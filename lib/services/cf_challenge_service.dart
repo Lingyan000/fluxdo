@@ -333,7 +333,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
           child: Opacity(
             opacity: _isBackground ? 0 : 1,
             child: Scaffold(
-              backgroundColor: Colors.transparent, // 始终透明，依靠内容决定是否遮挡
               appBar: showUi
                   ? AppBar(
                       title: Column(
