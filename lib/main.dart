@@ -55,38 +55,41 @@ Future<void> main() async {
     ));
   }
 
-  // 初始化 User-Agent（获取 WebView UA 并移除 wv 标识）
-  await AppConstants.initUserAgent();
-
   // 初始化语法高亮服务（预热 Isolate Worker 和字体）
   HighlighterService.instance.initialize(); // 不需要 await，后台初始化
 
-  // 初始化 SharedPreferences
-  final prefs = await SharedPreferences.getInstance();
+  // === 第一阶段：无依赖的初始化并行执行 ===
+  final prefsFuture = SharedPreferences.getInstance();
+  // Windows 上延迟初始化 UA（WebView2 启动慢），使用默认 UA 先行
+  // 移动端需要尽早获取以便登录 WebView 使用正确的 UA
+  if (!Platform.isWindows) {
+    AppConstants.initUserAgent(); // 后台初始化，不阻塞
+  }
+  final cookieJarFuture = CookieJarService().initialize();
+  final cookieSyncFuture = CookieSyncService().init();
+  final proxyCertFuture = ProxyCertificate.initialize();
 
-  // 初始化 CF 验证日志（仅开发者模式启用）
-  await CfChallengeLogger.setEnabled(prefs.getBool('developer_mode') ?? false);
+  // 等待 SharedPreferences（后续初始化依赖它）
+  final prefs = await prefsFuture;
 
-  // 初始化代理 CA 证书（非 Android 平台）
-  await ProxyCertificate.initialize();
+  // === 第二阶段：依赖 prefs 的初始化并行执行 ===
+  await Future.wait([
+    cookieJarFuture,
+    cookieSyncFuture,
+    proxyCertFuture,
+    CfChallengeLogger.setEnabled(prefs.getBool('developer_mode') ?? false),
+    CronetFallbackService.instance.initialize(prefs),
+    NetworkSettingsService.instance.initialize(prefs),
+    ProxySettingsService.instance.initialize(prefs),
+  ]);
 
-  // 初始化 Cronet 降级服务
-  await CronetFallbackService.instance.initialize(prefs);
-
-  // 初始化网络设置（DoH/代理）
-  await NetworkSettingsService.instance.initialize(prefs);
-
-  // 初始化 HTTP 代理设置
-  await ProxySettingsService.instance.initialize(prefs);
-
-  // 初始化 CookieJar（持久化 Cookie 管理）
-  await CookieJarService().initialize();
-
-  // 初始化 Cookie 同步服务（CSRF token 等）
-  await CookieSyncService().init();
-
-  // 初始化本地通知服务（请求权限）
+  // 初始化本地通知服务（请求权限，不阻塞）
   LocalNotificationService().initialize();
+
+  // Windows 上后台初始化 UA（不阻塞启动）
+  if (Platform.isWindows) {
+    AppConstants.initUserAgent();
+  }
 
   runApp(ProviderScope(
     overrides: [

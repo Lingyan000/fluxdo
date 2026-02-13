@@ -24,10 +24,9 @@ class _PreheatGateState extends State<PreheatGate> {
 
   Future<bool> _preload() async {
     try {
-      final minDelay = Future.delayed(const Duration(milliseconds: 1200));
-      final loadTask = PreloadedDataService().ensureLoaded();
-      await Future.wait([minDelay, loadTask]);
+      await PreloadedDataService().ensureLoaded();
 
+      // 这些任务不阻塞界面显示，后台加载
       DiscourseService().getEnabledReactions();
       EmojiHandler().init();
       DiscourseService().preloadUserSummary();
@@ -70,7 +69,7 @@ class _PreheatGateState extends State<PreheatGate> {
         }
 
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 300),
           switchInCurve: Curves.easeInOutCubic,
           switchOutCurve: Curves.easeOut,
           transitionBuilder: (child, animation) {
