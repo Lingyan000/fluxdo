@@ -319,30 +319,11 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>> {
 
     final newUnread = (topic.highestPostNumber - highestSeen).clamp(0, topic.highestPostNumber);
 
-    final updated = Topic(
-      id: topic.id,
-      title: topic.title,
-      slug: topic.slug,
-      postsCount: topic.postsCount,
-      replyCount: topic.replyCount,
-      views: topic.views,
-      likeCount: topic.likeCount,
-      excerpt: topic.excerpt,
-      createdAt: topic.createdAt,
-      lastPostedAt: topic.lastPostedAt,
-      lastPosterUsername: topic.lastPosterUsername,
-      categoryId: topic.categoryId,
-      pinned: topic.pinned,
-      visible: topic.visible,
-      closed: topic.closed,
-      archived: topic.archived,
-      tags: topic.tags,
-      posters: topic.posters,
+    final updated = topic.copyWith(
       unseen: false,
       unread: newUnread,
       newPosts: 0,
       lastReadPostNumber: highestSeen,
-      highestPostNumber: topic.highestPostNumber,
     );
 
     final newList = [...topics];

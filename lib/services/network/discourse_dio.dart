@@ -56,16 +56,16 @@ class DiscourseDio {
       retryableExtraStatuses: {429, 502, 503, 504},
     ));
 
-    // 4. 请求头拦截器
+    // 5. 请求头拦截器
     dio.interceptors.add(RequestHeaderInterceptor(CookieSyncService()));
 
-    // 5. 重定向拦截器
+    // 6. 重定向拦截器
     dio.interceptors.add(RedirectInterceptor(dio));
 
-    // 6. 错误拦截器
+    // 7. 错误拦截器
     dio.interceptors.add(ErrorInterceptor());
 
-    // 7. CF 验证拦截器
+    // 8. CF 验证拦截器
     dio.interceptors.add(CfChallengeInterceptor(
       dio: dio,
       cookieJarService: cookieJarService,

@@ -66,8 +66,6 @@ abstract class _DiscourseServiceBase {
   ValueNotifier<User?> get currentUserNotifier;
   StreamController<String> get _authErrorController;
   StreamController<void> get _authStateController;
-  // ignore: unused_element
-  StreamController<void> get _cfChallengeController;
   Map<String, String> get _urlCache;
 
   bool get isAuthenticated;
@@ -128,16 +126,14 @@ class DiscourseService extends _DiscourseServiceBase
   final ValueNotifier<User?> currentUserNotifier = ValueNotifier<User?>(null);
 
   @override
+  // ignore: close_sinks
   final _authErrorController = StreamController<String>.broadcast();
   Stream<String> get authErrorStream => _authErrorController.stream;
 
   @override
+  // ignore: close_sinks
   final _authStateController = StreamController<void>.broadcast();
   Stream<void> get authStateStream => _authStateController.stream;
-
-  @override
-  final _cfChallengeController = StreamController<void>.broadcast();
-  Stream<void> get cfChallengeStream => _cfChallengeController.stream;
 
   @override
   final Map<String, String> _urlCache = {};
