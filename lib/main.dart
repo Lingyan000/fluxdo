@@ -133,6 +133,13 @@ class MainApp extends ConsumerWidget {
           );
         }
 
+        // Windows/macOS 默认字体不含中文，需指定中文字体避免回退不一致
+        final String? fontFamily = Platform.isWindows
+            ? 'Microsoft YaHei'
+            : Platform.isMacOS
+                ? 'PingFang SC'
+                : null;
+
         return MaterialApp(
           scrollBehavior: const _AppScrollBehavior(),
           navigatorKey: navigatorKey,
@@ -153,10 +160,12 @@ class MainApp extends ConsumerWidget {
           theme: ThemeData(
             colorScheme: lightScheme,
             useMaterial3: true,
+            fontFamily: fontFamily,
           ),
           darkTheme: ThemeData(
             colorScheme: darkScheme,
             useMaterial3: true,
+            fontFamily: fontFamily,
           ),
           home: const OnboardingGate(
             child: PreheatGate(child: MainPage()),
