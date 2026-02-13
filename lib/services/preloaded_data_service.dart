@@ -36,6 +36,7 @@ class PreloadedDataService {
   List<String>? _enabledReactions;
   bool _loaded = false;
   bool _loading = false;
+  Completer<void>? _loadingCompleter;
 
   // 登录失效回调
   void Function()? _onAuthInvalidCallback;
@@ -305,11 +306,9 @@ class PreloadedDataService {
   /// 确保数据已加载
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
-    if (_loading) {
-      // 等待正在进行的加载完成
-      while (_loading) {
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
+    if (_loading && _loadingCompleter != null) {
+      // 等待正在进行的加载完成（无忙等待）
+      await _loadingCompleter!.future;
       return;
     }
     await _loadPreloadedData();
@@ -319,6 +318,7 @@ class PreloadedDataService {
   Future<void> _loadPreloadedData() async {
     if (_loading) return;
     _loading = true;
+    _loadingCompleter = Completer<void>();
 
     try {
       // 发起 HTTP 请求获取数据
@@ -341,6 +341,8 @@ class PreloadedDataService {
       debugPrint('[PreloadedData] 加载失败: $e');
     } finally {
       _loading = false;
+      _loadingCompleter?.complete();
+      _loadingCompleter = null;
     }
   }
 

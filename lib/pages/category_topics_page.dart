@@ -138,7 +138,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
           _page = 0;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[CategoryTopics] 刷新失败: $e');
+    }
   }
 
   Future<void> _loadMore() async {

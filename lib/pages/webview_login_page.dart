@@ -114,7 +114,9 @@ class _WebViewLoginPageState extends State<WebViewLoginPage> {
       if (result != null && result.toString().isNotEmpty && result.toString() != 'null') {
         username = result.toString();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WebViewLogin] 获取用户名失败: $e');
+    }
 
     // 保存 tokens 和用户名
     await _service.saveTokens(tToken: tToken, cfClearance: cfClearance);
@@ -132,7 +134,9 @@ class _WebViewLoginPageState extends State<WebViewLoginPage> {
       if (csrf != null && csrf.toString().isNotEmpty && csrf.toString() != 'null') {
         CookieSyncService().setCsrfToken(csrf.toString());
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WebViewLogin] 同步 CSRF 失败: $e');
+    }
     // 登录后从 WebView 同步 Cookie 到 CookieJar
     await _cookieJar.syncFromWebView();
     // 登录后重新加载预热数据
