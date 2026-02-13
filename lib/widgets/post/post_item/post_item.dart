@@ -301,9 +301,7 @@ class _PostItemState extends ConsumerState<PostItem> {
             : backgroundColor;
 
     return RepaintBoundary(
-        child: Opacity(
-          opacity: post.isDeleted ? 0.6 : 1.0,
-          child: Container(
+        child: Container(
           constraints: const BoxConstraints(minHeight: 80),
           decoration: BoxDecoration(
             color: targetColor,
@@ -527,7 +525,7 @@ class _PostItemState extends ConsumerState<PostItem> {
             ],
           ),
         ),
-      ),
     );
   }
 }
+

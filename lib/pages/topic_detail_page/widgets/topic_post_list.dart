@@ -194,10 +194,10 @@ class _TopicPostListState extends State<TopicPostList> {
     // 先调用原有的滚动通知处理
     final result = onScrollNotification(notification);
 
-    // 在滚动更新时检测可见帖子（节流 16ms）
+    // 在滚动更新时检测可见帖子（节流 150ms，减少滚动时的计算开销）
     if (notification is ScrollUpdateNotification && !_isThrottled) {
       _isThrottled = true;
-      Future.delayed(const Duration(milliseconds: 16), () {
+      Future.delayed(const Duration(milliseconds: 150), () {
         if (mounted) {
           _isThrottled = false;
           _updateFirstVisiblePost();
@@ -235,7 +235,7 @@ class _TopicPostListState extends State<TopicPostList> {
       child: CustomScrollView(
           controller: scrollController,
           center: centerKey,
-          cacheExtent: 500,
+          cacheExtent: 1500,
           physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
           slivers: [
           // 向上加载骨架屏

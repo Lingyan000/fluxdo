@@ -32,8 +32,6 @@ class TopicCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isUnread = topic.unseen || topic.unread > 0;
-    // 全部读完：进入过话题且没有未读帖子
-    final isFullyRead = !topic.unseen && topic.unread == 0 && topic.lastReadPostNumber != null;
 
     // 获取分类信息
     final categoryMap = ref.watch(categoryMapProvider).value;
@@ -60,9 +58,10 @@ class TopicCard extends ConsumerWidget {
     
 
 
-    return Card(
+    return RepaintBoundary(
+      child: Card(
       margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       elevation: isSelected ? 0 : 0,
       color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha:0.4) : null,
       shape: RoundedRectangleBorder(
@@ -77,9 +76,7 @@ class TopicCard extends ConsumerWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Opacity(
-          opacity: isFullyRead ? 0.5 : 1.0,
-          child: Padding(
+        child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,7 +254,7 @@ class TopicCard extends ConsumerWidget {
       ),
     );
   }
-  
+
   Widget _buildStackedAvatars(BuildContext context, List<TopicPoster> posters) {
     // Filter valid users
     final validPosters = posters.where((p) => p.user != null).toList();
@@ -351,7 +348,7 @@ class CompactTopicCard extends ConsumerWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       elevation: isSelected ? 0 : 0,
       color: isSelected
           ? theme.colorScheme.primaryContainer.withValues(alpha:0.4)

@@ -111,7 +111,7 @@ class _SmartAvatarState extends State<SmartAvatar> {
         color: bgColor,
         shape: BoxShape.circle,
       ),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       child: child,
     );
 

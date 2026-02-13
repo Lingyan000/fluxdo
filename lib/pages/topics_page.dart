@@ -905,6 +905,7 @@ class _TopicListState extends ConsumerState<_TopicList>
               child: ListView.builder(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(top: 8, bottom: 12),
+                cacheExtent: 1000,
                 itemCount: topics.length + newTopicOffset + 1,
                 itemBuilder: (context, index) {
                   if (hasNewTopics && index == 0) {
