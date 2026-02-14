@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../constants.dart';
 import '../providers/ldc_providers.dart';
 import '../pages/webview_page.dart';
 
@@ -24,7 +25,7 @@ class LdcBalanceCard extends ConsumerWidget {
       return GestureDetector(
         onTap: () => WebViewPage.open(
           context,
-          'https://credit.linux.do/home',
+          '${AppConstants.creditUrl}/home',
           title: 'LINUX DO Credits',
         ),
         child: Card(
@@ -106,7 +107,7 @@ class LdcBalanceCard extends ConsumerWidget {
     return GestureDetector(
       onTap: () => WebViewPage.open(
         context,
-        'https://credit.linux.do/home',
+        '${AppConstants.creditUrl}/home',
         title: 'LINUX DO Credits',
       ),
       child: Card(

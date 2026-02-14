@@ -177,8 +177,9 @@ class DeepLinkService {
       }
     }
 
-    // 其他 linux.do 链接：使用内置浏览器
-    if (uri.host == 'linux.do' || uri.host.endsWith('.linux.do')) {
+    // 其他站点链接：使用内置浏览器
+    final baseHost = Uri.parse(AppConstants.baseUrl).host;
+    if (uri.host == baseHost || uri.host.endsWith('.$baseHost')) {
       WebViewPage.open(context, url);
       return;
     }

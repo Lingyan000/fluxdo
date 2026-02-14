@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
 
+import '../constants.dart';
 import '../widgets/common/trust_level_skeleton.dart';
 import '../services/network/discourse_dio.dart';
 
@@ -37,7 +38,7 @@ class _TrustLevelRequirementsPageState
 
     try {
       final dio = DiscourseDio.create();
-      final response = await dio.get('https://connect.linux.do/');
+      final response = await dio.get('${AppConstants.connectUrl}/');
 
       if (response.statusCode == 200) {
         _parseHtml(response.data);

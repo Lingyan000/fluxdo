@@ -1,5 +1,6 @@
 // 用户操作记录
 import '../utils/time_utils.dart';
+import '../utils/url_helper.dart';
 
 /// 用户操作类型
 class UserActionType {
@@ -50,8 +51,7 @@ class UserAction {
   }
 
   String getAvatarUrl({int size = 120}) {
-    if (avatarTemplate == null) return '';
-    return avatarTemplate!.replaceAll('{size}', '$size');
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }
 

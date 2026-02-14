@@ -1,4 +1,5 @@
 import '../utils/time_utils.dart';
+import '../utils/url_helper.dart';
 
 /// Discourse 通知类型枚举
 enum NotificationType {
@@ -63,7 +64,7 @@ enum NotificationType {
 /// 通知详细数据
 class NotificationData {
   final String? displayUsername;
-  final String? originalPostId;
+  final int? originalPostId;
   final int? originalPostType;
   final String? originalUsername;
   final int? revisionNumber;
@@ -99,7 +100,7 @@ class NotificationData {
   factory NotificationData.fromJson(Map<String, dynamic> json) {
     return NotificationData(
       displayUsername: json['display_username'] as String?,
-      originalPostId: json['original_post_id']?.toString(),
+      originalPostId: json['original_post_id'] as int?,
       originalPostType: json['original_post_type'] as int?,
       originalUsername: json['original_username'] as String?,
       revisionNumber: json['revision_number'] as int?,
@@ -191,13 +192,10 @@ class DiscourseNotification {
 
   /// 获取头像 URL
   String getAvatarUrl({int size = 96}) {
-    // 优先使用顶层的 acting_user_avatar_template
-    String? template = actingUserAvatarTemplate ?? data.avatarTemplate;
-    if (template == null || template.isEmpty) {
-      return '';
-    }
-    // 直接替换 {size} 占位符
-    return template.replaceAll('{size}', size.toString());
+    return UrlHelper.resolveAvatarUrl(
+      avatarTemplate: actingUserAvatarTemplate ?? data.avatarTemplate,
+      size: size,
+    );
   }
 
   /// 获取通知标题

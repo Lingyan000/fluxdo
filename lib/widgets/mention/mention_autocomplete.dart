@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/mention_user.dart';
-import '../../constants.dart';
 import '../common/smart_avatar.dart';
 
 /// 搜索用户的数据源类型
@@ -456,7 +455,7 @@ class _MentionItemTile extends StatelessWidget {
 
   Widget _buildAvatar(ThemeData theme) {
     if (item.isUser) {
-      final avatarUrl = item.user?.getAvatarUrl(AppConstants.baseUrl, size: 40);
+      final avatarUrl = item.user?.getAvatarUrl(size: 40);
       if (avatarUrl != null && avatarUrl.isNotEmpty) {
         return SmartAvatar(
           imageUrl: avatarUrl,

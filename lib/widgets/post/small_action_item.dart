@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../constants.dart';
 import '../../models/topic.dart';
 import '../../utils/time_utils.dart';
 import '../common/smart_avatar.dart';
@@ -164,11 +163,7 @@ class SmallActionItem extends StatelessWidget {
           ),
           // 头像
           SmartAvatar(
-            imageUrl: avatarUrl.isNotEmpty
-                ? (avatarUrl.startsWith('http')
-                    ? avatarUrl
-                    : '${AppConstants.baseUrl}$avatarUrl')
-                : null,
+            imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
             radius: 14,
             fallbackText: post.username,
             backgroundColor: theme.colorScheme.surfaceContainerHighest,

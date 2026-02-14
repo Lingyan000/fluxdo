@@ -6,20 +6,13 @@ import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../services/discourse_cache_manager.dart';
-import '../../constants.dart';
+import '../../utils/color_utils.dart';
+import '../../utils/url_helper.dart';
 import '../../pages/category_topics_page.dart';
 
 // ============================================================
 // 工具函数
 // ============================================================
-
-Color _parseColor(String hex) {
-  try {
-    return Color(int.parse('FF$hex', radix: 16));
-  } catch (e) {
-    return Colors.grey;
-  }
-}
 
 /// 构建分类图标 widget
 /// [preferImage] 为 true 时图片优先（用于网格），false 时图标优先（用于 chips）
@@ -32,7 +25,7 @@ Widget _buildCategoryIcon(Category category, Color color, double size, {bool pre
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return Image(
         image: discourseImageProvider(
-          logoUrl.startsWith('http') ? logoUrl : '${AppConstants.baseUrl}$logoUrl',
+          UrlHelper.resolveUrl(logoUrl),
         ),
         width: size,
         height: size,
@@ -50,7 +43,7 @@ Widget _buildCategoryIcon(Category category, Color color, double size, {bool pre
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return Image(
         image: discourseImageProvider(
-          logoUrl.startsWith('http') ? logoUrl : '${AppConstants.baseUrl}$logoUrl',
+          UrlHelper.resolveUrl(logoUrl),
         ),
         width: size,
         height: size,
@@ -107,7 +100,7 @@ Future<void> _showSubcategoryMenu({
       ),
       // 子分类
       ...subcategories.map((sub) {
-        final subColor = _parseColor(sub.color);
+        final subColor = ColorUtils.parseHex(sub.color);
         return PopupMenuItem<Category>(
           value: sub,
           child: Row(
@@ -278,7 +271,7 @@ class _BrowseContent extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: pinnedCategories.map((category) {
-                final color = _parseColor(category.color);
+                final color = ColorUtils.parseHex(category.color);
                 return _buildQuickChip(context, category, color);
               }).toList(),
             ),
@@ -310,7 +303,7 @@ class _BrowseContent extends ConsumerWidget {
           itemCount: topCategories.length,
           itemBuilder: (context, index) {
             final category = topCategories[index];
-            final color = _parseColor(category.color);
+            final color = ColorUtils.parseHex(category.color);
             final subs = subcategoryMap[category.id];
             final hasSubs = subs != null && subs.isNotEmpty;
 
@@ -571,7 +564,7 @@ class _EditContent extends ConsumerWidget {
             },
             itemBuilder: (context, index) {
               final category = pinnedCategories[index];
-              final color = _parseColor(category.color);
+              final color = ColorUtils.parseHex(category.color);
               return _PinnedCategoryTile(
                 key: ValueKey(category.id),
                 category: category,
@@ -612,7 +605,7 @@ class _EditContent extends ConsumerWidget {
           itemCount: topLevel.length,
           itemBuilder: (context, index) {
             final category = topLevel[index];
-            final color = _parseColor(category.color);
+            final color = ColorUtils.parseHex(category.color);
             final subs = subMap[category.id];
             final hasSubs = subs != null && subs.isNotEmpty;
 
@@ -664,7 +657,7 @@ class _EditContent extends ConsumerWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 6,
       items: allItems.map((cat) {
-        final color = _parseColor(cat.color);
+        final color = ColorUtils.parseHex(cat.color);
         final isParent = cat.id == parent.id;
         return PopupMenuItem<Category>(
           value: cat,

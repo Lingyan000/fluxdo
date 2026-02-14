@@ -4,7 +4,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
-import '../../constants.dart';
+import '../../utils/color_utils.dart';
+import '../../utils/url_helper.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../common/topic_badges.dart';
 import '../common/smart_avatar.dart';
@@ -55,8 +56,6 @@ class TopicCard extends ConsumerWidget {
       faIcon = FontAwesomeHelper.getIcon(parent?.icon);
       logoUrl = parent?.uploadedLogo;
     }
-    
-
 
     return RepaintBoundary(
       child: Card(
@@ -273,9 +272,7 @@ class TopicCard extends ConsumerWidget {
         children: List.generate(displayPosters.length, (index) {
           final poster = displayPosters[index];
           
-          final avatarUrl = poster.user!.avatarTemplate.startsWith('http')
-              ? poster.user!.getAvatarUrl(size: 48)
-              : '${AppConstants.baseUrl}${poster.user!.getAvatarUrl(size: 48)}';
+          final avatarUrl = poster.user!.getAvatarUrl(size: 48);
           return Positioned(
             left: index * (avatarSize - overlap),
             child: SmartAvatar(
@@ -383,14 +380,12 @@ class CompactTopicCard extends ConsumerWidget {
                   FaIcon(
                     faIcon,
                     size: 12,
-                    color: _parseColor(category.color),
+                    color: ColorUtils.parseHex(category.color),
                   )
                 else if (logoUrl != null && logoUrl.isNotEmpty)
                   Image(
                     image: discourseImageProvider(
-                      logoUrl.startsWith('http') 
-                          ? logoUrl 
-                          : '${AppConstants.baseUrl}$logoUrl',
+                      UrlHelper.resolveUrl(logoUrl),
                     ),
                     width: 12,
                     height: 12,
@@ -505,17 +500,10 @@ class CompactTopicCard extends ConsumerWidget {
       width: 6,
       height: 6,
       decoration: BoxDecoration(
-        color: _parseColor(category.color),
+        color: ColorUtils.parseHex(category.color),
         shape: BoxShape.circle,
       ),
     );
   }
 
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
-  }
 }

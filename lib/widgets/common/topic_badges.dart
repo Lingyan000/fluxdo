@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../constants.dart';
 import '../../models/category.dart';
 import '../../services/discourse_cache_manager.dart';
+import '../../utils/color_utils.dart';
+import '../../utils/url_helper.dart';
 import '../../utils/tag_icon_list.dart';
 
 class BadgeSize {
@@ -225,7 +226,7 @@ class CategoryBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final categoryColor = _parseColor(category.color);
+    final categoryColor = ColorUtils.parseHex(category.color);
     final text = textStyle ??
         theme.textTheme.labelSmall?.copyWith(
           fontSize: size.fontSize,
@@ -258,9 +259,7 @@ class CategoryBadge extends StatelessWidget {
           else if (logoUrl != null && logoUrl!.isNotEmpty)
             Image(
               image: discourseImageProvider(
-                logoUrl!.startsWith('http')
-                    ? logoUrl!
-                    : '${AppConstants.baseUrl}$logoUrl',
+                UrlHelper.resolveUrl(logoUrl!),
               ),
               width: size.iconSize,
               height: size.iconSize,
@@ -299,11 +298,4 @@ class CategoryBadge extends StatelessWidget {
     );
   }
 
-  Color _parseColor(String hex) {
-    var clean = hex.replaceAll('#', '');
-    if (clean.length == 6) {
-      return Color(int.parse('0xFF$clean'));
-    }
-    return Colors.grey;
-  }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../constants.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/preloaded_data_service.dart';
 import '../services/network/cookie/cookie_jar_service.dart';
@@ -19,7 +20,7 @@ class _WebViewLoginPageState extends State<WebViewLoginPage> {
   final _cookieJar = CookieJarService();
   InAppWebViewController? _controller;
   bool _isLoading = true;
-  String _url = 'https://linux.do/';
+  String _url = '${AppConstants.baseUrl}/';
   double _progress = 0;
 
   @override
@@ -54,7 +55,7 @@ class _WebViewLoginPageState extends State<WebViewLoginPage> {
           ),
           Expanded(
             child: InAppWebView(
-              initialUrlRequest: URLRequest(url: WebUri('https://linux.do/')),
+              initialUrlRequest: URLRequest(url: WebUri('${AppConstants.baseUrl}/')),
               initialSettings: WebViewSettings.visible,
               onWebViewCreated: (controller) => _controller = controller,
               onLoadStart: (controller, url) => setState(() { _isLoading = true; _url = url?.toString() ?? ''; }),
@@ -83,7 +84,7 @@ class _WebViewLoginPageState extends State<WebViewLoginPage> {
   /// 检测登录状态，登录成功自动关闭
   Future<void> _checkLoginStatus(InAppWebViewController controller) async {
     final cookieManager = CookieManager.instance();
-    final cookies = await cookieManager.getCookies(url: WebUri('https://linux.do/'));
+    final cookies = await cookieManager.getCookies(url: WebUri('${AppConstants.baseUrl}/'));
 
     String? tToken;
     String? cfClearance;

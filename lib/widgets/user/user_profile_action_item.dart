@@ -3,7 +3,6 @@ import '../../models/user_action.dart';
 import '../../utils/time_utils.dart';
 import '../../services/emoji_handler.dart';
 import '../../services/discourse_cache_manager.dart';
-import '../../constants.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 
 /// 用户动态列表项
@@ -141,7 +140,7 @@ class UserReactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final emojiUrl = reaction.reactionValue != null
-        ? _getEmojiUrl(reaction.reactionValue!)
+        ? EmojiHandler().getEmojiUrl(reaction.reactionValue!)
         : null;
 
     return Card(
@@ -233,9 +232,4 @@ class UserReactionItem extends StatelessWidget {
     );
   }
 
-  String _getEmojiUrl(String emojiName) {
-    final url = EmojiHandler().getEmojiUrl(emojiName);
-    if (url != null) return url;
-    return '${AppConstants.baseUrl}/images/emoji/twitter/$emojiName.png?v=12';
-  }
 }

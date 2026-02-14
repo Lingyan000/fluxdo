@@ -5,7 +5,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
-import '../../constants.dart';
+import '../../utils/color_utils.dart';
+import '../../utils/url_helper.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/time_utils.dart';
@@ -225,10 +226,10 @@ class TopicPreviewDialog extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: _parseColor(category.color).withValues(alpha:0.1),
+              color: ColorUtils.parseHex(category.color).withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: _parseColor(category.color).withValues(alpha:0.3),
+                color: ColorUtils.parseHex(category.color).withValues(alpha:0.3),
                 width: 1,
               ),
             ),
@@ -241,7 +242,7 @@ class TopicPreviewDialog extends ConsumerWidget {
                     child: FaIcon(
                       faIcon,
                       size: 12,
-                      color: _parseColor(category.color),
+                      color: ColorUtils.parseHex(category.color),
                     ),
                   )
                 else if (logoUrl != null && logoUrl.isNotEmpty)
@@ -249,9 +250,7 @@ class TopicPreviewDialog extends ConsumerWidget {
                     padding: const EdgeInsets.only(right: 6),
                     child: Image(
                       image: discourseImageProvider(
-                        logoUrl.startsWith('http')
-                            ? logoUrl
-                            : '${AppConstants.baseUrl}$logoUrl',
+                        UrlHelper.resolveUrl(logoUrl),
                       ),
                       width: 12,
                       height: 12,
@@ -426,17 +425,10 @@ class TopicPreviewDialog extends ConsumerWidget {
       width: 8,
       height: 8,
       decoration: BoxDecoration(
-        color: _parseColor(category.color),
+        color: ColorUtils.parseHex(category.color),
         shape: BoxShape.circle,
       ),
     );
   }
 
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
-  }
 }

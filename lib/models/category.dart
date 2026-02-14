@@ -44,6 +44,50 @@ class Category {
   /// 是否允许在此分类创建话题
   bool get canCreateTopic => permission != null && permission! <= 1;
 
+  Category copyWith({
+    int? id,
+    String? name,
+    String? color,
+    String? textColor,
+    String? slug,
+    String? description,
+    int? parentCategoryId,
+    String? uploadedLogo,
+    String? uploadedBackground,
+    bool? readRestricted,
+    String? icon,
+    String? topicTemplate,
+    int? minimumRequiredTags,
+    List<RequiredTagGroup>? requiredTagGroups,
+    List<String>? allowedTags,
+    List<String>? allowedTagGroups,
+    bool? allowGlobalTags,
+    int? permission,
+    int? notificationLevel,
+  }) {
+    return Category(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      color: color ?? this.color,
+      textColor: textColor ?? this.textColor,
+      slug: slug ?? this.slug,
+      description: description ?? this.description,
+      parentCategoryId: parentCategoryId ?? this.parentCategoryId,
+      uploadedLogo: uploadedLogo ?? this.uploadedLogo,
+      uploadedBackground: uploadedBackground ?? this.uploadedBackground,
+      readRestricted: readRestricted ?? this.readRestricted,
+      icon: icon ?? this.icon,
+      topicTemplate: topicTemplate ?? this.topicTemplate,
+      minimumRequiredTags: minimumRequiredTags ?? this.minimumRequiredTags,
+      requiredTagGroups: requiredTagGroups ?? this.requiredTagGroups,
+      allowedTags: allowedTags ?? this.allowedTags,
+      allowedTagGroups: allowedTagGroups ?? this.allowedTagGroups,
+      allowGlobalTags: allowGlobalTags ?? this.allowGlobalTags,
+      permission: permission ?? this.permission,
+      notificationLevel: notificationLevel ?? this.notificationLevel,
+    );
+  }
+
   factory Category.fromJson(Map<String, dynamic> json) {
     return Category(
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,

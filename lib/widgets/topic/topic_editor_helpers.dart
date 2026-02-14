@@ -5,7 +5,7 @@ import 'package:pangutext/pangutext.dart';
 import '../../models/category.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/font_awesome_helper.dart';
-import '../../constants.dart';
+import '../../utils/url_helper.dart';
 import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
@@ -317,7 +317,7 @@ class CategoryTrigger extends StatelessWidget {
               else if (logoUrl != null && logoUrl.isNotEmpty)
                 Image(
                   image: discourseImageProvider(
-                    logoUrl.startsWith('http') ? logoUrl : '${AppConstants.baseUrl}$logoUrl',
+                    UrlHelper.resolveUrl(logoUrl),
                   ),
                   width: 16,
                   height: 16,

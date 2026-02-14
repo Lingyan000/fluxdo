@@ -115,7 +115,25 @@ class MessageBusInitNotifier extends Notifier<void> {
       
       void onTopicTracking(MessageBusMessage message) {
         debugPrint('[TopicTracking] 收到消息: ${message.channel} #${message.messageId}');
-        // TODO: 根据频道类型更新对应的话题列表
+
+        // /latest 频道由 LatestChannelNotifier 独立处理，跳过避免重复
+        if (channel == '/latest') return;
+
+        final data = message.data;
+        if (data is! Map<String, dynamic>) return;
+
+        final topicId = data['topic_id'] as int?;
+        if (topicId == null) return;
+
+        final payload = data['payload'] as Map<String, dynamic>?;
+        final categoryId = payload?['category_id'] as int? ?? data['category_id'] as int?;
+
+        debugPrint('[TopicTracking] 频道=$channel, topic=$topicId, category=$categoryId');
+
+        // /new 频道：新话题通知，添加到 incoming state
+        if (channel == '/new') {
+          ref.read(latestChannelProvider.notifier).addIncomingTopic(topicId, categoryId);
+        }
       }
       
       subscriptions[channel] = (messageId: messageId, callback: onTopicTracking);
@@ -273,6 +291,22 @@ class LatestChannelNotifier extends Notifier<TopicListIncomingState> {
     });
 
     return const TopicListIncomingState();
+  }
+
+  /// 外部添加新话题到 incoming state（供 /new 等频道使用）
+  void addIncomingTopic(int topicId, int? categoryId) {
+    _pendingTopics[topicId] = categoryId;
+
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDuration, () {
+      if (_pendingTopics.isNotEmpty) {
+        debugPrint('[LatestChannel] 批量添加 ${_pendingTopics.length} 条新话题');
+        state = TopicListIncomingState(
+          incomingTopics: {...state.incomingTopics, ..._pendingTopics},
+        );
+        _pendingTopics.clear();
+      }
+    });
   }
 
   /// 清除指定分类的新话题标记（null 表示清除全部）

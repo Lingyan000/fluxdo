@@ -258,12 +258,15 @@ class CfChallengeLogger {
       if (addresses.isNotEmpty) {
         return addresses.map((a) => a.address).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      // Primary resolver failed, falling through to system DNS
+    }
 
     try {
       final addresses = await InternetAddress.lookup(host);
       return addresses.map((a) => a.address).toList();
-    } catch (_) {
+    } catch (e) {
+      stderr.writeln('[CfChallengeLogger] DNS resolve failed for $host: $e');
       return const [];
     }
   }

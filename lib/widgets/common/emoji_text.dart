@@ -105,7 +105,7 @@ class EmojiText extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 1),
         child: Image(
-          image: discourseImageProvider(emojiUrl ?? ''),
+          image: discourseImageProvider(emojiUrl),
           width: emojiSize,
           height: emojiSize,
           fit: BoxFit.contain,

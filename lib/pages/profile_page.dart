@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../constants.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
-import '../services/discourse_cache_manager.dart';
 import 'webview_page.dart';
 import 'webview_login_page.dart';
 import 'appearance_page.dart';
@@ -21,6 +21,7 @@ import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/smart_avatar.dart';
+import '../widgets/common/user_status_helpers.dart';
 import '../providers/app_state_refresher.dart';
 import 'metaverse_page.dart';
 import 'drafts_page.dart';
@@ -137,7 +138,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     if (username != null && username.isNotEmpty) {
       await WebViewPage.open(
         context, 
-        'https://linux.do/u/$username/preferences/account',
+        '${AppConstants.baseUrl}/u/$username/preferences/account',
         title: '编辑资料',
         injectCss: '''
           .new-user-content-wrapper {
@@ -691,7 +692,7 @@ class _ProfileInfoSection extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  _getTrustLevelLabel(trustLevel ?? 0),
+                  getTrustLevelLabel(trustLevel ?? 0),
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSecondaryContainer,
                     fontWeight: FontWeight.w600,
@@ -797,49 +798,6 @@ class _ProfileAvatarState extends State<_ProfileAvatar> with AutomaticKeepAliveC
   }
 }
 
-String _getTrustLevelLabel(int level) {
-  switch (level) {
-    case 0:
-      return 'L0 新 user';
-    case 1:
-      return 'L1 基本用户';
-    case 2:
-      return 'L2 成员';
-    case 3:
-      return 'L3 活跃用户';
-    case 4:
-      return 'L4 领袖';
-    default:
-      return 'L$level';
-  }
-}
-
-Widget _buildStatusEmoji(UserStatus status) {
-  final emoji = status.emoji;
-  if (emoji == null || emoji.isEmpty) return const SizedBox.shrink();
-
-  final isEmojiName =
-      emoji.contains(RegExp(r'[a-zA-Z0-9_]')) && !emoji.contains(RegExp(r'[^\x00-\x7F]'));
-
-  if (isEmojiName) {
-    final cleanName = emoji.replaceAll(':', '');
-    final emojiUrl = 'https://linux.do/images/emoji/twitter/$cleanName.png?v=12';
-
-    return Image(
-      image: discourseImageProvider(emojiUrl),
-      width: 14,
-      height: 14,
-      fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-    );
-  }
-
-  return Text(
-    emoji,
-    style: const TextStyle(fontSize: 12, height: 1.2),
-  );
-}
-
 Widget _buildStatusChip(UserStatus status, ThemeData theme) {
   final emoji = status.emoji;
   final description = status.description;
@@ -859,7 +817,7 @@ Widget _buildStatusChip(UserStatus status, ThemeData theme) {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (emoji != null && emoji.isNotEmpty) ...[
-          _buildStatusEmoji(status),
+          buildStatusEmoji(status),
           if (description != null && description.isNotEmpty) const SizedBox(width: 4),
         ],
         if (description != null && description.isNotEmpty)

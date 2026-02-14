@@ -152,10 +152,7 @@ class ShareImageWidget extends ConsumerWidget {
   }
 
   Widget _buildAuthorInfo(BuildContext context, Post post, Color textColor, Color secondaryTextColor, Color borderColor) {
-    final avatarUrl = post.getAvatarUrl(size: 120);
-    final fullAvatarUrl = avatarUrl.startsWith('http')
-        ? avatarUrl
-        : '${AppConstants.baseUrl}$avatarUrl';
+    final fullAvatarUrl = post.getAvatarUrl(size: 120);
 
     return Row(
       children: [

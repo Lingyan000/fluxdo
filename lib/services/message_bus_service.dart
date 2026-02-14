@@ -62,6 +62,7 @@ class MessageBusService {
   static const int _maxBackoffSeconds = 30;
 
   // 消息流（用于全局监听）
+  // ignore: close_sinks — closed in dispose()
   final _messageController = StreamController<MessageBusMessage>.broadcast();
   Stream<MessageBusMessage> get messageStream => _messageController.stream;
 

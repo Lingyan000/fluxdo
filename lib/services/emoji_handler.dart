@@ -52,7 +52,7 @@ class EmojiHandler {
   }
 
   /// 获取 emoji 的完整 URL
-  String? getEmojiUrl(String name) {
+  String getEmojiUrl(String name) {
     final url = _emojiMap?[name];
     if (url != null) {
       return UrlHelper.resolveUrl(url);

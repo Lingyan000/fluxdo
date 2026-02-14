@@ -1,6 +1,6 @@
 // 搜索结果数据模型
-import '../constants.dart';
 import '../utils/time_utils.dart';
+import '../utils/url_helper.dart';
 import 'topic.dart';
 
 /// 搜索结果响应
@@ -100,10 +100,7 @@ class SearchPost {
   }
 
   String getAvatarUrl({int size = 120}) {
-    if (avatarTemplate.isEmpty) return '';
-    final url = avatarTemplate.replaceAll('{size}', '$size');
-    if (url.startsWith('http')) return url;
-    return '${AppConstants.baseUrl}$url';
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }
 
@@ -171,10 +168,7 @@ class SearchUser {
   }
 
   String getAvatarUrl({int size = 120}) {
-    if (avatarTemplate.isEmpty) return '';
-    final url = avatarTemplate.replaceAll('{size}', '$size');
-    if (url.startsWith('http')) return url;
-    return '${AppConstants.baseUrl}$url';
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }
 

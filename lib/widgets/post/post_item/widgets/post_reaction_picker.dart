@@ -1,16 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../../constants.dart';
 import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/emoji_handler.dart';
-
-/// 获取 emoji 图片 URL
-String _getEmojiUrl(String emojiName) {
-  final url = EmojiHandler().getEmojiUrl(emojiName);
-  if (url != null) return url;
-  return '${AppConstants.baseUrl}/images/emoji/twitter/$emojiName.png?v=12';
-}
 
 /// 回应选择器弹窗
 class PostReactionPicker {
@@ -139,7 +131,7 @@ class PostReactionPicker {
                               ),
                               child: Center(
                                 child: Image(
-                                  image: discourseImageProvider(_getEmojiUrl(r)),
+                                  image: discourseImageProvider(EmojiHandler().getEmojiUrl(r)),
                                   width: iconSize,
                                   height: iconSize,
                                   errorBuilder: (_, _, _) => const Icon(Icons.emoji_emotions_outlined, size: 24),

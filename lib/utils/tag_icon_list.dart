@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'color_utils.dart';
 import 'font_awesome_helper.dart';
 
 class TagIconInfo {
@@ -33,19 +34,9 @@ class TagIconList {
       if (name.isEmpty || iconName.isEmpty || colorHex.isEmpty) continue;
       final icon = FontAwesomeHelper.getIcon(iconName);
       if (icon == null) continue;
-      map[name] = TagIconInfo(icon: icon, color: _parseColor(colorHex));
+      map[name] = TagIconInfo(icon: icon, color: ColorUtils.parseHex(colorHex));
     }
     return map;
   }
 
-  static Color _parseColor(String hex) {
-    var clean = hex.replaceAll('#', '');
-    if (clean.length == 3) {
-      clean = '${clean[0]}${clean[0]}${clean[1]}${clean[1]}${clean[2]}${clean[2]}';
-    }
-    if (clean.length == 6) {
-      return Color(int.parse('0xFF$clean'));
-    }
-    return Colors.grey;
-  }
 }

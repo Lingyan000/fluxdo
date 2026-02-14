@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../constants.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/svg_utils.dart';
+import '../../utils/color_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 
 /// Flair 徽章组件
@@ -50,26 +51,6 @@ class FlairBadge extends StatelessWidget {
     return flairUrl;
   }
 
-  /// 解析颜色字符串（支持 hex 格式）
-  Color? _parseColor(String? colorStr) {
-    if (colorStr == null || colorStr.isEmpty) return null;
-
-    // 移除可能的 # 前缀
-    String hex = colorStr.replaceFirst('#', '');
-
-    // 补全 alpha 通道
-    if (hex.length == 6) {
-      hex = 'FF$hex';
-    } else if (hex.length == 3) {
-      hex = 'FF${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}';
-    }
-
-    try {
-      return Color(int.parse(hex, radix: 16));
-    } catch (e) {
-      return null;
-    }
-  }
 
   /// 获取完整的 flair URL
   String _getFullFlairUrl() {
@@ -98,8 +79,8 @@ class FlairBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!hasFlair) return const SizedBox.shrink();
 
-    final bgColor = _parseColor(flairBgColor);
-    final fgColor = _parseColor(flairColor);
+    final bgColor = ColorUtils.tryParseHex(flairBgColor);
+    final fgColor = ColorUtils.tryParseHex(flairColor);
     final hasBgColor = bgColor != null;
 
     // 如果是图标名称（不是 URL）

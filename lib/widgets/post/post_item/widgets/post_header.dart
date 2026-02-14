@@ -10,13 +10,6 @@ import '../../../common/avatar_glow.dart';
 import '../../whisper_indicator.dart';
 import 'post_granted_badge.dart';
 
-/// 获取 emoji 图片 URL
-String _getEmojiUrl(String emojiName) {
-  final url = EmojiHandler().getEmojiUrl(emojiName);
-  if (url != null) return url;
-  return '${AppConstants.baseUrl}/images/emoji/twitter/$emojiName.png?v=12';
-}
-
 /// 帖子头像组件（独立widget避免不必要的重建）
 class PostAvatar extends StatefulWidget {
   final Post post;
@@ -132,7 +125,7 @@ class PostHeader extends StatelessWidget {
                     Tooltip(
                       message: post.userStatus!.description ?? '',
                       child: Image(
-                        image: discourseImageProvider(_getEmojiUrl(post.userStatus!.emoji!)),
+                        image: discourseImageProvider(EmojiHandler().getEmojiUrl(post.userStatus!.emoji!)),
                         width: 16,
                         height: 16,
                         errorBuilder: (_, _, _) => const SizedBox.shrink(),
@@ -242,11 +235,7 @@ class PostHeader extends StatelessWidget {
                         radius: 10,
                         backgroundColor: theme.colorScheme.primaryContainer,
                         backgroundImage: post.replyToUser!.avatarTemplate.isNotEmpty
-                            ? discourseImageProvider(
-                                post.replyToUser!.avatarTemplate.startsWith('http')
-                                    ? post.replyToUser!.avatarTemplate.replaceAll('{size}', '40')
-                                    : '${AppConstants.baseUrl}${post.replyToUser!.avatarTemplate.replaceAll('{size}', '40')}',
-                              )
+                            ? discourseImageProvider(post.replyToUser!.getAvatarUrl())
                             : null,
                         child: post.replyToUser!.avatarTemplate.isEmpty
                             ? Text(

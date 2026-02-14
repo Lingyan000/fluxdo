@@ -95,24 +95,54 @@ class User {
   });
 
   User copyWith({
+    int? id,
+    String? username,
+    String? name,
+    String? avatarTemplate,
+    String? animatedAvatar,
+    int? trustLevel,
+    String? bio,
+    String? bioCooked,
+    String? bioRaw,
+    String? cardBackgroundUploadUrl,
+    String? profileBackgroundUploadUrl,
     int? unreadNotifications,
     int? unreadHighPriorityNotifications,
     int? allUnreadNotificationsCount,
     int? seenNotificationId,
     int? notificationChannelPosition,
+    UserStatus? status,
+    DateTime? lastPostedAt,
+    DateTime? lastSeenAt,
+    DateTime? createdAt,
+    String? location,
+    String? website,
+    String? websiteName,
+    String? flairUrl,
+    String? flairName,
+    String? flairBgColor,
+    String? flairColor,
+    int? flairGroupId,
+    bool? canFollow,
+    bool? isFollowed,
+    int? totalFollowers,
+    int? totalFollowing,
+    bool? canSendPrivateMessages,
+    bool? canSendPrivateMessageToUser,
+    int? gamificationScore,
   }) {
     return User(
-      id: id,
-      username: username,
-      name: name,
-      avatarTemplate: avatarTemplate,
-      animatedAvatar: animatedAvatar,
-      trustLevel: trustLevel,
-      bio: bio,
-      bioCooked: bioCooked,
-      bioRaw: bioRaw,
-      cardBackgroundUploadUrl: cardBackgroundUploadUrl,
-      profileBackgroundUploadUrl: profileBackgroundUploadUrl,
+      id: id ?? this.id,
+      username: username ?? this.username,
+      name: name ?? this.name,
+      avatarTemplate: avatarTemplate ?? this.avatarTemplate,
+      animatedAvatar: animatedAvatar ?? this.animatedAvatar,
+      trustLevel: trustLevel ?? this.trustLevel,
+      bio: bio ?? this.bio,
+      bioCooked: bioCooked ?? this.bioCooked,
+      bioRaw: bioRaw ?? this.bioRaw,
+      cardBackgroundUploadUrl: cardBackgroundUploadUrl ?? this.cardBackgroundUploadUrl,
+      profileBackgroundUploadUrl: profileBackgroundUploadUrl ?? this.profileBackgroundUploadUrl,
       unreadNotifications: unreadNotifications ?? this.unreadNotifications,
       unreadHighPriorityNotifications:
           unreadHighPriorityNotifications ?? this.unreadHighPriorityNotifications,
@@ -121,25 +151,25 @@ class User {
       seenNotificationId: seenNotificationId ?? this.seenNotificationId,
       notificationChannelPosition:
           notificationChannelPosition ?? this.notificationChannelPosition,
-      status: status,
-      lastPostedAt: lastPostedAt,
-      lastSeenAt: lastSeenAt,
-      createdAt: createdAt,
-      location: location,
-      website: website,
-      websiteName: websiteName,
-      flairUrl: flairUrl,
-      flairName: flairName,
-      flairBgColor: flairBgColor,
-      flairColor: flairColor,
-      flairGroupId: flairGroupId,
-      canFollow: canFollow,
-      isFollowed: isFollowed,
-      totalFollowers: totalFollowers,
-      totalFollowing: totalFollowing,
-      canSendPrivateMessages: canSendPrivateMessages,
-      canSendPrivateMessageToUser: canSendPrivateMessageToUser,
-      gamificationScore: gamificationScore,
+      status: status ?? this.status,
+      lastPostedAt: lastPostedAt ?? this.lastPostedAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      createdAt: createdAt ?? this.createdAt,
+      location: location ?? this.location,
+      website: website ?? this.website,
+      websiteName: websiteName ?? this.websiteName,
+      flairUrl: flairUrl ?? this.flairUrl,
+      flairName: flairName ?? this.flairName,
+      flairBgColor: flairBgColor ?? this.flairBgColor,
+      flairColor: flairColor ?? this.flairColor,
+      flairGroupId: flairGroupId ?? this.flairGroupId,
+      canFollow: canFollow ?? this.canFollow,
+      isFollowed: isFollowed ?? this.isFollowed,
+      totalFollowers: totalFollowers ?? this.totalFollowers,
+      totalFollowing: totalFollowing ?? this.totalFollowing,
+      canSendPrivateMessages: canSendPrivateMessages ?? this.canSendPrivateMessages,
+      canSendPrivateMessageToUser: canSendPrivateMessageToUser ?? this.canSendPrivateMessageToUser,
+      gamificationScore: gamificationScore ?? this.gamificationScore,
     );
   }
 
@@ -218,17 +248,11 @@ class User {
   
   /// 获取头像 URL，优先使用动画头像（GIF）
   String getAvatarUrl({int size = 120}) {
-    // 优先使用动画头像
-    if (animatedAvatar != null && animatedAvatar!.isNotEmpty) {
-      if (animatedAvatar!.startsWith('http')) return animatedAvatar!;
-      if (animatedAvatar!.startsWith('/')) return 'https://linux.do$animatedAvatar';
-      return 'https://linux.do/$animatedAvatar';
-    }
-    if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', size.toString());
-    if (template.startsWith('http')) return template;
-    if (template.startsWith('/')) return 'https://linux.do$template';
-    return 'https://linux.do/$template';
+    return UrlHelper.resolveAvatarUrl(
+      avatarTemplate: avatarTemplate,
+      animatedAvatar: animatedAvatar,
+      size: size,
+    );
   }
 }
 
@@ -464,11 +488,7 @@ class SummaryUserWithCount {
   }
 
   String getAvatarUrl({int size = 120}) {
-    if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', '$size');
-    if (template.startsWith('http')) return template;
-    if (template.startsWith('/')) return 'https://linux.do$template';
-    return 'https://linux.do/$template';
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }
 
@@ -545,8 +565,6 @@ class FollowUser {
   }
 
   String getAvatarUrl({int size = 96}) {
-    if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', size.toString());
-    return template.startsWith('http') ? template : 'https://linux.do$template';
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }

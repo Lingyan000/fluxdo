@@ -127,7 +127,7 @@ class _DiscourseHtmlContentState extends ConsumerState<DiscourseHtmlContent> {
       for (final user in widget.mentionedUsers!) {
         if (user.statusEmoji != null) {
           final emojiUrl = EmojiHandler().getEmojiUrl(user.statusEmoji!);
-          if (emojiUrl != null) {
+          if (emojiUrl.isNotEmpty) {
             // 查找该用户的 mention 链接，在 </a> 前注入 emoji 图片
             final escapedUsername = RegExp.escape(user.username);
             final pattern = RegExp(

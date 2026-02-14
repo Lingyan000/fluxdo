@@ -2,10 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'network/discourse_dio.dart';
+import '../constants.dart';
 import '../models/ldc_user_info.dart';
 
 class LdcOAuthService {
-  static const String baseUrl = 'https://credit.linux.do';
+  static String get baseUrl => AppConstants.creditUrl;
   late final Dio _dio;
 
   LdcOAuthService() {
@@ -92,7 +93,7 @@ class LdcOAuthService {
         builder: (context) => _AuthDialog(
           onApprove: () async {
             final approveResponse = await _dio.get(
-              'https://connect.linux.do$approveLink',
+              '${AppConstants.connectUrl}$approveLink',
               options: Options(
                 followRedirects: false,
                 validateStatus: (status) => status != null && status < 500,

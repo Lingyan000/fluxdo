@@ -371,14 +371,18 @@ class NetworkSettingsService {
           ],
         ),
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NetworkSettings] Failed to set WebView proxy: $e');
+    }
   }
 
   Future<void> _clearWebViewProxy() async {
     if (!Platform.isAndroid) return;
     try {
       await ProxyController.instance().clearProxyOverride();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NetworkSettings] Failed to clear WebView proxy: $e');
+    }
   }
 
   void _touch() {
@@ -417,7 +421,9 @@ class NetworkSettingsService {
             .map((e) => DohServer.fromJson(e.cast<String, dynamic>()))
             .toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NetworkSettings] Failed to decode custom servers: $e');
+    }
     return const [];
   }
 

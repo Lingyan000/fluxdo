@@ -76,6 +76,12 @@ class AppConstants {
   /// linux.do 域名
   static const String baseUrl = 'https://linux.do';
 
+  /// LINUX DO Connect 服务
+  static const String connectUrl = 'https://connect.linux.do';
+
+  /// LINUX DO Credits 服务
+  static const String creditUrl = 'https://credit.linux.do';
+
   /// 请求首页时是否跳过 X-CSRF-Token（用于预热）
   static const bool skipCsrfForHomeRequest = true;
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../constants.dart';
 import '../../../providers/message_bus_providers.dart';
 import '../../../widgets/common/smart_avatar.dart';
 
@@ -91,9 +90,7 @@ class TypingAvatars extends StatelessWidget {
               left: i * (avatarSize - overlap),
               child: SmartAvatar(
                 imageUrl: visibleUsers[i].avatarTemplate.isNotEmpty
-                    ? (visibleUsers[i].avatarTemplate.startsWith('http')
-                        ? visibleUsers[i].getAvatarUrl(size: 56)
-                        : '${AppConstants.baseUrl}${visibleUsers[i].getAvatarUrl(size: 56)}')
+                    ? visibleUsers[i].getAvatarUrl(size: 56)
                     : null,
                 radius: avatarSize / 2,
                 fallbackText: visibleUsers[i].username,

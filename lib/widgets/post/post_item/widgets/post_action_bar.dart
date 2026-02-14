@@ -1,15 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../constants.dart';
 import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/emoji_handler.dart';
-
-/// 获取 emoji 图片 URL
-String _getEmojiUrl(String emojiName) {
-  final url = EmojiHandler().getEmojiUrl(emojiName);
-  if (url != null) return url;
-  return '${AppConstants.baseUrl}/images/emoji/twitter/$emojiName.png?v=12';
-}
 
 /// 帖子底部操作栏
 class PostActionBar extends StatelessWidget {
@@ -156,7 +148,7 @@ class PostActionBar extends StatelessWidget {
                           ...reactions.take(3).map((reaction) => Padding(
                             padding: const EdgeInsets.only(right: 2),
                             child: Image(
-                              image: discourseImageProvider(_getEmojiUrl(reaction.id)),
+                              image: discourseImageProvider(EmojiHandler().getEmojiUrl(reaction.id)),
                               width: 16,
                               height: 16,
                               errorBuilder: (_, _, _) => const SizedBox(width: 16, height: 16),
@@ -182,7 +174,7 @@ class PostActionBar extends StatelessWidget {
                     // 点赞图标/回应图标
                     if (currentUserReaction != null)
                       Image(
-                        image: discourseImageProvider(_getEmojiUrl(currentUserReaction!.id)),
+                        image: discourseImageProvider(EmojiHandler().getEmojiUrl(currentUserReaction!.id)),
                         width: 20,
                         height: 20,
                         errorBuilder: (_, _, _) => Icon(

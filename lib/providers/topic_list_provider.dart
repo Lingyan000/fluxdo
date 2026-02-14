@@ -261,19 +261,13 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>> {
       final service = ref.read(discourseServiceProvider);
       final detail = await service.getTopicDetail(topicId);
 
-      final updatedTopic = Topic(
-        id: detail.id,
+      final updatedTopic = existingTopic.copyWith(
         title: detail.title,
         slug: detail.slug,
         categoryId: detail.categoryId,
         postsCount: detail.postsCount,
         replyCount: detail.postsCount > 0 ? detail.postsCount - 1 : 0,
-        views: existingTopic.views,
-        likeCount: existingTopic.likeCount,
-        lastPostedAt: existingTopic.lastPostedAt,
-        pinned: existingTopic.pinned,
         tags: detail.tags ?? existingTopic.tags,
-        posters: existingTopic.posters,
         unseen: false,
         unread: 0,
         lastReadPostNumber: detail.postsCount,

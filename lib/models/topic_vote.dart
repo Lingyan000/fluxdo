@@ -1,4 +1,5 @@
 // 话题投票相关数据模型
+import '../utils/url_helper.dart';
 
 /// 投票响应数据
 class VoteResponse {
@@ -58,6 +59,6 @@ class VotedUser {
   }
 
   String getAvatarUrl({int size = 40}) {
-    return avatarTemplate.replaceAll('{size}', '$size');
+    return UrlHelper.resolveAvatarUrl(avatarTemplate: avatarTemplate, size: size);
   }
 }
