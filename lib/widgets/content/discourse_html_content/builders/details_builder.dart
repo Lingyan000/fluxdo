@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'scan_boundary.dart';
 
 /// 构建 Discourse details 折叠块
 /// 
@@ -32,12 +33,14 @@ Widget buildDetails({
   // 检查是否有 open 属性（默认展开）
   final isOpenByDefault = element.attributes.containsKey('open');
 
-  return _DetailsWidget(
-    theme: theme,
-    summaryText: summaryText,
-    contentHtml: contentHtml,
-    htmlBuilder: htmlBuilder,
-    initiallyExpanded: isOpenByDefault,
+  return ScanBoundary(
+    child: _DetailsWidget(
+      theme: theme,
+      summaryText: summaryText,
+      contentHtml: contentHtml,
+      htmlBuilder: htmlBuilder,
+      initiallyExpanded: isOpenByDefault,
+    ),
   );
 }
 
