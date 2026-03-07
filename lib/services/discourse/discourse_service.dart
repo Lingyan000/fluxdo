@@ -16,6 +16,7 @@ import '../../models/badge.dart';
 import '../../models/tag_search_result.dart';
 import '../../models/mention_user.dart';
 import '../../models/draft.dart';
+import '../../models/invite_link.dart';
 
 import '../../constants.dart';
 import '../../providers/message_bus_providers.dart';

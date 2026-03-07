@@ -14,7 +14,10 @@ mixin _UsersMixin on _DiscourseServiceBase {
       final currentUser = await preloaded.getCurrentUser();
       if (currentUser != null && currentUser['username'] != null) {
         _username = currentUser['username'] as String;
-        await _storage.write(key: DiscourseService._usernameKey, value: _username!);
+        await _storage.write(
+          key: DiscourseService._usernameKey,
+          value: _username!,
+        );
         return _username;
       }
     } catch (e) {
@@ -41,7 +44,10 @@ mixin _UsersMixin on _DiscourseServiceBase {
         currentUserNotifier.value = user;
         if (user.username.isNotEmpty) {
           _username = user.username;
-          await _storage.write(key: DiscourseService._usernameKey, value: _username!);
+          await _storage.write(
+            key: DiscourseService._usernameKey,
+            value: _username!,
+          );
         }
         return user;
       }
@@ -63,12 +69,16 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取用户统计数据（带缓存，按用户名区分）
-  Future<UserSummary> getUserSummary(String username, {bool forceRefresh = false}) async {
+  Future<UserSummary> getUserSummary(
+    String username, {
+    bool forceRefresh = false,
+  }) async {
     if (!forceRefresh &&
         _cachedUserSummary != null &&
         _cachedUserSummaryUsername == username &&
         _userSummaryCacheTime != null &&
-        DateTime.now().difference(_userSummaryCacheTime!) < DiscourseService._summaryCacheDuration) {
+        DateTime.now().difference(_userSummaryCacheTime!) <
+            DiscourseService._summaryCacheDuration) {
       return _cachedUserSummary!;
     }
 
@@ -83,7 +93,11 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取用户动态
-  Future<UserActionResponse> getUserActions(String username, {String? filter, int offset = 0}) async {
+  Future<UserActionResponse> getUserActions(
+    String username, {
+    String? filter,
+    int offset = 0,
+  }) async {
     final queryParams = <String, dynamic>{
       'username': username,
       'offset': offset,
@@ -91,32 +105,43 @@ mixin _UsersMixin on _DiscourseServiceBase {
     if (filter != null) {
       queryParams['filter'] = filter;
     }
-    final response = await _dio.get('/user_actions.json', queryParameters: queryParams);
+    final response = await _dio.get(
+      '/user_actions.json',
+      queryParameters: queryParams,
+    );
     return UserActionResponse.fromJson(response.data);
   }
 
   /// 获取用户回应列表
-  Future<UserReactionsResponse> getUserReactions(String username, {int? beforeReactionUserId}) async {
-    final queryParams = <String, dynamic>{
-      'username': username,
-    };
+  Future<UserReactionsResponse> getUserReactions(
+    String username, {
+    int? beforeReactionUserId,
+  }) async {
+    final queryParams = <String, dynamic>{'username': username};
     if (beforeReactionUserId != null) {
       queryParams['before_reaction_user_id'] = beforeReactionUserId;
     }
-    final response = await _dio.get('/discourse-reactions/posts/reactions.json', queryParameters: queryParams);
+    final response = await _dio.get(
+      '/discourse-reactions/posts/reactions.json',
+      queryParameters: queryParams,
+    );
     return UserReactionsResponse.fromJson(response.data);
   }
 
   /// 获取用户关注列表
   Future<List<FollowUser>> getFollowing(String username) async {
     final response = await _dio.get('/u/$username/follow/following');
-    return (response.data as List).map((json) => FollowUser.fromJson(json)).toList();
+    return (response.data as List)
+        .map((json) => FollowUser.fromJson(json))
+        .toList();
   }
 
   /// 获取用户粉丝列表
   Future<List<FollowUser>> getFollowers(String username) async {
     final response = await _dio.get('/u/$username/follow/followers');
-    return (response.data as List).map((json) => FollowUser.fromJson(json)).toList();
+    return (response.data as List)
+        .map((json) => FollowUser.fromJson(json))
+        .toList();
   }
 
   /// 关注用户
@@ -138,14 +163,18 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 设置用户订阅级别（normal/mute/ignore）
-  Future<void> updateUserNotificationLevel(String username, {
+  Future<void> updateUserNotificationLevel(
+    String username, {
     required String level,
     String? expiringAt,
   }) async {
-    await _dio.put('/u/$username/notification_level.json', data: {
-      'notification_level': level,
-      if (expiringAt != null) 'expiring_at': expiringAt,
-    });
+    await _dio.put(
+      '/u/$username/notification_level.json',
+      data: {
+        'notification_level': level,
+        if (expiringAt case final expiringAt?) 'expiring_at': expiringAt,
+      },
+    );
   }
 
   /// 获取用户浏览历史
@@ -200,7 +229,10 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取徽章的所有获得者
-  Future<BadgeDetailResponse> getBadgeUsers({required int badgeId, String? username}) async {
+  Future<BadgeDetailResponse> getBadgeUsers({
+    required int badgeId,
+    String? username,
+  }) async {
     final queryParams = <String, dynamic>{'badge_id': badgeId};
     if (username != null) {
       queryParams['username'] = username;
@@ -212,5 +244,30 @@ mixin _UsersMixin on _DiscourseServiceBase {
     );
 
     return BadgeDetailResponse.fromJson(response.data);
+  }
+
+  /// 生成邀请链接
+  Future<InviteLinkResponse> createInviteLink({
+    required int maxRedemptionsAllowed,
+    DateTime? expiresAt,
+    String? description,
+    String? email,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/invites',
+        data: {
+          'max_redemptions_allowed': maxRedemptionsAllowed,
+          if (expiresAt != null)
+            'expires_at': expiresAt.toUtc().toIso8601String(),
+          if (description != null && description.trim().isNotEmpty)
+            'description': description.trim(),
+          if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+        },
+      );
+      return InviteLinkResponse.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
   }
 }

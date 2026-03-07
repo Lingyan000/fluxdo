@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -53,8 +55,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     final detail = widget.detail;
     if (detail == null || _isLoadingContext) return;
 
-    final scope =
-        ref.read(topicAiContextScopeProvider(widget.topicId));
+    final scope = ref.read(topicAiContextScopeProvider(widget.topicId));
 
     // 计算需要多少条帖子
     final stream = detail.postStream.stream;
@@ -69,8 +70,9 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     }
 
     // 找出缺失的帖子 ID
-    final missingIds =
-        neededIds.where((id) => !_fetchedPostIds.contains(id)).toList();
+    final missingIds = neededIds
+        .where((id) => !_fetchedPostIds.contains(id))
+        .toList();
     if (missingIds.isEmpty) return;
 
     setState(() => _isLoadingContext = true);
@@ -86,11 +88,13 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       for (final id in missingIds) {
         final post = loadedMap[id];
         if (post != null) {
-          fromLoaded.add(TopicPostContext(
-            postNumber: post.postNumber,
-            username: post.username,
-            cooked: post.cooked,
-          ));
+          fromLoaded.add(
+            TopicPostContext(
+              postNumber: post.postNumber,
+              username: post.username,
+              cooked: post.cooked,
+            ),
+          );
           _fetchedPostIds.add(id);
         } else {
           stillMissing.add(id);
@@ -104,17 +108,20 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
         final service = DiscourseService();
         // getPosts 一次最多获取合理数量，分批获取
         for (var i = 0; i < stillMissing.length; i += 20) {
-          final batch =
-              stillMissing.sublist(i, (i + 20).clamp(0, stillMissing.length));
-          final postStream =
-              await service.getPosts(widget.topicId, batch);
+          final batch = stillMissing.sublist(
+            i,
+            (i + 20).clamp(0, stillMissing.length),
+          );
+          final postStream = await service.getPosts(widget.topicId, batch);
           for (final post in postStream.posts) {
             if (!_fetchedPostIds.contains(post.id)) {
-              _contextPosts.add(TopicPostContext(
-                postNumber: post.postNumber,
-                username: post.username,
-                cooked: post.cooked,
-              ));
+              _contextPosts.add(
+                TopicPostContext(
+                  postNumber: post.postNumber,
+                  username: post.username,
+                  cooked: post.cooked,
+                ),
+              );
               _fetchedPostIds.add(post.id);
             }
           }
@@ -139,9 +146,8 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
 
   /// 当 scope 变更时检查是否需要加载更多帖子
   void _onScopeChanged(ContextScope newScope) {
-    ref
-        .read(topicAiContextScopeProvider(widget.topicId).notifier)
-        .state = newScope;
+    ref.read(topicAiContextScopeProvider(widget.topicId).notifier).state =
+        newScope;
 
     final detail = widget.detail;
     if (detail == null) return;
@@ -174,12 +180,26 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
         .setContextPosts(title, _contextPosts);
   }
 
+  ({AiProvider provider, AiModel model})? _currentModel() {
+    final selected = ref.read(topicSelectedAiModelProvider(widget.topicId));
+    final lastUsed = ref.read(lastUsedAiAssistantModelProvider);
+    final defaultModel = ref.read(defaultAiModelProvider);
+    return selected ?? lastUsed ?? defaultModel;
+  }
+
+  void _rememberModel(({AiProvider provider, AiModel model}) model) {
+    ref.read(topicSelectedAiModelProvider(widget.topicId).notifier).state =
+        model;
+    unawaited(
+      setLastUsedAiAssistantModel(ref, model.provider.id, model.model.id),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final chatState = ref.watch(topicAiChatProvider(widget.topicId));
-    final chatNotifier =
-        ref.read(topicAiChatProvider(widget.topicId).notifier);
+    final chatNotifier = ref.read(topicAiChatProvider(widget.topicId).notifier);
 
     // 首次 build 且有 detail 时加载上下文
     if (widget.detail != null && _lastLoadedScope == null) {
@@ -192,8 +212,10 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     final bottomInset = mediaQuery.viewInsets.bottom;
     final screenHeight = mediaQuery.size.height;
     // 内容区高度：键盘弹出时收缩，确保不超过屏幕顶部状态栏
-    final contentHeight = (screenHeight * 0.9)
-        .clamp(0.0, screenHeight - widget.topPadding - bottomInset);
+    final contentHeight = (screenHeight * 0.9).clamp(
+      0.0,
+      screenHeight - widget.topPadding - bottomInset,
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
@@ -206,131 +228,157 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
         child: SafeArea(
           bottom: false,
           child: Column(
-          children: [
-            // 顶部拖动条
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            
-            // 自定义标题栏
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome, size: 20, color: theme.colorScheme.primary),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'AI 助手',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                      ),
-                    ],
+            children: [
+              // 顶部拖动条
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.3,
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final scope = ref.watch(topicAiContextScopeProvider(widget.topicId));
-                          return AiContextSelector(
-                            currentScope: scope,
-                            onChanged: _onScopeChanged,
-                          );
-                        },
-                      ),
-                      if (chatState.messages.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: '清空聊天',
-                          onPressed: () => _confirmClear(context, chatNotifier),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // 自定义标题栏
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          size: 20,
+                          color: theme.colorScheme.primary,
                         ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 8),
+                        const Text(
+                          'AI 助手',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final scope = ref.watch(
+                              topicAiContextScopeProvider(widget.topicId),
+                            );
+                            return AiContextSelector(
+                              currentScope: scope,
+                              onChanged: _onScopeChanged,
+                            );
+                          },
+                        ),
+                        if (chatState.messages.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: '清空聊天',
+                            onPressed: () =>
+                                _confirmClear(context, chatNotifier),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-            // 上下文加载提示
-            if (_isLoadingContext)
-              LinearProgressIndicator(
-                minHeight: 2,
-                color: theme.colorScheme.primary,
+              // 上下文加载提示
+              if (_isLoadingContext)
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  color: theme.colorScheme.primary,
+                ),
+
+              // 聊天主要内容区
+              Expanded(
+                child: chatState.messages.isEmpty
+                    ? _buildEmptyState(context, theme)
+                    : _buildMessageList(context, ref, chatState),
               ),
 
-            // 聊天主要内容区
-            Expanded(
-              child: chatState.messages.isEmpty
-                  ? _buildEmptyState(context, theme)
-                  : _buildMessageList(context, ref, chatState),
-            ),
-
-            // 底部输入区
-            AiChatInput(
-              isGenerating: chatState.isGenerating,
-              onSend: (content) {
-                final scope = ref.read(topicAiContextScopeProvider(widget.topicId));
-                final selected = ref.read(topicSelectedAiModelProvider(widget.topicId));
-                final defaultModel = ref.read(defaultAiModelProvider);
-                final model = selected ?? defaultModel;
-                if (model == null) return;
-                chatNotifier.sendMessage(content, scope, selectedModel: model);
-              },
-              onStop: chatNotifier.stopGeneration,
-              bottomLeading: Consumer(
-                builder: (context, ref, _) {
-                  final allModels = ref.watch(allAvailableAiModelsProvider);
-                  final selected =
-                      ref.watch(topicSelectedAiModelProvider(widget.topicId));
-                  final defaultModel = ref.watch(defaultAiModelProvider);
-                  final current = selected ?? defaultModel;
-                  if (allModels.length <= 1 || current == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return _AiModelSelector(
-                    allModels: allModels,
-                    current: current,
-                    onChanged: (model) {
-                      ref
-                          .read(topicSelectedAiModelProvider(widget.topicId)
-                              .notifier)
-                          .state = model;
-                    },
+              // 底部输入区
+              AiChatInput(
+                isGenerating: chatState.isGenerating,
+                onSend: (content) {
+                  final scope = ref.read(
+                    topicAiContextScopeProvider(widget.topicId),
+                  );
+                  final model = _currentModel();
+                  if (model == null) return;
+                  _rememberModel(model);
+                  chatNotifier.sendMessage(
+                    content,
+                    scope,
+                    selectedModel: model,
                   );
                 },
+                onStop: chatNotifier.stopGeneration,
+                bottomLeading: Consumer(
+                  builder: (context, ref, _) {
+                    final allModels = ref.watch(allAvailableAiModelsProvider);
+                    final selected = ref.watch(
+                      topicSelectedAiModelProvider(widget.topicId),
+                    );
+                    final lastUsedModel = ref.watch(
+                      lastUsedAiAssistantModelProvider,
+                    );
+                    final defaultModel = ref.watch(defaultAiModelProvider);
+                    final current = selected ?? lastUsedModel ?? defaultModel;
+                    if (allModels.length <= 1 || current == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return _AiModelSelector(
+                      allModels: allModels,
+                      current: current,
+                      onChanged: _rememberModel,
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 
   /// 常用对话
   static const _quickPrompts = [
-    (icon: Icons.summarize_outlined, label: '总结这个话题', prompt: '请简要总结这个话题的主要内容和讨论要点。'),
+    (
+      icon: Icons.summarize_outlined,
+      label: '总结这个话题',
+      prompt: '请简要总结这个话题的主要内容和讨论要点。',
+    ),
     (icon: Icons.translate_outlined, label: '翻译主帖', prompt: '请将主帖内容翻译成英文。'),
-    (icon: Icons.question_answer_outlined, label: '列出主要观点', prompt: '请列出这个话题中各楼层的主要观点和立场。'),
-    (icon: Icons.lightbulb_outlined, label: '有什么值得关注的', prompt: '这个话题中有哪些值得关注的信息或亮点？'),
+    (
+      icon: Icons.question_answer_outlined,
+      label: '列出主要观点',
+      prompt: '请列出这个话题中各楼层的主要观点和立场。',
+    ),
+    (
+      icon: Icons.lightbulb_outlined,
+      label: '有什么值得关注的',
+      prompt: '这个话题中有哪些值得关注的信息或亮点？',
+    ),
   ];
 
   void _sendQuickPrompt(String prompt) {
     final scope = ref.read(topicAiContextScopeProvider(widget.topicId));
-    final selected =
-        ref.read(topicSelectedAiModelProvider(widget.topicId));
-    final defaultModel = ref.read(defaultAiModelProvider);
-    final model = selected ?? defaultModel;
+    final model = _currentModel();
     if (model == null) return;
+    _rememberModel(model);
     ref
         .read(topicAiChatProvider(widget.topicId).notifier)
         .sendMessage(prompt, scope, selectedModel: model);
@@ -359,8 +407,9 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
             Text(
               'AI 会基于话题内容为你解答',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant
-                    .withValues(alpha: 0.7),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.7,
+                ),
               ),
             ),
             const SizedBox(height: 28),
@@ -398,13 +447,12 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
           message: message,
           onRetry: message.status == MessageStatus.error
               ? () {
-                  final scope = ref
-                      .read(topicAiContextScopeProvider(widget.topicId));
-                  final selected = ref
-                      .read(topicSelectedAiModelProvider(widget.topicId));
-                  final defaultModel = ref.read(defaultAiModelProvider);
-                  final model = selected ?? defaultModel;
+                  final scope = ref.read(
+                    topicAiContextScopeProvider(widget.topicId),
+                  );
+                  final model = _currentModel();
                   if (model == null) return;
+                  _rememberModel(model);
                   ref
                       .read(topicAiChatProvider(widget.topicId).notifier)
                       .retryLastMessage(scope, selectedModel: model);
@@ -463,8 +511,11 @@ class _AiModelSelector extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_awesome,
-                size: 16, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.auto_awesome,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 4),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 100),
@@ -476,8 +527,11 @@ class _AiModelSelector extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(Icons.unfold_more,
-                size: 14, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.unfold_more,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -485,7 +539,8 @@ class _AiModelSelector extends StatelessWidget {
         return allModels.asMap().entries.map((entry) {
           final index = entry.key;
           final item = entry.value;
-          final isCurrent = item.provider.id == current.provider.id &&
+          final isCurrent =
+              item.provider.id == current.provider.id &&
               item.model.id == current.model.id;
           return PopupMenuItem<int>(
             value: index,
@@ -501,13 +556,17 @@ class _AiModelSelector extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(item.model.name ?? item.model.id,
-                          style: const TextStyle(fontSize: 14)),
-                      Text(item.provider.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          )),
+                      Text(
+                        item.model.name ?? item.model.id,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      Text(
+                        item.provider.name,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                 ),

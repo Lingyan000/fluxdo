@@ -10,6 +10,25 @@ import '../models/ai_chat_message.dart';
 import '../services/ai_chat_service.dart';
 import 'ai_provider_providers.dart';
 
+const _lastUsedAiAssistantModelKey = 'ai_assistant_last_model';
+
+({AiProvider provider, AiModel model})? _findAiModelByKey(
+  List<({AiProvider provider, AiModel model})> all,
+  String? key,
+) {
+  if (key == null || key.isEmpty) return null;
+
+  final parts = key.split(':');
+  if (parts.length != 2) return null;
+
+  for (final item in all) {
+    if (item.provider.id == parts[0] && item.model.id == parts[1]) {
+      return item;
+    }
+  }
+  return null;
+}
+
 /// 所有可用的 AI 模型列表（供应商 + 模型）
 final allAvailableAiModelsProvider =
     Provider<List<({AiProvider provider, AiModel model})>>(
@@ -35,18 +54,39 @@ final defaultAiModelProvider =
     if (all.isEmpty) return null;
 
     final defaultKey = ref.watch(defaultAiModelKeyProvider);
-    if (defaultKey != null) {
-      final parts = defaultKey.split(':');
-      if (parts.length == 2) {
-        final match = all.where(
-          (m) => m.provider.id == parts[0] && m.model.id == parts[1],
-        );
-        if (match.isNotEmpty) return match.first;
-      }
-    }
-    return all.first;
+    return _findAiModelByKey(all, defaultKey) ?? all.first;
   },
 );
+
+/// AI 助手上次使用的模型 key（providerId:modelId）
+final lastUsedAiAssistantModelKeyProvider = StateProvider<String?>((ref) {
+  final prefs = ref.watch(aiSharedPreferencesProvider);
+  return prefs.getString(_lastUsedAiAssistantModelKey);
+});
+
+/// AI 助手上次使用的模型
+final lastUsedAiAssistantModelProvider =
+    Provider<({AiProvider provider, AiModel model})?>(
+  (ref) {
+    final all = ref.watch(allAvailableAiModelsProvider);
+    if (all.isEmpty) return null;
+
+    final lastUsedKey = ref.watch(lastUsedAiAssistantModelKeyProvider);
+    return _findAiModelByKey(all, lastUsedKey);
+  },
+);
+
+/// 设置 AI 助手上次使用的模型
+Future<void> setLastUsedAiAssistantModel(
+  WidgetRef ref,
+  String providerId,
+  String modelId,
+) async {
+  final prefs = ref.read(aiSharedPreferencesProvider);
+  final key = '$providerId:$modelId';
+  await prefs.setString(_lastUsedAiAssistantModelKey, key);
+  ref.read(lastUsedAiAssistantModelKeyProvider.notifier).state = key;
+}
 
 /// 第一个可用的 AI 模型（向后兼容）
 final firstAvailableAiModelProvider =
@@ -62,7 +102,7 @@ final hasAvailableAiModelProvider = Provider<bool>(
 /// 话题选中的 AI 模型（独立管理，避免切换时影响消息列表）
 final topicSelectedAiModelProvider = StateProvider.autoDispose
     .family<({AiProvider provider, AiModel model})?, int>(
-  (ref, topicId) => null, // null 表示使用默认模型
+  (ref, topicId) => null, // null 表示使用记忆模型或默认模型
 );
 
 /// AI 聊天服务

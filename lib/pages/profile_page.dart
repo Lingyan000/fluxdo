@@ -25,6 +25,7 @@ import '../providers/app_state_refresher.dart';
 import 'metaverse_page.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'drafts_page.dart';
+import 'invite_links_page.dart';
 import '../providers/ldc_providers.dart';
 import '../widgets/ldc_balance_card.dart';
 import '../providers/cdk_providers.dart';
@@ -357,7 +358,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
 
             if (isLoggedIn) ...[
-              _buildOptionsCard(theme),
+              _buildOptionsCard(
+                theme,
+                canAccessInviteLinks: (user?.trustLevel ?? 0) >= 3,
+              ),
               const SizedBox(height: 20),
             ],
             _buildAboutCard(theme),
@@ -450,7 +454,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  Widget _buildOptionsCard(ThemeData theme) {
+  Widget _buildOptionsCard(ThemeData theme, {required bool canAccessInviteLinks}) {
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -488,6 +492,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             title: '信任要求', 
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrustLevelRequirementsPage()))
           ),
+          if (canAccessInviteLinks)
+            _buildOptionTile(
+              icon: Icons.link_rounded,
+              iconColor: Colors.cyan,
+              title: '邀请链接',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const InviteLinksPage()),
+              ),
+            ),
           _buildOptionTile(
             icon: Icons.history_rounded,
             iconColor: Colors.purple,
