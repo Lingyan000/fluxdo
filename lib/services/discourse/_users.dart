@@ -246,6 +246,65 @@ mixin _UsersMixin on _DiscourseServiceBase {
     return BadgeDetailResponse.fromJson(response.data);
   }
 
+  /// 获取待使用的邀请链接
+  Future<List<InviteLinkResponse>> getPendingInvites(String username) async {
+    try {
+      final response = await _dio.get('/u/$username/invited/pending');
+      return _parsePendingInvites(response.data);
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  List<InviteLinkResponse> _parsePendingInvites(dynamic data) {
+    final items = <dynamic>[];
+    if (data is List) {
+      items.addAll(data);
+    } else if (data is Map) {
+      final invites =
+          data['invites'] ??
+          data['pending_invites'] ??
+          data['invited'] ??
+          data['pending'];
+      if (invites is List) {
+        items.addAll(invites);
+      } else if (data['invite'] is Map ||
+          data['invite_link'] is String ||
+          data['invite_key'] is String) {
+        items.add(data);
+      }
+    }
+
+    final results = <InviteLinkResponse>[];
+    for (final item in items) {
+      if (item is Map) {
+        results.add(
+          _inviteResponseFromPendingItem(Map<String, dynamic>.from(item)),
+        );
+      }
+    }
+    return results;
+  }
+
+  InviteLinkResponse _inviteResponseFromPendingItem(
+    Map<String, dynamic> item,
+  ) {
+    final payload = Map<String, dynamic>.from(item);
+    if (!payload.containsKey('invite_link')) {
+      final url = payload['invite_url'] ?? payload['url'] ?? payload['link'];
+      if (url is String) {
+        payload['invite_link'] = url;
+      }
+    }
+    if (payload.containsKey('invite') || payload.containsKey('invite_link')) {
+      return InviteLinkResponse.fromJson(payload);
+    }
+    return InviteLinkResponse.fromJson({
+      'invite_link': payload['invite_link'],
+      'invite': payload,
+    });
+  }
+
   /// 生成邀请链接
   Future<InviteLinkResponse> createInviteLink({
     required int maxRedemptionsAllowed,
@@ -267,7 +326,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
       );
       return InviteLinkResponse.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
-      _throwApiError(e);
+      rethrow;
     }
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../constants.dart';
 import '../models/invite_link.dart';
 import '../providers/discourse_providers.dart';
 import '../services/toast_service.dart';
@@ -60,8 +61,15 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   _InviteExpiryPreset _expiryPreset = _InviteExpiryPreset.days1;
   bool _showAdvancedOptions = false;
   bool _isSubmitting = false;
+  bool _isLoadingPending = false;
   String? _error;
   InviteLinkResponse? _latestInvite;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_loadPendingInvites);
+  }
 
   @override
   void dispose() {
@@ -77,14 +85,78 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   }
 
   String get _summaryText {
+    if (_expiryPreset == _InviteExpiryPreset.days1) {
+      return '链接最多可用于 1 个用户，并且将在 1 天后到期。';
+    }
     if (_expiryPreset == _InviteExpiryPreset.never) {
       return '链接最多可用于 1 个用户，并且永不过期。';
     }
     return '链接最多可用于 1 个用户，并且将在 ${_expiryPreset.label} 后到期。';
   }
 
-  bool get _hasInviteLink =>
-      (_latestInvite?.inviteLink.trim().isNotEmpty ?? false);
+  String? get _effectiveInviteLink {
+    final link = _latestInvite?.inviteLink.trim() ?? '';
+    if (link.isNotEmpty) return link;
+    final key = _latestInvite?.invite?.inviteKey?.trim();
+    if (key != null && key.isNotEmpty) {
+      return _buildInviteLink(key);
+    }
+    return null;
+  }
+
+  bool get _hasInviteLink => (_effectiveInviteLink?.isNotEmpty ?? false);
+
+  String _buildInviteLink(String key) {
+    return '${AppConstants.baseUrl}/invites/$key';
+  }
+
+  InviteLinkResponse _resolveInviteLink(InviteLinkResponse invite) {
+    final link = invite.inviteLink.trim();
+    if (link.isNotEmpty) return invite;
+    final key = invite.invite?.inviteKey?.trim();
+    if (key != null && key.isNotEmpty) {
+      return InviteLinkResponse(
+        inviteLink: _buildInviteLink(key),
+        invite: invite.invite,
+      );
+    }
+    return invite;
+  }
+
+  InviteLinkResponse? _pickLatestInvite(List<InviteLinkResponse> invites) {
+    if (invites.isEmpty) return null;
+    return invites.reduce((a, b) {
+      final aTime =
+          a.invite?.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime =
+          b.invite?.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.isAfter(aTime) ? b : a;
+    });
+  }
+
+  Future<void> _loadPendingInvites({bool force = false}) async {
+    if (_isLoadingPending) return;
+    if (!force && _latestInvite != null) return;
+    final user = ref.read(currentUserProvider).value;
+    if (user == null) return;
+
+    setState(() => _isLoadingPending = true);
+    try {
+      final invites = await ref
+          .read(discourseServiceProvider)
+          .getPendingInvites(user.username);
+      final latest = _pickLatestInvite(invites);
+      if (latest != null && mounted) {
+        setState(() => _latestInvite = _resolveInviteLink(latest));
+      }
+    } catch (_) {
+      // 忽略失败，避免干扰手动创建流程
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingPending = false);
+      }
+    }
+  }
 
   Future<void> _createInviteLink({bool useAdvancedOptions = false}) async {
     final user = ref.read(currentUserProvider).value;
@@ -117,17 +189,23 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             email: email.isEmpty ? null : email,
           );
       if (!mounted) return;
-      setState(() {
-        _latestInvite = result.inviteLink.trim().isEmpty ? null : result;
-      });
+      final resolved = _resolveInviteLink(result);
+      if (resolved.inviteLink.trim().isNotEmpty) {
+        setState(() => _latestInvite = resolved);
+      } else {
+        await _loadPendingInvites(force: true);
+      }
       ToastService.showSuccess(
-        result.inviteLink.trim().isNotEmpty ? '邀请链接已生成' : '邀请已创建',
+        resolved.inviteLink.trim().isNotEmpty ? '邀请链接已生成' : '邀请已创建',
       );
     } catch (error) {
       if (!mounted) return;
       final message = _normalizeErrorMessage(error);
       setState(() => _error = message);
       ToastService.showError(message);
+      if (_latestInvite == null) {
+        await _loadPendingInvites(force: true);
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -136,14 +214,14 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   }
 
   Future<void> _copyInviteLink() async {
-    final inviteLink = _latestInvite?.inviteLink;
+    final inviteLink = _effectiveInviteLink;
     if (inviteLink == null || inviteLink.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: inviteLink));
     ToastService.showSuccess('邀请链接已复制');
   }
 
   void _shareInviteLink() {
-    final inviteLink = _latestInvite?.inviteLink;
+    final inviteLink = _effectiveInviteLink;
     if (inviteLink == null || inviteLink.isEmpty) return;
     SharePlus.instance.share(
       ShareParams(text: inviteLink, subject: 'Linux.do 邀请链接'),
@@ -203,6 +281,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
         _extractWaitText(message) ??
         _extractWaitTextFromData(dioError?.response?.data) ??
         _defaultRateLimitWait;
+    if (waitText == '21 小时') {
+      return '出错了：您执行此操作的次数过多。请等待 21 小时后再试。';
+    }
     return '出错了：您执行此操作的次数过多。请等待 $waitText 后再试。';
   }
 
@@ -376,6 +457,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
                 labelText: '限制为 (可选)',
+                helperText: '填写邮箱或域名',
                 hintText: 'name@example.com 或者 example.com',
                 border: OutlineInputBorder(),
               ),
@@ -471,6 +553,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildResultCard(ThemeData theme) {
     final invite = _latestInvite!;
+    final inviteLink = _effectiveInviteLink ?? invite.inviteLink;
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
@@ -495,7 +578,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: SelectableText(
-                invite.inviteLink,
+                inviteLink,
                 style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
               ),
             ),

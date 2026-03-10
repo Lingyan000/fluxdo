@@ -10,11 +10,24 @@ class InviteLinkResponse {
   });
 
   factory InviteLinkResponse.fromJson(Map<String, dynamic> json) {
+    final linkValue =
+        json['invite_link'] ??
+        json['invite_url'] ??
+        json['url'] ??
+        json['link'];
+    final inviteLink = linkValue is String ? linkValue : '';
+    InviteLinkDetails? invite;
+    final inviteJson = json['invite'];
+    if (inviteJson is Map<String, dynamic>) {
+      invite = InviteLinkDetails.fromJson(inviteJson);
+    } else if (json.containsKey('invite_key') ||
+        json.containsKey('expires_at') ||
+        json.containsKey('max_redemptions_allowed')) {
+      invite = InviteLinkDetails.fromJson(json);
+    }
     return InviteLinkResponse(
-      inviteLink: json['invite_link'] as String? ?? '',
-      invite: json['invite'] is Map<String, dynamic>
-          ? InviteLinkDetails.fromJson(json['invite'] as Map<String, dynamic>)
-          : null,
+      inviteLink: inviteLink,
+      invite: invite,
     );
   }
 }
