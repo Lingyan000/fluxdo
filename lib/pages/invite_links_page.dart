@@ -69,7 +69,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   bool _showAdvancedOptions = false;
   bool _isSubmitting = false;
   bool _isLoadingPending = false;
-  String? _error;
   InviteLinkResponse? _latestInvite;
   ProviderSubscription<AsyncValue<User?>>? _userSub;
   bool _hasRequestedInitialRefresh = false;
@@ -261,10 +260,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
         : '';
     final email = useAdvancedOptions ? _restrictionController.text.trim() : '';
 
-    setState(() {
-      _isSubmitting = true;
-      _error = null;
-    });
+    setState(() => _isSubmitting = true);
 
     try {
       final result = await ref
@@ -289,7 +285,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     } catch (error) {
       if (!mounted) return;
       final message = _normalizeErrorMessage(error);
-      setState(() => _error = message);
       ToastService.showError(message);
       if (_latestInvite == null) {
         await _loadPendingInvites(force: true);
@@ -512,10 +507,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
         padding: const EdgeInsets.all(16),
         children: [
           _buildSummaryCard(theme),
-          if (_error != null) ...[
-            const SizedBox(height: 16),
-            _buildErrorCard(theme),
-          ],
           if (_showAdvancedOptions) ...[
             const SizedBox(height: 16),
             _buildAdvancedOptionsCard(theme),
@@ -664,23 +655,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorCard(ThemeData theme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        _error!,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.error,
         ),
       ),
     );
