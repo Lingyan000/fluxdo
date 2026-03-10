@@ -30,6 +30,13 @@ class InviteLinkResponse {
       invite: invite,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'invite_link': inviteLink,
+      if (invite != null) 'invite': invite!.toJson(),
+    };
+  }
 }
 
 class InviteLinkDetails {
@@ -61,5 +68,18 @@ class InviteLinkDetails {
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       expiresAt: TimeUtils.parseUtcTime(json['expires_at'] as String?),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      if (inviteKey != null) 'invite_key': inviteKey,
+      if (maxRedemptionsAllowed != null)
+        'max_redemptions_allowed': maxRedemptionsAllowed,
+      if (redemptionCount != null) 'redemption_count': redemptionCount,
+      if (expired != null) 'expired': expired,
+      if (createdAt != null) 'created_at': createdAt!.toUtc().toIso8601String(),
+      if (expiresAt != null) 'expires_at': expiresAt!.toUtc().toIso8601String(),
+    };
   }
 }

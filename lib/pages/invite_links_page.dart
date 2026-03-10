@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +8,10 @@ import 'package:share_plus/share_plus.dart';
 
 import '../constants.dart';
 import '../models/invite_link.dart';
+import '../models/user.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/theme_provider.dart';
+import '../services/network/exceptions/api_exception.dart';
 import '../services/toast_service.dart';
 import '../utils/time_utils.dart';
 
@@ -54,6 +59,8 @@ class InviteLinksPage extends ConsumerStatefulWidget {
 class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   static const int _maxRedemptionsAllowed = 1;
   static const String _defaultRateLimitWait = '21 小时';
+  static const Duration _inviteCooldownDuration = Duration(hours: 24);
+  static const String _inviteCacheKeyPrefix = 'invite_link_cache:';
 
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _restrictionController = TextEditingController();
@@ -64,17 +71,32 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   bool _isLoadingPending = false;
   String? _error;
   InviteLinkResponse? _latestInvite;
+  ProviderSubscription<AsyncValue<User?>>? _userSub;
+  bool _hasRequestedInitialRefresh = false;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(_loadPendingInvites);
+    _userSub = ref.listenManual<AsyncValue<User?>>(
+      currentUserProvider,
+      (_, next) {
+        final user = next.value;
+        if (user == null) return;
+        _applyCachedInvite(user.username);
+        if (!_hasRequestedInitialRefresh) {
+          _hasRequestedInitialRefresh = true;
+          Future.microtask(() => _loadPendingInvites(force: true));
+        }
+      },
+      fireImmediately: true,
+    );
   }
 
   @override
   void dispose() {
     _descriptionController.dispose();
     _restrictionController.dispose();
+    _userSub?.close();
     super.dispose();
   }
 
@@ -134,9 +156,68 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     });
   }
 
+  String _inviteIdentity(InviteLinkResponse? invite) {
+    if (invite == null) return '';
+    final key = invite.invite?.inviteKey?.trim();
+    if (key != null && key.isNotEmpty) {
+      return 'key:$key';
+    }
+    final link = invite.inviteLink.trim();
+    if (link.isNotEmpty) {
+      return 'link:$link';
+    }
+    return '';
+  }
+
+  bool _isSameInvite(InviteLinkResponse? a, InviteLinkResponse? b) {
+    return _inviteIdentity(a) == _inviteIdentity(b);
+  }
+
+  String _inviteCacheKey(String username) {
+    return '$_inviteCacheKeyPrefix$username';
+  }
+
+  InviteLinkResponse? _readCachedInvite(String username) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final cached = prefs.getString(_inviteCacheKey(username));
+    if (cached == null || cached.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(cached);
+      if (decoded is Map<String, dynamic>) {
+        return _resolveInviteLink(InviteLinkResponse.fromJson(decoded));
+      }
+      if (decoded is Map) {
+        return _resolveInviteLink(
+          InviteLinkResponse.fromJson(Map<String, dynamic>.from(decoded)),
+        );
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _saveInviteCache(
+    String username,
+    InviteLinkResponse invite,
+  ) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final payload = jsonEncode(invite.toJson());
+    await prefs.setString(_inviteCacheKey(username), payload);
+  }
+
+  Future<void> _clearInviteCache(String username) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.remove(_inviteCacheKey(username));
+  }
+
+  void _applyCachedInvite(String username) {
+    if (_latestInvite != null) return;
+    final cached = _readCachedInvite(username);
+    if (cached == null || !mounted) return;
+    setState(() => _latestInvite = cached);
+  }
+
   Future<void> _loadPendingInvites({bool force = false}) async {
     if (_isLoadingPending) return;
-    if (!force && _latestInvite != null) return;
     final user = ref.read(currentUserProvider).value;
     if (user == null) return;
 
@@ -146,8 +227,14 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
           .read(discourseServiceProvider)
           .getPendingInvites(user.username);
       final latest = _pickLatestInvite(invites);
-      if (latest != null && mounted) {
-        setState(() => _latestInvite = _resolveInviteLink(latest));
+      final resolved = latest != null ? _resolveInviteLink(latest) : null;
+      if (!_isSameInvite(_latestInvite, resolved) && mounted) {
+        setState(() => _latestInvite = resolved);
+        if (resolved != null) {
+          await _saveInviteCache(user.username, resolved);
+        } else {
+          await _clearInviteCache(user.username);
+        }
       }
     } catch (_) {
       // 忽略失败，避免干扰手动创建流程
@@ -192,6 +279,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
       final resolved = _resolveInviteLink(result);
       if (resolved.inviteLink.trim().isNotEmpty) {
         setState(() => _latestInvite = resolved);
+        await _saveInviteCache(user.username, resolved);
       } else {
         await _loadPendingInvites(force: true);
       }
@@ -229,6 +317,16 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
   }
 
   String _normalizeErrorMessage(Object error) {
+    if (error is RateLimitException) {
+      final waitSeconds = error.retryAfterSeconds;
+      final waitFromMessage = _extractWaitText(error.toString());
+      final estimatedWait = _estimateInviteCooldownWait();
+      final waitText = waitSeconds != null && waitSeconds > 0
+          ? _formatWaitDuration(waitSeconds)
+          : (waitFromMessage ?? estimatedWait ?? _defaultRateLimitWait);
+      return '出错了：您执行此操作的次数过多。请等待 $waitText 后再试。';
+    }
+
     final message = _extractErrorMessage(error);
     final rateLimitMessage = _buildRateLimitMessage(error, message);
     if (rateLimitMessage != null) {
@@ -247,17 +345,27 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
       if (data is Map &&
           data['errors'] is List &&
           (data['errors'] as List).isNotEmpty) {
-        return (data['errors'] as List).join('\n');
+        return _cleanErrorMessage((data['errors'] as List).join('\n'));
       }
       if (data is Map && data['message'] is String) {
-        return data['message'] as String;
+        return _cleanErrorMessage(data['message'] as String);
       }
       if (data is String && data.trim().isNotEmpty) {
-        return data.trim();
+        return _cleanErrorMessage(data.trim());
       }
-      return (error.message ?? error.toString()).trim();
+      return _cleanErrorMessage((error.message ?? error.toString()).trim());
     }
-    return error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
+    return _cleanErrorMessage(
+      error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim(),
+    );
+  }
+
+  String _cleanErrorMessage(String message) {
+    var result = message.trim();
+    result = result.replaceFirst(RegExp(r'^DioException[^:]*:\s*'), '');
+    result = result.replaceFirst(RegExp(r'^\s*null\s*Error\s*'), '');
+    result = result.replaceFirst(RegExp(r'^\s*Error\s*'), '');
+    return result.trim();
   }
 
   String? _buildRateLimitMessage(Object error, String message) {
@@ -265,21 +373,32 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     final dioError = error is DioException ? error : null;
     final isRateLimited =
         normalized.contains('too many times') ||
+        normalized.contains('too many requests') ||
         normalized.contains('rate limit') ||
+        normalized.contains('rate limited') ||
         normalized.contains('request too many') ||
-        message.contains('请求过多') ||
-        message.contains('次数过多') ||
+        normalized.contains('请求过多') ||
+        normalized.contains('请求过于频繁') ||
+        normalized.contains('请求频繁') ||
+        normalized.contains('次数过多') ||
+        normalized.contains('请稍候') ||
         dioError?.response?.statusCode == 429;
 
     if (!isRateLimited) return null;
 
     if (message.contains('您执行此操作的次数过多')) {
-      return message.startsWith('出错了：') ? message : '出错了：$message';
+      if (message.startsWith('出错了：')) {
+        return message;
+      }
+      final cleaned = message.replaceFirst(RegExp(r'^[:：]+'), '');
+      return '出错了：$cleaned';
     }
 
     final waitText =
         _extractWaitText(message) ??
         _extractWaitTextFromData(dioError?.response?.data) ??
+        _extractWaitTextFromHeaders(dioError?.response?.headers) ??
+        _estimateInviteCooldownWait() ??
         _defaultRateLimitWait;
     if (waitText == '21 小时') {
       return '出错了：您执行此操作的次数过多。请等待 21 小时后再试。';
@@ -287,6 +406,40 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     return '出错了：您执行此操作的次数过多。请等待 $waitText 后再试。';
   }
 
+  String? _estimateInviteCooldownWait() {
+    final createdAt = _latestInvite?.invite?.createdAt;
+    if (createdAt == null) return null;
+    final elapsed = DateTime.now().difference(createdAt);
+    final remaining = _inviteCooldownDuration - elapsed;
+    if (remaining.inSeconds <= 0) return null;
+    return _formatWaitDuration(remaining.inSeconds);
+  }
+
+  String? _extractWaitTextFromHeaders(Headers? headers) {
+    if (headers == null) return null;
+    final retryAfter =
+        headers.value('retry-after') ?? headers.value('Retry-After');
+    final retrySeconds = int.tryParse(retryAfter ?? '');
+    if (retrySeconds != null && retrySeconds > 0) {
+      return _formatWaitDuration(retrySeconds);
+    }
+
+    final resetValue = headers.value('x-ratelimit-reset') ??
+        headers.value('ratelimit-reset') ??
+        headers.value('x-rate-limit-reset') ??
+        headers.value('X-RateLimit-Reset');
+    final resetSeconds = int.tryParse(resetValue ?? '');
+    if (resetSeconds != null && resetSeconds > 0) {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final delta = resetSeconds > 1000000000
+          ? (resetSeconds - nowSeconds)
+          : resetSeconds;
+      if (delta > 0) {
+        return _formatWaitDuration(delta);
+      }
+    }
+    return null;
+  }
   String? _extractWaitTextFromData(dynamic data) {
     if (data is Map) {
       final errors = data['errors'];
@@ -370,6 +523,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
           if (_hasInviteLink) ...[
             const SizedBox(height: 16),
             _buildResultCard(theme),
+          ] else if (!_isLoadingPending) ...[
+            const SizedBox(height: 16),
+            _buildEmptyStateCard(theme),
           ],
         ],
       ),
@@ -626,6 +782,21 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStateCard(ThemeData theme) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          '暂无生成邀请链接',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

@@ -1,10 +1,12 @@
 /// 429 Rate Limit 异常（重试耗尽后抛出）
 class RateLimitException implements Exception {
   final int? retryAfterSeconds;
-  RateLimitException([this.retryAfterSeconds]);
+  final String? message;
+
+  RateLimitException([this.retryAfterSeconds, this.message]);
 
   @override
-  String toString() => '请求过于频繁，请稍后再试';
+  String toString() => message ?? '请求过于频繁，请稍后再试';
 }
 
 /// 服务器错误异常（502/503/504 重试耗尽后抛出）
