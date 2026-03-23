@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as inappwebview;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -561,7 +561,8 @@ class NetworkSettingsService {
 
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
-    if (!Platform.isAndroid) return;
+    // 不是很清楚 macOS 14 以下调用 setProxyOverride 会不会报错闪退，保险起见还是判断一下
+    if (!Platform.isAndroid && !await isMacOS14OrAbove()) return;
     final port = _activeProxyPort;
     if (port == null) return;
     try {
@@ -576,10 +577,19 @@ class NetworkSettingsService {
   }
 
   Future<void> _clearWebViewProxy() async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid && !await isMacOS14OrAbove()) return;
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
     } catch (_) {}
+  }
+
+  Future<bool> isMacOS14OrAbove() async {
+    if(!Platform.isMacOS) return false;
+    final info = await DeviceInfoPlugin().macOsInfo;
+    final major = info.majorVersion;
+    if (major == null) return false; // 防御性（理论不会发生）
+    // 直接用 Darwin 判断（更简单可靠）
+    return major >= 23;
   }
 
   void _touch() {
