@@ -20,7 +20,7 @@ fi
 echo "=== Building Rust DOH Proxy for Desktop ($BUILD_TYPE) ==="
 
 cd "$RUST_DIR"
-cargo build $CARGO_FLAG
+cargo build $CARGO_FLAG --features ech
 
 # Determine executable name based on OS
 if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then

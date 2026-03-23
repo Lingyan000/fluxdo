@@ -50,15 +50,46 @@
 
 /* Begin PBXCopyFilesBuildPhase section */
 		33CC110E2044A8840003C045 /* Bundle Framework */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-			);
-			name = "Bundle Framework";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+            );
+            inputPaths = (
+            );
+            outputPaths = (
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/sh;
+            shellScript = "
+        # dylib source（自行改路径）
+        SRC_LIB=\"${PROJECT_DIR}/../core/doh_proxy/target/release/libdoh_proxy.dylib\"
+
+        if [ ! -f \"$SRC_LIB\" ]; then
+          echo \"[dylib] not found, building via cargo...\"
+          sh ${PROJECT_DIR}/../scripts/build_desktop.sh
+        else
+          echo \"[dylib] found existing build\"
+        fi
+
+        # 目标路径
+        DST_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks\"
+
+        echo \"[dylib] copy from $SRC_LIB to $DST_DIR\"
+
+        mkdir -p \"$DST_DIR\"
+        cp \"$SRC_LIB\" \"$DST_DIR/\"
+
+        # 可选：修正 install_name（强烈建议）
+        install_name_tool -id @rpath/libdoh_proxy.dylib \"$DST_DIR/libdoh_proxy.dylib\" || true
+
+        SRC_CER=\"${PROJECT_DIR}/../core/doh_proxy/certs/ca.der\"
+        DST_CER_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources\"
+        DST_CER=\"${DST_CER_DIR}/proxy_ca.der\"
+        echo \"[cer] copy from $SRC_CER to $DST_CER\"
+        mkdir -p \"$DST_CER_DIR\"
+        cp \"$SRC_CER\" \"$DST_CER\"
+        ";
+        };
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -571,10 +602,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = N6SSY9VFGK;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -705,10 +735,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = N6SSY9VFGK;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
