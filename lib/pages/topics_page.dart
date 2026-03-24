@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart' hide Category;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -109,11 +113,14 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   int _tabLength = 1; // 初始只有"全部"
   int _currentTabIndex = 0;
   List<int> _visiblePinnedIds = []; // 过滤后的可见分类 ID
+  ScrollDirection? _lastOuterScrollDirection;
 
   final ScrollController _outerScrollController = ScrollController();
   AnimationController? _snapAnim;
   bool _isSnapping = false;
   bool _invalidateScheduled = false;
+  Timer? _pointerScrollIdleTimer;
+  bool _pointerScrolling = false;
 
   @override
   void initState() {
@@ -127,6 +134,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   @override
   void dispose() {
     _snapAnim?.dispose();
+    _pointerScrollIdleTimer?.cancel();
     _outerScrollController.dispose();
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
@@ -457,7 +465,12 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     });
 
     return Listener(
-      onPointerDown: (_) => _cancelSnap(),
+      onPointerDown: (_) => _cancelSnap(cancelPointerScrollSession: true),
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent && _shouldHandlePointerScroll(event)) {
+          _onPointerScroll(event);
+        }
+      },
       child: NotificationListener<ScrollNotification>(
         onNotification: _handleOuterScrollNotification,
         child: ScrollConfiguration(
@@ -552,10 +565,21 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     );
   }
 
+  bool _shouldHandlePointerScroll(PointerScrollEvent event) {
+    if (kIsWeb) return false;
+    if (!Platform.isMacOS) return false;
+    final dx = event.scrollDelta.dx.abs();
+    final dy = event.scrollDelta.dy.abs();
+    return dy > dx;
+  }
+
   bool _handleOuterScrollNotification(ScrollNotification notification) {
     // 用 UserScrollNotification 追踪用户主动滚动方向，避免回弹/惯性误触发
     if (notification is UserScrollNotification &&
         notification.metrics.axis == Axis.vertical) {
+      if (notification.depth == 0) {
+        _lastOuterScrollDirection = notification.direction;
+      }
       if (notification.direction == ScrollDirection.forward) {
         // 向上滚动（朝顶部方向）→ 刷新模式
         if (!ref.read(fabRefreshModeProvider)) {
@@ -581,7 +605,17 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     // snap 逻辑仅处理外层滚动
     if (notification.depth != 0) return false;
 
+    // 拖拽滚动开始时，清理 pointer scroll 的状态，避免影响松手吸附。
+    if (notification is ScrollStartNotification && notification.dragDetails != null) {
+      _pointerScrollIdleTimer?.cancel();
+      _pointerScrolling = false;
+    }
+
     if (notification is ScrollEndNotification && !_isSnapping) {
+      // macOS 鼠标滚轮/触控板会产生大量离散的 ScrollEnd，若每次都立即 snap，
+      // 会导致外层 header 在 0~阈值间反复吸附，从而表现为列表上下跳动。
+      // pointer scrolling 期间跳过 snap，改由 onPointerSignal 的 idle 定时器统一触发一次。
+      if (_pointerScrolling) return false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _snapOuterScroll();
       });
@@ -590,12 +624,57 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     return false;
   }
 
+  void _onPointerScroll(PointerScrollEvent event) {
+    _cancelSnap();
+    _pointerScrolling = true;
+    _pointerScrollIdleTimer?.cancel();
+    final delay = event.kind == PointerDeviceKind.mouse
+        ? const Duration(milliseconds: 450)
+        : const Duration(milliseconds: 250);
+    _pointerScrollIdleTimer = Timer(delay, () {
+      _pointerScrolling = false;
+      if (!mounted || _isSnapping) return;
+      _snapOuterScrollAfterPointerScroll();
+    });
+  }
+
   /// 取消正在进行的 snap
-  void _cancelSnap() {
+  void _cancelSnap({bool cancelPointerScrollSession = false}) {
+    if (cancelPointerScrollSession) {
+      _pointerScrollIdleTimer?.cancel();
+      _pointerScrolling = false;
+    }
     if (_isSnapping) {
       _snapAnim?.stop();
       _isSnapping = false;
     }
+  }
+
+  void _snapOuterScrollTo(double target) {
+    if (!_outerScrollController.hasClients) return;
+    if (_outerScrollController.positions.length != 1) return;
+
+    final startOffset = _outerScrollController.offset;
+    if (startOffset == target) return;
+
+    _isSnapping = true;
+    _snapAnim?.dispose();
+    _snapAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+
+    _snapAnim!.addListener(() {
+      if (!_outerScrollController.hasClients) return;
+      if (_outerScrollController.positions.length != 1) return;
+      final t = Curves.easeOut.transform(_snapAnim!.value);
+      final newOffset = startOffset + (target - startOffset) * t;
+      _outerScrollController.position.snapToPixels(newOffset);
+    });
+
+    _snapAnim!.forward().whenComplete(() {
+      _isSnapping = false;
+    });
   }
 
   /// 松手后根据阈值吸附到完全展开或完全折叠。
@@ -617,26 +696,36 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     if (offset <= 0 || offset >= _collapsibleHeight) return;
 
     final target = offset > _collapsibleHeight / 2 ? _collapsibleHeight : 0.0;
-    final startOffset = offset;
+    _snapOuterScrollTo(target);
+  }
 
-    _isSnapping = true;
-    _snapAnim?.dispose();
-    _snapAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
+  void _snapOuterScrollAfterPointerScroll() {
+    if (!_outerScrollController.hasClients) return;
+    if (_outerScrollController.positions.length != 1) return;
+    final offset = _outerScrollController.offset;
 
-    _snapAnim!.addListener(() {
-      if (!_outerScrollController.hasClients) return;
-      if (_outerScrollController.positions.length != 1) return;
-      final t = Curves.easeOut.transform(_snapAnim!.value);
-      final newOffset = startOffset + (target - startOffset) * t;
-      _outerScrollController.position.snapToPixels(newOffset);
-    });
+    // 关闭折叠时，始终吸附到顶部
+    if (!ref.read(preferencesProvider).hideBarOnScroll) {
+      if (offset > 0) {
+        _outerScrollController.position.snapToPixels(0);
+      }
+      return;
+    }
 
-    _snapAnim!.forward().whenComplete(() {
-      _isSnapping = false;
-    });
+    if (offset <= 0 || offset >= _collapsibleHeight) return;
+
+    // pointer scroll（滚轮/触控板）更符合方向意图：向下则折叠，向上则展开。
+    final direction = _lastOuterScrollDirection;
+    final double target;
+    if (direction == ScrollDirection.reverse) {
+      target = _collapsibleHeight;
+    } else if (direction == ScrollDirection.forward) {
+      target = 0.0;
+    } else {
+      target = offset > _collapsibleHeight / 2 ? _collapsibleHeight : 0.0;
+    }
+
+    _snapOuterScrollTo(target);
   }
 
   /// 构建单个 tab 页面（带水平间距，圆角裁剪在列表内部处理）
