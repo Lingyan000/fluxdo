@@ -559,9 +559,11 @@ class NetworkSettingsService {
   /// 获取当前活动的代理端口
   int? get _activeProxyPort => _rustProxyService.port;
 
+  bool _webViewProxySet = false;
+
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
-    // 不是很清楚 macOS 14 以下调用 setProxyOverride 会不会报错闪退，保险起见还是判断一下
+    // macOS 14 以下调用 setProxyOverride 可能报错，保险起见判断一下
     if (!Platform.isAndroid && !await isMacOS14OrAbove()) return;
     final port = _activeProxyPort;
     if (port == null) return;
@@ -573,13 +575,16 @@ class NetworkSettingsService {
           ],
         ),
       );
+      _webViewProxySet = true;
     } catch (_) {}
   }
 
   Future<void> _clearWebViewProxy() async {
+    if (!_webViewProxySet) return;
     if (!Platform.isAndroid && !await isMacOS14OrAbove()) return;
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
+      _webViewProxySet = false;
     } catch (_) {}
   }
 
