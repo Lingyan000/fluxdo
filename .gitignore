@@ -53,10 +53,5 @@ app.*.map.json
 # Android JNI libraries (generated from Rust)
 android/app/src/main/jniLibs/
 
-pubspec.lock
-Podfile.lock
-# FVM Version Cache
-.fvm/
-
 # Firebase config (contains API keys)
 android/app/google-services.json

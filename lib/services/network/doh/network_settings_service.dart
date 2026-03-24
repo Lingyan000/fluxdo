@@ -583,13 +583,15 @@ class NetworkSettingsService {
     } catch (_) {}
   }
 
+  static bool? _isMacOS14OrAboveCache;
+
   Future<bool> isMacOS14OrAbove() async {
-    if(!Platform.isMacOS) return false;
+    if (!Platform.isMacOS) return false;
+    if (_isMacOS14OrAboveCache != null) return _isMacOS14OrAboveCache!;
     final info = await DeviceInfoPlugin().macOsInfo;
-    final major = info.majorVersion;
-    if (major == null) return false; // 防御性（理论不会发生）
-    // 直接用 Darwin 判断（更简单可靠）
-    return major >= 23;
+    // Darwin 23 对应 macOS 14 (Sonoma)
+    _isMacOS14OrAboveCache = info.majorVersion >= 23;
+    return _isMacOS14OrAboveCache!;
   }
 
   void _touch() {
