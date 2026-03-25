@@ -591,7 +591,7 @@ class NetworkSettingsService {
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
     // macOS 14 以下 / iOS 17 以下调用 setProxyOverride 可能报错
-    if (!Platform.isAndroid && !await isMacOS14OrAbove() && !await isiOS17OrAbove()) return;
+    if (!Platform.isAndroid && !await _isMacOS14OrAbove() && !await _isiOS17OrAbove()) return;
     final port = _activeProxyPort;
     if (port == null) return;
     try {
@@ -611,7 +611,7 @@ class NetworkSettingsService {
 
   Future<void> _clearWebViewProxy() async {
     if (!_webViewProxySet) return;
-    if (!Platform.isAndroid && !await isMacOS14OrAbove() && !await isiOS17OrAbove()) return;
+    if (!Platform.isAndroid && !await _isMacOS14OrAbove() && !await _isiOS17OrAbove()) return;
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
       _webViewProxySet = false;
@@ -623,18 +623,18 @@ class NetworkSettingsService {
 
   static bool? _isMacOS14OrAboveCache;
 
-  Future<bool> isMacOS14OrAbove() async {
+  Future<bool> _isMacOS14OrAbove() async {
     if (!Platform.isMacOS) return false;
     if (_isMacOS14OrAboveCache != null) return _isMacOS14OrAboveCache!;
     final info = await DeviceInfoPlugin().macOsInfo;
-    // Darwin 23 对应 macOS 14 (Sonoma)
-    _isMacOS14OrAboveCache = info.majorVersion >= 23;
+    // 修复：majorVersion 对应 macOS 大版本，如 macOS 14 (Sonoma) => majorVersion == 14 ≠ Darwin 23
+    _isMacOS14OrAboveCache = info.majorVersion >= 14;
     return _isMacOS14OrAboveCache!;
   }
 
   static bool? _isiOS17OrAboveCache;
 
-  Future<bool> isiOS17OrAbove() async {
+  Future<bool> _isiOS17OrAbove() async {
     if (!Platform.isIOS) return false;
     if (_isiOS17OrAboveCache != null) return _isiOS17OrAboveCache!;
     final info = await DeviceInfoPlugin().iosInfo;
