@@ -74,12 +74,18 @@ mixin _UsersMixin on _DiscourseServiceBase {
   /// 获取当前用户信息
   /// 网络错误时会抛出异常，由调用方决定如何处理
   Future<User?> getCurrentUser() async {
+    final cached = currentUserNotifier.value;
     final username = await getUsername();
-    if (username == null) return null;
+    if (username == null) return cached;
 
-    final user = await getUser(username);
-    currentUserNotifier.value = user;
-    return user;
+    try {
+      final user = await getUser(username);
+      currentUserNotifier.value = user;
+      return user;
+    } catch (e) {
+      debugPrint('[DiscourseService] getCurrentUser failed, keep cached user: $e');
+      return cached;
+    }
   }
 
   /// 获取用户统计数据（带缓存，按用户名区分）

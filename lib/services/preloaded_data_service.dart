@@ -375,7 +375,9 @@ class PreloadedDataService {
     }
 
     _loaded = true;
-    CfClearanceRefreshService().start();
+    if (_currentUser != null) {
+      CfClearanceRefreshService().start();
+    }
     debugPrint('[PreloadedData] 已从 HTML 快照恢复数据');
     return true;
   }
@@ -444,8 +446,10 @@ class PreloadedDataService {
       await _parsePreloadedDataFromHtml(html);
       debugPrint('[PreloadedData] 数据加载成功');
       _loaded = true;
-      // 预热完成，sitekey 已提取，启动 cf_clearance 自动续期
-      CfClearanceRefreshService().start();
+      // 仅在预加载里已确认 current_user 存在时才启动自动续期，避免启动抖动期放大鉴权误判。
+      if (_currentUser != null) {
+        CfClearanceRefreshService().start();
+      }
     } catch (e) {
       debugPrint('[PreloadedData] 加载失败: $e');
       rethrow;
