@@ -1,0 +1,118 @@
+name: Android CI Test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/conservative-auth-invalidation
+
+permissions:
+  contents: write
+
+env:
+  CI_TEST_TAG: ci-android-test
+  APK_NAME: fluxdo-arm64-test.apk
+
+jobs:
+  build-android-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Android build environment
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk
+          sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;25.2.9519653'
+
+      - name: Generate temporary signing key
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore android/app/upload-keystore.jks \
+            -alias ci-test \
+            -storepass android \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Fluxdo CI, OU=CI, O=Fluxdo, L=Internet, S=Internet, C=US"
+          cat > android/key.properties <<'EOF'
+          storePassword=android
+          keyPassword=android
+          keyAlias=ci-test
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Generate CA certificates
+        working-directory: core/doh_proxy
+        run: cargo run --bin gen_ca
+
+      - name: Build DOH Proxy
+        working-directory: core/doh_proxy
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/25.2.9519653
+        run: cargo ndk -t arm64-v8a --platform 28 build --release --features ech
+
+      - name: Copy native libraries
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp core/doh_proxy/target/aarch64-linux-android/release/libdoh_proxy.so android/app/src/main/jniLibs/arm64-v8a/
+          mkdir -p android/app/src/main/res/raw
+          cp core/doh_proxy/certs/ca.der android/app/src/main/res/raw/proxy_ca.der
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Android APK
+        run: |
+          flutter build apk --release --target-platform android-arm64 --dart-define=cronetHttpNoPlay=true
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/${{ env.APK_NAME }}
+
+      - name: Publish test APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.CI_TEST_TAG }}
+          name: Android CI Test APK
+          body: |
+            Automated Android arm64 test build from branch `${{ github.ref_name }}`.
+            This APK is signed with a temporary CI key for testing only.
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/${{ env.APK_NAME }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-test-apk
+          path: dist/${{ env.APK_NAME }}
+          if-no-files-found: error
+          overwrite: true
