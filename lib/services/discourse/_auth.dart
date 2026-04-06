@@ -49,6 +49,26 @@ mixin _AuthMixin on _DiscourseServiceBase {
     String? triggerInfo,
   }) async {
     try {
+      try {
+        await BoundarySyncService.instance.syncFromWebView(
+          cookieNames: {'_t', '_forum_session', 'cf_clearance'},
+        );
+      } catch (e) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'info',
+          'type': 'auth',
+          'event': 'auth_recheck_boundary_sync_failed',
+          'message': '会话复检前的 WebView→CookieJar 同步失败，继续尝试 session 复检',
+          'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'error': e.toString(),
+        });
+      }
+
+      final tTokenBeforeProbe = await _cookieJar.getTToken();
+      final cfClearanceBeforeProbe = await _cookieJar.getCfClearance();
+
       final response = await _dio.get(
         '/session/current.json',
         queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
@@ -100,6 +120,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'source': source,
           if (triggerInfo != null) 'trigger': triggerInfo,
           'username': user.username,
+          'hasTBeforeProbe': tTokenBeforeProbe != null && tTokenBeforeProbe.isNotEmpty,
+          'hasCfClearanceBeforeProbe': cfClearanceBeforeProbe != null && cfClearanceBeforeProbe.isNotEmpty,
         });
         return true;
       }
