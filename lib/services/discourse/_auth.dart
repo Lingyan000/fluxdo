@@ -3,13 +3,22 @@ part of 'discourse_service.dart';
 /// 认证相关
 mixin _AuthMixin on _DiscourseServiceBase {
   static const Duration _authInvalidStrikeWindow = Duration(seconds: 45);
+  static const Duration _authInconclusiveCooldown = Duration(seconds: 30);
   int _authInvalidStrikeCount = 0;
   DateTime? _lastAuthInvalidAt;
   Future<bool?>? _authRecheckFuture;
+  DateTime? _lastAuthRecheckInconclusiveAt;
 
   void _resetAuthInvalidState() {
     _authInvalidStrikeCount = 0;
     _lastAuthInvalidAt = null;
+    _lastAuthRecheckInconclusiveAt = null;
+  }
+
+  bool _shouldSuppressAuthInvalidDuringInconclusiveCooldown() {
+    final last = _lastAuthRecheckInconclusiveAt;
+    if (last == null) return false;
+    return DateTime.now().difference(last) <= _authInconclusiveCooldown;
   }
 
   int _registerAuthInvalidStrike() {
@@ -433,6 +442,29 @@ mixin _AuthMixin on _DiscourseServiceBase {
   }) async {
     if (_isLoggingOut) return;
 
+    if (_shouldSuppressAuthInvalidDuringInconclusiveCooldown()) {
+      final jarTToken = await _cookieJar.getTToken();
+      final csrfToken = _cookieSync.csrfToken;
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'info',
+        'type': 'auth',
+        'event': 'auth_invalid_suppressed_after_inconclusive',
+        'message': '距离上次会话复检不确定结果过近，暂时抑制重复登录异常处理',
+        'reason': message,
+        if (source != null) 'source': source,
+        if (triggerInfo != null) 'trigger': triggerInfo,
+        'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
+        'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+        'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+        'jarTokenLen': jarTToken?.length,
+        'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+        if (sentHasT != null) 'sentHasT': sentHasT,
+        if (sentTLen != null) 'sentTLen': sentTLen,
+      });
+      return;
+    }
+
     final strike = _registerAuthInvalidStrikeForEvent();
     final jarTToken = await _cookieJar.getTToken();
     final csrfToken = _cookieSync.csrfToken;
@@ -466,8 +498,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
     }
 
     if (probeResult == null) {
+      _lastAuthRecheckInconclusiveAt = DateTime.now();
       LogWriter.instance.write({
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': _lastAuthRecheckInconclusiveAt!.toIso8601String(),
         'level': 'info',
         'type': 'auth',
         'event': 'auth_inconclusive_abort_logout',
@@ -476,6 +509,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         if (source != null) 'source': source,
         if (triggerInfo != null) 'trigger': triggerInfo,
         'strike': strike,
+        'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
         'memHasToken': _tToken != null && _tToken!.isNotEmpty,
         'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
         'jarTokenLen': jarTToken?.length,
