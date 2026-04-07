@@ -24,6 +24,17 @@ mixin _AuthMixin on _DiscourseServiceBase {
     return _authInvalidStrikeCount;
   }
 
+  int _registerAuthInvalidStrikeForEvent() {
+    // 同一轮会话复检进行中时，把并发异常折叠成同一次 strike。
+    // 否则一次首页刷新触发的多个并发请求，可能在同一个「不确定」复检结果上
+    // 直接把 strike 叠满，误触发被动登出。
+    if (_authRecheckFuture != null && _authInvalidStrikeCount > 0) {
+      _lastAuthInvalidAt = DateTime.now();
+      return _authInvalidStrikeCount;
+    }
+    return _registerAuthInvalidStrike();
+  }
+
   Future<bool?> _probeSessionStillValid({
     required String source,
     String? triggerInfo,
@@ -422,7 +433,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
   }) async {
     if (_isLoggingOut) return;
 
-    final strike = _registerAuthInvalidStrike();
+    final strike = _registerAuthInvalidStrikeForEvent();
     final jarTToken = await _cookieJar.getTToken();
     final csrfToken = _cookieSync.csrfToken;
 
@@ -454,11 +465,45 @@ mixin _AuthMixin on _DiscourseServiceBase {
       return;
     }
 
-    if (probeResult == null && strike < 3) {
+    if (probeResult == null) {
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'info',
+        'type': 'auth',
+        'event': 'auth_inconclusive_abort_logout',
+        'message': '会话复检结果不确定，本次保持登录态并等待后续独立异常再次确认',
+        'reason': message,
+        if (source != null) 'source': source,
+        if (triggerInfo != null) 'trigger': triggerInfo,
+        'strike': strike,
+        'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+        'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+        'jarTokenLen': jarTToken?.length,
+        'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+        if (sentHasT != null) 'sentHasT': sentHasT,
+        if (sentTLen != null) 'sentTLen': sentTLen,
+      });
       return;
     }
 
     if (probeResult == false && strike < 2) {
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'info',
+        'type': 'auth',
+        'event': 'auth_recheck_failed_but_deferred_logout',
+        'message': '会话复检确认失效，但首次命中仅记录告警，暂不立即登出',
+        'reason': message,
+        if (source != null) 'source': source,
+        if (triggerInfo != null) 'trigger': triggerInfo,
+        'strike': strike,
+        'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+        'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+        'jarTokenLen': jarTToken?.length,
+        'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+        if (sentHasT != null) 'sentHasT': sentHasT,
+        if (sentTLen != null) 'sentTLen': sentTLen,
+      });
       return;
     }
 
