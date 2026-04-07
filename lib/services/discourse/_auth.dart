@@ -617,8 +617,58 @@ mixin _AuthMixin on _DiscourseServiceBase {
   Future<bool> isLoggedIn() async {
     final tToken = await _cookieJar.getTToken();
     if (tToken == null || tToken.isEmpty) return false;
+
+    final username = await _storage.read(key: DiscourseService._usernameKey);
+    if (username == null || username.isEmpty) {
+      return false;
+    }
+
+    // 启动恢复时不能只信任本地 _t；否则服务端已撤销会话但本地 cookie 仍在时，
+    // UI 会进入“假在线”状态。这里做一次轻量私有接口探测：
+    // - 200 且用户名匹配：确认仍在线
+    // - 401/403/not_logged_in/discourse-logged-out：承认已掉线并清理本地状态
+    // - 网络/挑战态等不确定错误：保守保留本地状态，避免冷启动误退
+    try {
+      final response = await _dio.get(
+        '/u/$username.json',
+        options: Options(
+          extra: const {
+            'skipAuthCheck': true,
+            'allowStaleSession': true,
+          },
+        ),
+      );
+      final data = response.data;
+      if (response.statusCode == 200 &&
+          data is Map &&
+          data['user'] is Map &&
+          (data['user']['username']?.toString().toLowerCase() ==
+              username.toLowerCase())) {
+        _tToken = tToken;
+        _username = username;
+        _resetAuthInvalidState();
+        return true;
+      }
+    } on DioException catch (e) {
+      final response = e.response;
+      final data = response?.data;
+      final hasNotLoggedInError =
+          data is Map && data['error_type'] == 'not_logged_in';
+      final hasLoggedOutHeader =
+          response?.headers.value('discourse-logged-out')?.isNotEmpty == true;
+      final privateAuthDenied =
+          response != null &&
+          (response.statusCode == 401 || response.statusCode == 403);
+      if (hasNotLoggedInError || hasLoggedOutHeader || privateAuthDenied) {
+        await logout(callApi: false, refreshPreload: false);
+        return false;
+      }
+    } catch (_) {
+      // ignore and fall back to conservative local restore below
+    }
+
     _tToken = tToken;
-    _username = await _storage.read(key: DiscourseService._usernameKey);
+    _username = username;
     _resetAuthInvalidState();
     return true;
   }

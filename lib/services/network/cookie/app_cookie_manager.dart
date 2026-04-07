@@ -323,22 +323,45 @@ class AppCookieManager extends Interceptor {
         .map((str) => Cookie.fromSetCookieValue(str))
         .toList();
 
-    // 拦截服务端对关键 cookie 的删除指令。
-    // 服务端可能在 200 响应中通过 Set-Cookie 删除 _t（设置为过期/空值），
-    // 如果无条件写入 CookieJar，会导致验证机制还没判断完 _t 就已经丢了。
-    // 只过滤「删除」操作，正常的「更新」（有值且未过期）仍然放行。
+    // 会话 cookie 删除指令不能再一刀切拦截。
+    // 旧逻辑会把服务端已经明确撤销会话的证据挡在外面，造成客户端“假在线”：
+    // 首页等公开页还能 200，但私有接口已 403，本地 UI 仍显示已登录。
+    // 现在改为：
+    // - 证据不足时：仍可暂时拦截删除，避免偶发抖动导致误退
+    // - 证据足够强时：允许删除真正落库，让客户端承认会话已经失效
     final filteredCookies = <Cookie>[];
     final filteredSetCookieHeaders = <String>[];
+    final responseBody = response.data;
+    final hasNotLoggedInError =
+        responseBody is Map && responseBody['error_type'] == 'not_logged_in';
+    final hasLoggedOutHeader =
+        response.headers.value('discourse-logged-out')?.isNotEmpty == true;
+    final isPrivateEndpoint =
+        requestUri.path.startsWith('/u/') ||
+        requestUri.path.startsWith('/user_actions') ||
+        requestUri.path.startsWith('/presence/') ||
+        requestUri.path.startsWith('/topics/timings') ||
+        requestUri.path.startsWith('/notifications') ||
+        requestUri.path.startsWith('/session/current');
+    final shouldTrustSessionDeletion =
+        hasLoggedOutHeader ||
+        hasNotLoggedInError ||
+        ((response.statusCode == 401 || response.statusCode == 403) &&
+            isPrivateEndpoint);
+
     for (var i = 0; i < cookies.length; i++) {
       final cookie = cookies[i];
-      final isSessionCookie = cookie.name == '_t' || cookie.name == '_forum_session';
+      final isSessionCookie =
+          cookie.name == '_t' || cookie.name == '_forum_session';
       if (isSessionCookie) {
         final isExpired = cookie.expires != null &&
             cookie.expires!.isBefore(DateTime.now());
         final isDeletion =
             cookie.value == 'del' || cookie.value.isEmpty || isExpired;
         final uri = response.requestOptions.uri;
-        debugPrint('[CookieManager] _t ${isDeletion ? "DEL(blocked)" : "SET"} '
+        final allowDeletion = isDeletion && shouldTrustSessionDeletion;
+        debugPrint('[CookieManager] ${cookie.name} '
+            '${!isDeletion ? "SET" : (allowDeletion ? "DEL(accepted)" : "DEL(blocked)")} '
             'from ${response.requestOptions.method} ${uri.host}${uri.path} '
             '(status=${response.statusCode}, len=${cookie.value.length}, '
             'domain=${cookie.domain}, hasLoggedIn=${response.requestOptions.headers['Discourse-Logged-In']})');
@@ -346,8 +369,16 @@ class AppCookieManager extends Interceptor {
           'timestamp': DateTime.now().toIso8601String(),
           'level': isDeletion ? 'warning' : 'info',
           'type': 'cookie_change',
-          'event': isDeletion ? 'token_cookie_delete_blocked' : 'token_cookie_updated',
-          'message': isDeletion ? '${cookie.name} 删除被拦截' : '${cookie.name} cookie 被更新',
+          'event': !isDeletion
+              ? 'token_cookie_updated'
+              : (allowDeletion
+                    ? 'token_cookie_delete_accepted'
+                    : 'token_cookie_delete_blocked'),
+          'message': !isDeletion
+              ? '${cookie.name} cookie 被更新'
+              : (allowDeletion
+                    ? '${cookie.name} 删除已接受（服务端会话失效证据充分）'
+                    : '${cookie.name} 删除被拦截'),
           'valueLength': cookie.value.length,
           'isExpired': isExpired,
           'method': response.requestOptions.method,
@@ -356,9 +387,11 @@ class AppCookieManager extends Interceptor {
           'statusCode': response.statusCode,
           'cookieDomain': cookie.domain,
           'hasLoggedInHeader': response.requestOptions.headers['Discourse-Logged-In'] == 'true',
+          'hasLoggedOutHeader': hasLoggedOutHeader,
+          'hasNotLoggedInError': hasNotLoggedInError,
+          'isPrivateEndpoint': isPrivateEndpoint,
         });
-        if (isDeletion) {
-          // 不写入 CookieJar，由业务层（_handleAuthInvalid）决定是否真正清除
+        if (isDeletion && !allowDeletion) {
           continue;
         }
       }
