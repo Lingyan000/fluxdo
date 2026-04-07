@@ -21,6 +21,29 @@ mixin _AuthMixin on _DiscourseServiceBase {
     return DateTime.now().difference(last) <= _authInconclusiveCooldown;
   }
 
+  void _runAuthHandlingInBackground(
+    Future<void> Function() task, {
+    required String event,
+    String? source,
+    String? triggerInfo,
+  }) {
+    unawaited(
+      task().catchError((Object error, StackTrace stackTrace) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': event,
+          'message': '后台认证异常处理任务失败',
+          if (source != null) 'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'error': error.toString(),
+          'stackTrace': stackTrace.toString(),
+        });
+      }),
+    );
+  }
+
   int _registerAuthInvalidStrike() {
     final now = DateTime.now();
     if (_lastAuthInvalidAt == null ||
@@ -240,13 +263,19 @@ mixin _AuthMixin on _DiscourseServiceBase {
               loggedOut != null &&
               loggedOut.isNotEmpty &&
               !_isLoggingOut) {
-            await _onDiscourseLoggedOut(
+            _runAuthHandlingInBackground(
+              () => _onDiscourseLoggedOut(
+                source: 'response_header',
+                triggerInfo:
+                    '${response.requestOptions.method} ${response.requestOptions.uri} → ${response.statusCode}',
+                requestOptions: response.requestOptions,
+                statusCode: response.statusCode,
+                responseHeaders: response.headers.map,
+              ),
+              event: 'auth_response_header_background_failed',
               source: 'response_header',
               triggerInfo:
                   '${response.requestOptions.method} ${response.requestOptions.uri} → ${response.statusCode}',
-              requestOptions: response.requestOptions,
-              statusCode: response.statusCode,
-              responseHeaders: response.headers.map,
             );
             return handler.next(response);
           }
@@ -319,13 +348,19 @@ mixin _AuthMixin on _DiscourseServiceBase {
               loggedOut != null &&
               loggedOut.isNotEmpty &&
               !_isLoggingOut) {
-            await _onDiscourseLoggedOut(
+            _runAuthHandlingInBackground(
+              () => _onDiscourseLoggedOut(
+                source: 'error_response_header',
+                triggerInfo:
+                    '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}',
+                requestOptions: error.requestOptions,
+                statusCode: error.response?.statusCode,
+                responseHeaders: error.response?.headers.map,
+              ),
+              event: 'auth_error_header_background_failed',
               source: 'error_response_header',
               triggerInfo:
                   '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}',
-              requestOptions: error.requestOptions,
-              statusCode: error.response?.statusCode,
-              responseHeaders: error.response?.headers.map,
             );
             return handler.next(error);
           }
@@ -350,8 +385,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
             final message =
                 (data['errors'] as List?)?.first?.toString() ??
                 S.current.auth_loginExpiredRelogin;
-            await _handleAuthInvalid(
-              message,
+            _runAuthHandlingInBackground(
+              () => _handleAuthInvalid(
+                message,
+                source: 'error_response_body',
+                triggerInfo:
+                    '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}, error_type=${data['error_type']}',
+              ),
+              event: 'auth_error_body_background_failed',
               source: 'error_response_body',
               triggerInfo:
                   '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}, error_type=${data['error_type']}',
