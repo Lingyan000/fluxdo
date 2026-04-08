@@ -372,29 +372,34 @@ class AppCookieManager extends Interceptor {
             cookie.value == 'del' || cookie.value.isEmpty || isExpired;
         final uri = response.requestOptions.uri;
         final allowDeletion = isDeletion && shouldTrustSessionDeletion;
+        final shouldBlockSessionSet = !isDeletion && ambiguousLoggedOutOnSuccess;
         debugPrint('[CookieManager] ${cookie.name} '
-            '${!isDeletion ? "SET" : (allowDeletion ? "DEL(accepted)" : "DEL(blocked)")} '
+            '${shouldBlockSessionSet ? "SET(blocked)" : (!isDeletion ? "SET" : (allowDeletion ? "DEL(accepted)" : "DEL(blocked)"))} '
             'from ${response.requestOptions.method} ${uri.host}${uri.path} '
             '(status=${response.statusCode}, len=${cookie.value.length}, '
             'domain=${cookie.domain}, hasLoggedIn=${response.requestOptions.headers['Discourse-Logged-In']})');
         LogWriter.instance.write({
           'timestamp': DateTime.now().toIso8601String(),
-          'level': isDeletion ? 'warning' : 'info',
+          'level': (isDeletion || shouldBlockSessionSet) ? 'warning' : 'info',
           'type': 'cookie_change',
-          'event': !isDeletion
-              ? 'token_cookie_updated'
-              : (allowDeletion
-                    ? 'token_cookie_delete_accepted'
-                    : (ambiguousLoggedOutOnSuccess
-                          ? 'token_cookie_delete_blocked_ambiguous_success'
-                          : 'token_cookie_delete_blocked')),
-          'message': !isDeletion
-              ? '${cookie.name} cookie 被更新'
-              : (allowDeletion
-                    ? '${cookie.name} 删除已接受（服务端会话失效证据充分）'
-                    : (ambiguousLoggedOutOnSuccess
-                          ? '${cookie.name} 删除被拦截（2xx 响应中的 mixed auth signal）'
-                          : '${cookie.name} 删除被拦截')),
+          'event': shouldBlockSessionSet
+              ? 'token_cookie_update_blocked_ambiguous_success'
+              : (!isDeletion
+                    ? 'token_cookie_updated'
+                    : (allowDeletion
+                          ? 'token_cookie_delete_accepted'
+                          : (ambiguousLoggedOutOnSuccess
+                                ? 'token_cookie_delete_blocked_ambiguous_success'
+                                : 'token_cookie_delete_blocked'))),
+          'message': shouldBlockSessionSet
+              ? '${cookie.name} 更新被拦截（2xx 响应中的 mixed auth signal）'
+              : (!isDeletion
+                    ? '${cookie.name} cookie 被更新'
+                    : (allowDeletion
+                          ? '${cookie.name} 删除已接受（服务端会话失效证据充分）'
+                          : (ambiguousLoggedOutOnSuccess
+                                ? '${cookie.name} 删除被拦截（2xx 响应中的 mixed auth signal）'
+                                : '${cookie.name} 删除被拦截'))),
           'valueLength': cookie.value.length,
           'isExpired': isExpired,
           'method': response.requestOptions.method,
@@ -409,7 +414,7 @@ class AppCookieManager extends Interceptor {
           'isStrictAuthEndpoint': isStrictAuthEndpoint,
           'ambiguousLoggedOutOnSuccess': ambiguousLoggedOutOnSuccess,
         });
-        if (isDeletion && !allowDeletion) {
+        if ((isDeletion && !allowDeletion) || shouldBlockSessionSet) {
           continue;
         }
       }
