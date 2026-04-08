@@ -323,12 +323,15 @@ class AppCookieManager extends Interceptor {
         .map((str) => Cookie.fromSetCookieValue(str))
         .toList();
 
-    // 会话 cookie 删除指令不能再一刀切拦截。
-    // 旧逻辑会把服务端已经明确撤销会话的证据挡在外面，造成客户端“假在线”：
-    // 首页等公开页还能 200，但私有接口已 403，本地 UI 仍显示已登录。
-    // 现在改为：
-    // - 证据不足时：仍可暂时拦截删除，避免偶发抖动导致误退
-    // - 证据足够强时：允许删除真正落库，让客户端承认会话已经失效
+    // 会话 cookie 删除指令仍需非常保守。
+    // 实测里服务端会在 200 响应的公开/半公开接口上带 discourse-logged-out，
+    // 甚至同时返回可渲染数据；如果此时直接接受 _t 删除，会把“混合信号”放大成
+    // 真掉线，造成频繁退出，甚至出现“页面还在、真实会话已被本地删掉”的假状态。
+    // 因此这里只信任以下强证据：
+    // - 响应体明确 error_type=not_logged_in
+    // - /session/current 明确返回 current_user=null
+    // - 明确需要登录的接口直接返回 401/403
+    // 单独的 discourse-logged-out header（尤其是 2xx 成功响应）不再直接删除会话 cookie。
     final filteredCookies = <Cookie>[];
     final filteredSetCookieHeaders = <String>[];
     final responseBody = response.data;
@@ -336,18 +339,27 @@ class AppCookieManager extends Interceptor {
         responseBody is Map && responseBody['error_type'] == 'not_logged_in';
     final hasLoggedOutHeader =
         response.headers.value('discourse-logged-out')?.isNotEmpty == true;
-    final isPrivateEndpoint =
-        requestUri.path.startsWith('/u/') ||
-        requestUri.path.startsWith('/user_actions') ||
+    final hasAnonymousSessionPayload =
+        responseBody is Map &&
+        responseBody.containsKey('current_user') &&
+        responseBody['current_user'] == null;
+    final isStrictAuthEndpoint =
         requestUri.path.startsWith('/presence/') ||
         requestUri.path.startsWith('/topics/timings') ||
         requestUri.path.startsWith('/notifications') ||
+        requestUri.path.startsWith('/bookmarks') ||
+        requestUri.path.startsWith('/drafts') ||
         requestUri.path.startsWith('/session/current');
+    final ambiguousLoggedOutOnSuccess =
+        hasLoggedOutHeader &&
+        (response.statusCode != null && response.statusCode! < 400) &&
+        !hasNotLoggedInError &&
+        !hasAnonymousSessionPayload;
     final shouldTrustSessionDeletion =
-        hasLoggedOutHeader ||
         hasNotLoggedInError ||
+        hasAnonymousSessionPayload ||
         ((response.statusCode == 401 || response.statusCode == 403) &&
-            isPrivateEndpoint);
+            isStrictAuthEndpoint);
 
     for (var i = 0; i < cookies.length; i++) {
       final cookie = cookies[i];
@@ -373,12 +385,16 @@ class AppCookieManager extends Interceptor {
               ? 'token_cookie_updated'
               : (allowDeletion
                     ? 'token_cookie_delete_accepted'
-                    : 'token_cookie_delete_blocked'),
+                    : (ambiguousLoggedOutOnSuccess
+                          ? 'token_cookie_delete_blocked_ambiguous_success'
+                          : 'token_cookie_delete_blocked')),
           'message': !isDeletion
               ? '${cookie.name} cookie 被更新'
               : (allowDeletion
                     ? '${cookie.name} 删除已接受（服务端会话失效证据充分）'
-                    : '${cookie.name} 删除被拦截'),
+                    : (ambiguousLoggedOutOnSuccess
+                          ? '${cookie.name} 删除被拦截（2xx 响应中的 mixed auth signal）'
+                          : '${cookie.name} 删除被拦截')),
           'valueLength': cookie.value.length,
           'isExpired': isExpired,
           'method': response.requestOptions.method,
@@ -389,7 +405,9 @@ class AppCookieManager extends Interceptor {
           'hasLoggedInHeader': response.requestOptions.headers['Discourse-Logged-In'] == 'true',
           'hasLoggedOutHeader': hasLoggedOutHeader,
           'hasNotLoggedInError': hasNotLoggedInError,
-          'isPrivateEndpoint': isPrivateEndpoint,
+          'hasAnonymousSessionPayload': hasAnonymousSessionPayload,
+          'isStrictAuthEndpoint': isStrictAuthEndpoint,
+          'ambiguousLoggedOutOnSuccess': ambiguousLoggedOutOnSuccess,
         });
         if (isDeletion && !allowDeletion) {
           continue;

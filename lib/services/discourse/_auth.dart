@@ -624,42 +624,55 @@ mixin _AuthMixin on _DiscourseServiceBase {
     }
 
     // 启动恢复时不能只信任本地 _t；否则服务端已撤销会话但本地 cookie 仍在时，
-    // UI 会进入“假在线”状态。这里做一次轻量私有接口探测：
-    // - 200 且用户名匹配：确认仍在线
-    // - 401/403/not_logged_in/discourse-logged-out：承认已掉线并清理本地状态
+    // UI 会进入“假在线”状态。
+    // 但这里也不能再用 /u/{username}.json 这种公开资料接口做判断：未登录时它也可能 200，
+    // 从而把匿名态误判成仍在线。改为直接探测严格鉴权的 /session/current.json：
+    // - current_user 存在：确认仍在线
+    // - current_user 缺失/null、401/403、not_logged_in：确认已掉线
     // - 网络/挑战态等不确定错误：保守保留本地状态，避免冷启动误退
     try {
       final response = await _dio.get(
-        '/u/$username.json',
+        '/session/current.json',
+        queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
         options: Options(
           extra: const {
             'skipAuthCheck': true,
+            'skipCsrf': true,
             'allowStaleSession': true,
           },
         ),
       );
       final data = response.data;
-      if (response.statusCode == 200 &&
-          data is Map &&
-          data['user'] is Map &&
-          (data['user']['username']?.toString().toLowerCase() ==
-              username.toLowerCase())) {
-        _tToken = tToken;
-        _username = username;
-        _resetAuthInvalidState();
-        return true;
+      if (data is Map && data['current_user'] is Map) {
+        final currentUser = data['current_user'] as Map;
+        final liveUsername = currentUser['username']?.toString();
+        if (liveUsername != null && liveUsername.isNotEmpty) {
+          _tToken = tToken;
+          _username = liveUsername;
+          await _storage.write(
+            key: DiscourseService._usernameKey,
+            value: liveUsername,
+          );
+          _resetAuthInvalidState();
+          return true;
+        }
+      }
+
+      if (data is Map && data.containsKey('current_user')) {
+        await logout(callApi: false, refreshPreload: false);
+        return false;
       }
     } on DioException catch (e) {
       final response = e.response;
       final data = response?.data;
       final hasNotLoggedInError =
           data is Map && data['error_type'] == 'not_logged_in';
-      final hasLoggedOutHeader =
-          response?.headers.value('discourse-logged-out')?.isNotEmpty == true;
+      final hasAnonymousSessionPayload =
+          data is Map && data.containsKey('current_user') && data['current_user'] == null;
       final privateAuthDenied =
           response != null &&
           (response.statusCode == 401 || response.statusCode == 403);
-      if (hasNotLoggedInError || hasLoggedOutHeader || privateAuthDenied) {
+      if (hasNotLoggedInError || hasAnonymousSessionPayload || privateAuthDenied) {
         await logout(callApi: false, refreshPreload: false);
         return false;
       }
