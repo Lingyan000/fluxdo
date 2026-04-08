@@ -355,6 +355,10 @@ class AppCookieManager extends Interceptor {
         (response.statusCode != null && response.statusCode! < 400) &&
         !hasNotLoggedInError &&
         !hasAnonymousSessionPayload;
+    final shouldBlockSessionSet =
+        hasLoggedOutHeader &&
+        !hasNotLoggedInError &&
+        !hasAnonymousSessionPayload;
     final shouldTrustSessionDeletion =
         hasNotLoggedInError ||
         hasAnonymousSessionPayload ||
@@ -372,17 +376,17 @@ class AppCookieManager extends Interceptor {
             cookie.value == 'del' || cookie.value.isEmpty || isExpired;
         final uri = response.requestOptions.uri;
         final allowDeletion = isDeletion && shouldTrustSessionDeletion;
-        final shouldBlockSessionSet = !isDeletion && ambiguousLoggedOutOnSuccess;
+        final blockThisSessionSet = !isDeletion && shouldBlockSessionSet;
         debugPrint('[CookieManager] ${cookie.name} '
-            '${shouldBlockSessionSet ? "SET(blocked)" : (!isDeletion ? "SET" : (allowDeletion ? "DEL(accepted)" : "DEL(blocked)"))} '
+            '${blockThisSessionSet ? "SET(blocked)" : (!isDeletion ? "SET" : (allowDeletion ? "DEL(accepted)" : "DEL(blocked)"))} '
             'from ${response.requestOptions.method} ${uri.host}${uri.path} '
             '(status=${response.statusCode}, len=${cookie.value.length}, '
             'domain=${cookie.domain}, hasLoggedIn=${response.requestOptions.headers['Discourse-Logged-In']})');
         LogWriter.instance.write({
           'timestamp': DateTime.now().toIso8601String(),
-          'level': (isDeletion || shouldBlockSessionSet) ? 'warning' : 'info',
+          'level': (isDeletion || blockThisSessionSet) ? 'warning' : 'info',
           'type': 'cookie_change',
-          'event': shouldBlockSessionSet
+          'event': blockThisSessionSet
               ? 'token_cookie_update_blocked_ambiguous_success'
               : (!isDeletion
                     ? 'token_cookie_updated'
@@ -391,7 +395,7 @@ class AppCookieManager extends Interceptor {
                           : (ambiguousLoggedOutOnSuccess
                                 ? 'token_cookie_delete_blocked_ambiguous_success'
                                 : 'token_cookie_delete_blocked'))),
-          'message': shouldBlockSessionSet
+          'message': blockThisSessionSet
               ? '${cookie.name} 更新被拦截（2xx 响应中的 mixed auth signal）'
               : (!isDeletion
                     ? '${cookie.name} cookie 被更新'
@@ -414,7 +418,7 @@ class AppCookieManager extends Interceptor {
           'isStrictAuthEndpoint': isStrictAuthEndpoint,
           'ambiguousLoggedOutOnSuccess': ambiguousLoggedOutOnSuccess,
         });
-        if ((isDeletion && !allowDeletion) || shouldBlockSessionSet) {
+        if ((isDeletion && !allowDeletion) || blockThisSessionSet) {
           continue;
         }
       }
