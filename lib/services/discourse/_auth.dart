@@ -97,8 +97,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
     try {
       try {
+        // 复检时只同步 cf_clearance，不再把 WebView 中的 _t/_forum_session
+        // 回灌到 CookieJar；否则 mixed-signal / 半失效态下，可能把坏会话再次写回。
         await BoundarySyncService.instance.syncFromWebView(
-          cookieNames: {'_t', '_forum_session', 'cf_clearance'},
+          cookieNames: {'cf_clearance'},
         );
       } catch (e) {
         LogWriter.instance.write({
