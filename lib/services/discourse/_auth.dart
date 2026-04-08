@@ -391,6 +391,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
                 source: 'error_response_body',
                 triggerInfo:
                     '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}, error_type=${data['error_type']}',
+                strongEvidence: true,
               ),
               event: 'auth_error_body_background_failed',
               source: 'error_response_body',
@@ -458,6 +459,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
       triggerInfo: triggerInfo,
       sentHasT: sentHasT,
       sentTLen: sentTLen,
+      strongEvidence: statusCode == 401 || statusCode == 403,
     );
   }
 
@@ -480,10 +482,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
     String? triggerInfo,
     bool? sentHasT,
     int? sentTLen,
+    bool strongEvidence = false,
   }) async {
     if (_isLoggingOut) return;
 
-    if (_shouldSuppressAuthInvalidDuringInconclusiveCooldown()) {
+    if (_shouldSuppressAuthInvalidDuringInconclusiveCooldown() &&
+        !strongEvidence) {
       final jarTToken = await _cookieJar.getTToken();
       final csrfToken = _cookieSync.csrfToken;
       LogWriter.instance.write({
@@ -496,6 +500,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         if (source != null) 'source': source,
         if (triggerInfo != null) 'trigger': triggerInfo,
         'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
+        'strongEvidence': strongEvidence,
         'memHasToken': _tToken != null && _tToken!.isNotEmpty,
         'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
         'jarTokenLen': jarTToken?.length,
@@ -520,6 +525,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
       if (source != null) 'source': source,
       if (triggerInfo != null) 'trigger': triggerInfo,
       'strike': strike,
+      'strongEvidence': strongEvidence,
       'memHasToken': _tToken != null && _tToken!.isNotEmpty,
       'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
       'jarTokenLen': jarTToken?.length,
@@ -539,26 +545,48 @@ mixin _AuthMixin on _DiscourseServiceBase {
     }
 
     if (probeResult == null) {
-      _lastAuthRecheckInconclusiveAt = DateTime.now();
-      LogWriter.instance.write({
-        'timestamp': _lastAuthRecheckInconclusiveAt!.toIso8601String(),
-        'level': 'info',
-        'type': 'auth',
-        'event': 'auth_inconclusive_abort_logout',
-        'message': '会话复检结果不确定，本次保持登录态并等待后续独立异常再次确认',
-        'reason': message,
-        if (source != null) 'source': source,
-        if (triggerInfo != null) 'trigger': triggerInfo,
-        'strike': strike,
-        'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
-        'memHasToken': _tToken != null && _tToken!.isNotEmpty,
-        'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
-        'jarTokenLen': jarTToken?.length,
-        'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
-        if (sentHasT != null) 'sentHasT': sentHasT,
-        if (sentTLen != null) 'sentTLen': sentTLen,
-      });
-      return;
+      if (strongEvidence && strike >= 2) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': 'auth_inconclusive_escalated_to_logout',
+          'message': '会话复检不确定，但强失效证据重复出现，升级为执行登出',
+          'reason': message,
+          if (source != null) 'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'strike': strike,
+          'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
+          'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+          'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+          'jarTokenLen': jarTToken?.length,
+          'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+          if (sentHasT != null) 'sentHasT': sentHasT,
+          if (sentTLen != null) 'sentTLen': sentTLen,
+        });
+      } else {
+        _lastAuthRecheckInconclusiveAt = DateTime.now();
+        LogWriter.instance.write({
+          'timestamp': _lastAuthRecheckInconclusiveAt!.toIso8601String(),
+          'level': 'info',
+          'type': 'auth',
+          'event': 'auth_inconclusive_abort_logout',
+          'message': '会话复检结果不确定，本次保持登录态并等待后续独立异常再次确认',
+          'reason': message,
+          if (source != null) 'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'strike': strike,
+          'strongEvidence': strongEvidence,
+          'cooldownSeconds': _authInconclusiveCooldown.inSeconds,
+          'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+          'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+          'jarTokenLen': jarTToken?.length,
+          'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+          if (sentHasT != null) 'sentHasT': sentHasT,
+          if (sentTLen != null) 'sentTLen': sentTLen,
+        });
+        return;
+      }
     }
 
     if (probeResult == false && strike < 2) {
@@ -599,6 +627,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
       if (triggerInfo != null) 'trigger': triggerInfo,
       'strike': strike,
       'probeResult': probeResult,
+      'strongEvidence': strongEvidence,
       'memHasToken': _tToken != null && _tToken!.isNotEmpty,
       'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
       'jarTokenLen': jarTToken?.length,
