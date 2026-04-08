@@ -111,6 +111,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
       final tTokenBeforeProbe = await _cookieJar.getTToken();
       final cfClearanceBeforeProbe = await _cookieJar.getCfClearance();
+      final previousStrikeCount = _authInvalidStrikeCount;
+      final previousAuthInvalidAt = _lastAuthInvalidAt;
+      final previousInconclusiveAt = _lastAuthRecheckInconclusiveAt;
 
       final response = await _dio.get(
         '/session/current.json',
@@ -179,6 +182,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
         if (triggerInfo != null) 'trigger': triggerInfo,
         'statusCode': response.statusCode,
       });
+      _authInvalidStrikeCount = previousStrikeCount;
+      _lastAuthInvalidAt = previousAuthInvalidAt;
+      _lastAuthRecheckInconclusiveAt = previousInconclusiveAt;
       return false;
     } on DioException catch (e) {
       LogWriter.instance.write({
@@ -193,6 +199,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'errorType': e.type.toString(),
         'url': e.requestOptions.uri.toString(),
       });
+      _authInvalidStrikeCount = previousStrikeCount;
+      _lastAuthInvalidAt = previousAuthInvalidAt;
+      _lastAuthRecheckInconclusiveAt = previousInconclusiveAt;
       return null;
     } catch (e) {
       LogWriter.instance.write({
@@ -205,6 +214,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
         if (triggerInfo != null) 'trigger': triggerInfo,
         'error': e.toString(),
       });
+      _authInvalidStrikeCount = previousStrikeCount;
+      _lastAuthInvalidAt = previousAuthInvalidAt;
+      _lastAuthRecheckInconclusiveAt = previousInconclusiveAt;
       return null;
     }
   }
@@ -283,7 +295,6 @@ mixin _AuthMixin on _DiscourseServiceBase {
           final tToken = await _cookieJar.getTToken();
           if (tToken != null && tToken.isNotEmpty) {
             _tToken = tToken;
-            _resetAuthInvalidState();
           } else if (_tToken != null && _tToken!.isNotEmpty) {
             LogWriter.instance.write({
               'timestamp': DateTime.now().toIso8601String(),
