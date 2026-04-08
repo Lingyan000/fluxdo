@@ -91,6 +91,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
     required String source,
     String? triggerInfo,
   }) async {
+    final previousStrikeCount = _authInvalidStrikeCount;
+    final previousAuthInvalidAt = _lastAuthInvalidAt;
+    final previousInconclusiveAt = _lastAuthRecheckInconclusiveAt;
+
     try {
       try {
         await BoundarySyncService.instance.syncFromWebView(
@@ -111,9 +115,6 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
       final tTokenBeforeProbe = await _cookieJar.getTToken();
       final cfClearanceBeforeProbe = await _cookieJar.getCfClearance();
-      final previousStrikeCount = _authInvalidStrikeCount;
-      final previousAuthInvalidAt = _lastAuthInvalidAt;
-      final previousInconclusiveAt = _lastAuthRecheckInconclusiveAt;
 
       final response = await _dio.get(
         '/session/current.json',
