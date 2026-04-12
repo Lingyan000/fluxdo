@@ -45,16 +45,6 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setCfClearanceRefresh(v),
         ),
-        if (Platform.isAndroid)
-          SwitchModel(
-            id: 'androidNativeCdp',
-            title: l10n.preferences_androidNativeCdp,
-            subtitle: l10n.preferences_androidNativeCdpDesc,
-            icon: Icons.developer_board_rounded,
-            getValue: (ref) => ref.watch(preferencesProvider).androidNativeCdp,
-            onChanged: (ref, v) =>
-                ref.read(preferencesProvider.notifier).setAndroidNativeCdp(v),
-          ),
         PlatformConditionalModel(
           inner: SwitchModel(
             id: 'portraitLock',
