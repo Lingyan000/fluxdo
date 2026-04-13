@@ -27,6 +27,8 @@ class WindowsWebViewEnvironmentService {
 
   WebViewEnvironment? get environment => _environment;
 
+  bool get isEnvironmentReady => _environment != null;
+
   String? get userDataFolder => _userDataFolder;
 
   CookieManager get cookieManager {

@@ -70,8 +70,12 @@ class _CategoryShortcutItem extends ConsumerWidget {
     final categoryColor = _parseColor(category.color, colorScheme.primary);
     final activeCategoryId = ref.watch(activeSidebarCategoryIdProvider);
     final isSelected = activeCategoryId == category.id;
-    final backgroundColor =
-        isSelected ? colorScheme.secondaryContainer : Colors.transparent;
+    final backgroundColor = isSelected
+        ? colorScheme.secondaryContainer
+        : Colors.transparent;
+    final foregroundColor = isSelected
+        ? colorScheme.onSecondaryContainer
+        : colorScheme.onSurfaceVariant;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -86,8 +90,31 @@ class _CategoryShortcutItem extends ConsumerWidget {
             child: extended
                 ? Row(
                     children: [
-                      const SizedBox(width: 16),
-                      _buildCategoryIcon(category, categoryColor, 20),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 4,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          height: isSelected ? 24 : 0,
+                          decoration: BoxDecoration(
+                            color: categoryColor,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Center(
+                          child: _buildCategoryIcon(
+                            category,
+                            categoryColor,
+                            20,
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -95,19 +122,51 @@ class _CategoryShortcutItem extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isSelected
-                                ? colorScheme.onSecondaryContainer
-                                : colorScheme.onSurfaceVariant,
+                            color: foregroundColor,
                             fontWeight: isSelected
                                 ? FontWeight.w600
-                                : FontWeight.normal,
+                                : FontWeight.w500,
                           ),
                         ),
                       ),
+                      const SizedBox(width: 12),
                     ],
                   )
                 : Center(
-                    child: _buildCategoryIcon(category, categoryColor, 20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: Stack(
+                        children: [
+                          if (isSelected)
+                            Positioned(
+                              left: 8,
+                              top: 16,
+                              bottom: 16,
+                              child: Container(
+                                width: 4,
+                                decoration: BoxDecoration(
+                                  color: categoryColor,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Center(
+                                child: _buildCategoryIcon(
+                                  category,
+                                  categoryColor,
+                                  20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
           ),
         ),
