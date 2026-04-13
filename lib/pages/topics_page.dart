@@ -49,7 +49,9 @@ class ScrollToTopNotifier extends StateNotifier<int> {
   void trigger() => state++;
 }
 
-final scrollToTopProvider = StateNotifierProvider<ScrollToTopNotifier, int>((ref) {
+final scrollToTopProvider = StateNotifierProvider<ScrollToTopNotifier, int>((
+  ref,
+) {
   return ScrollToTopNotifier();
 });
 
@@ -60,9 +62,10 @@ final barVisibilityProvider = StateProvider<double>((ref) => 1.0);
 final fabRefreshModeProvider = StateProvider<bool>((ref) => false);
 
 /// FAB 触发刷新信号
-final fabRefreshSignalProvider = StateNotifierProvider<ScrollToTopNotifier, int>((ref) {
-  return ScrollToTopNotifier();
-});
+final fabRefreshSignalProvider =
+    StateNotifierProvider<ScrollToTopNotifier, int>((ref) {
+      return ScrollToTopNotifier();
+    });
 
 /// Header 区域常量
 const _searchBarHeight = 56.0;
@@ -87,7 +90,9 @@ class _NoOuterScrollPhysics extends ScrollPhysics {
 
   @override
   Simulation? createBallisticSimulation(
-      ScrollMetrics position, double velocity) {
+    ScrollMetrics position,
+    double velocity,
+  ) {
     // 禁止惯性动画，防止松手后外层回弹
     return null;
   }
@@ -113,7 +118,8 @@ class TopicsPage extends ConsumerStatefulWidget {
   ConsumerState<TopicsPage> createState() => _TopicsPageState();
 }
 
-class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStateMixin {
+class _TopicsPageState extends ConsumerState<TopicsPage>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   int _tabLength = 1; // 初始只有"全部"
   int _currentTabIndex = 0;
@@ -134,24 +140,27 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     _tabLength = 1 + _visiblePinnedIds.length;
     _tabController = TabController(length: _tabLength, vsync: this);
     _tabController.addListener(_handleTabChange);
-
   }
 
   void _registerTabShortcuts() {
     if (!mounted) return;
-    ref.read(masterShortcutsProvider.notifier).update((current) => {
-      ...current,
-      ShortcutAction.previousTab: () {
-        if (_tabController.index > 0) {
-          _tabController.animateTo(_tabController.index - 1);
-        }
-      },
-      ShortcutAction.nextTab: () {
-        if (_tabController.index < _tabController.length - 1) {
-          _tabController.animateTo(_tabController.index + 1);
-        }
-      },
-    });
+    ref
+        .read(masterShortcutsProvider.notifier)
+        .update(
+          (current) => {
+            ...current,
+            ShortcutAction.previousTab: () {
+              if (_tabController.index > 0) {
+                _tabController.animateTo(_tabController.index - 1);
+              }
+            },
+            ShortcutAction.nextTab: () {
+              if (_tabController.index < _tabController.length - 1) {
+                _tabController.animateTo(_tabController.index + 1);
+              }
+            },
+          },
+        );
   }
 
   @override
@@ -199,10 +208,13 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     final staleTabs = ref.read(staleTabsProvider);
     if (staleTabs.contains(categoryId)) {
       ref.read(topicListProvider(categoryId).notifier).refresh();
-      ref.read(staleTabsProvider.notifier).state = staleTabs.difference({categoryId});
+      ref.read(staleTabsProvider.notifier).state = staleTabs.difference({
+        categoryId,
+      });
     }
 
     ref.read(currentTabCategoryIdProvider.notifier).state = categoryId;
+    ref.read(activeSidebarCategoryIdProvider.notifier).state = categoryId;
   }
 
   /// 检测 pinnedCategories 变化，重建 TabController
@@ -222,9 +234,9 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   }
 
   Future<void> _goToLogin() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const WebViewLoginPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const WebViewLoginPage()));
     if (result == true && mounted) {
       LoadingDialog.show(context, message: context.l10n.common_loadingData);
 
@@ -332,7 +344,10 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   }
 
   /// 获取当前选中分类 Tab 对应的 Category（仅非"全部"时返回）
-  Category? _getCurrentCategory(List<int> pinnedIds, Map<int, Category>? categoryMap) {
+  Category? _getCurrentCategory(
+    List<int> pinnedIds,
+    Map<int, Category>? categoryMap,
+  ) {
     if (_currentTabIndex == 0 || categoryMap == null) return null;
     if (_currentTabIndex - 1 >= pinnedIds.length) return null;
     final categoryId = pinnedIds[_currentTabIndex - 1];
@@ -352,9 +367,15 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   /// 构建排序栏右侧的按钮
   /// - 新/未读排序且已登录时：显示忽略按钮
   /// - 分类 Tab 且已登录时：显示分类通知按钮
-  Widget? _buildTrailing(Category? category, bool isLoggedIn, TopicListFilter currentFilter) {
+  Widget? _buildTrailing(
+    Category? category,
+    bool isLoggedIn,
+    TopicListFilter currentFilter,
+  ) {
     // 新/未读筛选时显示忽略按钮
-    if (isLoggedIn && (currentFilter == TopicListFilter.newTopics || currentFilter == TopicListFilter.unread)) {
+    if (isLoggedIn &&
+        (currentFilter == TopicListFilter.newTopics ||
+            currentFilter == TopicListFilter.unread)) {
       return _DismissButton(
         onPressed: () => _showDismissConfirmDialog(currentFilter),
       );
@@ -376,7 +397,10 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
         };
         try {
           final service = ref.read(discourseServiceProvider);
-          await service.setCategoryNotificationLevel(category.id, newLevel.value);
+          await service.setCategoryNotificationLevel(
+            category.id,
+            newLevel.value,
+          );
         } catch (_) {
           // 失败时回退
           if (mounted) {
@@ -387,8 +411,10 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
                 category.id: oldLevel,
               };
             } else {
-              ref.read(categoryNotificationOverridesProvider.notifier).state =
-                  Map.from(current)..remove(category.id);
+              ref
+                  .read(categoryNotificationOverridesProvider.notifier)
+                  .state = Map.from(current)
+                ..remove(category.id);
             }
           }
         }
@@ -397,7 +423,9 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
   }
 
   void _showDismissConfirmDialog(TopicListFilter currentFilter) {
-    final label = currentFilter == TopicListFilter.newTopics ? context.l10n.topics_newTopics : context.l10n.topics_unreadTopics;
+    final label = currentFilter == TopicListFilter.newTopics
+        ? context.l10n.topics_newTopics
+        : context.l10n.topics_unreadTopics;
     showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -452,8 +480,34 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
         ? allPinnedIds.where((id) => visibleIds.contains(id)).toList()
         : allPinnedIds;
     final currentFilter = ref.watch(topicFilterProvider);
+    final sidebarCategoryId = ref.watch(activeSidebarCategoryIdProvider);
 
     _syncTabsIfNeeded(pinnedIds);
+
+    if (sidebarCategoryId == null && _currentTabIndex != 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _tabController.index == 0) return;
+        _tabController.animateTo(0);
+      });
+    } else if (sidebarCategoryId != null) {
+      final targetIndex = pinnedIds.indexOf(sidebarCategoryId);
+      if (targetIndex >= 0 && _currentTabIndex != targetIndex + 1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final latestVisibleIds = ref.read(visibleCategoryIdsProvider);
+          final latestPinnedIds = ref.read(pinnedCategoriesProvider);
+          final effectivePinnedIds = latestVisibleIds != null
+              ? latestPinnedIds
+                    .where((id) => latestVisibleIds.contains(id))
+                    .toList()
+              : latestPinnedIds;
+          final latestIndex = effectivePinnedIds.indexOf(sidebarCategoryId);
+          if (latestIndex >= 0 && _tabController.index != latestIndex + 1) {
+            _tabController.animateTo(latestIndex + 1);
+          }
+        });
+      }
+    }
 
     final currentCategoryId = _currentCategoryId(pinnedIds);
     final currentTags = ref.watch(tabTagsProvider(currentCategoryId));
@@ -467,7 +521,10 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     });
 
     // 关闭滚动折叠时，复位外层滚动到顶部
-    ref.listen(preferencesProvider.select((p) => p.hideBarOnScroll), (prev, next) {
+    ref.listen(preferencesProvider.select((p) => p.hideBarOnScroll), (
+      prev,
+      next,
+    ) {
       if (!next &&
           _outerScrollController.hasClients &&
           _outerScrollController.positions.length == 1 &&
@@ -486,7 +543,8 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
       //
       // 不能调用 inner 的 animateTo(0)，因为 unnestOffset 的边界条件 bug
       // 会导致 coordinator 反而把 outer 推到 maxScrollExtent。
-      if (_outerScrollController.hasClients && _outerScrollController.positions.length == 1) {
+      if (_outerScrollController.hasClients &&
+          _outerScrollController.positions.length == 1) {
         _outerScrollController.animateTo(
           _outerScrollController.offset,
           duration: const Duration(milliseconds: 300),
@@ -509,88 +567,102 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
           // 多个 ScrollPosition 同时存在时 Scrollbar 报错
           behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
           child: ExtendedNestedScrollView(
-          controller: _outerScrollController,
-          floatHeaderSlivers: true,
-          physics: ref.watch(preferencesProvider.select((p) => p.hideBarOnScroll))
-              ? null
-              : const _NoOuterScrollPhysics(),
-          pinnedHeaderSliverHeightBuilder: () => topPadding + _tabRowHeight,
-          onlyOneScrollInBody: true,
-          headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            SliverPersistentHeader(
-              pinned: true,
-              floating: true,
-              delegate: _TopicsHeaderDelegate(
-                statusBarHeight: topPadding,
-                tabController: _tabController,
-                pinnedIds: pinnedIds,
-                categoryMap: categoryMap ?? {},
-                isLoggedIn: isLoggedIn,
-                currentFilter: currentFilter,
-                currentTags: currentTags,
-                currentCategory: currentCategory,
-                hideBarOnScroll: ref.watch(preferencesProvider).hideBarOnScroll,
-                onFilterChanged: (filter) {
-                  ref.read(topicFilterProvider.notifier).setFilter(filter);
-                },
-                onTagRemoved: (tag) {
-                  final tags = ref.read(tabTagsProvider(currentCategoryId));
-                  ref.read(tabTagsProvider(currentCategoryId).notifier).state =
-                      tags.where((t) => t != tag).toList();
-                },
-                onAddTag: _openTagSelection,
-                onTabTap: (index) {
-                  if (index == _currentTabIndex) {
-                    ref.read(scrollToTopProvider.notifier).trigger();
-                  }
-                },
-                onCategoryManager: _openCategoryManager,
-                onSearch: () {
-                  SearchFilter? filter;
-                  if (currentCategory != null) {
-                    String? parentSlug;
-                    if (currentCategory.parentCategoryId != null) {
-                      parentSlug = categoryMap?[currentCategory.parentCategoryId]?.slug;
+            controller: _outerScrollController,
+            floatHeaderSlivers: true,
+            physics:
+                ref.watch(preferencesProvider.select((p) => p.hideBarOnScroll))
+                ? null
+                : const _NoOuterScrollPhysics(),
+            pinnedHeaderSliverHeightBuilder: () => topPadding + _tabRowHeight,
+            onlyOneScrollInBody: true,
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverPersistentHeader(
+                pinned: true,
+                floating: true,
+                delegate: _TopicsHeaderDelegate(
+                  statusBarHeight: topPadding,
+                  tabController: _tabController,
+                  pinnedIds: pinnedIds,
+                  categoryMap: categoryMap ?? {},
+                  isLoggedIn: isLoggedIn,
+                  currentFilter: currentFilter,
+                  currentTags: currentTags,
+                  currentCategory: currentCategory,
+                  hideBarOnScroll: ref
+                      .watch(preferencesProvider)
+                      .hideBarOnScroll,
+                  onFilterChanged: (filter) {
+                    ref.read(topicFilterProvider.notifier).setFilter(filter);
+                  },
+                  onTagRemoved: (tag) {
+                    final tags = ref.read(tabTagsProvider(currentCategoryId));
+                    ref
+                        .read(tabTagsProvider(currentCategoryId).notifier)
+                        .state = tags
+                        .where((t) => t != tag)
+                        .toList();
+                  },
+                  onAddTag: _openTagSelection,
+                  onTabTap: (index) {
+                    if (index == _currentTabIndex) {
+                      ref.read(scrollToTopProvider.notifier).trigger();
                     }
-                    filter = SearchFilter(
-                      categoryId: currentCategory.id,
-                      categorySlug: currentCategory.slug,
-                      categoryName: currentCategory.name,
-                      parentCategorySlug: parentSlug,
-                    );
-                  }
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => SearchPage(initialFilter: filter)),
-                  );
-                },
-                onDebugTopicId: () => _showTopicIdDialog(context),
-                trailing: _buildTrailing(currentCategory, isLoggedIn, currentFilter),
-              ),
-            ),
-          ],
-          body: Column(
-            children: [
-              const OfflineIndicator(),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    ExtendedVisibilityDetector(
-                      uniqueKey: const Key('tab_all'),
-                      child: _buildTabPage(null),
-                    ),
-                    for (int i = 0; i < pinnedIds.length; i++)
-                      ExtendedVisibilityDetector(
-                        uniqueKey: Key('tab_${pinnedIds[i]}'),
-                        child: _buildTabPage(pinnedIds[i]),
+                  },
+                  onCategoryManager: _openCategoryManager,
+                  onSearch: () {
+                    SearchFilter? filter;
+                    if (currentCategory != null) {
+                      String? parentSlug;
+                      if (currentCategory.parentCategoryId != null) {
+                        parentSlug =
+                            categoryMap?[currentCategory.parentCategoryId]
+                                ?.slug;
+                      }
+                      filter = SearchFilter(
+                        categoryId: currentCategory.id,
+                        categorySlug: currentCategory.slug,
+                        categoryName: currentCategory.name,
+                        parentCategorySlug: parentSlug,
+                      );
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SearchPage(initialFilter: filter),
                       ),
-                  ],
+                    );
+                  },
+                  onDebugTopicId: () => _showTopicIdDialog(context),
+                  trailing: _buildTrailing(
+                    currentCategory,
+                    isLoggedIn,
+                    currentFilter,
+                  ),
                 ),
               ),
             ],
+            body: Column(
+              children: [
+                const OfflineIndicator(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      ExtendedVisibilityDetector(
+                        uniqueKey: const Key('tab_all'),
+                        child: _buildTabPage(null),
+                      ),
+                      for (int i = 0; i < pinnedIds.length; i++)
+                        ExtendedVisibilityDetector(
+                          uniqueKey: Key('tab_${pinnedIds[i]}'),
+                          child: _buildTabPage(pinnedIds[i]),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -637,7 +709,8 @@ class _TopicsPageState extends ConsumerState<TopicsPage> with TickerProviderStat
     if (notification.depth != 0) return false;
 
     // 拖拽滚动开始时，清理 pointer scroll 的状态，避免影响松手吸附。
-    if (notification is ScrollStartNotification && notification.dragDetails != null) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
       _pointerScrollIdleTimer?.cancel();
       _pointerScrolling = false;
     }
@@ -816,7 +889,8 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get maxExtent => statusBarHeight + _searchBarHeight + _tabRowHeight + _sortBarHeight;
+  double get maxExtent =>
+      statusBarHeight + _searchBarHeight + _tabRowHeight + _sortBarHeight;
 
   @override
   double get minExtent => statusBarHeight + _tabRowHeight;
@@ -836,12 +910,17 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     final clampedOffset = shrinkOffset.clamp(0.0, _collapsibleHeight);
 
     // 搜索栏先折叠（shrinkOffset 0→56），排序栏后折叠（56→100）
     final searchProgress = (clampedOffset / _searchBarHeight).clamp(0.0, 1.0);
-    final sortProgress = ((clampedOffset - _searchBarHeight) / _sortBarHeight).clamp(0.0, 1.0);
+    final sortProgress = ((clampedOffset - _searchBarHeight) / _sortBarHeight)
+        .clamp(0.0, 1.0);
 
     // 更新 barVisibility（仅在值变化时才更新，避免快速滚动时的帧级联重建）
     final visibility = hideBarOnScroll
@@ -875,7 +954,12 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                   child: SizedBox(
                     height: _searchBarHeight,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 8, left: 16, right: 16, bottom: 8),
+                      padding: const EdgeInsets.only(
+                        top: 8,
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                      ),
                       child: Row(
                         children: [
                           Expanded(
@@ -884,41 +968,59 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                               child: Container(
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.search, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      context.l10n.topics_searchHint,
-                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.search,
+                                      size: 20,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        context.l10n.topics_searchHint,
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                          fontSize: 14,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        if (isLoggedIn && !Responsive.showNavigationRail(context)) const NotificationIconButton(),
-                        if (kDebugMode)
-                          IconButton(
-                            icon: const Icon(Icons.bug_report),
-                            onPressed: onDebugTopicId,
-                            tooltip: context.l10n.topics_debugJump,
-                          ),
-                      ],
+                          if (isLoggedIn &&
+                              !Responsive.showNavigationRail(context))
+                            const NotificationIconButton(),
+                          if (kDebugMode)
+                            IconButton(
+                              icon: const Icon(Icons.bug_report),
+                              onPressed: onDebugTopicId,
+                              tooltip: context.l10n.topics_debugJump,
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
           // Tab 行（始终可见）
           SizedBox(
             height: _tabRowHeight,
@@ -932,7 +1034,9 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                       tabAlignment: TabAlignment.start,
                       tabs: _buildTabs(),
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-                      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.normal,
+                      ),
                       labelPadding: const EdgeInsets.symmetric(horizontal: 12),
                       indicatorSize: TabBarIndicatorSize.label,
                       dividerColor: Colors.transparent,
@@ -983,8 +1087,12 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                         onFilterChanged: onFilterChanged,
                         currentOrder: order,
                         ascending: ascending,
-                        onOrderChanged: (o) => ref.read(topicSortOrderProvider.notifier).setOrder(o),
-                        onToggleAscending: () => ref.read(topicSortAscendingProvider.notifier).toggle(),
+                        onOrderChanged: (o) => ref
+                            .read(topicSortOrderProvider.notifier)
+                            .setOrder(o),
+                        onToggleAscending: () => ref
+                            .read(topicSortAscendingProvider.notifier)
+                            .toggle(),
                         selectedTags: currentTags,
                         onTagRemoved: onTagRemoved,
                         onAddTag: onAddTag,
@@ -1017,11 +1125,7 @@ class _TopicList extends ConsumerStatefulWidget {
   final VoidCallback onLoginRequired;
   final int? categoryId;
 
-  const _TopicList({
-    super.key,
-    required this.onLoginRequired,
-    this.categoryId,
-  });
+  const _TopicList({super.key, required this.onLoginRequired, this.categoryId});
 
   @override
   ConsumerState<_TopicList> createState() => _TopicListState();
@@ -1031,12 +1135,16 @@ class _TopicListState extends ConsumerState<_TopicList>
     with AutomaticKeepAliveClientMixin {
   final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
   bool _isLoadingNewTopics = false;
+
   /// 需要高亮的话题 IDs（loadBefore 插入后设置，渐变消失后清除）
   final Set<int> _highlightedTopicIds = {};
+
   /// 本地缓存的话题数据，非当前 tab 时使用此缓存渲染，不订阅 provider
   AsyncValue<List<Topic>>? _cachedTopicsAsync;
+
   /// 键盘焦点索引（J/K 导航用）
   int _keyboardFocusIndex = -1;
+
   /// J/K 防抖：上次触发时间
   DateTime _lastKeyNavTime = DateTime(0);
 
@@ -1061,7 +1169,9 @@ class _TopicListState extends ConsumerState<_TopicList>
   /// 清除当前 tab 的高亮和"新话题"计数
   void _clearIncomingState() {
     _highlightedTopicIds.clear();
-    ref.read(latestChannelProvider.notifier).clearNewTopicsForCategory(widget.categoryId);
+    ref
+        .read(latestChannelProvider.notifier)
+        .clearNewTopicsForCategory(widget.categoryId);
   }
 
   /// J/K 键盘导航：移动焦点（含 150ms 防抖）
@@ -1089,9 +1199,13 @@ class _TopicListState extends ConsumerState<_TopicList>
       final viewport = scrollController.position.viewportDimension;
       final current = scrollController.position.pixels;
 
-      if (estimatedPosition < current || estimatedPosition > current + viewport - 80) {
+      if (estimatedPosition < current ||
+          estimatedPosition > current + viewport - 80) {
         scrollController.animateTo(
-          estimatedPosition.clamp(0.0, scrollController.position.maxScrollExtent),
+          estimatedPosition.clamp(
+            0.0,
+            scrollController.position.maxScrollExtent,
+          ),
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -1122,11 +1236,13 @@ class _TopicListState extends ConsumerState<_TopicList>
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
     if (canShowDetailPane) {
-      ref.read(selectedTopicProvider.notifier).select(
-        topicId: topic.id,
-        initialTitle: topic.title,
-        scrollToPostNumber: topic.lastReadPostNumber,
-      );
+      ref
+          .read(selectedTopicProvider.notifier)
+          .select(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: topic.lastReadPostNumber,
+          );
       return;
     }
 
@@ -1147,7 +1263,8 @@ class _TopicListState extends ConsumerState<_TopicList>
     super.build(context); // AutomaticKeepAliveClientMixin 需要
 
     final providerKey = widget.categoryId;
-    final isCurrentTab = ref.watch(currentTabCategoryIdProvider) == widget.categoryId;
+    final isCurrentTab =
+        ref.watch(currentTabCategoryIdProvider) == widget.categoryId;
 
     // 当前 tab：watch provider 建立订阅，并缓存到本地
     // 非当前 tab：stale 显示 loading，否则显示缓存数据；均不订阅 provider
@@ -1179,17 +1296,22 @@ class _TopicListState extends ConsumerState<_TopicList>
 
     final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
 
-
     // 桌面端：注册 J/K/Enter 导航到主面板快捷键
     if (PlatformUtils.isDesktop && isCurrentTab) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ref.read(masterShortcutsProvider.notifier).update((current) => {
-          ...current,
-          ShortcutAction.nextItem: () => _moveKeyboardFocus(1, topicsAsync),
-          ShortcutAction.previousItem: () => _moveKeyboardFocus(-1, topicsAsync),
-          ShortcutAction.openItem: () => _openFocusedTopic(topicsAsync),
-        });
+        ref
+            .read(masterShortcutsProvider.notifier)
+            .update(
+              (current) => {
+                ...current,
+                ShortcutAction.nextItem: () =>
+                    _moveKeyboardFocus(1, topicsAsync),
+                ShortcutAction.previousItem: () =>
+                    _moveKeyboardFocus(-1, topicsAsync),
+                ShortcutAction.openItem: () => _openFocusedTopic(topicsAsync),
+              },
+            );
       });
     }
 
@@ -1219,9 +1341,12 @@ class _TopicListState extends ConsumerState<_TopicList>
 
         final incomingState = ref.watch(latestChannelProvider);
         final currentFilter = ref.read(topicFilterProvider);
-        final hasNewTopics = currentFilter == TopicListFilter.latest
-            && incomingState.hasIncomingForCategory(widget.categoryId);
-        final newTopicCount = incomingState.incomingCountForCategory(widget.categoryId);
+        final hasNewTopics =
+            currentFilter == TopicListFilter.latest &&
+            incomingState.hasIncomingForCategory(widget.categoryId);
+        final newTopicCount = incomingState.incomingCountForCategory(
+          widget.categoryId,
+        );
         final newTopicOffset = hasNewTopics ? 1 : 0;
 
         return DesktopRefreshIndicator(
@@ -1235,7 +1360,9 @@ class _TopicListState extends ConsumerState<_TopicList>
               await ref.refresh(topicListProvider(providerKey).future);
             } catch (_) {}
             if (ref.read(topicFilterProvider) == TopicListFilter.latest) {
-              ref.read(latestChannelProvider.notifier).clearNewTopicsForCategory(widget.categoryId);
+              ref
+                  .read(latestChannelProvider.notifier)
+                  .clearNewTopicsForCategory(widget.categoryId);
             }
           },
           child: ClipRRect(
@@ -1243,7 +1370,8 @@ class _TopicListState extends ConsumerState<_TopicList>
             child: NotificationListener<ScrollUpdateNotification>(
               onNotification: (notification) {
                 if (notification.depth == 0 &&
-                    notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+                    notification.metrics.pixels >=
+                        notification.metrics.maxScrollExtent - 200) {
                   ref.read(topicListProvider(providerKey).notifier).loadMore();
                 }
                 return false;
@@ -1254,12 +1382,18 @@ class _TopicListState extends ConsumerState<_TopicList>
                 itemCount: topics.length + newTopicOffset + 1,
                 itemBuilder: (context, index) {
                   if (hasNewTopics && index == 0) {
-                    return _buildNewTopicIndicator(context, newTopicCount, providerKey);
+                    return _buildNewTopicIndicator(
+                      context,
+                      newTopicCount,
+                      providerKey,
+                    );
                   }
 
                   final topicIndex = index - newTopicOffset;
                   if (topicIndex >= topics.length) {
-                    final notifier = ref.watch(topicListProvider(providerKey).notifier);
+                    final notifier = ref.watch(
+                      topicListProvider(providerKey).notifier,
+                    );
                     return Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Center(
@@ -1269,36 +1403,61 @@ class _TopicListState extends ConsumerState<_TopicList>
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.refresh, size: 16, color: Theme.of(context).colorScheme.primary),
+                                    Icon(
+                                      Icons.refresh,
+                                      size: 16,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
                                     const SizedBox(width: 6),
                                     Text(
                                       context.l10n.common_loadFailedTapRetry,
-                                      style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
                                     ),
                                   ],
                                 ),
                               )
                             : notifier.hasMore
-                                ? const CircularProgressIndicator()
-                                : Text(context.l10n.common_noMore, style: const TextStyle(color: Colors.grey)),
+                            ? const CircularProgressIndicator()
+                            : Text(
+                                context.l10n.common_noMore,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
                       ),
                     );
                   }
 
                   final topic = topics[topicIndex];
-                  final enableLongPress = ref.watch(preferencesProvider).longPressPreview;
-                  final shouldHighlight = _highlightedTopicIds.contains(topic.id);
+                  final enableLongPress = ref
+                      .watch(preferencesProvider)
+                      .longPressPreview;
+                  final shouldHighlight = _highlightedTopicIds.contains(
+                    topic.id,
+                  );
 
                   if (shouldHighlight) {
                     final theme = Theme.of(context);
                     // 卡片正常背景色（需与 TopicCard / CompactTopicCard 的默认 color 一致）
                     final normalColor = topic.pinned
-                        ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
-                        : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerHighest;
-                    final highlightColor = theme.colorScheme.primaryContainer.withValues(alpha: 0.3);
+                        ? theme.colorScheme.surfaceContainerLow.withValues(
+                            alpha: 0.5,
+                          )
+                        : theme.cardTheme.color ??
+                              theme.colorScheme.surfaceContainerHighest;
+                    final highlightColor = theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.3);
                     return TweenAnimationBuilder<Color?>(
                       key: ValueKey('highlight_${topic.id}'),
-                      tween: ColorTween(begin: highlightColor, end: normalColor),
+                      tween: ColorTween(
+                        begin: highlightColor,
+                        end: normalColor,
+                      ),
                       duration: const Duration(milliseconds: 2000),
                       curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
                       onEnd: () => _highlightedTopicIds.remove(topic.id),
@@ -1345,51 +1504,67 @@ class _TopicListState extends ConsumerState<_TopicList>
     );
   }
 
-  Widget _buildNewTopicIndicator(BuildContext context, int count, int? providerKey) {
+  Widget _buildNewTopicIndicator(
+    BuildContext context,
+    int count,
+    int? providerKey,
+  ) {
     final scrollController = PrimaryScrollController.maybeOf(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2),
+        color: Theme.of(
+          context,
+        ).colorScheme.primaryContainer.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: _isLoadingNewTopics ? null : () async {
-            setState(() {
-              _isLoadingNewTopics = true;
-            });
-            try {
-              // 对齐网页版 showInserted：按 topic_ids 增量加载并插入顶部
-              final incomingState = ref.read(latestChannelProvider);
-              final topicIds = incomingState.incomingTopicIdsForCategory(providerKey);
-              final insertedIds = await ref.read(topicListProvider(providerKey).notifier).loadBefore(topicIds);
-              ref.read(latestChannelProvider.notifier).clearIncoming(topicIds);
+          onTap: _isLoadingNewTopics
+              ? null
+              : () async {
+                  setState(() {
+                    _isLoadingNewTopics = true;
+                  });
+                  try {
+                    // 对齐网页版 showInserted：按 topic_ids 增量加载并插入顶部
+                    final incomingState = ref.read(latestChannelProvider);
+                    final topicIds = incomingState.incomingTopicIdsForCategory(
+                      providerKey,
+                    );
+                    final insertedIds = await ref
+                        .read(topicListProvider(providerKey).notifier)
+                        .loadBefore(topicIds);
+                    ref
+                        .read(latestChannelProvider.notifier)
+                        .clearIncoming(topicIds);
 
-              if (mounted && insertedIds.isNotEmpty) {
-                // 标记插入的话题以显示高亮动画
-                _highlightedTopicIds.addAll(insertedIds);
-                // 定时清除高亮，避免不可见卡片的动画无法触发 onEnd
-                final idsToRemove = insertedIds.toSet();
-                Future.delayed(const Duration(milliseconds: 2500), () {
-                  if (!mounted) return;
-                  final hadHighlights = _highlightedTopicIds.intersection(idsToRemove).isNotEmpty;
-                  _highlightedTopicIds.removeAll(idsToRemove);
-                  if (hadHighlights) setState(() {});
-                });
-                scrollController?.animateTo(
-                  0,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOut,
-                );
-              }
-            } finally {
-              if (mounted) {
-                setState(() {
-                  _isLoadingNewTopics = false;
-                });
-              }
-            }
-          },
+                    if (mounted && insertedIds.isNotEmpty) {
+                      // 标记插入的话题以显示高亮动画
+                      _highlightedTopicIds.addAll(insertedIds);
+                      // 定时清除高亮，避免不可见卡片的动画无法触发 onEnd
+                      final idsToRemove = insertedIds.toSet();
+                      Future.delayed(const Duration(milliseconds: 2500), () {
+                        if (!mounted) return;
+                        final hadHighlights = _highlightedTopicIds
+                            .intersection(idsToRemove)
+                            .isNotEmpty;
+                        _highlightedTopicIds.removeAll(idsToRemove);
+                        if (hadHighlights) setState(() {});
+                      });
+                      scrollController?.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                  } finally {
+                    if (mounted) {
+                      setState(() {
+                        _isLoadingNewTopics = false;
+                      });
+                    }
+                  }
+                },
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Center(

@@ -27,12 +27,15 @@ class WindowsWebViewEnvironmentService {
 
   WebViewEnvironment? get environment => _environment;
 
+  bool get isEnvironmentReady => _environment != null;
+
   String? get userDataFolder => _userDataFolder;
 
   CookieManager get cookieManager {
     if (_isSupported && _environment != null) {
-      return _cookieManager ??=
-          CookieManager.instance(webViewEnvironment: _environment);
+      return _cookieManager ??= CookieManager.instance(
+        webViewEnvironment: _environment,
+      );
     }
     return CookieManager.instance();
   }
@@ -103,6 +106,8 @@ class WindowsWebViewEnvironmentService {
         label: '[WebViewEnv] initialize stack',
         stackTrace: stackTrace,
       );
+      _environment = null;
+      _cookieManager = null;
       _initializeFuture = null;
     }
   }

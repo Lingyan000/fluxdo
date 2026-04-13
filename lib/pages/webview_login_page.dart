@@ -83,6 +83,9 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final windowsWebViewEnvironment =
+        WindowsWebViewEnvironmentService.instance.environment;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.webviewLogin_title),
@@ -160,8 +163,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
               children: [
                 WebViewSettings.wrapWithScrollFix(
                   InAppWebView(
-                    webViewEnvironment:
-                        WindowsWebViewEnvironmentService.instance.environment,
+                    webViewEnvironment: windowsWebViewEnvironment,
                     initialUrlRequest: URLRequest(
                       url: WebUri(
                         widget.initialUrl ?? '${AppConstants.baseUrl}/login',

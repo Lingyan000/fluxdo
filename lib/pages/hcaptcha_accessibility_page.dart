@@ -33,6 +33,9 @@ class _HCaptchaAccessibilityPageState extends State<HCaptchaAccessibilityPage> {
 
   @override
   Widget build(BuildContext context) {
+    final windowsWebViewEnvironment =
+        WindowsWebViewEnvironmentService.instance.environment;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.hcaptcha_webviewTitle),
@@ -54,8 +57,7 @@ class _HCaptchaAccessibilityPageState extends State<HCaptchaAccessibilityPage> {
           Expanded(
             child: WebViewSettings.wrapWithScrollFix(
               InAppWebView(
-                webViewEnvironment:
-                    WindowsWebViewEnvironmentService.instance.environment,
+                webViewEnvironment: windowsWebViewEnvironment,
                 initialUrlRequest: URLRequest(
                   url: WebUri('https://www.hcaptcha.com/accessibility'),
                 ),
@@ -94,9 +96,7 @@ class _HCaptchaAccessibilityPageState extends State<HCaptchaAccessibilityPage> {
     }
 
     final uri = Uri.tryParse(text);
-    if (uri == null ||
-        !uri.hasScheme ||
-        !uri.host.contains('hcaptcha.com')) {
+    if (uri == null || !uri.hasScheme || !uri.host.contains('hcaptcha.com')) {
       ToastService.showError(S.current.hcaptcha_pasteLinkInvalid);
       return;
     }

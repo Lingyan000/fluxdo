@@ -62,7 +62,6 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     _scrollController.addListener(_onScroll);
     _resolveParentSlug();
     _loadTopics();
-
   }
 
   @override
@@ -81,7 +80,8 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
     }
   }
@@ -103,11 +103,16 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         period: _currentFilter.period,
         page: 0,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
       );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -141,11 +146,16 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         period: _currentFilter.period,
         page: 0,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
       );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -180,13 +190,18 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         period: _currentFilter.period,
         page: nextPage,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
       );
 
       final currentState = PaginationState(items: _topics);
       final result = _paginationHelper.processLoadMore(
         currentState,
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -228,13 +243,18 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   }
 
   void _removeTag(String tag) {
-    setState(() => _selectedTags = _selectedTags.where((t) => t != tag).toList());
+    setState(
+      () => _selectedTags = _selectedTags.where((t) => t != tag).toList(),
+    );
     _loadTopics();
   }
 
-  Future<void> _setCategoryNotificationLevel(CategoryNotificationLevel level) async {
+  Future<void> _setCategoryNotificationLevel(
+    CategoryNotificationLevel level,
+  ) async {
     final overrides = ref.read(categoryNotificationOverridesProvider);
-    final oldLevel = overrides[widget.category.id] ?? widget.category.notificationLevel;
+    final oldLevel =
+        overrides[widget.category.id] ?? widget.category.notificationLevel;
     // 乐观更新
     ref.read(categoryNotificationOverridesProvider.notifier).state = {
       ...overrides,
@@ -242,7 +262,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     };
     try {
       final service = ref.read(discourseServiceProvider);
-      await service.setCategoryNotificationLevel(widget.category.id, level.value);
+      await service.setCategoryNotificationLevel(
+        widget.category.id,
+        level.value,
+      );
     } catch (_) {
       // 失败时回退
       if (mounted) {
@@ -253,8 +276,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             widget.category.id: oldLevel,
           };
         } else {
-          ref.read(categoryNotificationOverridesProvider.notifier).state =
-              Map.from(current)..remove(widget.category.id);
+          ref
+              .read(categoryNotificationOverridesProvider.notifier)
+              .state = Map.from(current)
+            ..remove(widget.category.id);
         }
       }
     }
@@ -289,10 +314,12 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   Future<void> _createTopic() async {
     final topicId = await Navigator.push<int>(
       context,
-      MaterialPageRoute(builder: (_) => CreateTopicPage(
-        initialCategoryId: widget.category.id,
-        initialTags: _selectedTags.isNotEmpty ? _selectedTags : null,
-      )),
+      MaterialPageRoute(
+        builder: (_) => CreateTopicPage(
+          initialCategoryId: widget.category.id,
+          initialTags: _selectedTags.isNotEmpty ? _selectedTags : null,
+        ),
+      ),
     );
     if (topicId != null && mounted) {
       _silentRefresh();
@@ -332,14 +359,16 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             icon: const Icon(Icons.search),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => SearchPage(
-                initialFilter: SearchFilter(
-                  categoryId: widget.category.id,
-                  categorySlug: widget.category.slug,
-                  categoryName: widget.category.name,
-                  parentCategorySlug: _parentSlug,
+              MaterialPageRoute(
+                builder: (_) => SearchPage(
+                  initialFilter: SearchFilter(
+                    categoryId: widget.category.id,
+                    categorySlug: widget.category.slug,
+                    categoryName: widget.category.name,
+                    parentCategorySlug: _parentSlug,
+                  ),
                 ),
-              )),
+              ),
             ),
             tooltip: context.l10n.common_search,
           ),
@@ -365,15 +394,22 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
                     children: [
                       _CreateTopicButton(onPressed: _createTopic),
                       const SizedBox(width: 6),
-                      Builder(builder: (context) {
-                        final overrides = ref.watch(categoryNotificationOverridesProvider);
-                        final effectiveLevel = overrides[widget.category.id]
-                            ?? widget.category.notificationLevel;
-                        return CategoryNotificationButton(
-                          level: CategoryNotificationLevel.fromValue(effectiveLevel),
-                          onChanged: _setCategoryNotificationLevel,
-                        );
-                      }),
+                      Builder(
+                        builder: (context) {
+                          final overrides = ref.watch(
+                            categoryNotificationOverridesProvider,
+                          );
+                          final effectiveLevel =
+                              overrides[widget.category.id] ??
+                              widget.category.notificationLevel;
+                          return CategoryNotificationButton(
+                            level: CategoryNotificationLevel.fromValue(
+                              effectiveLevel,
+                            ),
+                            onChanged: _setCategoryNotificationLevel,
+                          );
+                        },
+                      ),
                     ],
                   )
                 : null,
@@ -387,16 +423,11 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
 
   Widget _buildBody(int? selectedTopicId) {
     if (_isLoading) {
-      return const TopicListSkeleton(
-        padding: EdgeInsets.all(12),
-      );
+      return const TopicListSkeleton(padding: EdgeInsets.all(12));
     }
 
     if (_error != null) {
-      return ErrorView(
-        error: _error!,
-        onRetry: _loadTopics,
-      );
+      return ErrorView(error: _error!, onRetry: _loadTopics);
     }
 
     if (_topics.isEmpty) {
@@ -404,7 +435,11 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Icons.inbox_outlined,
+              size: 48,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(height: 12),
             Text(context.l10n.categoryTopics_empty),
           ],
@@ -425,7 +460,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
               return Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Center(
-                  child: Text(context.l10n.common_noMore, style: const TextStyle(color: Colors.grey)),
+                  child: Text(
+                    context.l10n.common_noMore,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
                 ),
               );
             }
@@ -441,11 +479,18 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.refresh, size: 16, color: Theme.of(context).colorScheme.primary),
+                        Icon(
+                          Icons.refresh,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           context.l10n.common_loadFailedTapRetry,
-                          style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
                       ],
                     ),
@@ -460,7 +505,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
           }
 
           final topic = _topics[index];
-          final enableLongPress = ref.watch(preferencesProvider).longPressPreview;
+          final enableLongPress = ref
+              .watch(preferencesProvider)
+              .longPressPreview;
 
           return buildTopicItem(
             context: context,

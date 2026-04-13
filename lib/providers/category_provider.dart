@@ -23,7 +23,8 @@ class ActiveCategorySlugsNotifier extends Notifier<Set<String>> {
 
 final activeCategorySlugsProvider =
     NotifierProvider<ActiveCategorySlugsNotifier, Set<String>>(
-        () => ActiveCategorySlugsNotifier());
+      () => ActiveCategorySlugsNotifier(),
+    );
 
 /// 分类列表 Provider（已过滤系统默认的"未分类"）
 final categoriesProvider = FutureProvider<List<Category>>((ref) async {
@@ -55,7 +56,12 @@ final visibleCategoryIdsProvider = Provider<Set<int>?>((ref) {
 
 /// 分类通知级别本地覆盖（categoryId -> level）
 /// 用于在 API 成功后立即同步各页面的显示状态
-final categoryNotificationOverridesProvider = StateProvider<Map<int, int>>((ref) => {});
+final categoryNotificationOverridesProvider = StateProvider<Map<int, int>>(
+  (ref) => {},
+);
+
+/// 侧边栏当前激活的分类 ID（仅用于桌面/平板导航高亮）
+final activeSidebarCategoryIdProvider = StateProvider<int?>((ref) => null);
 
 /// 热门标签列表 Provider
 final tagsProvider = FutureProvider<List<String>>((ref) async {
@@ -100,7 +106,9 @@ final minPmPostLengthProvider = FutureProvider<int>((ref) async {
 });
 
 /// 分类下的话题列表 Provider
-final categoryTopicsProvider = FutureProvider.family<TopicListResponse, String>((ref, slug) async {
-  final service = ref.watch(discourseServiceProvider);
-  return service.getCategoryTopics(slug);
-});
+final categoryTopicsProvider = FutureProvider.family<TopicListResponse, String>(
+  (ref, slug) async {
+    final service = ref.watch(discourseServiceProvider);
+    return service.getCategoryTopics(slug);
+  },
+);

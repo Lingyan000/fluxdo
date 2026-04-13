@@ -25,7 +25,12 @@ Color _parseColor(String hex) {
 
 /// 构建分类图标 widget
 /// [preferImage] 为 true 时图片优先（用于网格），false 时图标优先（用于 chips）
-Widget _buildCategoryIcon(Category category, Color color, double size, {bool preferImage = false}) {
+Widget _buildCategoryIcon(
+  Category category,
+  Color color,
+  double size, {
+  bool preferImage = false,
+}) {
   final logoUrl = category.uploadedLogo;
   final faIcon = FontAwesomeHelper.getIcon(category.icon);
 
@@ -33,14 +38,13 @@ Widget _buildCategoryIcon(Category category, Color color, double size, {bool pre
     // 图片优先：logo → FA 图标 → lock → 色点
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return Image(
-        image: discourseImageProvider(
-          UrlHelper.resolveUrlWithCdn(logoUrl),
-        ),
+        image: discourseImageProvider(UrlHelper.resolveUrlWithCdn(logoUrl)),
         width: size,
         height: size,
         fit: BoxFit.contain,
         errorBuilder: (_, e, s) {
-          if (faIcon != null) return FaIcon(faIcon, size: size * 0.7, color: color);
+          if (faIcon != null)
+            return FaIcon(faIcon, size: size * 0.7, color: color);
           return _buildColorDot(color, size * 0.5);
         },
       );
@@ -51,9 +55,7 @@ Widget _buildCategoryIcon(Category category, Color color, double size, {bool pre
     if (faIcon != null) return FaIcon(faIcon, size: size * 0.7, color: color);
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return Image(
-        image: discourseImageProvider(
-          UrlHelper.resolveUrlWithCdn(logoUrl),
-        ),
+        image: discourseImageProvider(UrlHelper.resolveUrlWithCdn(logoUrl)),
         width: size,
         height: size,
         fit: BoxFit.contain,
@@ -103,7 +105,10 @@ Future<void> _showSubcategoryMenu({
           children: [
             _buildCategoryIcon(parent, parentColor, 20),
             const SizedBox(width: 10),
-            Text(S.current.common_all, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              S.current.common_all,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       ),
@@ -116,9 +121,7 @@ Future<void> _showSubcategoryMenu({
             children: [
               _buildCategoryIcon(sub, subColor, 20),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(sub.name, overflow: TextOverflow.ellipsis),
-              ),
+              Expanded(child: Text(sub.name, overflow: TextOverflow.ellipsis)),
             ],
           ),
         );
@@ -174,7 +177,9 @@ class CategoryTabManagerSheet extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             child: Text(
               S.current.category_browse,
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           // 内容
@@ -189,7 +194,9 @@ class CategoryTabManagerSheet extends ConsumerWidget {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(S.current.category_loadFailed(e.toString()))),
+              error: (e, _) => Center(
+                child: Text(S.current.category_loadFailed(e.toString())),
+              ),
             ),
           ),
         ],
@@ -252,7 +259,9 @@ class _BrowseContent extends ConsumerWidget {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const _PinnedCategoryEditPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const PinnedCategoryEditPage(),
+                  ),
                 );
               },
               icon: const Icon(Icons.edit_outlined, size: 14),
@@ -322,7 +331,12 @@ class _BrowseContent extends ConsumerWidget {
               color: color,
               isSelected: false,
               hasSubs: hasSubs,
-              iconWidget: _buildCategoryIcon(category, color, 24, preferImage: true),
+              iconWidget: _buildCategoryIcon(
+                category,
+                color,
+                24,
+                preferImage: true,
+              ),
               onTapUp: (details) {
                 if (hasSubs) {
                   _showSubcategoryMenu(
@@ -350,11 +364,7 @@ class _BrowseContent extends ConsumerWidget {
   }
 
   /// 我的分类区域的快捷 Chip（切换到对应 Tab）
-  Widget _buildQuickChip(
-    BuildContext context,
-    Category category,
-    Color color,
-  ) {
+  Widget _buildQuickChip(BuildContext context, Category category, Color color) {
     return GestureDetector(
       onTap: () {
         // 返回 category ID，TopicsPage 负责切换到对应 Tab
@@ -365,9 +375,7 @@ class _BrowseContent extends ConsumerWidget {
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: color.withValues(alpha: 0.2),
-          ),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -424,9 +432,7 @@ class _CategoryGridItem extends StatelessWidget {
               color: isSelected
                   ? color.withValues(alpha: 0.2)
                   : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-              border: isSelected
-                  ? Border.all(color: color, width: 2)
-                  : null,
+              border: isSelected ? Border.all(color: color, width: 2) : null,
             ),
             child: Center(child: iconWidget ?? const SizedBox.shrink()),
           ),
@@ -443,13 +449,19 @@ class _CategoryGridItem extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                     color: isSelected ? color : colorScheme.onSurface,
                   ),
                 ),
               ),
               if (hasSubs)
-                Icon(Icons.arrow_drop_down, size: 14, color: colorScheme.outline),
+                Icon(
+                  Icons.arrow_drop_down,
+                  size: 14,
+                  color: colorScheme.outline,
+                ),
             ],
           ),
         ],
@@ -462,8 +474,8 @@ class _CategoryGridItem extends StatelessWidget {
 // 二级页面：编辑固定分类
 // ============================================================
 
-class _PinnedCategoryEditPage extends ConsumerWidget {
-  const _PinnedCategoryEditPage();
+class PinnedCategoryEditPage extends ConsumerWidget {
+  const PinnedCategoryEditPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -474,7 +486,10 @@ class _PinnedCategoryEditPage extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text(S.current.category_editMyCategories), centerTitle: false),
+      appBar: AppBar(
+        title: Text(S.current.category_editMyCategories),
+        centerTitle: false,
+      ),
       body: categoriesAsync.when(
         data: (categories) {
           final categoryMap = categoryMapAsync.value ?? {};
@@ -487,7 +502,8 @@ class _PinnedCategoryEditPage extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(S.current.category_loadFailed(e.toString()))),
+        error: (e, _) =>
+            Center(child: Text(S.current.category_loadFailed(e.toString()))),
       ),
     );
   }
@@ -563,7 +579,9 @@ class _EditContent extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             itemCount: pinnedCategories.length,
             onReorder: (oldIndex, newIndex) {
-              ref.read(pinnedCategoriesProvider.notifier).reorder(oldIndex, newIndex);
+              ref
+                  .read(pinnedCategoriesProvider.notifier)
+                  .reorder(oldIndex, newIndex);
             },
             proxyDecorator: (child, index, animation) {
               return Material(
@@ -582,7 +600,9 @@ class _EditContent extends ConsumerWidget {
                 categoryMap: categoryMap,
                 index: index,
                 onRemove: () {
-                  ref.read(pinnedCategoriesProvider.notifier).remove(category.id);
+                  ref
+                      .read(pinnedCategoriesProvider.notifier)
+                      .remove(category.id);
                 },
               );
             },
@@ -624,7 +644,12 @@ class _EditContent extends ConsumerWidget {
               color: color,
               isSelected: false,
               hasSubs: hasSubs,
-              iconWidget: _buildCategoryIcon(category, color, 24, preferImage: true),
+              iconWidget: _buildCategoryIcon(
+                category,
+                color,
+                24,
+                preferImage: true,
+              ),
               onTapUp: (details) {
                 if (hasSubs) {
                   _showAddSubcategoryMenu(
@@ -741,21 +766,38 @@ class _PinnedCategoryTile extends StatelessWidget {
                 children: [
                   Text(
                     category.name,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   if (parentName != null)
-                    Text(parentName, style: TextStyle(fontSize: 12, color: colorScheme.outline)),
+                    Text(
+                      parentName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.outline,
+                      ),
+                    ),
                 ],
               ),
             ),
             GestureDetector(
               onTap: onRemove,
-              child: Icon(Icons.remove_circle_outline, size: 20, color: colorScheme.error),
+              child: Icon(
+                Icons.remove_circle_outline,
+                size: 20,
+                color: colorScheme.error,
+              ),
             ),
             const SizedBox(width: 12),
             ReorderableDragStartListener(
               index: index,
-              child: Icon(Icons.drag_indicator, size: 20, color: colorScheme.outline),
+              child: Icon(
+                Icons.drag_indicator,
+                size: 20,
+                color: colorScheme.outline,
+              ),
             ),
           ],
         ),

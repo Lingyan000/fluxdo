@@ -24,6 +24,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.destinations,
+    this.categoryShortcuts,
     this.extended = false,
     this.leading,
     this.bottomLeading,
@@ -33,6 +34,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<AdaptiveDestination> destinations;
+  final Widget? categoryShortcuts;
   final bool extended;
   final Widget? leading;
 
@@ -57,10 +59,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
         width: extended ? 180 : 72,
         child: Column(
           children: [
-            if (leading != null) ...[
-              leading!,
-              const SizedBox(height: 8),
-            ],
+            if (leading != null) ...[leading!, const SizedBox(height: 8)],
             const SizedBox(height: 16),
             // 顶部导航项
             ...topDestinations.asMap().entries.map((entry) {
@@ -77,6 +76,10 @@ class AdaptiveNavigationRail extends StatelessWidget {
                 onTap: () => onDestinationSelected(index),
               );
             }),
+            if (categoryShortcuts != null) ...[
+              const SizedBox(height: 4),
+              categoryShortcuts!,
+            ],
             const Spacer(),
             if (bottomLeading != null) ...[
               bottomLeading!,
@@ -166,7 +169,9 @@ class _NavigationRailItem extends StatelessWidget {
                           label,
                           style: TextStyle(
                             color: iconColor,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                           ),
                         ),
                       ),

@@ -46,9 +46,8 @@ class IframeAttributes {
     final attrs = element.attributes;
 
     // src 属性
-    final src = (attrs['src'] as String?) ??
-        (attrs['data-src'] as String?) ??
-        '';
+    final src =
+        (attrs['src'] as String?) ?? (attrs['data-src'] as String?) ?? '';
 
     // 宽高属性
     final width = double.tryParse(attrs['width'] as String? ?? '');
@@ -64,7 +63,8 @@ class IframeAttributes {
 
     // allow 属性 (Permissions Policy)
     final allowAttr = attrs['allow'] as String?;
-    final allow = allowAttr
+    final allow =
+        allowAttr
             ?.split(';')
             .map((e) => e.trim())
             .where((e) => e.isNotEmpty)
@@ -72,7 +72,8 @@ class IframeAttributes {
         {};
 
     // allowfullscreen 属性
-    final allowFullscreen = attrs.containsKey('allowfullscreen') ||
+    final allowFullscreen =
+        attrs.containsKey('allowfullscreen') ||
         attrs['allowfullscreen'] == 'true' ||
         attrs['allowfullscreen'] == '' ||
         allow.any((p) => p.startsWith('fullscreen'));
@@ -102,7 +103,8 @@ class IframeAttributes {
   }
 
   /// 是否允许脚本执行
-  bool get allowScripts => sandbox == null || sandbox!.contains('allow-scripts');
+  bool get allowScripts =>
+      sandbox == null || sandbox!.contains('allow-scripts');
 
   /// 是否允许自动播放
   bool get allowAutoplay => allow.any((p) => p.startsWith('autoplay'));
@@ -131,10 +133,7 @@ class IframeAttributes {
 }
 
 /// 构建 iframe Widget
-Widget? buildIframe({
-  required BuildContext context,
-  required dynamic element,
-}) {
+Widget? buildIframe({required BuildContext context, required dynamic element}) {
   // Web 平台不处理，让 flutter_widget_from_html 处理
   if (kIsWeb) return null;
 
@@ -151,10 +150,7 @@ Widget? buildIframe({
 class IframeWidget extends StatefulWidget {
   final IframeAttributes attributes;
 
-  const IframeWidget({
-    super.key,
-    required this.attributes,
-  });
+  const IframeWidget({super.key, required this.attributes});
 
   @override
   State<IframeWidget> createState() => _IframeWidgetState();
@@ -206,7 +202,10 @@ class _IframeWidgetState extends State<IframeWidget> {
               borderRadius: BorderRadius.circular(20),
               onTap: _exitInteractMode,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -236,52 +235,52 @@ class _IframeWidgetState extends State<IframeWidget> {
   Widget build(BuildContext context) {
     final attrs = widget.attributes;
     final theme = Theme.of(context);
+    final windowsWebViewEnvironment =
+        WindowsWebViewEnvironmentService.instance.environment;
 
     // 构建内容 Widget
     Widget content = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         children: [
-              // WebView - 始终渲染
-              // 直接加载 URL，通过设置 Referer 头解决 origin 验证问题
-              InAppWebView(
-                webViewEnvironment:
-                    WindowsWebViewEnvironmentService.instance.environment,
-                initialUrlRequest: URLRequest(
-                  url: WebUri(attrs.fullUrl),
-                  headers: {
-                    'Referer': AppConstants.baseUrl,
-                  },
-                ),
-                initialSettings: _buildSettings(attrs),
-                onReceivedServerTrustAuthRequest: (_, challenge) =>
-                    WebViewSettings.handleServerTrustAuthRequest(challenge),
-                // 允许 WebView 接收水平滑动手势
-                gestureRecognizers: {
-                  Factory<HorizontalDragGestureRecognizer>(
-                    () => HorizontalDragGestureRecognizer(),
-                  ),
-                },
-                onEnterFullscreen: (controller) {
-                  _lockLayout();
-                },
-                onExitFullscreen: (controller) {
-                  _unlockLayoutIfNeeded();
-                },
-                onLoadStart: (controller, url) {
-                  if (mounted) {
-                    setState(() {
-                      _isLoaded = false;
-                      _hasError = false;
-                    });
-                  }
-                },
-                onLoadStop: (controller, url) async {
-                  if (mounted) {
-                    setState(() => _isLoaded = true);
-                  }
-                  // 注入 viewport meta 标签，确保内容正确缩放
-                  await controller.evaluateJavascript(source: '''
+          // WebView - 始终渲染
+          // 直接加载 URL，通过设置 Referer 头解决 origin 验证问题
+          InAppWebView(
+            webViewEnvironment: windowsWebViewEnvironment,
+            initialUrlRequest: URLRequest(
+              url: WebUri(attrs.fullUrl),
+              headers: {'Referer': AppConstants.baseUrl},
+            ),
+            initialSettings: _buildSettings(attrs),
+            onReceivedServerTrustAuthRequest: (_, challenge) =>
+                WebViewSettings.handleServerTrustAuthRequest(challenge),
+            // 允许 WebView 接收水平滑动手势
+            gestureRecognizers: {
+              Factory<HorizontalDragGestureRecognizer>(
+                () => HorizontalDragGestureRecognizer(),
+              ),
+            },
+            onEnterFullscreen: (controller) {
+              _lockLayout();
+            },
+            onExitFullscreen: (controller) {
+              _unlockLayoutIfNeeded();
+            },
+            onLoadStart: (controller, url) {
+              if (mounted) {
+                setState(() {
+                  _isLoaded = false;
+                  _hasError = false;
+                });
+              }
+            },
+            onLoadStop: (controller, url) async {
+              if (mounted) {
+                setState(() => _isLoaded = true);
+              }
+              // 注入 viewport meta 标签，确保内容正确缩放
+              await controller.evaluateJavascript(
+                source: '''
                     (function() {
                       var meta = document.querySelector('meta[name="viewport"]');
                       if (!meta) {
@@ -291,83 +290,83 @@ class _IframeWidgetState extends State<IframeWidget> {
                       }
                       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
                     })();
-                  ''');
-                },
-                onReceivedError: (controller, request, error) {
-                  // 只有主框架加载失败才显示错误
-                  // 忽略子资源（JS、图片、视频海报等）的加载错误
-                  if (mounted && request.isForMainFrame == true) {
-                    setState(() => _hasError = true);
-                  }
-                },
-                // 拦截用户点击的链接，使用 WebViewPage 打开
-                shouldOverrideUrlLoading: (controller, navigationAction) async {
-                  // 只拦截用户主动点击的链接
-                  if (navigationAction.navigationType != NavigationType.LINK_ACTIVATED) {
-                    return NavigationActionPolicy.ALLOW;
-                  }
+                  ''',
+              );
+            },
+            onReceivedError: (controller, request, error) {
+              // 只有主框架加载失败才显示错误
+              // 忽略子资源（JS、图片、视频海报等）的加载错误
+              if (mounted && request.isForMainFrame == true) {
+                setState(() => _hasError = true);
+              }
+            },
+            // 拦截用户点击的链接，使用 WebViewPage 打开
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              // 只拦截用户主动点击的链接
+              if (navigationAction.navigationType !=
+                  NavigationType.LINK_ACTIVATED) {
+                return NavigationActionPolicy.ALLOW;
+              }
 
-                  final url = navigationAction.request.url?.toString();
-                  if (url == null) {
-                    return NavigationActionPolicy.ALLOW;
-                  }
+              final url = navigationAction.request.url?.toString();
+              if (url == null) {
+                return NavigationActionPolicy.ALLOW;
+              }
 
-                  // 使用 WebViewPage 打开
-                  if (mounted) {
-                    WebViewPage.open(context, url);
-                  }
-                  return NavigationActionPolicy.CANCEL;
-                },
-              ),
-              // 加载指示器
-              if (!_isLoaded && !_hasError)
-                Container(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-              // 错误状态
-              if (_hasError)
-                Container(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 48,
-                          color: theme.colorScheme.error,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          S.current.common_loadFailed,
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+              // 使用 WebViewPage 打开
+              if (mounted) {
+                WebViewPage.open(context, url);
+              }
+              return NavigationActionPolicy.CANCEL;
+            },
+          ),
+          // 加载指示器
+          if (!_isLoaded && !_hasError)
+            Container(
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+          // 错误状态
+          if (_hasError)
+            Container(
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: theme.colorScheme.error,
                     ),
-                  ),
-                ),
-              // 桌面平台：交互遮罩
-              if (_needsInteractionMask && !_interacting && _isLoaded && !_hasError)
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: _enterInteractMode,
-                    child: Container(
-                      color: Colors.black38,
-                      child: const Center(
-                        child: Icon(
-                          Icons.touch_app,
-                          size: 48,
-                          color: Colors.white70,
-                        ),
+                    const SizedBox(height: 8),
+                    Text(
+                      S.current.common_loadFailed,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+          // 桌面平台：交互遮罩
+          if (_needsInteractionMask && !_interacting && _isLoaded && !_hasError)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _enterInteractMode,
+                child: Container(
+                  color: Colors.black38,
+                  child: const Center(
+                    child: Icon(
+                      Icons.touch_app,
+                      size: 48,
+                      color: Colors.white70,
+                    ),
                   ),
                 ),
+              ),
+            ),
         ],
       ),
     );
