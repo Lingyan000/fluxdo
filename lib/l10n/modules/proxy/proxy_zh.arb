@@ -1,0 +1,194 @@
+{
+  "@@locale": "zh",
+  "httpProxy_auth": "认证",
+  "httpProxy_base64PskHint": "请输入 Base64 编码后的 32 字节预共享密钥",
+  "httpProxy_cipher": "加密算法",
+  "httpProxy_cipherNotSet": "未设置算法",
+  "httpProxy_configTitle": "配置上游代理",
+  "httpProxy_disabledDesc": "为本地网关配置远端 HTTP / SOCKS5 / Shadowsocks 代理",
+  "httpProxy_disabledHint": "开启后会保留代理模式开关，由本地网关统一接管 Dio、WebView 和 Shadowsocks 出口",
+  "httpProxy_dohProxyHint": "当前会通过本地 DoH 网关转发到上游代理；关闭 DoH 时会切换为纯代理转发",
+  "httpProxy_enabledDesc": "已启用 {protocol} 上游代理，由本地网关统一转发",
+  "@httpProxy_enabledDesc": {
+    "placeholders": {
+      "protocol": {
+        "type": "String"
+      }
+    }
+  },
+  "httpProxy_fillServerAndPort": "请填写服务器地址和端口",
+  "httpProxy_importSsLink": "导入 ss:// 链接",
+  "httpProxy_importedNode": "已导入节点：{remarks}",
+  "@httpProxy_importedNode": {
+    "placeholders": {
+      "remarks": {
+        "type": "String"
+      }
+    }
+  },
+  "httpProxy_keyBase64Psk": "密钥（Base64 PSK）",
+  "httpProxy_password": "密码",
+  "httpProxy_port": "端口",
+  "httpProxy_portHint": "例如：8080 或 1080",
+  "httpProxy_portInvalid": "端口无效",
+  "httpProxy_protocol": "协议",
+  "httpProxy_proxyAutoTest": "保存后会自动测试，也可以手动重新测试",
+  "httpProxy_requireAuth": "需要认证",
+  "httpProxy_selectSsCipher": "请选择受支持的 Shadowsocks 加密算法",
+  "httpProxy_server": "上游代理服务器",
+  "httpProxy_serverAddress": "服务器地址",
+  "httpProxy_serverAddressHint": "例如：192.168.1.1 或 proxy.example.com",
+  "httpProxy_ssConfigSaved": "保存后会校验 Shadowsocks 配置，并建议返回首页做实际访问验证",
+  "httpProxy_ssImportSuccess": "Shadowsocks 链接导入成功",
+  "httpProxy_ssLink": "Shadowsocks 链接",
+  "httpProxy_suppressedByVpn": "已被 VPN 自动关闭，VPN 断开后将自动恢复",
+  "httpProxy_testAvailability": "测试代理可用性",
+  "httpProxy_testingProxy": "正在验证是否能通过当前代理访问 linux.do",
+  "httpProxy_testingSsConfig": "正在校验 Shadowsocks 配置是否可由本地网关接管",
+  "httpProxy_title": "上游代理",
+  "httpProxy_username": "用户名: {username}",
+  "@httpProxy_username": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "httpProxy_usernameLabel": "用户名",
+  "proxy_cannotConnect": "无法连接代理服务器",
+  "proxy_connectionClosed": "连接已被远端关闭",
+  "proxy_fillAddressPort": "请先填写代理地址和端口",
+  "proxy_httpAuthFailed": "HTTP 代理认证失败（407）",
+  "proxy_httpConnectFailed": "HTTP 代理 CONNECT 失败：{statusLine}",
+  "@proxy_httpConnectFailed": {
+    "placeholders": {
+      "statusLine": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_notConfigured": "未配置代理服务器",
+  "proxy_responseTimeout": "等待代理响应超时",
+  "proxy_socks5AddrTypeNotSupported": "地址类型不支持",
+  "proxy_socks5AuthFailed": "SOCKS5 认证失败",
+  "proxy_socks5AuthRejected": "SOCKS5 不接受当前认证方式",
+  "proxy_socks5CommandNotSupported": "命令不支持",
+  "proxy_socks5ConnectFailed": "SOCKS5 CONNECT 失败：{reply}",
+  "@proxy_socks5ConnectFailed": {
+    "placeholders": {
+      "reply": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_socks5ConnectInvalidVersion": "SOCKS5 CONNECT 响应版本无效",
+  "proxy_socks5ConnectionRefused": "目标拒绝连接",
+  "proxy_socks5CredentialsTooLong": "SOCKS5 用户名或密码过长",
+  "proxy_socks5GeneralFailure": "普通失败",
+  "proxy_socks5HostUnreachable": "主机不可达",
+  "proxy_socks5HostnameTooLong": "SOCKS5 目标主机名过长",
+  "proxy_socks5InvalidVersion": "SOCKS5 响应版本无效",
+  "proxy_socks5NetworkUnreachable": "网络不可达",
+  "proxy_socks5NotAllowed": "规则不允许",
+  "proxy_socks5TtlExpired": "TTL 已过期",
+  "proxy_socks5UnknownAddrType": "SOCKS5 返回了未知地址类型：0x{hex}",
+  "@proxy_socks5UnknownAddrType": {
+    "placeholders": {
+      "hex": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_socks5UnknownError": "未知错误（0x{hex}）",
+  "@proxy_socks5UnknownError": {
+    "placeholders": {
+      "hex": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_socks5UnsupportedAuth": "SOCKS5 返回了不支持的认证方式：0x{hex}",
+  "@proxy_socks5UnsupportedAuth": {
+    "placeholders": {
+      "hex": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_ss2022KeyHint": "请填写 Shadowsocks 2022 的密钥（Base64 PSK）",
+  "proxy_ss2022KeyInvalidBase64": "Shadowsocks 2022 密钥必须是有效的 Base64 字符串",
+  "proxy_ss2022KeyInvalidLength": "Shadowsocks 2022 密钥长度无效：解码后必须为 {length} 字节",
+  "@proxy_ss2022KeyInvalidLength": {
+    "placeholders": {
+      "length": {
+        "type": "int"
+      }
+    }
+  },
+  "proxy_ssBase64DecodeFailed": "ss:// 链接 Base64 解码失败",
+  "proxy_ssCannotParseCipher": "无法解析加密算法和密码",
+  "proxy_ssIncomplete": "Shadowsocks 配置不完整",
+  "proxy_ssInvalidIpv6": "IPv6 地址格式无效",
+  "proxy_ssInvalidPort": "端口无效",
+  "proxy_ssLinkContentEmpty": "ss:// 链接内容为空",
+  "proxy_ssLinkEmpty": "链接不能为空",
+  "proxy_ssMissingAddress": "缺少服务器地址",
+  "proxy_ssMissingPort": "缺少端口",
+  "proxy_ssOnlySsProtocol": "仅支持 ss:// 链接",
+  "proxy_ssPasswordHint": "请填写 Shadowsocks 密码",
+  "proxy_ssSaved": "Shadowsocks 配置已保存",
+  "proxy_ssSavedDetail": "当前版本会通过本地网关接管 Shadowsocks 出站；请启用代理后返回首页进行实际访问验证",
+  "proxy_ssSelectCipher": "请选择受支持的 Shadowsocks 加密算法",
+  "proxy_ssUnsupportedCipher": "当前版本仅支持 {ciphers}",
+  "@proxy_ssUnsupportedCipher": {
+    "placeholders": {
+      "ciphers": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_targetResponseError": "目标站点响应异常：{statusLine}",
+  "@proxy_targetResponseError": {
+    "placeholders": {
+      "statusLine": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_testFailed": "代理测试失败",
+  "proxy_testSuccess": "代理可用",
+  "proxy_testSuccessDetail": "已通过 {protocol} 代理访问 {host}，HTTP {statusCode}",
+  "@proxy_testSuccessDetail": {
+    "placeholders": {
+      "protocol": {
+        "type": "String"
+      },
+      "host": {
+        "type": "String"
+      },
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "proxy_testTimeout": "代理测试超时",
+  "proxy_testTimeoutDetail": "连接或握手超过 {seconds} 秒，未能完成 {host} 可用性验证",
+  "@proxy_testTimeoutDetail": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      },
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "proxy_testTlsFailed": "TLS 握手失败",
+  "vpnToggle_and": " 和 ",
+  "vpnToggle_connected": "VPN 已连接",
+  "vpnToggle_disconnected": "VPN 未连接",
+  "vpnToggle_subtitle": "检测到 VPN 时自动关闭 DOH 和代理，断开后恢复",
+  "vpnToggle_suppressedSuffix": "已被自动关闭，VPN 断开后将自动恢复",
+  "vpnToggle_title": "VPN 自动切换",
+  "vpnToggle_upstreamProxy": "上游代理"
+}

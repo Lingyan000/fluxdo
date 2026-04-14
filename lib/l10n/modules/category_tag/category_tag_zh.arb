@@ -1,0 +1,114 @@
+{
+  "@@locale": "zh",
+  "categoryTopics_createPost": "发帖",
+  "categoryTopics_empty": "该分类下暂无话题",
+  "category_addHint": "点击下方分类添加到标签栏",
+  "category_allCategories": "全部分类",
+  "category_available": "可添加",
+  "category_browse": "浏览分类",
+  "category_dragHint": "拖拽排序，点击移除",
+  "category_editHint": "点击\"编辑\"添加常用分类到标签栏",
+  "category_editMyCategories": "编辑我的分类",
+  "category_levelMuted": "静音",
+  "category_levelMutedDesc": "不接收此分类的任何通知",
+  "category_levelRegular": "常规",
+  "category_levelRegularDesc": "只在被 @ 提及或回复时通知",
+  "category_levelTracking": "跟踪",
+  "category_levelTrackingDesc": "显示新帖未读计数",
+  "category_levelWatching": "关注",
+  "category_levelWatchingDesc": "每个新回复都通知",
+  "category_levelWatchingFirstPost": "关注新话题",
+  "category_levelWatchingFirstPostDesc": "此分类有新话题时通知",
+  "category_loadFailed": "加载分类失败: {error}",
+  "@category_loadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "category_myCategories": "我的分类",
+  "category_noCategories": "暂无分类",
+  "category_noCategoriesFound": "未找到相关分类",
+  "category_parentAll": "{name}（全部）",
+  "@category_parentAll": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "category_searchHint": "搜索分类...",
+  "tagTopics_empty": "该标签下暂无话题",
+  "tag_maxTagsReached": "最多只能选择 {max} 个标签",
+  "@tag_maxTagsReached": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_noTags": "暂无可用标签",
+  "tag_noTagsFound": "未找到相关标签",
+  "tag_requiredGroupWarning": "需从 \"{name}\" 标签组选择至少 {minCount} 个标签",
+  "@tag_requiredGroupWarning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "minCount": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_requiredTagGroupHint": "需从 \"{name}\" 选择至少 {minCount} 个",
+  "@tag_requiredTagGroupHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "minCount": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchHint": "搜索标签...",
+  "tag_searchWithCount": "搜索标签 (已选 {count})...",
+  "@tag_searchWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchWithMax": "搜索标签 (已选 {selected}/{max})...",
+  "@tag_searchWithMax": {
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchWithMin": "搜索标签 (已选 {selected}, 至少 {min})...",
+  "@tag_searchWithMin": {
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_topicCount": "{count} 个话题",
+  "@tag_topicCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

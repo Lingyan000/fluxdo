@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../l10n/s.dart';
+import '../../../utils/share_utils.dart';
 import '../../../services/network_logger.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../services/cf_challenge_logger.dart';
@@ -228,7 +229,7 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
 
     final path = await NetworkLogger.getLogPath();
     if (path != null) {
-      await SharePlus.instance.share(ShareParams(files: [XFile(path)], subject: 'DOH 调试日志'));
+      await ShareUtils.shareOrSaveFile(XFile(path), subject: 'DOH 调试日志');
     } else {
       await SharePlus.instance.share(ShareParams(text: logs, subject: 'DOH 调试日志'));
     }
@@ -396,7 +397,7 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
 
     final path = await CfChallengeLogger.getLogPath();
     if (path != null) {
-      await SharePlus.instance.share(ShareParams(files: [XFile(path)], subject: 'CF 验证日志'));
+      await ShareUtils.shareOrSaveFile(XFile(path), subject: 'CF 验证日志');
     } else {
       await SharePlus.instance.share(ShareParams(text: logs, subject: 'CF 验证日志'));
     }

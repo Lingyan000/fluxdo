@@ -68,3 +68,6 @@ android/app/google-services.json
 # Generated CA certificates (CI/local build auto-generates)
 assets/certs/proxy_ca.pem
 android/app/src/main/res/raw/proxy_ca.der
+
+# L10n merged ARB files (generated from lib/l10n/modules/)
+lib/l10n/merged/

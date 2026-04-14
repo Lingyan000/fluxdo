@@ -1,0 +1,62 @@
+{
+  "@@locale": "zh",
+  "appLink_alipay": "支付宝",
+  "appLink_amap": "高德地图",
+  "appLink_baidu": "百度",
+  "appLink_baiduNetdisk": "百度网盘",
+  "appLink_continueVisitConfirm": "继续访问{name}？",
+  "@appLink_continueVisitConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appLink_ctrip": "携程",
+  "appLink_dianping": "大众点评",
+  "appLink_dingtalk": "钉钉",
+  "appLink_douban": "豆瓣",
+  "appLink_douyin": "抖音",
+  "appLink_eleme": "饿了么",
+  "appLink_email": "邮件",
+  "appLink_externalApp": "外部应用",
+  "appLink_fliggy": "飞猪",
+  "appLink_jd": "京东",
+  "appLink_kuaishou": "快手",
+  "appLink_map": "地图",
+  "appLink_meituan": "美团",
+  "appLink_meituanWaimai": "美团外卖",
+  "appLink_openAppConfirm": "此网站想打开{name}应用",
+  "@appLink_openAppConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appLink_phone": "电话",
+  "appLink_pinduoduo": "拼多多",
+  "appLink_playStore": "Play 商店",
+  "appLink_qqMap": "腾讯地图",
+  "appLink_sms": "短信",
+  "appLink_suning": "苏宁",
+  "appLink_taobao": "淘宝",
+  "appLink_toutiao": "今日头条",
+  "appLink_weibo": "微博",
+  "appLink_weixin": "微信",
+  "appLink_xiaohongshu": "小红书",
+  "appLink_zhihu": "知乎",
+  "externalLink_blocked": "链接已被阻止",
+  "externalLink_blockedMessage": "此链接已被列入黑名单，无法访问",
+  "externalLink_contactAdmin": "如有疑问，请联系站点管理员",
+  "externalLink_leavingMessage": "您即将访问外部网站",
+  "externalLink_leavingTitle": "即将离开",
+  "externalLink_securityWarningHint": "可能包含推广内容或存在安全隐患，请谨慎访问",
+  "externalLink_securityWarningMessage": "此链接被标记为潜在风险链接",
+  "externalLink_securityWarningTitle": "安全警告",
+  "externalLink_shortLinkMessage": "此链接为短链接服务，无法预览真实目标",
+  "externalLink_shortLinkTitle": "短链接提醒",
+  "externalLink_shortLinkWarning": "短链接可能隐藏真实目的地，请确认来源可信",
+  "iframe_exitInteraction": "退出交互",
+  "onebox_linkPreview": "链接预览"
+}

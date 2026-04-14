@@ -174,12 +174,14 @@ class LongPostFooterSegment extends StatelessWidget {
   final void Function(int postId, bool accepted)? onSolutionChanged;
   final bool useReplyDialog;
   final VoidCallback? onShowPostDetail;
+  final String? highlightBoostUsername;
 
   const LongPostFooterSegment({
     super.key,
     required this.post,
     required this.topicId,
     required this.highlight,
+    this.highlightBoostUsername,
     required this.topicHasAcceptedAnswer,
     required this.acceptedAnswerPostNumber,
     required this.bottomDateSeparatorLabel,
@@ -207,6 +209,7 @@ class LongPostFooterSegment extends StatelessWidget {
           topicHasAcceptedAnswer: topicHasAcceptedAnswer,
           acceptedAnswerPostNumber: acceptedAnswerPostNumber,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          highlightBoostUsername: highlightBoostUsername,
           onReply: onReply,
           onEdit: onEdit,
           onShareAsImage: onShareAsImage,

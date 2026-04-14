@@ -1,6 +1,20 @@
+import 'dart:convert';
+
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
+
+/// 解析通知 data 字段：可能是 Map、JSON string 或 null
+Map<String, dynamic> _parseDataField(dynamic data) {
+  if (data is Map<String, dynamic>) return data;
+  if (data is String) {
+    try {
+      final parsed = jsonDecode(data);
+      if (parsed is Map<String, dynamic>) return parsed;
+    } catch (_) {}
+  }
+  return {};
+}
 
 /// Discourse 通知类型枚举
 enum NotificationType {
@@ -44,6 +58,7 @@ enum NotificationType {
   adminProblems(38),
   linkedConsolidated(39),
   chatWatchedThread(40),
+  boost(43),
   following(800),
   followingCreatedTopic(801),
   followingReplied(802),
@@ -95,6 +110,7 @@ enum NotificationType {
       case NotificationType.adminProblems: return S.current.notification_typeAdminProblems;
       case NotificationType.linkedConsolidated: return S.current.notification_typeLinkedConsolidated;
       case NotificationType.chatWatchedThread: return S.current.notification_typeChatWatchedThread;
+      case NotificationType.boost: return S.current.notification_typeBoost;
       case NotificationType.following: return S.current.notification_typeFollowing;
       case NotificationType.followingCreatedTopic: return S.current.notification_typeFollowingCreatedTopic;
       case NotificationType.followingReplied: return S.current.notification_typeFollowingReplied;
@@ -128,6 +144,7 @@ class NotificationData {
   final String? username;
   final String? username2;
   final String? avatarTemplate;
+  final String? boostRaw;
 
   NotificationData({
     this.displayUsername,
@@ -145,6 +162,7 @@ class NotificationData {
     this.username,
     this.username2,
     this.avatarTemplate,
+    this.boostRaw,
   });
 
   factory NotificationData.fromJson(Map<String, dynamic> json) {
@@ -164,6 +182,7 @@ class NotificationData {
       username: json['username'] as String?,
       username2: json['username2'] as String?,
       avatarTemplate: json['acting_user_avatar_template'] as String? ?? json['avatar_template'] as String?,
+      boostRaw: json['boost_raw'] as String?,
     );
   }
 }
@@ -209,7 +228,7 @@ class DiscourseNotification {
       postNumber: json['post_number'] as int?,
       topicId: json['topic_id'] as int?,
       slug: json['slug'] as String?,
-      data: NotificationData.fromJson(json['data'] as Map<String, dynamic>? ?? {}),
+      data: NotificationData.fromJson(_parseDataField(json['data'])),
       fancyTitle: json['fancy_title'] as String?,
       actingUserAvatarTemplate: json['acting_user_avatar_template'] as String?,
     );
@@ -378,6 +397,16 @@ class DiscourseNotification {
         return S.current.notification_chatQuotedPost(username);
       case NotificationType.chatWatchedThread:
         return S.current.notification_chatWatchedThread;
+      case NotificationType.boost:
+        final count = data.count ?? 1;
+        if (count > 1) {
+          return S.current.notification_boostByMany(username, count - 1);
+        }
+        final boostRaw = data.boostRaw;
+        if (boostRaw != null && boostRaw.isNotEmpty) {
+          return S.current.notification_boostWithContent(username, boostRaw);
+        }
+        return S.current.notification_boost(username);
       case NotificationType.assignedTopic:
         return S.current.notification_assignedTopic;
       case NotificationType.questionAnswerUserCommented:

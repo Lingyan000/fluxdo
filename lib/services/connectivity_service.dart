@@ -23,6 +23,9 @@ class ConnectivityService {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _retryTimer;
   Timer? _disconnectDebounce;
+  bool _retryInFlight = false;
+  int _retryBackoffSeconds = 1;
+  static const int _maxRetryBackoffSeconds = 30;
 
   bool _isConnected = true;
   bool _initialized = false;
@@ -174,22 +177,39 @@ class ConnectivityService {
     }
   }
 
-  /// 断开时每 1 秒检查设备网络状态，有网时根据开关决定是否 ping 服务器
+  /// 断开时使用指数退避检查设备网络状态（1s → 2s → 4s → ... → 30s）
   void _startRetry() {
     _stopRetry();
-    _retryTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
-      final result = await safeCheckConnectivity();
-      final hasNetwork = result.isNotEmpty &&
-          !result.every((r) => r == ConnectivityResult.none);
-      if (hasNetwork) {
-        if (enableServerPing) {
-          final reachable = await pingServer();
-          if (reachable) _setConnected(true);
+    _retryBackoffSeconds = 1;
+    _scheduleNextRetry();
+  }
+
+  void _scheduleNextRetry() {
+    _retryTimer = Timer(Duration(seconds: _retryBackoffSeconds), () async {
+      if (_isConnected) return; // 已恢复，无需继续
+      if (_retryInFlight) return; // 上一次检查尚未完成，跳过
+      _retryInFlight = true;
+      try {
+        final result = await safeCheckConnectivity();
+        final hasNetwork = result.isNotEmpty &&
+            !result.every((r) => r == ConnectivityResult.none);
+        if (hasNetwork) {
+          if (enableServerPing) {
+            final reachable = await pingServer();
+            if (reachable) _setConnected(true); // _setConnected(true) 内部会调用 _stopRetry
+          } else {
+            _setConnected(true);
+          }
         } else {
-          _setConnected(true);
+          debugPrint('[Connectivity] 设备无网络，${_retryBackoffSeconds}s 后重试');
         }
-      } else {
-        debugPrint('[Connectivity] 设备无网络，等待重试');
+      } finally {
+        _retryInFlight = false;
+      }
+      // 仍未恢复，增大退避间隔并继续重试
+      if (!_isConnected) {
+        _retryBackoffSeconds = (_retryBackoffSeconds * 2).clamp(1, _maxRetryBackoffSeconds);
+        _scheduleNextRetry();
       }
     });
   }
@@ -197,6 +217,8 @@ class ConnectivityService {
   void _stopRetry() {
     _retryTimer?.cancel();
     _retryTimer = null;
+    _retryInFlight = false;
+    _retryBackoffSeconds = 1;
   }
 
   /// 手动触发一次检查（如 App 回到前台时）

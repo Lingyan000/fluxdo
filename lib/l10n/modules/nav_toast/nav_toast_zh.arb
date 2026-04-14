@@ -1,0 +1,31 @@
+{
+  "@@locale": "zh",
+  "nav_home": "首页",
+  "nav_mine": "我的",
+  "toast_authorizationFailed": "授权失败: {error}",
+  "@toast_authorizationFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toast_credentialCleared": "凭证已清除",
+  "toast_credentialIncomplete": "请填写完整的凭证信息",
+  "toast_credentialSaved": "凭证保存成功",
+  "toast_networkDisconnected": "网络连接已断开",
+  "toast_networkRestored": "网络已恢复",
+  "toast_operationFailedRetry": "操作失败，请重试",
+  "toast_pressAgainToExit": "再按一次返回键退出",
+  "toast_rewardError": "打赏失败: {error}",
+  "@toast_rewardError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toast_rewardFailed": "打赏失败",
+  "toast_rewardNotConfigured": "请先配置打赏凭证",
+  "toast_rewardSuccess": "打赏成功！"
+}

@@ -5,8 +5,9 @@ import 'package:flutter/widgets.dart';
 import 'package:gal/gal.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'dart:io';
+import 'share_utils.dart';
 
 /// Widget 截图工具类
 class ScreenshotUtils {
@@ -168,7 +169,7 @@ class ScreenshotUtils {
 
       // 分享
       final xFile = XFile(file.path, mimeType: 'image/png');
-      await SharePlus.instance.share(ShareParams(files: [xFile]));
+      await ShareUtils.shareOrSaveFile(xFile);
     } catch (e) {
       debugPrint('[ScreenshotUtils] shareImage error: $e');
       rethrow;

@@ -1,0 +1,86 @@
+{
+  "@@locale": "zh_HK",
+  "backup_invalidFormat": "無效的備份文件格式",
+  "backup_missingDataField": "備份文件格式錯誤：缺少 data 字段",
+  "dataManagement_aiChatCleared": "AI 聊天數據已清除",
+  "dataManagement_aiChatData": "AI 聊天數據",
+  "dataManagement_allCleared": "所有緩存已清除，請重新登錄",
+  "dataManagement_apiKeysCount": "包含 {count} 個 API Key",
+  "@dataManagement_apiKeysCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_autoManagement": "自動管理",
+  "dataManagement_backupSource": "備份來源: v{version}",
+  "@dataManagement_backupSource": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_backupSubject": "FluxDO 數據備份",
+  "dataManagement_cacheManagement": "緩存管理",
+  "dataManagement_calculating": "計算中...",
+  "dataManagement_clearAiChatContent": "將刪除所有 AI 聊天記錄，此操作不可恢復。",
+  "dataManagement_clearAiChatTitle": "清除 AI 聊天數據",
+  "dataManagement_clearAll": "全部清除",
+  "dataManagement_clearAllCache": "清除所有緩存",
+  "dataManagement_clearAllContent": "將清除所有緩存數據，包括圖片緩存、AI 聊天數據和 Cookie。\n\n清除 Cookie 後需要重新登錄。",
+  "dataManagement_clearAllTitle": "清除所有緩存",
+  "dataManagement_clearAndLogout": "清除並退出登錄",
+  "dataManagement_clearCookieContent": "清除 Cookie 後需要重新登錄，確定要繼續嗎？",
+  "dataManagement_clearCookieTitle": "清除 Cookie 緩存",
+  "dataManagement_clearOnExit": "退出時清除圖片緩存",
+  "dataManagement_clearOnExitDesc": "下次啓動時自動清除圖片緩存",
+  "dataManagement_confirmImport": "確認導入",
+  "dataManagement_cookieCache": "Cookie 緩存",
+  "dataManagement_cookieCleared": "Cookie 緩存已清除，請重新登錄",
+  "dataManagement_dataBackup": "數據備份",
+  "dataManagement_exportData": "導出數據",
+  "dataManagement_exportDesc": "將偏好設置導出為文件",
+  "dataManagement_exportFailed": "導出失敗: {error}",
+  "@dataManagement_exportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_exportTime": "導出時間: {time}",
+  "@dataManagement_exportTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_imageCache": "圖片緩存",
+  "dataManagement_imageCacheCleared": "圖片緩存已清除",
+  "dataManagement_importAndRestart": "導入並重啓",
+  "dataManagement_importData": "導入數據",
+  "dataManagement_importDesc": "從備份文件恢復偏好設置",
+  "dataManagement_importFailed": "導入失敗: {error}",
+  "@dataManagement_importFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_importSuccess": "數據已導入，請重啓應用",
+  "dataManagement_importWarning": "導入後將覆蓋當前對應的設置項，需要重啓應用生效。",
+  "dataManagement_noCache": "無緩存",
+  "dataManagement_settingsCount": "包含 {count} 項設置",
+  "@dataManagement_settingsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_title": "數據管理"
+}

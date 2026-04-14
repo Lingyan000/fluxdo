@@ -1,0 +1,163 @@
+{
+  "@@locale": "zh",
+  "imageEditor_adjust": "调整",
+  "imageEditor_applyingChanges": "正在应用更改",
+  "imageEditor_arrow": "箭头",
+  "imageEditor_arrowBoth": "双端箭头",
+  "imageEditor_arrowEnd": "终点箭头",
+  "imageEditor_arrowStart": "起点箭头",
+  "imageEditor_bgMode": "背景模式",
+  "imageEditor_blur": "模糊",
+  "imageEditor_brightness": "亮度",
+  "imageEditor_brush": "画笔",
+  "imageEditor_changeOpacity": "调整透明度",
+  "imageEditor_circle": "圆形",
+  "imageEditor_closeWarningMessage": "确定要关闭图片编辑器吗？你的更改将不会被保存。",
+  "imageEditor_closeWarningTitle": "关闭图片编辑器？",
+  "imageEditor_color": "颜色",
+  "imageEditor_contrast": "对比度",
+  "imageEditor_cropRotate": "裁剪/旋转",
+  "imageEditor_dashDotLine": "点划线",
+  "imageEditor_dashLine": "虚线",
+  "imageEditor_emoji": "表情",
+  "imageEditor_emojiActivities": "活动",
+  "imageEditor_emojiAnimals": "动物与自然",
+  "imageEditor_emojiFlags": "旗帜",
+  "imageEditor_emojiFood": "食物与饮品",
+  "imageEditor_emojiObjects": "物品",
+  "imageEditor_emojiSmileys": "笑脸与人物",
+  "imageEditor_emojiSymbols": "符号",
+  "imageEditor_emojiTravel": "旅行与地点",
+  "imageEditor_eraser": "橡皮擦",
+  "imageEditor_exposure": "曝光",
+  "imageEditor_fade": "褪色",
+  "imageEditor_fill": "填充",
+  "imageEditor_filter": "滤镜",
+  "imageEditor_flip": "翻转",
+  "imageEditor_fontSize": "字体大小",
+  "imageEditor_freeStyle": "自由绘制",
+  "imageEditor_hexagon": "六边形",
+  "imageEditor_hue": "色调",
+  "imageEditor_initializingEditor": "正在初始化编辑器",
+  "imageEditor_inputText": "输入文字",
+  "imageEditor_line": "直线",
+  "imageEditor_lineWidth": "线条宽度",
+  "imageEditor_luminance": "明度",
+  "imageEditor_noFilter": "无滤镜",
+  "imageEditor_opacity": "透明度",
+  "imageEditor_pixelate": "像素化",
+  "imageEditor_polygon": "多边形",
+  "imageEditor_ratio": "比例",
+  "imageEditor_rectangle": "矩形",
+  "imageEditor_rotate": "旋转",
+  "imageEditor_rotateScale": "旋转和缩放",
+  "imageEditor_saturation": "饱和度",
+  "imageEditor_sharpness": "锐度",
+  "imageEditor_sticker": "贴纸",
+  "imageEditor_strokeWidth": "线条粗细",
+  "imageEditor_temperature": "色温",
+  "imageEditor_text": "文字",
+  "imageEditor_textAlign": "文字对齐",
+  "imageEditor_toggleFill": "切换填充",
+  "imageEditor_zoom": "缩放",
+  "imageFormat_generic": "图片",
+  "imageFormat_gif": "GIF 动图",
+  "imageFormat_jpeg": "JPEG 图片",
+  "imageFormat_png": "PNG 图片",
+  "imageFormat_webp": "WebP 图片",
+  "imageUpload_compressionQuality": "压缩质量：",
+  "imageUpload_confirmTitle": "上传图片确认",
+  "imageUpload_editImage": "编辑图片",
+  "imageUpload_editNotSupported": "{format} 暂不支持编辑，否则会丢失动画",
+  "@imageUpload_editNotSupported": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_editNotSupportedLabel": "当前格式不支持编辑",
+  "imageUpload_estimatedSize": "约 {size}",
+  "@imageUpload_estimatedSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_gridLayoutHint": "上传后将自动使用 [grid] 网格布局",
+  "imageUpload_keepAtLeastOne": "至少需要保留一张图片",
+  "imageUpload_keepOriginal": "{format} 将保留原图上传，不执行客户端压缩。",
+  "@imageUpload_keepOriginal": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_multiTitle": "上传 {count} 张图片",
+  "@imageUpload_multiTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "imageUpload_originalSize": "原始大小：{size}",
+  "@imageUpload_originalSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_processFailed": "处理图片失败: {error}",
+  "@imageUpload_processFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_totalEstimatedSize": "约 {size}",
+  "@imageUpload_totalEstimatedSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_totalOriginalSize": "总大小：{size}",
+  "@imageUpload_totalOriginalSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUpload_uploadCount": "上传 {count} 张",
+  "@imageUpload_uploadCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "imageViewer_grantPermission": "请授予相册访问权限",
+  "imageViewer_imageSaved": "图片已保存到相册",
+  "imageViewer_saveFailed": "保存失败: {error}",
+  "@imageViewer_saveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "imageViewer_saveFailedRetry": "保存失败，请重试",
+  "image_copied": "图片已复制",
+  "image_copyFailed": "复制图片失败",
+  "image_copyImage": "复制图片",
+  "image_copyLink": "复制链接",
+  "image_fetchFailed": "获取图片失败",
+  "image_viewFull": "查看大图"
+}

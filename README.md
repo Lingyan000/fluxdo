@@ -64,7 +64,12 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
    flutter pub get
    ```
 
-3. **编译 Rust DOH 代理**（可选，用于网络加速）
+3. **生成多语言文件**
+   ```bash
+   dart run tool/merge_l10n.dart
+   ```
+
+4. **编译 Rust DOH 代理**（可选，用于网络加速）
 
    桌面平台：
    ```bash
@@ -84,7 +89,7 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
    ./scripts/build_android.sh
    ```
 
-4. **运行应用**
+5. **运行应用**
    ```bash
    # Android
    flutter run --dart-define=cronetHttpNoPlay=true

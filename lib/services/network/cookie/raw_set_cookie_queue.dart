@@ -134,7 +134,10 @@ class RawSetCookieQueue {
   }
 
   Future<List<Map<String, String>>> _load() async {
-    if (_cache != null) return _cache!;
+    if (_cache != null) {
+      _cache = _cloneQueue(_cache!);
+      return _cache!;
+    }
     final path = _filePath;
     if (path == null) {
       _cache = [];
@@ -157,7 +160,7 @@ class RawSetCookieQueue {
       _cache = (json as List)
           .whereType<Map>()
           .map((e) => e.map((k, v) => MapEntry(k.toString(), v.toString())))
-          .toList();
+          .toList(growable: true);
     } catch (e) {
       debugPrint('[RawSetCookieQueue] 加载失败，重置队列: $e');
       _cache = [];
@@ -166,14 +169,15 @@ class RawSetCookieQueue {
   }
 
   Future<void> _save(List<Map<String, String>> queue) async {
-    _cache = queue;
+    final normalizedQueue = _cloneQueue(queue);
+    _cache = normalizedQueue;
     final path = _filePath;
     if (path == null) return;
 
     try {
       final file = io.File(path);
       await file.parent.create(recursive: true);
-      await file.writeAsString(jsonEncode(queue));
+      await file.writeAsString(jsonEncode(normalizedQueue));
     } catch (e) {
       debugPrint('[RawSetCookieQueue] 持久化失败: $e');
     }
@@ -217,5 +221,11 @@ class RawSetCookieQueue {
       final name = _extractCookieName(rawHeader).trim().toLowerCase();
       return '$name|$host|$url';
     }
+  }
+
+  List<Map<String, String>> _cloneQueue(List<Map<String, String>> queue) {
+    return queue
+        .map((entry) => Map<String, String>.from(entry))
+        .toList(growable: true);
   }
 }

@@ -1,0 +1,82 @@
+{
+  "@@locale": "zh_TW",
+  "codeBlock_chart": "圖表",
+  "codeBlock_chartLoadFailed": "圖表載入失敗",
+  "codeBlock_code": "程式碼",
+  "codeBlock_renderFailed": "程式碼塊渲染失敗: {error}",
+  "@codeBlock_renderFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "draft_topicTitle": "話題 #{id}",
+  "@draft_topicTitle": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "draft_untitled": "無標題",
+  "drafts_deleteContent": "確定要刪除這個草稿嗎？",
+  "drafts_deleteDraft": "刪除草稿",
+  "drafts_deleteFailed": "刪除失敗: {error}",
+  "@drafts_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "drafts_deleteTitle": "刪除草稿",
+  "drafts_deleted": "草稿已刪除",
+  "drafts_draft": "草稿",
+  "drafts_empty": "暫無草稿",
+  "drafts_newTopic": "新話題",
+  "drafts_pmIncomplete": "私信草稿資料不完整",
+  "drafts_privateMessage": "私信",
+  "drafts_replyToPost": "回覆 #{number}",
+  "@drafts_replyToPost": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "drafts_title": "我的草稿",
+  "editor_hintText": "說點什麼吧... (支援 Markdown)",
+  "editor_noContent": "（無內容）",
+  "link_insertTitle": "插入連結",
+  "link_textHint": "顯示的文字",
+  "link_textLabel": "連結文字",
+  "link_textRequired": "請輸入連結文字",
+  "link_urlRequired": "請輸入 URL",
+  "mention_group": "群組",
+  "mention_noUserFound": "未找到匹配使用者",
+  "mention_searchHint": "輸入使用者名稱搜尋",
+  "template_empty": "暫無可用範本",
+  "template_insertTitle": "插入範本",
+  "template_loadError": "載入範本失敗",
+  "template_searchHint": "搜尋範本…",
+  "template_tooltip": "範本",
+  "toolbar_attachFileTooltip": "上傳附件",
+  "toolbar_boldPlaceholder": "粗體文字",
+  "toolbar_codePlaceholder": "在此處鍵入或貼上程式碼",
+  "toolbar_gridMinImages": "需要至少 2 張圖片才能建立網格",
+  "toolbar_gridNeedConsecutive": "需要至少 2 張連續的圖片才能建立網格",
+  "toolbar_h1": "H1 - 一級標題",
+  "toolbar_h2": "H2 - 二級標題",
+  "toolbar_h3": "H3 - 三級標題",
+  "toolbar_h4": "H4 - 四級標題",
+  "toolbar_h5": "H5 - 五級標題",
+  "toolbar_imageGridTooltip": "圖片網格",
+  "toolbar_imagesAlreadyInGrid": "這些圖片已經在網格中了",
+  "toolbar_italicPlaceholder": "斜體文字",
+  "toolbar_mixOptimize": "混排最佳化",
+  "toolbar_quotePlaceholder": "引用文字",
+  "toolbar_spoilerPlaceholder": "劇透內容",
+  "toolbar_spoilerTooltip": "劇透",
+  "toolbar_strikethroughPlaceholder": "刪除線文字"
+}

@@ -100,6 +100,7 @@ class TopicDetailOverlay extends StatelessWidget {
             isTopLevelMode: isTopLevelMode,
             isNestedMode: isNestedMode,
             isLoading: isLoading,
+            isPrivateMessage: detail.isPrivateMessage,
             onShowTopReplies: onShowTopReplies,
             onShowAuthorOnly: onShowAuthorOnly,
             onShowTopLevelReplies: onShowTopLevelReplies,

@@ -309,3 +309,110 @@ class MyTopicsNotifier extends AsyncNotifier<List<Topic>> {
 final myTopicsProvider = AsyncNotifierProvider.autoDispose<MyTopicsNotifier, List<Topic>>(() {
   return MyTopicsNotifier();
 });
+
+/// 私信筛选类型
+enum PrivateMessageFilter { inbox, sent, archive }
+
+/// 私信列表 Notifier 基类 (支持分页)
+abstract class PrivateMessagesNotifier extends AsyncNotifier<List<Topic>> {
+  int _page = 0;
+  bool _hasMore = true;
+  bool _isLoadMoreFailed = false;
+  bool get hasMore => _hasMore;
+  bool get isLoadMoreFailed => _isLoadMoreFailed;
+
+  Future<TopicListResponse> fetch(int page);
+
+  @override
+  Future<List<Topic>> build() async {
+    _page = 0;
+    _hasMore = true;
+    _isLoadMoreFailed = false;
+    final response = await fetch(0);
+
+    final result = _topicPaginationHelper.processRefresh(
+      PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+    );
+    _hasMore = result.hasMore;
+    return result.items;
+  }
+
+  Future<void> refresh() async {
+    _isLoadMoreFailed = false;
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      _page = 0;
+      _hasMore = true;
+      final response = await fetch(0);
+
+      final result = _topicPaginationHelper.processRefresh(
+        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+      );
+      _hasMore = result.hasMore;
+      return result.items;
+    });
+  }
+
+  Future<void> loadMore() async {
+    if (_isLoadMoreFailed) return;
+    if (!_hasMore || state.isLoading) return;
+
+    // ignore: invalid_use_of_internal_member
+    state = const AsyncLoading<List<Topic>>().copyWithPrevious(state);
+
+    final result = await AsyncValue.guard(() async {
+      final currentList = state.requireValue;
+      final nextPage = _page + 1;
+
+      final response = await fetch(nextPage);
+
+      final currentState = PaginationState<Topic>(items: currentList);
+      final paginationResult = _topicPaginationHelper.processLoadMore(
+        currentState,
+        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+      );
+
+      _hasMore = paginationResult.hasMore;
+      if (paginationResult.items.length > currentList.length) {
+        _page = nextPage;
+      }
+      return paginationResult.items;
+    });
+    if (result.hasError) {
+      _isLoadMoreFailed = true;
+      state = AsyncValue.data(state.requireValue);
+    } else {
+      state = result;
+    }
+  }
+
+  void retryLoadMore() {
+    _isLoadMoreFailed = false;
+    loadMore();
+  }
+}
+
+class _PmInboxNotifier extends PrivateMessagesNotifier {
+  @override
+  Future<TopicListResponse> fetch(int page) =>
+      ref.read(discourseServiceProvider).getPrivateMessages(page: page);
+}
+
+class _PmSentNotifier extends PrivateMessagesNotifier {
+  @override
+  Future<TopicListResponse> fetch(int page) =>
+      ref.read(discourseServiceProvider).getPrivateMessagesSent(page: page);
+}
+
+class _PmArchiveNotifier extends PrivateMessagesNotifier {
+  @override
+  Future<TopicListResponse> fetch(int page) =>
+      ref.read(discourseServiceProvider).getPrivateMessagesArchive(page: page);
+}
+
+final pmInboxProvider = AsyncNotifierProvider.autoDispose<_PmInboxNotifier, List<Topic>>(
+    () => _PmInboxNotifier());
+final pmSentProvider = AsyncNotifierProvider.autoDispose<_PmSentNotifier, List<Topic>>(
+    () => _PmSentNotifier());
+final pmArchiveProvider = AsyncNotifierProvider.autoDispose<_PmArchiveNotifier, List<Topic>>(
+    () => _PmArchiveNotifier());

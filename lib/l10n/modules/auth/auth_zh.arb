@@ -1,0 +1,35 @@
+{
+  "@@locale": "zh",
+  "auth_cdkConfirmMessage": "Linux.do CDK 将获取你的基本信息，是否允许？",
+  "auth_cdkConfirmTitle": "授权确认",
+  "auth_clearDataAction": "清理数据",
+  "auth_cookieRepairLogoutHint": "检测到历史登录 Cookie 异常，应用已自动清理相关脏数据。这可能会让旧的无效登录态立即失效，请重新登录。",
+  "auth_frequentLogoutClearDataHint": "最近 24 小时内多次触发登录失效。如果重新登录后仍反复发生，建议前往“数据管理”清除 Cookie 或全部数据后再登录。",
+  "auth_ldcConfirmMessage": "Linux.do Credit 将获取你的基本信息，是否允许？",
+  "auth_ldcConfirmTitle": "授权确认",
+  "auth_logSubject": "认证日志",
+  "auth_loginExpiredRelogin": "登录已失效，请重新登录",
+  "auth_loginExpiredTitle": "登录失效",
+  "auth_oauthExpired": "{serviceName} 授权已过期",
+  "@auth_oauthExpired": {
+    "placeholders": {
+      "serviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "login_browserHint": "将在浏览器中打开登录页面",
+  "login_slogan": "真诚、友善、团结、专业",
+  "migration_cookieUpgrade": "正在升级 Cookie 存储...",
+  "migration_reloginRequired": "本次版本升级优化了 Cookie 存储机制，已清除旧的登录状态。请重新登录。",
+  "migration_title": "数据升级",
+  "oauth_approvePageParseFailed": "授权页面解析失败，请确认已登录论坛",
+  "oauth_callbackFailed": "授权回调失败",
+  "oauth_getAuthUrlFailed": "获取授权链接失败",
+  "oauth_missingParams": "授权回调缺少必要参数",
+  "oauth_networkError": "网络请求失败，请检查网络连接",
+  "oauth_noRedirectResponse": "授权服务未返回重定向",
+  "onboarding_guestAccess": "游客访问",
+  "onboarding_networkSettings": "网络设置",
+  "onboarding_slogan": "真诚 · 友善 · 团结 · 专业"
+}

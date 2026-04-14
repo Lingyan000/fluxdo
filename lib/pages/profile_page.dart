@@ -27,6 +27,7 @@ import 'metaverse_page.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
+import 'private_messages_page.dart';
 import 'invite_links_page.dart';
 import '../providers/ldc_providers.dart';
 import '../widgets/ldc_balance_card.dart';
@@ -714,7 +715,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       child: Column(
         children: [
           _buildOptionTile(
-            icon: Icons.military_tech_rounded, 
+            icon: Icons.mail_rounded,
+            iconColor: Colors.indigo,
+            title: context.l10n.profile_privateMessages,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivateMessagesPage())),
+          ),
+          _buildOptionTile(
+            icon: Icons.military_tech_rounded,
             iconColor: Colors.amber[700]!,
             title: context.l10n.profile_myBadges,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBadgesPage()))

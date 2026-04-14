@@ -81,6 +81,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
   final String? instanceId; // 外部指定的 provider 实例 ID（布局切换时复用）
   final bool autoOpenAiChat; // 自动打开 AI 聊天面板
   final String? initialSessionId; // AI 聊天初始会话 ID
+  final String? highlightBoostUsername; // 高亮指定用户的 boost（从 boost 通知跳转时使用）
 
   const TopicDetailPage({
     super.key,
@@ -95,6 +96,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
     this.instanceId,
     this.autoOpenAiChat = false,
     this.initialSessionId,
+    this.highlightBoostUsername,
   });
 
   @override
@@ -629,6 +631,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           TextSpan(
             style: theme.textTheme.titleMedium,
             children: [
+              if (detail?.isPrivateMessage ?? false)
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(
+                      Icons.mail_outline,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
               if (detail?.closed ?? false)
                 WidgetSpan(
                   alignment: PlaceholderAlignment.middle,
@@ -866,6 +880,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // 监听 MessageBus 事件
     ref.listen(topicChannelProvider(widget.topicId), (previous, next) {
+      if (!mounted) return;
       // 1. reload_topic（话题状态变更：关闭/打开/固定等）
       if (next.reloadRequested && !(previous?.reloadRequested ?? false)) {
         ref
@@ -910,6 +925,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // 预解析帖子 HTML
     ref.listen(topicDetailProvider(params), (previous, next) {
+      if (!mounted) return;
       final posts = next.value?.postStream.posts;
       if (posts != null && posts.isNotEmpty) {
         final htmlList = posts.map((p) => p.cooked).toList();
@@ -1076,6 +1092,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                               topicId: widget.topicId,
                               categoryId: detail.categoryId,
                               initialContent: '$imageMarkdown\n',
+                              isPrivateMessageTopic: detail.isPrivateMessage,
                             );
                           },
                   ),
@@ -1108,6 +1125,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             topicId: widget.topicId,
             categoryId: detail.categoryId,
             initialContent: '$imageMarkdown\n',
+            isPrivateMessageTopic: detail.isPrivateMessage,
           );
         },
       ),
@@ -1396,6 +1414,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               centerKey: _centerKey,
               headerKey: _headerKey,
               highlightPostNumber: highlightPostNumber,
+              highlightBoostUsername: widget.highlightBoostUsername,
               typingUsers: typingUsers,
               isLoggedIn: isLoggedIn,
               hasMoreBefore: notifier.hasMoreBefore,

@@ -14,6 +14,8 @@ class BoostList extends StatefulWidget {
   final bool canBoost;
   final VoidCallback? onAddBoost;
   final void Function(Boost boost)? onBoostTap;
+  /// 高亮指定用户的 boost（自动展开并滚动到位）
+  final String? highlightUsername;
 
   const BoostList({
     super.key,
@@ -21,13 +23,14 @@ class BoostList extends StatefulWidget {
     required this.canBoost,
     this.onAddBoost,
     this.onBoostTap,
+    this.highlightUsername,
   });
 
   @override
   State<BoostList> createState() => _BoostListState();
 }
 
-class _BoostListState extends State<BoostList> {
+class _BoostListState extends State<BoostList> with SingleTickerProviderStateMixin {
   static const int _collapsedMaxLines = 2;
   static const double _chipSpacing = 6;
   static const double _controlChipWidth = 28;
@@ -35,6 +38,44 @@ class _BoostListState extends State<BoostList> {
   bool _showAllRows = false;
   String? _activeGroupKey;
   BuildContext? _activePopoverContext;
+  late final AnimationController _highlightController;
+  late final Animation<double> _highlightOpacity;
+  final GlobalKey _highlightKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightUsername != null) {
+      _showAllRows = true;
+    }
+    _highlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    );
+    _highlightOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _highlightController,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+      ),
+    );
+    if (widget.highlightUsername != null) {
+      _highlightController.forward();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToHighlightedBoost();
+      });
+    }
+  }
+
+  void _scrollToHighlightedBoost() {
+    final ctx = _highlightKey.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+  }
 
   @override
   void didUpdateWidget(covariant BoostList oldWidget) {
@@ -72,6 +113,7 @@ class _BoostListState extends State<BoostList> {
 
   @override
   void dispose() {
+    _highlightController.dispose();
     _activePopoverContext = null;
     super.dispose();
   }
@@ -171,31 +213,73 @@ class _BoostListState extends State<BoostList> {
     }
   }
 
+  bool _groupContainsHighlight(BoostGroup group) {
+    final username = widget.highlightUsername;
+    if (username == null) return false;
+    return group.boosts.any((b) => b.user.username == username);
+  }
+
+  Widget _wrapHighlight(Widget child) {
+    return AnimatedBuilder(
+      animation: _highlightOpacity,
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        return DecoratedBox(
+          key: _highlightKey,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.primary.withValues(
+                  alpha: 0.5 * _highlightOpacity.value,
+                ),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+
   _WrapEntry _buildGroupEntry(BuildContext context, BoostGroup group) {
+    final isHighlighted = _groupContainsHighlight(group);
+
     if (group.count == 1) {
       final boost = group.boosts.first;
+      Widget bubble = BoostBubble(
+        boost: boost,
+        onTap: widget.onBoostTap == null ? null : () => widget.onBoostTap!(boost),
+        onLongPress: widget.onBoostTap == null ? null : () => widget.onBoostTap!(boost),
+      );
+      if (isHighlighted) {
+        bubble = _wrapHighlight(bubble);
+      }
       return _WrapEntry(
         width: _estimateSingleBubbleWidth(context, group.displayText),
-        child: BoostBubble(
-          boost: boost,
-          onTap: widget.onBoostTap == null ? null : () => widget.onBoostTap!(boost),
-          onLongPress: widget.onBoostTap == null ? null : () => widget.onBoostTap!(boost),
-        ),
+        child: bubble,
       );
     }
 
+    Widget bubble = BoostBubble.group(
+      group: group,
+      expanded: _activeGroupKey == group.groupingKey,
+      onTapWithContext: (anchorContext) {
+        unawaited(_toggleGroupPopover(anchorContext, group));
+      },
+      onLongPressWithContext: (anchorContext) {
+        unawaited(_toggleGroupPopover(anchorContext, group));
+      },
+    );
+    if (isHighlighted) {
+      bubble = _wrapHighlight(bubble);
+    }
     return _WrapEntry(
       width: _estimateGroupedBubbleWidth(context, group),
-      child: BoostBubble.group(
-        group: group,
-        expanded: _activeGroupKey == group.groupingKey,
-        onTapWithContext: (anchorContext) {
-          unawaited(_toggleGroupPopover(anchorContext, group));
-        },
-        onLongPressWithContext: (anchorContext) {
-          unawaited(_toggleGroupPopover(anchorContext, group));
-        },
-      ),
+      child: bubble,
     );
   }
 

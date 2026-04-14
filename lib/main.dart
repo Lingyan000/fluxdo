@@ -137,6 +137,9 @@ Future<void> main() async {
     );
     final isVisible = await windowManager.isVisible();
     await windowManager.setPreventClose(true);
+    // 立即开始监听窗口事件，确保在 OnboardingPage/PreheatGate 等
+    // MainPage 尚未挂载的阶段也能正常响应窗口关闭
+    WindowStateService.instance.startListening();
     if (isVisible) {
       await WindowStateService.instance.attach(prefs);
       if (Platform.isLinux) {

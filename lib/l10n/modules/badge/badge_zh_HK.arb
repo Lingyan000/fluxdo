@@ -1,0 +1,34 @@
+{
+  "@@locale": "zh_HK",
+  "badge_bronze": "銅牌",
+  "badge_bronzeBadge": "銅牌徽章",
+  "badge_defaultName": "徽章",
+  "badge_gold": "金牌",
+  "badge_goldBadge": "金牌徽章",
+  "badge_grantedCount": "已授予 {count} 次",
+  "@badge_grantedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "badge_grantedSuffix": " 獲得",
+  "badge_granteeCount": "{count} 位",
+  "@badge_granteeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "badge_grantees": "獲得者",
+  "badge_myBadges": "我的徽章",
+  "badge_noGrantees": "暫無用户獲得該徽章",
+  "badge_silver": "銀牌",
+  "badge_silverBadge": "銀牌徽章",
+  "myBadges_badgeUnit": "枚徽章",
+  "myBadges_empty": "暫無徽章",
+  "myBadges_title": "我的徽章",
+  "myBadges_totalEarned": "累計獲得"
+}

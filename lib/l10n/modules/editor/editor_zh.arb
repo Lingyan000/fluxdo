@@ -1,0 +1,82 @@
+{
+  "@@locale": "zh",
+  "codeBlock_chart": "图表",
+  "codeBlock_chartLoadFailed": "图表加载失败",
+  "codeBlock_code": "代码",
+  "codeBlock_renderFailed": "代码块渲染失败: {error}",
+  "@codeBlock_renderFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "draft_topicTitle": "话题 #{id}",
+  "@draft_topicTitle": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "draft_untitled": "无标题",
+  "drafts_deleteContent": "确定要删除这个草稿吗？",
+  "drafts_deleteDraft": "删除草稿",
+  "drafts_deleteFailed": "删除失败: {error}",
+  "@drafts_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "drafts_deleteTitle": "删除草稿",
+  "drafts_deleted": "草稿已删除",
+  "drafts_draft": "草稿",
+  "drafts_empty": "暂无草稿",
+  "drafts_newTopic": "新话题",
+  "drafts_pmIncomplete": "私信草稿数据不完整",
+  "drafts_privateMessage": "私信",
+  "drafts_replyToPost": "回复 #{number}",
+  "@drafts_replyToPost": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "drafts_title": "我的草稿",
+  "editor_hintText": "说点什么吧... (支持 Markdown)",
+  "editor_noContent": "（无内容）",
+  "link_insertTitle": "插入链接",
+  "link_textHint": "显示的文字",
+  "link_textLabel": "链接文本",
+  "link_textRequired": "请输入链接文本",
+  "link_urlRequired": "请输入 URL",
+  "mention_group": "群组",
+  "mention_noUserFound": "未找到匹配用户",
+  "mention_searchHint": "输入用户名搜索",
+  "template_empty": "暂无可用模板",
+  "template_insertTitle": "插入模板",
+  "template_loadError": "加载模板失败",
+  "template_searchHint": "搜索模板…",
+  "template_tooltip": "模板",
+  "toolbar_attachFileTooltip": "上传附件",
+  "toolbar_boldPlaceholder": "粗体文本",
+  "toolbar_codePlaceholder": "在此处键入或粘贴代码",
+  "toolbar_gridMinImages": "需要至少 2 张图片才能创建网格",
+  "toolbar_gridNeedConsecutive": "需要至少 2 张连续的图片才能创建网格",
+  "toolbar_h1": "H1 - 一级标题",
+  "toolbar_h2": "H2 - 二级标题",
+  "toolbar_h3": "H3 - 三级标题",
+  "toolbar_h4": "H4 - 四级标题",
+  "toolbar_h5": "H5 - 五级标题",
+  "toolbar_imageGridTooltip": "图片网格",
+  "toolbar_imagesAlreadyInGrid": "这些图片已经在网格中了",
+  "toolbar_italicPlaceholder": "斜体文本",
+  "toolbar_mixOptimize": "混排优化",
+  "toolbar_quotePlaceholder": "引用文本",
+  "toolbar_spoilerPlaceholder": "剧透内容",
+  "toolbar_spoilerTooltip": "剧透",
+  "toolbar_strikethroughPlaceholder": "删除线文本"
+}

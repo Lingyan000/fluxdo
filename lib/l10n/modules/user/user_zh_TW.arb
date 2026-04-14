@@ -1,0 +1,234 @@
+{
+  "@@locale": "zh_TW",
+  "followList_followers": "粉絲",
+  "followList_following": "關注",
+  "profileStats_addItems": "點擊新增統計項",
+  "profileStats_allItemsAdded": "所有統計項已新增",
+  "profileStats_availableItems": "可新增項目",
+  "profileStats_bookmarkCount": "書籤數",
+  "profileStats_columnsPerRow": "每行數量",
+  "profileStats_dataSource": "資料來源",
+  "profileStats_daysVisited": "造訪天數",
+  "profileStats_editTitle": "統計卡片自訂",
+  "profileStats_enabledItems": "已新增項目",
+  "profileStats_guideMessage": "點擊統計卡片可自訂展示項目、佈局和資料來源",
+  "profileStats_incompatibleSource": "不相容目前資料來源",
+  "profileStats_layoutGrid": "網格",
+  "profileStats_layoutMode": "佈局模式",
+  "profileStats_layoutScroll": "滾動",
+  "profileStats_layoutSettings": "佈局設定",
+  "profileStats_likesGiven": "送讚",
+  "profileStats_likesReceived": "獲讚",
+  "profileStats_likesReceivedDays": "獲讚天數",
+  "profileStats_likesReceivedUsers": "獲讚人數",
+  "profileStats_loadError": "資料載入失敗，已回退到全量統計",
+  "profileStats_noItemsSelected": "未選擇任何統計項",
+  "profileStats_postCount": "發帖數",
+  "profileStats_postsRead": "已讀帖子",
+  "profileStats_recentTimeRead": "近60天閱讀",
+  "profileStats_selectItems": "統計項目",
+  "profileStats_sourceConnect": "信任等級週期",
+  "profileStats_sourceDaily": "本日",
+  "profileStats_sourceMonthly": "本月",
+  "profileStats_sourceQuarterly": "本季",
+  "profileStats_sourceSummary": "全量統計",
+  "profileStats_sourceWeekly": "本週",
+  "profileStats_sourceYearly": "本年",
+  "profileStats_timeRead": "閱讀時間",
+  "profileStats_topicCount": "主題數",
+  "profileStats_topicsEntered": "瀏覽主題",
+  "profileStats_topicsRepliedTo": "回覆主題",
+  "profile_aboutFluxDO": "關於 FluxDO",
+  "profile_aiModelService": "AI 模型服務",
+  "profile_appearance": "外觀設定",
+  "profile_browsingHistory": "瀏覽歷史",
+  "profile_cdkReauthSuccess": "CDK 重新授權成功",
+  "profile_confirmLogout": "確認退出",
+  "profile_dataManagement": "資料管理",
+  "profile_daysVisited": "訪問天數",
+  "profile_editProfile": "編輯資料",
+  "profile_inviteLinks": "邀請連結",
+  "profile_ldcReauthSuccess": "LDC 重新授權成功",
+  "profile_likesReceived": "獲得點贊",
+  "profile_loadingData": "載入資料...",
+  "profile_loggingOut": "正在退出...",
+  "profile_loginForMore": "登入後體驗更多功能",
+  "profile_loginLinuxDo": "登入 Linux.do",
+  "profile_logoutContent": "確定要退出登入嗎？",
+  "profile_logoutCurrentAccount": "退出當前賬號",
+  "profile_metaverse": "元宇宙",
+  "profile_myBadges": "我的徽章",
+  "profile_myBookmarks": "我的書籤",
+  "profile_myDrafts": "我的草稿",
+  "profile_myTopics": "我的話題",
+  "profile_networkSettings": "網路設定",
+  "profile_notLoggedIn": "未登入",
+  "profile_postCount": "發表回覆",
+  "profile_postsRead": "閱讀帖子",
+  "profile_preferences": "功能設定",
+  "profile_settings": "應用設定",
+  "profile_trustRequirements": "信任要求",
+  "trustLevel_activity": "活躍程度",
+  "trustLevel_appBarTitle": "信任要求",
+  "trustLevel_compliance": "合規記錄",
+  "trustLevel_interaction": "互動參與",
+  "trustLevel_parseFailed": "解析失敗: {error}",
+  "@trustLevel_parseFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "trustLevel_parseNotFound": "未找到信任級別資訊 (div.card)",
+  "trustLevel_requestFailed": "請求失敗: {statusCode}",
+  "@trustLevel_requestFailed": {
+    "placeholders": {
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "trustLevel_title": "信任級別要求",
+  "userProfile_actionCreatedTopic": "釋出了話題",
+  "userProfile_actionDefault": "動態",
+  "userProfile_actionLike": "點贊",
+  "userProfile_actionLiked": "被贊",
+  "userProfile_actionReplied": "回覆了",
+  "userProfile_bio": "個人簡介",
+  "userProfile_catPostCount": "{count} 回覆",
+  "@userProfile_catPostCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_catTopicCount": "{count} 話題",
+  "@userProfile_catTopicCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_follow": "關注",
+  "userProfile_followed": "已關注",
+  "userProfile_followers": "粉絲",
+  "userProfile_following": "關注",
+  "userProfile_fourMonths": "四個月",
+  "userProfile_ignored": "已忽略",
+  "userProfile_joinDate": "加入時間",
+  "userProfile_laterThisWeek": "本週稍後",
+  "userProfile_laterToday": "今天稍後",
+  "userProfile_linkClicks": "{count} 次點選",
+  "@userProfile_linkClicks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_location": "位置",
+  "userProfile_message": "私信",
+  "userProfile_moreInfo": "更多資訊",
+  "userProfile_mostLiked": "贊最多",
+  "userProfile_mostLikedBy": "被誰讚的最多",
+  "userProfile_mostRepliedTo": "最多回復至",
+  "userProfile_mute": "免打擾",
+  "userProfile_nextMonday": "下週一",
+  "userProfile_nextMonth": "下個月",
+  "userProfile_noBio": "這個人很懶，什麼都沒寫",
+  "userProfile_noContent": "暫無內容",
+  "userProfile_noReactions": "暫無回應",
+  "userProfile_noSummary": "暫無總結資料",
+  "userProfile_normal": "常規",
+  "userProfile_oneYear": "一年",
+  "userProfile_permanent": "永久",
+  "userProfile_permanentlySilenced": "該使用者已被永久禁言",
+  "userProfile_permanentlySuspended": "該使用者已被永久封禁",
+  "userProfile_reacted": "回應了",
+  "userProfile_restored": "已恢復常規通知",
+  "userProfile_selectIgnoreDuration": "選擇忽略時長",
+  "userProfile_setToIgnore": "已設定為忽略",
+  "userProfile_setToMute": "已設定為免打擾",
+  "userProfile_shareUser": "分享使用者",
+  "userProfile_silencedBannerForever": "該使用者已被永久禁言",
+  "userProfile_silencedBannerUntil": "該使用者已被禁言至 {date}",
+  "@userProfile_silencedBannerUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_silencedStatus": "禁言狀態",
+  "userProfile_silencedUntil": "禁言至 {date}",
+  "@userProfile_silencedUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_sixMonths": "六個月",
+  "userProfile_statsLikes": "獲贊",
+  "userProfile_statsReplies": "回覆",
+  "userProfile_statsTopics": "話題",
+  "userProfile_statsVisits": "訪問",
+  "userProfile_suspendedBannerForever": "該使用者已被永久封禁",
+  "userProfile_suspendedBannerUntil": "該使用者已被封禁至 {date}",
+  "@userProfile_suspendedBannerUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_suspendedStatus": "封禁狀態",
+  "userProfile_suspendedUntil": "封禁至 {date}",
+  "@userProfile_suspendedUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_tabActivity": "動態",
+  "userProfile_tabLikes": "贊",
+  "userProfile_tabReactions": "回應",
+  "userProfile_tabReplies": "回覆",
+  "userProfile_tabSummary": "總結",
+  "userProfile_tabTopics": "話題",
+  "userProfile_threeMonths": "三個月",
+  "userProfile_tomorrow": "明天",
+  "userProfile_topBadges": "熱門徽章",
+  "userProfile_topCategories": "熱門類別",
+  "userProfile_topLinks": "熱門連結",
+  "userProfile_topReplies": "熱門回覆",
+  "userProfile_topTopics": "熱門話題",
+  "userProfile_topicHash": "話題 #{id}",
+  "@userProfile_topicHash": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_twoMonths": "兩個月",
+  "userProfile_twoWeeks": "兩週",
+  "userProfile_website": "網站",
+  "user_trustLevel0": "L0 新使用者",
+  "user_trustLevel1": "L1 基本使用者",
+  "user_trustLevel2": "L2 成員",
+  "user_trustLevel3": "L3 活躍使用者",
+  "user_trustLevel4": "L4 領袖",
+  "user_trustLevelUnknown": "等級 {level}",
+  "@user_trustLevelUnknown": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  }
+}

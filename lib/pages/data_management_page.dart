@@ -1,10 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 
 import '../l10n/s.dart';
+import '../utils/share_utils.dart';
 import '../providers/app_state_refresher.dart';
 import '../providers/core_providers.dart';
 import '../providers/theme_provider.dart';
@@ -306,11 +307,9 @@ class DataBackupSection extends ConsumerWidget {
     try {
       final prefs = ref.read(sharedPreferencesProvider);
       final filePath = await DataBackupService.exportToFile(prefs);
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(filePath, mimeType: 'application/json')],
-          subject: S.current.dataManagement_backupSubject,
-        ),
+      await ShareUtils.shareOrSaveFile(
+        XFile(filePath, mimeType: 'application/json'),
+        subject: S.current.dataManagement_backupSubject,
       );
     } catch (e) {
       ToastService.showError(

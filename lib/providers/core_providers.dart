@@ -72,9 +72,10 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
         _saveCache(prefs, user);
         return user;
       }
-      // 网络确认未登录，清除缓存并返回 null
-      await prefs.remove(_cacheKey);
-      await prefs.remove(_cacheUserKey);
+      // 网络返回 null 但本地有缓存时，保守处理：保留缓存返回，
+      // 避免短暂鉴权抖动把 UI 误判成已登出。
+      // 只有在已确认没有 token 的分支（第 48-53 行）才清理缓存。
+      if (cachedUser != null) return cachedUser;
       return null;
     } catch (e) {
       // 网络失败，返回缓存

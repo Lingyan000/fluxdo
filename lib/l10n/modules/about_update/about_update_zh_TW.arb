@@ -1,0 +1,42 @@
+{
+  "@@locale": "zh_TW",
+  "about_appLogs": "應用日誌",
+  "about_checkUpdate": "檢查更新",
+  "about_checkUpdateError": "無法檢查更新，請稍後重試。\n錯誤資訊: {error}",
+  "@about_checkUpdateError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "about_checkUpdateFailed": "檢查更新失敗",
+  "about_develop": "開發",
+  "about_developerMode": "開發者模式",
+  "about_developerModeAlreadyEnabled": "開發者模式已啟用",
+  "about_developerModeClosed": "已關閉開發者模式",
+  "about_developerModeEnabled": "已啟用開發者模式",
+  "about_feedback": "反饋問題",
+  "about_info": "資訊",
+  "about_latestVersion": "已是最新版本",
+  "about_legalese": "非官方 Linux.do 客戶端\n基於 Flutter & Material 3",
+  "about_noUpdateContent": "當前版本: {version}\n您正在使用最新版本的 FluxDO，無需更新。",
+  "@about_noUpdateContent": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "about_openSourceLicense": "開源許可",
+  "about_sourceCode": "專案原始碼",
+  "about_tapToDisableDeveloperMode": "點選關閉開發者模式",
+  "about_title": "關於",
+  "deviceInfo_dohOff": "DOH: 關閉",
+  "deviceInfo_proxyOff": "代理: 關閉",
+  "update_changelog": "更新內容",
+  "update_dontRemind": "不再提醒",
+  "update_newVersionFound": "發現新版本",
+  "update_now": "立即更新",
+  "update_rateLimited": "GitHub API 請求過於頻繁，請稍後再試"
+}

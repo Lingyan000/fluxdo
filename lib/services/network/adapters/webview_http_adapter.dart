@@ -48,8 +48,20 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     'transfer-encoding',
     'upgrade',
     'user-agent',
-    'via',
+      'via',
   };
+  @visibleForTesting
+  static const String fetchCacheModeExtraKey = 'webViewFetchCacheMode';
+  static const Set<String> _supportedFetchCacheModes = {
+    'default',
+    'no-store',
+    'reload',
+    'no-cache',
+    'force-cache',
+    'only-if-cached',
+  };
+  @visibleForTesting
+  static const String defaultApiFetchCacheMode = 'no-store';
   static Future<void>? _startupSessionCookieSelfCheckFuture;
   static bool _startupSessionCookieSelfCheckDone = false;
 
@@ -216,6 +228,24 @@ class WebViewHttpAdapter implements HttpClientAdapter {
 
     // 构建 headers（移除 Cookie，由 WebView 自动处理）
     final headersMap = _buildBrowserSafeHeaders(options.headers);
+    final fetchCacheMode = resolveFetchCacheMode(options);
+    if (fetchCacheMode != null) {
+      final currentFields = options.extra['_networkLogFields'];
+      if (currentFields is Map<String, dynamic>) {
+        currentFields['webViewCacheMode'] = fetchCacheMode;
+      } else {
+        final mergedFields = <String, dynamic>{};
+        if (currentFields is Map) {
+          currentFields.forEach((key, value) {
+            if (key is String) {
+              mergedFields[key] = value;
+            }
+          });
+        }
+        mergedFields['webViewCacheMode'] = fetchCacheMode;
+        options.extra['_networkLogFields'] = mergedFields;
+      }
+    }
 
     // 构建 body
     final bodyPlan = await _buildRequestBodyPlan(
@@ -238,7 +268,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
           const fetchOptions = {
             method: '$method',
             headers: ${jsonEncode(headersMap)},
-            credentials: 'include'
+            credentials: 'include'${fetchCacheMode != null ? ",\n            cache: ${jsonEncode(fetchCacheMode)}" : ''}
           };
           $bodyScript
 
@@ -775,6 +805,26 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     }
 
     await flush();
+  }
+
+  @visibleForTesting
+  static String? resolveFetchCacheMode(RequestOptions options) {
+    final requestedMode =
+        options.extra[fetchCacheModeExtraKey]?.toString().trim().toLowerCase();
+    if (requestedMode != null && requestedMode.isNotEmpty) {
+      if (_supportedFetchCacheModes.contains(requestedMode)) {
+        return requestedMode;
+      }
+      debugPrint(
+        '[WebViewAdapter] Ignore unsupported fetch cache mode: $requestedMode',
+      );
+    }
+
+    final method = options.method.toUpperCase();
+    if (method == 'GET' || method == 'HEAD') {
+      return defaultApiFetchCacheMode;
+    }
+    return null;
   }
 
   Future<Uint8List?> _readRequestBytes(Stream<Uint8List>? requestStream) async {

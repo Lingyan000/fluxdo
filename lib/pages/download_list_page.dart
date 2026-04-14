@@ -5,9 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart'
     show SwipeActionCell, SwipeAction, SwipeActionScope;
 import 'package:open_filex/open_filex.dart';
-import 'package:share_plus/share_plus.dart' show ShareParams, SharePlus, XFile;
+import 'package:cross_file/cross_file.dart';
 
 import '../models/download_item.dart';
+import '../utils/share_utils.dart';
 import '../providers/download_provider.dart';
 import '../services/local_notification_service.dart';
 import '../services/toast_service.dart';
@@ -184,8 +185,8 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
     }
     final result = await OpenFilex.open(item.savePath, type: item.mimeType);
     if (result.type != ResultType.done && mounted) {
-      // 打开失败时回退到分享面板
-      SharePlus.instance.share(ShareParams(files: [XFile(item.savePath)]));
+      // 打开失败时回退到分享/保存
+      ShareUtils.shareOrSaveFile(XFile(item.savePath));
     }
   }
 
@@ -195,7 +196,7 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
       ToastService.showError(S.current.myBrowser_fileNotFound);
       return;
     }
-    SharePlus.instance.share(ShareParams(files: [XFile(item.savePath)]));
+    ShareUtils.shareOrSaveFile(XFile(item.savePath));
   }
 
   void _confirmClear(BuildContext context) {

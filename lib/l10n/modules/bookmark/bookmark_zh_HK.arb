@@ -1,0 +1,32 @@
+{
+  "@@locale": "zh_HK",
+  "bookmark_deleteConfirm": "確定要刪除這個書籤嗎？",
+  "bookmark_editBookmark": "編輯書籤",
+  "bookmark_nameHint": "為書籤添加備註...",
+  "bookmark_nameLabel": "書籤名稱（可選）",
+  "bookmark_reminderCustom": "自定義",
+  "bookmark_reminderExpired": "提醒已過期",
+  "bookmark_reminderNextWeek": "下週",
+  "bookmark_reminderThreeDays": "3天后",
+  "bookmark_reminderTime": "提醒時間：{time}",
+  "@bookmark_reminderTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "bookmark_reminderTomorrow": "明天",
+  "bookmark_reminderTwoHours": "2小時後",
+  "bookmark_removed": "已取消書籤",
+  "bookmark_setReminder": "設置提醒",
+  "bookmarks_cancelReminder": "取消提醒",
+  "bookmarks_deleted": "已刪除書籤",
+  "bookmarks_empty": "暫無書籤",
+  "bookmarks_emptySearchHint": "輸入關鍵詞搜索書籤",
+  "bookmarks_expired": " 已過期",
+  "bookmarks_reminderCancelled": "已取消提醒",
+  "bookmarks_searchHint": "在書籤中搜索...",
+  "bookmarks_title": "我的書籤",
+  "readLater_title": "稍後閲讀"
+}

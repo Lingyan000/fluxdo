@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../l10n/s.dart';
 import '../models/topic.dart';
 import '../services/discourse/discourse_service.dart';
 import '../constants.dart';
+import 'share_utils.dart';
 
 /// 导出范围
 enum ExportScope {
@@ -239,7 +240,7 @@ class ExportUtils {
     };
 
     final xFile = XFile(file.path, mimeType: mimeType);
-    await SharePlus.instance.share(ShareParams(files: [xFile]));
+    await ShareUtils.shareOrSaveFile(xFile);
   }
 
   /// 移除 HTML 标签
@@ -279,10 +280,10 @@ class ExportUtils {
 
   /// 清理文件名中的非法字符
   static String _sanitizeFilename(String name) {
-    return name
+    final sanitized = name
         .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .substring(0, name.length > 50 ? 50 : name.length);
+        .replaceAll(RegExp(r'\s+'), '_');
+    return sanitized.length > 50 ? sanitized.substring(0, 50) : sanitized;
   }
 
   /// HTML 样式（参考 Discourse 官方样式）

@@ -20,6 +20,7 @@ class TopicBottomBar extends StatelessWidget {
   final VoidCallback? onShowTopLevelReplies;
   final VoidCallback? onCancelFilter;
   final VoidCallback? onShowNestedView;
+  final bool isPrivateMessage;
 
   const TopicBottomBar({
     super.key,
@@ -34,6 +35,7 @@ class TopicBottomBar extends StatelessWidget {
     this.isTopLevelMode = false,
     this.isNestedMode = false,
     this.isLoading = false,
+    this.isPrivateMessage = false,
     this.onShowTopReplies,
     this.onShowAuthorOnly,
     this.onShowTopLevelReplies,
@@ -185,26 +187,29 @@ class TopicBottomBar extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'link',
-          child: Row(
-            children: [
-              Icon(Icons.link, size: 20, color: theme.colorScheme.onSurface),
-              const SizedBox(width: 12),
-              Text(context.l10n.topicDetail_shareLink),
-            ],
+        // 私信话题不显示链接分享和生成分享图
+        if (!isPrivateMessage)
+          PopupMenuItem(
+            value: 'link',
+            child: Row(
+              children: [
+                Icon(Icons.link, size: 20, color: theme.colorScheme.onSurface),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_shareLink),
+              ],
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: 'image',
-          child: Row(
-            children: [
-              Icon(Icons.image_outlined, size: 20, color: theme.colorScheme.onSurface),
-              const SizedBox(width: 12),
-              Text(context.l10n.topicDetail_generateShareImage),
-            ],
+        if (!isPrivateMessage)
+          PopupMenuItem(
+            value: 'image',
+            child: Row(
+              children: [
+                Icon(Icons.image_outlined, size: 20, color: theme.colorScheme.onSurface),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
           ),
-        ),
         PopupMenuItem(
           value: 'export',
           child: Row(

@@ -1,0 +1,32 @@
+{
+  "@@locale": "zh",
+  "bookmark_deleteConfirm": "确定要删除这个书签吗？",
+  "bookmark_editBookmark": "编辑书签",
+  "bookmark_nameHint": "为书签添加备注...",
+  "bookmark_nameLabel": "书签名称（可选）",
+  "bookmark_reminderCustom": "自定义",
+  "bookmark_reminderExpired": "提醒已过期",
+  "bookmark_reminderNextWeek": "下周",
+  "bookmark_reminderThreeDays": "3天后",
+  "bookmark_reminderTime": "提醒时间：{time}",
+  "@bookmark_reminderTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "bookmark_reminderTomorrow": "明天",
+  "bookmark_reminderTwoHours": "2小时后",
+  "bookmark_removed": "已取消书签",
+  "bookmark_setReminder": "设置提醒",
+  "bookmarks_cancelReminder": "取消提醒",
+  "bookmarks_deleted": "已删除书签",
+  "bookmarks_empty": "暂无书签",
+  "bookmarks_emptySearchHint": "输入关键词搜索书签",
+  "bookmarks_expired": " 已过期",
+  "bookmarks_reminderCancelled": "已取消提醒",
+  "bookmarks_searchHint": "在书签中搜索...",
+  "bookmarks_title": "我的书签",
+  "readLater_title": "稍后阅读"
+}

@@ -53,6 +53,8 @@ class PostFooterSection extends ConsumerStatefulWidget {
   final String? postDetailLabel;
   /// Boost 更新回调
   final void Function(Post updatedPost)? onBoostUpdated;
+  /// 高亮指定用户的 boost（从 boost 通知跳转时使用）
+  final String? highlightBoostUsername;
 
   const PostFooterSection({
     super.key,
@@ -73,6 +75,7 @@ class PostFooterSection extends ConsumerStatefulWidget {
     this.onShowPostDetail,
     this.postDetailLabel,
     this.onBoostUpdated,
+    this.highlightBoostUsername,
   });
 
   @override
@@ -310,6 +313,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
               canBoost: _canBoost,
               onAddBoost: _openBoostInput,
               onBoostTap: _showBoostActions,
+              highlightUsername: widget.highlightBoostUsername,
             ),
           ValueListenableBuilder<bool>(
             valueListenable: _showRepliesNotifier,

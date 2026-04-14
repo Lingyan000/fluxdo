@@ -65,11 +65,13 @@ class CookieLogger {
     required List<String> names,
     required String source,
     String? url,
+    List<Map<String, dynamic>>? cookieDetails,
+    Map<String, dynamic>? extraFields,
   }) {
     final msg = '$direction, count=$count, names=$names'
         '${url != null ? ', url=$url' : ''}';
     debugPrint('[Cookie:Sync] $msg');
-    LogWriter.instance.write({
+    final entry = <String, dynamic>{
       'timestamp': DateTime.now().toIso8601String(),
       'level': 'info',
       'type': 'cookie_trace',
@@ -80,7 +82,12 @@ class CookieLogger {
       'names': names,
       'source': source,
       'url': url,
-    });
+      ...?(cookieDetails != null ? {'cookieDetails': cookieDetails} : null),
+    };
+    if (extraFields != null && extraFields.isNotEmpty) {
+      entry.addAll(extraFields);
+    }
+    LogWriter.instance.write(entry);
   }
 
   // ---------------------------------------------------------------------------

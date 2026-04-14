@@ -1,0 +1,74 @@
+{
+  "@@locale": "zh_TW",
+  "cfVerify_cooldown": "驗證太頻繁，請稍後再試",
+  "cfVerify_desc": "手動觸發過盾驗證",
+  "cfVerify_failed": "驗證未透過",
+  "cfVerify_success": "驗證成功",
+  "cfVerify_title": "Cloudflare 驗證",
+  "cf_abandonVerifyMessage": "退出驗證將導致相關功能無法使用，確定要退出嗎？",
+  "cf_abandonVerifyTitle": "放棄驗證？",
+  "cf_autoVerifyTimeout": "自動驗證超時，請手動完成驗證",
+  "cf_backgroundVerifying": "後臺驗證中... (點選開啟)",
+  "cf_cannotOpenVerifyPage": "無法開啟驗證頁面，請稍後重試",
+  "cf_challengeFailedCooldown": "安全驗證失敗，已進入冷卻期，請稍後再試",
+  "cf_challengeNotEffective": "驗證未生效，請稍後重試",
+  "cf_continueVerify": "繼續驗證",
+  "cf_cooldown": "請稍後再試",
+  "cf_failedRetry": "安全驗證失敗，請重試",
+  "cf_failedWithCause": "安全驗證失敗: {cause}",
+  "@cf_failedWithCause": {
+    "placeholders": {
+      "cause": {
+        "type": "String"
+      }
+    }
+  },
+  "cf_helpContent": "這是 Cloudflare 安全驗證頁面。\n\n請完成頁面上的驗證挑戰（如勾選框或滑塊）。\n\n驗證成功後會自動關閉此頁面。\n\n如果長時間無法完成，可以嘗試：\n• 點選重新整理按鈕重新載入\n• 檢查網路連線\n• 關閉後稍後再試",
+  "cf_helpTitle": "驗證幫助",
+  "cf_loadFailed": "載入失敗: {description}",
+  "@cf_loadFailed": {
+    "placeholders": {
+      "description": {
+        "type": "String"
+      }
+    }
+  },
+  "cf_securityVerifyTitle": "安全驗證",
+  "cf_userCancelled": "驗證已取消",
+  "cf_verifyIncomplete": "驗證未完成，請重試",
+  "cf_verifyLonger": "驗證時間較長，還剩 {seconds} 秒",
+  "@cf_verifyLonger": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "cf_verifyTimeout": "驗證超時，請重試",
+  "cf_verifying": "驗證中... {seconds}s",
+  "@cf_verifying": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "hcaptcha_clear": "清除",
+  "hcaptcha_clearConfirm": "確定要清除 hCaptcha 無障礙 Cookie 嗎？",
+  "hcaptcha_cookieCleared": "hCaptcha 無障礙 Cookie 已清除",
+  "hcaptcha_cookieNotFound": "未找到 hCaptcha 無障礙 Cookie，請先完成註冊",
+  "hcaptcha_cookieNotSet": "Cookie 未設定",
+  "hcaptcha_cookieSaved": "hCaptcha 無障礙 Cookie 已儲存",
+  "hcaptcha_cookieSet": "Cookie 已設定 ✓",
+  "hcaptcha_done": "完成",
+  "hcaptcha_pasteCookie": "貼上 Cookie",
+  "hcaptcha_pasteDialogDesc": "在瀏覽器中造訪 hCaptcha 無障礙頁面註冊後，從瀏覽器開發人員工具中複製名為 hc_accessibility 的 Cookie 值貼到下方。",
+  "hcaptcha_pasteDialogHint": "請輸入 hc_accessibility Cookie 值",
+  "hcaptcha_pasteDialogTitle": "貼上 hCaptcha Cookie",
+  "hcaptcha_pasteLink": "貼上登入連結",
+  "hcaptcha_pasteLinkInvalid": "剪貼簿中沒有有效的 hCaptcha 連結",
+  "hcaptcha_subtitle": "視障使用者可跳過 hCaptcha 驗證",
+  "hcaptcha_title": "hCaptcha 無障礙",
+  "hcaptcha_webviewGet": "WebView 取得",
+  "hcaptcha_webviewTitle": "hCaptcha 無障礙"
+}

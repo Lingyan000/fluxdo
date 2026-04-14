@@ -1,0 +1,33 @@
+{
+  "@@locale": "zh_HK",
+  "webviewLogin_clearSaved": "清除已保存的密碼",
+  "webviewLogin_clearSavedContent": "確定要清除已保存的登錄憑證嗎？下次登錄時需要手動輸入。",
+  "webviewLogin_clearSavedTitle": "清除已保存的密碼",
+  "webviewLogin_emailLoginInvalidLink": "無效的登錄鏈接",
+  "webviewLogin_emailLoginPaste": "粘貼登錄鏈接",
+  "webviewLogin_lastLogin": "上次登錄: @{username}",
+  "@webviewLogin_lastLogin": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "webviewLogin_loginSuccess": "登錄成功！",
+  "webviewLogin_savedPassword": "已保存的密碼",
+  "webviewLogin_title": "登錄 Linux.do",
+  "webview_browser": "瀏覽器",
+  "webview_cannotOpenBrowser": "無法打開外部瀏覽器",
+  "webview_goBack": "後退",
+  "webview_goForward": "前進",
+  "webview_noAppForLink": "未找到可處理此鏈接的應用",
+  "webview_openExternal": "在外部瀏覽器打開",
+  "webview_openFailed": "打開失敗: {error}",
+  "@webview_openFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
+}

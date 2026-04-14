@@ -1,0 +1,71 @@
+{
+  "@@locale": "en",
+  "myBrowser_addManually": "Add bookmark",
+  "myBrowser_bookmarkCount": "{count} bookmarks",
+  "@myBrowser_bookmarkCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "myBrowser_bookmarks": "Bookmarks",
+  "myBrowser_clearCompleted": "Clear completed",
+  "myBrowser_clearCompletedConfirm": "Are you sure you want to clear all completed downloads?",
+  "myBrowser_clearHistory": "Clear history",
+  "myBrowser_clearHistoryConfirm": "Are you sure you want to clear all browsing history?",
+  "myBrowser_confirmDelete": "Are you sure you want to delete this bookmark?",
+  "myBrowser_delete": "Delete",
+  "myBrowser_deleted": "Bookmark deleted",
+  "myBrowser_downloadComplete": "Download complete",
+  "myBrowser_downloadEmpty": "No downloads yet",
+  "myBrowser_downloadFailed": "Download failed",
+  "myBrowser_downloadSize": "{size} MB",
+  "@myBrowser_downloadSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "myBrowser_downloadStarted": "Download started",
+  "myBrowser_downloading": "Downloading",
+  "myBrowser_downloads": "Downloads",
+  "myBrowser_downloadsDesc": "View downloaded files",
+  "myBrowser_edit": "Edit",
+  "myBrowser_editTitle": "Edit title",
+  "myBrowser_empty": "No bookmarked pages yet",
+  "myBrowser_fileNotFound": "File not found",
+  "myBrowser_history": "Browsing History",
+  "myBrowser_historyCleared": "Browsing history cleared",
+  "myBrowser_historyDesc": "View browsed pages",
+  "myBrowser_historyEmpty": "No browsing history yet",
+  "myBrowser_inputTitle": "Title (optional)",
+  "myBrowser_inputUrl": "Enter URL",
+  "myBrowser_open": "Open",
+  "myBrowser_title": "Web Browse",
+  "myBrowser_undo": "Undo",
+  "myBrowser_viewDownload": "View",
+  "webviewLogin_clearSaved": "Clear saved password",
+  "webviewLogin_clearSavedContent": "Clear saved login credentials? You will need to enter them manually next time.",
+  "webviewLogin_clearSavedTitle": "Clear saved password",
+  "webviewLogin_emailLoginInvalidLink": "Invalid login link",
+  "webviewLogin_emailLoginPaste": "Paste login link",
+  "webviewLogin_lastLogin": "Last login: @{username}",
+  "webviewLogin_loginSuccess": "Login successful!",
+  "webviewLogin_savedPassword": "Saved password",
+  "webviewLogin_title": "Log in to Linux.do",
+  "webview_addBookmark": "Bookmark this page",
+  "webview_bookmarkAdded": "Bookmarked",
+  "webview_bookmarkRemoved": "Bookmark removed",
+  "webview_browser": "Browser",
+  "webview_cannotOpenBrowser": "Cannot open external browser",
+  "webview_go": "Go",
+  "webview_goBack": "Back",
+  "webview_goForward": "Forward",
+  "webview_inputUrl": "Enter or edit URL",
+  "webview_noAppForLink": "No app found for this link",
+  "webview_openExternal": "Open in external browser",
+  "webview_openFailed": "Open failed: {error}",
+  "webview_removeBookmark": "Remove bookmark"
+}

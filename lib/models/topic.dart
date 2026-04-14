@@ -731,7 +731,8 @@ class Post {
           ? PostNotice.fromJson(json['notice'] as Map<String, dynamic>)
           : null,
       boosts: (json['boosts'] as List<dynamic>?)
-          ?.map((e) => Boost.fromJson(e as Map<String, dynamic>))
+          ?.whereType<Map<String, dynamic>>()
+          .map((e) => Boost.fromJson(e))
           .toList(),
       canBoost: json['can_boost'] as bool? ?? false,
     );
@@ -930,7 +931,9 @@ class Boost {
     return Boost(
       id: json['id'] as int,
       cooked: json['cooked'] as String? ?? '',
-      user: BoostUser.fromJson(json['user'] as Map<String, dynamic>),
+      user: json['user'] != null
+          ? BoostUser.fromJson(json['user'] as Map<String, dynamic>)
+          : const BoostUser(id: 0, username: '', avatarTemplate: ''),
       canDelete: json['can_delete'] as bool? ?? false,
       canFlag: json['can_flag'] as bool? ?? false,
       userFlagStatus: json['user_flag_status'] as int?,

@@ -1,0 +1,62 @@
+{
+  "@@locale": "zh_TW",
+  "appLink_alipay": "支付寶",
+  "appLink_amap": "高德地圖",
+  "appLink_baidu": "百度",
+  "appLink_baiduNetdisk": "百度網盤",
+  "appLink_continueVisitConfirm": "繼續訪問{name}？",
+  "@appLink_continueVisitConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appLink_ctrip": "攜程",
+  "appLink_dianping": "大眾點評",
+  "appLink_dingtalk": "釘釘",
+  "appLink_douban": "豆瓣",
+  "appLink_douyin": "抖音",
+  "appLink_eleme": "餓了麼",
+  "appLink_email": "郵件",
+  "appLink_externalApp": "外部應用",
+  "appLink_fliggy": "飛豬",
+  "appLink_jd": "京東",
+  "appLink_kuaishou": "快手",
+  "appLink_map": "地圖",
+  "appLink_meituan": "美團",
+  "appLink_meituanWaimai": "美團外賣",
+  "appLink_openAppConfirm": "此網站想開啟{name}應用",
+  "@appLink_openAppConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appLink_phone": "電話",
+  "appLink_pinduoduo": "拼多多",
+  "appLink_playStore": "Play 商店",
+  "appLink_qqMap": "騰訊地圖",
+  "appLink_sms": "簡訊",
+  "appLink_suning": "蘇寧",
+  "appLink_taobao": "淘寶",
+  "appLink_toutiao": "今日頭條",
+  "appLink_weibo": "微博",
+  "appLink_weixin": "微信",
+  "appLink_xiaohongshu": "小紅書",
+  "appLink_zhihu": "知乎",
+  "externalLink_blocked": "連結已被阻止",
+  "externalLink_blockedMessage": "此連結已被列入黑名單，無法訪問",
+  "externalLink_contactAdmin": "如有疑問，請聯絡站點管理員",
+  "externalLink_leavingMessage": "您即將訪問外部網站",
+  "externalLink_leavingTitle": "即將離開",
+  "externalLink_securityWarningHint": "可能包含推廣內容或存在安全隱患，請謹慎訪問",
+  "externalLink_securityWarningMessage": "此連結被標記為潛在風險連結",
+  "externalLink_securityWarningTitle": "安全警告",
+  "externalLink_shortLinkMessage": "此連結為短連結服務，無法預覽真實目標",
+  "externalLink_shortLinkTitle": "短連結提醒",
+  "externalLink_shortLinkWarning": "短連結可能隱藏真實目的地，請確認來源可信",
+  "iframe_exitInteraction": "退出互動",
+  "onebox_linkPreview": "連結預覽"
+}

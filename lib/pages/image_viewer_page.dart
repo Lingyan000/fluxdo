@@ -6,13 +6,14 @@ import '../services/discourse_cache_manager.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/svg_utils.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../services/toast_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/share_utils.dart';
 import '../widgets/common/image_context_menu.dart';
 import '../widgets/common/loading_spinner.dart';
 import '../l10n/s.dart';
@@ -309,7 +310,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
       // 分享文件
       final xFile = XFile(file.path, mimeType: 'image/${_getExtensionFromUrl(imageUrl)}');
-      await SharePlus.instance.share(ShareParams(files: [xFile], text: imageUrl));
+      await ShareUtils.shareOrSaveFile(xFile);
     } catch (e) {
       debugPrint('Share image error: $e');
       if (mounted) {

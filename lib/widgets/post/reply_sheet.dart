@@ -36,6 +36,7 @@ Future<Post?> showReplySheet({
   Future<Draft?>? preloadedDraftFuture,
   String? initialContent,
   String? initialTitle,
+  bool isPrivateMessageTopic = false,
 }) async {
   final result = await showAppBottomSheet<Post?>(
     context: context,
@@ -50,6 +51,7 @@ Future<Post?> showReplySheet({
       preloadedDraftFuture: preloadedDraftFuture,
       initialContent: initialContent,
       initialTitle: initialTitle,
+      isPrivateMessageTopic: isPrivateMessageTopic,
     ),
   );
   return result;
@@ -89,6 +91,7 @@ class ReplySheet extends ConsumerStatefulWidget {
   final Future<Draft?>? preloadedDraftFuture; // 预加载的草稿
   final String? initialContent; // 预填内容（划词引用时使用）
   final String? initialTitle; // 预填标题（私信模式时使用）
+  final bool isPrivateMessageTopic; // 当前话题是否为私信话题
 
   const ReplySheet({
     super.key,
@@ -100,6 +103,7 @@ class ReplySheet extends ConsumerStatefulWidget {
     this.preloadedDraftFuture,
     this.initialContent,
     this.initialTitle,
+    this.isPrivateMessageTopic = false,
   });
 
   @override
@@ -128,6 +132,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   PresenceService? _presenceService;
 
   bool get _isPrivateMessage => widget.targetUsername != null;
+  /// 是否在私信话题中（创建新私信 或 回复已有私信话题）
+  bool get _isInPrivateMessageContext => _isPrivateMessage || widget.isPrivateMessageTopic;
   bool get _isEditMode => widget.editPost != null;
 
   @override
@@ -155,8 +161,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       _initDraftController();
     }
 
-    // 初始化 Presence 服务（非私信模式、非编辑模式）
-    if (!_isPrivateMessage && !_isEditMode && widget.topicId != null) {
+    // 初始化 Presence 服务（非私信场景、非编辑模式）
+    if (!_isInPrivateMessageContext && !_isEditMode && widget.topicId != null) {
       _presenceService = PresenceService(DiscourseService());
       _presenceService!.enterReplyChannel(widget.topicId!);
     }
@@ -371,7 +377,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
     // 最小字数校验
     final preloaded = PreloadedDataService();
-    final minLength = _isPrivateMessage
+    final minLength = _isInPrivateMessageContext
         ? await preloaded.getMinPmPostLength()
         : await preloaded.getMinPostLength();
     if (content.length < minLength) {
@@ -654,7 +660,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                         term: term,
                         topicId: widget.topicId,
                         categoryId: widget.categoryId,
-                        includeGroups: !_isPrivateMessage, // 私信不允许提及群组
+                        includeGroups: !_isInPrivateMessageContext, // 私信不允许提及群组
                       ),
                     ),
                   ),

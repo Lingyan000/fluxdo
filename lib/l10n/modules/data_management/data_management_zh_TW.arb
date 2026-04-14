@@ -1,0 +1,86 @@
+{
+  "@@locale": "zh_TW",
+  "backup_invalidFormat": "無效的備份檔案格式",
+  "backup_missingDataField": "備份檔案格式錯誤：缺少 data 欄位",
+  "dataManagement_aiChatCleared": "AI 聊天資料已清除",
+  "dataManagement_aiChatData": "AI 聊天資料",
+  "dataManagement_allCleared": "所有快取已清除，請重新登入",
+  "dataManagement_apiKeysCount": "包含 {count} 個 API Key",
+  "@dataManagement_apiKeysCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_autoManagement": "自動管理",
+  "dataManagement_backupSource": "備份來源: v{version}",
+  "@dataManagement_backupSource": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_backupSubject": "FluxDO 資料備份",
+  "dataManagement_cacheManagement": "快取管理",
+  "dataManagement_calculating": "計算中...",
+  "dataManagement_clearAiChatContent": "將刪除所有 AI 聊天記錄，此操作不可恢復。",
+  "dataManagement_clearAiChatTitle": "清除 AI 聊天資料",
+  "dataManagement_clearAll": "全部清除",
+  "dataManagement_clearAllCache": "清除所有快取",
+  "dataManagement_clearAllContent": "將清除所有快取資料，包括圖片快取、AI 聊天資料和 Cookie。\n\n清除 Cookie 後需要重新登入。",
+  "dataManagement_clearAllTitle": "清除所有快取",
+  "dataManagement_clearAndLogout": "清除並退出登入",
+  "dataManagement_clearCookieContent": "清除 Cookie 後需要重新登入，確定要繼續嗎？",
+  "dataManagement_clearCookieTitle": "清除 Cookie 快取",
+  "dataManagement_clearOnExit": "退出時清除圖片快取",
+  "dataManagement_clearOnExitDesc": "下次啟動時自動清除圖片快取",
+  "dataManagement_confirmImport": "確認匯入",
+  "dataManagement_cookieCache": "Cookie 快取",
+  "dataManagement_cookieCleared": "Cookie 快取已清除，請重新登入",
+  "dataManagement_dataBackup": "資料備份",
+  "dataManagement_exportData": "匯出資料",
+  "dataManagement_exportDesc": "將偏好設定匯出為檔案",
+  "dataManagement_exportFailed": "匯出失敗: {error}",
+  "@dataManagement_exportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_exportTime": "匯出時間: {time}",
+  "@dataManagement_exportTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_imageCache": "圖片快取",
+  "dataManagement_imageCacheCleared": "圖片快取已清除",
+  "dataManagement_importAndRestart": "匯入並重啟",
+  "dataManagement_importData": "匯入資料",
+  "dataManagement_importDesc": "從備份檔案恢復偏好設定",
+  "dataManagement_importFailed": "匯入失敗: {error}",
+  "@dataManagement_importFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_importSuccess": "資料已匯入，請重啟應用",
+  "dataManagement_importWarning": "匯入後將覆蓋當前對應的設定項，需要重啟應用生效。",
+  "dataManagement_noCache": "無快取",
+  "dataManagement_settingsCount": "包含 {count} 項設定",
+  "@dataManagement_settingsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_title": "資料管理"
+}

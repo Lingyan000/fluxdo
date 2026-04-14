@@ -1,0 +1,69 @@
+{
+  "@@locale": "zh_TW",
+  "createTopic_charCount": "{count} 字元",
+  "@createTopic_charCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "createTopic_confirmPublish": "確定釋出",
+  "createTopic_contentHint": "正文內容 (支援 Markdown)...",
+  "createTopic_continueEditing": "繼續編輯",
+  "createTopic_discardPost": "放棄帖子",
+  "createTopic_discardPostContent": "你想放棄你的帖子嗎？",
+  "createTopic_enterContent": "請輸入內容",
+  "createTopic_enterTitle": "請輸入標題",
+  "createTopic_loadCategoryFailed": "載入分類失敗: {error}",
+  "@createTopic_loadCategoryFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "createTopic_minContentLength": "內容至少需要 {min} 個字元",
+  "@createTopic_minContentLength": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "createTopic_minTags": "此分類至少需要 {min} 個標籤",
+  "@createTopic_minTags": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "createTopic_minTitleLength": "標題至少需要 {min} 個字元",
+  "@createTopic_minTitleLength": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "createTopic_noContent": "（無內容）",
+  "createTopic_noTitle": "（無標題）",
+  "createTopic_pendingReview": "你的帖子已提交，正在等待稽核",
+  "createTopic_restoreDraft": "恢復草稿",
+  "createTopic_restoreDraftContent": "檢測到未傳送的草稿，是否恢復？",
+  "createTopic_selectCategory": "請選擇分類",
+  "createTopic_templateNotModified": "您尚未修改分類别範本內容，確定要釋出嗎？",
+  "createTopic_title": "建立話題",
+  "createTopic_titleHint": "鍵入一個吸引人的標題...",
+  "editTopic_editPm": "編輯私信",
+  "editTopic_editTopic": "編輯話題",
+  "editTopic_loadContentFailed": "載入內容失敗: {error}",
+  "@editTopic_loadContentFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
+}

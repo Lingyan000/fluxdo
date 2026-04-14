@@ -154,6 +154,62 @@ class CookieJarService {
     return null;
   }
 
+  /// 加载指定 URI 下的 Cookie 诊断信息（不含真实值）
+  Future<List<Map<String, dynamic>>> getCookieDiagnosticsForRequest(
+    Uri uri, {
+    Iterable<String>? names,
+  }) async {
+    final normalizedNames = names
+        ?.map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final cookies = await loadCanonicalCookiesForRequest(uri);
+    final diagnostics = cookies
+        .where(
+          (cookie) =>
+              normalizedNames == null || normalizedNames.contains(cookie.name),
+        )
+        .map(
+          (cookie) => {
+            'name': cookie.name,
+            'domain': cookie.domain,
+            'normalizedDomain': cookie.normalizedDomain,
+            'path': cookie.path,
+            'hostOnly': cookie.hostOnly,
+            'valueLength': cookie.value.length,
+            'secure': cookie.secure,
+            'httpOnly': cookie.httpOnly,
+            'persistent': cookie.persistent,
+            'source': cookie.source.name,
+            'originUrl': cookie.originUrl,
+            'originHost': Uri.tryParse(cookie.originUrl ?? '')?.host,
+          },
+        )
+        .toList(growable: false);
+
+    diagnostics.sort((a, b) {
+      final nameA = a['name']?.toString() ?? '';
+      final nameB = b['name']?.toString() ?? '';
+      final nameCompare = nameA.compareTo(nameB);
+      if (nameCompare != 0) return nameCompare;
+
+      final pathA = a['path']?.toString().length ?? 0;
+      final pathB = b['path']?.toString().length ?? 0;
+      return pathB.compareTo(pathA);
+    });
+    return diagnostics;
+  }
+
+  /// 加载应用主域下的会话 Cookie 诊断信息
+  Future<List<Map<String, dynamic>>> getSessionCookieDiagnosticsForRequest({
+    Uri? uri,
+  }) {
+    return getCookieDiagnosticsForRequest(
+      uri ?? Uri.parse(AppConstants.baseUrl),
+      names: sessionCookieNames,
+    );
+  }
+
   /// 加载所有 CanonicalCookie（供 RawSetCookieQueue 兜底使用）
   Future<List<CanonicalCookie>> loadAllCanonicalCookies() async {
     if (!_initialized) await initialize();

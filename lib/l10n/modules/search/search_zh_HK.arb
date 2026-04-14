@@ -1,0 +1,109 @@
+{
+  "@@locale": "zh_HK",
+  "search_advancedSearch": "高級搜索",
+  "search_afterDate": "{date} 之後",
+  "@search_afterDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "search_applyFilter": "應用篩選",
+  "search_beforeDate": "{date} 之前",
+  "@search_beforeDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "search_category": "分類",
+  "search_categoryLoadFailed": "加載分類失敗: {error}",
+  "@search_categoryLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "search_clearAll": "清除全部",
+  "search_currentFilter": "當前篩選",
+  "search_custom": "自定義",
+  "search_dateRange": "時間範圍",
+  "search_emptyHint": "輸入關鍵詞搜索",
+  "search_error": "搜索出錯",
+  "search_filterBookmarks": "書籤",
+  "search_filterCreated": "我的話題",
+  "search_filterSeen": "瀏覽歷史",
+  "search_hintText": "搜索 @用户 #分類 tags:標籤",
+  "search_lastMonth": "最近一月",
+  "search_lastWeek": "最近一週",
+  "search_lastYear": "最近一年",
+  "search_likeCount": "{count} 點贊",
+  "@search_likeCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "search_noLimit": "不限",
+  "search_noPopularTags": "暫無熱門標籤",
+  "search_noResults": "沒有找到相關結果",
+  "search_popularTags": "熱門標籤",
+  "search_recentSearches": "最近搜索",
+  "search_replyCount": "{count} 條回覆",
+  "@search_replyCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "search_resultCount": "{count}{more} 條結果",
+  "@search_resultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "more": {
+        "type": "String"
+      }
+    }
+  },
+  "search_selectDateRange": "選擇時間範圍",
+  "search_selectedTags": "已選標籤",
+  "search_sortLabel": "排序：",
+  "search_sortLatest": "最新帖子",
+  "search_sortLatestTopic": "最新話題",
+  "search_sortLikes": "最受歡迎",
+  "search_sortRelevance": "相關性",
+  "search_sortViews": "最多瀏覽",
+  "search_status": "狀態",
+  "search_statusArchived": "已歸檔",
+  "search_statusClosed": "已關閉",
+  "search_statusOpen": "進行中",
+  "search_statusSolved": "已解決",
+  "search_statusUnsolved": "未解決",
+  "search_tags": "標籤",
+  "search_tagsLoadFailed": "加載標籤失敗: {error}",
+  "@search_tagsLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "search_topicSearchHint": "輸入關鍵詞搜索本話題",
+  "search_tryOtherKeywords": "請嘗試其他關鍵詞",
+  "search_users": "用户",
+  "search_viewCount": "{count} 瀏覽",
+  "@search_viewCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "@@locale": "en",
+  "nav_home": "Home",
+  "nav_mine": "Me",
+  "toast_authorizationFailed": "Authorization failed: {error}",
+  "toast_credentialCleared": "Credentials cleared",
+  "toast_credentialIncomplete": "Please fill in all credential fields",
+  "toast_credentialSaved": "Credentials saved",
+  "toast_networkDisconnected": "Network disconnected",
+  "toast_networkRestored": "Network restored",
+  "toast_operationFailedRetry": "Operation failed, please retry",
+  "toast_pressAgainToExit": "Press back again to exit",
+  "toast_rewardError": "Tip failed: {error}",
+  "toast_rewardFailed": "Tip failed",
+  "toast_rewardNotConfigured": "Please configure tip credentials first",
+  "toast_rewardSuccess": "Tip sent successfully!"
+}

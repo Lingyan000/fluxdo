@@ -56,12 +56,25 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final index = currentPosts.indexWhere((p) => p.id == postId);
     if (index == -1) return;
 
-    final finalPost = preserveCooked
+    final oldPost = currentPosts[index];
+
+    // /posts/{id}.json 单帖接口不会预加载 boosts 关联，
+    // 导致返回的 JSON 中不包含 boosts/can_boost 字段。
+    // 此时 Post.fromJson 会将 boosts 设为 null、canBoost 设为 false。
+    // 为避免丢失已有的 boost 数据，当新数据不含 boosts 时保留旧值。
+    final mergedPost = updatedPost.boosts == null
         ? updatedPost.copyWith(
-            cooked: currentPosts[index].cooked,
-            read: currentPosts[index].read,
+            boosts: oldPost.boosts,
+            canBoost: oldPost.canBoost,
           )
         : updatedPost;
+
+    final finalPost = preserveCooked
+        ? mergedPost.copyWith(
+            cooked: oldPost.cooked,
+            read: oldPost.read,
+          )
+        : mergedPost;
 
     final newPosts = [...currentPosts];
     newPosts[index] = finalPost;

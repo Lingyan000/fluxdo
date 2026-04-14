@@ -1,0 +1,16 @@
+{
+  "@@locale": "en",
+  "preheat_logoutConfirm": "Log out? This will clear local login data.",
+  "preheat_logoutMessage": "User logged out (preload failure page)",
+  "preheat_networkSettings": "Network settings",
+  "preheat_retryConnection": "Retry connection",
+  "preheat_userSkipped": "User skipped preload",
+  "table_rowCount": "{count} rows",
+  "@table_rowCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

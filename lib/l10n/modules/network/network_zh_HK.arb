@@ -1,0 +1,89 @@
+{
+  "@@locale": "zh_HK",
+  "advancedSettings_networkAdapter": "網絡適配器",
+  "advancedSettings_networkAdapterDesc": "管理 Cronet 和備用適配器設置",
+  "networkAdapter_adapterType": "適配器類型",
+  "networkAdapter_autoFallback": "已自動降級",
+  "networkAdapter_autoFallbackDesc": "檢測到 Cronet 不可用，已切換到備用適配器",
+  "networkAdapter_controlOptions": "控制選項",
+  "networkAdapter_currentStatus": "當前狀態",
+  "networkAdapter_degradeReason": "Cronet 降級原因",
+  "networkAdapter_devTest": "開發者測試",
+  "networkAdapter_fallback": "備用",
+  "networkAdapter_fallbackStatus": "降級狀態",
+  "networkAdapter_forceFallback": "強制使用備用適配器",
+  "networkAdapter_forceFallbackDesc": "禁用 Cronet，使用 NetworkHttpAdapter",
+  "networkAdapter_native": "原生",
+  "networkAdapter_resetFallback": "重置降級狀態",
+  "networkAdapter_resetFallbackDesc": "清除降級記錄，下次啓動重新嘗試 Cronet",
+  "networkAdapter_resetSuccess": "已重置，重啓應用後生效",
+  "networkAdapter_settingSaved": "設置已保存，重啓應用後生效",
+  "networkAdapter_simulateError": "模擬 Cronet 錯誤",
+  "networkAdapter_simulateErrorDesc": "觸發降級流程，測試自動降級功能",
+  "networkAdapter_simulateSuccess": "已觸發模擬降級，請查看降級狀態",
+  "networkAdapter_title": "網絡適配器",
+  "networkAdapter_viewReason": "查看降級原因",
+  "networkSettings_advanced": "高級",
+  "networkSettings_auxiliary": "輔助功能",
+  "networkSettings_debug": "調試",
+  "networkSettings_engine": "網絡引擎",
+  "networkSettings_maxConcurrent": "最大並發數",
+  "networkSettings_maxPerWindow": "窗口請求上限",
+  "networkSettings_proxy": "網絡代理",
+  "networkSettings_title": "網絡設置",
+  "networkSettings_windowSeconds": "窗口時長",
+  "networkSettings_windowSecondsSuffix": "秒",
+  "network_adapterNativeAndroid": "Cronet 適配器",
+  "network_adapterNativeIos": "Cupertino 適配器",
+  "network_adapterNetwork": "Network 適配器",
+  "network_adapterRhttp": "rhttp 引擎",
+  "network_adapterWebView": "WebView 適配器",
+  "network_badRequest": "請求參數錯誤",
+  "network_forbidden": "沒有權限執行此操作",
+  "network_internalError": "服務器內部錯誤",
+  "network_notFound": "請求的資源不存在",
+  "network_postPendingReview": "你的帖子已提交，正在等待審核",
+  "network_rateLimited": "請求過於頻繁，請稍後再試",
+  "network_rateLimitedWait": "請求過於頻繁，請等待 {duration} 後再試",
+  "@network_rateLimitedWait": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "network_requestFailed": "請求失敗 ({statusCode})",
+  "@network_requestFailed": {
+    "placeholders": {
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "network_serverUnavailable": "服務器暫時不可用 ({statusCode})",
+  "@network_serverUnavailable": {
+    "placeholders": {
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "network_serverUnavailableRetry": "服務器暫時不可用，請稍後再試",
+  "network_unauthorized": "未登錄或登錄已過期",
+  "network_unprocessable": "請求無法處理",
+  "rhttpEngine_alwaysUse": "始終使用",
+  "rhttpEngine_currentAdapter": "當前: {adapter}",
+  "@rhttpEngine_currentAdapter": {
+    "placeholders": {
+      "adapter": {
+        "type": "String"
+      }
+    }
+  },
+  "rhttpEngine_disabledDesc": "啓用後使用 Rust 網絡引擎",
+  "rhttpEngine_echFallbackHint": "ECH 啓用時 WebView 仍通過本地代理兜底；rhttp 直連會優先嚐試自身的 ECH",
+  "rhttpEngine_enabledDesc": "HTTP/2 多路複用 · Rust reqwest",
+  "rhttpEngine_proxyDohOnly": "僅代理/DOH",
+  "rhttpEngine_title": "rhttp 引擎",
+  "rhttpEngine_useMode": "使用模式"
+}

@@ -1,0 +1,61 @@
+{
+  "@@locale": "zh_HK",
+  "invite_collapseOptions": "收起鏈接選項",
+  "invite_createFailed": "生成邀請鏈接失敗",
+  "invite_createLink": "創建邀請鏈接",
+  "invite_created": "邀請已創建",
+  "invite_creating": "創建中...",
+  "invite_description": "描述 (可選)",
+  "invite_expandOptions": "編輯鏈接選項或通過電子郵件發送。",
+  "invite_expiryDate": "截止 {date}",
+  "@invite_expiryDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_expiryTime": "有效截止時間",
+  "invite_fixed": "固定",
+  "invite_inviteMembers": "邀請成員",
+  "invite_latestResult": "最新生成結果",
+  "invite_linkCopied": "邀請鏈接已複製",
+  "invite_linkGenerated": "邀請鏈接已生成",
+  "invite_maxRedemptions": "最大使用次數",
+  "invite_never": "從不",
+  "invite_noExpiry": "無過期時間",
+  "invite_noLinks": "暫無生成邀請鏈接",
+  "invite_permissionDenied": "服務端拒絕了當前賬號的邀請權限",
+  "invite_rateLimited": "出錯了：您執行此操作的次數過多。請等待 {waitText} 後再試。",
+  "@invite_rateLimited": {
+    "placeholders": {
+      "waitText": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_restriction": "限制為 (可選)",
+  "invite_restrictionHelper": "填寫郵箱或域名",
+  "invite_restrictionHint": "name@example.com 或者 example.com",
+  "invite_shareSubject": "Linux.do 邀請鏈接",
+  "invite_summaryDay1": "鏈接最多可用於 1 個用户，並且將在 1 天后到期。",
+  "invite_summaryExpiry": "鏈接最多可用於 1 個用户，並且將在 {expiry} 後到期。",
+  "@invite_summaryExpiry": {
+    "placeholders": {
+      "expiry": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_summaryNever": "鏈接最多可用於 1 個用户，並且永不過期。",
+  "invite_title": "邀請鏈接",
+  "invite_trustLevelTooLow": "當前賬號尚未達到 L3，無法創建邀請鏈接",
+  "invite_usableCount": "可用 {count} 次",
+  "@invite_usableCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

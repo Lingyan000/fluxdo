@@ -1,0 +1,61 @@
+{
+  "@@locale": "zh",
+  "invite_collapseOptions": "收起链接选项",
+  "invite_createFailed": "生成邀请链接失败",
+  "invite_createLink": "创建邀请链接",
+  "invite_created": "邀请已创建",
+  "invite_creating": "创建中...",
+  "invite_description": "描述 (可选)",
+  "invite_expandOptions": "编辑链接选项或通过电子邮件发送。",
+  "invite_expiryDate": "截止 {date}",
+  "@invite_expiryDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_expiryTime": "有效截止时间",
+  "invite_fixed": "固定",
+  "invite_inviteMembers": "邀请成员",
+  "invite_latestResult": "最新生成结果",
+  "invite_linkCopied": "邀请链接已复制",
+  "invite_linkGenerated": "邀请链接已生成",
+  "invite_maxRedemptions": "最大使用次数",
+  "invite_never": "从不",
+  "invite_noExpiry": "无过期时间",
+  "invite_noLinks": "暂无生成邀请链接",
+  "invite_permissionDenied": "服务端拒绝了当前账号的邀请权限",
+  "invite_rateLimited": "出错了：您执行此操作的次数过多。请等待 {waitText} 后再试。",
+  "@invite_rateLimited": {
+    "placeholders": {
+      "waitText": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_restriction": "限制为 (可选)",
+  "invite_restrictionHelper": "填写邮箱或域名",
+  "invite_restrictionHint": "name@example.com 或者 example.com",
+  "invite_shareSubject": "Linux.do 邀请链接",
+  "invite_summaryDay1": "链接最多可用于 1 个用户，并且将在 1 天后到期。",
+  "invite_summaryExpiry": "链接最多可用于 1 个用户，并且将在 {expiry} 后到期。",
+  "@invite_summaryExpiry": {
+    "placeholders": {
+      "expiry": {
+        "type": "String"
+      }
+    }
+  },
+  "invite_summaryNever": "链接最多可用于 1 个用户，并且永不过期。",
+  "invite_title": "邀请链接",
+  "invite_trustLevelTooLow": "当前账号尚未达到 L3，无法创建邀请链接",
+  "invite_usableCount": "可用 {count} 次",
+  "@invite_usableCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

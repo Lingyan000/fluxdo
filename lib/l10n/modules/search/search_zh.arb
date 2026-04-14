@@ -1,0 +1,109 @@
+{
+  "@@locale": "zh",
+  "search_advancedSearch": "高级搜索",
+  "search_afterDate": "{date} 之后",
+  "@search_afterDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "search_applyFilter": "应用筛选",
+  "search_beforeDate": "{date} 之前",
+  "@search_beforeDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "search_category": "分类",
+  "search_categoryLoadFailed": "加载分类失败: {error}",
+  "@search_categoryLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "search_clearAll": "清除全部",
+  "search_currentFilter": "当前筛选",
+  "search_custom": "自定义",
+  "search_dateRange": "时间范围",
+  "search_emptyHint": "输入关键词搜索",
+  "search_error": "搜索出错",
+  "search_filterBookmarks": "书签",
+  "search_filterCreated": "我的话题",
+  "search_filterSeen": "浏览历史",
+  "search_hintText": "搜索 @用户 #分类 tags:标签",
+  "search_lastMonth": "最近一月",
+  "search_lastWeek": "最近一周",
+  "search_lastYear": "最近一年",
+  "search_likeCount": "{count} 点赞",
+  "@search_likeCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "search_noLimit": "不限",
+  "search_noPopularTags": "暂无热门标签",
+  "search_noResults": "没有找到相关结果",
+  "search_popularTags": "热门标签",
+  "search_recentSearches": "最近搜索",
+  "search_replyCount": "{count} 条回复",
+  "@search_replyCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "search_resultCount": "{count}{more} 条结果",
+  "@search_resultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "more": {
+        "type": "String"
+      }
+    }
+  },
+  "search_selectDateRange": "选择时间范围",
+  "search_selectedTags": "已选标签",
+  "search_sortLabel": "排序：",
+  "search_sortLatest": "最新帖子",
+  "search_sortLatestTopic": "最新话题",
+  "search_sortLikes": "最受欢迎",
+  "search_sortRelevance": "相关性",
+  "search_sortViews": "最多浏览",
+  "search_status": "状态",
+  "search_statusArchived": "已归档",
+  "search_statusClosed": "已关闭",
+  "search_statusOpen": "进行中",
+  "search_statusSolved": "已解决",
+  "search_statusUnsolved": "未解决",
+  "search_tags": "标签",
+  "search_tagsLoadFailed": "加载标签失败: {error}",
+  "@search_tagsLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "search_topicSearchHint": "输入关键词搜索本话题",
+  "search_tryOtherKeywords": "请尝试其他关键词",
+  "search_users": "用户",
+  "search_viewCount": "{count} 浏览",
+  "@search_viewCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  }
+}

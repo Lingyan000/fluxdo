@@ -1,0 +1,60 @@
+{
+  "@@locale": "zh",
+  "ai_askSubtitle": "AI 会基于话题内容为你解答",
+  "ai_askTitle": "向 AI 助手提问",
+  "ai_clearChat": "清空聊天",
+  "ai_clearChatConfirm": "确定要清空所有聊天记录吗？",
+  "ai_clearChatTitle": "清空聊天",
+  "ai_clearLabel": "清空",
+  "ai_copiedToClipboard": "已复制到剪贴板",
+  "ai_copyLabel": "复制",
+  "ai_exportImage": "导出图片",
+  "ai_generateFailed": "生成失败",
+  "ai_highlights": "有什么值得关注的",
+  "ai_highlightsPrompt": "这个话题中有哪些值得关注的信息或亮点？",
+  "ai_inputHint": "输入消息...",
+  "ai_likeInDev": "点赞功能开发中...",
+  "ai_listViewpoints": "列出主要观点",
+  "ai_listViewpointsPrompt": "请列出这个话题中各楼层的主要观点和立场。",
+  "ai_moreTooltip": "更多",
+  "ai_multiSelectExport": "多选导出",
+  "ai_newSession": "新建会话",
+  "ai_retryLabel": "重试",
+  "ai_selectContext": "选择上下文范围",
+  "ai_selectExportMessages": "请选择要导出的消息",
+  "ai_selectModel": "选择模型",
+  "ai_selectedCount": "已选 {count} 条",
+  "@ai_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ai_sendTooltip": "发送",
+  "ai_sessionCount": "{count} 条",
+  "@ai_sessionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ai_sessionHistory": "会话记录",
+  "ai_sessionTitle": "会话 {index}",
+  "@ai_sessionTitle": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "ai_stopGenerate": "停止生成",
+  "ai_summarizePrompt": "请简要总结这个话题的主要内容和讨论要点。",
+  "ai_summarizeTopic": "总结这个话题",
+  "ai_swipeHint": "向左滑动可打开 AI 助手",
+  "ai_title": "AI 助手",
+  "ai_translatePost": "翻译主帖",
+  "ai_translatePrompt": "请将主帖内容翻译成英文。",
+  "ai_typingIndicator": "正在输入"
+}

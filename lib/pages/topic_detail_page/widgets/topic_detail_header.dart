@@ -78,6 +78,18 @@ class TopicDetailHeader extends ConsumerWidget {
                 letterSpacing: 0.2,
               ),
               children: [
+                if (detail.isPrivateMessage)
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Icon(
+                        Icons.mail_outline,
+                        size: 20,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
                 if (detail.closed)
                   WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
@@ -113,8 +125,8 @@ class TopicDetailHeader extends ConsumerWidget {
 
           const SizedBox(height: 16),
           
-          // 分类与标签
-          if (category != null || (detail.tags != null && detail.tags!.isNotEmpty)) ...[
+          // 分类与标签（私信话题不显示）
+          if (!detail.isPrivateMessage && (category != null || (detail.tags != null && detail.tags!.isNotEmpty))) ...[
             Wrap(
               spacing: 6,
               runSpacing: 8,

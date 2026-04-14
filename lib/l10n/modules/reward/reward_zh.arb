@@ -1,0 +1,84 @@
+{
+  "@@locale": "zh",
+  "cdk_balance": "CDK 积分",
+  "cdk_points": "积分",
+  "cdk_reAuthHint": "请重新授权以查看积分",
+  "ldc_balance": "LDC 余额",
+  "ldc_dailyIncome": "今日收入 {amount}",
+  "@ldc_dailyIncome": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "ldc_reAuthHint": "请重新授权以查看余额",
+  "reward_authFailed": "认证失败，请检查 Client ID 和 Client Secret",
+  "reward_clearCredential": "清除凭证",
+  "reward_configDialogTitle": "配置 LDC 打赏凭证",
+  "reward_configHint": "请输入在 credit.linux.do 申请的凭证",
+  "reward_configured": "已配置，可在帖子中打赏",
+  "reward_confirmMessage": "确定向 {target} 打赏 {amount} LDC 吗？",
+  "@reward_confirmMessage": {
+    "placeholders": {
+      "target": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
+  "reward_confirmTitle": "确认打赏",
+  "reward_createApp": "创建应用",
+  "reward_customAmount": "自定义金额",
+  "reward_defaultError": "打赏失败",
+  "reward_duplicateWarning": "请勿重复打赏，{remaining}秒后可再次操作",
+  "@reward_duplicateWarning": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      }
+    }
+  },
+  "reward_goToCreateApp": "前往创建应用 →",
+  "reward_httpError": "请求失败: HTTP {statusCode}",
+  "@reward_httpError": {
+    "placeholders": {
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "reward_networkError": "网络错误: {error}",
+  "@reward_networkError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "reward_notConfigured": "配置凭证以启用打赏功能",
+  "reward_noteHint": "感谢分享！",
+  "reward_noteLabel": "备注（可选）",
+  "reward_selectAmount": "选择金额",
+  "reward_selectOrInputAmount": "请选择或输入金额",
+  "reward_sheetTitle": "打赏 LDC",
+  "reward_submitWithAmount": "打赏 {amount} LDC",
+  "@reward_submitWithAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
+  "reward_title": "LDC 打赏",
+  "reward_unknownError": "未知错误: {error}",
+  "@reward_unknownError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
+}

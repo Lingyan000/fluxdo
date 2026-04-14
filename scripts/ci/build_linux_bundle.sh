@@ -9,6 +9,7 @@ FLUTTER_VERSION="${FLUTTER_VERSION:-3.41.5}"
 FLUTTER_ROOT="${FLUTTER_ROOT:-$HOME/flutter}"
 FLUTTER_ARCHIVE="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
 FLUTTER_URL="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/${FLUTTER_ARCHIVE}"
+DART_BIN="${FLUTTER_ROOT}/bin/cache/dart-sdk/bin/dart"
 
 if ! command -v pacman >/dev/null 2>&1; then
   echo "This script currently supports Arch Linux builders only." >&2
@@ -73,6 +74,9 @@ echo "==> Preparing Flutter Linux build"
 flutter config --enable-linux-desktop
 
 cd "${PROJECT_ROOT}"
+
+echo "==> Generating l10n"
+"${DART_BIN}" tool/merge_l10n.dart
 
 flutter pub get
 bash "${SCRIPT_DIR}/patch_linux_plugins.sh"

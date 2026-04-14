@@ -1,0 +1,86 @@
+{
+  "@@locale": "zh",
+  "backup_invalidFormat": "无效的备份文件格式",
+  "backup_missingDataField": "备份文件格式错误：缺少 data 字段",
+  "dataManagement_aiChatCleared": "AI 聊天数据已清除",
+  "dataManagement_aiChatData": "AI 聊天数据",
+  "dataManagement_allCleared": "所有缓存已清除，请重新登录",
+  "dataManagement_apiKeysCount": "包含 {count} 个 API Key",
+  "@dataManagement_apiKeysCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_autoManagement": "自动管理",
+  "dataManagement_backupSource": "备份来源: v{version}",
+  "@dataManagement_backupSource": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_backupSubject": "FluxDO 数据备份",
+  "dataManagement_cacheManagement": "缓存管理",
+  "dataManagement_calculating": "计算中...",
+  "dataManagement_clearAiChatContent": "将删除所有 AI 聊天记录，此操作不可恢复。",
+  "dataManagement_clearAiChatTitle": "清除 AI 聊天数据",
+  "dataManagement_clearAll": "全部清除",
+  "dataManagement_clearAllCache": "清除所有缓存",
+  "dataManagement_clearAllContent": "将清除所有缓存数据，包括图片缓存、AI 聊天数据和 Cookie。\n\n清除 Cookie 后需要重新登录。",
+  "dataManagement_clearAllTitle": "清除所有缓存",
+  "dataManagement_clearAndLogout": "清除并退出登录",
+  "dataManagement_clearCookieContent": "清除 Cookie 后需要重新登录，确定要继续吗？",
+  "dataManagement_clearCookieTitle": "清除 Cookie 缓存",
+  "dataManagement_clearOnExit": "退出时清除图片缓存",
+  "dataManagement_clearOnExitDesc": "下次启动时自动清除图片缓存",
+  "dataManagement_confirmImport": "确认导入",
+  "dataManagement_cookieCache": "Cookie 缓存",
+  "dataManagement_cookieCleared": "Cookie 缓存已清除，请重新登录",
+  "dataManagement_dataBackup": "数据备份",
+  "dataManagement_exportData": "导出数据",
+  "dataManagement_exportDesc": "将偏好设置导出为文件",
+  "dataManagement_exportFailed": "导出失败: {error}",
+  "@dataManagement_exportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_exportTime": "导出时间: {time}",
+  "@dataManagement_exportTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_imageCache": "图片缓存",
+  "dataManagement_imageCacheCleared": "图片缓存已清除",
+  "dataManagement_importAndRestart": "导入并重启",
+  "dataManagement_importData": "导入数据",
+  "dataManagement_importDesc": "从备份文件恢复偏好设置",
+  "dataManagement_importFailed": "导入失败: {error}",
+  "@dataManagement_importFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_importSuccess": "数据已导入，请重启应用",
+  "dataManagement_importWarning": "导入后将覆盖当前对应的设置项，需要重启应用生效。",
+  "dataManagement_noCache": "无缓存",
+  "dataManagement_settingsCount": "包含 {count} 项设置",
+  "@dataManagement_settingsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dataManagement_title": "数据管理"
+}

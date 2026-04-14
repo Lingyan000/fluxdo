@@ -1,0 +1,162 @@
+{
+  "@@locale": "zh_TW",
+  "common_about": "關於",
+  "common_add": "新增",
+  "common_addBookmark": "新增書籤",
+  "common_added": "已新增",
+  "common_all": "全部",
+  "common_allow": "允許",
+  "common_authExpired": "授權已過期",
+  "common_back": "返回",
+  "common_bookmarkAdded": "已新增書籤",
+  "common_bookmarkRemoved": "已取消書籤",
+  "common_bookmarkUpdated": "書籤已更新",
+  "common_cancel": "取消",
+  "common_cannotOpenBrowser": "無法開啟瀏覽器",
+  "common_checkInput": "請檢查輸入",
+  "common_checkNetworkRetry": "請檢查網路後重試",
+  "common_clear": "清除",
+  "common_clearFailed": "清除失敗: {error}",
+  "@common_clearFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "common_clipboardUnavailable": "剪貼簿不可用",
+  "common_close": "關閉",
+  "common_closePreview": "關閉預覽",
+  "common_codeCopied": "已複製程式碼",
+  "common_confirm": "確定",
+  "common_continue": "繼續",
+  "common_continueVisit": "繼續訪問",
+  "common_copiedToClipboard": "已複製到剪貼簿",
+  "common_copy": "複製",
+  "common_copyLink": "複製連結",
+  "common_copyQuote": "複製引用",
+  "common_custom": "自定義",
+  "common_decodeAvif": "解碼 AVIF",
+  "common_delete": "刪除",
+  "common_deleteBookmark": "刪除書籤",
+  "common_deleted": "已刪除",
+  "common_deny": "拒絕",
+  "common_details": "詳情",
+  "common_discard": "捨棄",
+  "common_done": "完成",
+  "common_edit": "編輯",
+  "common_editTopic": "編輯話題",
+  "common_enable": "開啟",
+  "common_error": "發生錯誤",
+  "common_errorDetails": "錯誤詳情",
+  "common_exit": "退出",
+  "common_exitPreview": "退出預覽",
+  "common_export": "匯出",
+  "common_failed": "失敗",
+  "common_fillComplete": "請填寫完整資訊",
+  "common_filter": "篩選",
+  "common_gotIt": "知道了",
+  "common_help": "幫助",
+  "common_hint": "提示",
+  "common_import": "匯入",
+  "common_later": "稍後",
+  "common_linkCopied": "連結已複製",
+  "common_loadFailed": "載入失敗",
+  "common_loadFailedRetry": "載入失敗，請重試",
+  "common_loadFailedTapRetry": "載入失敗，點選重試",
+  "common_loading": "載入中...",
+  "common_loadingData": "載入資料...",
+  "common_login": "登入",
+  "common_logout": "退出登入",
+  "common_more": "更多",
+  "common_name": "名稱",
+  "common_networkDisconnected": "網路連線已斷開",
+  "common_noContent": "暫無內容",
+  "common_noData": "暫無資料",
+  "common_noMore": "沒有更多了",
+  "common_notConfigured": "未配置",
+  "common_notSet": "未設定",
+  "common_notification": "通知",
+  "common_ok": "好",
+  "common_operationFailed": "操作失敗：{error}",
+  "@common_operationFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "common_paste": "貼上",
+  "common_pleaseLogin": "請先登入",
+  "common_pleaseWait": "請稍候...",
+  "common_preview": "預覽",
+  "common_publish": "釋出",
+  "common_quote": "引用",
+  "common_quoteCopied": "已複製引用",
+  "common_reAuth": "重新授權",
+  "common_recentlyUsed": "最近使用",
+  "common_redo": "重做",
+  "common_refresh": "重新整理",
+  "common_remove": "移除",
+  "common_reply": "回覆",
+  "common_report": "舉報",
+  "common_reset": "重置",
+  "common_restore": "恢復",
+  "common_restoreDefault": "恢復預設",
+  "common_restored": "已恢復",
+  "common_retry": "重試",
+  "common_save": "儲存",
+  "common_search": "搜尋",
+  "common_searchHint": "搜尋...",
+  "common_searchMore": "搜尋更多",
+  "common_send": "傳送",
+  "common_share": "分享",
+  "common_shareFailed": "分享失敗，請重試",
+  "common_shareImage": "分享圖片",
+  "common_shareLink": "分享連結",
+  "common_sizeBytes": "{size} 位元組",
+  "@common_sizeBytes": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeGB": "{size} GB",
+  "@common_sizeGB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeKB": "{size} KB",
+  "@common_sizeKB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeMB": "{size} MB",
+  "@common_sizeMB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_skip": "跳過",
+  "common_success": "成功",
+  "common_test": "測試",
+  "common_title": "標題",
+  "common_trustRequirements": "信任要求",
+  "common_understood": "我知道了",
+  "common_undo": "撤銷",
+  "common_unknown": "未知",
+  "common_unknownError": "未知錯誤",
+  "common_upload": "上傳",
+  "common_view": "檢視",
+  "common_viewAll": "檢視全部",
+  "common_viewDetails": "檢視詳情"
+}

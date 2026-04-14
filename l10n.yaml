@@ -1,4 +1,4 @@
-arb-dir: lib/l10n
+arb-dir: lib/l10n/merged
 template-arb-file: app_zh.arb
 output-localization-file: app_localizations.dart
 output-dir: lib/l10n

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../l10n/s.dart';
+import '../../utils/share_utils.dart';
 import '../../models/topic.dart';
 import '../../pages/image_viewer_page.dart';
 import '../../services/discourse_cache_manager.dart';
@@ -325,7 +326,7 @@ class ImageContextMenu {
       final file = await DiscourseCacheManager().getSingleFile(imageUrl);
       final ext = _getExtensionFromUrl(imageUrl);
       final xFile = XFile(file.path, mimeType: 'image/$ext');
-      await SharePlus.instance.share(ShareParams(files: [xFile]));
+      await ShareUtils.shareOrSaveFile(xFile);
     } catch (e) {
       debugPrint('[ImageContextMenu] shareImage error: $e');
       ToastService.showError(S.current.common_shareFailed);

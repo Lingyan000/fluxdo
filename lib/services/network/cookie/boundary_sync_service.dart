@@ -54,12 +54,17 @@ class BoundarySyncService {
           cookieNames: cookieNames,
         );
         if (synced > 0) {
+          final syncedDetails = await _jar.getCookieDiagnosticsForRequest(
+            uri,
+            names: cookieNames,
+          );
           CookieLogger.sync(
             direction: 'WebView(CDP) → CookieJar',
             count: synced,
             names: cookieNames?.toList() ?? const [],
             source: 'boundary_sync',
             url: url,
+            cookieDetails: syncedDetails,
           );
           return;
         }
@@ -104,6 +109,7 @@ class BoundarySyncService {
       }
 
       final toSave = <io.Cookie>[];
+      final forcedHostOnlySessionCookies = <Map<String, dynamic>>[];
 
       for (final wc in cookiesToPersist) {
         final value = wc.value?.toString() ?? '';
@@ -121,9 +127,22 @@ class BoundarySyncService {
 
         // domain 处理：优先用平台返回值，旧 Android 兜底
         String? domain;
-        if (wc.domain != null && wc.domain!.trim().isNotEmpty) {
+        final rawDomain = wc.domain?.trim();
+        final shouldForceSessionHostOnly =
+            io.Platform.isAndroid && isSessionCookie;
+        if (shouldForceSessionHostOnly) {
+          domain = null;
+          if (rawDomain != null && rawDomain.isNotEmpty) {
+            forcedHostOnlySessionCookies.add({
+              'name': wc.name,
+              'webViewDomain': wc.domain,
+              'path': wc.path,
+              'valueLength': value.length,
+            });
+          }
+        } else if (rawDomain != null && rawDomain.isNotEmpty) {
           // 新设备：平台返回了 domain，直接使用
-          domain = wc.domain;
+          domain = rawDomain;
         } else if (isSessionCookie) {
           // 会话 Cookie 缺失 domain 时，保持 host-only 语义，不再放大到子域名。
           domain = null;
@@ -185,6 +204,10 @@ class BoundarySyncService {
 
       if (!_jar.isInitialized) await _jar.initialize();
       await _jar.cookieJar.saveFromResponse(uri, toSave);
+      final syncedDetails = await _jar.getCookieDiagnosticsForRequest(
+        uri,
+        names: toSave.map((cookie) => cookie.name),
+      );
 
       CookieLogger.sync(
         direction: 'WebView → CookieJar',
@@ -192,6 +215,11 @@ class BoundarySyncService {
         names: toSave.map((c) => c.name).toList(),
         source: 'boundary_sync',
         url: url,
+        cookieDetails: syncedDetails,
+        extraFields: {
+          if (forcedHostOnlySessionCookies.isNotEmpty)
+            'forcedHostOnlySessionCookies': forcedHostOnlySessionCookies,
+        },
       );
     } catch (e) {
       CookieLogger.error(operation: 'boundary_sync', error: e.toString());
@@ -278,6 +306,7 @@ class BoundarySyncService {
       'selected': {
         'domain': selected.domain,
         'path': selected.path,
+        'hostOnly': selected.domain == null || selected.domain!.trim().isEmpty,
         'valueLength': selected.value?.length ?? 0,
         'httpOnly': selected.isHttpOnly,
         'secure': selected.isSecure,
@@ -287,6 +316,7 @@ class BoundarySyncService {
             (cookie) => {
               'domain': cookie.domain,
               'path': cookie.path,
+              'hostOnly': cookie.domain == null || cookie.domain!.trim().isEmpty,
               'valueLength': cookie.value?.length ?? 0,
               'httpOnly': cookie.isHttpOnly,
               'secure': cookie.isSecure,

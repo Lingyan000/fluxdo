@@ -1,0 +1,386 @@
+{
+  "@@locale": "zh_TW",
+  "notification_adminNewSuggestions": "網站資訊中心有新建議",
+  "notification_assignedTopic": "話題已分配給你",
+  "notification_backgroundRunning": "正在後臺執行，保持通知接收",
+  "notification_boost": "{username} Boost 了你的帖子",
+  "@notification_boost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_boostWithContent": "{username}: {content}",
+  "@notification_boostWithContent": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "content": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_boostByMany": "{username} 等 {count} 人 Boost 了你的帖子",
+  "@notification_boostByMany": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_bookmarkReminder": "書籤提醒",
+  "notification_channelBackground": "後臺執行",
+  "notification_channelBackgroundDesc": "保持 FluxDO 在後臺接收通知",
+  "notification_channelDiscourse": "Discourse 通知",
+  "notification_channelDiscourseDesc": "來自 Discourse 論壇的通知",
+  "notification_chatGroupMention": "群組在聊天中被提及",
+  "notification_chatInvitation": "{username} 邀請你參與聊天",
+  "@notification_chatInvitation": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_chatMention": "{username} 在聊天中提及了你",
+  "@notification_chatMention": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_chatMessage": "{username} 傳送了聊天訊息",
+  "@notification_chatMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_chatQuotedPost": "{username} 在聊天中引用了你",
+  "@notification_chatQuotedPost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_chatWatchedThread": "你關注的聊天話題有新訊息",
+  "notification_circlesActivity": "圈子有新動態",
+  "notification_codeReviewApproved": "程式碼稽核已透過",
+  "notification_createdNewTopic": "{username} 建立了新話題",
+  "@notification_createdNewTopic": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_custom": "自定義通知",
+  "notification_editedPost": "{username} 編輯了帖子",
+  "@notification_editedPost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_empty": "暫無通知",
+  "notification_eventInvitation": "{username} 邀請你參加活動",
+  "@notification_eventInvitation": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_eventReminder": "活動提醒",
+  "notification_followingYou": "{displayName} 開始關注你",
+  "@notification_followingYou": {
+    "placeholders": {
+      "displayName": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_grantedBadge": "獲得了 '{badgeName}'",
+  "@notification_grantedBadge": {
+    "placeholders": {
+      "badgeName": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_groupMessageSummary": "{groupName} 收件箱有 {count} 條訊息",
+  "@notification_groupMessageSummary": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_invitedToPM": "{username} 邀請你參與私信",
+  "@notification_invitedToPM": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_invitedToTopic": "{username} 邀請你參與話題",
+  "@notification_invitedToTopic": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_inviteeAccepted": "{displayName} 接受了你的邀請",
+  "@notification_inviteeAccepted": {
+    "placeholders": {
+      "displayName": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_liked": "{username} 讚了你的帖子",
+  "@notification_liked": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_likedByMany": "{username} 和其他 {count} 人讚了你的帖子",
+  "@notification_likedByMany": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_likedByTwo": "{username}、{username2} 讚了你的帖子",
+  "@notification_likedByTwo": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "username2": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_likedMultiplePosts": "{displayName} 點讚了你的 {count} 個帖子",
+  "@notification_likedMultiplePosts": {
+    "placeholders": {
+      "displayName": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_linkedMultiplePosts": "{displayName} 連結了你的 {count} 個帖子",
+  "@notification_linkedMultiplePosts": {
+    "placeholders": {
+      "displayName": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_linkedPost": "{username} 連結了你的帖子",
+  "@notification_linkedPost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_markAllRead": "全部標為已讀",
+  "notification_membershipAccepted": "加入 '{groupName}' 的申請已被接受",
+  "@notification_membershipAccepted": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_membershipPending": "{count} 個未處理的 '{groupName}' 成員申請",
+  "@notification_membershipPending": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_mentioned": "{username} 在帖子中提及了你",
+  "@notification_mentioned": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_movedPost": "{username} 移動了帖子",
+  "@notification_movedPost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_newFeaturesAvailable": "有新功能可用！",
+  "notification_newNotification": "新通知",
+  "notification_newPostPublished": "{username} 釋出了新帖子",
+  "@notification_newPostPublished": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_newTopic": "新建話題",
+  "notification_peopleLikedPost": "{count} 人讚了你的帖子",
+  "@notification_peopleLikedPost": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_peopleLinkedPost": "{count} 人連結了你的帖子",
+  "@notification_peopleLinkedPost": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_postApproved": "你的帖子已被批准",
+  "notification_privateMsgSent": "{username} 傳送了私信",
+  "@notification_privateMsgSent": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_qaCommented": "{username} 評論了問答",
+  "@notification_qaCommented": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_quoted": "{username} 引用了你的帖子",
+  "@notification_quoted": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_reaction": "{username} 對你的帖子做出了反應",
+  "@notification_reaction": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_replied": "{username} 回覆了你的帖子",
+  "@notification_replied": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_repliedTopic": "{username} 回覆了話題",
+  "@notification_repliedTopic": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_topicReminder": "話題提醒",
+  "notification_typeAdminProblems": "管理員問題",
+  "notification_typeAssignedTopic": "話題指派",
+  "notification_typeBoost": "Boost",
+  "notification_typeBookmarkReminder": "書籤提醒",
+  "notification_typeChatGroupMention": "群聊提及",
+  "notification_typeChatInvitation": "聊天邀請",
+  "notification_typeChatMention": "聊天提及",
+  "notification_typeChatMessage": "聊天訊息",
+  "notification_typeChatQuotedPost": "聊天引用",
+  "notification_typeChatWatchedThread": "聊天關注話題",
+  "notification_typeCirclesActivity": "圈子活動",
+  "notification_typeCodeReviewApproved": "程式碼稽核透過",
+  "notification_typeCustom": "自定義",
+  "notification_typeEdited": "編輯",
+  "notification_typeEventInvitation": "活動邀請",
+  "notification_typeEventReminder": "活動提醒",
+  "notification_typeFollowing": "關注",
+  "notification_typeFollowingCreatedTopic": "關注的使用者建立了話題",
+  "notification_typeFollowingReplied": "關注的使用者回覆了",
+  "notification_typeGrantedBadge": "獲得徽章",
+  "notification_typeGroupMentioned": "群組提及",
+  "notification_typeGroupMessageSummary": "群組訊息摘要",
+  "notification_typeInvitedToPM": "私信邀請",
+  "notification_typeInvitedToTopic": "話題邀請",
+  "notification_typeInviteeAccepted": "邀請已接受",
+  "notification_typeLiked": "點贊",
+  "notification_typeLikedConsolidated": "點贊彙總",
+  "notification_typeLinked": "連結",
+  "notification_typeLinkedConsolidated": "連結彙總",
+  "notification_typeMembershipAccepted": "成員申請已接受",
+  "notification_typeMembershipConsolidated": "成員申請彙總",
+  "notification_typeMentioned": "提及",
+  "notification_typeMovedPost": "帖子移動",
+  "notification_typeNewFeatures": "新功能",
+  "notification_typePostApproved": "帖子已批准",
+  "notification_typePosted": "發帖",
+  "notification_typePrivateMessage": "私信",
+  "notification_typeQACommented": "問答評論",
+  "notification_typeQuoted": "引用",
+  "notification_typeReaction": "反應",
+  "notification_typeReplied": "回覆",
+  "notification_typeTopicReminder": "話題提醒",
+  "notification_typeUnknown": "未知",
+  "notification_typeVotesReleased": "投票釋出",
+  "notification_typeWatchingCategoryOrTag": "關注分類或標籤",
+  "notification_typeWatchingFirstPost": "關注首帖",
+  "notification_votesReleased": "投票已釋出",
+  "notification_watchingCategoryNewPost": "{username} 釋出了新帖子",
+  "@notification_watchingCategoryNewPost": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "notifications_empty": "暫無通知",
+  "notifications_markAllRead": "全部標為已讀",
+  "notifications_title": "通知"
+}

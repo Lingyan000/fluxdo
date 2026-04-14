@@ -1,0 +1,37 @@
+{
+  "@@locale": "zh",
+  "emoji_activities": "活动",
+  "emoji_animals": "动物",
+  "emoji_flags": "旗帜",
+  "emoji_food": "食物",
+  "emoji_loadFailed": "加载表情失败",
+  "emoji_notFound": "没有找到表情",
+  "emoji_objects": "物体",
+  "emoji_people": "人物",
+  "emoji_searchHint": "搜索表情...",
+  "emoji_searchNotFound": "未找到相关表情",
+  "emoji_searchPrompt": "输入关键词搜索表情",
+  "emoji_searchTooltip": "搜索表情",
+  "emoji_smileys": "表情",
+  "emoji_symbols": "符号",
+  "emoji_tab": "表情",
+  "emoji_travel": "旅行",
+  "sticker_addFromMarket": "从市场添加",
+  "sticker_addTooltip": "添加表情包",
+  "sticker_added": "已添加",
+  "sticker_emojiCount": "{count} 个表情",
+  "@sticker_emojiCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_groupEmpty": "该分组暂无表情包",
+  "sticker_loadFailed": "加载表情包失败",
+  "sticker_marketEmpty": "暂无可用的表情包",
+  "sticker_marketLoadFailed": "加载市场失败",
+  "sticker_marketTitle": "表情包市场",
+  "sticker_noStickers": "还没有表情包",
+  "sticker_tab": "表情包"
+}

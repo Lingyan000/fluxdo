@@ -1,0 +1,20 @@
+{
+  "@@locale": "en",
+  "badge_bronze": "Bronze",
+  "badge_bronzeBadge": "Bronze badge",
+  "badge_defaultName": "Badge",
+  "badge_gold": "Gold",
+  "badge_goldBadge": "Gold badge",
+  "badge_grantedCount": "Granted {count} times",
+  "badge_grantedSuffix": " earned",
+  "badge_granteeCount": "{count} users",
+  "badge_grantees": "Grantees",
+  "badge_myBadges": "My badges",
+  "badge_noGrantees": "No users have earned this badge",
+  "badge_silver": "Silver",
+  "badge_silverBadge": "Silver badge",
+  "myBadges_badgeUnit": " badges",
+  "myBadges_empty": "No badges",
+  "myBadges_title": "My Badges",
+  "myBadges_totalEarned": "Total earned"
+}

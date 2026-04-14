@@ -1,0 +1,241 @@
+{
+  "@@locale": "zh",
+  "followList_followers": "粉丝",
+  "followList_following": "关注",
+  "privateMessages_title": "私信",
+  "privateMessages_inbox": "最新",
+  "privateMessages_sent": "已发送",
+  "privateMessages_archive": "归档",
+  "privateMessages_empty": "暂无私信",
+  "profileStats_addItems": "点击添加统计项",
+  "profileStats_allItemsAdded": "所有统计项已添加",
+  "profileStats_availableItems": "可添加项目",
+  "profileStats_bookmarkCount": "书签数",
+  "profileStats_columnsPerRow": "每行数量",
+  "profileStats_dataSource": "数据源",
+  "profileStats_daysVisited": "访问天数",
+  "profileStats_editTitle": "统计卡片自定义",
+  "profileStats_enabledItems": "已添加项目",
+  "profileStats_guideMessage": "点击统计卡片可自定义展示项目、布局和数据源",
+  "profileStats_incompatibleSource": "不兼容当前数据源",
+  "profileStats_layoutGrid": "网格",
+  "profileStats_layoutMode": "布局模式",
+  "profileStats_layoutScroll": "滚动",
+  "profileStats_layoutSettings": "布局设置",
+  "profileStats_likesGiven": "送赞",
+  "profileStats_likesReceived": "获赞",
+  "profileStats_likesReceivedDays": "获赞天数",
+  "profileStats_likesReceivedUsers": "获赞人数",
+  "profileStats_loadError": "数据加载失败，已回退到全量统计",
+  "profileStats_noItemsSelected": "未选择任何统计项",
+  "profileStats_postCount": "发帖数",
+  "profileStats_postsRead": "已读帖子",
+  "profileStats_recentTimeRead": "近60天阅读",
+  "profileStats_selectItems": "统计项目",
+  "profileStats_sourceConnect": "信任等级周期",
+  "profileStats_sourceDaily": "本日",
+  "profileStats_sourceMonthly": "本月",
+  "profileStats_sourceQuarterly": "本季",
+  "profileStats_sourceSummary": "全量统计",
+  "profileStats_sourceWeekly": "本周",
+  "profileStats_sourceYearly": "本年",
+  "profileStats_timeRead": "阅读时间",
+  "profileStats_topicCount": "主题数",
+  "profileStats_topicsEntered": "浏览主题",
+  "profileStats_topicsRepliedTo": "回复主题",
+  "profile_aboutFluxDO": "关于 FluxDO",
+  "profile_aiModelService": "AI 模型服务",
+  "profile_appearance": "外观设置",
+  "profile_browsingHistory": "浏览历史",
+  "profile_cdkReauthSuccess": "CDK 重新授权成功",
+  "profile_confirmLogout": "确认退出",
+  "profile_dataManagement": "数据管理",
+  "profile_daysVisited": "访问天数",
+  "profile_editProfile": "编辑资料",
+  "profile_inviteLinks": "邀请链接",
+  "profile_ldcReauthSuccess": "LDC 重新授权成功",
+  "profile_likesReceived": "获得点赞",
+  "profile_loadingData": "加载数据...",
+  "profile_loggingOut": "正在退出...",
+  "profile_loginForMore": "登录后体验更多功能",
+  "profile_loginLinuxDo": "登录 Linux.do",
+  "profile_logoutContent": "确定要退出登录吗？",
+  "profile_logoutCurrentAccount": "退出当前账号",
+  "profile_metaverse": "元宇宙",
+  "profile_privateMessages": "私信",
+  "profile_myBadges": "我的徽章",
+  "profile_myBookmarks": "我的书签",
+  "profile_myBrowser": "网页浏览",
+  "profile_myDrafts": "我的草稿",
+  "profile_myTopics": "我的话题",
+  "profile_networkSettings": "网络设置",
+  "profile_notLoggedIn": "未登录",
+  "profile_postCount": "发表回复",
+  "profile_postsRead": "阅读帖子",
+  "profile_preferences": "功能设置",
+  "profile_settings": "应用设置",
+  "profile_trustRequirements": "信任要求",
+  "trustLevel_activity": "活跃程度",
+  "trustLevel_appBarTitle": "信任要求",
+  "trustLevel_compliance": "合规记录",
+  "trustLevel_interaction": "互动参与",
+  "trustLevel_parseFailed": "解析失败: {error}",
+  "@trustLevel_parseFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "trustLevel_parseNotFound": "未找到信任级别信息 (div.card)",
+  "trustLevel_requestFailed": "请求失败: {statusCode}",
+  "@trustLevel_requestFailed": {
+    "placeholders": {
+      "statusCode": {
+        "type": "int"
+      }
+    }
+  },
+  "trustLevel_title": "信任级别要求",
+  "userProfile_actionCreatedTopic": "发布了话题",
+  "userProfile_actionDefault": "动态",
+  "userProfile_actionLike": "点赞",
+  "userProfile_actionLiked": "被赞",
+  "userProfile_actionReplied": "回复了",
+  "userProfile_bio": "个人简介",
+  "userProfile_catPostCount": "{count} 回复",
+  "@userProfile_catPostCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_catTopicCount": "{count} 话题",
+  "@userProfile_catTopicCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_follow": "关注",
+  "userProfile_followed": "已关注",
+  "userProfile_followers": "粉丝",
+  "userProfile_following": "关注",
+  "userProfile_fourMonths": "四个月",
+  "userProfile_ignored": "已忽略",
+  "userProfile_joinDate": "加入时间",
+  "userProfile_laterThisWeek": "本周稍后",
+  "userProfile_laterToday": "今天稍后",
+  "userProfile_linkClicks": "{count} 次点击",
+  "@userProfile_linkClicks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userProfile_location": "位置",
+  "userProfile_message": "私信",
+  "userProfile_moreInfo": "更多信息",
+  "userProfile_mostLiked": "赞最多",
+  "userProfile_mostLikedBy": "被谁赞的最多",
+  "userProfile_mostRepliedTo": "最多回复至",
+  "userProfile_mute": "免打扰",
+  "userProfile_nextMonday": "下周一",
+  "userProfile_nextMonth": "下个月",
+  "userProfile_noBio": "这个人很懒，什么都没写",
+  "userProfile_noContent": "暂无内容",
+  "userProfile_noReactions": "暂无回应",
+  "userProfile_noSummary": "暂无总结数据",
+  "userProfile_normal": "常规",
+  "userProfile_oneYear": "一年",
+  "userProfile_permanent": "永久",
+  "userProfile_permanentlySilenced": "该用户已被永久禁言",
+  "userProfile_permanentlySuspended": "该用户已被永久封禁",
+  "userProfile_reacted": "回应了",
+  "userProfile_restored": "已恢复常规通知",
+  "userProfile_selectIgnoreDuration": "选择忽略时长",
+  "userProfile_setToIgnore": "已设置为忽略",
+  "userProfile_setToMute": "已设置为免打扰",
+  "userProfile_shareUser": "分享用户",
+  "userProfile_silencedBannerForever": "该用户已被永久禁言",
+  "userProfile_silencedBannerUntil": "该用户已被禁言至 {date}",
+  "@userProfile_silencedBannerUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_silencedStatus": "禁言状态",
+  "userProfile_silencedUntil": "禁言至 {date}",
+  "@userProfile_silencedUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_sixMonths": "六个月",
+  "userProfile_statsLikes": "获赞",
+  "userProfile_statsReplies": "回复",
+  "userProfile_statsTopics": "话题",
+  "userProfile_statsVisits": "访问",
+  "userProfile_suspendedBannerForever": "该用户已被永久封禁",
+  "userProfile_suspendedBannerUntil": "该用户已被封禁至 {date}",
+  "@userProfile_suspendedBannerUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_suspendedStatus": "封禁状态",
+  "userProfile_suspendedUntil": "封禁至 {date}",
+  "@userProfile_suspendedUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_tabActivity": "动态",
+  "userProfile_tabLikes": "赞",
+  "userProfile_tabReactions": "回应",
+  "userProfile_tabReplies": "回复",
+  "userProfile_tabSummary": "总结",
+  "userProfile_tabTopics": "话题",
+  "userProfile_threeMonths": "三个月",
+  "userProfile_tomorrow": "明天",
+  "userProfile_topBadges": "热门徽章",
+  "userProfile_topCategories": "热门类别",
+  "userProfile_topLinks": "热门链接",
+  "userProfile_topReplies": "热门回复",
+  "userProfile_topTopics": "热门话题",
+  "userProfile_topicHash": "话题 #{id}",
+  "@userProfile_topicHash": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "userProfile_twoMonths": "两个月",
+  "userProfile_twoWeeks": "两周",
+  "userProfile_website": "网站",
+  "user_trustLevel0": "L0 新用户",
+  "user_trustLevel1": "L1 基本用户",
+  "user_trustLevel2": "L2 成员",
+  "user_trustLevel3": "L3 活跃用户",
+  "user_trustLevel4": "L4 领袖",
+  "user_trustLevelUnknown": "等级 {level}",
+  "@user_trustLevelUnknown": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  }
+}

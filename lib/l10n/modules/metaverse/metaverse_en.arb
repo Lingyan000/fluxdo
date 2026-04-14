@@ -1,0 +1,19 @@
+{
+  "@@locale": "en",
+  "chat_thread": "Thread",
+  "github_commentedOn": " commented on ",
+  "github_moreFiles": "... and {count} more files",
+  "github_viewFullCode": "View full code",
+  "metaverse_authFailed": "Authorization failed: {error}",
+  "metaverse_cdkAuthSuccess": "CDK authorization successful",
+  "metaverse_cdkDesc": "Connect account to access CDK",
+  "metaverse_cdkReauthSuccess": "CDK re-authorization successful",
+  "metaverse_cdkService": "CDK Service",
+  "metaverse_comingSoon": "More services coming soon...",
+  "metaverse_ldcAuthSuccess": "LDC authorization successful",
+  "metaverse_ldcDesc": "Connect account to access points",
+  "metaverse_ldcReauthSuccess": "LDC re-authorization successful",
+  "metaverse_ldcService": "LDC Points Service",
+  "metaverse_myServices": "My Services",
+  "metaverse_title": "Metaverse"
+}

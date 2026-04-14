@@ -1,0 +1,11 @@
+{
+  "@@locale": "en",
+  "browsingHistory_empty": "No browsing history",
+  "browsingHistory_emptySearchHint": "Enter keywords to search history",
+  "browsingHistory_searchHint": "Search browsing history...",
+  "browsingHistory_title": "Browsing History",
+  "myTopics_empty": "No topics",
+  "myTopics_emptySearchHint": "Enter keywords to search my topics",
+  "myTopics_searchHint": "Search my topics...",
+  "myTopics_title": "My Topics"
+}

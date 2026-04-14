@@ -25,6 +25,7 @@ class WindowStateService with WindowListener {
   Timer? _saveTimer;
   File? _stateFile;
   bool? _isMaximizedCache;
+  bool _isListening = false;
 
   Future<void> attach(SharedPreferences prefs) async {
     _prefs = prefs;
@@ -49,12 +50,15 @@ class WindowStateService with WindowListener {
 
   /// 开始监听窗口变化
   void startListening() {
+    if (_isListening) return;
+    _isListening = true;
     windowManager.addListener(this);
   }
 
   /// 停止监听并清理资源
   void stopListening() {
     _saveTimer?.cancel();
+    _isListening = false;
     windowManager.removeListener(this);
   }
 

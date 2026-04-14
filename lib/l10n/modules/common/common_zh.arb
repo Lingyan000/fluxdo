@@ -1,0 +1,162 @@
+{
+  "@@locale": "zh",
+  "common_about": "关于",
+  "common_add": "添加",
+  "common_addBookmark": "添加书签",
+  "common_added": "已添加",
+  "common_all": "全部",
+  "common_allow": "允许",
+  "common_authExpired": "授权已过期",
+  "common_back": "返回",
+  "common_bookmarkAdded": "已添加书签",
+  "common_bookmarkRemoved": "已取消书签",
+  "common_bookmarkUpdated": "书签已更新",
+  "common_cancel": "取消",
+  "common_cannotOpenBrowser": "无法打开浏览器",
+  "common_checkInput": "请检查输入",
+  "common_checkNetworkRetry": "请检查网络后重试",
+  "common_clear": "清除",
+  "common_clearFailed": "清除失败: {error}",
+  "@common_clearFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "common_clipboardUnavailable": "剪贴板不可用",
+  "common_close": "关闭",
+  "common_closePreview": "关闭预览",
+  "common_codeCopied": "已复制代码",
+  "common_confirm": "确定",
+  "common_continue": "继续",
+  "common_continueVisit": "继续访问",
+  "common_copiedToClipboard": "已复制到剪贴板",
+  "common_copy": "复制",
+  "common_copyLink": "复制链接",
+  "common_copyQuote": "复制引用",
+  "common_custom": "自定义",
+  "common_decodeAvif": "解码 AVIF",
+  "common_delete": "删除",
+  "common_deleteBookmark": "删除书签",
+  "common_deleted": "已删除",
+  "common_deny": "拒绝",
+  "common_details": "详情",
+  "common_discard": "舍弃",
+  "common_done": "完成",
+  "common_edit": "编辑",
+  "common_editTopic": "编辑话题",
+  "common_enable": "开启",
+  "common_error": "发生错误",
+  "common_errorDetails": "错误详情",
+  "common_exit": "退出",
+  "common_exitPreview": "退出预览",
+  "common_export": "导出",
+  "common_failed": "失败",
+  "common_fillComplete": "请填写完整信息",
+  "common_filter": "筛选",
+  "common_gotIt": "知道了",
+  "common_help": "帮助",
+  "common_hint": "提示",
+  "common_import": "导入",
+  "common_later": "稍后",
+  "common_linkCopied": "链接已复制",
+  "common_loadFailed": "加载失败",
+  "common_loadFailedRetry": "加载失败，请重试",
+  "common_loadFailedTapRetry": "加载失败，点击重试",
+  "common_loading": "加载中...",
+  "common_loadingData": "加载数据...",
+  "common_login": "登录",
+  "common_logout": "退出登录",
+  "common_more": "更多",
+  "common_name": "名称",
+  "common_networkDisconnected": "网络连接已断开",
+  "common_noContent": "暂无内容",
+  "common_noData": "暂无数据",
+  "common_noMore": "没有更多了",
+  "common_notConfigured": "未配置",
+  "common_notSet": "未设置",
+  "common_notification": "通知",
+  "common_ok": "好",
+  "common_operationFailed": "操作失败：{error}",
+  "@common_operationFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "common_paste": "粘贴",
+  "common_pleaseLogin": "请先登录",
+  "common_pleaseWait": "请稍候...",
+  "common_preview": "预览",
+  "common_publish": "发布",
+  "common_quote": "引用",
+  "common_quoteCopied": "已复制引用",
+  "common_reAuth": "重新授权",
+  "common_recentlyUsed": "最近使用",
+  "common_redo": "重做",
+  "common_refresh": "刷新",
+  "common_remove": "移除",
+  "common_reply": "回复",
+  "common_report": "举报",
+  "common_reset": "重置",
+  "common_restore": "恢复",
+  "common_restoreDefault": "恢复默认",
+  "common_restored": "已恢复",
+  "common_retry": "重试",
+  "common_save": "保存",
+  "common_search": "搜索",
+  "common_searchHint": "搜索...",
+  "common_searchMore": "搜索更多",
+  "common_send": "发送",
+  "common_share": "分享",
+  "common_shareFailed": "分享失败，请重试",
+  "common_shareImage": "分享图片",
+  "common_shareLink": "分享链接",
+  "common_sizeBytes": "{size} 字节",
+  "@common_sizeBytes": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeGB": "{size} GB",
+  "@common_sizeGB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeKB": "{size} KB",
+  "@common_sizeKB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_sizeMB": "{size} MB",
+  "@common_sizeMB": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "common_skip": "跳过",
+  "common_success": "成功",
+  "common_test": "测试",
+  "common_title": "标题",
+  "common_trustRequirements": "信任要求",
+  "common_understood": "我知道了",
+  "common_undo": "撤销",
+  "common_unknown": "未知",
+  "common_unknownError": "未知错误",
+  "common_upload": "上传",
+  "common_view": "查看",
+  "common_viewAll": "查看全部",
+  "common_viewDetails": "查看详情"
+}

@@ -1,0 +1,35 @@
+{
+  "@@locale": "zh_HK",
+  "auth_cdkConfirmMessage": "Linux.do CDK 將獲取你的基本信息，是否允許？",
+  "auth_cdkConfirmTitle": "授權確認",
+  "auth_clearDataAction": "清理數據",
+  "auth_cookieRepairLogoutHint": "檢測到歷史登錄 Cookie 異常，應用已自動清理相關髒數據。這可能會讓舊的無效登錄態立即失效，請重新登錄。",
+  "auth_frequentLogoutClearDataHint": "最近 24 小時內多次觸發登錄失效。如果重新登錄後仍反覆發生，建議前往「數據管理」清除 Cookie 或全部數據後再登錄。",
+  "auth_ldcConfirmMessage": "Linux.do Credit 將獲取你的基本信息，是否允許？",
+  "auth_ldcConfirmTitle": "授權確認",
+  "auth_logSubject": "認證日誌",
+  "auth_loginExpiredRelogin": "登錄已失效，請重新登錄",
+  "auth_loginExpiredTitle": "登錄失效",
+  "auth_oauthExpired": "{serviceName} 授權已過期",
+  "@auth_oauthExpired": {
+    "placeholders": {
+      "serviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "login_browserHint": "將在瀏覽器中打開登錄頁面",
+  "login_slogan": "真誠、友善、團結、專業",
+  "migration_cookieUpgrade": "正在升級 Cookie 儲存...",
+  "migration_reloginRequired": "本次版本升級優化了 Cookie 儲存機制，已清除舊的登入狀態。請重新登入。",
+  "migration_title": "資料升級",
+  "oauth_approvePageParseFailed": "授權頁面解析失敗，請確認已登入論壇",
+  "oauth_callbackFailed": "授權回調失敗",
+  "oauth_getAuthUrlFailed": "獲取授權連結失敗",
+  "oauth_missingParams": "授權回調缺少必要參數",
+  "oauth_networkError": "網絡請求失敗，請檢查網絡連接",
+  "oauth_noRedirectResponse": "授權服務未返回重定向",
+  "onboarding_guestAccess": "遊客訪問",
+  "onboarding_networkSettings": "網絡設置",
+  "onboarding_slogan": "真誠 · 友善 · 團結 · 專業"
+}

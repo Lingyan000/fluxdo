@@ -1,0 +1,134 @@
+{
+  "@@locale": "zh_TW",
+  "time_days": "{count} 天",
+  "@time_days": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_daysAgo": "{count}天前",
+  "@time_daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_fullDate": "{year}年{month}月{day}日",
+  "@time_fullDate": {
+    "placeholders": {
+      "year": {
+        "type": "int"
+      },
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      }
+    }
+  },
+  "time_hours": "{count} 小時",
+  "@time_hours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_hoursAgo": "{count}小時前",
+  "@time_hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_justNow": "剛剛",
+  "time_minutes": "{count} 分鐘",
+  "@time_minutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_minutesAgo": "{count}分鐘前",
+  "@time_minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_monthsAgo": "{count}個月前",
+  "@time_monthsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_seconds": "{count} 秒",
+  "@time_seconds": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_shortDate": "{month}月{day}日",
+  "@time_shortDate": {
+    "placeholders": {
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      }
+    }
+  },
+  "time_today": "今天",
+  "time_tooltipTime": "{year}年{month}月{day}日 {hour}:{minute}:{second}",
+  "@time_tooltipTime": {
+    "placeholders": {
+      "year": {
+        "type": "int"
+      },
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      },
+      "hour": {
+        "type": "String"
+      },
+      "minute": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "time_weeksAgo": "{count}周前",
+  "@time_weeksAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_yearsAgo": "{count}年前",
+  "@time_yearsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "time_yesterday": "昨天"
+}

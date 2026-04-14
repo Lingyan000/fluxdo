@@ -1,0 +1,134 @@
+{
+  "@@locale": "en",
+  "dohDetail_addServer": "Add Server",
+  "dohDetail_bootstrapIpHelper": "Connect to DoH server directly via IP, bypassing DNS resolution",
+  "dohDetail_bootstrapIpHint": "Comma separated, e.g. 1.1.1.1, 1.0.0.1",
+  "dohDetail_bootstrapIpOptional": "Bootstrap IP (Optional)",
+  "dohDetail_clearCache": "Clear Cache",
+  "dohDetail_clearDnsCacheFailed": "Failed to clear DNS cache: {error}",
+  "@dohDetail_clearDnsCacheFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_copyAddress": "Copy address",
+  "dohDetail_deleteServer": "Delete Server",
+  "dohDetail_deleteServerConfirm": "Are you sure you want to delete \"{name}\"?",
+  "@dohDetail_deleteServerConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_dnsCacheCleared": "DNS cache cleared",
+  "dohDetail_dnsCacheDesc": "Currently cached {count} domains. Proxy mode and query mode share cache, background refresh when TTL is near expiry.",
+  "@dohDetail_dnsCacheDesc": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dohDetail_dnsCacheRefreshed": "DNS cache force refreshed ({count} domains)",
+  "@dohDetail_dnsCacheRefreshed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dohDetail_dnsCacheRefreshedSimple": "DNS cache force refreshed",
+  "dohDetail_dnsCacheSection": "DNS Cache",
+  "dohDetail_dohAddress": "DoH Address",
+  "dohDetail_dohAddressCopied": "DoH address copied",
+  "dohDetail_echSameAsDnsDesc": "Use DNS resolver to query ECH configuration",
+  "dohDetail_echServer": "ECH Server",
+  "dohDetail_editServer": "Edit Server",
+  "dohDetail_exampleDns": "e.g. My DNS",
+  "dohDetail_forceRefresh": "Force Refresh",
+  "dohDetail_gatewayDisabledDesc": "Disabled, using MITM dual TLS",
+  "dohDetail_gatewayEnabledDesc": "Single TLS, forwarded via reverse proxy",
+  "dohDetail_gatewayMode": "Gateway Mode",
+  "dohDetail_ipAddress": "IP Address",
+  "dohDetail_ipv6Prefer": "Prefer IPv6",
+  "dohDetail_ipv6PreferDesc": "Try IPv6 first, fallback to IPv4 on failure",
+  "dohDetail_localDnsCache": "Shared Local DNS Cache",
+  "dohDetail_noServers": "No servers",
+  "dohDetail_processing": "Processing",
+  "dohDetail_refreshDnsCacheFailed": "Failed to force refresh DNS cache: {error}",
+  "@dohDetail_refreshDnsCacheFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_sameAsDns": "Same as DNS",
+  "dohDetail_selectEchServer": "Select ECH Server",
+  "dohDetail_serverIp": "Server IP",
+  "dohDetail_serverIpHint": "Specify connection IP, skip DNS resolution",
+  "dohDetail_servers": "Servers",
+  "dohDetail_testAllSpeed": "Test All",
+  "dohDetail_testSpeed": "Test speed",
+  "dohDetail_testingSpeed": "Testing...",
+  "dohDetail_title": "DOH Detail Settings",
+  "dohDetail_urlMustHttps": "Address must start with https://",
+  "dohSettings_certAllDone": "All Steps Completed",
+  "dohSettings_certDialogDesc": "HTTPS interception requires installing and trusting a CA certificate, each device generates a unique certificate",
+  "dohSettings_certDialogTitle": "CA Certificate Installation",
+  "dohSettings_certDownloadFailed": "Profile download failed",
+  "dohSettings_certDownloadHint": "Tap the button below, Safari will prompt to download. Tap \"Allow\".",
+  "dohSettings_certDownloadProfile": "Download Profile",
+  "dohSettings_certInstall": "Install",
+  "dohSettings_certInstallHint": "Install and trust the certificate for HTTPS interception",
+  "dohSettings_certInstallProfileHint": "Go to Settings → General → VPN & Device Management, find the DOH Proxy CA profile and install it.",
+  "dohSettings_certInstalled": "CA Certificate Installed",
+  "dohSettings_certInstalledNext": "Installed, Next",
+  "dohSettings_certOpenSettings": "Open Settings",
+  "dohSettings_certPreparing": "Preparing...",
+  "dohSettings_certRegenerate": "Regenerate Certificate",
+  "dohSettings_certRegenerateFailed": "Certificate regeneration failed",
+  "dohSettings_certRegenerated": "New certificate generated",
+  "dohSettings_certReinstall": "Reinstall",
+  "dohSettings_certReinstallHint": "Tap to reinstall or replace certificate",
+  "dohSettings_certRequired": "CA Certificate Required",
+  "dohSettings_certStepDownload": "Download Profile",
+  "dohSettings_certStepInstall": "Install Profile",
+  "dohSettings_certStepTrust": "Trust Certificate",
+  "dohSettings_certTrustHint": "Go to Settings → General → About → Certificate Trust Settings, enable the trust switch for DOH Proxy CA.",
+  "dohSettings_disabledDesc": "Using system default DNS",
+  "dohSettings_enabledDesc": "Encrypted DNS resolution enabled",
+  "dohSettings_errorCopied": "Error message copied",
+  "dohSettings_moreSettings": "More Settings",
+  "dohSettings_moreSettingsDesc": "Servers, IPv6, ECH, etc.",
+  "dohSettings_perDeviceCert": "Per-Device Certificate",
+  "dohSettings_perDeviceCertDisabledDesc": "Enable to generate a unique CA certificate per device for better security",
+  "dohSettings_perDeviceCertEnabledDesc": "Enabled, each device uses its own CA certificate",
+  "dohSettings_port": "Port {port}",
+  "@dohSettings_port": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
+  "dohSettings_proxyNotStarted": "Proxy Not Started",
+  "dohSettings_proxyRunning": "Proxy Running",
+  "dohSettings_proxyStartFailed": "Proxy start failed, DoH/ECH cannot take effect",
+  "dohSettings_restartProxy": "Restart Proxy",
+  "dohSettings_restarting": "Restarting...",
+  "dohSettings_starting": "Starting...",
+  "dohSettings_suppressedByVpn": "Auto-disabled by VPN, will restore when VPN disconnects",
+  "doh_cannotConnect": "Cannot connect to DOH service",
+  "doh_executableNotFound": "Proxy executable not found",
+  "doh_invalidHttpResponse": "Invalid HTTP response",
+  "doh_queryFailed": "DOH query failed",
+  "doh_serverAlibaba": "Alibaba DNS",
+  "doh_serverError": "DOH server error: {statusLine}",
+  "doh_serverTencent": "Tencent DNS",
+  "doh_startTimeout": "Proxy start timeout (5s)",
+  "doh_unknownReason": "Unknown reason"
+}

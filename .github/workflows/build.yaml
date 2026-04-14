@@ -118,6 +118,9 @@ jobs:
         if: matrix.platform == 'ios' || matrix.platform == 'macos'
         run: git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Generate l10n
+        run: bash scripts/gen_l10n.sh --merge
+
       - name: Get dependencies
         run: flutter pub get
 

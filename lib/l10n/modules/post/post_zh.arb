@@ -1,0 +1,215 @@
+{
+  "@@locale": "zh",
+  "boost_created": "Boost 已发送",
+  "boost_deleteConfirm": "确定要删除这条 Boost 吗？",
+  "boost_deleteFailed": "Boost 删除失败",
+  "boost_deleted": "Boost 已删除",
+  "boost_failed": "Boost 发送失败",
+  "boost_flagSubmitted": "举报已提交",
+  "boost_flagTitle": "举报 Boost",
+  "boost_limitReached": "此帖子的 Boost 数量已达上限",
+  "boost_placeholder": "说点什么...",
+  "boost_send": "发送",
+  "boost_tooLong": "内容过长，最多 {count} 个字符",
+  "@boost_tooLong": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_flatView": "切换平铺视图",
+  "nested_loadMore": "加载更多",
+  "nested_loadMoreReplies": "加载更多回复",
+  "nested_repliesCount": "{count} 条回复",
+  "@nested_repliesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_sortNew": "最新",
+  "nested_sortOld": "最旧",
+  "nested_sortTop": "热门",
+  "nested_title": "树形视图",
+  "poll_closed": "已关闭",
+  "poll_count": "计数",
+  "poll_percentage": "百分比",
+  "poll_undo": "撤销",
+  "poll_viewResults": "查看结果",
+  "poll_vote": "投票",
+  "poll_voters": "{count} 投票人",
+  "@poll_voters": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "post_acceptSolution": "采纳为解决方案",
+  "post_collapseReplies": "收起回复",
+  "post_contentRequired": "请输入内容",
+  "post_deleteReplyConfirm": "确定要删除这条回复吗？此操作可以撤销。",
+  "post_deleteReplyTitle": "删除回复",
+  "post_detail": "帖子详情",
+  "post_discardConfirm": "你想放弃你的帖子吗？",
+  "post_discardTitle": "放弃帖子",
+  "post_editPostTitle": "编辑帖子 #{postNumber}",
+  "@post_editPostTitle": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "post_firstPostNotice": "这是 {username} 的首次发帖——让我们欢迎 TA 加入社区！",
+  "@post_firstPostNotice": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "post_flagDescriptionHint": "请描述具体问题...",
+  "post_flagFailed": "举报失败，请稍后重试",
+  "post_flagMessageUser": "向 @{username} 发送消息",
+  "@post_flagMessageUser": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "post_flagNotifyModerators": "私下通知管理人员",
+  "post_flagSubmitted": "举报已提交",
+  "post_flagTitle": "举报帖子",
+  "post_generateShareImage": "生成分享图片",
+  "post_lastReadHere": "上次看到这里",
+  "post_loadContentFailed": "加载内容失败: {error}",
+  "@post_loadContentFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "post_loadMoreReplies": "加载更多回复",
+  "post_longTimeAgo": "很久以前",
+  "post_meBadge": "我",
+  "post_moreLinks": "还有 {count} 条",
+  "@post_moreLinks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "post_noReactions": "暂无回应",
+  "post_opBadge": "主",
+  "post_pendingReview": "你的帖子已提交，正在等待审核",
+  "post_reactions": "回应",
+  "post_relatedLinks": "相关链接",
+  "post_relatedRepliesCount": "相关回复共 {count} 条",
+  "@post_relatedRepliesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "post_replyCount": "{count} 条回复",
+  "@post_replyCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "post_replySent": "回复已发送",
+  "post_replySentAction": "查看",
+  "post_replyTo": "回复给",
+  "post_replyToTopic": "回复话题",
+  "post_replyToUser": "回复 @{username}",
+  "@post_replyToUser": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "post_returningUserNotice": "好久不见 {username}——TA 的上一条帖子是 {timeText}。",
+  "@post_returningUserNotice": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "timeText": {
+        "type": "String"
+      }
+    }
+  },
+  "post_sendPmTitle": "发送私信给 @{username}",
+  "@post_sendPmTitle": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "post_solutionAccepted": "已采纳为解决方案",
+  "post_solutionUnaccepted": "已取消采纳",
+  "post_solved": "已解决",
+  "post_submitFlag": "提交举报",
+  "post_tipLdc": "打赏 LDC",
+  "post_titleRequired": "请输入标题",
+  "post_topicSolved": "此话题已解决",
+  "post_unacceptSolution": "取消采纳",
+  "post_unsolved": "待解决",
+  "post_viewBestAnswer": "查看最佳答案",
+  "post_viewHiddenInfo": "查看隐藏的信息",
+  "post_whisperIndicator": "仅管理员可见",
+  "smallAction_archivedDisabled": "取消归档了话题",
+  "smallAction_archivedEnabled": "归档了话题",
+  "smallAction_autobumped": "自动顶帖",
+  "smallAction_autoclosedDisabled": "话题被自动打开",
+  "smallAction_autoclosedEnabled": "话题被自动关闭",
+  "smallAction_bannerDisabled": "移除了横幅",
+  "smallAction_bannerEnabled": "将话题设为横幅",
+  "smallAction_categoryChanged": "更新了类别",
+  "smallAction_closedDisabled": "打开了话题",
+  "smallAction_closedEnabled": "关闭了话题",
+  "smallAction_forwarded": "转发了邮件",
+  "smallAction_invitedGroup": "邀请了",
+  "smallAction_invitedUser": "邀请了",
+  "smallAction_openTopic": "转换为话题",
+  "smallAction_pinnedDisabled": "取消置顶了话题",
+  "smallAction_pinnedEnabled": "置顶了话题",
+  "smallAction_pinnedGloballyDisabled": "取消全站置顶",
+  "smallAction_pinnedGloballyEnabled": "全站置顶了话题",
+  "smallAction_privateTopic": "转换为私信",
+  "smallAction_publicTopic": "转换为公开话题",
+  "smallAction_removedGroup": "移除了",
+  "smallAction_removedUser": "移除了",
+  "smallAction_splitTopic": "拆分了话题",
+  "smallAction_tagsChanged": "更新了标签",
+  "smallAction_userLeft": "离开了对话",
+  "smallAction_visibleDisabled": "取消公开了话题",
+  "smallAction_visibleEnabled": "公开了话题",
+  "vote_cancelled": "已取消投票",
+  "vote_closed": "已关闭",
+  "vote_label": "投票",
+  "vote_pleaseLogin": "请先登录",
+  "vote_success": "投票成功",
+  "vote_successNoRemaining": "投票成功，您的投票已用完",
+  "vote_successRemaining": "投票成功，剩余 {remaining} 票",
+  "@vote_successRemaining": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      }
+    }
+  },
+  "vote_topicClosed": "话题已关闭，无法投票",
+  "vote_voted": "已投票"
+}

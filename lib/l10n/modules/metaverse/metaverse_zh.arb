@@ -1,0 +1,33 @@
+{
+  "@@locale": "zh",
+  "chat_thread": "线程",
+  "github_commentedOn": " 评论于 ",
+  "github_moreFiles": "... 还有 {count} 个文件",
+  "@github_moreFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "github_viewFullCode": "点击查看完整代码",
+  "metaverse_authFailed": "授权失败: {error}",
+  "@metaverse_authFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_cdkAuthSuccess": "CDK 授权成功",
+  "metaverse_cdkDesc": "连接账户，开启 CDK 权益",
+  "metaverse_cdkReauthSuccess": "CDK 重新授权成功",
+  "metaverse_cdkService": "CDK 服务",
+  "metaverse_comingSoon": "更多服务接入中...",
+  "metaverse_ldcAuthSuccess": "LDC 授权成功",
+  "metaverse_ldcDesc": "连接账户，开启积分权益",
+  "metaverse_ldcReauthSuccess": "LDC 重新授权成功",
+  "metaverse_ldcService": "LDC 积分服务",
+  "metaverse_myServices": "我的服务",
+  "metaverse_title": "元宇宙"
+}

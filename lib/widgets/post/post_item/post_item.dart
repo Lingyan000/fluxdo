@@ -36,6 +36,7 @@ class PostItem extends ConsumerStatefulWidget {
   final bool useReplyDialog;
   final VoidCallback? onShowPostDetail;
   final bool hideRepliesButton;
+  final String? highlightBoostUsername;
 
   const PostItem({
     super.key,
@@ -49,6 +50,7 @@ class PostItem extends ConsumerStatefulWidget {
     this.onJumpToPost,
     this.onSolutionChanged,
     this.highlight = false,
+    this.highlightBoostUsername,
     this.isTopicOwner = false,
     this.topicHasAcceptedAnswer = false,
     this.acceptedAnswerPostNumber,
@@ -230,6 +232,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                 topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,
                 acceptedAnswerPostNumber: widget.acceptedAnswerPostNumber,
                 padding: const EdgeInsets.only(top: 12),
+                highlightBoostUsername: widget.highlightBoostUsername,
                 onReply: widget.onReply,
                 onEdit: widget.onEdit,
                 onShareAsImage: widget.onShareAsImage,

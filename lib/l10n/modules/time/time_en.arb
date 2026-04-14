@@ -1,0 +1,19 @@
+{
+  "@@locale": "en",
+  "time_days": "{count} days",
+  "time_daysAgo": "{count}d ago",
+  "time_fullDate": "{month}/{day}/{year}",
+  "time_hours": "{count} hours",
+  "time_hoursAgo": "{count}h ago",
+  "time_justNow": "Just now",
+  "time_minutes": "{count} minutes",
+  "time_minutesAgo": "{count}m ago",
+  "time_monthsAgo": "{count}mo ago",
+  "time_seconds": "{count} seconds",
+  "time_shortDate": "{month}/{day}",
+  "time_today": "Today",
+  "time_tooltipTime": "{month}/{day}/{year} {hour}:{minute}:{second}",
+  "time_weeksAgo": "{count}w ago",
+  "time_yearsAgo": "{count}y ago",
+  "time_yesterday": "Yesterday"
+}

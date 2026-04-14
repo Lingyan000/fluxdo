@@ -27,6 +27,7 @@ detect_flutter_root() {
 }
 
 FLUTTER_ROOT="$(detect_flutter_root)"
+DART_BIN="${FLUTTER_ROOT}/bin/cache/dart-sdk/bin/dart"
 
 echo "==> Using Flutter SDK at ${FLUTTER_ROOT}"
 echo "==> Using local pub cache at ${PUB_CACHE_DIR}"
@@ -38,6 +39,9 @@ mkdir -p "${ARTIFACT_ROOT}"
 
 cd "${PROJECT_ROOT}"
 
+echo "==> Generating l10n"
+"${DART_BIN}" tool/merge_l10n.dart
+
 echo "==> Preparing Flutter dependencies"
 flutter config --enable-linux-desktop
 flutter precache --linux
@@ -45,7 +49,6 @@ flutter pub get
 bash "${SCRIPT_DIR}/patch_linux_plugins.sh"
 
 echo "==> Warming Cargokit build tool dependencies"
-DART_BIN="${FLUTTER_ROOT}/bin/cache/dart-sdk/bin/dart"
 CARGOKIT_WARM_ROOT="${ARTIFACT_ROOT}/cargokit-pub-runners"
 rm -rf "${CARGOKIT_WARM_ROOT}"
 mkdir -p "${CARGOKIT_WARM_ROOT}"

@@ -1,0 +1,85 @@
+{
+  "@@locale": "zh",
+  "myBrowser_addManually": "添加收藏",
+  "myBrowser_bookmarkCount": "{count} 个收藏",
+  "@myBrowser_bookmarkCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "myBrowser_bookmarks": "收藏",
+  "myBrowser_clearCompleted": "清除已完成",
+  "myBrowser_clearCompletedConfirm": "确定要清除所有已完成的下载记录吗？",
+  "myBrowser_clearHistory": "清空历史",
+  "myBrowser_clearHistoryConfirm": "确定要清空所有浏览历史吗？",
+  "myBrowser_confirmDelete": "确定要删除这条收藏吗？",
+  "myBrowser_delete": "删除",
+  "myBrowser_deleted": "已删除收藏",
+  "myBrowser_downloadComplete": "下载完成",
+  "myBrowser_downloadEmpty": "还没有下载记录",
+  "myBrowser_downloadFailed": "下载失败",
+  "myBrowser_downloadSize": "{size} MB",
+  "@myBrowser_downloadSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "myBrowser_downloadStarted": "开始下载",
+  "myBrowser_downloading": "下载中",
+  "myBrowser_downloads": "下载管理",
+  "myBrowser_downloadsDesc": "查看下载的文件",
+  "myBrowser_edit": "编辑",
+  "myBrowser_editTitle": "编辑标题",
+  "myBrowser_empty": "还没有收藏的网页",
+  "myBrowser_fileNotFound": "文件不存在",
+  "myBrowser_history": "浏览历史",
+  "myBrowser_historyCleared": "浏览历史已清空",
+  "myBrowser_historyDesc": "查看浏览过的网页",
+  "myBrowser_historyEmpty": "还没有浏览记录",
+  "myBrowser_inputTitle": "标题（选填）",
+  "myBrowser_inputUrl": "输入网址",
+  "myBrowser_open": "打开",
+  "myBrowser_title": "网页浏览",
+  "myBrowser_undo": "撤销",
+  "myBrowser_viewDownload": "查看",
+  "webviewLogin_clearSaved": "清除已保存的密码",
+  "webviewLogin_clearSavedContent": "确定要清除已保存的登录凭证吗？下次登录时需要手动输入。",
+  "webviewLogin_clearSavedTitle": "清除已保存的密码",
+  "webviewLogin_emailLoginInvalidLink": "无效的登录链接",
+  "webviewLogin_emailLoginPaste": "粘贴登录链接",
+  "webviewLogin_lastLogin": "上次登录: @{username}",
+  "@webviewLogin_lastLogin": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "webviewLogin_loginSuccess": "登录成功！",
+  "webviewLogin_savedPassword": "已保存的密码",
+  "webviewLogin_title": "登录 Linux.do",
+  "webview_addBookmark": "收藏此页",
+  "webview_bookmarkAdded": "已收藏",
+  "webview_bookmarkRemoved": "已取消收藏",
+  "webview_browser": "浏览器",
+  "webview_cannotOpenBrowser": "无法打开外部浏览器",
+  "webview_go": "前往",
+  "webview_goBack": "后退",
+  "webview_goForward": "前进",
+  "webview_inputUrl": "输入或编辑网址",
+  "webview_noAppForLink": "未找到可处理此链接的应用",
+  "webview_openExternal": "在外部浏览器打开",
+  "webview_openFailed": "打开失败: {error}",
+  "@webview_openFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "webview_removeBookmark": "取消收藏"
+}

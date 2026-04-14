@@ -1,0 +1,202 @@
+{
+  "@@locale": "zh",
+  "topicDetail_addToReadLater": "加入浮窗",
+  "topicDetail_addToReadLaterSuccess": "已加入浮窗",
+  "topicDetail_aiAssistant": "AI 助手",
+  "topicDetail_authorOnly": "只看题主",
+  "topicDetail_cannotOpenBrowser": "无法打开浏览器",
+  "topicDetail_editBookmark": "编辑书签",
+  "topicDetail_editTopic": "编辑话题",
+  "topicDetail_exportArticle": "导出文章",
+  "topicDetail_filter": "筛选",
+  "topicDetail_generateShareImage": "生成分享图片",
+  "topicDetail_hotOnly": "只看热门",
+  "topicDetail_loadFailedTapRetry": "加载失败，点击重试",
+  "topicDetail_loading": "加载中...",
+  "topicDetail_moreOptions": "更多选项",
+  "topicDetail_openInBrowser": "在浏览器打开",
+  "topicDetail_readLaterFull": "浮窗已满（最多 {max} 个）",
+  "@topicDetail_readLaterFull": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "topicDetail_removeFromReadLater": "移出浮窗",
+  "topicDetail_removeFromReadLaterSuccess": "已从浮窗移除",
+  "topicDetail_replyLabel": "回复",
+  "topicDetail_scrollToTop": "回到顶部",
+  "topicDetail_searchHint": "在本话题中搜索...",
+  "topicDetail_searchTopic": "搜索本话题",
+  "topicDetail_setToLevel": "已设置为{level}",
+  "@topicDetail_setToLevel": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_shareLink": "分享链接",
+  "topicDetail_showHiddenReplies": "显示 {count} 条隐藏回复",
+  "@topicDetail_showHiddenReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topicDetail_topLevelOnly": "只看顶层",
+  "topicDetail_viewAll": "查看全部",
+  "topicDetail_viewsLabel": "浏览",
+  "topicSort_activity": "活跃度",
+  "topicSort_created": "创建时间",
+  "topicSort_default": "默认",
+  "topicSort_likes": "点赞数",
+  "topicSort_posters": "参与者",
+  "topicSort_posts": "回复数",
+  "topicSort_views": "浏览量",
+  "topic_addTags": "添加标签",
+  "topic_aiSummary": "AI 摘要",
+  "topic_atCurrentPosition": "正位于此",
+  "topic_createdAt": "创建于 ",
+  "topic_currentFloor": "当前楼层",
+  "topic_filterHot": "热门",
+  "topic_filterLatest": "最新",
+  "topic_filterNew": "新话题",
+  "topic_filterTooltip": "筛选: {label}",
+  "@topic_filterTooltip": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "topic_filterTop": "排行榜",
+  "topic_filterUnread": "未读完",
+  "topic_filterUnseen": "未浏览",
+  "topic_flagInappropriate": "不当内容",
+  "topic_flagInappropriateDesc": "此帖子包含不适当的内容",
+  "topic_flagOffTopic": "离题",
+  "topic_flagOffTopicDesc": "此帖子与当前讨论无关，应该移动到其他话题",
+  "topic_flagOther": "其他问题",
+  "topic_flagOtherDesc": "需要版主关注的其他问题",
+  "topic_flagSpam": "垃圾信息",
+  "topic_flagSpamDesc": "此帖子是广告或垃圾信息",
+  "topic_generateAiSummary": "生成 AI 摘要",
+  "topic_generatingSummary": "正在生成摘要...",
+  "topic_jump": "跳转",
+  "topic_lastReply": "最后回复 ",
+  "topic_levelMuted": "静音",
+  "topic_levelMutedDesc": "不接收任何通知",
+  "topic_levelRegular": "常规",
+  "topic_levelRegularDesc": "只在被 @ 提及或回复时通知",
+  "topic_levelTracking": "跟踪",
+  "topic_levelTrackingDesc": "显示未读计数",
+  "topic_levelWatching": "关注",
+  "topic_levelWatchingDesc": "每个新回复都通知",
+  "topic_likeCount": "{count} 点赞",
+  "@topic_likeCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "topic_minTagsRequired": "至少选择 {min} 个标签",
+  "@topic_minTagsRequired": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_newRepliesSinceSummary": "有 {count} 条新回复",
+  "@topic_newRepliesSinceSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_noSummary": "暂无摘要",
+  "topic_notificationSettings": "订阅设置",
+  "topic_participants": "参与者",
+  "topic_readyToJump": "准备跳转",
+  "topic_remainingTags": "还需 {remaining} 个标签",
+  "@topic_remainingTags": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_replyCount": "{count} 条回复",
+  "@topic_replyCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_selectCategory": "选择分类",
+  "topic_sortTooltip": "排序: {label}",
+  "@topic_sortTooltip": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "topic_summaryLoadFailed": "加载摘要失败",
+  "topic_tagGroupRequirement": "从 {name} 选择 {minCount} 个",
+  "@topic_tagGroupRequirement": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "minCount": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_updatedAt": "更新于 ",
+  "topic_viewCount": "{count} 浏览",
+  "@topic_viewCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "topicsScreen_createTopic": "创建话题",
+  "topicsScreen_myDrafts": "我的草稿",
+  "topics_browseCategories": "浏览分类",
+  "topics_debugJump": "调试：跳转话题",
+  "topics_dismiss": "忽略",
+  "topics_dismissConfirmContent": "确定要忽略全部{label}吗？",
+  "@topics_dismissConfirmContent": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "topics_dismissConfirmTitle": "忽略确认",
+  "topics_jump": "跳转",
+  "topics_jumpToTopic": "跳转到话题",
+  "topics_newTopics": "新话题",
+  "topics_noTopics": "没有相关话题",
+  "topics_searchHint": "搜索话题...",
+  "topics_topicId": "话题 ID",
+  "topics_topicIdHint": "例如: 1095754",
+  "topics_unreadTopics": "未读话题",
+  "topics_viewNewTopics": "查看 {count} 个新的或更新的话题",
+  "@topics_viewNewTopics": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

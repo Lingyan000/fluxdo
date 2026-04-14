@@ -92,6 +92,8 @@ class NotificationItem extends StatelessWidget {
       case NotificationType.chatGroupMention:
       case NotificationType.chatQuotedPost:
         return Icons.chat;
+      case NotificationType.boost:
+        return Icons.rocket_launch;
       case NotificationType.assignedTopic:
         return Icons.assignment;
       case NotificationType.questionAnswerUserCommented:
@@ -157,6 +159,8 @@ class NotificationItem extends StatelessWidget {
         return Colors.blue;
       case NotificationType.grantedBadge:
         return Colors.amber;
+      case NotificationType.boost:
+        return Colors.deepPurple;
       case NotificationType.mentioned:
       case NotificationType.groupMentioned:
         return colorScheme.primary;
@@ -239,14 +243,19 @@ class NotificationItem extends StatelessWidget {
       subtitle: Row(
         children: [
           Expanded(
-            child: Text(
-              notification.description,
+            child: Text.rich(
+              TextSpan(
+                children: EmojiText.buildEmojiSpans(
+                  context,
+                  notification.description,
+                  TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontSize: 13,
-              ),
             ),
           ),
           const SizedBox(width: 8),

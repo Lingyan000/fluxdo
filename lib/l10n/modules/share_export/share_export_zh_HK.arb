@@ -1,0 +1,106 @@
+{
+  "@@locale": "zh_HK",
+  "download_alreadyInProgress": "已有下載任務正在進行",
+  "download_checksumFailed": "文件校驗失敗，下載的文件可能已損壞",
+  "download_connecting": "正在連接...",
+  "download_downloading": "正在下載 {name}",
+  "@download_downloading": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "download_failed": "下載失敗: {error}",
+  "@download_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "download_failedWithError": "下載失敗: {error}",
+  "@download_failedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "download_installFailed": "安裝失敗: {error}",
+  "@download_installFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "download_installStarted": "已開始安裝",
+  "download_installing": "正在安裝...",
+  "download_internalError": "下載安裝過程中發生內部錯誤",
+  "download_noInstallPermission": "未授予安裝權限，請在設置中允許安裝未知應用",
+  "download_verifying": "正在校驗文件...",
+  "export_exporting": "導出中 ({progress}/{total})",
+  "@export_exporting": {
+    "placeholders": {
+      "progress": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "export_exportingNoProgress": "導出中...",
+  "export_failed": "導出失敗: {error}",
+  "@export_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "export_fetchPostsFailed": "獲取帖子數據失敗",
+  "export_firstPostOnly": "僅主帖",
+  "export_format": "導出格式",
+  "export_markdownLimit": "Markdown 格式最多導出前 {max} 條帖子",
+  "@export_markdownLimit": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "export_noPostsToExport": "沒有可導出的帖子",
+  "export_range": "導出範圍",
+  "export_title": "導出文章",
+  "share_aiAssistant": "AI 助手",
+  "share_aiQuestion": "提問",
+  "share_aiReply": "AI 回覆",
+  "share_aiReplyAlt": "AI 助手回覆",
+  "share_cannotGetPostId": "無法獲取主帖 ID",
+  "share_copyFailed": "複製失敗，請重試",
+  "share_exportChatImage": "導出對話圖片",
+  "share_exportImage": "導出圖片",
+  "share_generatedByAi": "由 FluxDO AI 助手生成",
+  "share_getPostFailed": "獲取主帖失敗",
+  "share_imageCopied": "圖片已複製",
+  "share_imageSaved": "圖片已保存到相冊",
+  "share_loadingPost": "正在加載帖子...",
+  "share_replyToTopic": "回覆話題",
+  "share_saveFailed": "保存失敗，請重試",
+  "share_savePermissionDenied": "保存失敗，請授予相冊權限",
+  "share_saveToGallery": "保存到相冊",
+  "share_fileSaved": "文件已保存",
+  "share_selectSaveLocation": "選擇保存位置",
+  "share_screenshotFailed": "截圖失敗",
+  "share_shareImageTitle": "分享圖片",
+  "share_themeBlack": "純黑",
+  "share_themeBlue": "藍調",
+  "share_themeClassic": "經典",
+  "share_themeDark": "深色",
+  "share_themeGreen": "綠野",
+  "share_themeWhite": "純白",
+  "share_uploadFailed": "上傳失敗，請重試",
+  "share_uploading": "正在上傳..."
+}

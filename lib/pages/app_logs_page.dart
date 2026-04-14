@@ -3,9 +3,10 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 
 import '../services/app_error_handler.dart';
+import '../utils/share_utils.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/log/logger_utils.dart';
 import '../services/network/adapters/platform_adapter.dart';
@@ -79,8 +80,9 @@ class _AppLogsPageState extends State<AppLogsPage> {
 
   Future<void> _shareLog() async {
     final path = await LoggerUtils.getShareFilePath();
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(path)], subject: S.current.appLogs_shareSubject),
+    await ShareUtils.shareOrSaveFile(
+      XFile(path),
+      subject: S.current.appLogs_shareSubject,
     );
   }
 

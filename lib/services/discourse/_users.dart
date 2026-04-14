@@ -205,6 +205,45 @@ mixin _UsersMixin on _DiscourseServiceBase {
     );
   }
 
+  /// 获取私信列表（收件箱）
+  Future<TopicListResponse> getPrivateMessages({int page = 0}) async {
+    final username = await getUsername();
+    if (username == null) {
+      throw Exception(S.current.error_notLoggedInNoUsername);
+    }
+    final response = await _dio.get(
+      '/topics/private-messages/$username.json',
+      queryParameters: page > 0 ? {'page': page} : null,
+    );
+    return TopicListResponse.fromJson(response.data);
+  }
+
+  /// 获取已发送私信
+  Future<TopicListResponse> getPrivateMessagesSent({int page = 0}) async {
+    final username = await getUsername();
+    if (username == null) {
+      throw Exception(S.current.error_notLoggedInNoUsername);
+    }
+    final response = await _dio.get(
+      '/topics/private-messages-sent/$username.json',
+      queryParameters: page > 0 ? {'page': page} : null,
+    );
+    return TopicListResponse.fromJson(response.data);
+  }
+
+  /// 获取归档私信
+  Future<TopicListResponse> getPrivateMessagesArchive({int page = 0}) async {
+    final username = await getUsername();
+    if (username == null) {
+      throw Exception(S.current.error_notLoggedInNoUsername);
+    }
+    final response = await _dio.get(
+      '/topics/private-messages-archive/$username.json',
+      queryParameters: page > 0 ? {'page': page} : null,
+    );
+    return TopicListResponse.fromJson(response.data);
+  }
+
   /// 获取用户浏览历史
   Future<TopicListResponse> getBrowsingHistory({int page = 0}) async {
     final response = await _dio.get(

@@ -57,6 +57,21 @@ void handleNotificationTap(
     case NotificationType.membershipRequestAccepted:
       break;
 
+    case NotificationType.boost:
+      if (notification.topicId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TopicDetailPage(
+              topicId: notification.topicId!,
+              scrollToPostNumber: notification.postNumber,
+              highlightBoostUsername: notification.data.displayUsername,
+            ),
+          ),
+        );
+      }
+      break;
+
     default:
       if (notification.topicId != null) {
         Navigator.push(

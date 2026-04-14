@@ -1,0 +1,33 @@
+{
+  "@@locale": "zh_HK",
+  "chat_thread": "線程",
+  "github_commentedOn": " 評論於 ",
+  "github_moreFiles": "... 還有 {count} 個文件",
+  "@github_moreFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "github_viewFullCode": "點擊查看完整代碼",
+  "metaverse_authFailed": "授權失敗: {error}",
+  "@metaverse_authFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_cdkAuthSuccess": "CDK 授權成功",
+  "metaverse_cdkDesc": "連接賬户，開啓 CDK 權益",
+  "metaverse_cdkReauthSuccess": "CDK 重新授權成功",
+  "metaverse_cdkService": "CDK 服務",
+  "metaverse_comingSoon": "更多服務接入中...",
+  "metaverse_ldcAuthSuccess": "LDC 授權成功",
+  "metaverse_ldcDesc": "連接賬户，開啓積分權益",
+  "metaverse_ldcReauthSuccess": "LDC 重新授權成功",
+  "metaverse_ldcService": "LDC 積分服務",
+  "metaverse_myServices": "我的服務",
+  "metaverse_title": "元宇宙"
+}

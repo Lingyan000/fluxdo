@@ -1,0 +1,114 @@
+{
+  "@@locale": "zh_TW",
+  "categoryTopics_createPost": "發帖",
+  "categoryTopics_empty": "該分類下暫無話題",
+  "category_addHint": "點選下方分類新增到標籤欄",
+  "category_allCategories": "全部分類",
+  "category_available": "可新增",
+  "category_browse": "瀏覽分類",
+  "category_dragHint": "拖拽排序，點選移除",
+  "category_editHint": "點選\"編輯\"新增常用分類到標籤欄",
+  "category_editMyCategories": "編輯我的分類",
+  "category_levelMuted": "靜音",
+  "category_levelMutedDesc": "不接收此分類的任何通知",
+  "category_levelRegular": "常規",
+  "category_levelRegularDesc": "只在被 @ 提及或回覆時通知",
+  "category_levelTracking": "跟蹤",
+  "category_levelTrackingDesc": "顯示新帖未讀計數",
+  "category_levelWatching": "關注",
+  "category_levelWatchingDesc": "每個新回覆都通知",
+  "category_levelWatchingFirstPost": "關注新話題",
+  "category_levelWatchingFirstPostDesc": "此分類有新話題時通知",
+  "category_loadFailed": "載入分類失敗: {error}",
+  "@category_loadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "category_myCategories": "我的分類",
+  "category_noCategories": "暫無分類",
+  "category_noCategoriesFound": "未找到相關分類",
+  "category_parentAll": "{name}（全部）",
+  "@category_parentAll": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "category_searchHint": "搜尋分類...",
+  "tagTopics_empty": "該標籤下暫無話題",
+  "tag_maxTagsReached": "最多隻能選擇 {max} 個標籤",
+  "@tag_maxTagsReached": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_noTags": "暫無可用標籤",
+  "tag_noTagsFound": "未找到相關標籤",
+  "tag_requiredGroupWarning": "需從 \"{name}\" 標籤組選擇至少 {minCount} 個標籤",
+  "@tag_requiredGroupWarning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "minCount": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_requiredTagGroupHint": "需從 \"{name}\" 選擇至少 {minCount} 個",
+  "@tag_requiredTagGroupHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "minCount": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchHint": "搜尋標籤...",
+  "tag_searchWithCount": "搜尋標籤 (已選 {count})...",
+  "@tag_searchWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchWithMax": "搜尋標籤 (已選 {selected}/{max})...",
+  "@tag_searchWithMax": {
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_searchWithMin": "搜尋標籤 (已選 {selected}, 至少 {min})...",
+  "@tag_searchWithMin": {
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "tag_topicCount": "{count} 個話題",
+  "@tag_topicCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

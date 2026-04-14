@@ -50,6 +50,7 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: replyToPost,
       preloadedDraftFuture: preloadedDraftFuture,
+      isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
     );
 
     if (newPost != null && mounted) {
@@ -350,6 +351,7 @@ extension _UserActions on _TopicDetailPageState {
       replyToPost: post,
       initialContent: quote,
       preloadedDraftFuture: preloadedDraftFuture,
+      isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
     );
 
     if (newPost != null && mounted) {
@@ -390,6 +392,7 @@ extension _UserActions on _TopicDetailPageState {
       replyToPost: post,
       initialContent: quote,
       preloadedDraftFuture: preloadedDraftFuture,
+      isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
     );
 
     if (newPost != null && mounted) {

@@ -1,0 +1,11 @@
+{
+  "@@locale": "zh",
+  "browsingHistory_empty": "暂无浏览历史",
+  "browsingHistory_emptySearchHint": "输入关键词搜索浏览历史",
+  "browsingHistory_searchHint": "在浏览历史中搜索...",
+  "browsingHistory_title": "浏览历史",
+  "myTopics_empty": "暂无话题",
+  "myTopics_emptySearchHint": "输入关键词搜索我的话题",
+  "myTopics_searchHint": "在我的话题中搜索...",
+  "myTopics_title": "我的话题"
+}

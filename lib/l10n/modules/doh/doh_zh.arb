@@ -1,0 +1,141 @@
+{
+  "@@locale": "zh",
+  "dohDetail_addServer": "添加服务器",
+  "dohDetail_bootstrapIpHelper": "直接用 IP 连接 DoH 服务器，绕过 DNS 解析",
+  "dohDetail_bootstrapIpHint": "用逗号分隔，如 1.1.1.1, 1.0.0.1",
+  "dohDetail_bootstrapIpOptional": "Bootstrap IP（可选）",
+  "dohDetail_clearCache": "清空缓存",
+  "dohDetail_clearDnsCacheFailed": "清空 DNS 缓存失败: {error}",
+  "@dohDetail_clearDnsCacheFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_copyAddress": "复制地址",
+  "dohDetail_deleteServer": "删除服务器",
+  "dohDetail_deleteServerConfirm": "确定要删除 \"{name}\" 吗？",
+  "@dohDetail_deleteServerConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_dnsCacheCleared": "DNS 缓存已清空",
+  "dohDetail_dnsCacheDesc": "当前已缓存 {count} 个域名。代理模式和查询模式共用缓存，TTL 临近到期会后台刷新。",
+  "@dohDetail_dnsCacheDesc": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dohDetail_dnsCacheRefreshed": "DNS 缓存已强制刷新（{count} 个域名）",
+  "@dohDetail_dnsCacheRefreshed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dohDetail_dnsCacheRefreshedSimple": "DNS 缓存已强制刷新",
+  "dohDetail_dnsCacheSection": "DNS 缓存",
+  "dohDetail_dohAddress": "DoH 地址",
+  "dohDetail_dohAddressCopied": "已复制 DoH 地址",
+  "dohDetail_echSameAsDnsDesc": "使用 DNS 解析服务器查询 ECH 配置",
+  "dohDetail_echServer": "ECH 服务器",
+  "dohDetail_editServer": "编辑服务器",
+  "dohDetail_exampleDns": "例如：My DNS",
+  "dohDetail_forceRefresh": "强制刷新",
+  "dohDetail_gatewayDisabledDesc": "已关闭，使用 MITM 双重 TLS",
+  "dohDetail_gatewayEnabledDesc": "单次 TLS，通过反向代理转发",
+  "dohDetail_gatewayMode": "Gateway 模式",
+  "dohDetail_ipAddress": "IP 地址",
+  "dohDetail_ipv6Prefer": "IPv6 优先",
+  "dohDetail_ipv6PreferDesc": "优先尝试 IPv6，失败自动回落 IPv4",
+  "dohDetail_localDnsCache": "共享本地 DNS 缓存",
+  "dohDetail_noServers": "暂无服务器",
+  "dohDetail_processing": "处理中",
+  "dohDetail_refreshDnsCacheFailed": "强制刷新 DNS 缓存失败: {error}",
+  "@dohDetail_refreshDnsCacheFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "dohDetail_sameAsDns": "与 DNS 相同",
+  "dohDetail_selectEchServer": "选择 ECH 服务器",
+  "dohDetail_serverIp": "服务端 IP",
+  "dohDetail_serverIpHint": "指定连接 IP，跳过 DNS 解析",
+  "dohDetail_servers": "服务器",
+  "dohDetail_testAllSpeed": "全部测速",
+  "dohDetail_testSpeed": "测速",
+  "dohDetail_testingSpeed": "测速中",
+  "dohDetail_title": "DOH 详细设置",
+  "dohDetail_urlMustHttps": "地址必须以 https:// 开头",
+  "dohSettings_certAllDone": "已完成所有步骤",
+  "dohSettings_certDialogDesc": "HTTPS 拦截需要安装并信任 CA 证书，每台设备生成唯一证书",
+  "dohSettings_certDialogTitle": "CA 证书安装",
+  "dohSettings_certDownloadFailed": "描述文件下载失败",
+  "dohSettings_certDownloadHint": "点击下方按钮，Safari 会弹出下载提示，请点击\"允许\"。",
+  "dohSettings_certDownloadProfile": "下载描述文件",
+  "dohSettings_certInstall": "安装",
+  "dohSettings_certInstallHint": "HTTPS 拦截需要安装并信任证书",
+  "dohSettings_certInstallProfileHint": "前往 设置 → 通用 → VPN与设备管理，找到 DOH Proxy CA 描述文件并安装。",
+  "dohSettings_certInstalled": "CA 证书已安装",
+  "dohSettings_certInstalledNext": "已安装，下一步",
+  "dohSettings_certOpenSettings": "打开设置",
+  "dohSettings_certPreparing": "正在准备...",
+  "dohSettings_certRegenerate": "重新生成证书",
+  "dohSettings_certRegenerateFailed": "证书重新生成失败",
+  "dohSettings_certRegenerated": "新证书已生成",
+  "dohSettings_certReinstall": "重新安装",
+  "dohSettings_certReinstallHint": "点击可重新安装或更换证书",
+  "dohSettings_certRequired": "需要安装 CA 证书",
+  "dohSettings_certStepDownload": "下载描述文件",
+  "dohSettings_certStepInstall": "安装描述文件",
+  "dohSettings_certStepTrust": "信任证书",
+  "dohSettings_certTrustHint": "前往 设置 → 通用 → 关于本机 → 证书信任设置，开启 DOH Proxy CA 的信任开关。",
+  "dohSettings_disabledDesc": "使用系统默认 DNS",
+  "dohSettings_enabledDesc": "已启用加密 DNS 解析",
+  "dohSettings_errorCopied": "已复制错误信息",
+  "dohSettings_moreSettings": "更多设置",
+  "dohSettings_moreSettingsDesc": "服务器、IPv6、ECH 等",
+  "dohSettings_perDeviceCert": "设备独有证书",
+  "dohSettings_perDeviceCertDisabledDesc": "启用后每台设备生成独立的 CA 证书，更安全",
+  "dohSettings_perDeviceCertEnabledDesc": "已启用，每台设备使用独立 CA 证书",
+  "dohSettings_port": "端口 {port}",
+  "@dohSettings_port": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
+  "dohSettings_proxyNotStarted": "代理未启动",
+  "dohSettings_proxyRunning": "代理运行中",
+  "dohSettings_proxyStartFailed": "代理启动失败，DoH/ECH 无法生效",
+  "dohSettings_restartProxy": "重启代理",
+  "dohSettings_restarting": "正在重启...",
+  "dohSettings_starting": "正在启动...",
+  "dohSettings_suppressedByVpn": "已被 VPN 自动关闭，VPN 断开后将自动恢复",
+  "doh_cannotConnect": "无法连接到 DOH 服务",
+  "doh_executableNotFound": "找不到代理可执行文件",
+  "doh_invalidHttpResponse": "无效的 HTTP 响应",
+  "doh_queryFailed": "DOH 查询失败",
+  "doh_serverAlibaba": "阿里 DNS",
+  "doh_serverError": "DOH 服务器返回错误: {statusLine}",
+  "@doh_serverError": {
+    "placeholders": {
+      "statusLine": {
+        "type": "String"
+      }
+    }
+  },
+  "doh_serverTencent": "腾讯 DNS",
+  "doh_startTimeout": "代理启动超时（5秒内未响应）",
+  "doh_unknownReason": "未知原因"
+}

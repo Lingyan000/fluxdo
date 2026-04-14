@@ -2,6 +2,282 @@ part of 'discourse_service.dart';
 
 /// 认证相关
 mixin _AuthMixin on _DiscourseServiceBase {
+  // --- 保守登出复检机制 ---
+  // 收到 discourse-logged-out 等信号后，不立即登出，而是累积 strike 并通过
+  // probe（GET /session/current.json）做二次验证，避免瞬时 cookie 传输问题
+  // 或 token rotation 窗口导致的误判。
+  static const Duration _strikeWindow = Duration(seconds: 45);
+  static const Duration _inconclusiveCooldown = Duration(seconds: 30);
+  int _authStrikeCount = 0;
+  DateTime? _lastStrikeAt;
+  DateTime? _lastInconclusiveAt;
+  Future<bool?>? _activeProbe;
+
+  void _resetStrikes() {
+    _authStrikeCount = 0;
+    _lastStrikeAt = null;
+    _lastInconclusiveAt = null;
+  }
+
+  bool _isInCooldown() {
+    final last = _lastInconclusiveAt;
+    if (last == null) return false;
+    return DateTime.now().difference(last) <= _inconclusiveCooldown;
+  }
+
+  /// 统一的 auth invalid 信号入口。
+  /// [isStrong] 强信号：not_logged_in / 4xx + logged-out（1 次即触发 probe）
+  ///           弱信号：2xx + logged-out（需 2 次累积）
+  Future<void> _reportAuthSignal({
+    required bool isStrong,
+    required String source,
+    required String triggerInfo,
+    required RequestOptions requestOptions,
+    int? statusCode,
+  }) async {
+    if (_isLoggingOut) return;
+
+    // 冷却期内抑制
+    if (_isInCooldown() && !isStrong) {
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'info',
+        'type': 'auth',
+        'event': 'auth_signal_suppressed_cooldown',
+        'message': '处于 inconclusive 冷却期，暂时抑制弱 auth 信号',
+        'source': source,
+        'trigger': triggerInfo,
+      });
+      return;
+    }
+
+    // probe 进行中，不增加 strike（并发折叠）
+    if (_activeProbe != null) {
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'info',
+        'type': 'auth',
+        'event': 'auth_signal_folded',
+        'message': 'probe 进行中，折叠此 auth 信号',
+        'source': source,
+        'trigger': triggerInfo,
+      });
+      return;
+    }
+
+    // 累加 strike
+    final now = DateTime.now();
+    if (_lastStrikeAt == null ||
+        now.difference(_lastStrikeAt!) > _strikeWindow) {
+      _authStrikeCount = 1;
+    } else {
+      _authStrikeCount += 1;
+    }
+    _lastStrikeAt = now;
+
+    final threshold = isStrong ? 1 : 2;
+
+    // 记录诊断日志
+    final jarTToken = await _cookieJar.getTToken();
+    final sentCookieHeader =
+        requestOptions.headers['cookie']?.toString() ?? '';
+    final sentTMatch =
+        RegExp(r'(?:^|;\s*)_t=([^;]*)').firstMatch(sentCookieHeader);
+
+    LogWriter.instance.write({
+      'timestamp': now.toIso8601String(),
+      'level': _authStrikeCount >= threshold ? 'warning' : 'info',
+      'type': 'auth',
+      'event': 'auth_signal_reported',
+      'message': _authStrikeCount >= threshold
+          ? 'auth 信号达到阈值，准备执行 session probe'
+          : 'auth 信号已记录，等待后续信号确认',
+      'source': source,
+      'trigger': triggerInfo,
+      'isStrong': isStrong,
+      'strike': _authStrikeCount,
+      'threshold': threshold,
+      'statusCode': statusCode,
+      'memHasToken': _tToken != null && _tToken!.isNotEmpty,
+      'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
+      'sentHasT': sentTMatch != null,
+    });
+
+    if (_authStrikeCount >= threshold) {
+      await _probeSession(source: source, triggerInfo: triggerInfo);
+    }
+  }
+
+  /// 通过 GET /session/current.json 验证会话是否仍然有效。
+  /// 返回值：true=有效, false=确认失效, null=无法判断
+  Future<bool?> _probeSession({
+    required String source,
+    String? triggerInfo,
+  }) {
+    final inFlight = _activeProbe;
+    if (inFlight != null) return inFlight;
+
+    final future = _probeSessionImpl(
+      source: source,
+      triggerInfo: triggerInfo,
+    );
+    _activeProbe = future;
+    future.whenComplete(() {
+      if (identical(_activeProbe, future)) {
+        _activeProbe = null;
+      }
+    });
+    return future;
+  }
+
+  Future<bool?> _probeSessionImpl({
+    required String source,
+    String? triggerInfo,
+  }) async {
+    final strikeSnapshot = _authStrikeCount;
+
+    // probe 前只同步 cf_clearance，不同步 _t
+    // 避免在半失效态把坏 cookie 回灌到 CookieJar
+    try {
+      await BoundarySyncService.instance.syncFromWebView(
+        cookieNames: {'cf_clearance'},
+      );
+    } catch (e) {
+      debugPrint('[Auth] probe 前 cf_clearance 同步失败: $e');
+    }
+
+    try {
+      final response = await _dio.get(
+        '/session/current.json',
+        queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
+        options: Options(
+          extra: const {
+            'skipAuthCheck': true,
+            'skipCsrf': true,
+          },
+        ),
+      );
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': 'auth_probe_inconclusive',
+          'message': 'probe 返回非预期数据结构，暂不登出',
+          'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'statusCode': response.statusCode,
+        });
+        _lastInconclusiveAt = DateTime.now();
+        return null;
+      }
+
+      final currentUser = data['current_user'];
+      if (currentUser is Map<String, dynamic>) {
+        // 会话有效，恢复
+        final user = User.fromJson(currentUser);
+        currentUserNotifier.value = user;
+        if (user.username.isNotEmpty) {
+          _username = user.username;
+          await _storage.write(
+            key: DiscourseService._usernameKey,
+            value: user.username,
+          );
+        }
+        final liveToken = await _cookieJar.getTToken();
+        if (liveToken != null && liveToken.isNotEmpty) {
+          _tToken = liveToken;
+        }
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'info',
+          'type': 'auth',
+          'event': 'auth_probe_success',
+          'message': 'session probe 确认会话有效，保持登录',
+          'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+          'username': user.username,
+        });
+        _resetStrikes();
+        return true;
+      }
+
+      // 200 但无 current_user → 确认失效
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'warning',
+        'type': 'auth',
+        'event': 'auth_probe_failed',
+        'message': 'session probe 确认 current_user 不存在，执行登出',
+        'source': source,
+        if (triggerInfo != null) 'trigger': triggerInfo,
+      });
+      await _handleAuthInvalid(
+        S.current.auth_loginExpiredRelogin,
+        source: 'probe_confirmed',
+        triggerInfo: triggerInfo,
+      );
+      return false;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // 404 = 无用户（session_controller.rb:676）
+      if (status == 404) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': 'auth_probe_failed',
+          'message': 'session probe 返回 404，确认会话失效',
+          'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+        });
+        await _handleAuthInvalid(
+          S.current.auth_loginExpiredRelogin,
+          source: 'probe_confirmed',
+          triggerInfo: triggerInfo,
+        );
+        return false;
+      }
+      // 网络异常 → inconclusive
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'warning',
+        'type': 'auth',
+        'event': 'auth_probe_inconclusive',
+        'message': 'session probe 请求失败，暂不登出',
+        'source': source,
+        if (triggerInfo != null) 'trigger': triggerInfo,
+        'statusCode': status,
+        'errorType': e.type.toString(),
+      });
+      // 如果累积 strike 较多，升级为登出
+      if (strikeSnapshot >= 2) {
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': 'auth_inconclusive_escalated',
+          'message': 'probe 不确定但 strike 已累积 $strikeSnapshot 次，升级为登出',
+          'source': source,
+          if (triggerInfo != null) 'trigger': triggerInfo,
+        });
+        await _handleAuthInvalid(
+          S.current.auth_loginExpiredRelogin,
+          source: 'probe_escalated',
+          triggerInfo: triggerInfo,
+        );
+        return false;
+      }
+      _lastInconclusiveAt = DateTime.now();
+      return null;
+    } catch (e) {
+      debugPrint('[Auth] probe 异常: $e');
+      _lastInconclusiveAt = DateTime.now();
+      return null;
+    }
+  }
 
   /// 初始化拦截器
   void _initInterceptors() {
@@ -60,14 +336,15 @@ mixin _AuthMixin on _DiscourseServiceBase {
               loggedOut != null &&
               loggedOut.isNotEmpty &&
               !_isLoggingOut) {
-            await _onDiscourseLoggedOut(
+            // 2xx + discourse-logged-out 是弱信号（矛盾信号），异步处理不阻塞
+            unawaited(_reportAuthSignal(
+              isStrong: false,
               source: 'response_header',
               triggerInfo:
                   '${response.requestOptions.method} ${response.requestOptions.uri} → ${response.statusCode}',
               requestOptions: response.requestOptions,
               statusCode: response.statusCode,
-              responseHeaders: response.headers.map,
-            );
+            ));
             return handler.next(response);
           }
 
@@ -135,14 +412,16 @@ mixin _AuthMixin on _DiscourseServiceBase {
               loggedOut != null &&
               loggedOut.isNotEmpty &&
               !_isLoggingOut) {
-            await _onDiscourseLoggedOut(
+            // 4xx + logged-out 是强信号，2xx/3xx 是弱信号
+            final errorStatusCode = error.response?.statusCode;
+            unawaited(_reportAuthSignal(
+              isStrong: errorStatusCode == 401 || errorStatusCode == 403,
               source: 'error_response_header',
               triggerInfo:
-                  '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}',
+                  '${error.requestOptions.method} ${error.requestOptions.uri} → $errorStatusCode',
               requestOptions: error.requestOptions,
-              statusCode: error.response?.statusCode,
-              responseHeaders: error.response?.headers.map,
-            );
+              statusCode: errorStatusCode,
+            ));
             return handler.next(error);
           }
 
@@ -173,15 +452,15 @@ mixin _AuthMixin on _DiscourseServiceBase {
                 'memHasToken': _tToken != null && _tToken!.isNotEmpty,
               },
             );
-            final message =
-                (data['errors'] as List?)?.first?.toString() ??
-                S.current.auth_loginExpiredRelogin;
-            await _handleAuthInvalid(
-              message,
+            // 服务端明确返回 not_logged_in 是强信号
+            unawaited(_reportAuthSignal(
+              isStrong: true,
               source: 'error_response_body',
               triggerInfo:
                   '${error.requestOptions.method} ${error.requestOptions.uri} → ${error.response?.statusCode}, error_type=${data['error_type']}',
-            );
+              requestOptions: error.requestOptions,
+              statusCode: error.response?.statusCode,
+            ));
           }
 
           handler.next(error);
@@ -314,13 +593,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'level': 'warning',
           'type': 'auth',
           'event': 'token_missing_after_response',
-          'message': '响应后会话 Cookie 已缺失，已清空内存 token',
+          'message': '响应后会话 Cookie 已缺失，仅记录告警，不立即清空内存 token',
           'method': requestOptions.method,
           'url': requestOptions.uri.toString(),
           'memTokenLen': _tToken?.length,
         });
       }
-      _tToken = null;
+      // 不再立即清空 _tToken，由 probe 确认失效后在 logout() 中统一清除
+      // _tToken = null;
     }
   }
 
@@ -330,9 +610,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
   /// 1. 有 _t cookie 但 UserAuthToken.lookup 找不到对应用户（token 已失效）
   /// 2. 没有 _t cookie 但请求带了 Discourse-Logged-In header
   ///
-  /// Discourse 官方前端：弹对话框 → window.location 刷新，不做二次验证。
-  /// 我们也直接信任此信号触发登出。之前的二次验证（请求首页检查 currentUser）
-  /// 会清除 CDN URL 等基础数据，导致头像 URL 降级到主域名 → 403 → 雪崩。
+  /// Discourse 官方前端：弹对话框 → 无论点什么都刷新页面。
+  /// 我们采用保守策略：通过 _reportAuthSignal → probe 机制二次验证，
+  /// 避免因 cookie 传输瞬时问题或 token rotation 窗口导致误判。
+  ///
+  /// 此方法已不再被拦截器直接调用，保留仅供参考和未来扩展。
+  // ignore: unused_element
   Future<void> _onDiscourseLoggedOut({
     required String source,
     required String triggerInfo,
@@ -340,18 +623,13 @@ mixin _AuthMixin on _DiscourseServiceBase {
     int? statusCode,
     Map<String, List<String>>? responseHeaders,
   }) async {
-    // _handleAuthInvalid 内部有 _isLoggingOut 锁，防止重复处理
     if (_isLoggingOut) return;
 
     debugPrint('[Auth] discourse-logged-out: $triggerInfo');
 
     final jarTToken = await _cookieJar.getTToken();
-
-    // 从实际发出的请求 header 中提取 _t cookie 状态
     final sentCookieHeader = requestOptions.headers['cookie']?.toString() ?? '';
     final sentTMatch = RegExp(r'(?:^|;\s*)_t=([^;]*)').firstMatch(sentCookieHeader);
-    final sentHasT = sentTMatch != null;
-    final sentTLen = sentTMatch?.group(1)?.length;
 
     await AuthLogService().logAuthInvalid(
       source: source,
@@ -363,19 +641,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
         'jarTokenLen': jarTToken?.length,
         'memHasToken': _tToken != null && _tToken!.isNotEmpty,
-        // 实际发出的请求中 _t cookie 的状态
-        'sentHasT': sentHasT,
-        'sentTLen': sentTLen,
+        'sentHasT': sentTMatch != null,
+        'sentTLen': sentTMatch?.group(1)?.length,
         'sentCookieLen': sentCookieHeader.length,
       },
-    );
-
-    await _handleAuthInvalid(
-      S.current.auth_loginExpiredRelogin,
-      source: source,
-      triggerInfo: triggerInfo,
-      sentHasT: sentHasT,
-      sentTLen: sentTLen,
     );
   }
 
@@ -409,6 +678,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
     // 收集 _t cookie 诊断信息（不含实际值，仅状态）
     final jarTToken = await _cookieJar.getTToken();
     final csrfToken = _cookieSync.csrfToken;
+    final jarSessionCookies =
+        await _cookieJar.getSessionCookieDiagnosticsForRequest(
+          uri: Uri.parse(AppConstants.baseUrl),
+        );
 
     // 记录被动退出日志（含触发来源，方便排查）
     LogWriter.instance.write({
@@ -425,6 +698,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
       'jarHasToken': jarTToken != null && jarTToken.isNotEmpty,
       'jarTokenLen': jarTToken?.length,
       'hasCsrf': csrfToken != null && csrfToken.isNotEmpty,
+      'jarSessionCookies': jarSessionCookies,
       // 实际请求中 Cookie header 的 _t 状态（仅 discourse-logged-out 触发时有值）
       'sentHasT': sentHasT,
       'sentTLen': sentTLen,
@@ -437,12 +711,56 @@ mixin _AuthMixin on _DiscourseServiceBase {
   }
 
   /// 检查是否已登录
+  ///
+  /// 除了检查本地 _t cookie，还会请求 /session/current.json 做服务端验证，
+  /// 避免本地有 cookie 但服务端已撤销 session 的"假在线"状态。
+  /// 网络异常时保守返回 true（保留本地状态）。
   Future<bool> isLoggedIn() async {
     final tToken = await _cookieJar.getTToken();
     if (tToken == null || tToken.isEmpty) return false;
-    _tToken = tToken;
-    _username = await _storage.read(key: DiscourseService._usernameKey);
-    return true;
+
+    final username = await _storage.read(key: DiscourseService._usernameKey);
+    if (username == null || username.isEmpty) return false;
+
+    // 服务端验证
+    try {
+      final response = await _dio.get(
+        '/session/current.json',
+        queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
+        options: Options(
+          extra: const {'skipAuthCheck': true, 'skipCsrf': true},
+        ),
+      );
+      final data = response.data;
+      if (data is Map<String, dynamic> && data['current_user'] is Map) {
+        _tToken = tToken;
+        final liveUsername =
+            (data['current_user'] as Map)['username']?.toString();
+        _username = (liveUsername != null && liveUsername.isNotEmpty)
+            ? liveUsername
+            : username;
+        _resetStrikes();
+        return true;
+      }
+      // 200 但无 current_user
+      await logout(callApi: false, refreshPreload: false);
+      return false;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // 404 = 无用户 / 401/403 = 明确拒绝
+      if (status == 404 || status == 401 || status == 403) {
+        await logout(callApi: false, refreshPreload: false);
+        return false;
+      }
+      // 网络异常/CF 验证等 → 保守保留本地状态
+      _tToken = tToken;
+      _username = username;
+      return true;
+    } catch (_) {
+      _tToken = tToken;
+      _username = username;
+      return true;
+    }
   }
 
   /// 仅设置 token，不触发状态广播（登录流程中先设置 token，等数据就绪后再广播）
@@ -514,5 +832,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
     // ===== 第七步：广播状态变更（此时一切已就绪）=====
     currentUserNotifier.value = null;
     _authStateController.add(null);
+
+    // ===== 第八步：重置 auth strike 状态 =====
+    _resetStrikes();
   }
 }

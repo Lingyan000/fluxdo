@@ -1,0 +1,16 @@
+{
+  "@@locale": "zh",
+  "preheat_logoutConfirm": "确定要退出当前账号吗？退出后将清除本地登录信息。",
+  "preheat_logoutMessage": "用户主动退出登录（预热失败页面）",
+  "preheat_networkSettings": "网络设置",
+  "preheat_retryConnection": "重试连接",
+  "preheat_userSkipped": "用户跳过预加载",
+  "table_rowCount": "共 {count} 行",
+  "@table_rowCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}
