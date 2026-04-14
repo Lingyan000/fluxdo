@@ -76,11 +76,15 @@ class AdaptiveNavigationRail extends StatelessWidget {
                 onTap: () => onDestinationSelected(index),
               );
             }),
-            if (categoryShortcuts != null) ...[
-              const SizedBox(height: 4),
-              categoryShortcuts!,
-            ],
-            const Spacer(),
+            if (categoryShortcuts != null)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: categoryShortcuts!,
+                ),
+              )
+            else
+              const Spacer(),
             if (bottomLeading != null) ...[
               bottomLeading!,
               const SizedBox(height: 8),
