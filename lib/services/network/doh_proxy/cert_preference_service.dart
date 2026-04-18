@@ -21,16 +21,16 @@ class CertPreferenceService {
 
   /// 是否使用 per-device CA
   ///
-  /// iOS 强制返回 true，其他平台读取用户偏好
+  /// iOS/macOS 强制返回 true（平台要求），其他平台读取用户偏好
   static Future<bool> usePerDevice() async {
-    if (Platform.isIOS) return true;
+    if (isPerDeviceRequired) return true;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_usePerDeviceKey) ?? false;
   }
 
-  /// 设置是否使用 per-device CA（仅对非 iOS 平台生效）
+  /// 设置是否使用 per-device CA（仅对非 iOS/macOS 平台生效）
   static Future<void> setUsePerDevice(bool value) async {
-    if (Platform.isIOS) return;
+    if (isPerDeviceRequired) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_usePerDeviceKey, value);
   }
