@@ -82,6 +82,10 @@ class AdaptiveScaffold extends ConsumerWidget {
                     onDestinationSelected(index);
                   },
                   destinations: destinations,
+                  topDestinationCount: destinations.isEmpty ? 0 : 1,
+                  bottomDestinationCount: destinations.length <= 1
+                      ? 0
+                      : destinations.length - 1,
                   categoryShortcuts: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -92,7 +96,9 @@ class AdaptiveScaffold extends ConsumerWidget {
                           if (selectedIndex != 0) {
                             onDestinationSelected(0);
                           }
-                          ref.read(currentTabCategoryIdProvider.notifier).state =
+                          ref
+                                  .read(currentTabCategoryIdProvider.notifier)
+                                  .state =
                               categoryId;
                         },
                       ),
