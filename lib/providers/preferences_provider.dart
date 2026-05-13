@@ -24,6 +24,18 @@ enum NestedLineStyle {
   }
 }
 
+enum BookmarksOpenMode {
+  defaultRoute,
+  tabbedWorkspace;
+
+  static BookmarksOpenMode fromString(String? value) {
+    return BookmarksOpenMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => BookmarksOpenMode.defaultRoute,
+    );
+  }
+}
+
 class AppPreferences {
   final bool autoPanguSpacing;
 
@@ -81,6 +93,9 @@ class AppPreferences {
   /// 嵌套视图连接线样式
   final NestedLineStyle nestedLineStyle;
 
+  /// 书签页默认打开方式（仅桌面端使用）
+  final BookmarksOpenMode bookmarksOpenMode;
+
   /// 最大并发请求数
   final int maxConcurrent;
 
@@ -121,6 +136,7 @@ class AppPreferences {
     this.showSignatures = true,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
+    this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
     required this.maxConcurrent,
     required this.maxPerWindow,
     required this.windowSeconds,
@@ -151,6 +167,7 @@ class AppPreferences {
     bool? showSignatures,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
+    BookmarksOpenMode? bookmarksOpenMode,
     int? maxConcurrent,
     int? maxPerWindow,
     int? windowSeconds,
@@ -182,6 +199,7 @@ class AppPreferences {
       showSignatures: showSignatures ?? this.showSignatures,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
+      bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
       maxConcurrent: maxConcurrent ?? this.maxConcurrent,
       maxPerWindow: maxPerWindow ?? this.maxPerWindow,
       windowSeconds: windowSeconds ?? this.windowSeconds,
@@ -219,6 +237,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
+  static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
   static const String _maxConcurrentKey = 'pref_max_concurrent';
   static const String _maxPerWindowKey = 'pref_max_per_window';
   static const String _windowSecondsKey = 'pref_window_seconds';
@@ -259,6 +278,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
+          ),
+          bookmarksOpenMode: BookmarksOpenMode.fromString(
+            _prefs.getString(_bookmarksOpenModeKey),
           ),
           maxConcurrent: _prefs.getInt(_maxConcurrentKey) ?? 3,
           maxPerWindow: _prefs.getInt(_maxPerWindowKey) ?? 6,
@@ -401,6 +423,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setNestedLineStyle(NestedLineStyle style) async {
     state = state.copyWith(nestedLineStyle: style);
     await _prefs.setString(_nestedLineStyleKey, style.name);
+  }
+
+  Future<void> setBookmarksOpenMode(BookmarksOpenMode mode) async {
+    state = state.copyWith(bookmarksOpenMode: mode);
+    await _prefs.setString(_bookmarksOpenModeKey, mode.name);
   }
 
   Future<void> setMaxConcurrent(int value) async {

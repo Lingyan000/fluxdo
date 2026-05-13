@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+
+import 'package:dio/dio.dart';
+
 import '../../models/bookmark.dart';
+import '../../pages/bookmarks/bookmarks_models.dart';
+import '../../l10n/s.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/app_error_handler.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/time_utils.dart';
-import 'package:dio/dio.dart';
-import '../../../../../l10n/s.dart';
+import 'bookmark_name_edit_panel.dart';
 
 /// 书签编辑结果
 class BookmarkEditResult {
@@ -22,12 +26,16 @@ class BookmarkEditSheet extends StatefulWidget {
   final int bookmarkId;
   final String? initialName;
   final DateTime? initialReminderAt;
+  final List<String> nameSuggestions;
+  final Future<List<String>> Function()? nameSuggestionsLoader;
 
   const BookmarkEditSheet({
     super.key,
     required this.bookmarkId,
     this.initialName,
     this.initialReminderAt,
+    this.nameSuggestions = const [],
+    this.nameSuggestionsLoader,
   });
 
   /// 显示书签编辑 BottomSheet
@@ -36,6 +44,8 @@ class BookmarkEditSheet extends StatefulWidget {
     required int bookmarkId,
     String? initialName,
     DateTime? initialReminderAt,
+    List<String> nameSuggestions = const [],
+    Future<List<String>> Function()? nameSuggestionsLoader,
   }) {
     return showAppBottomSheet<BookmarkEditResult>(
       context: context,
@@ -45,6 +55,8 @@ class BookmarkEditSheet extends StatefulWidget {
         bookmarkId: bookmarkId,
         initialName: initialName,
         initialReminderAt: initialReminderAt,
+        nameSuggestions: nameSuggestions,
+        nameSuggestionsLoader: nameSuggestionsLoader,
       ),
     );
   }
@@ -75,6 +87,14 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     super.dispose();
   }
 
+  Future<List<String>> _defaultNameSuggestionsLoader() async {
+    final topics = await loadAllBookmarkTopics(
+      loadPage: (page, limit) =>
+          _service.getUserBookmarks(page: page, limit: limit),
+    );
+    return buildBookmarkNameSuggestions(topics);
+  }
+
   Future<void> _save() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -82,9 +102,11 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     try {
       // 计算提醒时间
       DateTime? reminderAt = _currentReminderAt;
-      if (_selectedReminder != null && _selectedReminder != BookmarkReminderOption.custom) {
+      if (_selectedReminder != null &&
+          _selectedReminder != BookmarkReminderOption.custom) {
         reminderAt = _selectedReminder!.toReminderAt();
-      } else if (_selectedReminder == BookmarkReminderOption.custom && _customReminderAt != null) {
+      } else if (_selectedReminder == BookmarkReminderOption.custom &&
+          _customReminderAt != null) {
         reminderAt = _customReminderAt;
       }
 
@@ -97,10 +119,13 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       );
 
       if (mounted) {
-        Navigator.pop(context, BookmarkEditResult(
-          name: name.isNotEmpty ? name : null,
-          reminderAt: reminderAt,
-        ));
+        Navigator.pop(
+          context,
+          BookmarkEditResult(
+            name: name.isNotEmpty ? name : null,
+            reminderAt: reminderAt,
+          ),
+        );
         ToastService.showSuccess(S.current.common_bookmarkUpdated);
       }
     } on DioException catch (_) {
@@ -173,7 +198,13 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     if (time == null || !mounted) return;
 
     setState(() {
-      _customReminderAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _customReminderAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
       _currentReminderAt = _customReminderAt;
     });
   }
@@ -201,7 +232,12 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      margin: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + bottomInset),
+      margin: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: 16 + bottomInset,
+      ),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -236,18 +272,11 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
               const SizedBox(height: 16),
 
               // 书签名称
-              TextField(
+              BookmarkNameEditPanel(
                 controller: _nameController,
-                maxLength: 100,
-                decoration: InputDecoration(
-                  labelText: S.current.bookmark_nameLabel,
-                  hintText: S.current.bookmark_nameHint,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  counterText: '',
-                  prefixIcon: const Icon(Icons.label_outline, size: 20),
-                ),
+                initialSuggestions: widget.nameSuggestions,
+                suggestionsLoader:
+                    widget.nameSuggestionsLoader ?? _defaultNameSuggestionsLoader,
               ),
               const SizedBox(height: 16),
 
@@ -263,7 +292,10 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
               // 当前提醒时间显示
               if (_currentReminderAt != null && _selectedReminder == null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
                     color: _currentReminderAt!.isAfter(DateTime.now())
@@ -283,7 +315,9 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                       const SizedBox(width: 8),
                       Text(
                         _currentReminderAt!.isAfter(DateTime.now())
-                            ? S.current.bookmark_reminderTime(TimeUtils.formatDetailTime(_currentReminderAt!))
+                            ? S.current.bookmark_reminderTime(
+                                TimeUtils.formatDetailTime(_currentReminderAt!),
+                              )
                             : S.current.bookmark_reminderExpired,
                         style: TextStyle(
                           fontSize: 13,
@@ -326,18 +360,26 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
               ),
 
               // 自定义时间显示
-              if (_selectedReminder == BookmarkReminderOption.custom && _customReminderAt != null)
+              if (_selectedReminder == BookmarkReminderOption.custom &&
+                  _customReminderAt != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.alarm, size: 16, color: theme.colorScheme.onPrimaryContainer),
+                        Icon(
+                          Icons.alarm,
+                          size: 16,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           TimeUtils.formatFullDate(_customReminderAt!),
@@ -370,10 +412,14 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                     onPressed: _isDeleting ? null : _delete,
                     icon: _isDeleting
                         ? const SizedBox(
-                            width: 16, height: 16,
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Icon(Icons.delete_outline, color: theme.colorScheme.error),
+                        : Icon(
+                            Icons.delete_outline,
+                            color: theme.colorScheme.error,
+                          ),
                     label: Text(
                       S.current.common_delete,
                       style: TextStyle(color: theme.colorScheme.error),
@@ -391,8 +437,12 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                     onPressed: _isSaving ? null : _save,
                     child: _isSaving
                         ? const SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : Text(S.current.common_save),
                   ),

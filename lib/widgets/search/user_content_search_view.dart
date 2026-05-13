@@ -20,10 +20,18 @@ class UserContentSearchView extends ConsumerStatefulWidget {
   /// 空搜索状态的提示文字
   final String emptySearchHint;
 
+  /// 自定义打开话题行为（如桌面工作区复用标签）
+  final void Function({
+    required int topicId,
+    required String title,
+    int? scrollToPostNumber,
+  })? onOpenTopic;
+
   const UserContentSearchView({
     super.key,
     required this.inType,
     required this.emptySearchHint,
+    this.onOpenTopic,
   });
 
   @override
@@ -92,6 +100,32 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
     }
   }
 
+  void _openTopic({
+    required int topicId,
+    required String title,
+    int? scrollToPostNumber,
+  }) {
+    final customHandler = widget.onOpenTopic;
+    if (customHandler != null) {
+      customHandler(
+        topicId: topicId,
+        title: title,
+        scrollToPostNumber: scrollToPostNumber,
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TopicDetailPage(
+          topicId: topicId,
+          initialTitle: title,
+          scrollToPostNumber: scrollToPostNumber,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -109,12 +143,13 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
         onClearAll: _onClearAll,
       );
     }
+    final filterWidgets = filterBar == null ? const <Widget>[] : <Widget>[filterBar];
 
     // 未搜索状态
     if (searchState.query.isEmpty && searchState.results.isEmpty) {
       return Column(
         children: [
-          if (filterBar != null) filterBar,
+          ...filterWidgets,
           Expanded(
             child: Center(
               child: Column(
@@ -140,7 +175,7 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
     if (searchState.isLoading && searchState.results.isEmpty) {
       return Column(
         children: [
-          if (filterBar != null) filterBar,
+          ...filterWidgets,
           const Expanded(child: Center(child: LoadingSpinner())),
         ],
       );
@@ -150,7 +185,7 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
     if (searchState.error != null && searchState.results.isEmpty) {
       return Column(
         children: [
-          if (filterBar != null) filterBar,
+          ...filterWidgets,
           Expanded(
             child: Center(
               child: Column(
@@ -179,7 +214,7 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
     if (searchState.results.isEmpty) {
       return Column(
         children: [
-          if (filterBar != null) filterBar,
+          ...filterWidgets,
           Expanded(
             child: Center(
               child: Column(
@@ -211,7 +246,7 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
     // 搜索结果
     return Column(
       children: [
-        if (filterBar != null) filterBar,
+        ...filterWidgets,
         // 结果数量
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -246,14 +281,10 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
                 onTap: () {
                   final topic = post.topic;
                   if (topic != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TopicDetailPage(
-                          topicId: topic.id,
-                          scrollToPostNumber: post.postNumber,
-                        ),
-                      ),
+                    _openTopic(
+                      topicId: topic.id,
+                      title: topic.title,
+                      scrollToPostNumber: post.postNumber,
                     );
                   }
                 },
@@ -264,14 +295,10 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
                           onOpen: () {
                             final topic = post.topic;
                             if (topic != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TopicDetailPage(
-                                    topicId: topic.id,
-                                    scrollToPostNumber: post.postNumber,
-                                  ),
-                                ),
+                              _openTopic(
+                                topicId: topic.id,
+                                title: topic.title,
+                                scrollToPostNumber: post.postNumber,
                               );
                             }
                           },

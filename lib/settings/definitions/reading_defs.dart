@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../providers/preferences_provider.dart';
+import '../../utils/platform_utils.dart';
+import '../../utils/responsive.dart';
 import '../settings_model.dart';
 
 /// 阅读设置数据声明
@@ -89,6 +91,30 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           getValue: (ref) => ref.watch(preferencesProvider).showSignatures,
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setShowSignatures(v),
+        ),
+        PlatformConditionalModel(
+          inner: CustomModel(
+            id: 'bookmarksOpenMode',
+            title: l10n.reading_bookmarksOpenMode,
+            builder: (context, ref) {
+              final currentMode = ref.watch(preferencesProvider).bookmarksOpenMode;
+              final l = context.l10n;
+              return ListTile(
+                leading: Icon(
+                  Icons.tab_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: Text(l.reading_bookmarksOpenMode),
+                subtitle: Text(switch (currentMode) {
+                  BookmarksOpenMode.defaultRoute => l.reading_bookmarksOpenModeDefault,
+                  BookmarksOpenMode.tabbedWorkspace => l.reading_bookmarksOpenModeTabbedWorkspace,
+                }),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showBookmarksOpenModePicker(context, ref, currentMode),
+              );
+            },
+          ),
+          condition: () => PlatformUtils.isDesktop && Responsive.isDesktop(context),
         ),
         PlatformConditionalModel(
           inner: SwitchModel(
@@ -181,6 +207,49 @@ void _showLineStylePicker(
   ).then((selected) {
     if (selected != null) {
       ref.read(preferencesProvider.notifier).setNestedLineStyle(selected);
+    }
+  });
+}
+
+void _showBookmarksOpenModePicker(
+  BuildContext context,
+  WidgetRef ref,
+  BookmarksOpenMode current,
+) {
+  final l10n = context.l10n;
+  final options = [
+    (BookmarksOpenMode.defaultRoute, l10n.reading_bookmarksOpenModeDefault),
+    (
+      BookmarksOpenMode.tabbedWorkspace,
+      l10n.reading_bookmarksOpenModeTabbedWorkspace,
+    ),
+  ];
+
+  showDialog<BookmarksOpenMode>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: Text(l10n.reading_bookmarksOpenMode),
+      children: [
+        for (final (mode, label) in options)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, mode),
+            child: Row(
+              children: [
+                Icon(
+                  mode == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: mode == current ? Theme.of(context).colorScheme.primary : null,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(label),
+              ],
+            ),
+          ),
+      ],
+    ),
+  ).then((selected) {
+    if (selected != null) {
+      ref.read(preferencesProvider.notifier).setBookmarksOpenMode(selected);
     }
   });
 }

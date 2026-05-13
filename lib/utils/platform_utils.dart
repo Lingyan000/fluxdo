@@ -6,12 +6,17 @@ import 'package:flutter/foundation.dart';
 class PlatformUtils {
   PlatformUtils._();
 
+  @visibleForTesting
+  static bool? debugDesktopOverride;
+
   /// 是否运行在桌面操作系统（macOS / Windows / Linux）
   static bool get isDesktop =>
-      !kIsWeb &&
-      (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+      debugDesktopOverride ??
+      (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux));
 
   /// 是否运行在移动操作系统（Android / iOS）
   static bool get isMobile =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      debugDesktopOverride == null
+      ? (!kIsWeb && (Platform.isAndroid || Platform.isIOS))
+      : !debugDesktopOverride!;
 }

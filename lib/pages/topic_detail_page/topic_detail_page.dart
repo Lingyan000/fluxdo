@@ -52,7 +52,7 @@ import 'widgets/topic_detail_header.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import '../../widgets/share/share_image_preview.dart';
 import '../../widgets/share/export_sheet.dart';
-import '../../widgets/bookmark/bookmark_edit_sheet.dart';
+import '../../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
 import '../../widgets/search/topic_search_view.dart';
 import '../../providers/read_later_provider.dart';
 import '../../models/read_later_item.dart';
@@ -378,6 +378,17 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         reason: _isParentActive ? 'parent_active' : 'parent_inactive',
       );
     }
+    if (oldWidget.topicId == widget.topicId &&
+        oldWidget.scrollToPostNumber != widget.scrollToPostNumber &&
+        widget.scrollToPostNumber != null &&
+        widget.scrollToPostNumber! > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(
+          _handleExternalScrollTargetUpdate(widget.scrollToPostNumber!),
+        );
+      });
+    }
   }
 
   @override
@@ -597,6 +608,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           );
       navigator.pop();
     });
+  }
+
+  Future<void> _handleExternalScrollTargetUpdate(int postNumber) async {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    final notifier = ref.read(topicDetailProvider(_params).notifier);
+    if (detail == null) {
+      _controller.prepareJumpToPost(postNumber);
+      if (mounted) setState(() {});
+      await notifier.reloadWithPostNumber(postNumber);
+      return;
+    }
+    await _scrollToPost(postNumber);
   }
 
   /// 在大屏上为内容添加宽度约束

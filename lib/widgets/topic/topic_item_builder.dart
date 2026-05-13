@@ -12,11 +12,13 @@ Widget buildTopicItem({
   required Topic topic,
   required bool isSelected,
   required VoidCallback onTap,
+  VoidCallback? onMiddleClick,
   required bool enableLongPress,
   Color? highlightColor,
   Widget? topWidget,
   Widget? bottomWidget,
   List<PreviewAction>? previewActions,
+  WidgetBuilder? previewCustomActionPanelBuilder,
 }) {
   Widget child;
 
@@ -24,13 +26,15 @@ Widget buildTopicItem({
     child = CompactTopicCard(
       topic: topic,
       onTap: onTap,
+      onMiddleClick: onMiddleClick,
       onLongPress: enableLongPress
           ? () => TopicPreviewDialog.show(
-                context,
-                topic: topic,
-                onOpen: onTap,
-                actions: previewActions,
-              )
+              context,
+              topic: topic,
+              onOpen: onTap,
+              actions: previewActions,
+              customActionPanelBuilder: previewCustomActionPanelBuilder,
+            )
           : null,
       isSelected: isSelected,
       highlightColor: highlightColor,
@@ -39,13 +43,15 @@ Widget buildTopicItem({
     child = TopicCard(
       topic: topic,
       onTap: onTap,
+      onMiddleClick: onMiddleClick,
       onLongPress: enableLongPress
           ? () => TopicPreviewDialog.show(
-                context,
-                topic: topic,
-                onOpen: onTap,
-                actions: previewActions,
-              )
+              context,
+              topic: topic,
+              onOpen: onTap,
+              actions: previewActions,
+              customActionPanelBuilder: previewCustomActionPanelBuilder,
+            )
           : null,
       isSelected: isSelected,
       highlightColor: highlightColor,
@@ -57,7 +63,9 @@ Widget buildTopicItem({
   if (!Responsive.isMobile(context)) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: Breakpoints.maxContentWidth),
+        constraints: const BoxConstraints(
+          maxWidth: Breakpoints.maxContentWidth,
+        ),
         child: child,
       ),
     );

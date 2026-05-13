@@ -40,6 +40,9 @@ class SearchableAppBar extends StatefulWidget implements PreferredSizeWidget {
   /// 返回按钮回调（为 null 则使用默认返回逻辑）
   final VoidCallback? onBackPressed;
 
+  /// 非搜索模式下是否显示搜索按钮
+  final bool showSearchButton;
+
   const SearchableAppBar({
     super.key,
     required this.title,
@@ -54,6 +57,7 @@ class SearchableAppBar extends StatefulWidget implements PreferredSizeWidget {
     this.initialSearchText,
     this.searchHint = '',
     this.onBackPressed,
+    this.showSearchButton = true,
   });
 
   @override
@@ -141,11 +145,11 @@ class _SearchableAppBarState extends State<SearchableAppBar>
               onPressed: widget.onCloseSearch,
             )
           : (widget.onBackPressed != null
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: widget.onBackPressed,
-                )
-              : null),
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: widget.onBackPressed,
+                  )
+                : null),
       titleSpacing: widget.isSearchMode ? 0 : null,
       title: AnimatedBuilder(
         animation: _animation,
@@ -164,7 +168,9 @@ class _SearchableAppBarState extends State<SearchableAppBar>
               textAlignVertical: TextAlignVertical.center,
               style: theme.textTheme.bodyLarge,
               decoration: InputDecoration(
-                hintText: widget.searchHint.isEmpty ? context.l10n.common_searchHint : widget.searchHint,
+                hintText: widget.searchHint.isEmpty
+                    ? context.l10n.common_searchHint
+                    : widget.searchHint,
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
@@ -189,17 +195,16 @@ class _SearchableAppBarState extends State<SearchableAppBar>
                 onPressed: () => _handleSubmit(_searchController.text),
                 tooltip: context.l10n.common_search,
               ),
-              if (widget.showFilterButton)
-                _buildFilterButton(theme),
+              if (widget.showFilterButton) _buildFilterButton(theme),
             ]
           : [
-              IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: widget.onSearchPressed,
-                tooltip: context.l10n.common_search,
-              ),
-              if (widget.showFilterButton)
-                _buildFilterButton(theme),
+              if (widget.showSearchButton)
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: widget.onSearchPressed,
+                  tooltip: context.l10n.common_search,
+                ),
+              if (widget.showFilterButton) _buildFilterButton(theme),
             ],
     );
   }
