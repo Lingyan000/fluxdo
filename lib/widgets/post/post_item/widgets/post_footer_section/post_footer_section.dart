@@ -14,7 +14,7 @@ import '../../../../../services/discourse/discourse_service.dart';
 import '../../../../../services/toast_service.dart';
 import '../../../post_links.dart';
 import '../post_action_bar.dart';
-import '../../../../bookmark/bookmark_edit_sheet.dart';
+import '../../../../bookmark/bookmark_edit_sheet_launcher.dart';
 import '../../../../post/post_boost/boost_list.dart';
 import '../../../../post/post_boost/boost_input.dart';
 import '../post_flag_sheet.dart';

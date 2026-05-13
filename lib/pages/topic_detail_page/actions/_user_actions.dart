@@ -169,8 +169,9 @@ extension _UserActions on _TopicDetailPageState {
       final bookmarkId = detail.bookmarkId;
       if (bookmarkId == null) return;
 
-      final result = await BookmarkEditSheet.show(
+      final result = await showBookmarkEditSheetWithCachedNames(
         context,
+        ref,
         bookmarkId: bookmarkId,
         initialName: detail.bookmarkName,
         initialReminderAt: detail.bookmarkReminderAt,
@@ -194,8 +195,9 @@ extension _UserActions on _TopicDetailPageState {
         ToastService.showSuccess(S.current.common_bookmarkAdded);
 
         // 弹出编辑 BottomSheet
-        final result = await BookmarkEditSheet.show(
+        final result = await showBookmarkEditSheetWithCachedNames(
           context,
+          ref,
           bookmarkId: newBookmarkId,
         );
         if (result == null || !mounted) return;
@@ -448,8 +450,9 @@ extension _UserActions on _TopicDetailPageState {
     final notifier = ref.read(topicDetailProvider(_params).notifier);
 
     if (post.bookmarked && post.bookmarkId != null) {
-      final result = await BookmarkEditSheet.show(
+      final result = await showBookmarkEditSheetWithCachedNames(
         context,
+        ref,
         bookmarkId: post.bookmarkId!,
         initialName: post.bookmarkName,
         initialReminderAt: post.bookmarkReminderAt,
@@ -485,8 +488,9 @@ extension _UserActions on _TopicDetailPageState {
       );
       ToastService.showSuccess(S.current.common_bookmarkAdded);
 
-      final result = await BookmarkEditSheet.show(
+      final result = await showBookmarkEditSheetWithCachedNames(
         context,
+        ref,
         bookmarkId: bookmarkId,
       );
       if (result == null || !mounted) return;

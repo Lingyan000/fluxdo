@@ -1,33 +1,46 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../l10n/s.dart';
 import '../models/search_filter.dart';
 import '../models/topic.dart';
 import '../navigation/nav_action_bus.dart';
+import '../pages/bookmarks/bookmarks_models.dart';
+import '../providers/bookmark_name_suggestions_provider.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/user_content_providers.dart';
 import '../providers/user_content_search_provider.dart';
 import '../services/app_error_handler.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
-import '../utils/time_utils.dart';
-import '../widgets/bookmark/bookmark_edit_sheet.dart';
+import '../utils/platform_utils.dart';
+import '../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
+import '../widgets/bookmark/bookmarks_list_content.dart';
+import '../widgets/bookmark/bookmarks_workspace_tab_bar.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
-import '../widgets/topic/topic_item_builder.dart';
-import '../widgets/topic/topic_list_skeleton.dart';
-import '../widgets/topic/topic_preview_dialog.dart';
-import '../widgets/common/error_view.dart';
-import '../l10n/s.dart';
-import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+
+typedef BookmarksWorkspaceTopicPageBuilder =
+    Widget Function(
+      BuildContext context,
+      BookmarkWorkspaceTopicTab tab,
+      bool parentActive,
+    );
 
 /// 我的书签页面
 class BookmarksPage extends ConsumerStatefulWidget {
-  const BookmarksPage({super.key, this.isActive = true});
+  const BookmarksPage({
+    super.key,
+    this.isActive = true,
+    this.workspaceTopicPageBuilder,
+  });
 
   /// 是否为当前活跃的 tab（嵌入底栏时用于决定是否响应 NavActionBus）
   final bool isActive;
+  final BookmarksWorkspaceTopicPageBuilder? workspaceTopicPageBuilder;
 
   @override
   ConsumerState<BookmarksPage> createState() => _BookmarksPageState();
@@ -36,18 +49,30 @@ class BookmarksPage extends ConsumerStatefulWidget {
 class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   final ScrollController _scrollController = ScrollController();
   late final UserContentSearchNotifier _searchNotifier;
+  String? _selectedBookmarkName;
+  BookmarksWorkspaceState _workspaceState = const BookmarksWorkspaceState();
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _searchNotifier = ref.read(userContentSearchProvider(SearchInType.bookmarks).notifier);
+    _searchNotifier = ref.read(
+      userContentSearchProvider(SearchInType.bookmarks).notifier,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant BookmarksPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _workspaceState = const BookmarksWorkspaceState();
+    }
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    Future(_searchNotifier.exitSearchMode);
+    Future.microtask(_searchNotifier.exitSearchMode);
     super.dispose();
   }
 
@@ -65,7 +90,8 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.bookmarks));
     final atZero = progress == 0 && current != 0;
-    final crossed = (progress >= navScrollIconThreshold) !=
+    final crossed =
+        (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.bookmarks).notifier).state =
@@ -76,25 +102,148 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
     await ref.read(bookmarksProvider.notifier).refresh();
   }
 
-  void _onItemTap(Topic topic) {
+  void _onBookmarkTap(Topic topic) {
+    final preferences = ref.read(preferencesProvider);
+    if (_useTabbedWorkspace(preferences)) {
+      _openTopicInWorkspace(
+        topic: topic,
+        scrollToPostNumber: resolveBookmarkScrollToPostNumber(topic),
+      );
+      return;
+    }
+    _openTopicRoute(
+      topicId: topic.id,
+      initialTitle: topic.title,
+      scrollToPostNumber: resolveBookmarkScrollToPostNumber(topic),
+    );
+  }
+
+  void _openTopicRoute({
+    required int topicId,
+    String? initialTitle,
+    int? scrollToPostNumber,
+  }) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
-          topicId: topic.id,
-          // 帖子书签跳转到被书签的帖子，话题书签使用最后阅读位置
-          scrollToPostNumber: topic.bookmarkedPostNumber ?? topic.lastReadPostNumber,
+          topicId: topicId,
+          initialTitle: initialTitle,
+          scrollToPostNumber: scrollToPostNumber,
         ),
       ),
     );
   }
 
-  @override
+  void _openTopicInWorkspace({required Topic topic, int? scrollToPostNumber}) {
+    _openWorkspaceTab(
+      topicId: topic.id,
+      title: topic.title,
+      scrollToPostNumber: scrollToPostNumber,
+    );
+  }
+
+  void _openWorkspaceTab({
+    required int topicId,
+    required String title,
+    int? scrollToPostNumber,
+    bool activate = true,
+  }) {
+    setState(() {
+      _workspaceState = activate
+          ? _workspaceState.openTopicTab(
+              topicId: topicId,
+              title: title,
+              scrollToPostNumber: scrollToPostNumber,
+            )
+          : _workspaceState.openTopicTabInBackground(
+              topicId: topicId,
+              title: title,
+              scrollToPostNumber: scrollToPostNumber,
+            );
+    });
+  }
+
+  void _onSearchPressed(bool useTabbedWorkspace) {
+    ref
+        .read(userContentSearchProvider(SearchInType.bookmarks).notifier)
+        .enterSearchMode();
+    if (!useTabbedWorkspace) {
+      return;
+    }
+    setState(() {
+      _workspaceState = _workspaceState.activateBookmarksTab();
+    });
+  }
+
+  void _onBookmarkMiddleClick(Topic topic) {
+    final preferences = ref.read(preferencesProvider);
+    if (!_useTabbedWorkspace(preferences)) {
+      return;
+    }
+    _openWorkspaceTab(
+      topicId: topic.id,
+      title: topic.title,
+      scrollToPostNumber: resolveBookmarkScrollToPostNumber(topic),
+      activate: false,
+    );
+  }
+
+  bool _useTabbedWorkspace(AppPreferences preferences) {
+    return PlatformUtils.isDesktop &&
+        preferences.bookmarksOpenMode == BookmarksOpenMode.tabbedWorkspace;
+  }
+
+  int _workspaceActiveIndex() {
+    if (_workspaceState.activeTabId == BookmarksWorkspaceState.bookmarksTabId) {
+      return 0;
+    }
+    final topicIndex = _workspaceState.topicTabs.indexWhere(
+      (tab) => tab.tabId == _workspaceState.activeTabId,
+    );
+    return topicIndex == -1 ? 0 : topicIndex + 1;
+  }
+
+  Widget _buildWorkspaceTopicPage(BookmarkWorkspaceTopicTab tab) {
+    final parentActive =
+        widget.isActive && _workspaceState.activeTabId == tab.tabId;
+    final customBuilder = widget.workspaceTopicPageBuilder;
+    if (customBuilder != null) {
+      return customBuilder(context, tab, parentActive);
+    }
+    return TopicDetailPage(
+      topicId: tab.topicId,
+      initialTitle: tab.title,
+      scrollToPostNumber: tab.scrollToPostNumber,
+      embeddedMode: true,
+      parentActive: parentActive,
+      instanceId: tab.instanceId,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final bookmarksAsync = ref.watch(bookmarksProvider);
-    final searchState = ref.watch(userContentSearchProvider(SearchInType.bookmarks));
+    final bookmarksNotifier = ref.watch(bookmarksProvider.notifier);
+    final preferences = ref.watch(preferencesProvider);
+    final searchState = ref.watch(
+      userContentSearchProvider(SearchInType.bookmarks),
+    );
+    final useTabbedWorkspace = _useTabbedWorkspace(preferences);
+
+    ref.listen<AsyncValue<List<Topic>>>(bookmarksProvider, (_, next) {
+      final topics = next.asData?.value;
+      if (topics == null) {
+        return;
+      }
+      final notifier = ref.read(bookmarkNameSuggestionsProvider.notifier);
+      final bookmarksState = ref.read(bookmarksProvider.notifier);
+      final isCompleteSnapshot =
+          !bookmarksState.isHydratingAll &&
+          !bookmarksState.hasMore &&
+          !bookmarksState.isLoadMoreFailed;
+      notifier.seedFromTopics(topics, isCompleteSnapshot: isCompleteSnapshot);
+    });
 
     // 嵌入底栏时响应快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -128,176 +277,196 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       canPop: !searchState.isSearchMode,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (!didPop) {
-          // 搜索模式下按返回键，退出搜索而不是退出页面
-          ref.read(userContentSearchProvider(SearchInType.bookmarks).notifier).exitSearchMode();
+          ref
+              .read(userContentSearchProvider(SearchInType.bookmarks).notifier)
+              .exitSearchMode();
         }
       },
       child: Scaffold(
-        appBar: SearchableAppBar(
-          title: context.l10n.bookmarks_title,
-          isSearchMode: searchState.isSearchMode,
-          onSearchPressed: () => ref
-              .read(userContentSearchProvider(SearchInType.bookmarks).notifier)
-              .enterSearchMode(),
-          onCloseSearch: () => ref
-              .read(userContentSearchProvider(SearchInType.bookmarks).notifier)
-              .exitSearchMode(),
-          onSearch: (query) => ref
-              .read(userContentSearchProvider(SearchInType.bookmarks).notifier)
-              .search(query),
-          showFilterButton: searchState.isSearchMode,
-          filterActive: searchState.filter.isNotEmpty,
-          onFilterPressed: () =>
-              showSearchFilterPanel(context, ref, SearchInType.bookmarks),
-          searchHint: context.l10n.bookmarks_searchHint,
-        ),
-        body: Stack(
-          children: [
-            // 使用 Offstage 保持列表存在但在搜索模式下隐藏，保留滚动位置
-            Offstage(
-              offstage: searchState.isSearchMode,
-              child: _buildTopicList(bookmarksAsync),
-            ),
-            if (searchState.isSearchMode)
-              UserContentSearchView(
-                inType: SearchInType.bookmarks,
-                emptySearchHint: context.l10n.bookmarks_emptySearchHint,
+        appBar: useTabbedWorkspace && !searchState.isSearchMode
+            ? null
+            : SearchableAppBar(
+                title: useTabbedWorkspace ? '' : context.l10n.bookmarks_title,
+                isSearchMode: searchState.isSearchMode,
+                onSearchPressed: () => _onSearchPressed(useTabbedWorkspace),
+                showSearchButton: !useTabbedWorkspace,
+                onCloseSearch: () => ref
+                    .read(
+                      userContentSearchProvider(
+                        SearchInType.bookmarks,
+                      ).notifier,
+                    )
+                    .exitSearchMode(),
+                onSearch: (query) => ref
+                    .read(
+                      userContentSearchProvider(
+                        SearchInType.bookmarks,
+                      ).notifier,
+                    )
+                    .search(query),
+                showFilterButton: searchState.isSearchMode,
+                filterActive: searchState.filter.isNotEmpty,
+                onFilterPressed: () =>
+                    showSearchFilterPanel(context, ref, SearchInType.bookmarks),
+                searchHint: context.l10n.bookmarks_searchHint,
               ),
-          ],
-        ),
+        body: useTabbedWorkspace
+            ? _buildWorkspaceBody(
+                context,
+                bookmarksAsync,
+                bookmarksNotifier,
+                searchState,
+                preferences,
+              )
+            : _buildBookmarksPane(
+                context,
+                bookmarksAsync,
+                bookmarksNotifier,
+                searchState,
+                preferences,
+                workspaceOpenEnabled: false,
+              ),
       ),
     );
   }
 
-  /// 卡片顶部色带：书签名称、提醒时间
-  Widget? _buildBookmarkTopBar(BuildContext context, Topic topic) {
-    final hasName = topic.bookmarkName != null && topic.bookmarkName!.isNotEmpty;
-    final hasReminder = topic.bookmarkReminderAt != null;
-    if (!hasName && !hasReminder) return null;
-
-    final colorScheme = Theme.of(context).colorScheme;
-    final isExpired = hasReminder &&
-        topic.bookmarkReminderAt!.isBefore(DateTime.now());
-    final bgColor = isExpired
-        ? colorScheme.errorContainer.withValues(alpha: 0.5)
-        : colorScheme.secondaryContainer.withValues(alpha: 0.6);
-    final fgColor = isExpired
-        ? colorScheme.error
-        : colorScheme.onSecondaryContainer;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      color: bgColor,
-      child: Text.rich(
-        TextSpan(
-          children: [
-            // 书签名称
-            if (hasName) ...[
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(Icons.bookmark_outlined, size: 13, color: fgColor),
+  Widget _buildWorkspaceBody(
+    BuildContext context,
+    AsyncValue<List<Topic>> bookmarksAsync,
+    BookmarksNotifier bookmarksNotifier,
+    UserContentSearchState searchState,
+    AppPreferences preferences,
+  ) {
+    return Column(
+      children: [
+        BookmarksWorkspaceTabBar(
+          activeTabId: _workspaceState.activeTabId,
+          topicTabs: _workspaceState.topicTabs,
+          bookmarksLabel: context.l10n.bookmarks_title,
+          onSearchTap: () => _onSearchPressed(true),
+          onBookmarksTap: () {
+            setState(() {
+              _workspaceState = _workspaceState.activateBookmarksTab();
+            });
+          },
+          onTopicTap: (topicId) {
+            setState(() {
+              _workspaceState = _workspaceState.activateTopicTab(topicId);
+            });
+          },
+          onTopicClose: (topicId) {
+            setState(() {
+              _workspaceState = _workspaceState.closeTopicTab(topicId);
+            });
+          },
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _workspaceActiveIndex(),
+            children: [
+              _buildBookmarksPane(
+                context,
+                bookmarksAsync,
+                bookmarksNotifier,
+                searchState,
+                preferences,
+                workspaceOpenEnabled: true,
               ),
-              TextSpan(text: ' ${topic.bookmarkName!}'),
-            ],
-            // 提醒时间
-            if (hasReminder) ...[
-              if (hasName)
-                TextSpan(
-                  text: '  ·  ',
-                  style: TextStyle(color: fgColor.withValues(alpha: 0.4)),
+              for (final tab in _workspaceState.topicTabs)
+                KeyedSubtree(
+                  key: ValueKey(tab.instanceId),
+                  child: _buildWorkspaceTopicPage(tab),
                 ),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(Icons.alarm, size: 13, color: fgColor),
-              ),
-              TextSpan(
-                text: isExpired
-                    ? context.l10n.bookmarks_expired
-                    : ' ${TimeUtils.formatDetailTime(topic.bookmarkReminderAt!)}',
-              ),
             ],
-          ],
+          ),
         ),
-        style: TextStyle(
-          fontSize: 12,
-          color: fgColor,
-          height: 1.3,
-        ),
-      ),
+      ],
     );
   }
 
-  /// 卡片底部：摘要
-  Widget? _buildBookmarkExcerpt(BuildContext context, Topic topic) {
-    if (topic.excerpt == null) return null;
-    final cleaned = _cleanExcerpt(topic.excerpt!);
-    if (cleaned.isEmpty) return null;
+  Widget _buildBookmarksPane(
+    BuildContext context,
+    AsyncValue<List<Topic>> bookmarksAsync,
+    BookmarksNotifier bookmarksNotifier,
+    UserContentSearchState searchState,
+    AppPreferences preferences, {
+    required bool workspaceOpenEnabled,
+  }) {
+    final bookmarkNameSuggestions = ref.watch(bookmarkNameSuggestionsProvider);
+    final bookmarkNameSuggestionsLoader = ref
+        .read(bookmarkNameSuggestionsProvider.notifier)
+        .ensureLoaded;
 
-    final colorScheme = Theme.of(context).colorScheme;
-    return Text(
-      cleaned,
-      style: TextStyle(
-        fontSize: 12,
-        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-        height: 1.4,
-      ),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
-
-  /// 清理 excerpt 中的 HTML 标签和实体
-  String _cleanExcerpt(String html) {
-    return html
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&hellip;', '...')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  List<PreviewAction> _buildPreviewActions(Topic topic) {
-    final theme = Theme.of(context);
-    final bookmarkId = topic.bookmarkId;
-    if (bookmarkId == null) return [];
-
-    return [
-      PreviewAction(
-        icon: Icons.edit_outlined,
-        label: context.l10n.bookmark_editBookmark,
-        color: theme.colorScheme.primary,
-        onTap: () => _editBookmark(topic),
-      ),
-      if (topic.bookmarkReminderAt != null)
-        PreviewAction(
-          icon: Icons.alarm_off,
-          label: context.l10n.bookmarks_cancelReminder,
-          onTap: () => _clearReminder(topic),
+    return Stack(
+      children: [
+        Offstage(
+          offstage: searchState.isSearchMode,
+          child: BookmarksListContent(
+            bookmarksAsync: bookmarksAsync,
+            bookmarkNameSuggestions: bookmarkNameSuggestions,
+            bookmarkNameSuggestionsLoader: bookmarkNameSuggestionsLoader,
+            scrollController: _scrollController,
+            onRefresh: _onRefresh,
+            onTap: _onBookmarkTap,
+            onMiddleClick: _onBookmarkMiddleClick,
+            enableLongPress: preferences.longPressPreview,
+            showSummaryBar: !searchState.isSearchMode,
+            selectedBookmarkName: _selectedBookmarkName,
+            onSelectedBookmarkName: (value) {
+              setState(() {
+                _selectedBookmarkName = value;
+              });
+            },
+            hasMore: bookmarksNotifier.hasMore,
+            isLoadMoreFailed: bookmarksNotifier.isLoadMoreFailed,
+            isLoadingMore: bookmarksNotifier.isHydratingAll,
+            onRetryLoadMore: bookmarksNotifier.retryLoadMore,
+            onEditBookmark: _editBookmark,
+            onQuickRenameBookmark: _quickRenameBookmark,
+            onClearReminder: _clearReminder,
+            onDeleteBookmark: _deleteBookmark,
+          ),
         ),
-      PreviewAction(
-        icon: Icons.delete_outline,
-        label: context.l10n.common_deleteBookmark,
-        color: theme.colorScheme.error,
-        onTap: () => _deleteBookmark(topic),
-      ),
-    ];
+        if (searchState.isSearchMode)
+          UserContentSearchView(
+            inType: SearchInType.bookmarks,
+            emptySearchHint: context.l10n.bookmarks_emptySearchHint,
+            onOpenTopic: workspaceOpenEnabled
+                ? ({
+                    required int topicId,
+                    required String title,
+                    int? scrollToPostNumber,
+                  }) {
+                    ref
+                        .read(
+                          userContentSearchProvider(
+                            SearchInType.bookmarks,
+                          ).notifier,
+                        )
+                        .exitSearchMode();
+                    _openWorkspaceTab(
+                      topicId: topicId,
+                      title: title,
+                      scrollToPostNumber: scrollToPostNumber,
+                    );
+                  }
+                : null,
+          ),
+      ],
+    );
   }
 
   Future<void> _editBookmark(Topic topic) async {
     final bookmarkId = topic.bookmarkId;
     if (bookmarkId == null) return;
 
-    final result = await BookmarkEditSheet.show(
+    final result = await showBookmarkEditSheetWithCachedNames(
       context,
+      ref,
       bookmarkId: bookmarkId,
       initialName: topic.bookmarkName,
       initialReminderAt: topic.bookmarkReminderAt,
+      seedTopics: ref.read(bookmarksProvider).value ?? const [],
     );
     if (result == null || !mounted) return;
 
@@ -308,6 +477,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       notifier.updateBookmarkMeta(
         bookmarkId,
         name: result.name,
+        clearName: result.name == null,
         reminderAt: result.reminderAt,
         clearReminderAt: result.reminderAt == null,
       );
@@ -321,10 +491,9 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
     try {
       await DiscourseService().clearBookmarkReminder(bookmarkId);
       if (!mounted) return;
-      ref.read(bookmarksProvider.notifier).updateBookmarkMeta(
-        bookmarkId,
-        clearReminderAt: true,
-      );
+      ref
+          .read(bookmarksProvider.notifier)
+          .updateBookmarkMeta(bookmarkId, clearReminderAt: true);
       ToastService.showSuccess(S.current.bookmarks_reminderCancelled);
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
@@ -341,6 +510,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       await DiscourseService().deleteBookmark(bookmarkId);
       if (!mounted) return;
       ref.read(bookmarksProvider.notifier).removeBookmarkById(bookmarkId);
+      ref.read(bookmarkNameSuggestionsProvider.notifier).markDirty();
       ToastService.showSuccess(S.current.bookmarks_deleted);
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
@@ -349,96 +519,36 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
     }
   }
 
-  Widget _buildTopicList(AsyncValue<List<Topic>> bookmarksAsync) {
-    return DesktopRefreshIndicator(
-      onRefresh: _onRefresh,
-      child: bookmarksAsync.when(
-        data: (topics) {
-          if (topics.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.bookmark_border, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  Text(context.l10n.bookmarks_empty, style: const TextStyle(color: Colors.grey)),
-                ],
-              ),
-            );
-          }
+  Future<bool> _quickRenameBookmark(Topic topic, String? name) async {
+    final bookmarkId = topic.bookmarkId;
+    if (bookmarkId == null) return false;
 
-          return ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(12),
-            itemCount: topics.length + 1,
-            itemBuilder: (context, index) {
-              if (index == topics.length) {
-                final notifier = ref.watch(bookmarksProvider.notifier);
-                if (!notifier.hasMore) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                      child: Text(
-                        context.l10n.common_noMore,
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ),
-                  );
-                }
-                if (notifier.isLoadMoreFailed) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () => notifier.retryLoadMore(),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.refresh, size: 16, color: Theme.of(context).colorScheme.primary),
-                            const SizedBox(width: 6),
-                            Text(
-                              context.l10n.common_loadFailedTapRetry,
-                              style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                if (bookmarksAsync.isLoading && !bookmarksAsync.hasError) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return const SizedBox();
-              }
-
-              final topic = topics[index];
-              final enableLongPress = ref.watch(preferencesProvider).longPressPreview;
-              return buildTopicItem(
-                context: context,
-                topic: topic,
-                isSelected: false,
-                onTap: () => _onItemTap(topic),
-                enableLongPress: enableLongPress,
-                topWidget: _buildBookmarkTopBar(context, topic),
-                bottomWidget: _buildBookmarkExcerpt(context, topic),
-                previewActions: topic.bookmarkId != null
-                    ? _buildPreviewActions(topic)
-                    : null,
-              );
-            },
+    try {
+      await DiscourseService().updateBookmark(
+        bookmarkId,
+        name: name?.trim() ?? '',
+        reminderAt: topic.bookmarkReminderAt,
+      );
+      if (!mounted) return false;
+      ref
+          .read(bookmarksProvider.notifier)
+          .updateBookmarkMeta(
+            bookmarkId,
+            name: name?.trim().isNotEmpty == true ? name!.trim() : null,
+            clearName: name?.trim().isNotEmpty != true,
+            reminderAt: topic.bookmarkReminderAt,
           );
-        },
-        loading: () => const TopicListSkeleton(),
-        error: (error, stack) => ErrorView(
-          error: error,
-          stackTrace: stack,
-          onRetry: _onRefresh,
-        ),
-      ),
-    );
+      ref
+          .read(bookmarkNameSuggestionsProvider.notifier)
+          .markDirty(optimisticName: name);
+      ToastService.showSuccess(S.current.common_bookmarkUpdated);
+      return true;
+    } on DioException catch (_) {
+      // 网络错误已由 ErrorInterceptor 处理
+      return false;
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+      return false;
+    }
   }
 }

@@ -254,14 +254,24 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取用户个人书签
-  Future<TopicListResponse> getUserBookmarks({int page = 0}) async {
+  Future<TopicListResponse> getUserBookmarks({int page = 0, int? limit}) async {
     final username = await getUsername();
     if (username == null) {
       throw Exception(S.current.error_notLoggedInNoUsername);
     }
+    final queryParameters = <String, dynamic>{};
+    if (page > 0) {
+      queryParameters['page'] = page;
+    }
+    if (limit != null) {
+      // Discourse 书签接口单页上限是 20，超过会直接返回 invalid_parameters。
+      if (limit > 0) {
+        queryParameters['limit'] = limit > 20 ? 20 : limit;
+      }
+    }
     final response = await _dio.get(
       '/u/$username/bookmarks.json',
-      queryParameters: page > 0 ? {'page': page} : null,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     return TopicListResponse.fromJson(response.data);
   }

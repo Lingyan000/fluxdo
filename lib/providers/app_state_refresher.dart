@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core_providers.dart';
+import 'bookmark_name_suggestions_provider.dart';
 import 'notification_list_provider.dart';
 import 'topic_list/topic_list_provider.dart';
 import 'topic_list/filter_provider.dart';
@@ -42,6 +43,7 @@ class AppStateRefresher {
   static Future<void> resetForLogout(WidgetRef ref) async {
     ref.read(currentUserProvider.notifier).clearCache();
     ref.read(userSummaryProvider.notifier).clearCache();
+    ref.read(bookmarkNameSuggestionsProvider.notifier).clearCache();
     // 登出时 invalidate 所有（不会发请求，因为数据被清空了）
     for (final refresh in _coreRefreshers) {
       refresh(ref);
