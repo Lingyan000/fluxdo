@@ -52,7 +52,7 @@ import 'widgets/topic_detail_header.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import '../../widgets/share/share_image_preview.dart';
 import '../../widgets/share/export_sheet.dart';
-import '../../widgets/bookmark/bookmark_edit_sheet.dart';
+import '../../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
 import '../../widgets/search/topic_search_view.dart';
 import '../../providers/read_later_provider.dart';
 import '../../models/read_later_item.dart';

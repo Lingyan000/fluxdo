@@ -5,17 +5,24 @@ import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 import 'user.dart';
 
+String? _normalizeBookmarkNameValue(String? rawName) {
+  final trimmed = rawName?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return null;
+  }
+  if (trimmed == '?' || trimmed == '？') {
+    return null;
+  }
+  return trimmed;
+}
+
 /// 标签模型
 class Tag {
   final int? id;
   final String name;
   final String? slug;
 
-  const Tag({
-    this.id,
-    required this.name,
-    this.slug,
-  });
+  const Tag({this.id, required this.name, this.slug});
 
   factory Tag.fromJson(dynamic json) {
     // 兼容新旧格式
@@ -60,19 +67,27 @@ enum TopicNotificationLevel {
 
   String get label {
     switch (this) {
-      case TopicNotificationLevel.muted: return S.current.topic_levelMuted;
-      case TopicNotificationLevel.regular: return S.current.topic_levelRegular;
-      case TopicNotificationLevel.tracking: return S.current.topic_levelTracking;
-      case TopicNotificationLevel.watching: return S.current.topic_levelWatching;
+      case TopicNotificationLevel.muted:
+        return S.current.topic_levelMuted;
+      case TopicNotificationLevel.regular:
+        return S.current.topic_levelRegular;
+      case TopicNotificationLevel.tracking:
+        return S.current.topic_levelTracking;
+      case TopicNotificationLevel.watching:
+        return S.current.topic_levelWatching;
     }
   }
 
   String get description {
     switch (this) {
-      case TopicNotificationLevel.muted: return S.current.topic_levelMutedDesc;
-      case TopicNotificationLevel.regular: return S.current.topic_levelRegularDesc;
-      case TopicNotificationLevel.tracking: return S.current.topic_levelTrackingDesc;
-      case TopicNotificationLevel.watching: return S.current.topic_levelWatchingDesc;
+      case TopicNotificationLevel.muted:
+        return S.current.topic_levelMutedDesc;
+      case TopicNotificationLevel.regular:
+        return S.current.topic_levelRegularDesc;
+      case TopicNotificationLevel.tracking:
+        return S.current.topic_levelTrackingDesc;
+      case TopicNotificationLevel.watching:
+        return S.current.topic_levelWatchingDesc;
     }
   }
 
@@ -128,9 +143,11 @@ class Poll {
       type: json['type'] as String? ?? 'regular',
       status: json['status'] as String? ?? 'open',
       results: json['results'] as String? ?? 'always',
-      options: (json['options'] as List<dynamic>?)
-          ?.map((e) => PollOption.fromJson(e as Map<String, dynamic>))
-          .toList() ?? [],
+      options:
+          (json['options'] as List<dynamic>?)
+              ?.map((e) => PollOption.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
       voters: json['voters'] as int? ?? 0,
     );
   }
@@ -176,7 +193,10 @@ class TopicPoster {
     this.user,
   });
 
-  factory TopicPoster.fromJson(Map<String, dynamic> json, Map<int, TopicUser> userMap) {
+  factory TopicPoster.fromJson(
+    Map<String, dynamic> json,
+    Map<int, TopicUser> userMap,
+  ) {
     final userId = json['user_id'] as int;
     return TopicPoster(
       userId: userId,
@@ -208,22 +228,22 @@ class Topic {
   final List<TopicPoster> posters;
 
   // 已读状态相关
-  final bool unseen;           // 新话题（从未见过）
-  final int unread;            // 未读帖子数
-  final int newPosts;          // 新帖子数
-  final int? lastReadPostNumber;   // 最后阅读的帖子编号
-  final int highestPostNumber;     // 最高帖子编号
+  final bool unseen; // 新话题（从未见过）
+  final int unread; // 未读帖子数
+  final int newPosts; // 新帖子数
+  final int? lastReadPostNumber; // 最后阅读的帖子编号
+  final int highestPostNumber; // 最高帖子编号
 
   // 书签相关（从书签列表 API 获取）
-  final int? bookmarkedPostNumber;  // 帖子书签对应的帖子编号（bookmarkable_type 为 Post 时有值）
-  final int? bookmarkId;            // 书签 ID（用于编辑/删除）
-  final String? bookmarkName;       // 书签备注名称
+  final int? bookmarkedPostNumber; // 帖子书签对应的帖子编号（bookmarkable_type 为 Post 时有值）
+  final int? bookmarkId; // 书签 ID（用于编辑/删除）
+  final String? bookmarkName; // 书签备注名称
   final DateTime? bookmarkReminderAt; // 书签提醒时间
-  final String? bookmarkableType;   // 书签类型（Post/Topic）
+  final String? bookmarkableType; // 书签类型（Post/Topic）
 
   // 已解决问题相关
-  final bool hasAcceptedAnswer;    // 话题是否有被接受的答案
-  final bool canHaveAnswer;        // 话题是否可以有解决方案（用于显示未解决状态）
+  final bool hasAcceptedAnswer; // 话题是否有被接受的答案
+  final bool canHaveAnswer; // 话题是否可以有解决方案（用于显示未解决状态）
 
   Topic({
     required this.id,
@@ -258,7 +278,10 @@ class Topic {
     this.canHaveAnswer = false,
   });
 
-  factory Topic.fromJson(Map<String, dynamic> json, {Map<int, TopicUser>? userMap}) {
+  factory Topic.fromJson(
+    Map<String, dynamic> json, {
+    Map<int, TopicUser>? userMap,
+  }) {
     return Topic(
       id: json['id'] as int,
       title: json['title'] as String? ?? '',
@@ -276,10 +299,21 @@ class Topic {
       visible: json['visible'] as bool? ?? true,
       closed: json['closed'] as bool? ?? false,
       archived: json['archived'] as bool? ?? false,
-      tags: (json['tags'] as List<dynamic>?)?.map((e) => Tag.fromJson(e)).toList() ?? const <Tag>[],
-      posters: (json['posters'] as List<dynamic>?)
-          ?.map((e) => TopicPoster.fromJson(e as Map<String, dynamic>, userMap ?? {}))
-          .toList() ?? const [],
+      tags:
+          (json['tags'] as List<dynamic>?)
+              ?.map((e) => Tag.fromJson(e))
+              .toList() ??
+          const <Tag>[],
+      posters:
+          (json['posters'] as List<dynamic>?)
+              ?.map(
+                (e) => TopicPoster.fromJson(
+                  e as Map<String, dynamic>,
+                  userMap ?? {},
+                ),
+              )
+              .toList() ??
+          const [],
       unseen: json['unseen'] as bool? ?? false,
       unread: json['unread_posts'] as int? ?? 0,
       newPosts: json['new_posts'] as int? ?? 0,
@@ -287,8 +321,12 @@ class Topic {
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
       bookmarkedPostNumber: json['_bookmarked_post_number'] as int?,
       bookmarkId: json['_bookmark_id'] as int?,
-      bookmarkName: json['_bookmark_name'] as String?,
-      bookmarkReminderAt: TimeUtils.parseUtcTime(json['_bookmark_reminder_at'] as String?),
+      bookmarkName: _normalizeBookmarkNameValue(
+        json['_bookmark_name'] as String?,
+      ),
+      bookmarkReminderAt: TimeUtils.parseUtcTime(
+        json['_bookmark_reminder_at'] as String?,
+      ),
       bookmarkableType: json['_bookmarkable_type'] as String?,
       hasAcceptedAnswer: json['has_accepted_answer'] as bool? ?? false,
       canHaveAnswer: json['can_have_answer'] as bool? ?? false,
@@ -379,10 +417,10 @@ class MentionedUser {
 class GrantedBadge {
   final int id;
   final String name;
-  final String? icon;      // FontAwesome 图标名，如 "seedling"
-  final String? imageUrl;  // 图片 URL（与 icon 二选一）
+  final String? icon; // FontAwesome 图标名，如 "seedling"
+  final String? imageUrl; // 图片 URL（与 icon 二选一）
   final String slug;
-  final int badgeTypeId;   // 1=Gold, 2=Silver, 3=Bronze
+  final int badgeTypeId; // 1=Gold, 2=Silver, 3=Bronze
 
   const GrantedBadge({
     required this.id,
@@ -408,11 +446,15 @@ class GrantedBadge {
 
 /// 帖子回应（Reaction）
 class PostReaction {
-  final String id;  // emoji 名称，如 "heart", "distorted_face"
+  final String id; // emoji 名称，如 "heart", "distorted_face"
   final String type;
   final int count;
 
-  const PostReaction({required this.id, required this.type, required this.count});
+  const PostReaction({
+    required this.id,
+    required this.type,
+    required this.count,
+  });
 
   factory PostReaction.fromJson(Map<String, dynamic> json) {
     return PostReaction(
@@ -425,7 +467,10 @@ class PostReaction {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is PostReaction && id == other.id && type == other.type && count == other.count;
+      other is PostReaction &&
+          id == other.id &&
+          type == other.type &&
+          count == other.count;
 
   @override
   int get hashCode => Object.hash(id, type, count);
@@ -473,7 +518,8 @@ class ReactionUsersGroup {
     return ReactionUsersGroup(
       id: json['id'] as String? ?? '',
       count: json['count'] as int? ?? 0,
-      users: (json['users'] as List<dynamic>?)
+      users:
+          (json['users'] as List<dynamic>?)
               ?.map((e) => ReactionUser.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -532,9 +578,9 @@ class Post {
   final Map<String, List<String>>? pollsVotes; // 用户投票记录 {pollName: [optionId]}
 
   // small_action 相关字段
-  final String? actionCode;       // 操作代码，如 "pinned.enabled", "closed.enabled"
-  final String? actionCodeWho;    // 操作执行者用户名
-  final String? actionCodePath;   // 操作关联的路径
+  final String? actionCode; // 操作代码，如 "pinned.enabled", "closed.enabled"
+  final String? actionCodeWho; // 操作执行者用户名
+  final String? actionCodePath; // 操作关联的路径
 
   // Flair 徽章
   final String? flairUrl;
@@ -550,17 +596,17 @@ class Post {
   final List<MentionedUser>? mentionedUsers;
 
   // 已解决问题相关
-  final bool acceptedAnswer;       // 此帖子是否是被接受的答案
-  final bool canAcceptAnswer;      // 当前用户是否可以接受此帖子为答案
-  final bool canUnacceptAnswer;    // 当前用户是否可以取消接受
+  final bool acceptedAnswer; // 此帖子是否是被接受的答案
+  final bool canAcceptAnswer; // 当前用户是否可以接受此帖子为答案
+  final bool canUnacceptAnswer; // 当前用户是否可以取消接受
 
   // 删除状态
-  final DateTime? deletedAt;       // 删除时间（不为空表示已删除）
-  final bool userDeleted;          // 是否是用户自己删除的
+  final DateTime? deletedAt; // 删除时间（不为空表示已删除）
+  final bool userDeleted; // 是否是用户自己删除的
 
   // 用户头衔和状态
-  final String? userTitle;         // 用户头衔
-  final UserStatus? userStatus;    // 用户状态（emoji + 描述）
+  final String? userTitle; // 用户头衔
+  final UserStatus? userStatus; // 用户状态（emoji + 描述）
 
   // 帖子头部徽章
   final List<GrantedBadge>? badgesGranted; // 帖子头部显示的徽章
@@ -569,14 +615,14 @@ class Post {
   final int? userId;
 
   // 用户身份标识
-  final bool moderator;          // 用户是否为版主
-  final bool admin;              // 用户是否为管理员
-  final bool groupModerator;     // 用户是否为分类群组版主
+  final bool moderator; // 用户是否为版主
+  final bool admin; // 用户是否为管理员
+  final bool groupModerator; // 用户是否为分类群组版主
 
   // 隐藏状态（举报隐藏）
-  final bool hidden;             // 帖子是否被隐藏
-  final bool cookedHidden;       // cooked 内容是否被替换为隐藏提示
-  final bool canSeeHiddenPost;   // 当前用户是否可以查看隐藏内容
+  final bool hidden; // 帖子是否被隐藏
+  final bool cookedHidden; // cooked 内容是否被替换为隐藏提示
+  final bool canSeeHiddenPost; // 当前用户是否可以查看隐藏内容
 
   // 帖子提示信息
   final PostNotice? notice;
@@ -679,8 +725,12 @@ class Post {
       cooked: json['cooked'] as String? ?? '',
       postNumber: json['post_number'] as int? ?? 0,
       postType: json['post_type'] as int? ?? 1,
-      updatedAt: TimeUtils.parseUtcTime(json['updated_at'] as String?) ?? DateTime.now(),
-      createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?) ?? DateTime.now(),
+      updatedAt:
+          TimeUtils.parseUtcTime(json['updated_at'] as String?) ??
+          DateTime.now(),
+      createdAt:
+          TimeUtils.parseUtcTime(json['created_at'] as String?) ??
+          DateTime.now(),
       likeCount: json['like_count'] as int? ?? 0,
       replyCount: json['reply_count'] as int? ?? 0,
       replyToPostNumber: json['reply_to_post_number'] as int? ?? 0,
@@ -694,7 +744,9 @@ class Post {
       canWiki: json['can_wiki'] as bool? ?? false,
       bookmarked: json['bookmarked'] as bool? ?? false,
       bookmarkId: json['bookmark_id'] as int?,
-      bookmarkName: json['_bookmark_name'] as String?,
+      bookmarkName: _normalizeBookmarkNameValue(
+        json['_bookmark_name'] as String?,
+      ),
       bookmarkReminderAt: json['_bookmark_reminder_at'] != null
           ? TimeUtils.parseUtcTime(json['_bookmark_reminder_at'] as String?)
           : null,
@@ -707,13 +759,18 @@ class Post {
           ?.map((e) => PostReaction.fromJson(e as Map<String, dynamic>))
           .toList(),
       currentUserReaction: json['current_user_reaction'] != null
-          ? PostReaction.fromJson(json['current_user_reaction'] as Map<String, dynamic>)
+          ? PostReaction.fromJson(
+              json['current_user_reaction'] as Map<String, dynamic>,
+            )
           : null,
       polls: (json['polls'] as List<dynamic>?)
           ?.map((e) => Poll.fromJson(e as Map<String, dynamic>))
           .toList(),
       pollsVotes: (json['polls_votes'] as Map<String, dynamic>?)?.map(
-        (key, value) => MapEntry(key, (value as List<dynamic>).map((e) => e.toString()).toList()),
+        (key, value) => MapEntry(
+          key,
+          (value as List<dynamic>).map((e) => e.toString()).toList(),
+        ),
       ),
       actionCode: json['action_code'] as String?,
       actionCodeWho: json['action_code_who'] as String?,
@@ -758,7 +815,10 @@ class Post {
           .map((e) => Boost.fromJson(e))
           .toList(),
       canBoost: json['can_boost'] as bool? ?? false,
-      signatureCooked: (json['user_custom_fields'] as Map<String, dynamic>?)?['signature_cooked'] as String?,
+      signatureCooked:
+          (json['user_custom_fields']
+                  as Map<String, dynamic>?)?['signature_cooked']
+              as String?,
       policyAccepted: json['policy_accepted'] as bool? ?? false,
       policyRevoked: json['policy_revoked'] as bool? ?? false,
       policyCanAccept: json['policy_can_accept'] as bool? ?? false,
@@ -816,7 +876,15 @@ class Post {
           canBoost == other.canBoost;
 
   @override
-  int get hashCode => Object.hash(id, cooked, likeCount, bookmarked, acceptedAnswer, hidden, canBoost);
+  int get hashCode => Object.hash(
+    id,
+    cooked,
+    likeCount,
+    bookmarked,
+    acceptedAnswer,
+    hidden,
+    canBoost,
+  );
 
   /// 复制并修改部分字段
   Post copyWith({
@@ -913,13 +981,19 @@ class Post {
       canWiki: canWiki ?? this.canWiki,
       bookmarked: bookmarked ?? this.bookmarked,
       bookmarkId: bookmarkId ?? this.bookmarkId,
-      bookmarkName: clearBookmarkName ? null : (bookmarkName ?? this.bookmarkName),
-      bookmarkReminderAt: clearBookmarkReminderAt ? null : (bookmarkReminderAt ?? this.bookmarkReminderAt),
+      bookmarkName: clearBookmarkName
+          ? null
+          : (bookmarkName ?? this.bookmarkName),
+      bookmarkReminderAt: clearBookmarkReminderAt
+          ? null
+          : (bookmarkReminderAt ?? this.bookmarkReminderAt),
       read: read ?? this.read,
       actionsSummary: actionsSummary ?? this.actionsSummary,
       linkCounts: linkCounts ?? this.linkCounts,
       reactions: reactions ?? this.reactions,
-      currentUserReaction: clearCurrentUserReaction ? null : (currentUserReaction ?? this.currentUserReaction),
+      currentUserReaction: clearCurrentUserReaction
+          ? null
+          : (currentUserReaction ?? this.currentUserReaction),
       polls: polls ?? this.polls,
       pollsVotes: pollsVotes ?? this.pollsVotes,
       actionCode: actionCode ?? this.actionCode,
@@ -957,7 +1031,8 @@ class Post {
       policyCanRevoke: policyCanRevoke ?? this.policyCanRevoke,
       policyAcceptedBy: policyAcceptedBy ?? this.policyAcceptedBy,
       policyNotAcceptedBy: policyNotAcceptedBy ?? this.policyNotAcceptedBy,
-      policyAcceptedByCount: policyAcceptedByCount ?? this.policyAcceptedByCount,
+      policyAcceptedByCount:
+          policyAcceptedByCount ?? this.policyAcceptedByCount,
       policyNotAcceptedByCount:
           policyNotAcceptedByCount ?? this.policyNotAcceptedByCount,
     );
@@ -992,9 +1067,7 @@ class PolicyUser {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is PolicyUser &&
-          id == other.id &&
-          username == other.username;
+      other is PolicyUser && id == other.id && username == other.username;
 
   @override
   int get hashCode => Object.hash(id, username);
@@ -1094,7 +1167,7 @@ class BoostUser {
 /// 帖子流中的 gaps 数据（拉黑用户的帖子位置）
 class PostStreamGaps {
   final Map<int, List<int>> before; // {postId: [gapPostIds]}
-  final Map<int, List<int>> after;  // {postId: [gapPostIds]}
+  final Map<int, List<int>> after; // {postId: [gapPostIds]}
 
   const PostStreamGaps({this.before = const {}, this.after = const {}});
 
@@ -1110,6 +1183,7 @@ class PostStreamGaps {
       }
       return result;
     }
+
     return PostStreamGaps(
       before: parseGapMap(json['before'] as Map<String, dynamic>?),
       after: parseGapMap(json['after'] as Map<String, dynamic>?),
@@ -1142,9 +1216,14 @@ class PostStream {
 
   /// 从顶层 JSON 解析 users/badges 数据，注入到 posts 中
   /// [topLevelJson] 是包含 users、badges 字段的顶层响应 JSON
-  static void injectBadges(List<Post> posts, Map<String, dynamic> topLevelJson, List<dynamic>? rawPosts) {
+  static void injectBadges(
+    List<Post> posts,
+    Map<String, dynamic> topLevelJson,
+    List<dynamic>? rawPosts,
+  ) {
     // badge 数据在 topLevelJson['user_badges'] 下，包含 users 和 badges 两个子字典
-    final userBadgesContainer = topLevelJson['user_badges'] as Map<String, dynamic>?;
+    final userBadgesContainer =
+        topLevelJson['user_badges'] as Map<String, dynamic>?;
     if (userBadgesContainer == null) return;
 
     final badgesMap = <int, GrantedBadge>{};
@@ -1156,7 +1235,9 @@ class PostStream {
       for (final entry in badgesRaw.entries) {
         final badgeId = int.tryParse(entry.key);
         if (badgeId != null && entry.value is Map<String, dynamic>) {
-          badgesMap[badgeId] = GrantedBadge.fromJson(entry.value as Map<String, dynamic>);
+          badgesMap[badgeId] = GrantedBadge.fromJson(
+            entry.value as Map<String, dynamic>,
+          );
         }
       }
     } else if (badgesRaw is List) {
@@ -1251,38 +1332,38 @@ class TopicDetail {
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
 
   // 投票相关字段
-  final bool canVote;        // 是否可以投票
-  final int voteCount;       // 投票数
-  final bool userVoted;      // 当前用户是否已投票
+  final bool canVote; // 是否可以投票
+  final int voteCount; // 投票数
+  final bool userVoted; // 当前用户是否已投票
 
   // 创建者信息
   final TopicUser? createdBy;
 
   // AI 摘要相关字段
-  final bool summarizable;        // 话题是否可摘要（后端控制）
-  final bool hasCachedSummary;    // 是否有缓存的摘要
+  final bool summarizable; // 话题是否可摘要（后端控制）
+  final bool hasCachedSummary; // 是否有缓存的摘要
 
   // 热门回复相关字段
-  final bool hasSummary;          // 是否有足够的帖子/点赞来支持热门回复功能
+  final bool hasSummary; // 是否有足够的帖子/点赞来支持热门回复功能
 
   // 订阅级别
   final TopicNotificationLevel notificationLevel;
 
   // 话题类型
-  final String archetype;  // 'regular' 或 'private_message'
+  final String archetype; // 'regular' 或 'private_message'
 
   // 话题权限（来自 details）
-  final bool canEdit;  // 是否可以编辑话题元数据（标题、分类、标签）
+  final bool canEdit; // 是否可以编辑话题元数据（标题、分类、标签）
 
   // 话题书签相关
-  final bool bookmarked;                // 话题是否已被书签（Topic 级别）
-  final int? bookmarkId;                // 话题书签 ID（用于删除书签）
-  final String? bookmarkName;           // 书签名称
-  final DateTime? bookmarkReminderAt;   // 书签提醒时间
+  final bool bookmarked; // 话题是否已被书签（Topic 级别）
+  final int? bookmarkId; // 话题书签 ID（用于删除书签）
+  final String? bookmarkName; // 书签名称
+  final DateTime? bookmarkReminderAt; // 书签提醒时间
 
   // 已解决问题相关
-  final bool hasAcceptedAnswer;         // 话题是否有被接受的答案
-  final int? acceptedAnswerPostNumber;  // 被接受答案的帖子编号
+  final bool hasAcceptedAnswer; // 话题是否有被接受的答案
+  final int? acceptedAnswerPostNumber; // 被接受答案的帖子编号
 
   /// 是否为私信
   bool get isPrivateMessage => archetype == 'private_message';
@@ -1321,10 +1402,14 @@ class TopicDetail {
   });
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
-    var postStream = PostStream.fromJson(json['post_stream'] as Map<String, dynamic>);
+    var postStream = PostStream.fromJson(
+      json['post_stream'] as Map<String, dynamic>,
+    );
 
     // 注入 topic 级别的 badges 数据到每个 post
-    final rawPosts = (json['post_stream'] as Map<String, dynamic>)['posts'] as List<dynamic>?;
+    final rawPosts =
+        (json['post_stream'] as Map<String, dynamic>)['posts']
+            as List<dynamic>?;
     PostStream.injectBadges(postStream.posts, json, rawPosts);
 
     // 解析 accepted_answer：topic 级别返回的是一个对象 {post_number, username, ...}
@@ -1343,7 +1428,9 @@ class TopicDetail {
       hasAcceptedAnswer = json['has_accepted_answer'] as bool? ?? false;
     }
     if (hasAcceptedAnswer && acceptedAnswerPostNumber == null) {
-      final acceptedPost = postStream.posts.where((p) => p.acceptedAnswer).firstOrNull;
+      final acceptedPost = postStream.posts
+          .where((p) => p.acceptedAnswer)
+          .firstOrNull;
       acceptedAnswerPostNumber = acceptedPost?.postNumber;
     }
 
@@ -1361,9 +1448,12 @@ class TopicDetail {
           if (b['bookmarkable_type'] == 'Topic') {
             topicBookmarked = true;
             topicBookmarkId = b['id'] as int?;
-            final name = b['name'] as String?;
-            topicBookmarkName = (name != null && name.isNotEmpty) ? name : null;
-            topicBookmarkReminderAt = TimeUtils.parseUtcTime(b['reminder_at'] as String?);
+            topicBookmarkName = _normalizeBookmarkNameValue(
+              b['name'] as String?,
+            );
+            topicBookmarkReminderAt = TimeUtils.parseUtcTime(
+              b['reminder_at'] as String?,
+            );
           } else if (b['bookmarkable_type'] == 'Post') {
             final bookmarkableId = b['bookmarkable_id'] as int?;
             if (bookmarkableId != null) {
@@ -1373,23 +1463,51 @@ class TopicDetail {
         }
       }
     }
+    final topLevelBookmarkName = _normalizeBookmarkNameValue(
+      (json['bookmark_name'] ?? json['_bookmark_name']) as String?,
+    );
+    final topLevelBookmarkReminderAt = TimeUtils.parseUtcTime(
+      (json['bookmark_reminder_at'] ?? json['_bookmark_reminder_at'])
+          as String?,
+    );
+    final topLevelBookmarked = json['bookmarked'] as bool? ?? false;
+    if (!topicBookmarked &&
+        (topLevelBookmarked ||
+            json['bookmark_id'] != null ||
+            topLevelBookmarkName != null ||
+            topLevelBookmarkReminderAt != null)) {
+      topicBookmarked = true;
+      topicBookmarkId = json['bookmark_id'] as int?;
+      topicBookmarkName = topLevelBookmarkName;
+      topicBookmarkReminderAt = topLevelBookmarkReminderAt;
+    } else if (topicBookmarked) {
+      topicBookmarkId ??= json['bookmark_id'] as int?;
+      topicBookmarkName ??= topLevelBookmarkName;
+      topicBookmarkReminderAt ??= topLevelBookmarkReminderAt;
+    }
 
     // 注入帖子书签数据到对应的 Post
     if (postBookmarks.isNotEmpty) {
       final updatedPosts = postStream.posts.map((post) {
         final bm = postBookmarks[post.id];
         if (bm != null) {
-          final bmName = bm['name'] as String?;
+          final bmName = _normalizeBookmarkNameValue(bm['name'] as String?);
           return post.copyWith(
             bookmarked: true,
             bookmarkId: bm['id'] as int?,
-            bookmarkName: (bmName != null && bmName.isNotEmpty) ? bmName : null,
-            bookmarkReminderAt: TimeUtils.parseUtcTime(bm['reminder_at'] as String?),
+            bookmarkName: bmName,
+            bookmarkReminderAt: TimeUtils.parseUtcTime(
+              bm['reminder_at'] as String?,
+            ),
           );
         }
         return post;
       }).toList();
-      postStream = PostStream(posts: updatedPosts, stream: postStream.stream, gaps: postStream.gaps);
+      postStream = PostStream(
+        posts: updatedPosts,
+        stream: postStream.stream,
+        gaps: postStream.gaps,
+      );
     }
 
     return TopicDetail(
@@ -1401,7 +1519,9 @@ class TopicDetail {
       categoryId: json['category_id'] as int? ?? 0,
       closed: json['closed'] as bool? ?? false,
       archived: json['archived'] as bool? ?? false,
-      tags: (json['tags'] as List<dynamic>?)?.map((e) => Tag.fromJson(e)).toList(),
+      tags: (json['tags'] as List<dynamic>?)
+          ?.map((e) => Tag.fromJson(e))
+          .toList(),
       views: json['views'] as int? ?? 0,
       likeCount: json['like_count'] as int? ?? 0,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
@@ -1410,17 +1530,23 @@ class TopicDetail {
       canVote: json['can_vote'] as bool? ?? false,
       voteCount: json['vote_count'] as int? ?? 0,
       userVoted: json['user_voted'] as bool? ?? false,
-      createdBy: (json['details'] as Map<String, dynamic>?)?['created_by'] != null
-          ? TopicUser.fromJson((json['details']!['created_by'] as Map<String, dynamic>))
+      createdBy:
+          (json['details'] as Map<String, dynamic>?)?['created_by'] != null
+          ? TopicUser.fromJson(
+              (json['details']!['created_by'] as Map<String, dynamic>),
+            )
           : null,
       summarizable: json['summarizable'] as bool? ?? false,
       hasCachedSummary: json['has_cached_summary'] as bool? ?? false,
       hasSummary: json['has_summary'] as bool? ?? false,
       archetype: json['archetype'] as String? ?? 'regular',
       notificationLevel: TopicNotificationLevel.fromValue(
-        (json['details'] as Map<String, dynamic>?)?['notification_level'] as int?,
+        (json['details'] as Map<String, dynamic>?)?['notification_level']
+            as int?,
       ),
-      canEdit: (json['details'] as Map<String, dynamic>?)?['can_edit'] as bool? ?? false,
+      canEdit:
+          (json['details'] as Map<String, dynamic>?)?['can_edit'] as bool? ??
+          false,
       bookmarked: topicBookmarked,
       bookmarkId: topicBookmarkId,
       bookmarkName: topicBookmarkName,
@@ -1493,10 +1619,15 @@ class TopicDetail {
       canEdit: canEdit ?? this.canEdit,
       bookmarked: bookmarked ?? this.bookmarked,
       bookmarkId: clearBookmarkId ? null : (bookmarkId ?? this.bookmarkId),
-      bookmarkName: clearBookmarkName ? null : (bookmarkName ?? this.bookmarkName),
-      bookmarkReminderAt: clearBookmarkReminderAt ? null : (bookmarkReminderAt ?? this.bookmarkReminderAt),
+      bookmarkName: clearBookmarkName
+          ? null
+          : (bookmarkName ?? this.bookmarkName),
+      bookmarkReminderAt: clearBookmarkReminderAt
+          ? null
+          : (bookmarkReminderAt ?? this.bookmarkReminderAt),
       hasAcceptedAnswer: hasAcceptedAnswer ?? this.hasAcceptedAnswer,
-      acceptedAnswerPostNumber: acceptedAnswerPostNumber ?? this.acceptedAnswerPostNumber,
+      acceptedAnswerPostNumber:
+          acceptedAnswerPostNumber ?? this.acceptedAnswerPostNumber,
     );
   }
 }
@@ -1536,17 +1667,14 @@ class TopicListResponse {
   final List<Topic> topics;
   final String? moreTopicsUrl;
 
-  TopicListResponse({
-    required this.topics,
-    this.moreTopicsUrl,
-  });
+  TopicListResponse({required this.topics, this.moreTopicsUrl});
 
   factory TopicListResponse.fromJson(Map<String, dynamic> json) {
     // Parse users map
     final usersJson = json['users'] as List<dynamic>? ?? [];
     final userMap = {
       for (var u in usersJson)
-        (u['id'] as int): TopicUser.fromJson(u as Map<String, dynamic>)
+        (u['id'] as int): TopicUser.fromJson(u as Map<String, dynamic>),
     };
 
     final topicList = json['topic_list'] as Map<String, dynamic>?;
@@ -1558,7 +1686,8 @@ class TopicListResponse {
       moreTopicsUrl = topicList['more_topics_url'] as String?;
     } else if (json.containsKey('user_bookmark_list')) {
       // 处理 /u/{username}/bookmarks.json 格式
-      final userBookmarkList = json['user_bookmark_list'] as Map<String, dynamic>?;
+      final userBookmarkList =
+          json['user_bookmark_list'] as Map<String, dynamic>?;
       if (userBookmarkList != null) {
         final bookmarks = userBookmarkList['bookmarks'] as List<dynamic>? ?? [];
         moreTopicsUrl = userBookmarkList['more_bookmarks_url'] as String?;
@@ -1572,8 +1701,8 @@ class TopicListResponse {
           if (map.containsKey('topic_id')) {
             map['id'] = map['topic_id'];
           }
-          final bmName = map['name'] as String?;
-          if (bmName != null && bmName.isNotEmpty) {
+          final bmName = _normalizeBookmarkNameValue(map['name'] as String?);
+          if (bmName != null) {
             map['_bookmark_name'] = bmName;
           }
           if (map['reminder_at'] != null) {
@@ -1599,7 +1728,8 @@ class TopicListResponse {
           }
 
           // 2. 使用 bumped_at 作为 last_posted_at
-          if (map.containsKey('bumped_at') && !map.containsKey('last_posted_at')) {
+          if (map.containsKey('bumped_at') &&
+              !map.containsKey('last_posted_at')) {
             map['last_posted_at'] = map['bumped_at'];
           }
 
@@ -1619,7 +1749,7 @@ class TopicListResponse {
                 'user_id': userId,
                 'description': 'Original Poster',
                 'extras': 'latest',
-              }
+              },
             ];
 
             // 设置 last_poster_username
@@ -1656,7 +1786,11 @@ class TopicListResponse {
     }
 
     return TopicListResponse(
-      topics: topicsJson.map((t) => Topic.fromJson(t as Map<String, dynamic>, userMap: userMap)).toList(),
+      topics: topicsJson
+          .map(
+            (t) => Topic.fromJson(t as Map<String, dynamic>, userMap: userMap),
+          )
+          .toList(),
       moreTopicsUrl: moreTopicsUrl,
     );
   }
@@ -1699,9 +1833,11 @@ class FlagType {
       requireMessage: json['require_message'] as bool? ?? false,
       enabled: json['enabled'] as bool? ?? true,
       position: json['position'] as int? ?? 0,
-      appliesTo: (json['applies_to'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList() ?? const ['Post', 'Chat::Message'],
+      appliesTo:
+          (json['applies_to'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['Post', 'Chat::Message'],
     );
   }
 

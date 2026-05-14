@@ -70,10 +70,16 @@ class _SearchableAppBarState extends State<SearchableAppBar>
   late AnimationController _animationController;
   late Animation<double> _animation;
 
+  void _handleControllerChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.initialSearchText);
+    _searchController.addListener(_handleControllerChanged);
     _focusNode = FocusNode();
     _animationController = AnimationController(
       vsync: this,
@@ -111,6 +117,7 @@ class _SearchableAppBarState extends State<SearchableAppBar>
 
   @override
   void dispose() {
+    _searchController.removeListener(_handleControllerChanged);
     _searchController.dispose();
     _focusNode.dispose();
     _animationController.dispose();

@@ -72,11 +72,14 @@ extension _PostFooterBookmarkActions on _PostFooterSectionState {
 
   /// 弹出书签编辑 BottomSheet
   Future<void> _showBookmarkSheet(int bookmarkId, {bool isEdit = false}) async {
-    final result = await BookmarkEditSheet.show(
+    final result = await showBookmarkEditSheetWithCachedNames(
       context,
+      ref,
       bookmarkId: bookmarkId,
       initialName: isEdit ? (_bookmarkName ?? widget.post.bookmarkName) : null,
-      initialReminderAt: isEdit ? (_bookmarkReminderAt ?? widget.post.bookmarkReminderAt) : null,
+      initialReminderAt: isEdit
+          ? (_bookmarkReminderAt ?? widget.post.bookmarkReminderAt)
+          : null,
     );
 
     if (result == null || !mounted) return;

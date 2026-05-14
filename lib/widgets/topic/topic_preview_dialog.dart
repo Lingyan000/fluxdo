@@ -44,12 +44,16 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
   final Topic topic;
   final VoidCallback? onOpen;
   final List<PreviewAction>? actions;
+  final WidgetBuilder? customActionPanelBuilder;
+  final Future<String?> Function()? firstPostLoader;
 
   const TopicPreviewDialog({
     super.key,
     required this.topic,
     this.onOpen,
     this.actions,
+    this.customActionPanelBuilder,
+    this.firstPostLoader,
   });
 
   @override
@@ -61,6 +65,8 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     required Topic topic,
     VoidCallback? onOpen,
     List<PreviewAction>? actions,
+    WidgetBuilder? customActionPanelBuilder,
+    Future<String?> Function()? firstPostLoader,
   }) {
     // 触觉反馈
     HapticFeedback.mediumImpact();
@@ -76,6 +82,8 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
           topic: topic,
           onOpen: onOpen,
           actions: actions,
+          customActionPanelBuilder: customActionPanelBuilder,
+          firstPostLoader: firstPostLoader,
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -85,10 +93,7 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
         );
         return ScaleTransition(
           scale: curvedAnimation,
-          child: FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+          child: FadeTransition(opacity: animation, child: child),
         );
       },
     );
@@ -110,7 +115,11 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
 
   Future<void> _loadFirstPost() async {
     try {
-      final cooked = await ref.read(discourseServiceProvider).getTopicFirstPostCooked(topic.id);
+      final cooked = widget.firstPostLoader != null
+          ? await widget.firstPostLoader!()
+          : await ref
+                .read(discourseServiceProvider)
+                .getTopicFirstPostCooked(topic.id);
       if (!mounted) return;
       setState(() {
         _firstPostCooked = cooked;
@@ -150,6 +159,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     }
 
     final hasActions = widget.actions != null && widget.actions!.isNotEmpty;
+    final hasCustomActionPanel = widget.customActionPanelBuilder != null;
 
     return Center(
       child: ConstrainedBox(
@@ -157,84 +167,83 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
           maxWidth: maxWidth.clamp(300, 500),
           maxHeight: maxHeight,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 预览卡片
-            Flexible(
-              child: Material(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                clipBehavior: Clip.antiAlias,
-                elevation: 8,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 顶部装饰条
-                    Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primaryContainer,
-                            theme.colorScheme.tertiaryContainer,
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // 内容区域
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 标题
-                            _buildTitle(context, theme),
-
-                            const SizedBox(height: 12),
-
-                            // 楼主信息
-                            _buildAuthorInfo(context, theme),
-
-                            // 分类和标签
-                            if (category != null || topic.tags.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _buildCategoryAndTags(context, theme, category, faIcon, logoUrl),
+        child: SizedBox(
+          key: const ValueKey('topic-preview-root'),
+          height: maxHeight,
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Expanded(
+                child: Material(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 8,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.colorScheme.primaryContainer,
+                              theme.colorScheme.tertiaryContainer,
                             ],
-
-                            // 主贴内容
-                            const SizedBox(height: 16),
-                            _buildPostContent(context, theme),
-
-                            const SizedBox(height: 16),
-
-                            // 参与者头像
-                            if (topic.posters.length > 1)
-                              _buildParticipants(context, theme),
-
-                            // 统计信息
-                            _buildStats(context, theme),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-
-                    // 底部操作栏
-                    _buildActions(context, theme),
-                  ],
+                      if (hasCustomActionPanel)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                          child: widget.customActionPanelBuilder!(context),
+                        ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(
+                            20,
+                            hasCustomActionPanel ? 16 : 20,
+                            20,
+                            20,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTitle(context, theme),
+                              const SizedBox(height: 12),
+                              _buildAuthorInfo(context, theme),
+                              if (category != null ||
+                                  topic.tags.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                _buildCategoryAndTags(
+                                  context,
+                                  theme,
+                                  category,
+                                  faIcon,
+                                  logoUrl,
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              _buildPostContent(context, theme),
+                              const SizedBox(height: 16),
+                              if (topic.posters.length > 1)
+                                _buildParticipants(context, theme),
+                              _buildStats(context, theme),
+                            ],
+                          ),
+                        ),
+                      ),
+                      _buildActions(context, theme),
+                    ],
+                  ),
                 ),
               ),
-            ),
-
-            // 卡片外的操作菜单
-            if (hasActions) ...[
-              const SizedBox(height: 8),
-              _buildCustomActions(context, theme),
+              if (hasActions) ...[
+                const SizedBox(height: 8),
+                _buildCustomActions(context, theme),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -250,7 +259,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
       );
     }
 
-    if (_firstPostCooked != null && _firstPostCooked!.isNotEmpty && !_loadFailed) {
+    if (_firstPostCooked != null &&
+        _firstPostCooked!.isNotEmpty &&
+        !_loadFailed) {
       // 加载成功：渲染主贴 HTML
       final contentFontScale = ref.watch(preferencesProvider).contentFontScale;
       return DiscourseHtmlContent(
@@ -258,7 +269,8 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         compact: true,
         textStyle: theme.textTheme.bodyMedium?.copyWith(
           height: 1.5,
-          fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14) * contentFontScale,
+          fontSize:
+              (theme.textTheme.bodyMedium?.fontSize ?? 14) * contentFontScale,
         ),
         onInternalLinkTap: (topicId, topicSlug, postNumber) {
           Navigator.of(context).pop();
@@ -308,7 +320,8 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
           height: 1.6,
-          fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14) * contentFontScale,
+          fontSize:
+              (theme.textTheme.bodyMedium?.fontSize ?? 14) * contentFontScale,
         ),
         maxLines: 8,
         overflow: TextOverflow.ellipsis,
@@ -353,11 +366,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               alignment: PlaceholderAlignment.middle,
               child: Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: Icon(
-                  Icons.check_box,
-                  size: 20,
-                  color: Colors.green,
-                ),
+                child: Icon(Icons.check_box, size: 20, color: Colors.green),
               ),
             ),
           ...EmojiText.buildEmojiSpans(
@@ -387,11 +396,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
 
     return Row(
       children: [
-        SmartAvatar(
-          imageUrl: avatarUrl,
-          radius: 14,
-          fallbackText: username,
-        ),
+        SmartAvatar(imageUrl: avatarUrl, radius: 14, fallbackText: username),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
@@ -443,16 +448,18 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: category)),
+                MaterialPageRoute(
+                  builder: (_) => CategoryTopicsPage(category: category),
+                ),
               );
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: _parseColor(category.color).withValues(alpha:0.1),
+                color: _parseColor(category.color).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _parseColor(category.color).withValues(alpha:0.3),
+                  color: _parseColor(category.color).withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -516,7 +523,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => TagTopicsPage(tagName: tag.name)),
+                MaterialPageRoute(
+                  builder: (_) => TagTopicsPage(tagName: tag.name),
+                ),
               );
             },
           ),
@@ -583,14 +592,18 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               child: _buildStatItem(
                 context,
                 Icons.chat_bubble_outline_rounded,
-                S.current.topic_replyCount((topic.postsCount - 1).clamp(0, 999999)),
+                S.current.topic_replyCount(
+                  (topic.postsCount - 1).clamp(0, 999999),
+                ),
               ),
             ),
             Expanded(
               child: _buildStatItem(
                 context,
                 Icons.favorite_border_rounded,
-                S.current.topic_likeCount(NumberUtils.formatCount(topic.likeCount)),
+                S.current.topic_likeCount(
+                  NumberUtils.formatCount(topic.likeCount),
+                ),
               ),
             ),
           ],
@@ -625,16 +638,16 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     );
   }
 
-  Widget _buildStatWidgetItem(BuildContext context, IconData icon, Widget child) {
+  Widget _buildStatWidgetItem(
+    BuildContext context,
+    IconData icon,
+    Widget child,
+  ) {
     final theme = Theme.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(width: 4),
         child,
       ],
@@ -646,11 +659,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(width: 4),
         Text(
           text,
@@ -669,7 +678,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         color: theme.colorScheme.surfaceContainerLow,
         border: Border(
           top: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha:0.5),
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
       ),
@@ -731,21 +740,32 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (index > 0)
-                Divider(height: 0.5, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                Divider(
+                  height: 0.5,
+                  thickness: 0.5,
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.4,
+                  ),
+                ),
               InkWell(
                 onTap: () {
                   Navigator.of(context).pop();
                   action.onTap();
                 },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       Icon(action.icon, size: 20, color: color),
                       const SizedBox(width: 12),
                       Text(
                         action.label,
-                        style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: color,
+                        ),
                       ),
                     ],
                   ),
