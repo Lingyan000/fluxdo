@@ -86,6 +86,7 @@
   "rhttpEngine_proxyDohOnly": "仅代理/DOH",
   "rhttpEngine_title": "rhttp 引擎",
   "rhttpEngine_useMode": "使用模式",
+  "rhttpEngine_initFailedHint": "rhttp 引擎初始化失败，已回退至备用网络适配器，下次启动将自动重试",
   "webviewAdapter_disabledDesc": "使用浏览器内核发送请求，可改善登录稳定性",
   "webviewAdapter_enabledDesc": "主站 API 请求通过浏览器内核发送",
   "webviewAdapter_hint": "仅主站 API 请求通过 WebView 发送，图片加载和消息推送不受影响",

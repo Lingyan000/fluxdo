@@ -85,5 +85,6 @@
   "rhttpEngine_enabledDesc": "HTTP/2 多路複用 · Rust reqwest",
   "rhttpEngine_proxyDohOnly": "僅代理/DOH",
   "rhttpEngine_title": "rhttp 引擎",
-  "rhttpEngine_useMode": "使用模式"
+  "rhttpEngine_useMode": "使用模式",
+  "rhttpEngine_initFailedHint": "rhttp 引擎初始化失敗，已退回至備用網絡適配器，下次啓動將自動重試"
 }
