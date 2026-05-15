@@ -43,6 +43,7 @@ class AiL10n {
   String get save => '保存';
   String get add => '添加';
   String get edit => '编辑';
+  String get manage => '管理';
   String get remove => '移除';
   String get test => '测试';
   String get notSet => '未设置';
@@ -94,12 +95,21 @@ class AiL10n {
 
   // ---- AI 模型服务页 ----
   String get aiModelService => 'AI 模型服务';
+  String get providersTitle => '供应商';
   String get addProvider => '添加供应商';
   String get editProvider => '编辑供应商';
   String get noProviderConfigured => '还没有配置 AI 供应商';
   String get addProviderHint => '添加供应商后可以使用 AI 助手功能';
   String get confirmDelete => '确认删除';
   String confirmDeleteProvider(String name) => '确定要删除供应商「$name」吗？';
+  String get pinProvider => '置顶';
+  String get unpinProvider => '取消置顶';
+  String get pinnedProvidersSection => '置顶提供商';
+  String get otherProvidersSection => '普通提供商';
+  String selectedProviderCount(int count) => '已选 $count 个供应商';
+  String get deleteSelectedProviders => '删除选中';
+  String confirmDeleteSelectedProviders(int count) =>
+      '确定要删除选中的 $count 个供应商吗？';
   String modelCount(int enabled, int total) => '$enabled/$total 个模型';
   String get modelConfig => '模型配置';
   String get defaultChatModel => '默认聊天模型';

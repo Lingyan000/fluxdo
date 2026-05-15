@@ -11,28 +11,42 @@ import '../l10n/ai_l10n.dart';
 import '../models/ai_chat_attachment.dart';
 import '../models/ai_provider.dart';
 import '../models/ai_chat_message.dart';
+import '../models/prompt_preset.dart';
 import '../services/ai_chat_service.dart';
 import '../services/ai_chat_storage_service.dart';
 import '../services/dio_http_bridge.dart';
 import 'ai_provider_providers.dart';
 
 const _lastUsedAiAssistantModelKey = 'ai_assistant_last_model';
+const _favoriteAiModelKeys = 'ai_favorite_model_keys';
 // 文本 / 图像两种模式各自的"上次使用模型"key。
 // 用户切换模式时聊天页会自动应用对应 mode 的模型，不再让两种模式互相覆盖。
 const _lastUsedTextAiModelKey = 'ai_assistant_last_text_model';
 const _lastUsedImageAiModelKey = 'ai_assistant_last_image_model';
 
+String buildAiModelKey(String providerId, String modelId) =>
+    '$providerId:$modelId';
+
+({String providerId, String modelId})? parseAiModelKey(String? key) {
+  if (key == null || key.isEmpty) return null;
+  final parts = key.split(':');
+  if (parts.length < 2) return null;
+  return (
+    providerId: parts.first,
+    modelId: parts.sublist(1).join(':'),
+  );
+}
+
 ({AiProvider provider, AiModel model})? _findAiModelByKey(
   List<({AiProvider provider, AiModel model})> all,
   String? key,
 ) {
-  if (key == null || key.isEmpty) return null;
-
-  final parts = key.split(':');
-  if (parts.length != 2) return null;
+  final parsed = parseAiModelKey(key);
+  if (parsed == null) return null;
 
   for (final item in all) {
-    if (item.provider.id == parts[0] && item.model.id == parts[1]) {
+    if (item.provider.id == parsed.providerId &&
+        item.model.id == parsed.modelId) {
       return item;
     }
   }
@@ -119,6 +133,55 @@ final lastUsedAiAssistantModelKeyProvider = StateProvider<String?>((ref) {
   return prefs.getString(_lastUsedAiAssistantModelKey);
 });
 
+/// 收藏模型 key 列表，按最近收藏在前排序。
+final favoriteAiModelKeysProvider = StateProvider<List<String>>((ref) {
+  final prefs = ref.watch(aiSharedPreferencesProvider);
+  return prefs.getStringList(_favoriteAiModelKeys) ?? const [];
+});
+
+/// 当前模式下可见的收藏模型列表。
+final favoriteAiModelsProvider = Provider.family<
+    List<({AiProvider provider, AiModel model})>, PromptType>((ref, mode) {
+  final all = ref.watch(allAvailableAiModelsProvider);
+  final keys = ref.watch(favoriteAiModelKeysProvider);
+  bool matchesMode(AiModel model) => mode == PromptType.image
+      ? model.output.contains(Modality.image)
+      : model.output.contains(Modality.text);
+
+  return [
+    for (final key in keys)
+      if (_findAiModelByKey(all, key) case final item?)
+        if (matchesMode(item.model)) item,
+  ];
+});
+
+List<String> nextFavoriteAiModelKeys(List<String> current, String key) {
+  final next = [...current];
+  if (next.contains(key)) {
+    next.removeWhere((value) => value == key);
+  } else {
+    next
+      ..removeWhere((value) => value == key)
+      ..insert(0, key);
+  }
+  return next;
+}
+
+Future<void> toggleFavoriteAiModel(
+  WidgetRef ref,
+  String providerId,
+  String modelId,
+) async {
+  final prefs = ref.read(aiSharedPreferencesProvider);
+  final key = buildAiModelKey(providerId, modelId);
+  final next = nextFavoriteAiModelKeys(
+    ref.read(favoriteAiModelKeysProvider),
+    key,
+  );
+  await prefs.setStringList(_favoriteAiModelKeys, next);
+  ref.read(favoriteAiModelKeysProvider.notifier).state = next;
+}
+
 /// AI 助手上次使用的模型
 final lastUsedAiAssistantModelProvider =
     Provider<({AiProvider provider, AiModel model})?>(
@@ -146,7 +209,7 @@ Future<void> setLastUsedAiAssistantModel(
   bool? isImageMode,
 }) async {
   final prefs = ref.read(aiSharedPreferencesProvider);
-  final key = '$providerId:$modelId';
+  final key = buildAiModelKey(providerId, modelId);
   await prefs.setString(_lastUsedAiAssistantModelKey, key);
   ref.read(lastUsedAiAssistantModelKeyProvider.notifier).state = key;
   if (isImageMode == true) {

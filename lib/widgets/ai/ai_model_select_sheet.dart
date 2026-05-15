@@ -1,5 +1,6 @@
-import 'package:ai_model_manager/ai_model_manager.dart';
+﻿import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../../l10n/s.dart';
@@ -7,14 +8,13 @@ import '../../utils/dialog_utils.dart';
 
 /// 弹出模型选择 sheet
 ///
-/// 设计参考 Kelivo `model_select_sheet.dart`：搜索框 + 按 provider 分组 +
-/// 当前/默认模型高亮 + brand logo + 能力标签。
-///
-/// 选中时返回选中的 model；用户取消时返回 null。
+/// 设计参考 Kelivo `model_select_sheet.dart`：搜索框 + 收藏区 +
+/// 按 provider 分组 + 当前模型高亮 + 品牌图标 + 能力标签。
 Future<({AiProvider provider, AiModel model})?> showAiModelSelectSheet({
   required BuildContext context,
   required List<({AiProvider provider, AiModel model})> allModels,
   required ({AiProvider provider, AiModel model}) current,
+  required PromptType mode,
 }) {
   return showAppBottomSheet<({AiProvider provider, AiModel model})>(
     context: context,
@@ -24,24 +24,28 @@ Future<({AiProvider provider, AiModel model})?> showAiModelSelectSheet({
     builder: (ctx) => _AiModelSelectSheet(
       allModels: allModels,
       current: current,
+      mode: mode,
     ),
   );
 }
 
-class _AiModelSelectSheet extends StatefulWidget {
+class _AiModelSelectSheet extends ConsumerStatefulWidget {
   const _AiModelSelectSheet({
     required this.allModels,
     required this.current,
+    required this.mode,
   });
 
   final List<({AiProvider provider, AiModel model})> allModels;
   final ({AiProvider provider, AiModel model}) current;
+  final PromptType mode;
 
   @override
-  State<_AiModelSelectSheet> createState() => _AiModelSelectSheetState();
+  ConsumerState<_AiModelSelectSheet> createState() =>
+      _AiModelSelectSheetState();
 }
 
-class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
+class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
   final _searchController = TextEditingController();
   final _scrollController = AutoScrollController(axis: Axis.vertical);
   String _query = '';
@@ -58,9 +62,12 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
     final theme = Theme.of(context);
     final mediaQuery = MediaQuery.of(context);
     final maxHeight = mediaQuery.size.height * 0.85;
+    final favoriteKeys = ref.watch(favoriteAiModelKeysProvider);
+    final favoriteModels = ref.watch(favoriteAiModelsProvider(widget.mode));
 
-    final filtered = _filterModels();
-    final groups = _groupByProvider(filtered);
+    final filtered = _filterModels(widget.allModels);
+    final visibleFavorites = _filterModels(favoriteModels);
+    final sections = _buildSections(filtered, visibleFavorites);
 
     return Container(
       constraints: BoxConstraints(maxHeight: maxHeight),
@@ -73,7 +80,6 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // drag handle
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Container(
@@ -85,13 +91,12 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
                 ),
               ),
             ),
-            // 搜索框（去掉冗余标题栏，drag handle 已经表明这是 sheet）
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: TextField(
                 controller: _searchController,
                 autofocus: false,
-                onChanged: (v) => setState(() => _query = v),
+                onChanged: (value) => setState(() => _query = value),
                 decoration: InputDecoration(
                   hintText: S.current.ai_modelSearchHint,
                   prefixIcon: Icon(
@@ -123,40 +128,63 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
                 ),
               ),
             ),
-            // 列表 / 空状态
             Flexible(
-              child: filtered.isEmpty
+              child: sections.isEmpty
                   ? _buildEmpty(theme)
-                  : _buildList(groups, theme),
+                  : _buildList(sections, favoriteKeys, theme),
             ),
-            // 底部 provider 快速跳转 dock（仅当 ≥2 个 provider 且非搜索空态）
-            if (filtered.isNotEmpty) _buildProviderDock(groups, theme),
+            if (sections.length > 1)
+              _buildProviderDock(sections, favoriteKeys, theme),
           ],
         ),
       ),
     );
   }
 
-  List<({AiProvider provider, AiModel model})> _filterModels() {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return widget.allModels;
-    return widget.allModels.where((m) {
-      final name = (m.model.name ?? m.model.id).toLowerCase();
-      final id = m.model.id.toLowerCase();
-      final provider = m.provider.name.toLowerCase();
-      return name.contains(q) || id.contains(q) || provider.contains(q);
+  List<({AiProvider provider, AiModel model})> _filterModels(
+    List<({AiProvider provider, AiModel model})> models,
+  ) {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return models;
+    return models.where((item) {
+      final name = (item.model.name ?? item.model.id).toLowerCase();
+      final id = item.model.id.toLowerCase();
+      final provider = item.provider.name.toLowerCase();
+      return name.contains(query) || id.contains(query) || provider.contains(query);
     }).toList(growable: false);
   }
 
-  /// 按 provider 分组并保持原 order
-  Map<String, List<({AiProvider provider, AiModel model})>> _groupByProvider(
-    List<({AiProvider provider, AiModel model})> models,
+  List<_SectionData> _buildSections(
+    List<({AiProvider provider, AiModel model})> filtered,
+    List<({AiProvider provider, AiModel model})> visibleFavorites,
   ) {
-    final result = <String, List<({AiProvider provider, AiModel model})>>{};
-    for (final m in models) {
-      result.putIfAbsent(m.provider.id, () => []).add(m);
+    final sections = <_SectionData>[];
+    if (visibleFavorites.isNotEmpty) {
+      sections.add(
+        _SectionData(
+          id: 'favorites',
+          title: _favoriteModelsSectionLabel(context),
+          items: visibleFavorites,
+          isFavorites: true,
+        ),
+      );
     }
-    return result;
+
+    final groups = <String, List<({AiProvider provider, AiModel model})>>{};
+    for (final item in filtered) {
+      groups.putIfAbsent(item.provider.id, () => []).add(item);
+    }
+    for (final entry in groups.entries) {
+      sections.add(
+        _SectionData(
+          id: entry.key,
+          title: entry.value.first.provider.name,
+          items: entry.value,
+          provider: entry.value.first.provider,
+        ),
+      );
+    }
+    return sections;
   }
 
   Widget _buildEmpty(ThemeData theme) {
@@ -183,28 +211,27 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
   }
 
   Widget _buildList(
-    Map<String, List<({AiProvider provider, AiModel model})>> groups,
+    List<_SectionData> sections,
+    List<String> favoriteKeys,
     ThemeData theme,
   ) {
-    final entries = groups.entries.toList(growable: false);
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-      itemCount: entries.length,
-      itemBuilder: (context, idx) {
-        final entry = entries[idx];
-        final providerName = entry.value.first.provider.name;
+      itemCount: sections.length,
+      itemBuilder: (context, index) {
+        final section = sections[index];
         return AutoScrollTag(
-          key: ValueKey('section_${entry.key}'),
+          key: ValueKey('section_${section.id}'),
           controller: _scrollController,
-          index: idx,
+          index: index,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
                 child: Text(
-                  providerName,
+                  section.title,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -212,8 +239,19 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
                   ),
                 ),
               ),
-              for (final m in entry.value)
-                _ModelRow(item: m, current: widget.current),
+              for (final item in section.items)
+                _ModelRow(
+                  item: item,
+                  current: widget.current,
+                  isFavorite: favoriteKeys.contains(
+                    buildAiModelKey(item.provider.id, item.model.id),
+                  ),
+                  onToggleFavorite: () => toggleFavoriteAiModel(
+                    ref,
+                    item.provider.id,
+                    item.model.id,
+                  ),
+                ),
             ],
           ),
         );
@@ -221,22 +259,19 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
     );
   }
 
-  /// 底部 provider 快速跳转 dock
-  ///
-  /// 横向 logo 列表，点击 → 滚动到对应 provider section
   Widget _buildProviderDock(
-    Map<String, List<({AiProvider provider, AiModel model})>> groups,
+    List<_SectionData> sections,
+    List<String> favoriteKeys,
     ThemeData theme,
   ) {
-    final entries = groups.entries.toList(growable: false);
-    if (entries.length <= 1) return const SizedBox.shrink();
-    final currentProviderId = widget.current.provider.id;
-    // 单行胶囊（参考 Kelivo `_ProviderChip` 设计）：
-    // - 边框轮廓样式，不用填充背景（更轻、不抢主列表）
-    // - logo 18px + 名字横排
-    // - 选中态用极浅 primary tint 背景（alpha 0.05-0.08，比 primaryContainer 克制）
+    final currentKey = buildAiModelKey(
+      widget.current.provider.id,
+      widget.current.model.id,
+    );
+    final currentIsFavorite = favoriteKeys.contains(currentKey);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.25);
+    final borderColor =
+        theme.colorScheme.outlineVariant.withValues(alpha: 0.25);
     return Container(
       color: theme.colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -244,22 +279,24 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
         height: 36,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: entries.length,
+          itemCount: sections.length,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (context, idx) {
-            final entry = entries[idx];
-            final provider = entry.value.first.provider;
-            final isCurrent = provider.id == currentProviderId;
-            final bg = isCurrent
+          itemBuilder: (context, index) {
+            final section = sections[index];
+            final isCurrent = section.isFavorites
+                ? currentIsFavorite
+                : section.provider?.id == widget.current.provider.id &&
+                    !currentIsFavorite;
+            final background = isCurrent
                 ? theme.colorScheme.primary
                     .withValues(alpha: isDark ? 0.08 : 0.05)
                 : Colors.transparent;
             return Material(
-              color: bg,
+              color: background,
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
                 onTap: () => _scrollController.scrollToIndex(
-                  idx,
+                  index,
                   preferPosition: AutoScrollPosition.begin,
                   duration: const Duration(milliseconds: 280),
                 ),
@@ -269,20 +306,29 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: borderColor),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ModelIcon(
-                        providerName: provider.name,
-                        modelName: provider.name,
-                        size: 18,
-                        withBackground: false,
-                      ),
+                      if (section.isFavorites)
+                        Icon(
+                          Icons.favorite_rounded,
+                          size: 18,
+                          color: theme.colorScheme.error,
+                        )
+                      else
+                        ModelIcon(
+                          providerName: section.provider!.name,
+                          modelName: section.provider!.name,
+                          size: 18,
+                          withBackground: false,
+                        ),
                       const SizedBox(width: 6),
                       Text(
-                        provider.name,
+                        section.isFavorites
+                            ? _favoriteDockLabel(context)
+                            : section.title,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -303,7 +349,22 @@ class _AiModelSelectSheetState extends State<_AiModelSelectSheet> {
   }
 }
 
-/// 这条 row 是否需要展示能力 badge 行
+class _SectionData {
+  const _SectionData({
+    required this.id,
+    required this.title,
+    required this.items,
+    this.isFavorites = false,
+    this.provider,
+  });
+
+  final String id;
+  final String title;
+  final List<({AiProvider provider, AiModel model})> items;
+  final bool isFavorites;
+  final AiProvider? provider;
+}
+
 bool _hasAnyBadge(AiModel model, bool isImageOut) {
   return isImageOut ||
       model.input.contains(Modality.image) ||
@@ -312,10 +373,17 @@ bool _hasAnyBadge(AiModel model, bool isImageOut) {
 }
 
 class _ModelRow extends StatelessWidget {
-  const _ModelRow({required this.item, required this.current});
+  const _ModelRow({
+    required this.item,
+    required this.current,
+    required this.isFavorite,
+    required this.onToggleFavorite,
+  });
 
   final ({AiProvider provider, AiModel model}) item;
   final ({AiProvider provider, AiModel model}) current;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
 
   @override
   Widget build(BuildContext context) {
@@ -378,7 +446,6 @@ class _ModelRow extends StatelessWidget {
                               label: 'image',
                               color: const Color(0xFFEA580C),
                             ),
-                          // vision = 模型 input 含 image（多模态识图能力）
                           if (item.model.input.contains(Modality.image))
                             _CapabilityBadge(
                               icon: Icons.visibility_outlined,
@@ -404,9 +471,28 @@ class _ModelRow extends StatelessWidget {
                   ],
                 ),
               ),
+              IconButton(
+                key: ValueKey(
+                  'favorite_${item.provider.id}_${item.model.id}',
+                ),
+                tooltip: isFavorite
+                    ? _favoriteRemoveLabel(context)
+                    : _favoriteAddLabel(context),
+                onPressed: onToggleFavorite,
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: isFavorite
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
               if (isCurrent)
-                Icon(Icons.check_circle,
-                    size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
             ],
           ),
         ),
@@ -452,3 +538,25 @@ class _CapabilityBadge extends StatelessWidget {
     );
   }
 }
+
+
+String _favoriteModelsSectionLabel(BuildContext context) {
+  return _isEnglishLocale(context) ? 'Favorite Models' : '\u6536\u85CF\u6A21\u578B';
+}
+
+String _favoriteDockLabel(BuildContext context) {
+  return _isEnglishLocale(context) ? 'Favorites' : '\u6536\u85CF';
+}
+
+String _favoriteAddLabel(BuildContext context) {
+  return _isEnglishLocale(context) ? 'Favorite model' : '\u6536\u85CF\u6A21\u578B';
+}
+
+String _favoriteRemoveLabel(BuildContext context) {
+  return _isEnglishLocale(context) ? 'Remove favorite' : '\u53D6\u6D88\u6536\u85CF';
+}
+
+bool _isEnglishLocale(BuildContext context) {
+  return Localizations.localeOf(context).languageCode.toLowerCase() == 'en';
+}
+

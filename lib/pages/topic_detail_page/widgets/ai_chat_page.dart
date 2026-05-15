@@ -1112,6 +1112,9 @@ class _ModelLogoButton extends StatelessWidget {
             context: context,
             allModels: allModels,
             current: current,
+            mode: current.model.output.contains(Modality.image)
+                ? PromptType.image
+                : PromptType.text,
           );
           if (picked != null) onChanged(picked);
         },

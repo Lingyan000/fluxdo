@@ -189,6 +189,7 @@ class AiProviderListNotifier extends StateNotifier<List<AiProvider>> {
       type: type,
       baseUrl: baseUrl,
       models: _inferAll(models),
+      pinned: false,
     );
     state = [...state, provider];
     await _save();
@@ -227,12 +228,67 @@ class AiProviderListNotifier extends StateNotifier<List<AiProvider>> {
     await _deleteApiKey(id);
   }
 
+  /// 批量删除供应商，并同步清理 API Key。
+  Future<void> removeProviders(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+    state = state.where((p) => !idSet.contains(p.id)).toList();
+    await _save();
+    await Future.wait(idSet.map(_deleteApiKey));
+  }
+
   /// 更新模型列表
   Future<void> updateModels(String id, List<AiModel> models) async {
     state = state.map((p) {
       if (p.id != id) return p;
       return p.copyWith(models: _inferAll(models));
     }).toList();
+    await _save();
+  }
+
+  /// 切换置顶状态。
+  ///
+  /// - 未置顶 -> 插到置顶区最前
+  /// - 已置顶 -> 取消置顶并移到普通区最后
+  Future<void> togglePin(String id) async {
+    final index = state.indexWhere((p) => p.id == id);
+    if (index == -1) return;
+    final provider = state[index];
+    final next = [...state]..removeAt(index);
+    if (provider.pinned) {
+      next.add(provider.copyWith(pinned: false));
+    } else {
+      next.insert(0, provider.copyWith(pinned: true));
+    }
+    state = next;
+    await _save();
+  }
+
+  /// 仅重排序置顶区内部顺序。
+  Future<void> reorderPinned(int oldIndex, int newIndex) async {
+    await _reorderByPinned(true, oldIndex, newIndex);
+  }
+
+  /// 仅重排普通区内部顺序。
+  Future<void> reorderUnpinned(int oldIndex, int newIndex) async {
+    await _reorderByPinned(false, oldIndex, newIndex);
+  }
+
+  Future<void> _reorderByPinned(bool pinned, int oldIndex, int newIndex) async {
+    final pinnedItems =
+        state.where((provider) => provider.pinned == pinned).toList();
+    if (pinnedItems.isEmpty) return;
+    if (oldIndex < 0 ||
+        oldIndex >= pinnedItems.length ||
+        newIndex < 0 ||
+        newIndex >= pinnedItems.length) {
+      return;
+    }
+    final moved = pinnedItems.removeAt(oldIndex);
+    pinnedItems.insert(newIndex, moved);
+    final otherItems =
+        state.where((provider) => provider.pinned != pinned).toList();
+    state = pinned ? [...pinnedItems, ...otherItems] : [...otherItems, ...pinnedItems];
     await _save();
   }
 

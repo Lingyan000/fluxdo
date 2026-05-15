@@ -164,6 +164,7 @@ class AiProvider {
   final AiProviderType type;
   final String baseUrl;
   final List<AiModel> models;
+  final bool pinned;
 
   const AiProvider({
     required this.id,
@@ -171,6 +172,7 @@ class AiProvider {
     required this.type,
     required this.baseUrl,
     this.models = const [],
+    this.pinned = false,
   });
 
   factory AiProvider.fromJson(Map<String, dynamic> json) {
@@ -185,6 +187,7 @@ class AiProvider {
               ?.map((e) => AiModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      pinned: json['pinned'] as bool? ?? false,
     );
   }
 
@@ -195,6 +198,7 @@ class AiProvider {
       'type': type.name,
       'base_url': baseUrl,
       'models': models.map((m) => m.toJson()).toList(),
+      if (pinned) 'pinned': pinned,
     };
   }
 
@@ -204,6 +208,7 @@ class AiProvider {
     AiProviderType? type,
     String? baseUrl,
     List<AiModel>? models,
+    bool? pinned,
   }) {
     return AiProvider(
       id: id ?? this.id,
@@ -211,6 +216,7 @@ class AiProvider {
       type: type ?? this.type,
       baseUrl: baseUrl ?? this.baseUrl,
       models: models ?? this.models,
+      pinned: pinned ?? this.pinned,
     );
   }
 }

@@ -14,6 +14,8 @@ class AiL10nZhTW extends AiL10n {
   @override
   String get edit => '編輯';
   @override
+  String get manage => '管理';
+  @override
   String get remove => '移除';
   @override
   String get test => '測試';
@@ -111,6 +113,8 @@ class AiL10nZhTW extends AiL10n {
   @override
   String get aiModelService => 'AI 模型服務';
   @override
+  String get providersTitle => '供應商';
+  @override
   String get addProvider => '新增供應商';
   @override
   String get editProvider => '編輯供應商';
@@ -122,6 +126,21 @@ class AiL10nZhTW extends AiL10n {
   String get confirmDelete => '確認刪除';
   @override
   String confirmDeleteProvider(String name) => '確定要刪除供應商「$name」嗎？';
+  @override
+  String get pinProvider => '置頂';
+  @override
+  String get unpinProvider => '取消置頂';
+  @override
+  String get pinnedProvidersSection => '置頂供應商';
+  @override
+  String get otherProvidersSection => '一般供應商';
+  @override
+  String selectedProviderCount(int count) => '已選 $count 個供應商';
+  @override
+  String get deleteSelectedProviders => '刪除選取';
+  @override
+  String confirmDeleteSelectedProviders(int count) =>
+      '確定要刪除選取的 $count 個供應商嗎？';
   @override
   String modelCount(int enabled, int total) => '$enabled/$total 個模型';
   @override

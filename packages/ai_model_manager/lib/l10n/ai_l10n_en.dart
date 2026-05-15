@@ -14,6 +14,8 @@ class AiL10nEn extends AiL10n {
   @override
   String get edit => 'Edit';
   @override
+  String get manage => 'Manage';
+  @override
   String get remove => 'Remove';
   @override
   String get test => 'Test';
@@ -114,6 +116,8 @@ class AiL10nEn extends AiL10n {
   @override
   String get aiModelService => 'AI Model Service';
   @override
+  String get providersTitle => 'Providers';
+  @override
   String get addProvider => 'Add Provider';
   @override
   String get editProvider => 'Edit Provider';
@@ -127,6 +131,21 @@ class AiL10nEn extends AiL10n {
   @override
   String confirmDeleteProvider(String name) =>
       'Are you sure you want to delete provider "$name"?';
+  @override
+  String get pinProvider => 'Pin';
+  @override
+  String get unpinProvider => 'Unpin';
+  @override
+  String get pinnedProvidersSection => 'Pinned Providers';
+  @override
+  String get otherProvidersSection => 'Other Providers';
+  @override
+  String selectedProviderCount(int count) => '$count selected';
+  @override
+  String get deleteSelectedProviders => 'Delete Selected';
+  @override
+  String confirmDeleteSelectedProviders(int count) =>
+      'Delete the selected $count providers?';
   @override
   String modelCount(int enabled, int total) => '$enabled/$total models';
   @override
