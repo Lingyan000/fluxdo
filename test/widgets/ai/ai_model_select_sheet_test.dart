@@ -31,22 +31,24 @@ void main() {
         type: AiProviderType.openai,
         baseUrl: 'https://example.com/2',
         models: const [
-          AiModel(id: 'gamma-image', name: 'Gamma Image', output: [Modality.image]),
+          AiModel(
+            id: 'gamma-image',
+            name: 'Gamma Image',
+            output: [Modality.image],
+          ),
         ],
       ),
     ];
 
     SharedPreferences.setMockInitialValues({
       'ai_providers': jsonEncode(providers.map((e) => e.toJson()).toList()),
-      'ai_favorite_model_keys': ['p1:alpha'],
+      'ai_favorite_model_keys': ['p1:alpha', 'p2:gamma-image'],
     });
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          aiSharedPreferencesProvider.overrideWithValue(prefs),
-        ],
+        overrides: [aiSharedPreferencesProvider.overrideWithValue(prefs)],
         child: TranslationProvider(
           child: MaterialApp(
             localizationsDelegates: const [
@@ -63,8 +65,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows favorites dock and selecting a model closes sheet',
-      (tester) async {
+  testWidgets('shows favorites dock and selecting a model closes sheet', (
+    tester,
+  ) async {
     await pumpHost(tester);
 
     await tester.tap(find.text('open'));
@@ -83,6 +86,87 @@ void main() {
 
     expect(find.text('selected:beta'), findsOneWidget);
     expect(find.text('收藏模型'), findsNothing);
+  });
+
+  testWidgets('text mode favorites still show image models', (tester) async {
+    await pumpHost(tester);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final favoritesSection = find.byKey(const ValueKey('section_favorites'));
+    expect(favoritesSection, findsOneWidget);
+    expect(
+      find.descendant(of: favoritesSection, matching: find.text('Gamma Image')),
+      findsOneWidget,
+    );
+    expect(find.byType(ReorderableDragStartListener), findsNothing);
+    expect(find.byType(ReorderableDelayedDragStartListener), findsWidgets);
+  });
+
+  testWidgets('search keeps favorite match visible but disables drag', (
+    tester,
+  ) async {
+    await pumpHost(tester);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Gamma');
+    await tester.pumpAndSettle();
+
+    final favoritesSection = find.byKey(const ValueKey('section_favorites'));
+    expect(favoritesSection, findsOneWidget);
+    expect(
+      find.descendant(of: favoritesSection, matching: find.text('Gamma Image')),
+      findsOneWidget,
+    );
+    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
+  });
+
+  testWidgets('favorite reorder persists after reopening sheet', (
+    tester,
+  ) async {
+    await pumpHost(tester);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final alphaRow = find.byKey(const ValueKey('favorite_row_p1_alpha'));
+    final gammaRow = find.byKey(const ValueKey('favorite_row_p2_gamma-image'));
+    expect(
+      tester.getTopLeft(alphaRow).dy,
+      lessThan(tester.getTopLeft(gammaRow).dy),
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(gammaRow));
+    await tester.pump(const Duration(milliseconds: 700));
+    await gesture.moveBy(const Offset(0, -80));
+    await tester.pumpAndSettle();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(gammaRow).dy,
+      lessThan(tester.getTopLeft(alphaRow).dy),
+    );
+
+    await tester.tap(gammaRow);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('favorite_row_p2_gamma-image')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('favorite_row_p1_alpha')))
+            .dy,
+      ),
+    );
   });
 }
 

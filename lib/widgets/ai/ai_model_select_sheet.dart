@@ -1,4 +1,4 @@
-﻿import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
@@ -21,11 +21,8 @@ Future<({AiProvider provider, AiModel model})?> showAiModelSelectSheet({
     isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _AiModelSelectSheet(
-      allModels: allModels,
-      current: current,
-      mode: mode,
-    ),
+    builder: (ctx) =>
+        _AiModelSelectSheet(allModels: allModels, current: current, mode: mode),
   );
 }
 
@@ -63,7 +60,8 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
     final mediaQuery = MediaQuery.of(context);
     final maxHeight = mediaQuery.size.height * 0.85;
     final favoriteKeys = ref.watch(favoriteAiModelKeysProvider);
-    final favoriteModels = ref.watch(favoriteAiModelsProvider(widget.mode));
+    final favoriteModels = ref.watch(allFavoriteAiModelsProvider);
+    final canReorderFavorites = _query.trim().isEmpty;
 
     final filtered = _filterModels(widget.allModels);
     final visibleFavorites = _filterModels(favoriteModels);
@@ -131,9 +129,14 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
             Flexible(
               child: sections.isEmpty
                   ? _buildEmpty(theme)
-                  : _buildList(sections, favoriteKeys, theme),
+                  : _buildScrollableContent(
+                      sections,
+                      favoriteKeys,
+                      theme,
+                      canReorderFavorites,
+                    ),
             ),
-            if (sections.length > 1)
+            if (_shouldShowProviderDock(sections))
               _buildProviderDock(sections, favoriteKeys, theme),
           ],
         ),
@@ -146,12 +149,16 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
   ) {
     final query = _query.trim().toLowerCase();
     if (query.isEmpty) return models;
-    return models.where((item) {
-      final name = (item.model.name ?? item.model.id).toLowerCase();
-      final id = item.model.id.toLowerCase();
-      final provider = item.provider.name.toLowerCase();
-      return name.contains(query) || id.contains(query) || provider.contains(query);
-    }).toList(growable: false);
+    return models
+        .where((item) {
+          final name = (item.model.name ?? item.model.id).toLowerCase();
+          final id = item.model.id.toLowerCase();
+          final provider = item.provider.name.toLowerCase();
+          return name.contains(query) ||
+              id.contains(query) ||
+              provider.contains(query);
+        })
+        .toList(growable: false);
   }
 
   List<_SectionData> _buildSections(
@@ -210,26 +217,57 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
     );
   }
 
-  Widget _buildList(
+  Widget _buildScrollableContent(
     List<_SectionData> sections,
     List<String> favoriteKeys,
     ThemeData theme,
+    bool canReorderFavorites,
   ) {
-    return ListView.builder(
+    return CustomScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-      itemCount: sections.length,
-      itemBuilder: (context, index) {
-        final section = sections[index];
-        return AutoScrollTag(
-          key: ValueKey('section_${section.id}'),
-          controller: _scrollController,
-          index: index,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+          sliver: SliverMainAxisGroup(
+            slivers: [
+              for (var index = 0; index < sections.length; index++) ...[
+                _buildSectionHeaderSliver(sections[index], index, theme),
+                if (sections[index].isFavorites && canReorderFavorites)
+                  _buildReorderableFavoriteSectionSliver(
+                    sections[index].items,
+                    favoriteKeys,
+                  )
+                else
+                  _buildStaticSectionSliver(sections[index], favoriteKeys),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool _shouldShowProviderDock(List<_SectionData> sections) {
+    return sections.length > 1 ||
+        sections.any((section) => section.isFavorites);
+  }
+
+  Widget _buildSectionHeaderSliver(
+    _SectionData section,
+    int index,
+    ThemeData theme,
+  ) {
+    final showFavoriteSortHint = section.isFavorites && _query.trim().isEmpty;
+    return SliverToBoxAdapter(
+      child: AutoScrollTag(
+        key: ValueKey('section_${section.id}'),
+        controller: _scrollController,
+        index: index,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+              Expanded(
                 child: Text(
                   section.title,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -239,24 +277,108 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                   ),
                 ),
               ),
-              for (final item in section.items)
-                _ModelRow(
-                  item: item,
-                  current: widget.current,
-                  isFavorite: favoriteKeys.contains(
-                    buildAiModelKey(item.provider.id, item.model.id),
+              if (showFavoriteSortHint)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
                   ),
-                  onToggleFavorite: () => toggleFavoriteAiModel(
-                    ref,
-                    item.provider.id,
-                    item.model.id,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _favoriteSortHintLabel(context),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaticSectionSliver(
+    _SectionData section,
+    List<String> favoriteKeys,
+  ) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final item = section.items[index];
+        return _buildModelRow(
+          item: item,
+          favoriteKeys: favoriteKeys,
+          favoriteRowKey: section.isFavorites
+              ? ValueKey('favorite_row_${item.provider.id}_${item.model.id}')
+              : null,
+        );
+      }, childCount: section.items.length),
+    );
+  }
+
+  Widget _buildReorderableFavoriteSectionSliver(
+    List<({AiProvider provider, AiModel model})> items,
+    List<String> favoriteKeys,
+  ) {
+    return SliverReorderableList(
+      itemCount: items.length,
+      onReorder: (oldIndex, newIndex) {
+        _handleFavoriteReorder(items, oldIndex, newIndex);
+      },
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return ReorderableDelayedDragStartListener(
+          key: ValueKey('favorite_row_${item.provider.id}_${item.model.id}'),
+          index: index,
+          child: _buildModelRow(item: item, favoriteKeys: favoriteKeys),
         );
       },
     );
+  }
+
+  Future<void> _handleFavoriteReorder(
+    List<({AiProvider provider, AiModel model})> items,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex == newIndex) return;
+
+    var targetIndex = newIndex;
+    if (targetIndex > oldIndex) {
+      targetIndex -= 1;
+    }
+
+    final reorderedKeys = [
+      for (final item in items)
+        buildAiModelKey(item.provider.id, item.model.id),
+    ];
+    final movedKey = reorderedKeys.removeAt(oldIndex);
+    reorderedKeys.insert(targetIndex, movedKey);
+    await reorderFavoriteAiModelKeys(ref, reorderedKeys);
+  }
+
+  Widget _buildModelRow({
+    required ({AiProvider provider, AiModel model}) item,
+    required List<String> favoriteKeys,
+    Key? favoriteRowKey,
+  }) {
+    final row = _ModelRow(
+      item: item,
+      current: widget.current,
+      isFavorite: favoriteKeys.contains(
+        buildAiModelKey(item.provider.id, item.model.id),
+      ),
+      onToggleFavorite: () =>
+          toggleFavoriteAiModel(ref, item.provider.id, item.model.id),
+    );
+    if (favoriteRowKey == null) {
+      return row;
+    }
+    return KeyedSubtree(key: favoriteRowKey, child: row);
   }
 
   Widget _buildProviderDock(
@@ -270,8 +392,9 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
     );
     final currentIsFavorite = favoriteKeys.contains(currentKey);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor =
-        theme.colorScheme.outlineVariant.withValues(alpha: 0.25);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(
+      alpha: 0.25,
+    );
     return Container(
       color: theme.colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -286,10 +409,11 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
             final isCurrent = section.isFavorites
                 ? currentIsFavorite
                 : section.provider?.id == widget.current.provider.id &&
-                    !currentIsFavorite;
+                      !currentIsFavorite;
             final background = isCurrent
-                ? theme.colorScheme.primary
-                    .withValues(alpha: isDark ? 0.08 : 0.05)
+                ? theme.colorScheme.primary.withValues(
+                    alpha: isDark ? 0.08 : 0.05,
+                  )
                 : Colors.transparent;
             return Material(
               color: background,
@@ -306,8 +430,10 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: borderColor),
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -388,7 +514,8 @@ class _ModelRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isCurrent = item.provider.id == current.provider.id &&
+    final isCurrent =
+        item.provider.id == current.provider.id &&
         item.model.id == current.model.id;
     final modelName = item.model.name ?? item.model.id;
     final isImageOut = item.model.output.contains(Modality.image);
@@ -398,103 +525,117 @@ class _ModelRow extends StatelessWidget {
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: () => Navigator.of(context).pop(item),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              ModelIcon(
-                providerName: item.provider.name,
-                modelName: modelName,
-                size: 36,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      modelName,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => Navigator.of(context).pop(item),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      ModelIcon(
+                        providerName: item.provider.name,
+                        modelName: modelName,
+                        size: 36,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (item.model.id != modelName)
-                      Text(
-                        item.model.id,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 11,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              modelName,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: isCurrent
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (item.model.id != modelName)
+                              Text(
+                                item.model.id,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 11,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            if (_hasAnyBadge(item.model, isImageOut)) ...[
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 4,
+                                runSpacing: 2,
+                                children: [
+                                  if (isImageOut)
+                                    _CapabilityBadge(
+                                      icon: Icons.image_outlined,
+                                      label: 'image',
+                                      color: const Color(0xFFEA580C),
+                                    ),
+                                  if (item.model.input.contains(Modality.image))
+                                    _CapabilityBadge(
+                                      icon: Icons.visibility_outlined,
+                                      label: 'vision',
+                                      color: theme.colorScheme.tertiary,
+                                    ),
+                                  if (item.model.abilities.contains(
+                                    ModelAbility.reasoning,
+                                  ))
+                                    _CapabilityBadge(
+                                      icon: Icons.psychology_alt_outlined,
+                                      label: 'reasoning',
+                                      color: theme.colorScheme.secondary,
+                                    ),
+                                  if (item.model.abilities.contains(
+                                    ModelAbility.tool,
+                                  ))
+                                    _CapabilityBadge(
+                                      icon: Icons.build_outlined,
+                                      label: 'tool',
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    if (_hasAnyBadge(item.model, isImageOut)) ...[
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 2,
-                        children: [
-                          if (isImageOut)
-                            _CapabilityBadge(
-                              icon: Icons.image_outlined,
-                              label: 'image',
-                              color: const Color(0xFFEA580C),
-                            ),
-                          if (item.model.input.contains(Modality.image))
-                            _CapabilityBadge(
-                              icon: Icons.visibility_outlined,
-                              label: 'vision',
-                              color: theme.colorScheme.tertiary,
-                            ),
-                          if (item.model.abilities
-                              .contains(ModelAbility.reasoning))
-                            _CapabilityBadge(
-                              icon: Icons.psychology_alt_outlined,
-                              label: 'reasoning',
-                              color: theme.colorScheme.secondary,
-                            ),
-                          if (item.model.abilities.contains(ModelAbility.tool))
-                            _CapabilityBadge(
-                              icon: Icons.build_outlined,
-                              label: 'tool',
-                              color: theme.colorScheme.primary,
-                            ),
-                        ],
                       ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-              IconButton(
-                key: ValueKey(
-                  'favorite_${item.provider.id}_${item.model.id}',
-                ),
-                tooltip: isFavorite
-                    ? _favoriteRemoveLabel(context)
-                    : _favoriteAddLabel(context),
-                onPressed: onToggleFavorite,
-                icon: Icon(
-                  isFavorite ? Icons.favorite : Icons.favorite_border,
-                  size: 20,
-                  color: isFavorite
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              key: ValueKey('favorite_${item.provider.id}_${item.model.id}'),
+              tooltip: isFavorite
+                  ? _favoriteRemoveLabel(context)
+                  : _favoriteAddLabel(context),
+              onPressed: onToggleFavorite,
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                size: 20,
+                color: isFavorite
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
               ),
-              if (isCurrent)
-                Icon(
-                  Icons.check_circle,
-                  size: 20,
-                  color: theme.colorScheme.primary,
-                ),
+            ),
+            if (isCurrent) ...[
+              Icon(
+                Icons.check_circle,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -539,24 +680,34 @@ class _CapabilityBadge extends StatelessWidget {
   }
 }
 
-
 String _favoriteModelsSectionLabel(BuildContext context) {
-  return _isEnglishLocale(context) ? 'Favorite Models' : '\u6536\u85CF\u6A21\u578B';
+  return _isEnglishLocale(context)
+      ? 'Favorite Models'
+      : '\u6536\u85CF\u6A21\u578B';
 }
 
 String _favoriteDockLabel(BuildContext context) {
   return _isEnglishLocale(context) ? 'Favorites' : '\u6536\u85CF';
 }
 
+String _favoriteSortHintLabel(BuildContext context) {
+  return _isEnglishLocale(context)
+      ? 'Long press to sort'
+      : '\u957F\u6309\u6392\u5E8F';
+}
+
 String _favoriteAddLabel(BuildContext context) {
-  return _isEnglishLocale(context) ? 'Favorite model' : '\u6536\u85CF\u6A21\u578B';
+  return _isEnglishLocale(context)
+      ? 'Favorite model'
+      : '\u6536\u85CF\u6A21\u578B';
 }
 
 String _favoriteRemoveLabel(BuildContext context) {
-  return _isEnglishLocale(context) ? 'Remove favorite' : '\u53D6\u6D88\u6536\u85CF';
+  return _isEnglishLocale(context)
+      ? 'Remove favorite'
+      : '\u53D6\u6D88\u6536\u85CF';
 }
 
 bool _isEnglishLocale(BuildContext context) {
   return Localizations.localeOf(context).languageCode.toLowerCase() == 'en';
 }
-

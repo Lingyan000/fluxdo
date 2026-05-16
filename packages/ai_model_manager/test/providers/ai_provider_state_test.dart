@@ -112,8 +112,10 @@ void main() {
       await notifier.reorderPinned(0, 1);
       await notifier.reorderUnpinned(1, 0);
 
-      final ids =
-          container.read(aiProviderListProvider).map((item) => item.id).toList();
+      final ids = container
+          .read(aiProviderListProvider)
+          .map((item) => item.id)
+          .toList();
       expect(ids, ['b', 'a', 'd', 'c']);
     });
 
@@ -135,8 +137,10 @@ void main() {
           .read(aiProviderListProvider.notifier)
           .removeProviders(['a', 'b']);
 
-      final remaining =
-          container.read(aiProviderListProvider).map((item) => item.id).toList();
+      final remaining = container
+          .read(aiProviderListProvider)
+          .map((item) => item.id)
+          .toList();
       expect(remaining, ['c']);
       expect(prefs.getString('__secure_fallback__ai_provider_key_a'), isNull);
       expect(prefs.getString('__secure_fallback__ai_provider_key_b'), isNull);
@@ -195,13 +199,70 @@ void main() {
         favoriteKeys: ['a:image-a', 'missing:model', 'a:text:a'],
       );
 
+      final allFavorites = container.read(allFavoriteAiModelsProvider);
       final textFavorites =
           container.read(favoriteAiModelsProvider(PromptType.text));
       final imageFavorites =
           container.read(favoriteAiModelsProvider(PromptType.image));
 
+      expect(
+        allFavorites.map((item) => item.model.id).toList(),
+        ['image-a', 'text:a'],
+      );
       expect(textFavorites.map((item) => item.model.id).toList(), ['text:a']);
       expect(imageFavorites.map((item) => item.model.id).toList(), ['image-a']);
+    });
+
+    test('reorder favorite keys keeps storage and provider state in sync',
+        () async {
+      await bootstrap(
+        providers: [
+          provider('a', models: const [
+            AiModel(id: 'text-a', output: [Modality.text]),
+          ]),
+          provider('b', models: const [
+            AiModel(id: 'image-b', output: [Modality.image]),
+          ]),
+        ],
+        favoriteKeys: ['a:text-a', 'b:image-b'],
+      );
+
+      final reorderedKeys = reorderFavoriteAiModelKeyOrder(
+        container.read(favoriteAiModelKeysProvider),
+        ['b:image-b', 'a:text-a'],
+      );
+
+      await prefs.setStringList('ai_favorite_model_keys', reorderedKeys);
+      container.read(favoriteAiModelKeysProvider.notifier).state =
+          reorderedKeys;
+
+      expect(
+        prefs.getStringList('ai_favorite_model_keys'),
+        ['b:image-b', 'a:text-a'],
+      );
+      expect(
+        container.read(favoriteAiModelKeysProvider),
+        ['b:image-b', 'a:text-a'],
+      );
+      expect(
+        container
+            .read(allFavoriteAiModelsProvider)
+            .map((item) => item.model.id)
+            .toList(),
+        ['image-b', 'text-a'],
+      );
+    });
+
+    test(
+        'reorder helper preserves invalid keys while reordering valid favorites',
+        () {
+      expect(
+        reorderFavoriteAiModelKeyOrder(
+          ['missing:model', 'a:text-a', 'ghost:item', 'b:image-b'],
+          ['b:image-b', 'a:text-a'],
+        ),
+        ['b:image-b', 'a:text-a', 'missing:model', 'ghost:item'],
+      );
     });
   });
 }
