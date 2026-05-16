@@ -11,6 +11,7 @@ import 'draggable_divider.dart';
 class MasterDetailLayout extends StatefulWidget {
   static const double defaultMasterWidth = 380;
   static const double defaultMinDetailWidth = 400;
+  static const double desktopMasterWidthRatio = 0.28;
   static const double minMasterWidth = 280;
   static const double maxMasterWidth = 520;
 
@@ -53,7 +54,9 @@ class MasterDetailLayout extends StatefulWidget {
     double minDetailWidth = defaultMinDetailWidth,
   }) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final computed = screenWidth >= masterWidth + minDetailWidth && !Responsive.isMobile(context);
+    final computed =
+        screenWidth >= masterWidth + minDetailWidth &&
+        !Responsive.isMobile(context);
     return LayoutLock.resolveCanShowBoth(computed: computed);
   }
 
@@ -73,11 +76,32 @@ class MasterDetailLayout extends StatefulWidget {
 class _MasterDetailLayoutState extends State<MasterDetailLayout> {
   late double _currentMasterWidth;
   double? _dragStartWidth;
+  bool _hasUserResized = false;
 
   @override
   void initState() {
     super.initState();
     _currentMasterWidth = widget.masterWidth;
+  }
+
+  double _preferredMasterWidth(double totalWidth) {
+    if (_hasUserResized) return _currentMasterWidth;
+
+    final proportionalWidth =
+        totalWidth * MasterDetailLayout.desktopMasterWidthRatio;
+    return proportionalWidth.clamp(
+      widget.masterWidth,
+      MasterDetailLayout.maxMasterWidth,
+    );
+  }
+
+  double _clampMasterWidth(double width, double totalWidth) {
+    final maxAllowed = totalWidth - widget.minDetailWidth;
+    final upperBound = maxAllowed.clamp(
+      MasterDetailLayout.minMasterWidth,
+      MasterDetailLayout.maxMasterWidth,
+    );
+    return width.clamp(MasterDetailLayout.minMasterWidth, upperBound);
   }
 
   @override
@@ -89,13 +113,9 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
         final totalWidth = constraints.maxWidth;
         final showBothPanes = widget.canShowBothPanes(context);
 
-        // 根据可用宽度动态限制 master 宽度
-        final maxAllowed = totalWidth - MasterDetailLayout.defaultMinDetailWidth;
-        final clampedWidth = _currentMasterWidth.clamp(
-          MasterDetailLayout.minMasterWidth,
-          maxAllowed.clamp(MasterDetailLayout.minMasterWidth, MasterDetailLayout.maxMasterWidth),
-        );
-        final mWidth = showBothPanes ? clampedWidth : totalWidth;
+        final preferredWidth = _preferredMasterWidth(totalWidth);
+        final masterWidth = _clampMasterWidth(preferredWidth, totalWidth);
+        final mWidth = showBothPanes ? masterWidth : totalWidth;
 
         final row = Row(
           children: [
@@ -117,7 +137,10 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
             if (showBothPanes) ...[
               const VerticalDivider(width: 1, thickness: 1),
               Expanded(
-                child: widget.detail ?? widget.emptyDetail ?? _buildEmptyState(context),
+                child:
+                    widget.detail ??
+                    widget.emptyDetail ??
+                    _buildEmptyState(context),
               ),
             ],
           ],
@@ -134,13 +157,15 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
               bottom: 0,
               width: 16,
               child: DraggableDivider(
-                onResizeStart: () => _dragStartWidth = _currentMasterWidth,
+                onResizeStart: () => _dragStartWidth = masterWidth,
                 onResizeUpdate: (globalX, startX) {
                   setState(() {
                     final desired = _dragStartWidth! + (globalX - startX);
-                    final maxW = (totalWidth - MasterDetailLayout.defaultMinDetailWidth)
-                        .clamp(MasterDetailLayout.minMasterWidth, MasterDetailLayout.maxMasterWidth);
-                    _currentMasterWidth = desired.clamp(MasterDetailLayout.minMasterWidth, maxW);
+                    _currentMasterWidth = _clampMasterWidth(
+                      desired,
+                      totalWidth,
+                    );
+                    _hasUserResized = true;
                   });
                 },
               ),

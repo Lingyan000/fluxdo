@@ -84,6 +84,10 @@ class AdaptiveScaffold extends ConsumerWidget {
                     onDestinationSelected(index);
                   },
                   destinations: destinations,
+                  topDestinationCount: destinations.isEmpty ? 0 : 1,
+                  bottomDestinationCount: destinations.length <= 1
+                      ? 0
+                      : destinations.length - 1,
                   categoryShortcuts: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
