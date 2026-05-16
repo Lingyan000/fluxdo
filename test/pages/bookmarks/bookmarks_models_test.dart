@@ -82,6 +82,19 @@ void main() {
     expect(suggestions, ['image', 'beta']);
   });
 
+  test('未设置汇总固定排在全部之后的第一个筛选项', () {
+    final summaries = buildBookmarkNameSummaries([
+      _bookmarkTopic(topicId: 1, bookmarkId: 101, bookmarkName: 'image'),
+      _bookmarkTopic(topicId: 2, bookmarkId: 102, bookmarkName: 'beta'),
+      _bookmarkTopic(topicId: 3, bookmarkId: 103, bookmarkName: '   '),
+    ]);
+
+    expect(
+      summaries.map((summary) => summary.filterKey),
+      [unsetBookmarkNameFilterKey, 'beta', 'image'],
+    );
+  });
+
   test('重复页不再产生新书签时会停止继续拉取', () async {
     final requestedPages = <String>[];
 

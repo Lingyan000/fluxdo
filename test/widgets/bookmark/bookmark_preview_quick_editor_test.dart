@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/l10n/app_localizations.dart';
-import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/widgets/bookmark/bookmark_preview_quick_editor.dart';
 
 void main() {
@@ -132,5 +131,32 @@ void main() {
 
     expect(find.byType(Dialog), findsOneWidget);
     expect(find.text('draft-name'), findsOneWidget);
+  });
+
+  testWidgets('快速编辑输入框默认不自动聚焦', (tester) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocaleUtils.supportedLocales,
+          home: Scaffold(
+            body: BookmarkPreviewQuickEditor(
+              suggestions: const ['cached'],
+              onSave: (_) async => true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.autofocus, isFalse);
   });
 }

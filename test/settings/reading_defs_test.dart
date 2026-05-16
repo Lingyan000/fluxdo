@@ -64,23 +64,23 @@ void main() {
     expect(items.map((item) => item.id), contains('bookmarksOpenMode'));
   });
 
-  testWidgets('桌面窄屏不显示默认打开标签页方式设置', (tester) async {
+  testWidgets('桌面窄屏显示默认打开标签页方式设置', (tester) async {
     final items = await _pumpAndCollectBasicItems(
       tester,
       size: const Size(900, 900),
       desktopOverride: true,
     );
 
-    expect(items.map((item) => item.id), isNot(contains('bookmarksOpenMode')));
+    expect(items.map((item) => item.id), contains('bookmarksOpenMode'));
   });
 
-  testWidgets('非桌面端不显示默认打开标签页方式设置', (tester) async {
+  testWidgets('手机端显示默认打开标签页方式设置', (tester) async {
     final items = await _pumpAndCollectBasicItems(
       tester,
-      size: const Size(1400, 900),
+      size: const Size(390, 844),
       desktopOverride: false,
     );
 
-    expect(items.map((item) => item.id), isNot(contains('bookmarksOpenMode')));
+    expect(items.map((item) => item.id), contains('bookmarksOpenMode'));
   });
 }

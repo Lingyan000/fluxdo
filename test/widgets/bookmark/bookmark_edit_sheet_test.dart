@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/l10n/app_localizations.dart';
+import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/widgets/bookmark/bookmark_edit_sheet.dart';
 
@@ -71,5 +71,69 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('icon'), findsOneWidget);
+  });
+
+  testWidgets('窄屏且键盘弹起时编辑面板仍可滚动显示', (tester) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          navigatorKey: navigatorKey,
+          supportedLocales: AppLocaleUtils.supportedLocales,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(320, 480),
+              viewInsets: EdgeInsets.only(bottom: 180),
+            ),
+            child: Scaffold(
+              body: BookmarkEditSheet(
+                bookmarkId: 1,
+                initialReminderAt: DateTime(2026, 5, 13, 12, 34),
+                nameSuggestions: const ['cached'],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('初始书签名为问号时输入框会视为空值', (tester) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          navigatorKey: navigatorKey,
+          supportedLocales: AppLocaleUtils.supportedLocales,
+          home: Scaffold(
+            body: BookmarkEditSheet(
+              bookmarkId: 1,
+              initialName: '?',
+              nameSuggestions: const ['image'],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextFormField>(find.byType(TextFormField));
+    expect(field.controller?.text, isEmpty);
   });
 }

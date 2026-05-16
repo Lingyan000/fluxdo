@@ -30,6 +30,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/screen_track.dart';
 import '../../services/toast_service.dart';
 import '../../services/log/log_writer.dart';
+import '../../services/log/bookmark_edit_trace.dart';
 import '../../services/navigation/app_route_observer.dart';
 import '../../widgets/content/lazy_load_scope.dart';
 import '../../widgets/post/post_item_skeleton.dart';
@@ -53,11 +54,14 @@ import '../../widgets/layout/master_detail_layout.dart';
 import '../../widgets/share/share_image_preview.dart';
 import '../../widgets/share/export_sheet.dart';
 import '../../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
+import '../../widgets/bookmark/mobile_topic_workspace_app_bar.dart';
 import '../../widgets/search/topic_search_view.dart';
 import '../../providers/read_later_provider.dart';
 import '../../models/read_later_item.dart';
 import '../../providers/topic_search_provider.dart';
 import '../edit_topic_page.dart';
+import 'topic_bookmark_edit_target.dart';
+import 'topic_more_menu_actions.dart';
 import 'widgets/ai_chat_page.dart';
 import 'widgets/ai_chat_guide.dart';
 import '../../utils/dialog_utils.dart';
@@ -84,6 +88,15 @@ class TopicDetailPage extends ConsumerStatefulWidget {
   final bool autoOpenAiChat; // 自动打开 AI 聊天面板
   final String? initialSessionId; // AI 聊天初始会话 ID
   final String? highlightBoostUsername; // 高亮指定用户的 boost（从 boost 通知跳转时使用）
+  final int? initialBookmarkId;
+  final String? initialBookmarkName;
+  final DateTime? initialBookmarkReminderAt;
+  final String? initialBookmarkableType;
+  final VoidCallback? onEmbeddedBack;
+  final VoidCallback? onEmbeddedClose;
+  final int? embeddedTabCount;
+  final VoidCallback? onEmbeddedShowTabs;
+  final bool hideInlineHeaderTitle;
 
   const TopicDetailPage({
     super.key,
@@ -99,6 +112,15 @@ class TopicDetailPage extends ConsumerStatefulWidget {
     this.autoOpenAiChat = false,
     this.initialSessionId,
     this.highlightBoostUsername,
+    this.initialBookmarkId,
+    this.initialBookmarkName,
+    this.initialBookmarkReminderAt,
+    this.initialBookmarkableType,
+    this.onEmbeddedBack,
+    this.onEmbeddedClose,
+    this.embeddedTabCount,
+    this.onEmbeddedShowTabs,
+    this.hideInlineHeaderTitle = false,
   });
 
   @override
@@ -164,10 +186,23 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     ref: ref,
     scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
   );
+  late int? _fallbackBookmarkId = widget.initialBookmarkId;
+  late String? _fallbackBookmarkName = widget.initialBookmarkName;
+  late DateTime? _fallbackBookmarkReminderAt = widget.initialBookmarkReminderAt;
+  late String? _fallbackBookmarkableType = widget.initialBookmarkableType;
   ModalRoute<dynamic>? _route;
   bool _isRouteVisible = true;
   bool _isParentActive = true;
   bool _isScreenTrackRunning = false;
+
+  bool get _usesEmbeddedMobileWorkspaceChrome {
+    return widget.embeddedMode &&
+        PlatformUtils.isMobile &&
+        widget.onEmbeddedBack != null &&
+        widget.onEmbeddedClose != null &&
+        widget.embeddedTabCount != null &&
+        widget.onEmbeddedShowTabs != null;
+  }
 
   int? get _resolvedViewportPostNumber =>
       _controller.viewportPostNumber ?? widget.scrollToPostNumber;
@@ -300,7 +335,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       },
       ShortcutAction.bookmarkTopic: () {
         if (!mounted) return;
-        _handleBookmark(ref.read(topicDetailProvider(_params).notifier));
+        final traceId = createBookmarkEditTraceId();
+        writeBookmarkEditTrace(
+          phase: 'shortcut_triggered',
+          traceId: traceId,
+          source: 'topic_detail_topic_shortcut',
+          message: '详情页快捷键触发编辑书签',
+          topicId: widget.topicId,
+          selectedAction: 'bookmark',
+        );
+        _handleBookmark(
+          ref.read(topicDetailProvider(_params).notifier),
+          traceId: traceId,
+          source: 'topic_detail_topic_shortcut',
+        );
       },
       ShortcutAction.replyPost: () {
         if (!mounted) return;
@@ -372,6 +420,16 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void didUpdateWidget(covariant TopicDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialBookmarkId != widget.initialBookmarkId ||
+        oldWidget.initialBookmarkName != widget.initialBookmarkName ||
+        oldWidget.initialBookmarkReminderAt !=
+            widget.initialBookmarkReminderAt ||
+        oldWidget.initialBookmarkableType != widget.initialBookmarkableType) {
+      _fallbackBookmarkId = widget.initialBookmarkId;
+      _fallbackBookmarkName = widget.initialBookmarkName;
+      _fallbackBookmarkReminderAt = widget.initialBookmarkReminderAt;
+      _fallbackBookmarkableType = widget.initialBookmarkableType;
+    }
     if (oldWidget.parentActive != widget.parentActive) {
       _isParentActive = widget.parentActive;
       _syncScreenTrackState(
@@ -695,6 +753,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               final expandProgress = _expandController.value;
               final shouldShowTitle = showTitle || !_hasFirstPost;
 
+              if (_usesEmbeddedMobileWorkspaceChrome) {
+                return _buildEmbeddedMobileWorkspaceAppBar(
+                  theme: theme,
+                  detail: detail,
+                  notifier: notifier,
+                  elevation: currentElevation,
+                );
+              }
+
               return AppBar(
                 automaticallyImplyLeading: !widget.embeddedMode,
                 elevation: currentElevation,
@@ -791,6 +858,132 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
+  bool _canEditTopic(TopicDetail detail) {
+    final firstPost = detail.postStream.posts
+        .where((p) => p.postNumber == 1)
+        .firstOrNull;
+    return detail.canEdit || (firstPost?.canEdit ?? false);
+  }
+
+  TopicBookmarkEditTarget? _bookmarkEditTarget(TopicDetail detail) {
+    return resolveTopicBookmarkEditTarget(
+      detail: detail,
+      fallbackBookmarkId: _fallbackBookmarkId,
+      fallbackBookmarkName: _fallbackBookmarkName,
+      fallbackBookmarkReminderAt: _fallbackBookmarkReminderAt,
+      fallbackBookmarkableType: _fallbackBookmarkableType,
+      scrollToPostNumber: widget.scrollToPostNumber,
+    );
+  }
+
+  PreferredSizeWidget _buildEmbeddedMobileWorkspaceAppBar({
+    required ThemeData theme,
+    required TopicDetail? detail,
+    required TopicDetailNotifier notifier,
+    required double elevation,
+  }) {
+    return MobileTopicWorkspaceAppBar(
+      backButtonKey: const ValueKey('bookmark-workspace-mobile-back'),
+      closeButtonKey: const ValueKey('bookmark-workspace-mobile-close'),
+      backgroundColor: theme.colorScheme.surface,
+      elevation: elevation,
+      scrolledUnderElevation: elevation,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: theme.colorScheme.surfaceTint.withValues(alpha: 1),
+      onBack: widget.onEmbeddedBack!,
+      onClose: widget.onEmbeddedClose!,
+      title: _buildEmbeddedMobileWorkspaceTitle(theme, detail),
+      actions: [
+        _buildSearchAction(),
+        MobileWorkspaceCountButton(
+          key: const ValueKey('bookmark-workspace-mobile-count-button'),
+          count: widget.embeddedTabCount!,
+          tooltip: '已打开 ${widget.embeddedTabCount!} 个',
+          onPressed: widget.onEmbeddedShowTabs,
+        ),
+        if (detail != null)
+          _buildMoreMenuAction(
+            detail: detail,
+            notifier: notifier,
+            canEditTopic: _canEditTopic(detail),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildEmbeddedMobileWorkspaceTitle(
+    ThemeData theme,
+    TopicDetail? detail,
+  ) {
+    return GestureDetector(
+      onTap: detail == null ? null : _toggleExpandedHeader,
+      child: Text.rich(
+        TextSpan(
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+          children: [
+            if (detail?.isPrivateMessage ?? false)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    Icons.mail_outline,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            if (detail?.closed ?? false)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    Icons.lock_outline,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            if (detail?.hasAcceptedAnswer ?? false)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(Icons.check_box, size: 16, color: Colors.green),
+                ),
+              ),
+            ...EmojiText.buildEmojiSpans(
+              context,
+              detail?.title ?? widget.initialTitle ?? '',
+              theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        key: const ValueKey('bookmark-workspace-mobile-title-text'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _buildSearchAction() {
+    return IconButton(
+      key: _usesEmbeddedMobileWorkspaceChrome
+          ? const ValueKey('bookmark-workspace-mobile-search')
+          : null,
+      icon: const Icon(Icons.search),
+      tooltip: context.l10n.topicDetail_searchTopic,
+      onPressed: () {
+        ref
+            .read(topicSearchProvider(widget.topicId).notifier)
+            .enterSearchMode();
+      },
+    );
+  }
+
   /// 构建 AppBar Actions
   List<Widget> _buildAppBarActions({
     required TopicDetail? detail,
@@ -802,11 +995,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return [];
     }
 
-    // 编辑话题入口：可以编辑话题元数据 或 可以编辑首贴内容
-    final firstPost = detail.postStream.posts
-        .where((p) => p.postNumber == 1)
-        .firstOrNull;
-    final canEditTopic = detail.canEdit || (firstPost?.canEdit ?? false);
+    final canEditTopic = _canEditTopic(detail);
 
     final useSwipeEntry = ref.watch(
       preferencesProvider.select((p) => p.aiSwipeEntry),
@@ -820,248 +1009,280 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           tooltip: context.l10n.topicDetail_aiAssistant,
           onPressed: () => _showAiAssistantSheet(detail),
         ),
-      // 搜索按钮
-      IconButton(
-        icon: const Icon(Icons.search),
-        tooltip: context.l10n.topicDetail_searchTopic,
-        onPressed: () {
-          ref
-              .read(topicSearchProvider(widget.topicId).notifier)
-              .enterSearchMode();
-        },
-      ),
-      // 更多选项
-      SwipeDismissiblePopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert),
-        tooltip: context.l10n.topicDetail_moreOptions,
-        onSelected: (value) {
-          switch (value) {
-            case 'edit_topic':
-              _handleEditTopic();
-            case 'bookmark':
-              _handleBookmark(notifier);
-            case 'read_later':
-              _handleReadLater();
-            case 'subscribe':
-              showNotificationLevelSheet(
-                context,
-                detail.notificationLevel,
-                (level) => _handleNotificationLevelChanged(notifier, level),
-              );
-            case 'share_link':
-              _shareTopic();
-            case 'share_image':
-              _shareAsImage();
-            case 'export':
-              _showExportSheet();
-            case 'open_in_browser':
-              _openInBrowser();
-            case 'filter':
-              _showFilterSheet();
-            case 'reading_settings':
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
-              );
-          }
-        },
-        itemBuilder: (context) => [
-          if (canEditTopic)
-            PopupMenuItem(
-              value: 'edit_topic',
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.edit_outlined,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.topicDetail_editTopic),
-                ],
-              ),
-            ),
-          PopupMenuItem(
-            value: 'bookmark',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  detail.bookmarked ? Icons.bookmark : Icons.bookmark_border,
-                  size: 20,
-                  color: detail.bookmarked
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  detail.bookmarked
-                      ? context.l10n.topicDetail_editBookmark
-                      : context.l10n.common_addBookmark,
-                ),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: 'read_later',
-            child: Builder(
-              builder: (context) {
-                final isInReadLater = ref
-                    .read(readLaterProvider.notifier)
-                    .contains(widget.topicId);
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isInReadLater ? Icons.layers : Icons.layers_outlined,
-                      size: 20,
-                      color: isInReadLater
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      isInReadLater
-                          ? context.l10n.topicDetail_removeFromReadLater
-                          : context.l10n.topicDetail_addToReadLater,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          PopupMenuItem(
-            value: 'subscribe',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  TopicNotificationButton.getIcon(detail.notificationLevel),
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(context.l10n.topic_notificationSettings),
-              ],
-            ),
-          ),
-          const PopupMenuDivider(),
-          if (!detail.isPrivateMessage)
-            PopupMenuItem(
-              value: 'share_link',
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.link,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.topicDetail_shareLink),
-                ],
-              ),
-            ),
-          if (!detail.isPrivateMessage)
-            PopupMenuItem(
-              value: 'share_image',
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.image_outlined,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.topicDetail_generateShareImage),
-                ],
-              ),
-            ),
-          PopupMenuItem(
-            value: 'export',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.download_outlined,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(context.l10n.topicDetail_exportArticle),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: 'open_in_browser',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.language,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(context.l10n.topicDetail_openInBrowser),
-              ],
-            ),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'filter',
-            child: Builder(
-              builder: (context) {
-                final hasFilter =
-                    notifier.isSummaryMode ||
-                    notifier.isAuthorOnlyMode ||
-                    notifier.isTopLevelMode ||
-                    _isNestedView;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.filter_list,
-                      size: 20,
-                      color: hasFilter
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      context.l10n.topicDetail_filter,
-                      style: hasFilter
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                            )
-                          : null,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'reading_settings',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.auto_stories_rounded,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(context.l10n.settings_reading),
-              ],
-            ),
-          ),
-        ],
+      _buildSearchAction(),
+      _buildMoreMenuAction(
+        detail: detail,
+        notifier: notifier,
+        canEditTopic: canEditTopic,
       ),
     ];
+  }
+
+  Widget _buildMoreMenuAction({
+    required TopicDetail detail,
+    required TopicDetailNotifier notifier,
+    required bool canEditTopic,
+  }) {
+    final bookmarkTarget = _bookmarkEditTarget(detail);
+    final hasEditableBookmark = bookmarkTarget != null || detail.bookmarked;
+    return SwipeDismissiblePopupMenuButton<String>(
+      key: _usesEmbeddedMobileWorkspaceChrome
+          ? const ValueKey('bookmark-workspace-mobile-more')
+          : null,
+      icon: const Icon(Icons.more_vert),
+      tooltip: context.l10n.topicDetail_moreOptions,
+      onSelected: (value) {
+        final bookmarkTraceTarget = value == 'bookmark'
+            ? _bookmarkEditTarget(detail)
+            : null;
+        final bookmarkTraceId = value == 'bookmark'
+            ? createBookmarkEditTraceId()
+            : null;
+        if (bookmarkTraceId != null) {
+          writeBookmarkEditTrace(
+            phase: 'menu_selected',
+            traceId: bookmarkTraceId,
+            source: 'topic_detail_topic_menu',
+            message: '详情页更多菜单已选中编辑书签',
+            topicId: widget.topicId,
+            postId: bookmarkTraceTarget?.postId,
+            bookmarkId: bookmarkTraceTarget?.bookmarkId ?? detail.bookmarkId,
+            bookmarkName:
+                bookmarkTraceTarget?.initialName ?? detail.bookmarkName,
+            bookmarked: detail.bookmarked,
+            hasReminder:
+                bookmarkTraceTarget?.initialReminderAt != null ||
+                detail.bookmarkReminderAt != null,
+            selectedAction: value,
+          );
+        }
+        handleTopicDetailMoreMenuSelection(
+          value,
+          onEditTopic: () => unawaited(_handleEditTopic()),
+          onBookmark: () => unawaited(
+            _handleBookmark(
+              notifier,
+              traceId: bookmarkTraceId,
+              source: 'topic_detail_topic_menu',
+            ),
+          ),
+          onReadLater: _handleReadLater,
+          onSubscribe: () {
+            showNotificationLevelSheet(
+              context,
+              detail.notificationLevel,
+              (level) => _handleNotificationLevelChanged(notifier, level),
+            );
+          },
+          onShareLink: _shareTopic,
+          onShareImage: _shareAsImage,
+          onExport: _showExportSheet,
+          onOpenInBrowser: _openInBrowser,
+          onFilter: _showFilterSheet,
+          onReadingSettings: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
+            );
+          },
+        );
+      },
+      itemBuilder: (context) => [
+        if (canEditTopic)
+          PopupMenuItem(
+            value: 'edit_topic',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.edit_outlined,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_editTopic),
+              ],
+            ),
+          ),
+        PopupMenuItem(
+          value: 'bookmark',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasEditableBookmark ? Icons.bookmark : Icons.bookmark_border,
+                size: 20,
+                color: hasEditableBookmark
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                hasEditableBookmark
+                    ? context.l10n.topicDetail_editBookmark
+                    : context.l10n.common_addBookmark,
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'read_later',
+          child: Builder(
+            builder: (context) {
+              final isInReadLater = ref
+                  .read(readLaterProvider.notifier)
+                  .contains(widget.topicId);
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isInReadLater ? Icons.layers : Icons.layers_outlined,
+                    size: 20,
+                    color: isInReadLater
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    isInReadLater
+                        ? context.l10n.topicDetail_removeFromReadLater
+                        : context.l10n.topicDetail_addToReadLater,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        PopupMenuItem(
+          value: 'subscribe',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                TopicNotificationButton.getIcon(detail.notificationLevel),
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(context.l10n.topic_notificationSettings),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        if (!detail.isPrivateMessage)
+          PopupMenuItem(
+            value: 'share_link',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.link,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_shareLink),
+              ],
+            ),
+          ),
+        if (!detail.isPrivateMessage)
+          PopupMenuItem(
+            value: 'share_image',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.image_outlined,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
+          ),
+        PopupMenuItem(
+          value: 'export',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.download_outlined,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(context.l10n.topicDetail_exportArticle),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'open_in_browser',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.language,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(context.l10n.topicDetail_openInBrowser),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'filter',
+          child: Builder(
+            builder: (context) {
+              final hasFilter =
+                  notifier.isSummaryMode ||
+                  notifier.isAuthorOnlyMode ||
+                  notifier.isTopLevelMode ||
+                  _isNestedView;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.filter_list,
+                    size: 20,
+                    color: hasFilter
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    context.l10n.topicDetail_filter,
+                    style: hasFilter
+                        ? TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'reading_settings',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.auto_stories_rounded,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(context.l10n.settings_reading),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   void _showTimelineSheet(TopicDetail detail) {
@@ -1623,6 +1844,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           topicId: widget.topicId,
           scrollController: _controller.scrollController,
           headerKey: _headerKey,
+          hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
           onReply: _handleReply,
           onEdit: _handleEdit,
@@ -1657,6 +1879,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   scrollController: _controller.scrollController,
                   centerKey: _centerKey,
                   headerKey: _headerKey,
+                  hideHeaderTitle: widget.hideInlineHeaderTitle,
                   selectedPostNumber: selectedPostNumber,
                   highlightPostNumber: highlightPostNumber,
                   highlightBoostUsername: widget.highlightBoostUsername,

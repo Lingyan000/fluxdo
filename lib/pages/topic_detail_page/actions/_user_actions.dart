@@ -160,21 +160,155 @@ extension _UserActions on _TopicDetailPageState {
     }
   }
 
-  Future<void> _handleBookmark(TopicDetailNotifier notifier) async {
+  Future<void> _handleBookmark(
+    TopicDetailNotifier notifier, {
+    String? traceId,
+    String source = 'topic_detail_topic',
+  }) async {
+    final resolvedTraceId = traceId ?? createBookmarkEditTraceId();
     final detail = ref.read(topicDetailProvider(_params)).value;
-    if (detail == null) return;
+    if (detail == null) {
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'detail_missing',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '编辑书签时未拿到话题详情',
+        topicId: widget.topicId,
+      );
+      return;
+    }
 
-    if (detail.bookmarked) {
-      // 已书签 → 弹出编辑 BottomSheet
-      final bookmarkId = detail.bookmarkId;
-      if (bookmarkId == null) return;
+    writeBookmarkEditTrace(
+      phase: 'handle_bookmark_enter',
+      traceId: resolvedTraceId,
+      source: source,
+      message: '进入详情页编辑书签处理逻辑',
+      topicId: widget.topicId,
+      bookmarkId: detail.bookmarkId ?? _fallbackBookmarkId,
+      bookmarkName: detail.bookmarkName ?? _fallbackBookmarkName,
+      bookmarked: detail.bookmarked,
+      hasReminder: detail.bookmarkReminderAt != null,
+    );
+
+    final editTarget = _bookmarkEditTarget(detail);
+    if (editTarget != null) {
+      writeBookmarkEditTrace(
+        phase: 'launcher_request',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '详情页准备打开编辑书签面板',
+        topicId: widget.topicId,
+        postId: editTarget.postId,
+        bookmarkId: editTarget.bookmarkId,
+        bookmarkName: editTarget.initialName,
+        initialName: editTarget.initialName,
+        hasReminder: editTarget.initialReminderAt != null,
+      );
 
       final result = await showBookmarkEditSheetWithCachedNames(
         context,
         ref,
-        bookmarkId: bookmarkId,
-        initialName: detail.bookmarkName,
-        initialReminderAt: detail.bookmarkReminderAt,
+        bookmarkId: editTarget.bookmarkId,
+        initialName: editTarget.initialName,
+        initialReminderAt: editTarget.initialReminderAt,
+        traceId: resolvedTraceId,
+        source: source,
+        topicId: widget.topicId,
+        postId: editTarget.postId,
+      );
+      if (result == null || !mounted) return;
+
+      if (editTarget.source == TopicBookmarkTargetSource.routeFallback) {
+        if (result.deleted) {
+          _fallbackBookmarkId = null;
+          _fallbackBookmarkName = null;
+          _fallbackBookmarkReminderAt = null;
+          _fallbackBookmarkableType = null;
+        } else {
+          _fallbackBookmarkId = editTarget.bookmarkId;
+          _fallbackBookmarkName = result.name;
+          _fallbackBookmarkReminderAt = result.reminderAt;
+          _fallbackBookmarkableType = editTarget.bookmarkableType;
+        }
+      }
+
+      if (editTarget.isTopicBookmark) {
+        if (result.deleted) {
+          // BookmarkEditSheet 已调用 API 删除，刷新元数据同步本地状态
+          notifier.reloadTopicMetadata();
+        } else {
+          notifier.updateTopicBookmarkMeta(
+            name: result.name,
+            reminderAt: result.reminderAt,
+          );
+        }
+        return;
+      }
+
+      final targetPost = editTarget.postId == null
+          ? null
+          : detail.postStream.posts
+                .where((post) => post.id == editTarget.postId)
+                .firstOrNull;
+      if (result.deleted) {
+        if (targetPost != null) {
+          notifier.refreshPost(targetPost.id, preserveCooked: true);
+        } else {
+          notifier.reloadTopicMetadata();
+        }
+      } else if (targetPost != null) {
+        notifier.updatePost(
+          targetPost.copyWith(
+            bookmarked: true,
+            bookmarkId: editTarget.bookmarkId,
+            bookmarkName: result.name,
+            bookmarkReminderAt: result.reminderAt,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (detail.bookmarked) {
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'bookmark_id_missing',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '话题已书签但未解析到可编辑的书签目标',
+        topicId: widget.topicId,
+        bookmarkName: detail.bookmarkName,
+        initialName: _fallbackBookmarkName,
+        bookmarked: detail.bookmarked,
+        hasReminder: detail.bookmarkReminderAt != null,
+      );
+      return;
+    }
+
+    // 未书签 → 创建书签，然后弹出编辑 BottomSheet
+    try {
+      final newBookmarkId = await notifier.addTopicBookmark();
+      if (!mounted) return;
+      ToastService.showSuccess(S.current.common_bookmarkAdded);
+      writeBookmarkEditTrace(
+        phase: 'bookmark_created',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '详情页已新建书签，准备打开编辑面板',
+        topicId: widget.topicId,
+        bookmarkId: newBookmarkId,
+        bookmarked: true,
+      );
+
+      // 弹出编辑 BottomSheet
+      final result = await showBookmarkEditSheetWithCachedNames(
+        context,
+        ref,
+        bookmarkId: newBookmarkId,
+        traceId: resolvedTraceId,
+        source: source,
+        topicId: widget.topicId,
       );
       if (result == null || !mounted) return;
 
@@ -187,35 +321,10 @@ extension _UserActions on _TopicDetailPageState {
           reminderAt: result.reminderAt,
         );
       }
-    } else {
-      // 未书签 → 创建书签，然后弹出编辑 BottomSheet
-      try {
-        final newBookmarkId = await notifier.addTopicBookmark();
-        if (!mounted) return;
-        ToastService.showSuccess(S.current.common_bookmarkAdded);
-
-        // 弹出编辑 BottomSheet
-        final result = await showBookmarkEditSheetWithCachedNames(
-          context,
-          ref,
-          bookmarkId: newBookmarkId,
-        );
-        if (result == null || !mounted) return;
-
-        if (result.deleted) {
-          // BookmarkEditSheet 已调用 API 删除，刷新元数据同步本地状态
-          notifier.reloadTopicMetadata();
-        } else {
-          notifier.updateTopicBookmarkMeta(
-            name: result.name,
-            reminderAt: result.reminderAt,
-          );
-        }
-      } on DioException catch (e) {
-        debugPrint('[TopicDetail] 添加书签失败: $e');
-      } catch (e, s) {
-        AppErrorHandler.handleUnexpected(e, s);
-      }
+    } on DioException catch (e) {
+      debugPrint('[TopicDetail] 添加书签失败: $e');
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
     }
   }
 
@@ -448,14 +557,32 @@ extension _UserActions on _TopicDetailPageState {
 
   Future<void> _handlePostBookmark(Post post) async {
     final notifier = ref.read(topicDetailProvider(_params).notifier);
+    final traceId = createBookmarkEditTraceId();
 
     if (post.bookmarked && post.bookmarkId != null) {
+      writeBookmarkEditTrace(
+        phase: 'post_bookmark_edit_request',
+        traceId: traceId,
+        source: 'topic_detail_post_action',
+        message: '帖子级书签准备打开编辑面板',
+        topicId: widget.topicId,
+        postId: post.id,
+        bookmarkId: post.bookmarkId,
+        bookmarkName: post.bookmarkName,
+        initialName: post.bookmarkName,
+        bookmarked: post.bookmarked,
+        hasReminder: post.bookmarkReminderAt != null,
+      );
       final result = await showBookmarkEditSheetWithCachedNames(
         context,
         ref,
         bookmarkId: post.bookmarkId!,
         initialName: post.bookmarkName,
         initialReminderAt: post.bookmarkReminderAt,
+        traceId: traceId,
+        source: 'topic_detail_post_action',
+        topicId: widget.topicId,
+        postId: post.id,
       );
       if (result == null || !mounted) return;
 
@@ -487,11 +614,25 @@ extension _UserActions on _TopicDetailPageState {
         ),
       );
       ToastService.showSuccess(S.current.common_bookmarkAdded);
+      writeBookmarkEditTrace(
+        phase: 'post_bookmark_created',
+        traceId: traceId,
+        source: 'topic_detail_post_action',
+        message: '帖子级书签已创建，准备打开编辑面板',
+        topicId: widget.topicId,
+        postId: post.id,
+        bookmarkId: bookmarkId,
+        bookmarked: true,
+      );
 
       final result = await showBookmarkEditSheetWithCachedNames(
         context,
         ref,
         bookmarkId: bookmarkId,
+        traceId: traceId,
+        source: 'topic_detail_post_action',
+        topicId: widget.topicId,
+        postId: post.id,
       );
       if (result == null || !mounted) return;
 

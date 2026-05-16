@@ -57,8 +57,10 @@ class AdaptiveScaffold extends ConsumerWidget {
     final hideBarOnScroll = ref.watch(
       preferencesProvider.select((p) => p.hideBarOnScroll),
     );
-    final visibility = (selectedIndex == 0 && hideBarOnScroll)
-        ? ref.watch(barVisibilityProvider)
+    final barVisibility = ref.watch(barVisibilityProvider);
+    final visibility =
+        (selectedIndex == 0 && hideBarOnScroll) || barVisibility == 0.0
+        ? barVisibility
         : 1.0;
 
     final hasAcrylic = Platform.isMacOS || Platform.isWindows;
@@ -92,7 +94,9 @@ class AdaptiveScaffold extends ConsumerWidget {
                           if (selectedIndex != 0) {
                             onDestinationSelected(0);
                           }
-                          ref.read(currentTabCategoryIdProvider.notifier).state =
+                          ref
+                                  .read(currentTabCategoryIdProvider.notifier)
+                                  .state =
                               categoryId;
                         },
                       ),
@@ -134,7 +138,7 @@ class AdaptiveScaffold extends ConsumerWidget {
             ],
           ),
           floatingActionButton: floatingActionButton,
-          bottomNavigationBar: showRail
+          bottomNavigationBar: showRail || visibility == 0.0
               ? null
               : _AnimatedBottomNav(
                   visibility: visibility,

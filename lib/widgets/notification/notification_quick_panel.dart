@@ -50,13 +50,7 @@ class _SidebarNotificationPanelState
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _animation;
-  late final ShortcutSurfaceBinding _shortcutSurfaceBinding =
-      ShortcutSurfaceBinding(
-        ref: ref,
-        id: ShortcutSurfaceIds.notifications,
-        triggerAction: ShortcutAction.toggleNotifications,
-        repeatBehavior: ShortcutSurfaceRepeatBehavior.toggle,
-      );
+  late final ShortcutSurfaceBinding _shortcutSurfaceBinding;
   final ScrollController _scrollController = ScrollController();
   bool _wasVisible = false;
 
@@ -71,6 +65,12 @@ class _SidebarNotificationPanelState
       parent: _animController,
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
+    );
+    _shortcutSurfaceBinding = ShortcutSurfaceBinding(
+      ref: ref,
+      id: ShortcutSurfaceIds.notifications,
+      triggerAction: ShortcutAction.toggleNotifications,
+      repeatBehavior: ShortcutSurfaceRepeatBehavior.toggle,
     );
     _wasVisible = NotificationQuickPanel._visible.value;
     if (_wasVisible) {

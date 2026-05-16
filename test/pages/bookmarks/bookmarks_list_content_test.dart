@@ -3,7 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/l10n/app_localizations.dart';
+import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/providers/category_provider.dart';
@@ -250,6 +250,118 @@ void main() {
     expect(state._selectedBookmarkName, isNull);
     expect(state._scrollController.offset, 0);
   });
+
+  testWidgets('手机端左右滑动标签下方内容会切换当前筛选项', (tester) async {
+    PlatformUtils.debugDesktopOverride = false;
+    addTearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          categoryMapProvider.overrideWith(
+            (ref) => const AsyncValue.data(<int, Category>{}),
+          ),
+        ],
+        child: _BookmarksListTestHost(
+          topics: const [
+            _BookmarkSeed(id: 1, title: 'Alpha', bookmarkName: 'codex'),
+            _BookmarkSeed(id: 2, title: 'Beta', bookmarkName: 'beta'),
+            _BookmarkSeed(id: 3, title: 'Gamma', bookmarkName: 'codex'),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state<_BookmarksListTestHostState>(
+      find.byType(_BookmarksListTestHost),
+    );
+    final swipeRegion = find.byKey(
+      const ValueKey('bookmark-content-swipe-region'),
+    );
+
+    expect(state._selectedBookmarkName, isNull);
+
+    await tester.drag(swipeRegion, const Offset(-320, 0));
+    await tester.pumpAndSettle();
+
+    expect(state._selectedBookmarkName, 'codex');
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Gamma'), findsOneWidget);
+    expect(find.text('Beta'), findsNothing);
+
+    await tester.drag(swipeRegion, const Offset(-320, 0));
+    await tester.pumpAndSettle();
+
+    expect(state._selectedBookmarkName, 'beta');
+    expect(find.text('Beta'), findsOneWidget);
+    expect(find.text('Alpha'), findsNothing);
+
+    await tester.drag(swipeRegion, const Offset(320, 0));
+    await tester.pumpAndSettle();
+
+    expect(state._selectedBookmarkName, 'codex');
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Gamma'), findsOneWidget);
+
+    await tester.drag(swipeRegion, const Offset(320, 0));
+    await tester.pumpAndSettle();
+
+    expect(state._selectedBookmarkName, isNull);
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Beta'), findsOneWidget);
+    expect(find.text('Gamma'), findsOneWidget);
+  });
+
+  testWidgets('手机端左右拖动顶部名称标签只滚动标签条不切换筛选项', (tester) async {
+    PlatformUtils.debugDesktopOverride = false;
+    addTearDown(() => PlatformUtils.debugDesktopOverride = null);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          categoryMapProvider.overrideWith(
+            (ref) => const AsyncValue.data(<int, Category>{}),
+          ),
+        ],
+        child: _BookmarksListTestHost(
+          topics: List.generate(
+            14,
+            (index) => _BookmarkSeed(
+              id: index + 1,
+              title: 'Topic $index',
+              bookmarkName: 'tag-$index',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state<_BookmarksListTestHostState>(
+      find.byType(_BookmarksListTestHost),
+    );
+    final summaryScrollable = tester.state<ScrollableState>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.right,
+      ),
+    );
+
+    expect(summaryScrollable.position.pixels, 0);
+    expect(state._selectedBookmarkName, isNull);
+
+    await tester.drag(
+      find.byKey(const ValueKey('bookmark-summary-wheel-region')),
+      const Offset(-240, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(summaryScrollable.position.pixels, greaterThan(0));
+    expect(state._selectedBookmarkName, isNull);
+  });
 }
 
 class _BookmarkSeed {
@@ -316,6 +428,8 @@ class _BookmarksListTestHostState extends State<_BookmarksListTestHost> {
         home: Scaffold(
           body: BookmarksListContent(
             bookmarksAsync: AsyncValue.data(topics),
+            bookmarkNameSuggestions: const <String>[],
+            bookmarkNameSuggestionsLoader: _emptySuggestionsLoader,
             scrollController: _scrollController,
             onRefresh: () async {},
             onTap: (_) {},
@@ -340,3 +454,5 @@ class _BookmarksListTestHostState extends State<_BookmarksListTestHost> {
     );
   }
 }
+
+Future<List<String>> _emptySuggestionsLoader() async => const <String>[];

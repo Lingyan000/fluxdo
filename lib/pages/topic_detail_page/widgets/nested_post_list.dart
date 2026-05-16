@@ -26,6 +26,7 @@ class NestedPostList extends ConsumerStatefulWidget {
   final void Function(TopicNotificationLevel)? onNotificationLevelChanged;
   final void Function(int postId, bool accepted)? onSolutionChanged;
   final bool Function(ScrollNotification) onScrollNotification;
+  final bool hideHeaderTitle;
 
   /// 可见帖子上报（走 ScreenTrack 上报链路）
   final void Function(Set<int> visiblePostNumbers)? onVisiblePostsChanged;
@@ -47,6 +48,7 @@ class NestedPostList extends ConsumerStatefulWidget {
     this.onNotificationLevelChanged,
     this.onSolutionChanged,
     required this.onScrollNotification,
+    this.hideHeaderTitle = false,
     this.onVisiblePostsChanged,
   });
 
@@ -120,6 +122,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
               child: TopicDetailHeader(
                 detail: widget.detail,
                 headerKey: widget.headerKey,
+                showTitle: !widget.hideHeaderTitle,
                 onVoteChanged: widget.onVoteChanged,
                 onNotificationLevelChanged: widget.onNotificationLevelChanged,
                 onJumpToPost: widget.onJumpToPost,

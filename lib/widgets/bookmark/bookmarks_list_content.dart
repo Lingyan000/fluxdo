@@ -90,26 +90,11 @@ class BookmarksListContent extends StatelessWidget {
 
     final summaries = buildBookmarkNameSummaries(topics);
     final filteredTopics = filterBookmarksByName(topics, selectedBookmarkName);
-    final summaryOffset = showSummaryBar ? 1 : 0;
-    final itemCount = filteredTopics.length + 1 + summaryOffset;
-
-    return ListView.builder(
+    final listView = ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.all(12),
-      itemCount: itemCount,
+      itemCount: filteredTopics.length + 1,
       itemBuilder: (context, index) {
-        if (showSummaryBar && index == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _BookmarkSummaryBar(
-              summaries: summaries,
-              selectedBookmarkName: selectedBookmarkName,
-              onSelectedBookmarkName: onSelectedBookmarkName,
-            ),
-          );
-        }
-
-        final dataIndex = index - summaryOffset;
         if (filteredTopics.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 32),
@@ -122,11 +107,11 @@ class BookmarksListContent extends StatelessWidget {
           );
         }
 
-        if (dataIndex == filteredTopics.length) {
+        if (index == filteredTopics.length) {
           return _buildFooter(context);
         }
 
-        final topic = filteredTopics[dataIndex];
+        final topic = filteredTopics[index];
         return buildTopicItem(
           context: context,
           topic: topic,
@@ -149,6 +134,31 @@ class BookmarksListContent extends StatelessWidget {
               : null,
         );
       },
+    );
+
+    final swipeRegion = _BookmarkFilterSwipeRegion(
+      summaries: summaries,
+      selectedBookmarkName: selectedBookmarkName,
+      onSelectedBookmarkName: onSelectedBookmarkName,
+      child: listView,
+    );
+
+    if (!showSummaryBar) {
+      return swipeRegion;
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: _BookmarkSummaryBar(
+            summaries: summaries,
+            selectedBookmarkName: selectedBookmarkName,
+            onSelectedBookmarkName: onSelectedBookmarkName,
+          ),
+        ),
+        Expanded(child: swipeRegion),
+      ],
     );
   }
 
@@ -541,6 +551,100 @@ class _BookmarkSummaryBarState extends State<_BookmarkSummaryBar> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BookmarkFilterSwipeRegion extends StatefulWidget {
+  const _BookmarkFilterSwipeRegion({
+    required this.summaries,
+    required this.selectedBookmarkName,
+    required this.onSelectedBookmarkName,
+    required this.child,
+  });
+
+  final List<BookmarkNameSummary> summaries;
+  final String? selectedBookmarkName;
+  final ValueChanged<String?> onSelectedBookmarkName;
+  final Widget child;
+
+  @override
+  State<_BookmarkFilterSwipeRegion> createState() =>
+      _BookmarkFilterSwipeRegionState();
+}
+
+class _BookmarkFilterSwipeRegionState extends State<_BookmarkFilterSwipeRegion> {
+  static const String _allSummaryKey = '__bookmark_summary_all__';
+  static const double _swipeDistanceThreshold = 72;
+  static const double _swipeVelocityThreshold = 320;
+
+  double _horizontalDragDelta = 0;
+
+  String _selectedSummaryKey() {
+    return widget.selectedBookmarkName ?? _allSummaryKey;
+  }
+
+  List<String> _orderedSummaryKeys() {
+    return [
+      _allSummaryKey,
+      ...widget.summaries.map((summary) => summary.filterKey),
+    ];
+  }
+
+  void _selectSummaryByOffset(int offset) {
+    if (offset == 0) {
+      return;
+    }
+    final keys = _orderedSummaryKeys();
+    final currentIndex = keys.indexOf(_selectedSummaryKey());
+    if (currentIndex == -1) {
+      return;
+    }
+    final nextIndex = (currentIndex + offset).clamp(0, keys.length - 1);
+    if (nextIndex == currentIndex) {
+      return;
+    }
+    final nextKey = keys[nextIndex];
+    widget.onSelectedBookmarkName(nextKey == _allSummaryKey ? null : nextKey);
+  }
+
+  void _handleHorizontalDragStart(DragStartDetails details) {
+    _horizontalDragDelta = 0;
+  }
+
+  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
+    _horizontalDragDelta += details.primaryDelta ?? 0;
+  }
+
+  void _handleHorizontalDragEnd(DragEndDetails details) {
+    if (!PlatformUtils.isMobile) {
+      _horizontalDragDelta = 0;
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    final delta = _horizontalDragDelta;
+    _horizontalDragDelta = 0;
+
+    if (delta <= -_swipeDistanceThreshold ||
+        velocity <= -_swipeVelocityThreshold) {
+      _selectSummaryByOffset(1);
+      return;
+    }
+    if (delta >= _swipeDistanceThreshold ||
+        velocity >= _swipeVelocityThreshold) {
+      _selectSummaryByOffset(-1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const ValueKey('bookmark-content-swipe-region'),
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _handleHorizontalDragStart,
+      onHorizontalDragUpdate: _handleHorizontalDragUpdate,
+      onHorizontalDragEnd: _handleHorizontalDragEnd,
+      child: widget.child,
     );
   }
 }
