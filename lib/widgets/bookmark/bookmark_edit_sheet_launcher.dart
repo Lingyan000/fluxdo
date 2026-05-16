@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/topic.dart';
 import '../../providers/bookmark_name_suggestions_provider.dart';
+import '../../services/log/bookmark_edit_trace.dart';
 import 'bookmark_edit_sheet.dart';
 
 Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
@@ -12,7 +13,12 @@ Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
   String? initialName,
   DateTime? initialReminderAt,
   List<Topic> seedTopics = const [],
+  String? traceId,
+  String source = 'bookmark_launcher',
+  int? topicId,
+  int? postId,
 }) async {
+  final resolvedTraceId = traceId ?? createBookmarkEditTraceId();
   final suggestionsNotifier = ref.read(
     bookmarkNameSuggestionsProvider.notifier,
   );
@@ -20,17 +26,64 @@ Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
     suggestionsNotifier.seedFromTopics(seedTopics);
   }
   suggestionsNotifier.rememberName(initialName);
+  final cachedSuggestions = ref.read(bookmarkNameSuggestionsProvider);
 
-  final result = await BookmarkEditSheet.show(
-    context,
+  writeBookmarkEditTrace(
+    phase: 'launcher_prepare',
+    traceId: resolvedTraceId,
+    source: source,
+    message: '准备打开编辑书签面板',
+    topicId: topicId,
+    postId: postId,
     bookmarkId: bookmarkId,
     initialName: initialName,
-    initialReminderAt: initialReminderAt,
-    nameSuggestions: ref.read(bookmarkNameSuggestionsProvider),
-    nameSuggestionsLoader: suggestionsNotifier.ensureLoaded,
+    hasReminder: initialReminderAt != null,
+    cachedSuggestionCount: cachedSuggestions.length,
+    seedTopicCount: seedTopics.length,
   );
 
+  BookmarkEditResult? result;
+  try {
+    result = await BookmarkEditSheet.show(
+      context,
+      bookmarkId: bookmarkId,
+      initialName: initialName,
+      initialReminderAt: initialReminderAt,
+      nameSuggestions: cachedSuggestions,
+      nameSuggestionsLoader: suggestionsNotifier.ensureLoaded,
+      traceId: resolvedTraceId,
+      traceSource: source,
+      topicId: topicId,
+      postId: postId,
+    );
+  } catch (e, s) {
+    writeBookmarkEditTrace(
+      level: 'error',
+      phase: 'launcher_throw',
+      traceId: resolvedTraceId,
+      source: source,
+      message: '打开编辑书签面板时抛出异常',
+      topicId: topicId,
+      postId: postId,
+      bookmarkId: bookmarkId,
+      initialName: initialName,
+      error: e,
+      stackTrace: s,
+    );
+    rethrow;
+  }
+
   if (result == null) {
+    writeBookmarkEditTrace(
+      phase: 'launcher_dismissed',
+      traceId: resolvedTraceId,
+      source: source,
+      message: '编辑书签面板已关闭且未返回结果',
+      topicId: topicId,
+      postId: postId,
+      bookmarkId: bookmarkId,
+      initialName: initialName,
+    );
     return null;
   }
 
@@ -39,5 +92,17 @@ Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
   } else {
     suggestionsNotifier.markDirty(optimisticName: result.name);
   }
+  writeBookmarkEditTrace(
+    phase: 'launcher_completed',
+    traceId: resolvedTraceId,
+    source: source,
+    message: '编辑书签面板返回结果',
+    topicId: topicId,
+    postId: postId,
+    bookmarkId: bookmarkId,
+    deleted: result.deleted,
+    resultName: result.name,
+    hasReminder: result.reminderAt != null,
+  );
   return result;
 }

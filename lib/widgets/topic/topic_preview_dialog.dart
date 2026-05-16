@@ -193,9 +193,19 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                           ),
                         ),
                       ),
+                      if (hasCustomActionPanel)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                          child: widget.customActionPanelBuilder!(context),
+                        ),
                       Expanded(
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(20),
+                          padding: EdgeInsets.fromLTRB(
+                            20,
+                            hasCustomActionPanel ? 16 : 20,
+                            20,
+                            20,
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -228,10 +238,6 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                   ),
                 ),
               ),
-              if (hasCustomActionPanel) ...[
-                const SizedBox(height: 8),
-                widget.customActionPanelBuilder!(context),
-              ],
               if (hasActions) ...[
                 const SizedBox(height: 8),
                 _buildCustomActions(context, theme),

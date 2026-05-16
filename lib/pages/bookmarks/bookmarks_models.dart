@@ -75,7 +75,8 @@ List<BookmarkNameSummary> buildBookmarkNameSummaries(List<Topic> topics) {
     return a.displayName.compareTo(b.displayName);
   });
   if (unsetCount > 0) {
-    summaries.add(
+    summaries.insert(
+      0,
       BookmarkNameSummary(
         filterKey: unsetBookmarkNameFilterKey,
         displayName: unsetBookmarkNameFilterKey,
@@ -193,20 +194,39 @@ class BookmarkWorkspaceTopicTab {
     required this.title,
     required this.instanceId,
     this.scrollToPostNumber,
+    this.bookmarkId,
+    this.bookmarkName,
+    this.bookmarkReminderAt,
+    this.bookmarkableType,
   });
 
   final int topicId;
   final String title;
   final int? scrollToPostNumber;
+  final int? bookmarkId;
+  final String? bookmarkName;
+  final DateTime? bookmarkReminderAt;
+  final String? bookmarkableType;
   final String instanceId;
 
   String get tabId => BookmarksWorkspaceState.topicTabId(topicId);
 
-  BookmarkWorkspaceTopicTab copyWith({String? title, int? scrollToPostNumber}) {
+  BookmarkWorkspaceTopicTab copyWith({
+    String? title,
+    int? scrollToPostNumber,
+    int? bookmarkId,
+    String? bookmarkName,
+    DateTime? bookmarkReminderAt,
+    String? bookmarkableType,
+  }) {
     return BookmarkWorkspaceTopicTab(
       topicId: topicId,
       title: title ?? this.title,
       scrollToPostNumber: scrollToPostNumber ?? this.scrollToPostNumber,
+      bookmarkId: bookmarkId ?? this.bookmarkId,
+      bookmarkName: bookmarkName ?? this.bookmarkName,
+      bookmarkReminderAt: bookmarkReminderAt ?? this.bookmarkReminderAt,
+      bookmarkableType: bookmarkableType ?? this.bookmarkableType,
       instanceId: instanceId,
     );
   }
@@ -214,6 +234,7 @@ class BookmarkWorkspaceTopicTab {
 
 class BookmarksWorkspaceState {
   static const String bookmarksTabId = 'bookmarks';
+  static const int maxTopicTabs = 10;
   static final Uuid _uuid = const Uuid();
 
   const BookmarksWorkspaceState({
@@ -285,10 +306,31 @@ class BookmarksWorkspaceState {
     return activateTopicTab(topicId);
   }
 
+  ({List<BookmarkWorkspaceTopicTab> tabs, String activeTabId})
+  _applyTopicTabLimit(
+    List<BookmarkWorkspaceTopicTab> tabs,
+    String activeTabId,
+  ) {
+    if (tabs.length <= maxTopicTabs) {
+      return (tabs: tabs, activeTabId: activeTabId);
+    }
+
+    final removedTabId = tabs.first.tabId;
+    final trimmedTabs = tabs.sublist(tabs.length - maxTopicTabs);
+    final resolvedActiveTabId = activeTabId == removedTabId
+        ? bookmarksTabId
+        : activeTabId;
+    return (tabs: trimmedTabs, activeTabId: resolvedActiveTabId);
+  }
+
   BookmarksWorkspaceState openTopicTab({
     required int topicId,
     required String title,
     int? scrollToPostNumber,
+    int? bookmarkId,
+    String? bookmarkName,
+    DateTime? bookmarkReminderAt,
+    String? bookmarkableType,
   }) {
     final existingIndex = topicTabs.indexWhere((tab) => tab.topicId == topicId);
     if (existingIndex != -1) {
@@ -297,22 +339,34 @@ class BookmarksWorkspaceState {
         topicId: topicId,
         title: title,
         scrollToPostNumber: scrollToPostNumber,
+        bookmarkId: bookmarkId,
+        bookmarkName: bookmarkName,
+        bookmarkReminderAt: bookmarkReminderAt,
+        bookmarkableType: bookmarkableType,
         instanceId: updatedTabs[existingIndex].instanceId,
       );
       return copyWith(activeTabId: topicTabId(topicId), topicTabs: updatedTabs);
     }
 
-    return copyWith(
-      activeTabId: topicTabId(topicId),
-      topicTabs: [
+    final limited = _applyTopicTabLimit(
+      [
         ...topicTabs,
         BookmarkWorkspaceTopicTab(
           topicId: topicId,
           title: title,
           scrollToPostNumber: scrollToPostNumber,
+          bookmarkId: bookmarkId,
+          bookmarkName: bookmarkName,
+          bookmarkReminderAt: bookmarkReminderAt,
+          bookmarkableType: bookmarkableType,
           instanceId: _uuid.v4(),
         ),
       ],
+      topicTabId(topicId),
+    );
+    return copyWith(
+      activeTabId: limited.activeTabId,
+      topicTabs: limited.tabs,
     );
   }
 
@@ -320,6 +374,10 @@ class BookmarksWorkspaceState {
     required int topicId,
     required String title,
     int? scrollToPostNumber,
+    int? bookmarkId,
+    String? bookmarkName,
+    DateTime? bookmarkReminderAt,
+    String? bookmarkableType,
   }) {
     final existingIndex = topicTabs.indexWhere((tab) => tab.topicId == topicId);
     if (existingIndex != -1) {
@@ -328,21 +386,34 @@ class BookmarksWorkspaceState {
         topicId: topicId,
         title: title,
         scrollToPostNumber: scrollToPostNumber,
+        bookmarkId: bookmarkId,
+        bookmarkName: bookmarkName,
+        bookmarkReminderAt: bookmarkReminderAt,
+        bookmarkableType: bookmarkableType,
         instanceId: updatedTabs[existingIndex].instanceId,
       );
       return copyWith(topicTabs: updatedTabs);
     }
 
-    return copyWith(
-      topicTabs: [
+    final limited = _applyTopicTabLimit(
+      [
         ...topicTabs,
         BookmarkWorkspaceTopicTab(
           topicId: topicId,
           title: title,
           scrollToPostNumber: scrollToPostNumber,
+          bookmarkId: bookmarkId,
+          bookmarkName: bookmarkName,
+          bookmarkReminderAt: bookmarkReminderAt,
+          bookmarkableType: bookmarkableType,
           instanceId: _uuid.v4(),
         ),
       ],
+      activeTabId,
+    );
+    return copyWith(
+      activeTabId: limited.activeTabId,
+      topicTabs: limited.tabs,
     );
   }
 

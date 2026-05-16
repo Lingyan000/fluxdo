@@ -5,12 +5,24 @@ import 'package:dio/dio.dart';
 import '../../models/bookmark.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
 import '../../l10n/s.dart';
+import '../../services/log/bookmark_edit_trace.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/app_error_handler.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/time_utils.dart';
 import 'bookmark_name_edit_panel.dart';
+
+String _normalizeEditableBookmarkName(String? rawName) {
+  final trimmed = rawName?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return '';
+  }
+  if (trimmed == '?' || trimmed == '？') {
+    return '';
+  }
+  return trimmed;
+}
 
 /// 书签编辑结果
 class BookmarkEditResult {
@@ -28,6 +40,10 @@ class BookmarkEditSheet extends StatefulWidget {
   final DateTime? initialReminderAt;
   final List<String> nameSuggestions;
   final Future<List<String>> Function()? nameSuggestionsLoader;
+  final String? traceId;
+  final String? traceSource;
+  final int? topicId;
+  final int? postId;
 
   const BookmarkEditSheet({
     super.key,
@@ -36,6 +52,10 @@ class BookmarkEditSheet extends StatefulWidget {
     this.initialReminderAt,
     this.nameSuggestions = const [],
     this.nameSuggestionsLoader,
+    this.traceId,
+    this.traceSource,
+    this.topicId,
+    this.postId,
   });
 
   /// 显示书签编辑 BottomSheet
@@ -46,6 +66,10 @@ class BookmarkEditSheet extends StatefulWidget {
     DateTime? initialReminderAt,
     List<String> nameSuggestions = const [],
     Future<List<String>> Function()? nameSuggestionsLoader,
+    String? traceId,
+    String? traceSource,
+    int? topicId,
+    int? postId,
   }) {
     return showAppBottomSheet<BookmarkEditResult>(
       context: context,
@@ -57,6 +81,10 @@ class BookmarkEditSheet extends StatefulWidget {
         initialReminderAt: initialReminderAt,
         nameSuggestions: nameSuggestions,
         nameSuggestionsLoader: nameSuggestionsLoader,
+        traceId: traceId,
+        traceSource: traceSource,
+        topicId: topicId,
+        postId: postId,
       ),
     );
   }
@@ -66,6 +94,8 @@ class BookmarkEditSheet extends StatefulWidget {
 }
 
 class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
+  static const double _compactLayoutWidth = 360;
+
   late final TextEditingController _nameController;
   BookmarkReminderOption? _selectedReminder;
   DateTime? _customReminderAt;
@@ -74,11 +104,29 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
   bool _isDeleting = false;
   final DiscourseService _service = DiscourseService();
 
+  String get _traceId => widget.traceId ?? 'bookmark-edit-missing-trace';
+
+  String get _traceSource => widget.traceSource ?? 'bookmark_sheet';
+
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.initialName ?? '');
+    _nameController = TextEditingController(
+      text: _normalizeEditableBookmarkName(widget.initialName),
+    );
     _currentReminderAt = widget.initialReminderAt;
+    writeBookmarkEditTrace(
+      phase: 'sheet_init',
+      traceId: _traceId,
+      source: _traceSource,
+      message: '编辑书签面板已初始化',
+      topicId: widget.topicId,
+      postId: widget.postId,
+      bookmarkId: widget.bookmarkId,
+      initialName: widget.initialName,
+      hasReminder: widget.initialReminderAt != null,
+      cachedSuggestionCount: widget.nameSuggestions.length,
+    );
   }
 
   @override
@@ -98,6 +146,16 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
   Future<void> _save() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
+    writeBookmarkEditTrace(
+      phase: 'sheet_save_start',
+      traceId: _traceId,
+      source: _traceSource,
+      message: '编辑书签面板开始保存',
+      topicId: widget.topicId,
+      postId: widget.postId,
+      bookmarkId: widget.bookmarkId,
+      bookmarkName: _nameController.text.trim(),
+    );
 
     try {
       // 计算提醒时间
@@ -119,6 +177,17 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       );
 
       if (mounted) {
+        writeBookmarkEditTrace(
+          phase: 'sheet_save_success',
+          traceId: _traceId,
+          source: _traceSource,
+          message: '编辑书签面板保存成功',
+          topicId: widget.topicId,
+          postId: widget.postId,
+          bookmarkId: widget.bookmarkId,
+          resultName: name.isNotEmpty ? name : null,
+          hasReminder: reminderAt != null,
+        );
         Navigator.pop(
           context,
           BookmarkEditResult(
@@ -130,7 +199,29 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       }
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'sheet_save_dio_error',
+        traceId: _traceId,
+        source: _traceSource,
+        message: '编辑书签面板保存失败',
+        topicId: widget.topicId,
+        postId: widget.postId,
+        bookmarkId: widget.bookmarkId,
+      );
     } catch (e, s) {
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'sheet_save_throw',
+        traceId: _traceId,
+        source: _traceSource,
+        message: '编辑书签面板保存时抛出异常',
+        topicId: widget.topicId,
+        postId: widget.postId,
+        bookmarkId: widget.bookmarkId,
+        error: e,
+        stackTrace: s,
+      );
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -164,15 +255,56 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     if (confirmed != true) return;
 
     setState(() => _isDeleting = true);
+    writeBookmarkEditTrace(
+      phase: 'sheet_delete_start',
+      traceId: _traceId,
+      source: _traceSource,
+      message: '编辑书签面板开始删除书签',
+      topicId: widget.topicId,
+      postId: widget.postId,
+      bookmarkId: widget.bookmarkId,
+    );
     try {
       await _service.deleteBookmark(widget.bookmarkId);
       if (mounted) {
+        writeBookmarkEditTrace(
+          phase: 'sheet_delete_success',
+          traceId: _traceId,
+          source: _traceSource,
+          message: '编辑书签面板删除书签成功',
+          topicId: widget.topicId,
+          postId: widget.postId,
+          bookmarkId: widget.bookmarkId,
+          deleted: true,
+        );
         Navigator.pop(context, const BookmarkEditResult(deleted: true));
         ToastService.showSuccess(S.current.bookmark_removed);
       }
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'sheet_delete_dio_error',
+        traceId: _traceId,
+        source: _traceSource,
+        message: '编辑书签面板删除书签失败',
+        topicId: widget.topicId,
+        postId: widget.postId,
+        bookmarkId: widget.bookmarkId,
+      );
     } catch (e, s) {
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'sheet_delete_throw',
+        traceId: _traceId,
+        source: _traceSource,
+        message: '编辑书签面板删除书签时抛出异常',
+        topicId: widget.topicId,
+        postId: widget.postId,
+        bookmarkId: widget.bookmarkId,
+        error: e,
+        stackTrace: s,
+      );
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
       if (mounted) setState(() => _isDeleting = false);
@@ -228,8 +360,48 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
     final theme = Theme.of(context);
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final maxSheetHeight =
+        mediaQuery.size.height -
+        mediaQuery.padding.top -
+        mediaQuery.padding.bottom -
+        bottomInset -
+        32;
+    final compactLayout = mediaQuery.size.width < _compactLayoutWidth;
+
+    final deleteButton = TextButton.icon(
+      onPressed: _isDeleting ? null : _delete,
+      icon: _isDeleting
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(Icons.delete_outline, color: theme.colorScheme.error),
+      label: Text(
+        S.current.common_delete,
+        style: TextStyle(color: theme.colorScheme.error),
+      ),
+    );
+    final cancelButton = TextButton(
+      onPressed: () => Navigator.pop(context),
+      child: Text(S.current.common_cancel),
+    );
+    final saveButton = FilledButton(
+      onPressed: _isSaving ? null : _save,
+      child: _isSaving
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Text(S.current.common_save),
+    );
 
     return Container(
       margin: EdgeInsets.only(
@@ -243,212 +415,198 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题栏
-              Row(
-                children: [
-                  Icon(Icons.bookmark, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    S.current.bookmark_editBookmark,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: maxSheetHeight.clamp(280, double.infinity),
+          ),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 标题栏
+                Row(
+                  children: [
+                    Icon(Icons.bookmark, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      S.current.bookmark_editBookmark,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 20),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // 书签名称
-              BookmarkNameEditPanel(
-                controller: _nameController,
-                initialSuggestions: widget.nameSuggestions,
-                suggestionsLoader:
-                    widget.nameSuggestionsLoader ?? _defaultNameSuggestionsLoader,
-              ),
-              const SizedBox(height: 16),
-
-              // 提醒时间
-              Text(
-                S.current.bookmark_setReminder,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
-              // 当前提醒时间显示
-              if (_currentReminderAt != null && _selectedReminder == null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: _currentReminderAt!.isAfter(DateTime.now())
-                        ? theme.colorScheme.primaryContainer
-                        : theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.alarm,
-                        size: 16,
-                        color: _currentReminderAt!.isAfter(DateTime.now())
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onErrorContainer,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _currentReminderAt!.isAfter(DateTime.now())
-                            ? S.current.bookmark_reminderTime(
-                                TimeUtils.formatDetailTime(_currentReminderAt!),
-                              )
-                            : S.current.bookmark_reminderExpired,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _currentReminderAt!.isAfter(DateTime.now())
-                              ? theme.colorScheme.onPrimaryContainer
-                              : theme.colorScheme.onErrorContainer,
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _currentReminderAt = null;
-                          });
-                        },
-                        child: Icon(
-                          Icons.close,
-                          size: 16,
-                          color: _currentReminderAt!.isAfter(DateTime.now())
-                              ? theme.colorScheme.onPrimaryContainer
-                              : theme.colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ],
+                // 书签名称
+                BookmarkNameEditPanel(
+                  controller: _nameController,
+                  initialSuggestions: widget.nameSuggestions,
+                  suggestionsLoader:
+                      widget.nameSuggestionsLoader ??
+                      _defaultNameSuggestionsLoader,
+                ),
+                const SizedBox(height: 16),
+
+                // 提醒时间
+                Text(
+                  S.current.bookmark_setReminder,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(height: 8),
 
-              // 快捷提醒选项
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: BookmarkReminderOption.values.map((option) {
-                  final isSelected = _selectedReminder == option;
-                  return ChoiceChip(
-                    label: Text(option.label),
-                    selected: isSelected,
-                    onSelected: (_) => _selectReminder(option),
-                  );
-                }).toList(),
-              ),
-
-              // 自定义时间显示
-              if (_selectedReminder == BookmarkReminderOption.custom &&
-                  _customReminderAt != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Container(
+                // 当前提醒时间显示
+                if (_currentReminderAt != null && _selectedReminder == null)
+                  Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
                     ),
+                    margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
+                      color: _currentReminderAt!.isAfter(DateTime.now())
+                          ? theme.colorScheme.primaryContainer
+                          : theme.colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
                           Icons.alarm,
                           size: 16,
-                          color: theme.colorScheme.onPrimaryContainer,
+                          color: _currentReminderAt!.isAfter(DateTime.now())
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onErrorContainer,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          TimeUtils.formatFullDate(_customReminderAt!),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onPrimaryContainer,
+                        Expanded(
+                          child: Text(
+                            _currentReminderAt!.isAfter(DateTime.now())
+                                ? S.current.bookmark_reminderTime(
+                                    TimeUtils.formatDetailTime(
+                                      _currentReminderAt!,
+                                    ),
+                                  )
+                                : S.current.bookmark_reminderExpired,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _currentReminderAt!.isAfter(DateTime.now())
+                                  ? theme.colorScheme.onPrimaryContainer
+                                  : theme.colorScheme.onErrorContainer,
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         GestureDetector(
-                          onTap: _pickCustomDateTime,
+                          onTap: () {
+                            setState(() {
+                              _currentReminderAt = null;
+                            });
+                          },
                           child: Icon(
-                            Icons.edit,
+                            Icons.close,
                             size: 16,
-                            color: theme.colorScheme.onPrimaryContainer,
+                            color: _currentReminderAt!.isAfter(DateTime.now())
+                                ? theme.colorScheme.onPrimaryContainer
+                                : theme.colorScheme.onErrorContainer,
                           ),
                         ),
                       ],
                     ),
                   ),
+
+                // 快捷提醒选项
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: BookmarkReminderOption.values.map((option) {
+                    final isSelected = _selectedReminder == option;
+                    return ChoiceChip(
+                      label: Text(option.label),
+                      selected: isSelected,
+                      onSelected: (_) => _selectReminder(option),
+                    );
+                  }).toList(),
                 ),
 
-              const SizedBox(height: 20),
-
-              // 按钮区域
-              Row(
-                children: [
-                  // 删除按钮
-                  TextButton.icon(
-                    onPressed: _isDeleting ? null : _delete,
-                    icon: _isDeleting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            Icons.delete_outline,
-                            color: theme.colorScheme.error,
+                // 自定义时间显示
+                if (_selectedReminder == BookmarkReminderOption.custom &&
+                    _customReminderAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.alarm,
+                            size: 16,
+                            color: theme.colorScheme.onPrimaryContainer,
                           ),
-                    label: Text(
-                      S.current.common_delete,
-                      style: TextStyle(color: theme.colorScheme.error),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              TimeUtils.formatFullDate(_customReminderAt!),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _pickCustomDateTime,
+                            child: Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  // 取消按钮
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(S.current.common_cancel),
+
+                const SizedBox(height: 20),
+
+                // 按钮区域
+                if (compactLayout) ...[
+                  SizedBox(width: double.infinity, child: saveButton),
+                  const SizedBox(height: 8),
+                  Row(children: [deleteButton, const Spacer(), cancelButton]),
+                ] else
+                  Row(
+                    children: [
+                      deleteButton,
+                      const Spacer(),
+                      cancelButton,
+                      const SizedBox(width: 8),
+                      saveButton,
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  // 保存按钮
-                  FilledButton(
-                    onPressed: _isSaving ? null : _save,
-                    child: _isSaving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(S.current.common_save),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

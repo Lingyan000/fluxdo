@@ -113,4 +113,69 @@ void main() {
     );
     expect(backgroundOpened.topicTabs.map((tab) => tab.topicId), [1, 2]);
   });
+
+  test('超过 10 个话题标签时会自动关闭最早打开的第一个标签', () {
+    var state = const BookmarksWorkspaceState();
+    for (var topicId = 1; topicId <= 10; topicId++) {
+      state = state.openTopicTab(topicId: topicId, title: 'T$topicId');
+    }
+
+    final overflowed = state.openTopicTab(topicId: 11, title: 'T11');
+
+    expect(overflowed.topicTabs, hasLength(10));
+    expect(
+      overflowed.topicTabs.map((tab) => tab.topicId),
+      [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    );
+    expect(overflowed.activeTabId, BookmarksWorkspaceState.topicTabId(11));
+  });
+
+  test('后台打开第 11 个标签时也会淘汰最早打开的第一个标签', () {
+    var state = const BookmarksWorkspaceState();
+    for (var topicId = 1; topicId <= 10; topicId++) {
+      state = state.openTopicTab(topicId: topicId, title: 'T$topicId');
+    }
+    state = state.activateBookmarksTab();
+
+    final overflowed = state.openTopicTabInBackground(topicId: 11, title: 'T11');
+
+    expect(overflowed.topicTabs, hasLength(10));
+    expect(
+      overflowed.topicTabs.map((tab) => tab.topicId),
+      [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    );
+    expect(
+      overflowed.activeTabId,
+      BookmarksWorkspaceState.bookmarksTabId,
+    );
+  });
+
+  test('打开书签话题时会保留并更新书签上下文', () {
+    final opened = const BookmarksWorkspaceState().openTopicTab(
+      topicId: 42,
+      title: 'FluxDO',
+      scrollToPostNumber: 7,
+      bookmarkId: 101,
+      bookmarkName: 'draft',
+      bookmarkableType: 'Post',
+    );
+
+    expect(opened.activeTopicTab?.bookmarkId, 101);
+    expect(opened.activeTopicTab?.bookmarkName, 'draft');
+    expect(opened.activeTopicTab?.bookmarkableType, 'Post');
+
+    final reopened = opened.openTopicTab(
+      topicId: 42,
+      title: 'FluxDO',
+      scrollToPostNumber: 8,
+      bookmarkId: 202,
+      bookmarkName: 'updated',
+      bookmarkableType: 'Topic',
+    );
+
+    expect(reopened.activeTopicTab?.bookmarkId, 202);
+    expect(reopened.activeTopicTab?.bookmarkName, 'updated');
+    expect(reopened.activeTopicTab?.bookmarkableType, 'Topic');
+    expect(reopened.activeTopicTab?.scrollToPostNumber, 8);
+  });
 }

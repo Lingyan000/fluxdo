@@ -1,6 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+class _RefreshableTextEditingController extends TextEditingController {
+  _RefreshableTextEditingController.fromValue(super.value) : super.fromValue();
+
+  void refreshOptions() {
+    notifyListeners();
+  }
+}
 
 class BookmarkNameAutocompleteField extends StatefulWidget {
   const BookmarkNameAutocompleteField({
@@ -10,7 +17,7 @@ class BookmarkNameAutocompleteField extends StatefulWidget {
     required this.labelText,
     required this.hintText,
     this.maxLength = 100,
-    this.maxOptions = 8,
+    this.maxOptions,
   });
 
   final TextEditingController controller;
@@ -18,7 +25,7 @@ class BookmarkNameAutocompleteField extends StatefulWidget {
   final String labelText;
   final String hintText;
   final int maxLength;
-  final int maxOptions;
+  final int? maxOptions;
 
   @override
   State<BookmarkNameAutocompleteField> createState() =>
@@ -28,15 +35,24 @@ class BookmarkNameAutocompleteField extends StatefulWidget {
 class _BookmarkNameAutocompleteFieldState
     extends State<BookmarkNameAutocompleteField> {
   late final FocusNode _focusNode;
+  late final _RefreshableTextEditingController _internalController;
 
   @override
   void initState() {
     super.initState();
     _focusNode = FocusNode();
+    _internalController = _RefreshableTextEditingController.fromValue(
+      widget.controller.value,
+    );
+    widget.controller.addListener(_syncFromExternalController);
+    _internalController.addListener(_syncToExternalController);
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_syncFromExternalController);
+    _internalController.removeListener(_syncToExternalController);
+    _internalController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -44,17 +60,35 @@ class _BookmarkNameAutocompleteFieldState
   @override
   void didUpdateWidget(covariant BookmarkNameAutocompleteField oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncFromExternalController);
+      widget.controller.addListener(_syncFromExternalController);
+      _syncFromExternalController();
+    }
     if (_sameSuggestions(oldWidget.suggestions, widget.suggestions)) {
       return;
     }
-    // RawAutocomplete 只会在输入框 controller 变更时重新计算候选；
-    // 候选异步到达后主动触发一次监听，确保当前输入立即刷新补全。
+    // 候选异步到达后，主动刷新内部 controller 的监听，立即重算补全。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      widget.controller.notifyListeners();
+      _internalController.refreshOptions();
     });
+  }
+
+  void _syncFromExternalController() {
+    if (_internalController.value == widget.controller.value) {
+      return;
+    }
+    _internalController.value = widget.controller.value;
+  }
+
+  void _syncToExternalController() {
+    if (widget.controller.value == _internalController.value) {
+      return;
+    }
+    widget.controller.value = _internalController.value;
   }
 
   Iterable<String> _buildOptions(TextEditingValue value) {
@@ -71,7 +105,8 @@ class _BookmarkNameAutocompleteFieldState
       if (query.isEmpty || lower.startsWith(query) || lower.contains(query)) {
         normalized.add(trimmed);
       }
-      if (normalized.length >= widget.maxOptions) {
+      if (widget.maxOptions != null &&
+          normalized.length >= widget.maxOptions!) {
         break;
       }
     }
@@ -80,10 +115,17 @@ class _BookmarkNameAutocompleteFieldState
   }
 
   bool _sameSuggestions(Iterable<String> left, Iterable<String> right) {
-    return listEquals(
-      left.toList(growable: false),
-      right.toList(growable: false),
-    );
+    final leftList = left.toList(growable: false);
+    final rightList = right.toList(growable: false);
+    if (leftList.length != rightList.length) {
+      return false;
+    }
+    for (var index = 0; index < leftList.length; index++) {
+      if (leftList[index] != rightList[index]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   String _suggestionsKey() {
@@ -96,11 +138,11 @@ class _BookmarkNameAutocompleteFieldState
 
     return RawAutocomplete<String>(
       key: ValueKey(_suggestionsKey()),
-      textEditingController: widget.controller,
+      textEditingController: _internalController,
       focusNode: _focusNode,
       optionsBuilder: _buildOptions,
       onSelected: (value) {
-        widget.controller.value = TextEditingValue(
+        _internalController.value = TextEditingValue(
           text: value,
           selection: TextSelection.collapsed(offset: value.length),
         );
@@ -126,6 +168,7 @@ class _BookmarkNameAutocompleteFieldState
           child: TextFormField(
             controller: controller,
             focusNode: focusNode,
+            autofocus: false,
             maxLength: widget.maxLength,
             decoration: InputDecoration(
               labelText: widget.labelText,

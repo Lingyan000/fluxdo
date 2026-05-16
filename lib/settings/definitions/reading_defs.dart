@@ -5,8 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../providers/preferences_provider.dart';
-import '../../utils/platform_utils.dart';
-import '../../utils/responsive.dart';
 import '../settings_model.dart';
 
 /// 阅读设置数据声明
@@ -69,7 +67,8 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           title: l10n.preferences_openLinksInApp,
           subtitle: l10n.preferences_openLinksInAppDesc,
           icon: Icons.open_in_browser_rounded,
-          getValue: (ref) => ref.watch(preferencesProvider).openExternalLinksInAppBrowser,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).openExternalLinksInAppBrowser,
           onChanged: (ref, v) => ref
               .read(preferencesProvider.notifier)
               .setOpenExternalLinksInAppBrowser(v),
@@ -92,29 +91,31 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setShowSignatures(v),
         ),
-        PlatformConditionalModel(
-          inner: CustomModel(
-            id: 'bookmarksOpenMode',
-            title: l10n.reading_bookmarksOpenMode,
-            builder: (context, ref) {
-              final currentMode = ref.watch(preferencesProvider).bookmarksOpenMode;
-              final l = context.l10n;
-              return ListTile(
-                leading: Icon(
-                  Icons.tab_rounded,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                title: Text(l.reading_bookmarksOpenMode),
-                subtitle: Text(switch (currentMode) {
-                  BookmarksOpenMode.defaultRoute => l.reading_bookmarksOpenModeDefault,
-                  BookmarksOpenMode.tabbedWorkspace => l.reading_bookmarksOpenModeTabbedWorkspace,
-                }),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _showBookmarksOpenModePicker(context, ref, currentMode),
-              );
-            },
-          ),
-          condition: () => PlatformUtils.isDesktop && Responsive.isDesktop(context),
+        CustomModel(
+          id: 'bookmarksOpenMode',
+          title: l10n.reading_bookmarksOpenMode,
+          builder: (context, ref) {
+            final currentMode = ref
+                .watch(preferencesProvider)
+                .bookmarksOpenMode;
+            final l = context.l10n;
+            return ListTile(
+              leading: Icon(
+                Icons.tab_rounded,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: Text(l.reading_bookmarksOpenMode),
+              subtitle: Text(switch (currentMode) {
+                BookmarksOpenMode.defaultRoute =>
+                  l.reading_bookmarksOpenModeDefault,
+                BookmarksOpenMode.tabbedWorkspace =>
+                  l.reading_bookmarksOpenModeTabbedWorkspace,
+              }),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () =>
+                  _showBookmarksOpenModePicker(context, ref, currentMode),
+            );
+          },
         ),
         PlatformConditionalModel(
           inner: SwitchModel(
@@ -193,8 +194,12 @@ void _showLineStylePicker(
             child: Row(
               children: [
                 Icon(
-                  style == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: style == current ? Theme.of(context).colorScheme.primary : null,
+                  style == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: style == current
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
                   size: 20,
                 ),
                 const SizedBox(width: 12),
@@ -236,8 +241,12 @@ void _showBookmarksOpenModePicker(
             child: Row(
               children: [
                 Icon(
-                  mode == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: mode == current ? Theme.of(context).colorScheme.primary : null,
+                  mode == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: mode == current
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
                   size: 20,
                 ),
                 const SizedBox(width: 12),

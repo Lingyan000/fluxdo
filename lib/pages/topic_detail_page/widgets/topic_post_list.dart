@@ -80,6 +80,7 @@ class TopicPostList extends StatefulWidget {
 
   /// 高亮指定用户的 boost（从 boost 通知跳转时使用）
   final String? highlightBoostUsername;
+  final bool hideHeaderTitle;
 
   const TopicPostList({
     super.key,
@@ -90,6 +91,7 @@ class TopicPostList extends StatefulWidget {
     required this.selectedPostNumber,
     required this.highlightPostNumber,
     this.highlightBoostUsername,
+    this.hideHeaderTitle = false,
     required this.typingUsers,
     required this.isLoggedIn,
     required this.hasMoreBefore,
@@ -552,6 +554,7 @@ class _TopicPostListState extends State<TopicPostList> {
                       child: TopicDetailHeader(
                         detail: detail,
                         headerKey: headerKey,
+                        showTitle: !widget.hideHeaderTitle,
                         onVoteChanged: onVoteChanged,
                         onNotificationLevelChanged: onNotificationLevelChanged,
                         onJumpToPost: onJumpToPost,
@@ -590,6 +593,7 @@ class _TopicPostListState extends State<TopicPostList> {
                           child: TopicDetailHeader(
                             detail: detail,
                             headerKey: headerKey,
+                            showTitle: !widget.hideHeaderTitle,
                             onVoteChanged: onVoteChanged,
                             onNotificationLevelChanged:
                                 onNotificationLevelChanged,

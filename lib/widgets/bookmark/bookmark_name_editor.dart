@@ -24,6 +24,8 @@ class BookmarkNameEditor extends StatefulWidget {
 }
 
 class _BookmarkNameEditorState extends State<BookmarkNameEditor> {
+  static const double _compactLayoutWidth = 420;
+
   Future<void> _save() async {
     final save = widget.onSave;
     if (save == null || widget.isSaving) {
@@ -52,14 +54,12 @@ class _BookmarkNameEditorState extends State<BookmarkNameEditor> {
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       elevation: 8,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: field),
-            const SizedBox(width: 12),
-            FilledButton(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compactLayout = constraints.maxWidth < _compactLayoutWidth;
+          final saveButton = SizedBox(
+            width: compactLayout ? double.infinity : null,
+            child: FilledButton(
               onPressed: widget.isSaving ? null : _save,
               child: widget.isSaving
                   ? const SizedBox(
@@ -72,8 +72,26 @@ class _BookmarkNameEditorState extends State<BookmarkNameEditor> {
                     )
                   : Text(context.l10n.common_save),
             ),
-          ],
-        ),
+          );
+
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: compactLayout
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [field, const SizedBox(height: 12), saveButton],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: field),
+                      const SizedBox(width: 12),
+                      saveButton,
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }

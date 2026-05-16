@@ -11,6 +11,7 @@ import '../../../../../providers/preferences_provider.dart';
 import 'package:dio/dio.dart';
 import '../../../../../services/app_error_handler.dart';
 import '../../../../../services/discourse/discourse_service.dart';
+import '../../../../../services/log/bookmark_edit_trace.dart';
 import '../../../../../services/toast_service.dart';
 import '../../../post_links.dart';
 import '../post_action_bar.dart';

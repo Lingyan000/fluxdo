@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/l10n/app_localizations.dart';
+import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/pages/bookmarks/bookmarks_models.dart';
 import 'package:fluxdo/providers/bookmark_name_suggestions_provider.dart';

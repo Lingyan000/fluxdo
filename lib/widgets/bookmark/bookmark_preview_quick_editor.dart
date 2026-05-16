@@ -30,6 +30,11 @@ class _BookmarkPreviewQuickEditorState
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      }
+    });
   }
 
   @override
