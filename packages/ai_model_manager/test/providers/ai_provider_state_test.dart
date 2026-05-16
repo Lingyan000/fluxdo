@@ -119,6 +119,47 @@ void main() {
       expect(ids, ['b', 'a', 'd', 'c']);
     });
 
+    test('updateProvider keeps reordered model order in state and storage',
+        () async {
+      await bootstrap(
+        providers: [
+          provider('p', models: const [
+            AiModel(id: 'model-a'),
+            AiModel(id: 'model-b'),
+            AiModel(id: 'model-c'),
+          ]),
+        ],
+      );
+
+      await container.read(aiProviderListProvider.notifier).updateProvider(
+        id: 'p',
+        models: const [
+          AiModel(id: 'model-c'),
+          AiModel(id: 'model-a'),
+          AiModel(id: 'model-b'),
+        ],
+      );
+
+      final stateIds = container
+          .read(aiProviderListProvider)
+          .single
+          .models
+          .map((model) => model.id)
+          .toList();
+      expect(stateIds, ['model-c', 'model-a', 'model-b']);
+
+      final saved =
+          jsonDecode(prefs.getString('ai_providers')!) as List<dynamic>;
+      final savedModels =
+          (saved.single as Map<String, dynamic>)['models'] as List<dynamic>;
+      expect(
+        savedModels
+            .map((model) => (model as Map<String, dynamic>)['id'])
+            .toList(),
+        ['model-c', 'model-a', 'model-b'],
+      );
+    });
+
     test('removeProviders removes state and fallback api keys', () async {
       await bootstrap(
         providers: [
