@@ -5,6 +5,7 @@ import '../markdown_editor/markdown_editor.dart';
 import '../../models/topic.dart';
 import '../../models/draft.dart';
 import '../../services/discourse/discourse_service.dart';
+import '../../services/ai_post_review_service.dart';
 import '../../services/presence_service.dart';
 import '../../services/emoji_handler.dart';
 import '../../services/draft_controller.dart';
@@ -17,6 +18,7 @@ import '../common/smart_avatar.dart';
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
+import '../ai/ai_post_review_button.dart';
 import '../common/loading_spinner.dart';
 
 /// 显示回复底部弹框
@@ -37,6 +39,7 @@ Future<Post?> showReplySheet({
   Future<Draft?>? preloadedDraftFuture,
   String? initialContent,
   String? initialTitle,
+  String? topicTitle,
   bool isPrivateMessageTopic = false,
   ShortcutSurfaceConfig? shortcutSurface,
 }) async {
@@ -54,6 +57,7 @@ Future<Post?> showReplySheet({
       preloadedDraftFuture: preloadedDraftFuture,
       initialContent: initialContent,
       initialTitle: initialTitle,
+      topicTitle: topicTitle,
       isPrivateMessageTopic: isPrivateMessageTopic,
     ),
   );
@@ -93,6 +97,7 @@ class ReplySheet extends ConsumerStatefulWidget {
   final Future<Draft?>? preloadedDraftFuture; // 预加载的草稿
   final String? initialContent; // 预填内容（划词引用时使用）
   final String? initialTitle; // 预填标题（私信模式时使用）
+  final String? topicTitle; // 普通回帖审核时带上的话题标题
   final bool isPrivateMessageTopic; // 当前话题是否为私信话题
 
   const ReplySheet({
@@ -105,6 +110,7 @@ class ReplySheet extends ConsumerStatefulWidget {
     this.preloadedDraftFuture,
     this.initialContent,
     this.initialTitle,
+    this.topicTitle,
     this.isPrivateMessageTopic = false,
   });
 
@@ -139,6 +145,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   bool get _isInPrivateMessageContext =>
       _isPrivateMessage || widget.isPrivateMessageTopic;
   bool get _isEditMode => widget.editPost != null;
+  bool get _canReviewPost =>
+      !_isEditMode &&
+      !_isPrivateMessage &&
+      !_isInPrivateMessageContext &&
+      widget.topicId != null;
 
   @override
   void initState() {
@@ -620,6 +631,17 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                         ? null
                                         : _discardDraft,
                                     child: Text(context.l10n.common_discard),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+
+                                if (_canReviewPost) ...[
+                                  AiPostReviewButton(
+                                    titleBuilder: () => widget.topicTitle,
+                                    contentBuilder: () =>
+                                        _contentController.text,
+                                    target: AiPostReviewTarget.reply,
+                                    enabled: !_isSubmitting && !_isLoadingRaw,
                                   ),
                                   const SizedBox(width: 8),
                                 ],

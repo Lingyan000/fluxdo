@@ -25,6 +25,8 @@ enum NestedLineStyle {
 }
 
 class AppPreferences {
+  static const Object _unset = Object();
+
   final bool autoPanguSpacing;
 
   /// 阅读时自动优化中英文混排间距
@@ -68,6 +70,12 @@ class AppPreferences {
 
   /// AI 助手左滑入口（PageView 模式）
   final bool aiSwipeEntry;
+
+  /// 发帖前 AI 审核
+  final bool aiPostReviewEnabled;
+
+  /// 发帖前 AI 审核使用的模型 key（providerId:modelId）
+  final String? aiPostReviewModelKey;
 
   /// 对话框背景高斯模糊
   final bool dialogBlur;
@@ -117,6 +125,8 @@ class AppPreferences {
     required this.cfClearanceRefresh,
     required this.expandRelatedLinks,
     required this.aiSwipeEntry,
+    this.aiPostReviewEnabled = false,
+    this.aiPostReviewModelKey,
     required this.dialogBlur,
     this.showSignatures = true,
     this.defaultNestedView = false,
@@ -147,6 +157,8 @@ class AppPreferences {
     bool? cfClearanceRefresh,
     bool? expandRelatedLinks,
     bool? aiSwipeEntry,
+    bool? aiPostReviewEnabled,
+    Object? aiPostReviewModelKey = _unset,
     bool? dialogBlur,
     bool? showSignatures,
     bool? defaultNestedView,
@@ -178,6 +190,10 @@ class AppPreferences {
       cfClearanceRefresh: cfClearanceRefresh ?? this.cfClearanceRefresh,
       expandRelatedLinks: expandRelatedLinks ?? this.expandRelatedLinks,
       aiSwipeEntry: aiSwipeEntry ?? this.aiSwipeEntry,
+      aiPostReviewEnabled: aiPostReviewEnabled ?? this.aiPostReviewEnabled,
+      aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
+          ? this.aiPostReviewModelKey
+          : aiPostReviewModelKey as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
@@ -215,6 +231,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       CfClearanceRefreshService.prefKeyEnabled;
   static const String _expandRelatedLinksKey = 'pref_expand_related_links';
   static const String _aiSwipeEntryKey = 'pref_ai_swipe_entry';
+  static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
+  static const String _aiPostReviewModelKey = 'pref_ai_post_review_model';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
@@ -254,6 +272,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           cfClearanceRefresh: _prefs.getBool(_cfClearanceRefreshKey) ?? false,
           expandRelatedLinks: _prefs.getBool(_expandRelatedLinksKey) ?? false,
           aiSwipeEntry: _prefs.getBool(_aiSwipeEntryKey) ?? false,
+          aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
+          aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
@@ -381,6 +401,20 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setAiSwipeEntry(bool enabled) async {
     state = state.copyWith(aiSwipeEntry: enabled);
     await _prefs.setBool(_aiSwipeEntryKey, enabled);
+  }
+
+  Future<void> setAiPostReviewEnabled(bool enabled) async {
+    state = state.copyWith(aiPostReviewEnabled: enabled);
+    await _prefs.setBool(_aiPostReviewEnabledKey, enabled);
+  }
+
+  Future<void> setAiPostReviewModelKey(String? key) async {
+    state = state.copyWith(aiPostReviewModelKey: key);
+    if (key == null || key.isEmpty) {
+      await _prefs.remove(_aiPostReviewModelKey);
+    } else {
+      await _prefs.setString(_aiPostReviewModelKey, key);
+    }
   }
 
   Future<void> setDialogBlur(bool enabled) async {

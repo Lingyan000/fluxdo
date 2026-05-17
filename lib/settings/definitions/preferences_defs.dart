@@ -1,11 +1,15 @@
 import 'dart:io';
 
+import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../providers/ai_post_review_provider.dart';
 import '../../providers/preferences_provider.dart';
+import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
+import '../../widgets/ai/ai_model_select_sheet.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/sticker_market_service.dart';
 import '../settings_model.dart';
@@ -83,6 +87,39 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setAutoPanguSpacing(v),
         ),
+        SwitchModel(
+          id: 'aiPostReview',
+          title: l10n.preferences_aiPostReview,
+          subtitle: l10n.preferences_aiPostReviewDesc,
+          icon: Icons.fact_check_outlined,
+          getValue: (ref) => ref.watch(preferencesProvider).aiPostReviewEnabled,
+          onChanged: (ref, v) async {
+            final notifier = ref.read(preferencesProvider.notifier);
+            await notifier.setAiPostReviewEnabled(v);
+            if (!v) return;
+            final prefs = ref.read(preferencesProvider);
+            if (prefs.aiPostReviewModelKey != null) return;
+            final selected = ref.read(aiPostReviewSelectedModelProvider);
+            if (selected == null) return;
+            await notifier.setAiPostReviewModelKey(
+              buildAiModelKey(selected.provider.id, selected.model.id),
+            );
+          },
+        ),
+        ActionModel(
+          id: 'aiPostReviewModel',
+          title: l10n.preferences_aiPostReviewModel,
+          icon: Icons.psychology_alt_outlined,
+          getDynamicSubtitle: (ref) {
+            final selected = ref.watch(aiPostReviewSelectedModelProvider);
+            if (selected == null) {
+              return l10n.preferences_aiPostReviewModelNotSelected;
+            }
+            final modelName = selected.model.name ?? selected.model.id;
+            return '${selected.provider.name} / $modelName';
+          },
+          onTap: (context, ref) => _showAiPostReviewModelSheet(context, ref),
+        ),
         ActionModel(
           id: 'stickerSource',
           title: l10n.preferences_stickerSource,
@@ -110,6 +147,38 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
         ],
       ),
   ];
+}
+
+Future<void> _showAiPostReviewModelSheet(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final allModels = ref.read(aiPostReviewAvailableModelsProvider);
+  if (allModels.isEmpty) {
+    ToastService.showInfo(context.l10n.aiPostReview_noAvailableModel);
+    return;
+  }
+
+  final current =
+      ref.read(aiPostReviewSelectedModelProvider) ?? allModels.first;
+  final selected = await showAiModelSelectSheet(
+    context: context,
+    allModels: allModels,
+    current: current,
+    mode: PromptType.text,
+  );
+  if (!context.mounted || selected == null) return;
+
+  if (!selected.model.output.contains(Modality.text)) {
+    ToastService.showInfo(context.l10n.aiPostReview_chooseTextModel);
+    return;
+  }
+
+  await ref
+      .read(preferencesProvider.notifier)
+      .setAiPostReviewModelKey(
+        buildAiModelKey(selected.provider.id, selected.model.id),
+      );
 }
 
 void _showStickerBaseUrlDialog(BuildContext context, WidgetRef ref) {

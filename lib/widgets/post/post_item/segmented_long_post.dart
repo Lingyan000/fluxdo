@@ -186,6 +186,8 @@ class LongPostFooterSegment extends ConsumerWidget {
   final void Function(int postNumber)? onJumpToPost;
   final void Function(int postId, bool accepted)? onSolutionChanged;
   final bool useReplyDialog;
+  final String? topicTitle;
+  final bool isPrivateMessageTopic;
   final VoidCallback? onShowPostDetail;
   final String? highlightBoostUsername;
 
@@ -206,6 +208,8 @@ class LongPostFooterSegment extends ConsumerWidget {
     required this.onJumpToPost,
     required this.onSolutionChanged,
     this.useReplyDialog = false,
+    this.topicTitle,
+    this.isPrivateMessageTopic = false,
     this.onShowPostDetail,
   });
 
@@ -232,7 +236,9 @@ class LongPostFooterSegment extends ConsumerWidget {
                 decoration: BoxDecoration(
                   border: Border(
                     top: BorderSide(
-                      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.3,
+                      ),
                       width: 0.5,
                     ),
                   ),
@@ -240,7 +246,9 @@ class LongPostFooterSegment extends ConsumerWidget {
                 child: CollapsedHtmlContent(
                   html: post.signatureCooked!,
                   textStyle: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.6,
+                    ),
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -263,6 +271,8 @@ class LongPostFooterSegment extends ConsumerWidget {
               onJumpToPost: onJumpToPost,
               onSolutionChanged: onSolutionChanged,
               useReplyDialog: useReplyDialog,
+              topicTitle: topicTitle,
+              isPrivateMessageTopic: isPrivateMessageTopic,
               onShowPostDetail: onShowPostDetail,
             ),
           ),

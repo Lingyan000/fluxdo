@@ -25,6 +25,8 @@ void showPostRepliesSheet({
   required BuildContext context,
   required Post post,
   required int topicId,
+  String? topicTitle,
+  bool isPrivateMessageTopic = false,
   void Function(int postNumber)? onJumpToPost,
 }) {
   showAppBottomSheet(
@@ -38,6 +40,8 @@ void showPostRepliesSheet({
     builder: (context) => _PostRepliesSheetContent(
       post: post,
       topicId: topicId,
+      topicTitle: topicTitle,
+      isPrivateMessageTopic: isPrivateMessageTopic,
       onJumpToPost: onJumpToPost,
     ),
   );
@@ -46,11 +50,15 @@ void showPostRepliesSheet({
 class _PostRepliesSheetContent extends ConsumerStatefulWidget {
   final Post post;
   final int topicId;
+  final String? topicTitle;
+  final bool isPrivateMessageTopic;
   final void Function(int postNumber)? onJumpToPost;
 
   const _PostRepliesSheetContent({
     required this.post,
     required this.topicId,
+    this.topicTitle,
+    this.isPrivateMessageTopic = false,
     this.onJumpToPost,
   });
 
@@ -210,6 +218,8 @@ class _PostRepliesSheetContentState
       topicId: widget.topicId,
       replyToPost: replyToPost,
       initialContent: initialContent,
+      topicTitle: widget.topicTitle,
+      isPrivateMessageTopic: widget.isPrivateMessageTopic,
     );
   }
 
@@ -257,6 +267,8 @@ class _PostRepliesSheetContentState
       topicId: widget.topicId,
       replyToPost: post,
       initialContent: quote,
+      topicTitle: widget.topicTitle,
+      isPrivateMessageTopic: widget.isPrivateMessageTopic,
     );
   }
 
@@ -543,6 +555,8 @@ class _PostRepliesSheetContentState
             onRefreshPost: null,
             onJumpToPost: _jumpToPost,
             onSolutionChanged: null,
+            topicTitle: widget.topicTitle,
+            isPrivateMessageTopic: widget.isPrivateMessageTopic,
             hideRepliesButton: true,
             onShowPostDetail: () => _jumpToPost(post.postNumber),
             postDetailLabel: S.current.topic_jump,

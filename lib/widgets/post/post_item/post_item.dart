@@ -36,6 +36,8 @@ class PostItem extends ConsumerStatefulWidget {
   final void Function(String quote, Post post)? onQuoteImage;
   final void Function(int postId)? onExpandHiddenPost;
   final bool useReplyDialog;
+  final String? topicTitle;
+  final bool isPrivateMessageTopic;
   final VoidCallback? onShowPostDetail;
   final bool hideRepliesButton;
   final String? highlightBoostUsername;
@@ -63,6 +65,8 @@ class PostItem extends ConsumerStatefulWidget {
     this.onQuoteImage,
     this.onExpandHiddenPost,
     this.useReplyDialog = false,
+    this.topicTitle,
+    this.isPrivateMessageTopic = false,
     this.onShowPostDetail,
     this.hideRepliesButton = false,
   });
@@ -216,7 +220,9 @@ class _PostItemState extends ConsumerState<PostItem> {
                     decoration: BoxDecoration(
                       border: Border(
                         top: BorderSide(
-                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
                           width: 0.5,
                         ),
                       ),
@@ -224,7 +230,9 @@ class _PostItemState extends ConsumerState<PostItem> {
                     child: CollapsedHtmlContent(
                       html: post.signatureCooked!,
                       textStyle: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.6,
+                        ),
                         fontSize: 12,
                         height: 1.4,
                       ),
@@ -284,6 +292,8 @@ class _PostItemState extends ConsumerState<PostItem> {
                 onJumpToPost: widget.onJumpToPost,
                 onSolutionChanged: widget.onSolutionChanged,
                 useReplyDialog: widget.useReplyDialog,
+                topicTitle: widget.topicTitle,
+                isPrivateMessageTopic: widget.isPrivateMessageTopic,
                 onShowPostDetail: widget.onShowPostDetail,
                 hideRepliesButton: widget.hideRepliesButton,
                 onAcceptedAnswerChanged: (accepted) {

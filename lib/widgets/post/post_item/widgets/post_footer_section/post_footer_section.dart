@@ -45,6 +45,8 @@ class PostFooterSection extends ConsumerStatefulWidget {
   final void Function(int postId, bool accepted)? onSolutionChanged;
   final ValueChanged<bool>? onAcceptedAnswerChanged;
   final bool useReplyDialog;
+  final String? topicTitle;
+  final bool isPrivateMessageTopic;
 
   /// 隐藏回复列表按钮（弹框内使用时不需要展示）
   final bool hideRepliesButton;
@@ -76,6 +78,8 @@ class PostFooterSection extends ConsumerStatefulWidget {
     required this.onSolutionChanged,
     this.onAcceptedAnswerChanged,
     this.useReplyDialog = false,
+    this.topicTitle,
+    this.isPrivateMessageTopic = false,
     this.hideRepliesButton = false,
     this.onShowPostDetail,
     this.postDetailLabel,

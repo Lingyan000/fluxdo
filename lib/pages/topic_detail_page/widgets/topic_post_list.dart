@@ -733,6 +733,8 @@ class _TopicPostListState extends State<TopicPostList> {
           onQuoteImage: onQuoteImage,
           onExpandHiddenPost: onExpandHiddenPost,
           useReplyDialog: useReplyDialog,
+          topicTitle: detail.title,
+          isPrivateMessageTopic: detail.isPrivateMessage,
           onShowPostDetail: widget.onShowPostDetail != null
               ? () => widget.onShowPostDetail!(post)
               : null,
@@ -783,6 +785,8 @@ class _TopicPostListState extends State<TopicPostList> {
           onJumpToPost: onJumpToPost,
           onSolutionChanged: onSolutionChanged,
           useReplyDialog: useReplyDialog,
+          topicTitle: detail.title,
+          isPrivateMessageTopic: detail.isPrivateMessage,
           onShowPostDetail: widget.onShowPostDetail != null
               ? () => widget.onShowPostDetail!(post)
               : null,

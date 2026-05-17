@@ -58,6 +58,7 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: replyToPost,
       initialContent: initialContent,
+      topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
       shortcutSurface: const ShortcutSurfaceConfig(
@@ -393,6 +394,7 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
       shortcutSurface: const ShortcutSurfaceConfig(
@@ -718,6 +720,7 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
       shortcutSurface: const ShortcutSurfaceConfig(
@@ -769,6 +772,7 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
       shortcutSurface: const ShortcutSurfaceConfig(
@@ -803,7 +807,9 @@ extension _UserActions on _TopicDetailPageState {
   void _updateNestedViewAfterReply(Post newPost) {
     if (!_isNestedView) return;
     final nestedParams = NestedTopicParams(topicId: widget.topicId);
-    ref.read(nestedTopicProvider(nestedParams).notifier).addNewPost(newPost, isOwnPost: true);
+    ref
+        .read(nestedTopicProvider(nestedParams).notifier)
+        .addNewPost(newPost, isOwnPost: true);
   }
 
   /// MessageBus created 事件：获取完整帖子数据并更新嵌套视图

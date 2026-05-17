@@ -117,7 +117,9 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
 
   void _listenChildCreated() {
     ref.listenManual(
-      nestedTopicProvider(widget.params).select((s) => s.value?.lastChildCreated),
+      nestedTopicProvider(
+        widget.params,
+      ).select((s) => s.value?.lastChildCreated),
       (previous, next) {
         if (next == null || next == previous) return;
         if (next.parentPostNumber != widget.node.post.postNumber) return;
@@ -524,7 +526,9 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.3,
+                    ),
                     width: 0.5,
                   ),
                 ),
@@ -532,7 +536,9 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
               child: CollapsedHtmlContent(
                 html: post.signatureCooked!,
                 textStyle: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.6,
+                  ),
                   fontSize: 11,
                   height: 1.4,
                 ),
@@ -560,6 +566,8 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           onRefreshPost: widget.onRefreshPost,
           onJumpToPost: widget.onJumpToPost,
           onSolutionChanged: widget.onSolutionChanged,
+          topicTitle: widget.detail.title,
+          isPrivateMessageTopic: widget.detail.isPrivateMessage,
           hideRepliesButton: true,
         ),
       ],
