@@ -200,7 +200,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
       '/u/$username/notification_level.json',
       data: {
         'notification_level': level,
-        if (expiringAt case final expiringAt?) 'expiring_at': expiringAt,
+        ...?(expiringAt == null ? null : {'expiring_at': expiringAt}),
       },
     );
   }

@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/topic.dart';
-import 'package:fluxdo/pages/bookmarks/bookmarks_models.dart';
 import 'package:fluxdo/providers/user_content_providers.dart';
 
 Topic _bookmarkTopic({
