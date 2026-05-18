@@ -518,6 +518,10 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       }
 
       _loginHandled = true;
+      // 指纹 POST 改为 fire-and-forget：后续 _finalizeLoginBeforeExit +
+      // evaluateJavascript + _finalizeLoginBootstrap 链路本身就会 await 一段时间，
+      // 足以让 WebView 内的 visitor_id POST 自然完成；
+      // 不再为指纹单独等待最多 15 秒，避免阻塞登录交接。
       unawaited(_waitForFingerprintPost());
       final finalToken = await _finalizeLoginBeforeExit(
         controller,
@@ -607,19 +611,25 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     required String token,
     String? pageHtml,
   }) async {
+    // PreloadedDataService.refresh 底层 Dio 请求没有显式超时，极端网络下
+    // 可能挂住很久；这里整段限时 8 秒，超时也要兜底广播登录成功，
+    // 避免用户被永久卡在「正在同步登录状态…」界面。
+    const finalizeTimeout = Duration(seconds: 8);
+
     var loginReadyNotified = false;
     try {
-      final reusedPreloaded = await LoginReadyCoordinator(
-        hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
-        refreshPreloadedData: () async {
-          debugPrint('[Login] 当前页面无可复用首页数据，回退到 HTTP refresh');
-          await PreloadedDataService().refresh();
-        },
-        notifyLoginReady: (finalToken) {
-          loginReadyNotified = true;
-          _service.onLoginSuccess(finalToken);
-        },
-      ).finalize(token: token, pageHtml: pageHtml);
+      final reusedPreloaded =
+          await LoginReadyCoordinator(
+            hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
+            refreshPreloadedData: () async {
+              debugPrint('[Login] 当前页面无可复用首页数据，回退到 HTTP refresh');
+              await PreloadedDataService().refresh();
+            },
+            notifyLoginReady: (finalToken) {
+              loginReadyNotified = true;
+              _service.onLoginSuccess(finalToken);
+            },
+          ).finalize(token: token, pageHtml: pageHtml).timeout(finalizeTimeout);
 
       final jarToken = await _cookieJar.getTToken();
       final tokenMatch = jarToken == token;
@@ -640,8 +650,20 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         'reusedPreloaded': reusedPreloaded,
         'jarSessionCookies': jarSessionCookies,
       });
+    } on TimeoutException {
+      debugPrint('[Login] 登录态收尾超时（${finalizeTimeout.inSeconds}s），走兜底广播');
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'warning',
+        'type': 'auth',
+        'event': 'login_bootstrap_timeout',
+        'message': '登录态收尾超时，已兜底广播登录成功',
+        'currentUrl': currentUrl,
+        'timeoutSeconds': finalizeTimeout.inSeconds,
+      });
     } catch (e) {
       debugPrint('[Login] 登录态收尾失败: $e');
+    } finally {
       if (!loginReadyNotified) {
         _service.onLoginSuccess(token);
       }
