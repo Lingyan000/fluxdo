@@ -2,7 +2,10 @@
   "@@locale": "en",
   "aiPostReview_button": "Review",
   "aiPostReview_cachedGuidelines": "Using the last cached community guidelines",
+  "aiPostReview_changeModel": "Change",
   "aiPostReview_chooseTextModel": "Choose a model that supports text output",
+  "aiPostReview_contentChangedDesc": "Review the current content again, or view the previous result.",
+  "aiPostReview_contentChangedTitle": "Content changed",
   "aiPostReview_contentRequired": "Enter the body to review",
   "aiPostReview_copyDetails": "Copy details",
   "aiPostReview_detailsCopied": "Error details copied",
@@ -16,6 +19,11 @@
   "aiPostReview_noFullRewriteHint": "Only opinions and edit directions are shown here. Full rewrites are not provided.",
   "aiPostReview_opinions": "Opinions",
   "aiPostReview_pass": "Looks fine",
+  "aiPostReview_modelPrefix": "Model: ",
+  "aiPostReview_previousResultNotice": "Content has changed. This is the previous review result.",
+  "aiPostReview_reviewAgain": "Review again",
+  "aiPostReview_reviewCurrent": "Review current content",
   "aiPostReview_reviewing": "Reviewing",
-  "aiPostReview_suggestions": "Edit directions"
+  "aiPostReview_suggestions": "Edit directions",
+  "aiPostReview_viewLastResult": "View previous result"
 }
