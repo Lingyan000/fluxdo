@@ -55,7 +55,9 @@ class DraftData {
       tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
       replyToPostNumber: json['replyToPostNumber'] as int?,
       action: json['action'] as String?,
-      recipients: (json['recipients'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      recipients: (json['recipients'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList(),
       archetypeId: json['archetypeId'] as String?,
       composerTime: json['composerTime'] as int?,
       typingTime: json['typingTime'] as int?,
@@ -69,9 +71,13 @@ class DraftData {
     if (title != null) json['title'] = title;
     if (categoryId != null) json['categoryId'] = categoryId;
     if (tags != null && tags!.isNotEmpty) json['tags'] = tags;
-    if (replyToPostNumber != null) json['replyToPostNumber'] = replyToPostNumber;
+    if (replyToPostNumber != null) {
+      json['replyToPostNumber'] = replyToPostNumber;
+    }
     if (action != null) json['action'] = action;
-    if (recipients != null && recipients!.isNotEmpty) json['recipients'] = recipients;
+    if (recipients != null && recipients!.isNotEmpty) {
+      json['recipients'] = recipients;
+    }
     if (archetypeId != null) json['archetypeId'] = archetypeId;
     if (composerTime != null) json['composerTime'] = composerTime;
     if (typingTime != null) json['typingTime'] = typingTime;
@@ -171,8 +177,9 @@ class Draft {
       sequence: json['draft_sequence'] as int? ?? json['sequence'] as int? ?? 0,
       title: json['title'] as String?,
       excerpt: json['excerpt'] as String?,
-      updatedAt: TimeUtils.parseUtcTime(json['updated_at'] as String?)
-          ?? TimeUtils.parseUtcTime(json['created_at'] as String?),
+      updatedAt:
+          TimeUtils.parseUtcTime(json['updated_at'] as String?) ??
+          TimeUtils.parseUtcTime(json['created_at'] as String?),
       username: json['username'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
       topicId: topicId,
@@ -228,11 +235,31 @@ class Draft {
   /// 新私信草稿 Key
   static const String newPrivateMessageKey = 'new_private_message';
 
+  /// 判断是否是新话题草稿 Key。
+  ///
+  /// Discourse 网页端可能为新话题草稿生成带后缀的 key，例如
+  /// `new_topic_xxxxx`，不能只按固定的 `new_topic` 判断。
+  static bool isNewTopicKey(String draftKey) {
+    return draftKey == newTopicKey || draftKey.startsWith('${newTopicKey}_');
+  }
+
+  /// 是否是新话题草稿。
+  bool get isNewTopicDraft {
+    if (isNewTopicKey(draftKey)) return true;
+
+    final action = data.action;
+    return draftKey.isNotEmpty &&
+        draftKey != newPrivateMessageKey &&
+        !draftKey.startsWith('topic_') &&
+        (action == 'createTopic' || action == DraftAction.createTopic.value);
+  }
+
   /// 话题回复草稿 Key（回复话题本身）
   static String topicReplyKey(int topicId) => 'topic_$topicId';
 
   /// 帖子回复草稿 Key（回复某个帖子）
-  static String postReplyKey(int topicId, int postNumber) => 'topic_${topicId}_post_$postNumber';
+  static String postReplyKey(int topicId, int postNumber) =>
+      'topic_${topicId}_post_$postNumber';
 
   /// 根据参数生成回复草稿 Key
   static String replyKey(int topicId, {int? replyToPostNumber}) {
@@ -258,15 +285,14 @@ class DraftListResponse {
   final List<Draft> drafts;
   final bool hasMore;
 
-  const DraftListResponse({
-    required this.drafts,
-    this.hasMore = false,
-  });
+  const DraftListResponse({required this.drafts, this.hasMore = false});
 
   factory DraftListResponse.fromJson(Map<String, dynamic> json) {
     final draftsJson = json['drafts'] as List<dynamic>? ?? [];
     return DraftListResponse(
-      drafts: draftsJson.map((e) => Draft.fromJson(e as Map<String, dynamic>)).toList(),
+      drafts: draftsJson
+          .map((e) => Draft.fromJson(e as Map<String, dynamic>))
+          .toList(),
       hasMore: json['has_more'] as bool? ?? false,
     );
   }

@@ -54,7 +54,8 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.drafts));
     final atZero = progress == 0 && current != 0;
-    final crossed = (progress >= navScrollIconThreshold) !=
+    final crossed =
+        (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.drafts).notifier).state =
@@ -109,9 +110,16 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.drafts_outlined, size: 64, color: Colors.grey),
+                    const Icon(
+                      Icons.drafts_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(height: 16),
-                    Text(context.l10n.drafts_empty, style: const TextStyle(color: Colors.grey)),
+                    Text(
+                      context.l10n.drafts_empty,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                   ],
                 ),
               );
@@ -146,11 +154,13 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
   Future<void> _onDraftTap(Draft draft) async {
     final draftKey = draft.draftKey;
 
-    if (draftKey == Draft.newTopicKey) {
+    if (draft.isNewTopicDraft) {
       // 新话题草稿：进入创建话题页面
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const CreateTopicPage()),
+        MaterialPageRoute(
+          builder: (_) => CreateTopicPage(draftKey: draft.draftKey),
+        ),
       );
     } else if (draftKey == Draft.newPrivateMessageKey) {
       // 私信草稿：直接弹出回复框
@@ -178,7 +188,8 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
         }
       } else {
         // 话题回复草稿：topic_{topicId}
-        topicId = draft.topicId ?? int.tryParse(draftKey.replaceFirst('topic_', ''));
+        topicId =
+            draft.topicId ?? int.tryParse(draftKey.replaceFirst('topic_', ''));
       }
 
       if (topicId != null) {
@@ -219,7 +230,9 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
             content: Text(dialogContext.l10n.drafts_deleteContent),
             actions: [
               TextButton(
-                onPressed: isDeleting ? null : () => Navigator.pop(dialogContext, false),
+                onPressed: isDeleting
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
                 child: Text(dialogContext.l10n.common_cancel),
               ),
               FilledButton(
@@ -232,11 +245,15 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
                             draft.draftKey,
                             sequence: draft.sequence,
                           );
-                          if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
                         } catch (e) {
                           if (dialogContext.mounted) {
                             setState(() => isDeleting = false);
-                            ToastService.showError(S.current.drafts_deleteFailed(e.toString()));
+                            ToastService.showError(
+                              S.current.drafts_deleteFailed(e.toString()),
+                            );
                           }
                         }
                       },
@@ -282,7 +299,7 @@ class _DraftCard extends StatelessWidget {
     String typeLabel;
     IconData typeIcon;
 
-    if (draft.draftKey == Draft.newTopicKey) {
+    if (draft.isNewTopicDraft) {
       typeLabel = context.l10n.drafts_newTopic;
       typeIcon = Icons.add_circle_outline;
     } else if (draft.draftKey == Draft.newPrivateMessageKey) {
@@ -319,7 +336,10 @@ class _DraftCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(6),
