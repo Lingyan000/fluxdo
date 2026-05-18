@@ -68,7 +68,10 @@ class AdaptiveNavigationRail extends StatelessWidget {
     final safeBottomCount = bottomDestinationCount.clamp(0, remainingAfterTop);
     final bottomStartIndex = destinations.length - safeBottomCount;
     final topDestinations = destinations.sublist(0, safeTopCount);
-    final middleDestinations = destinations.sublist(
+    // 既不在 top 也不在 bottom 的剩余项，渲染在 categoryShortcuts 下方、
+    // bottomDestinations 上方（视觉上仍归属"底部分组"，只是排在底部分组之前）。
+    // 当 topCount + bottomCount == destinations.length 时为空。
+    final extraBottomDestinations = destinations.sublist(
       safeTopCount,
       bottomStartIndex,
     );
@@ -114,7 +117,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
               bottomLeading!,
               const SizedBox(height: 8),
             ],
-            ...middleDestinations.asMap().entries.map((entry) {
+            ...extraBottomDestinations.asMap().entries.map((entry) {
               final index = entry.key + safeTopCount;
               final dest = entry.value;
               final selected = index == selectedIndex;
