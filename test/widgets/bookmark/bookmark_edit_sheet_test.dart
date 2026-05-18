@@ -36,6 +36,42 @@ void main() {
     expect(find.text('icon'), findsOneWidget);
   });
 
+  testWidgets('编辑面板中的书签名称候选列表可滚动查看更多选项', (tester) async {
+    final suggestions = List<String>.generate(12, (index) => 'tag-${index + 1}');
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          navigatorKey: navigatorKey,
+          supportedLocales: AppLocaleUtils.supportedLocales,
+          home: Scaffold(
+            body: BookmarkEditSheet(
+              bookmarkId: 1,
+              nameSuggestions: suggestions,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextFormField));
+    await tester.pumpAndSettle();
+
+    expect(find.text('tag-12'), findsNothing);
+
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('tag-12'), findsOneWidget);
+  });
+
   testWidgets('传入缓存候选后仍会后台刷新完整补全列表', (tester) async {
     var loaderCalls = 0;
 

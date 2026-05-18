@@ -420,7 +420,8 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
             maxHeight: maxSheetHeight.clamp(280, double.infinity),
           ),
           child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            // 允许书签名称候选列表自己处理拖拽，避免外层滚动先收起键盘导致补全浮层失焦。
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
