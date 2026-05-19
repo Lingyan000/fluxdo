@@ -85,6 +85,8 @@ class AiPostReviewService {
   static const _guidelinesCacheUpdatedAtKey =
       'ai_post_review_guidelines_cache_updated_at';
   static const _maxGuidelinesChars = 12000;
+  static const _guidelinesReceiveTimeout = Duration(seconds: 10);
+  static const _guidelinesOverallTimeout = Duration(seconds: 12);
 
   final SharedPreferences _prefs;
   final AiChatService _chatService;
@@ -167,10 +169,15 @@ class AiPostReviewService {
     if (dio == null) {
       throw StateError('缺少网络客户端。');
     }
-    final response = await dio.get<String>(
-      guidelinesUrl,
-      options: Options(responseType: ResponseType.plain),
-    );
+    final response = await dio
+        .get<String>(
+          guidelinesUrl,
+          options: Options(
+            responseType: ResponseType.plain,
+            receiveTimeout: _guidelinesReceiveTimeout,
+          ),
+        )
+        .timeout(_guidelinesOverallTimeout);
     return response.data ?? '';
   }
 

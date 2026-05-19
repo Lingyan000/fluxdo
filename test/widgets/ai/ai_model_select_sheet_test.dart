@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/app_localizations.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/widgets/ai/ai_model_select_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,19 +37,23 @@ void main() {
             name: 'Gamma Image',
             output: [Modality.image],
           ),
+          AiModel(id: 'delta', name: 'Delta Model', output: [Modality.text]),
         ],
       ),
     ];
 
     SharedPreferences.setMockInitialValues({
       'ai_providers': jsonEncode(providers.map((e) => e.toJson()).toList()),
-      'ai_favorite_model_keys': ['p1:alpha', 'p2:gamma-image'],
+      'ai_favorite_model_keys': ['p1:alpha', 'p2:delta', 'p2:gamma-image'],
     });
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [aiSharedPreferencesProvider.overrideWithValue(prefs)],
+        overrides: [
+          aiSharedPreferencesProvider.overrideWithValue(prefs),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             localizationsDelegates: const [
@@ -88,17 +93,24 @@ void main() {
     expect(find.text('收藏模型'), findsNothing);
   });
 
-  testWidgets('text mode favorites still show image models', (tester) async {
+  testWidgets('text mode hides image-only favorites', (tester) async {
     await pumpHost(tester);
 
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    final favoritesSection = find.byKey(const ValueKey('section_favorites'));
-    expect(favoritesSection, findsOneWidget);
+    expect(find.byKey(const ValueKey('section_favorites')), findsOneWidget);
     expect(
-      find.descendant(of: favoritesSection, matching: find.text('Gamma Image')),
+      find.byKey(const ValueKey('favorite_row_p1_alpha')),
       findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('favorite_row_p2_delta')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('favorite_row_p2_gamma-image')),
+      findsNothing,
     );
     expect(find.byType(ReorderableDragStartListener), findsNothing);
     expect(find.byType(ReorderableDelayedDragStartListener), findsWidgets);
@@ -112,15 +124,11 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Gamma');
+    await tester.enterText(find.byType(TextField), 'Delta');
     await tester.pumpAndSettle();
 
-    final favoritesSection = find.byKey(const ValueKey('section_favorites'));
-    expect(favoritesSection, findsOneWidget);
-    expect(
-      find.descendant(of: favoritesSection, matching: find.text('Gamma Image')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('section_favorites')), findsOneWidget);
+    expect(find.text('Delta Model'), findsWidgets);
     expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
   });
 
@@ -133,25 +141,29 @@ void main() {
     await tester.pumpAndSettle();
 
     final alphaRow = find.byKey(const ValueKey('favorite_row_p1_alpha'));
-    final gammaRow = find.byKey(const ValueKey('favorite_row_p2_gamma-image'));
+    final deltaRow = find.byKey(const ValueKey('favorite_row_p2_delta'));
     expect(
       tester.getTopLeft(alphaRow).dy,
-      lessThan(tester.getTopLeft(gammaRow).dy),
+      lessThan(tester.getTopLeft(deltaRow).dy),
     );
 
-    final gesture = await tester.startGesture(tester.getCenter(gammaRow));
-    await tester.pump(const Duration(milliseconds: 700));
-    await gesture.moveBy(const Offset(0, -80));
-    await tester.pumpAndSettle();
+    final dragDistance =
+        tester.getCenter(deltaRow).dy - tester.getCenter(alphaRow).dy + 16;
+    final gesture = await tester.startGesture(tester.getCenter(deltaRow));
+    await tester.pump(const Duration(milliseconds: 800));
+    for (var step = 0; step < 8; step++) {
+      await gesture.moveBy(Offset(0, -dragDistance / 8));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     await gesture.up();
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(gammaRow).dy,
+      tester.getTopLeft(deltaRow).dy,
       lessThan(tester.getTopLeft(alphaRow).dy),
     );
 
-    await tester.tap(gammaRow);
+    await tester.tap(deltaRow);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('open'));
@@ -159,7 +171,7 @@ void main() {
 
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey('favorite_row_p2_gamma-image')))
+          .getTopLeft(find.byKey(const ValueKey('favorite_row_p2_delta')))
           .dy,
       lessThan(
         tester

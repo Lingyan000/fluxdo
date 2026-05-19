@@ -232,7 +232,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _expandRelatedLinksKey = 'pref_expand_related_links';
   static const String _aiSwipeEntryKey = 'pref_ai_swipe_entry';
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
-  static const String _aiPostReviewModelKey = 'pref_ai_post_review_model';
+  static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
@@ -273,7 +273,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           expandRelatedLinks: _prefs.getBool(_expandRelatedLinksKey) ?? false,
           aiSwipeEntry: _prefs.getBool(_aiSwipeEntryKey) ?? false,
           aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
-          aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelKey),
+          aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
@@ -411,9 +411,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setAiPostReviewModelKey(String? key) async {
     state = state.copyWith(aiPostReviewModelKey: key);
     if (key == null || key.isEmpty) {
-      await _prefs.remove(_aiPostReviewModelKey);
+      await _prefs.remove(_aiPostReviewModelPrefKey);
     } else {
-      await _prefs.setString(_aiPostReviewModelKey, key);
+      await _prefs.setString(_aiPostReviewModelPrefKey, key);
     }
   }
 

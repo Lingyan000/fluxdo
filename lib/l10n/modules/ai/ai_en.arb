@@ -72,6 +72,7 @@
   "ai_modelFavoritesDock": "Favorites",
   "ai_modelFavoriteAdd": "Favorite model",
   "ai_modelFavoriteRemove": "Remove favorite",
+  "ai_modelFavoriteSortHint": "Long press to sort",
   "ai_imageGenTitle": "Generate an image",
   "ai_imageGenSubtitle": "Pick a style preset or describe what you want to draw",
   "ai_imageCoverLabel": "Cover poster",

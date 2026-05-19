@@ -60,7 +60,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
     final mediaQuery = MediaQuery.of(context);
     final maxHeight = mediaQuery.size.height * 0.85;
     final favoriteKeys = ref.watch(favoriteAiModelKeysProvider);
-    final favoriteModels = ref.watch(allFavoriteAiModelsProvider);
+    final favoriteModels = ref.watch(favoriteAiModelsProvider(widget.mode));
     final canReorderFavorites = _query.trim().isEmpty;
 
     final filtered = _filterModels(widget.allModels);
@@ -96,7 +96,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                 autofocus: false,
                 onChanged: (value) => setState(() => _query = value),
                 decoration: InputDecoration(
-                  hintText: S.current.ai_modelSearchHint,
+                  hintText: context.l10n.ai_modelSearchHint,
                   prefixIcon: Icon(
                     Icons.search,
                     size: 20,
@@ -170,7 +170,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
       sections.add(
         _SectionData(
           id: 'favorites',
-          title: _favoriteModelsSectionLabel(context),
+          title: context.l10n.ai_modelFavoritesSection,
           items: visibleFavorites,
           isFavorites: true,
         ),
@@ -207,7 +207,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            S.current.ai_modelSearchNoMatch,
+            context.l10n.ai_modelSearchNoMatch,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -288,7 +288,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    _favoriteSortHintLabel(context),
+                    context.l10n.ai_modelFavoriteSortHint,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w500,
@@ -453,7 +453,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                       const SizedBox(width: 6),
                       Text(
                         section.isFavorites
-                            ? _favoriteDockLabel(context)
+                            ? context.l10n.ai_modelFavoritesDock
                             : section.title,
                         style: TextStyle(
                           fontSize: 12,
@@ -617,8 +617,8 @@ class _ModelRow extends StatelessWidget {
             IconButton(
               key: ValueKey('favorite_${item.provider.id}_${item.model.id}'),
               tooltip: isFavorite
-                  ? _favoriteRemoveLabel(context)
-                  : _favoriteAddLabel(context),
+                  ? context.l10n.ai_modelFavoriteRemove
+                  : context.l10n.ai_modelFavoriteAdd,
               onPressed: onToggleFavorite,
               icon: Icon(
                 isFavorite ? Icons.favorite : Icons.favorite_border,
@@ -680,34 +680,3 @@ class _CapabilityBadge extends StatelessWidget {
   }
 }
 
-String _favoriteModelsSectionLabel(BuildContext context) {
-  return _isEnglishLocale(context)
-      ? 'Favorite Models'
-      : '\u6536\u85CF\u6A21\u578B';
-}
-
-String _favoriteDockLabel(BuildContext context) {
-  return _isEnglishLocale(context) ? 'Favorites' : '\u6536\u85CF';
-}
-
-String _favoriteSortHintLabel(BuildContext context) {
-  return _isEnglishLocale(context)
-      ? 'Long press to sort'
-      : '\u957F\u6309\u6392\u5E8F';
-}
-
-String _favoriteAddLabel(BuildContext context) {
-  return _isEnglishLocale(context)
-      ? 'Favorite model'
-      : '\u6536\u85CF\u6A21\u578B';
-}
-
-String _favoriteRemoveLabel(BuildContext context) {
-  return _isEnglishLocale(context)
-      ? 'Remove favorite'
-      : '\u53D6\u6D88\u6536\u85CF';
-}
-
-bool _isEnglishLocale(BuildContext context) {
-  return Localizations.localeOf(context).languageCode.toLowerCase() == 'en';
-}
