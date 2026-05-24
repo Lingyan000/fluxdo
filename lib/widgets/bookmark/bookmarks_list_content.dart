@@ -92,7 +92,9 @@ class BookmarksListContent extends StatelessWidget {
     final filteredTopics = filterBookmarksByName(topics, selectedBookmarkName);
     final listView = ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.all(12),
+      // 顶部 padding 由上方 summary bar（如有）接管，避免双重间距；非工作区模式
+      // 下若不显示 summary bar，下方 swipeRegion 直接返回 listView，仍走全 12。
+      padding: EdgeInsets.fromLTRB(12, showSummaryBar ? 8 : 12, 12, 12),
       itemCount: filteredTopics.length + 1,
       itemBuilder: (context, index) {
         if (filteredTopics.isEmpty) {
@@ -147,14 +149,20 @@ class BookmarksListContent extends StatelessWidget {
       return swipeRegion;
     }
 
+    final theme = Theme.of(context);
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          child: _BookmarkSummaryBar(
-            summaries: summaries,
-            selectedBookmarkName: selectedBookmarkName,
-            onSelectedBookmarkName: onSelectedBookmarkName,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: _BookmarkSummaryBar(
+              summaries: summaries,
+              selectedBookmarkName: selectedBookmarkName,
+              onSelectedBookmarkName: onSelectedBookmarkName,
+            ),
           ),
         ),
         Expanded(child: swipeRegion),
@@ -353,31 +361,16 @@ class _BookmarkSummaryBar extends StatefulWidget {
 }
 
 class _BookmarkSummaryBarState extends State<_BookmarkSummaryBar> {
-  static const double _scrollStep = 240;
   static const String _allSummaryKey = '__bookmark_summary_all__';
 
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _summaryKeys = <String, GlobalKey>{};
-  bool _canScrollBackward = false;
-  bool _canScrollForward = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_syncScrollState);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _syncScrollState();
-      }
-    });
-  }
 
   @override
   void didUpdateWidget(covariant _BookmarkSummaryBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _syncScrollState();
         _ensureSelectedChipVisible();
       }
     });
@@ -385,42 +378,8 @@ class _BookmarkSummaryBarState extends State<_BookmarkSummaryBar> {
 
   @override
   void dispose() {
-    _scrollController
-      ..removeListener(_syncScrollState)
-      ..dispose();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  void _syncScrollState() {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    final position = _scrollController.position;
-    final canScrollBackward = position.pixels > 0;
-    final canScrollForward = position.maxScrollExtent - position.pixels > 1;
-    if (canScrollBackward == _canScrollBackward &&
-        canScrollForward == _canScrollForward) {
-      return;
-    }
-    setState(() {
-      _canScrollBackward = canScrollBackward;
-      _canScrollForward = canScrollForward;
-    });
-  }
-
-  Future<void> _scrollBy(double delta) async {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    final target = (_scrollController.offset + delta).clamp(
-      0.0,
-      _scrollController.position.maxScrollExtent,
-    );
-    await _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   GlobalKey _keyForSummary(String key) {
@@ -463,20 +422,7 @@ class _BookmarkSummaryBarState extends State<_BookmarkSummaryBar> {
         _scrollController.position.maxScrollExtent,
       );
       _scrollController.jumpTo(target);
-      _syncScrollState();
     });
-  }
-
-  ScrollBehavior _desktopFriendlyBehavior(BuildContext context) {
-    return ScrollConfiguration.of(context).copyWith(
-      dragDevices: {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-        PointerDeviceKind.unknown,
-      },
-    );
   }
 
   @override
@@ -505,50 +451,19 @@ class _BookmarkSummaryBarState extends State<_BookmarkSummaryBar> {
         ),
     ];
 
-    final scrollableRow = ScrollConfiguration(
-      behavior: _desktopFriendlyBehavior(context),
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (var index = 0; index < chipChildren.length; index++) ...[
-              if (index > 0) const SizedBox(width: 8),
-              chipChildren[index],
-            ],
-          ],
-        ),
-      ),
-    );
-
+    const spacing = SizedBox(width: 6);
     return Listener(
       key: const ValueKey('bookmark-summary-wheel-region'),
       behavior: HitTestBehavior.opaque,
       onPointerSignal: _handlePointerSignal,
       child: SizedBox(
-        height: 40,
-        child: Row(
-          children: [
-            if (PlatformUtils.isDesktop)
-              IconButton(
-                key: const ValueKey('bookmark-summary-scroll-left'),
-                visualDensity: VisualDensity.compact,
-                onPressed: _canScrollBackward
-                    ? () => _scrollBy(-_scrollStep)
-                    : null,
-                icon: const Icon(Icons.chevron_left_rounded),
-              ),
-            Expanded(child: scrollableRow),
-            if (PlatformUtils.isDesktop)
-              IconButton(
-                key: const ValueKey('bookmark-summary-scroll-right'),
-                visualDensity: VisualDensity.compact,
-                onPressed: _canScrollForward
-                    ? () => _scrollBy(_scrollStep)
-                    : null,
-                icon: const Icon(Icons.chevron_right_rounded),
-              ),
-          ],
+        height: 36,
+        child: ListView.separated(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          itemCount: chipChildren.length,
+          separatorBuilder: (_, _) => spacing,
+          itemBuilder: (_, index) => chipChildren[index],
         ),
       ),
     );

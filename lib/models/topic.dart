@@ -192,7 +192,16 @@ class TopicPoster {
       userId: userId,
       description: json['description'] as String? ?? '',
       extras: json['extras'] as String? ?? '',
-      user: userMap[userId],
+      user: userMap[userId] ??
+          // 从 sqflite 缓存反序列化时没有 userMap；fallback 到嵌入在
+          // poster entry 里的用户字段（normalizeBookmarkListEntry 写入）。
+          (json['_avatar_template'] != null || json['_username'] != null
+              ? TopicUser(
+                  id: userId,
+                  username: json['_username'] as String? ?? '',
+                  avatarTemplate: json['_avatar_template'] as String? ?? '',
+                )
+              : null),
     );
   }
 }
@@ -1724,12 +1733,16 @@ Map<String, dynamic> normalizeBookmarkListEntry(
       userMap[userId] = TopicUser.fromJson(user);
     }
 
-    // 创建 posters 数组
+    // 创建 posters 数组，嵌入用户头像/昵称字段，确保从 sqflite 缓存反序列化
+    // 时也能还原 avatar（此时没有 userMap）。
     map['posters'] = [
       {
         'user_id': userId,
         'description': 'Original Poster',
         'extras': 'latest',
+        if (user.containsKey('avatar_template'))
+          '_avatar_template': user['avatar_template'],
+        if (user.containsKey('username')) '_username': user['username'],
       },
     ];
 

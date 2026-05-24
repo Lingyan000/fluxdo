@@ -85,6 +85,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('12'), findsOneWidget);
-    expect(tester.getSize(find.byKey(badgeKey)), const Size(24, 24));
+    expect(tester.getSize(find.byKey(badgeKey)), const Size(26, 26));
   });
 }

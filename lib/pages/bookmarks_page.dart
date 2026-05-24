@@ -21,6 +21,7 @@ import '../utils/platform_utils.dart';
 import '../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
 import '../widgets/bookmark/bookmarks_list_content.dart';
 import '../widgets/bookmark/bookmarks_workspace_tab_bar.dart';
+import '../widgets/bookmark/mobile_topic_workspace_app_bar.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
 import 'topics_page.dart';
@@ -505,7 +506,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            _WorkspaceCountButton(
+            MobileWorkspaceCountButton(
               key: const ValueKey('bookmark-workspace-mobile-count-button'),
               count: _workspaceState.topicTabs.length,
               tooltip: _workspaceSwitcherLabel(
@@ -533,7 +534,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
         ),
         _buildSyncAction(),
         if (hasOpenedTopics)
-          _WorkspaceCountButton(
+          MobileWorkspaceCountButton(
             key: const ValueKey('bookmark-workspace-mobile-count-button'),
             count: _workspaceState.topicTabs.length,
             tooltip: _workspaceSwitcherLabel(_workspaceState.topicTabs.length),
@@ -753,6 +754,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
             activeTabId: _workspaceState.activeTabId,
             topicTabs: _workspaceState.topicTabs,
             bookmarksLabel: context.l10n.bookmarks_title,
+            isSearchMode: searchState.isSearchMode,
             onSearchTap: () => _onSearchPressed(true),
             onBookmarksTap: () {
               setState(() {
@@ -942,48 +944,5 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       AppErrorHandler.handleUnexpected(e, s);
       return false;
     }
-  }
-}
-
-class _WorkspaceCountButton extends StatelessWidget {
-  const _WorkspaceCountButton({
-    super.key,
-    required this.count,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final int count;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: count == 0 ? null : onPressed,
-      icon: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
-          border: Border.all(color: colorScheme.outline),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: Center(
-            child: Text(
-              count.toString(),
-              maxLines: 1,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }

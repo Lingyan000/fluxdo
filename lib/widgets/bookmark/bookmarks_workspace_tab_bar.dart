@@ -12,6 +12,7 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
     required this.topicTabs,
     required this.bookmarksLabel,
     this.onSearchTap,
+    this.isSearchMode = false,
     required this.onBookmarksTap,
     required this.onTopicTap,
     required this.onTopicClose,
@@ -22,11 +23,12 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
   final List<BookmarkWorkspaceTopicTab> topicTabs;
   final String bookmarksLabel;
   final VoidCallback? onSearchTap;
+  final bool isSearchMode;
   final VoidCallback onBookmarksTap;
   final ValueChanged<int> onTopicTap;
   final ValueChanged<int> onTopicClose;
 
-  /// 注入到搜索按钮右侧的额外控件（如同步按钮）。
+  /// 注入到搜索按钮右侧的额外控件（如同步按钮）。搜索模式下隐藏。
   final List<Widget> trailing;
 
   @override
@@ -108,11 +110,6 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
       ),
       child: SizedBox(
         height: 48,
@@ -154,7 +151,7 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
                 ),
               ),
             ),
-            if (widget.onSearchTap != null)
+            if (!widget.isSearchMode && widget.onSearchTap != null)
               IconButton(
                 key: const ValueKey('bookmark-workspace-search-button'),
                 tooltip: context.l10n.common_search,
@@ -162,7 +159,7 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
                 onPressed: widget.onSearchTap,
                 icon: const Icon(Icons.search_rounded),
               ),
-            ...widget.trailing,
+            if (!widget.isSearchMode) ...widget.trailing,
           ],
         ),
       ),

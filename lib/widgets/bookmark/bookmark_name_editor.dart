@@ -48,51 +48,41 @@ class _BookmarkNameEditorState extends State<BookmarkNameEditor> {
       return field;
     }
 
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      elevation: 8,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compactLayout = constraints.maxWidth < _compactLayoutWidth;
-          final saveButton = SizedBox(
-            width: compactLayout ? double.infinity : null,
-            child: FilledButton(
-              onPressed: widget.isSaving ? null : _save,
-              child: widget.isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(context.l10n.common_save),
-            ),
-          );
-
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: compactLayout
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [field, const SizedBox(height: 12), saveButton],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compactLayout = constraints.maxWidth < _compactLayoutWidth;
+        final saveButton = SizedBox(
+          width: compactLayout ? double.infinity : null,
+          child: FilledButton(
+            onPressed: widget.isSaving ? null : _save,
+            child: widget.isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: field),
-                      const SizedBox(width: 12),
-                      saveButton,
-                    ],
-                  ),
-          );
-        },
-      ),
+                : Text(context.l10n.common_save),
+          ),
+        );
+
+        return compactLayout
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [field, const SizedBox(height: 12), saveButton],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: field),
+                  const SizedBox(width: 12),
+                  saveButton,
+                ],
+              );
+      },
     );
   }
 }
