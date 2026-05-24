@@ -43,6 +43,9 @@ class SearchableAppBar extends StatefulWidget implements PreferredSizeWidget {
   /// 非搜索模式下是否显示搜索按钮
   final bool showSearchButton;
 
+  /// 注入到 actions 末尾的额外按钮（仅在非搜索模式生效）。
+  final List<Widget> trailingActions;
+
   const SearchableAppBar({
     super.key,
     required this.title,
@@ -58,6 +61,7 @@ class SearchableAppBar extends StatefulWidget implements PreferredSizeWidget {
     this.searchHint = '',
     this.onBackPressed,
     this.showSearchButton = true,
+    this.trailingActions = const [],
   });
 
   @override
@@ -205,6 +209,7 @@ class _SearchableAppBarState extends State<SearchableAppBar>
                   tooltip: context.l10n.common_search,
                 ),
               if (widget.showFilterButton) _buildFilterButton(theme),
+              ...widget.trailingActions,
             ],
     );
   }

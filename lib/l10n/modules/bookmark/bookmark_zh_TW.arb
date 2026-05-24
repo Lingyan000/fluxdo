@@ -28,5 +28,27 @@
   "bookmarks_reminderCancelled": "已取消提醒",
   "bookmarks_searchHint": "在書籤中搜尋...",
   "bookmarks_title": "我的書籤",
+  "bookmarks_workspaceOpenedCount": "已開啟 {count} 個",
+  "@bookmarks_workspaceOpenedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncBookmarks": "同步書籤",
+  "bookmarks_syncCompleted": "已同步：新增/更新 {upserted}，清理 {deleted}",
+  "@bookmarks_syncCompleted": {
+    "placeholders": {
+      "upserted": {
+        "type": "int"
+      },
+      "deleted": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncUpToDate": "書籤已是最新",
+  "bookmarks_syncFailed": "同步失敗，請稍後重試",
   "readLater_title": "稍後閱讀"
 }

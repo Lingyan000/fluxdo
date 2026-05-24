@@ -3,18 +3,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
+import '../utils/bookmark_name_utils.dart';
 import 'user.dart';
-
-String? _normalizeBookmarkNameValue(String? rawName) {
-  final trimmed = rawName?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return null;
-  }
-  if (trimmed == '?' || trimmed == '？') {
-    return null;
-  }
-  return trimmed;
-}
 
 /// 标签模型
 class Tag {
@@ -321,7 +311,7 @@ class Topic {
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
       bookmarkedPostNumber: json['_bookmarked_post_number'] as int?,
       bookmarkId: json['_bookmark_id'] as int?,
-      bookmarkName: _normalizeBookmarkNameValue(
+      bookmarkName: normalizeBookmarkName(
         json['_bookmark_name'] as String?,
       ),
       bookmarkReminderAt: TimeUtils.parseUtcTime(
@@ -744,7 +734,7 @@ class Post {
       canWiki: json['can_wiki'] as bool? ?? false,
       bookmarked: json['bookmarked'] as bool? ?? false,
       bookmarkId: json['bookmark_id'] as int?,
-      bookmarkName: _normalizeBookmarkNameValue(
+      bookmarkName: normalizeBookmarkName(
         json['_bookmark_name'] as String?,
       ),
       bookmarkReminderAt: json['_bookmark_reminder_at'] != null
@@ -1450,7 +1440,7 @@ class TopicDetail {
             topicBookmarked = true;
             topicBookmarkId = b['id'] as int?;
             topicBookmarkNameFieldSeen = b.containsKey('name');
-            topicBookmarkName = _normalizeBookmarkNameValue(
+            topicBookmarkName = normalizeBookmarkName(
               b['name'] as String?,
             );
             topicBookmarkReminderAt = TimeUtils.parseUtcTime(
@@ -1465,7 +1455,7 @@ class TopicDetail {
         }
       }
     }
-    final topLevelBookmarkName = _normalizeBookmarkNameValue(
+    final topLevelBookmarkName = normalizeBookmarkName(
       (json['bookmark_name'] ?? json['_bookmark_name']) as String?,
     );
     final topLevelBookmarkReminderAt = TimeUtils.parseUtcTime(
@@ -1498,7 +1488,7 @@ class TopicDetail {
       final updatedPosts = postStream.posts.map((post) {
         final bm = postBookmarks[post.id];
         if (bm != null) {
-          final bmName = _normalizeBookmarkNameValue(bm['name'] as String?);
+          final bmName = normalizeBookmarkName(bm['name'] as String?);
           return post.copyWith(
             bookmarked: true,
             bookmarkId: bm['id'] as int?,
@@ -1669,6 +1659,99 @@ class TopicSummary {
   }
 }
 
+/// 将 `/u/{username}/bookmarks.json` 接口里 `user_bookmark_list.bookmarks` 数组
+/// 中的单条原始 JSON 规范化为 [Topic.fromJson] 可接受的 topic-like map。
+///
+/// 抽离自 [TopicListResponse.fromJson]，供 [BookmarksRepository] / 对账层直接
+/// 使用：它们既要 [Topic] 实例显示，也要拿到包含书签 `updated_at` 的 normalized
+/// map 作为本地缓存 payload。[userMap] 会被就地写入新发现的用户。
+Map<String, dynamic> normalizeBookmarkListEntry(
+  Map<String, dynamic> raw, {
+  required Map<int, TopicUser> userMap,
+}) {
+  final map = Map<String, dynamic>.from(raw);
+
+  // 提取书签元数据（必须在 id 被覆盖前取原始书签 ID）
+  map['_bookmark_id'] = map['id'];
+
+  // 保留书签自身 updated_at，供本地缓存对账使用（书签 name / reminder 改动会变）。
+  if (map['updated_at'] != null) {
+    map['_bookmark_updated_at'] = map['updated_at'];
+  }
+
+  // 书签对象中的 id 是书签 ID，topic_id 才是主题 ID
+  if (map.containsKey('topic_id')) {
+    map['id'] = map['topic_id'];
+  }
+  final bmName = normalizeBookmarkName(map['name'] as String?);
+  if (bmName != null) {
+    map['_bookmark_name'] = bmName;
+  }
+  if (map['reminder_at'] != null) {
+    map['_bookmark_reminder_at'] = map['reminder_at'];
+  }
+  if (map['bookmarkable_type'] != null) {
+    map['_bookmarkable_type'] = map['bookmarkable_type'];
+  }
+
+  // 帖子书签：保留 linked_post_number 供跳转使用
+  if (map['bookmarkable_type'] == 'Post') {
+    final linkedPostNumber = map['linked_post_number'] as int?;
+    if (linkedPostNumber != null) {
+      map['_bookmarked_post_number'] = linkedPostNumber;
+    }
+  }
+
+  // 映射关键字段以适配 TopicCard 显示
+  // 1. 使用 highest_post_number 作为 posts_count
+  if (map.containsKey('highest_post_number')) {
+    map['posts_count'] = map['highest_post_number'];
+    map['reply_count'] = (map['highest_post_number'] as int) - 1;
+  }
+
+  // 2. 使用 bumped_at 作为 last_posted_at
+  if (map.containsKey('bumped_at') && !map.containsKey('last_posted_at')) {
+    map['last_posted_at'] = map['bumped_at'];
+  }
+
+  // 3. 将 user 转换为 posters 数组格式（用于头像叠放）
+  if (map.containsKey('user') && map['user'] != null) {
+    final user = map['user'] as Map<String, dynamic>;
+    final userId = user['id'] as int;
+
+    // 添加 user 到 userMap（如果不存在）
+    if (!userMap.containsKey(userId)) {
+      userMap[userId] = TopicUser.fromJson(user);
+    }
+
+    // 创建 posters 数组
+    map['posters'] = [
+      {
+        'user_id': userId,
+        'description': 'Original Poster',
+        'extras': 'latest',
+      },
+    ];
+
+    // 设置 last_poster_username
+    if (user.containsKey('username')) {
+      map['last_poster_username'] = user['username'];
+    }
+  }
+
+  // 4. 如果没有 like_count，设置为 0（书签数据中可能没有这个字段）
+  if (!map.containsKey('like_count')) {
+    map['like_count'] = 0;
+  }
+
+  // 5. 如果没有 views，设置为 0
+  if (!map.containsKey('views')) {
+    map['views'] = 0;
+  }
+
+  return map;
+}
+
 /// 帖子列表响应
 class TopicListResponse {
   final List<Topic> topics;
@@ -1698,85 +1781,14 @@ class TopicListResponse {
       if (userBookmarkList != null) {
         final bookmarks = userBookmarkList['bookmarks'] as List<dynamic>? ?? [];
         moreTopicsUrl = userBookmarkList['more_bookmarks_url'] as String?;
-        topicsJson = bookmarks.map((b) {
-          final map = Map<String, dynamic>.from(b as Map);
-
-          // 提取书签元数据（必须在 id 被覆盖前取原始书签 ID）
-          map['_bookmark_id'] = map['id'];
-
-          // 书签对象中的 id 是书签 ID，topic_id 才是主题 ID
-          if (map.containsKey('topic_id')) {
-            map['id'] = map['topic_id'];
-          }
-          final bmName = _normalizeBookmarkNameValue(map['name'] as String?);
-          if (bmName != null) {
-            map['_bookmark_name'] = bmName;
-          }
-          if (map['reminder_at'] != null) {
-            map['_bookmark_reminder_at'] = map['reminder_at'];
-          }
-          if (map['bookmarkable_type'] != null) {
-            map['_bookmarkable_type'] = map['bookmarkable_type'];
-          }
-
-          // 帖子书签：保留 linked_post_number 供跳转使用
-          if (map['bookmarkable_type'] == 'Post') {
-            final linkedPostNumber = map['linked_post_number'] as int?;
-            if (linkedPostNumber != null) {
-              map['_bookmarked_post_number'] = linkedPostNumber;
-            }
-          }
-
-          // 映射关键字段以适配 TopicCard 显示
-          // 1. 使用 highest_post_number 作为 posts_count
-          if (map.containsKey('highest_post_number')) {
-            map['posts_count'] = map['highest_post_number'];
-            map['reply_count'] = (map['highest_post_number'] as int) - 1;
-          }
-
-          // 2. 使用 bumped_at 作为 last_posted_at
-          if (map.containsKey('bumped_at') &&
-              !map.containsKey('last_posted_at')) {
-            map['last_posted_at'] = map['bumped_at'];
-          }
-
-          // 3. 将 user 转换为 posters 数组格式（用于头像叠放）
-          if (map.containsKey('user') && map['user'] != null) {
-            final user = map['user'] as Map<String, dynamic>;
-            final userId = user['id'] as int;
-
-            // 添加 user 到 userMap（如果不存在）
-            if (!userMap.containsKey(userId)) {
-              userMap[userId] = TopicUser.fromJson(user);
-            }
-
-            // 创建 posters 数组
-            map['posters'] = [
-              {
-                'user_id': userId,
-                'description': 'Original Poster',
-                'extras': 'latest',
-              },
-            ];
-
-            // 设置 last_poster_username
-            if (user.containsKey('username')) {
-              map['last_poster_username'] = user['username'];
-            }
-          }
-
-          // 4. 如果没有 like_count，设置为 0（书签数据中可能没有这个字段）
-          if (!map.containsKey('like_count')) {
-            map['like_count'] = 0;
-          }
-
-          // 5. 如果没有 views，设置为 0
-          if (!map.containsKey('views')) {
-            map['views'] = 0;
-          }
-
-          return map;
-        }).toList();
+        topicsJson = bookmarks
+            .map(
+              (b) => normalizeBookmarkListEntry(
+                Map<String, dynamic>.from(b as Map),
+                userMap: userMap,
+              ),
+            )
+            .toList();
       }
     } else if (json.containsKey('bookmarks')) {
       // 处理 /bookmarks.json 格式

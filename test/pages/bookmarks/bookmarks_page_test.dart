@@ -9,14 +9,18 @@ import 'package:fluxdo/navigation/nav_action_bus.dart';
 import 'package:fluxdo/pages/bookmarks_page.dart';
 import 'package:fluxdo/pages/topics_page.dart';
 import 'package:fluxdo/providers/bookmark_name_suggestions_provider.dart';
+import 'package:fluxdo/providers/bookmarks_reconciler.dart';
+import 'package:fluxdo/providers/bookmarks_repository.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/user_content_providers.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Topic _bookmarkTopic({
   required int topicId,
@@ -47,38 +51,100 @@ Future<ProviderContainer> _createContainer({
     'pref_bookmarks_open_mode': 'tabbedWorkspace',
   });
   final prefs = await SharedPreferences.getInstance();
+
+  // 用内存 sqflite 做 BookmarksRepository 的存储——避免 testWidgets 触发真实
+  // sqflite 初始化（需要 path_provider 等 native binding）。
+  sqfliteFfiInit();
+  final db = await databaseFactoryFfi.openDatabase(
+    inMemoryDatabasePath,
+    options: OpenDatabaseOptions(
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE bookmark_cache (
+            account_id TEXT NOT NULL,
+            bookmark_id INTEGER NOT NULL,
+            topic_id INTEGER NOT NULL,
+            name_normalized TEXT,
+            updated_at TEXT NOT NULL,
+            cached_at TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (account_id, bookmark_id)
+          )
+        ''');
+      },
+    ),
+  );
+  addTearDown(db.close);
+
+  final repo = BookmarksRepository(
+    BookmarkCacheDao(databaseFactory: () async => db),
+  );
+
+  // 预填充 2 条书签：用 _bookmarkTopic 的 raw JSON 作 payload。
+  Map<String, dynamic> payloadOf(Topic topic, int bookmarkId) {
+    return {
+      'id': topic.id,
+      'title': topic.title,
+      'slug': topic.slug,
+      'posts_count': topic.postsCount,
+      'reply_count': topic.replyCount,
+      'views': topic.views,
+      'like_count': topic.likeCount,
+      'category_id': int.parse(topic.categoryId),
+      '_bookmark_id': bookmarkId,
+      if (topic.bookmarkName != null) '_bookmark_name': topic.bookmarkName,
+      if (topic.bookmarkableType != null)
+        '_bookmarkable_type': topic.bookmarkableType,
+      '_bookmark_updated_at': DateTime.utc(2026, 5, 1).toIso8601String(),
+    };
+  }
+
+  final preset = [
+    _bookmarkTopic(
+      topicId: 1,
+      bookmarkId: 101,
+      title: 'Alpha',
+      bookmarkName: 'image',
+      bookmarkableType: 'Post',
+    ),
+    _bookmarkTopic(
+      topicId: 2,
+      bookmarkId: 102,
+      title: 'Beta',
+      bookmarkName: 'beta',
+      bookmarkableType: 'Topic',
+    ),
+  ];
+  await repo.upsertEntries('test_user', [
+    for (final t in preset)
+      BookmarkCacheEntry(
+        bookmarkId: t.bookmarkId!,
+        topicId: t.id,
+        nameNormalized: t.bookmarkName,
+        updatedAt: DateTime.utc(2026, 5, 1),
+        cachedAt: DateTime.utc(2026, 5, 1),
+        payload: payloadOf(t, t.bookmarkId!),
+      ),
+  ]);
+
   return ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       categoryMapProvider.overrideWith(
         (ref) => const AsyncValue.data(<int, Category>{}),
       ),
-      bookmarksPageLoaderProvider.overrideWithValue((page, limit) async {
-        switch (page) {
-          case 0:
-            return TopicListResponse(
-              topics: [
-                _bookmarkTopic(
-                  topicId: 1,
-                  bookmarkId: 101,
-                  title: 'Alpha',
-                  bookmarkName: 'image',
-                  bookmarkableType: 'Post',
-                ),
-                _bookmarkTopic(
-                  topicId: 2,
-                  bookmarkId: 102,
-                  title: 'Beta',
-                  bookmarkName: 'beta',
-                  bookmarkableType: 'Topic',
-                ),
-              ],
-              moreTopicsUrl: '/u/test/bookmarks.json?page=1',
-            );
-          default:
-            return TopicListResponse(topics: const []);
-        }
-      }),
+      bookmarksRepositoryProvider.overrideWithValue(repo),
+      currentUsernameProvider.overrideWith((ref) async => 'test_user'),
+      bookmarkRawPageLoaderProvider.overrideWithValue(
+        (_) async => BookmarkPageParseResult(
+          topics: const [],
+          entries: const [],
+          moreUrl: null,
+        ),
+      ),
+      // 旧 provider stub，保留兼容（已不被新代码使用）。
+      // ignore: deprecated_member_use_from_same_package
       bookmarkNameSuggestionPageLoaderProvider.overrideWithValue((
         page,
         limit,

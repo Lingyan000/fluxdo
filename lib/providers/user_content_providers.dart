@@ -5,11 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/topic.dart';
 import '../pages/bookmarks/bookmarks_models.dart';
 import '../utils/pagination_helper.dart';
+import 'bookmarks_reconciler.dart';
+import 'bookmarks_repository.dart';
 import 'core_providers.dart';
 
 final bookmarksPageLoaderProvider = Provider<BookmarkPageLoader>((ref) {
   final service = ref.read(discourseServiceProvider);
   return (page, limit) => service.getUserBookmarks(page: page, limit: limit);
+});
+
+/// 当前账号 username，作为本地书签缓存的隔离键；抽出来便于测试注入。
+final currentUsernameProvider = FutureProvider<String?>((ref) async {
+  return ref.read(discourseServiceProvider).getUsername();
 });
 
 /// 分页助手（所有用户内容列表共用）
@@ -108,147 +115,188 @@ final browsingHistoryProvider =
       return BrowsingHistoryNotifier();
     });
 
-/// 书签 Notifier（进入页面时拉取全量，确保顶部统计和筛选完整）
+/// 书签 Notifier：本地缓存 + 远端对账三层（首次 / 定期 / 手动），下拉刷新独立。
+///
+/// 数据来源是 [BookmarksRepository]（sqflite 缓存），通过 watch 订阅变更。
+/// 网络对账委托给 [BookmarksReconciler]。
 class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
-  bool _hasMore = false;
-  bool _isLoadMoreFailed = false;
-  bool _isHydratingAll = false;
-  StreamIterator<List<Topic>>? _activeIterator;
-  bool get hasMore => _hasMore;
-  bool get isLoadMoreFailed => _isLoadMoreFailed;
-  bool get isHydratingAll => _isHydratingAll;
+  late BookmarksRepository _repo;
+  String? _accountId;
+  bool _isReconciling = false;
+  bool _isLastReconcileFailed = false;
+  ReconcileMode? _ongoingMode;
+  StreamSubscription<void>? _repoSubscription;
 
-  void _refreshCurrentState() {
-    if (!state.hasValue) {
-      return;
-    }
-    state = AsyncValue.data(List<Topic>.from(state.requireValue));
-  }
+  bool get isReconciling => _isReconciling;
+  bool get isLastReconcileFailed => _isLastReconcileFailed;
+  ReconcileMode? get ongoingReconcileMode => _ongoingMode;
+
+  /// 兼容旧 UI：方案 E 下不再分页，永远 false。
+  bool get hasMore => false;
+
+  /// 兼容旧 UI：映射到上一次对账是否失败。
+  bool get isLoadMoreFailed => _isLastReconcileFailed;
+
+  /// 兼容旧 UI：映射到"对账进行中"。
+  bool get isHydratingAll => _isReconciling;
 
   @override
   Future<List<Topic>> build() async {
-    _hasMore = false;
-    _isLoadMoreFailed = false;
-    _isHydratingAll = false;
-    return _loadFirstPageThenHydrate(
-      loadPage: ref.read(bookmarksPageLoaderProvider),
-    );
-  }
-
-  Future<void> refresh() async {
-    await _activeIterator?.cancel();
-    _activeIterator = null;
-    _isLoadMoreFailed = false;
-    _isHydratingAll = false;
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      return _loadFirstPageThenHydrate(
-        loadPage: ref.read(bookmarksPageLoaderProvider),
-      );
-    });
-  }
-
-  Future<void> loadMore() async {
-    return;
-  }
-
-  void retryLoadMore() {
-    if (_isHydratingAll) return;
-    _isLoadMoreFailed = false;
-    if (!state.hasValue) {
-      unawaited(refresh());
-      return;
+    _repo = ref.read(bookmarksRepositoryProvider);
+    final username = await ref.read(currentUsernameProvider.future);
+    if (username == null) {
+      // 未登录或测试环境读不到 username：直接返回空表，不阻塞 UI。
+      return const <Topic>[];
     }
-    _hasMore = true;
-    _isHydratingAll = true;
-    _refreshCurrentState();
-    unawaited(
-      _restartHydration(loadPage: ref.read(bookmarksPageLoaderProvider)),
-    );
-  }
+    _accountId = username;
 
-  Future<List<Topic>> _loadFirstPageThenHydrate({
-    required BookmarkPageLoader loadPage,
-  }) async {
-    await _activeIterator?.cancel();
-    final iterator = StreamIterator(
-      progressivelyLoadAllBookmarkTopics(loadPage: loadPage),
-    );
-    _activeIterator = iterator;
-    _bindIteratorCleanup(iterator);
+    _repoSubscription = _repo.watch().listen((_) {
+      if (!ref.mounted) return;
+      unawaited(_refreshFromRepository());
+    });
+    ref.onDispose(() {
+      _repoSubscription?.cancel();
+    });
 
-    if (!await iterator.moveNext()) {
-      if (identical(_activeIterator, iterator)) {
-        _activeIterator = null;
+    final records = await _repo.readAll(username);
+    final reconciler = await ref.read(bookmarksReconcilerProvider.future);
+
+    if (records.isEmpty) {
+      // 首次进入（本地空）：阻塞做完整对账。仅此一次。
+      _isReconciling = true;
+      try {
+        final report = await reconciler.fullReconcile(username);
+        _isLastReconcileFailed =
+            report.stopReason == ReconcileStopReason.errored;
+      } catch (_) {
+        _isLastReconcileFailed = true;
+      } finally {
+        _isReconciling = false;
       }
-      return const [];
+      final refreshed = await _repo.readAll(username);
+      return refreshed.map((r) => r.topic).toList(growable: false);
     }
 
-    final firstPageTopics = iterator.current;
-    _hasMore = true;
-    _isLoadMoreFailed = false;
-    _isHydratingAll = true;
-    unawaited(_continueHydration(iterator));
-    return firstPageTopics;
+    // 非首次：立即返回本地缓存，后台跑增量或定期完整对账。
+    unawaited(_runBackgroundReconcile(reconciler, username));
+    return records.map((r) => r.topic).toList(growable: false);
   }
 
-  Future<void> _restartHydration({required BookmarkPageLoader loadPage}) async {
-    await _activeIterator?.cancel();
-    final iterator = StreamIterator(
-      progressivelyLoadAllBookmarkTopics(loadPage: loadPage),
-    );
-    _activeIterator = iterator;
-    _bindIteratorCleanup(iterator);
-    unawaited(_continueHydration(iterator));
-  }
-
-  void _bindIteratorCleanup(StreamIterator<List<Topic>> iterator) {
-    ref.onDispose(() async {
-      if (identical(_activeIterator, iterator)) {
-        await iterator.cancel();
-      }
-    });
-  }
-
-  Future<void> _continueHydration(StreamIterator<List<Topic>> iterator) async {
+  Future<void> _runBackgroundReconcile(
+    BookmarksReconciler reconciler,
+    String accountId,
+  ) async {
+    if (_isReconciling) return;
+    final mode = reconciler.isFullReconcileDue(accountId)
+        ? ReconcileMode.full
+        : ReconcileMode.incremental;
+    _isReconciling = true;
+    _ongoingMode = mode;
+    _isLastReconcileFailed = false;
+    _emit();
     try {
-      while (await iterator.moveNext()) {
-        if (!ref.mounted || !identical(_activeIterator, iterator)) {
-          return;
-        }
-        state = AsyncValue.data(iterator.current);
-      }
-      if (identical(_activeIterator, iterator)) {
-        _hasMore = false;
-        _isLoadMoreFailed = false;
-      }
+      final report = mode == ReconcileMode.full
+          ? await reconciler.fullReconcile(accountId)
+          : await reconciler.incrementalReconcile(accountId);
+      _isLastReconcileFailed = report.stopReason == ReconcileStopReason.errored;
     } catch (_) {
-      if (!ref.mounted || !identical(_activeIterator, iterator)) {
-        return;
-      }
-      _hasMore = true;
-      _isLoadMoreFailed = true;
+      _isLastReconcileFailed = true;
     } finally {
-      if (identical(_activeIterator, iterator)) {
-        _isHydratingAll = false;
-        _activeIterator = null;
-        if (ref.mounted) {
-          _refreshCurrentState();
-        }
-      }
+      _isReconciling = false;
+      _ongoingMode = null;
+      _emit();
     }
   }
 
-  /// 从本地列表中移除指定书签（删除后调用）
-  void removeBookmarkById(int bookmarkId) {
-    final current = state.value;
-    if (current == null) return;
+  Future<void> _refreshFromRepository() async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final records = await _repo.readAll(accountId);
+    if (!ref.mounted) return;
     state = AsyncValue.data(
-      current.where((t) => t.bookmarkId != bookmarkId).toList(),
+      records.map((r) => r.topic).toList(growable: false),
     );
   }
 
-  /// 更新本地列表中指定书签的元数据
+  /// 下拉刷新：拉第一页 upsert，不翻多页、不删除（spec 中明确不是"对账"）。
+  Future<void> refresh() async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final reconciler = await ref.read(bookmarksReconcilerProvider.future);
+    await reconciler.pullToRefresh(accountId);
+    // 写入会经由 repository.watch 通知 _refreshFromRepository。
+  }
+
+  /// 手动对账：触发完整对账，UI 通常会在调用前后展示加载条与结果 toast。
+  Future<ReconcileReport?> manualFullReconcile() async {
+    final accountId = _accountId;
+    if (accountId == null) return null;
+    if (_isReconciling) return null;
+    final reconciler = await ref.read(bookmarksReconcilerProvider.future);
+    _isReconciling = true;
+    _ongoingMode = ReconcileMode.full;
+    _isLastReconcileFailed = false;
+    _emit();
+    try {
+      final report = await reconciler.fullReconcile(accountId);
+      _isLastReconcileFailed = report.stopReason == ReconcileStopReason.errored;
+      return report;
+    } catch (_) {
+      _isLastReconcileFailed = true;
+      return null;
+    } finally {
+      _isReconciling = false;
+      _ongoingMode = null;
+      _emit();
+    }
+  }
+
+  /// 兼容旧 UI 的占位：方案 E 下书签一次性全量渲染，无分页概念。
+  Future<void> loadMore() async {}
+
+  /// 兼容旧 UI：上一次对账失败时让用户点击"重试"，触发一次后台增量。
+  void retryLoadMore() {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    if (_isReconciling) return;
+    if (!_isLastReconcileFailed) return;
+    unawaited(() async {
+      final reconciler = await ref.read(bookmarksReconcilerProvider.future);
+      await _runBackgroundReconcile(reconciler, accountId);
+    }());
+  }
+
+  /// 本地写穿透：编辑书签元数据（name / reminderAt）后调用，写入 repository。
+  /// 实际 UI 刷新由 repository.watch 推送。
+  Future<void> applyLocalEditResult(
+    int bookmarkId, {
+    required String? name,
+    required DateTime? reminderAt,
+  }) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    await _repo.applyMetadataChange(
+      accountId,
+      bookmarkId,
+      name: name,
+      reminderAt: reminderAt,
+      bookmarkUpdatedAt: DateTime.now().toUtc(),
+    );
+  }
+
+  /// 本地写穿透：删除书签后调用。
+  Future<void> removeBookmarkLocally(int bookmarkId) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    await _repo.deleteOne(accountId, bookmarkId);
+  }
+
+  /// 兼容旧 API：同步移除本地某条书签（实际异步写入 repository）。
+  void removeBookmarkById(int bookmarkId) {
+    unawaited(removeBookmarkLocally(bookmarkId));
+  }
+
+  /// 兼容旧 API：更新本地某条书签的元数据。
   void updateBookmarkMeta(
     int bookmarkId, {
     String? name,
@@ -256,47 +304,21 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
     bool clearName = false,
     bool clearReminderAt = false,
   }) {
+    unawaited(
+      applyLocalEditResult(
+        bookmarkId,
+        name: clearName ? null : name,
+        reminderAt: clearReminderAt ? null : reminderAt,
+      ),
+    );
+  }
+
+  void _emit() {
+    if (!ref.mounted) return;
     final current = state.value;
     if (current == null) return;
-    state = AsyncValue.data(
-      current.map((t) {
-        if (t.bookmarkId != bookmarkId) return t;
-        return Topic(
-          id: t.id,
-          title: t.title,
-          slug: t.slug,
-          postsCount: t.postsCount,
-          replyCount: t.replyCount,
-          views: t.views,
-          likeCount: t.likeCount,
-          excerpt: t.excerpt,
-          createdAt: t.createdAt,
-          lastPostedAt: t.lastPostedAt,
-          lastPosterUsername: t.lastPosterUsername,
-          categoryId: t.categoryId,
-          pinned: t.pinned,
-          visible: t.visible,
-          closed: t.closed,
-          archived: t.archived,
-          tags: t.tags,
-          posters: t.posters,
-          unseen: t.unseen,
-          unread: t.unread,
-          newPosts: t.newPosts,
-          lastReadPostNumber: t.lastReadPostNumber,
-          highestPostNumber: t.highestPostNumber,
-          bookmarkedPostNumber: t.bookmarkedPostNumber,
-          bookmarkId: t.bookmarkId,
-          bookmarkName: clearName ? null : (name ?? t.bookmarkName),
-          bookmarkReminderAt: clearReminderAt
-              ? null
-              : (reminderAt ?? t.bookmarkReminderAt),
-          bookmarkableType: t.bookmarkableType,
-          hasAcceptedAnswer: t.hasAcceptedAnswer,
-          canHaveAnswer: t.canHaveAnswer,
-        );
-      }).toList(),
-    );
+    // 重新打包同一个 list 让监听 notifier 状态的 widget 感知到状态字段变化。
+    state = AsyncValue.data(List<Topic>.unmodifiable(current));
   }
 }
 

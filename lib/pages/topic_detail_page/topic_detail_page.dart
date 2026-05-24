@@ -190,6 +190,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   late String? _fallbackBookmarkName = widget.initialBookmarkName;
   late DateTime? _fallbackBookmarkReminderAt = widget.initialBookmarkReminderAt;
   late String? _fallbackBookmarkableType = widget.initialBookmarkableType;
+  // 用户在本页内编辑/删除过书签后置为 true：阻止 didUpdateWidget 把父级
+  // 传入的旧 initialBookmark* 写回 fallback，避免已删除的书签被"复活"。
+  bool _userMutatedFallback = false;
   ModalRoute<dynamic>? _route;
   bool _isRouteVisible = true;
   bool _isParentActive = true;
@@ -420,11 +423,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void didUpdateWidget(covariant TopicDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialBookmarkId != widget.initialBookmarkId ||
-        oldWidget.initialBookmarkName != widget.initialBookmarkName ||
-        oldWidget.initialBookmarkReminderAt !=
-            widget.initialBookmarkReminderAt ||
-        oldWidget.initialBookmarkableType != widget.initialBookmarkableType) {
+    if (!_userMutatedFallback &&
+        (oldWidget.initialBookmarkId != widget.initialBookmarkId ||
+            oldWidget.initialBookmarkName != widget.initialBookmarkName ||
+            oldWidget.initialBookmarkReminderAt !=
+                widget.initialBookmarkReminderAt ||
+            oldWidget.initialBookmarkableType !=
+                widget.initialBookmarkableType)) {
       _fallbackBookmarkId = widget.initialBookmarkId;
       _fallbackBookmarkName = widget.initialBookmarkName;
       _fallbackBookmarkReminderAt = widget.initialBookmarkReminderAt;
@@ -898,7 +903,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         MobileWorkspaceCountButton(
           key: const ValueKey('bookmark-workspace-mobile-count-button'),
           count: widget.embeddedTabCount!,
-          tooltip: '已打开 ${widget.embeddedTabCount!} 个',
+          tooltip: S.current.bookmarks_workspaceOpenedCount(
+            widget.embeddedTabCount!,
+          ),
           onPressed: widget.onEmbeddedShowTabs,
         ),
         if (detail != null)

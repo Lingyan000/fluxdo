@@ -28,5 +28,27 @@
   "bookmarks_reminderCancelled": "已取消提醒",
   "bookmarks_searchHint": "在书签中搜索...",
   "bookmarks_title": "我的书签",
+  "bookmarks_workspaceOpenedCount": "已打开 {count} 个",
+  "@bookmarks_workspaceOpenedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncBookmarks": "同步书签",
+  "bookmarks_syncCompleted": "已同步：新增/更新 {upserted}，清理 {deleted}",
+  "@bookmarks_syncCompleted": {
+    "placeholders": {
+      "upserted": {
+        "type": "int"
+      },
+      "deleted": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncUpToDate": "书签已是最新",
+  "bookmarks_syncFailed": "同步失败，请稍后重试",
   "readLater_title": "稍后阅读"
 }

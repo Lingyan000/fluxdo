@@ -15,6 +15,7 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
     required this.onBookmarksTap,
     required this.onTopicTap,
     required this.onTopicClose,
+    this.trailing = const [],
   });
 
   final String activeTabId;
@@ -24,6 +25,9 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
   final VoidCallback onBookmarksTap;
   final ValueChanged<int> onTopicTap;
   final ValueChanged<int> onTopicClose;
+
+  /// 注入到搜索按钮右侧的额外控件（如同步按钮）。
+  final List<Widget> trailing;
 
   @override
   State<BookmarksWorkspaceTabBar> createState() =>
@@ -158,6 +162,7 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
                 onPressed: widget.onSearchTap,
                 icon: const Icon(Icons.search_rounded),
               ),
+            ...widget.trailing,
           ],
         ),
       ),

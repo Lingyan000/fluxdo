@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/topic.dart';
 import '../../providers/bookmark_name_suggestions_provider.dart';
+import '../../providers/bookmarks_repository.dart';
+import '../../services/discourse/discourse_service.dart';
 import '../../services/log/bookmark_edit_trace.dart';
+import '../../providers/core_providers.dart';
 import 'bookmark_edit_sheet.dart';
 
 Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
@@ -92,6 +95,15 @@ Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
   } else {
     suggestionsNotifier.markDirty(optimisticName: result.name);
   }
+
+  // 统一写穿透 BookmarksRepository：所有书签编辑入口（书签页 / 详情页 /
+  // 帖子 footer / 预览卡）共用 launcher，本地缓存的同步收敛在这一处。
+  await _syncToBookmarkRepository(
+    ref,
+    bookmarkId: bookmarkId,
+    result: result,
+  );
+
   writeBookmarkEditTrace(
     phase: 'launcher_completed',
     traceId: resolvedTraceId,
@@ -105,4 +117,26 @@ Future<BookmarkEditResult?> showBookmarkEditSheetWithCachedNames(
     hasReminder: result.reminderAt != null,
   );
   return result;
+}
+
+Future<void> _syncToBookmarkRepository(
+  WidgetRef ref, {
+  required int bookmarkId,
+  required BookmarkEditResult result,
+}) async {
+  final DiscourseService service = ref.read(discourseServiceProvider);
+  final accountId = await service.getUsername();
+  if (accountId == null) return;
+  final repo = ref.read(bookmarksRepositoryProvider);
+  if (result.deleted) {
+    await repo.deleteOne(accountId, bookmarkId);
+    return;
+  }
+  await repo.applyMetadataChange(
+    accountId,
+    bookmarkId,
+    name: result.name,
+    reminderAt: result.reminderAt,
+    bookmarkUpdatedAt: DateTime.now().toUtc(),
+  );
 }

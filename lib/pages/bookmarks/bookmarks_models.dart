@@ -1,6 +1,9 @@
 import 'package:uuid/uuid.dart';
 
 import '../../models/topic.dart';
+import '../../utils/bookmark_name_utils.dart';
+
+export '../../utils/bookmark_name_utils.dart' show normalizeBookmarkName;
 
 const String unsetBookmarkNameFilterKey = '__bookmark_name_unset__';
 // Discourse 书签接口单页上限是 20，超过会直接返回 invalid_parameters。
@@ -16,14 +19,6 @@ int _normalizeBookmarkRequestLimit(int requestLimit) {
   return requestLimit > bookmarkRequestLimit
       ? bookmarkRequestLimit
       : requestLimit;
-}
-
-String? normalizeBookmarkName(String? rawName) {
-  final trimmed = rawName?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return null;
-  }
-  return trimmed;
 }
 
 int? resolveBookmarkScrollToPostNumber(Topic topic) {

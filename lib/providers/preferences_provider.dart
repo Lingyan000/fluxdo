@@ -93,7 +93,7 @@ class AppPreferences {
   /// 嵌套视图连接线样式
   final NestedLineStyle nestedLineStyle;
 
-  /// 书签页默认打开方式（仅桌面端使用）
+  /// 书签页默认打开方式（桌面端与手机端均生效）
   final BookmarksOpenMode bookmarksOpenMode;
 
   /// 最大并发请求数

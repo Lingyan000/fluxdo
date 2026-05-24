@@ -23,6 +23,38 @@ Topic _bookmarkTopic({
 }
 
 void main() {
+  test('?, ？ 与空白书签名一律归一为 null', () {
+    expect(normalizeBookmarkName(null), isNull);
+    expect(normalizeBookmarkName(''), isNull);
+    expect(normalizeBookmarkName('   '), isNull);
+    expect(normalizeBookmarkName('?'), isNull);
+    expect(normalizeBookmarkName('？'), isNull);
+    expect(normalizeBookmarkName('  ?  '), isNull);
+    expect(normalizeBookmarkName('  ？  '), isNull);
+    expect(normalizeBookmarkName(' image '), 'image');
+  });
+
+  test('Topic.fromJson 会将 ? / ？ 书签名清洗为 null', () {
+    final dirtyNames = ['?', '？', '  ?  ', '   '];
+    for (final name in dirtyNames) {
+      final topic = Topic.fromJson({
+        'id': 1,
+        'title': 'Topic 1',
+        'slug': 'topic-1',
+        'posts_count': 1,
+        'reply_count': 0,
+        'views': 0,
+        'like_count': 0,
+        'category_id': 1,
+        'bookmarked': true,
+        'bookmarks': [
+          {'id': 100, 'name': name},
+        ],
+      });
+      expect(topic.bookmarkName, isNull, reason: '"$name" 应归一为 null');
+    }
+  });
+
   test('会按页拉取全部书签直到空页，并保留同主题的多个书签', () async {
     final requestedPages = <String>[];
 

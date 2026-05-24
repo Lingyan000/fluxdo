@@ -13,17 +13,6 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/time_utils.dart';
 import 'bookmark_name_edit_panel.dart';
 
-String _normalizeEditableBookmarkName(String? rawName) {
-  final trimmed = rawName?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return '';
-  }
-  if (trimmed == '?' || trimmed == '？') {
-    return '';
-  }
-  return trimmed;
-}
-
 /// 书签编辑结果
 class BookmarkEditResult {
   final String? name;
@@ -112,7 +101,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(
-      text: _normalizeEditableBookmarkName(widget.initialName),
+      text: normalizeBookmarkName(widget.initialName) ?? '',
     );
     _currentReminderAt = widget.initialReminderAt;
     writeBookmarkEditTrace(
@@ -198,7 +187,8 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
         ToastService.showSuccess(S.current.common_bookmarkUpdated);
       }
     } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      // ErrorInterceptor 默认对 PUT/POST/DELETE/PATCH 弹出错误 toast，这里
+      // 故意不二次弹 toast 避免重复；同时保留 sheet 打开让用户修改后重试。
       writeBookmarkEditTrace(
         level: 'error',
         phase: 'sheet_save_dio_error',
@@ -281,7 +271,8 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
         ToastService.showSuccess(S.current.bookmark_removed);
       }
     } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      // ErrorInterceptor 默认对 DELETE 弹出错误 toast，这里故意不二次弹避免
+      // 重复；同时保留 sheet 打开让用户重试删除。
       writeBookmarkEditTrace(
         level: 'error',
         phase: 'sheet_delete_dio_error',
@@ -311,7 +302,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     }
   }
 
-  Future<void> _pickCustomDateTime() async {
+  Future<DateTime?> _pickCustomDateTime() async {
     final now = DateTime.now();
     final initialDate = _customReminderAt ?? now.add(const Duration(hours: 1));
 
@@ -321,40 +312,55 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
     );
-    if (date == null || !mounted) return;
+    if (date == null || !mounted) return null;
 
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initialDate),
     );
-    if (time == null || !mounted) return;
+    if (time == null || !mounted) return null;
 
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  /// 已选 custom 时，再次点击 edit 图标走这个入口：弹 picker 并应用结果。
+  /// 不与 [_selectReminder] 走"取消选择"分支冲突。
+  Future<void> _pickAndApplyCustomDateTime() async {
+    final picked = await _pickCustomDateTime();
+    if (!mounted || picked == null) return;
     setState(() {
-      _customReminderAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-      _currentReminderAt = _customReminderAt;
+      _customReminderAt = picked;
+      _currentReminderAt = picked;
+      _selectedReminder ??= BookmarkReminderOption.custom;
     });
   }
 
-  void _selectReminder(BookmarkReminderOption option) {
-    setState(() {
-      if (_selectedReminder == option) {
-        // 取消选择
+  Future<void> _selectReminder(BookmarkReminderOption option) async {
+    if (_selectedReminder == option) {
+      // 再次点击同一选项视为取消
+      setState(() {
         _selectedReminder = null;
         _currentReminderAt = widget.initialReminderAt;
+      });
+      return;
+    }
+    if (option == BookmarkReminderOption.custom) {
+      // 先 await picker 拿到结果再 setState，避免出现"已选 custom 但无时间"的闪烁；
+      // 用户取消 picker 时不更新选中状态，保持原值。
+      final picked = await _pickCustomDateTime();
+      if (!mounted || picked == null) {
         return;
       }
+      setState(() {
+        _selectedReminder = option;
+        _customReminderAt = picked;
+        _currentReminderAt = picked;
+      });
+      return;
+    }
+    setState(() {
       _selectedReminder = option;
-      if (option == BookmarkReminderOption.custom) {
-        _pickCustomDateTime();
-      } else {
-        _currentReminderAt = option.toReminderAt();
-      }
+      _currentReminderAt = option.toReminderAt();
     });
   }
 
@@ -577,7 +583,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                           ),
                           const SizedBox(width: 8),
                           GestureDetector(
-                            onTap: _pickCustomDateTime,
+                            onTap: _pickAndApplyCustomDateTime,
                             child: Icon(
                               Icons.edit,
                               size: 16,

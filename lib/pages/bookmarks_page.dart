@@ -10,6 +10,7 @@ import '../pages/bookmarks/bookmarks_models.dart';
 import '../providers/bookmark_name_suggestions_provider.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/bookmarks_reconciler.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/user_content_search_provider.dart';
 import '../services/app_error_handler.dart';
@@ -74,6 +75,9 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
     if (oldWidget.isActive && !widget.isActive) {
       _workspaceState = const BookmarksWorkspaceState();
       _setMobileBottomBarHidden(false);
+    } else if (!oldWidget.isActive && widget.isActive) {
+      // 重新切回当前页时，按当前工作区状态恢复底栏可见性。
+      _syncMobileBottomBarVisibility(workspaceState: _workspaceState);
     }
   }
 
@@ -109,6 +113,31 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   Future<void> _onRefresh() async {
     await ref.read(bookmarksProvider.notifier).refresh();
+  }
+
+  Future<void> _onManualSync() async {
+    final notifier = ref.read(bookmarksProvider.notifier);
+    if (notifier.isReconciling) return;
+    final report = await notifier.manualFullReconcile();
+    if (!mounted) return;
+    if (report == null) {
+      ToastService.showError(S.current.bookmarks_syncFailed);
+      return;
+    }
+    if (report.stopReason == ReconcileStopReason.errored) {
+      ToastService.showError(S.current.bookmarks_syncFailed);
+      return;
+    }
+    if (report.hasChange) {
+      ToastService.showSuccess(
+        S.current.bookmarks_syncCompleted(
+          report.upserted,
+          report.deleted,
+        ),
+      );
+    } else {
+      ToastService.showSuccess(S.current.bookmarks_syncUpToDate);
+    }
   }
 
   void _onBookmarkTap(Topic topic) {
@@ -248,7 +277,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   }
 
   String _workspaceSwitcherLabel(int count) {
-    return '已打开 $count 个';
+    return S.current.bookmarks_workspaceOpenedCount(count);
   }
 
   void _activateBookmarksTab() {
@@ -436,6 +465,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
         showFilterButton: false,
         filterActive: false,
         searchHint: context.l10n.bookmarks_searchHint,
+        trailingActions: [_buildSyncAction()],
       );
     }
 
@@ -501,6 +531,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
           onPressed: () => _onSearchPressed(true),
           tooltip: context.l10n.common_search,
         ),
+        _buildSyncAction(),
         if (hasOpenedTopics)
           _WorkspaceCountButton(
             key: const ValueKey('bookmark-workspace-mobile-count-button'),
@@ -509,6 +540,22 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
             onPressed: _showWorkspaceSwitcher,
           ),
       ],
+    );
+  }
+
+  Widget _buildSyncAction() {
+    final notifier = ref.watch(bookmarksProvider.notifier);
+    final isReconciling = notifier.isReconciling;
+    return IconButton(
+      tooltip: context.l10n.bookmarks_syncBookmarks,
+      onPressed: isReconciling ? null : _onManualSync,
+      icon: isReconciling
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.sync),
     );
   }
 
@@ -572,14 +619,13 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
         !searchState.isSearchMode &&
         _workspaceState.activeTabId != BookmarksWorkspaceState.bookmarksTabId;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _setMobileBottomBarHidden(
-        _shouldHideMobileBottomBar(
-          preferences,
-          workspaceState: _workspaceState,
-        ),
-      );
+    // 切换打开方式（_useMobileWorkspace 受 preferences 控制）时，同步底栏可见性。
+    // 其它入口（widget.isActive 变化、工作区 tab 切换）已在 didUpdateWidget /
+    // _activateBookmarksTab / openTopicTab 等显式调用 _syncMobileBottomBarVisibility。
+    ref.listen<AppPreferences>(preferencesProvider, (previous, next) {
+      if (previous == null) return;
+      if (_useMobileWorkspace(previous) == _useMobileWorkspace(next)) return;
+      _syncMobileBottomBarVisibility(workspaceState: _workspaceState);
     });
 
     ref.listen<AsyncValue<List<Topic>>>(bookmarksProvider, (_, next) {
@@ -723,6 +769,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
                 _workspaceState = _workspaceState.closeTopicTab(topicId);
               });
             },
+            trailing: [_buildSyncAction()],
           ),
         Expanded(child: workspaceContent),
       ],

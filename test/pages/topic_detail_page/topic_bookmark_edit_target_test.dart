@@ -86,4 +86,73 @@ void main() {
     expect(target.initialName, 'from-bookmarks');
     expect(target.bookmarkableType, 'Post');
   });
+
+  test('指定 scrollToPostNumber 命中带书签的帖子时返回 loadedPost', () {
+    final target = resolveTopicBookmarkEditTarget(
+      detail: _detail(
+        bookmarked: false,
+        posts: [
+          _post(id: 100, postNumber: 1),
+          _post(id: 101, postNumber: 2, bookmarkId: 555, bookmarkName: 'p2'),
+        ],
+        stream: const [100, 101],
+      ),
+      scrollToPostNumber: 2,
+    );
+
+    expect(target, isNotNull);
+    expect(target!.bookmarkId, 555);
+    expect(target.source, TopicBookmarkTargetSource.loadedPost);
+    expect(target.postId, 101);
+    expect(target.bookmarkableType, 'Post');
+  });
+
+  test('话题已书签但 bookmarkId 缺失且无 scrollToPostNumber 时不会兜底到 post 书签', () {
+    // M3 修复：避免把唯一已加载的 post 书签当成话题书签编辑目标，
+    // 详见 lib/pages/topic_detail_page/topic_bookmark_edit_target.dart。
+    final target = resolveTopicBookmarkEditTarget(
+      detail: _detail(
+        bookmarked: true,
+        posts: [
+          _post(id: 100, postNumber: 1),
+          _post(id: 101, postNumber: 2, bookmarkId: 555, bookmarkName: 'p2'),
+        ],
+        stream: const [100, 101],
+      ),
+    );
+
+    expect(target, isNull);
+  });
+
+  test('话题未书签且仅有唯一已加载的 post 书签时允许兜底', () {
+    final target = resolveTopicBookmarkEditTarget(
+      detail: _detail(
+        bookmarked: false,
+        posts: [
+          _post(id: 100, postNumber: 1),
+          _post(id: 101, postNumber: 2, bookmarkId: 555, bookmarkName: 'p2'),
+        ],
+        stream: const [100, 101],
+      ),
+    );
+
+    expect(target, isNotNull);
+    expect(target!.bookmarkId, 555);
+    expect(target.source, TopicBookmarkTargetSource.loadedPost);
+  });
+
+  test('多个已加载 post 书签时返回 null，避免猜测', () {
+    final target = resolveTopicBookmarkEditTarget(
+      detail: _detail(
+        bookmarked: false,
+        posts: [
+          _post(id: 100, postNumber: 1, bookmarkId: 333),
+          _post(id: 101, postNumber: 2, bookmarkId: 555),
+        ],
+        stream: const [100, 101],
+      ),
+    );
+
+    expect(target, isNull);
+  });
 }

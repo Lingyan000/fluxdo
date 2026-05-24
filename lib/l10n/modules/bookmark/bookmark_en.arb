@@ -21,5 +21,27 @@
   "bookmarks_reminderCancelled": "Reminder cancelled",
   "bookmarks_searchHint": "Search bookmarks...",
   "bookmarks_title": "My Bookmarks",
+  "bookmarks_workspaceOpenedCount": "{count} open",
+  "@bookmarks_workspaceOpenedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncBookmarks": "Sync bookmarks",
+  "bookmarks_syncCompleted": "Synced: {upserted} new/updated, {deleted} removed",
+  "@bookmarks_syncCompleted": {
+    "placeholders": {
+      "upserted": {
+        "type": "int"
+      },
+      "deleted": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarks_syncUpToDate": "Bookmarks are up to date",
+  "bookmarks_syncFailed": "Sync failed, please try again later",
   "readLater_title": "Read later"
 }

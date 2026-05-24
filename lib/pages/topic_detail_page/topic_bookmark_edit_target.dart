@@ -69,20 +69,31 @@ TopicBookmarkEditTarget? resolveTopicBookmarkEditTarget({
     );
   }
 
-  final bookmarkedPosts = detail.postStream.posts
-      .where((post) => post.bookmarkId != null)
-      .toList(growable: false);
-  if (bookmarkedPosts.length == 1) {
-    final post = bookmarkedPosts.single;
-    return TopicBookmarkEditTarget(
-      bookmarkId: post.bookmarkId!,
-      source: TopicBookmarkTargetSource.loadedPost,
-      bookmarkableType: 'Post',
-      initialName: post.bookmarkName,
-      initialReminderAt: post.bookmarkReminderAt,
-      postId: post.id,
-      postNumber: post.postNumber,
-    );
+  // 兜底分支：尝试用"已加载列表里唯一的 post 书签"作为编辑目标。
+  //
+  // 仅在以下两种场景启用，避免误把某个 post 书签当成话题级书签编辑：
+  // 1. 调用方传入了 scrollToPostNumber，意味着用户来自帖子级入口；
+  // 2. 话题本身未书签（!detail.bookmarked），此时唯一的 post 书签就是
+  //    用户在该话题内可编辑的唯一对象。
+  //
+  // 当 detail.bookmarked == true 但 bookmarkId 异常缺失时，主动返回 null，
+  // 让调用方走 "bookmark_id_missing" 错误分支，不去猜测目标。
+  if (scrollToPostNumber != null || !detail.bookmarked) {
+    final bookmarkedPosts = detail.postStream.posts
+        .where((post) => post.bookmarkId != null)
+        .toList(growable: false);
+    if (bookmarkedPosts.length == 1) {
+      final post = bookmarkedPosts.single;
+      return TopicBookmarkEditTarget(
+        bookmarkId: post.bookmarkId!,
+        source: TopicBookmarkTargetSource.loadedPost,
+        bookmarkableType: 'Post',
+        initialName: post.bookmarkName,
+        initialReminderAt: post.bookmarkReminderAt,
+        postId: post.id,
+        postNumber: post.postNumber,
+      );
+    }
   }
 
   return null;

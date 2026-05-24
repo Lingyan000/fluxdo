@@ -128,8 +128,13 @@ class _BookmarkNameAutocompleteFieldState
     return true;
   }
 
-  String _suggestionsKey() {
-    return widget.suggestions.join('\u0001');
+  Object _suggestionsFingerprint() {
+    // 用 Object.hashAll + length 做轻量指纹，避免每次 build 都拼接长字符串。
+    // 仅用于 ValueKey 判等，不要求抗碰撞。
+    return Object.hash(
+      widget.suggestions.length,
+      Object.hashAll(widget.suggestions),
+    );
   }
 
   @override
@@ -137,7 +142,15 @@ class _BookmarkNameAutocompleteFieldState
     final theme = Theme.of(context);
 
     return RawAutocomplete<String>(
-      key: ValueKey(_suggestionsKey()),
+      // 这里的 ValueKey 是必需的：RawAutocomplete 内部缓存了 optionsBuilder
+      // 上一次返回的 options，单纯 _internalController.refreshOptions() 不足
+      // 以让它在 widget 重建时重算（详见 widget 测试
+      // "候选异步到达后会基于当前输入立即显示补全"）。
+      //
+      // 重建本身不会打断输入：textEditingController 与 focusNode 都是本 State
+      // 持有的字段，RawAutocomplete 重建不会 dispose 它们。会丢失的只是候选
+      // 浮层的内部状态，而我们恰好希望浮层基于新候选立即重算。
+      key: ValueKey(_suggestionsFingerprint()),
       textEditingController: _internalController,
       focusNode: _focusNode,
       optionsBuilder: _buildOptions,

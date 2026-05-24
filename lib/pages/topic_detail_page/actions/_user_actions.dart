@@ -220,6 +220,9 @@ extension _UserActions on _TopicDetailPageState {
       if (result == null || !mounted) return;
 
       if (editTarget.source == TopicBookmarkTargetSource.routeFallback) {
+        // 用户在本页改/删了 fallback，标记后续 didUpdateWidget 不再用父级
+        // 旧 initialBookmark* 覆盖回来。
+        _userMutatedFallback = true;
         if (result.deleted) {
           _fallbackBookmarkId = null;
           _fallbackBookmarkName = null;
@@ -252,8 +255,10 @@ extension _UserActions on _TopicDetailPageState {
                 .where((post) => post.id == editTarget.postId)
                 .firstOrNull;
       if (result.deleted) {
-        if (targetPost != null) {
-          notifier.refreshPost(targetPost.id, preserveCooked: true);
+        // 帖子级书签：优先按 postId 拉取该帖最新状态，避免 reloadTopicMetadata
+        // 只刷话题级元数据导致本地 post.bookmarked 与服务端不一致。
+        if (editTarget.postId != null) {
+          notifier.refreshPost(editTarget.postId!, preserveCooked: true);
         } else {
           notifier.reloadTopicMetadata();
         }
@@ -266,6 +271,10 @@ extension _UserActions on _TopicDetailPageState {
             bookmarkReminderAt: result.reminderAt,
           ),
         );
+      } else if (editTarget.postId != null) {
+        // 帖子还未加载到详情页（如长楼跨度跳转）但服务端已写入新数据，
+        // 拉取最新 post 状态，保证后续滚动到该楼时显示正确。
+        notifier.refreshPost(editTarget.postId!, preserveCooked: true);
       }
       return;
     }
@@ -322,8 +331,28 @@ extension _UserActions on _TopicDetailPageState {
         );
       }
     } on DioException catch (e) {
-      debugPrint('[TopicDetail] 添加书签失败: $e');
+      // 网络错误的 toast 已由 ErrorInterceptor 对 POST/PUT/DELETE 默认弹出，
+      // 这里只补记 trace 方便事后排障与其它分支保持一致。
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'bookmark_create_dio_error',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '详情页新建书签失败',
+        topicId: widget.topicId,
+        error: e,
+      );
     } catch (e, s) {
+      writeBookmarkEditTrace(
+        level: 'error',
+        phase: 'bookmark_create_throw',
+        traceId: resolvedTraceId,
+        source: source,
+        message: '详情页新建书签抛出异常',
+        topicId: widget.topicId,
+        error: e,
+        stackTrace: s,
+      );
       AppErrorHandler.handleUnexpected(e, s);
     }
   }
