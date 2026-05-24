@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import '../../../l10n/s.dart';
+import '../../cf_challenge_service.dart';
 import '../../toast_service.dart';
 import '../exceptions/api_exception.dart';
 
@@ -19,6 +20,13 @@ class ErrorInterceptor extends Interceptor {
     final statusCode = err.response?.statusCode;
     final method = err.requestOptions.method.toUpperCase();
     final extra = err.requestOptions.extra;
+
+    // CF 盾 403 由 CfChallengeInterceptor 统一决定展示形态：
+    // 页面数据走错误态按钮，操作请求走明确提示，静默请求不打扰。
+    if (statusCode == 403 && _isCfChallengeResponse(err.response)) {
+      handler.next(err);
+      return;
+    }
 
     // 静默模式：不显示任何错误提示
     if (extra['isSilent'] == true) {
@@ -38,7 +46,8 @@ class ErrorInterceptor extends Interceptor {
     final data = err.response?.data;
     if (data is Map<String, dynamic>) {
       // Discourse API 错误格式
-      errorMessage = data['error'] as String? ??
+      errorMessage =
+          data['error'] as String? ??
           (data['errors'] as List?)?.firstOrNull?.toString();
     }
 
@@ -55,7 +64,9 @@ class ErrorInterceptor extends Interceptor {
     }
     if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
       if (showErrorToast) {
-        ToastService.showError(errorMessage ?? S.current.network_serverUnavailableRetry);
+        ToastService.showError(
+          errorMessage ?? S.current.network_serverUnavailableRetry,
+        );
       }
       throw ServerException(statusCode!);
     }
@@ -82,6 +93,22 @@ class ErrorInterceptor extends Interceptor {
     handler.next(err);
   }
 
+  bool _isCfChallengeResponse(Response? response) {
+    if (response == null) return false;
+
+    final headers = response.headers;
+    final server = headers.value('server') ?? '';
+    if (!server.toLowerCase().contains('cloudflare')) return false;
+
+    final contentType = headers.value('content-type') ?? '';
+    if (!contentType.contains('text/html')) return false;
+
+    final cfMitigated = headers.value('cf-mitigated') ?? '';
+    if (cfMitigated.contains('challenge')) return true;
+
+    return CfChallengeService.isCfChallenge(response.data);
+  }
+
   int? _extractRetryAfterSeconds(Response? response) {
     if (response == null) return null;
     final headerSeconds = _extractRetryAfterFromHeaders(response.headers);
@@ -104,15 +131,17 @@ class ErrorInterceptor extends Interceptor {
       } catch (_) {}
     }
 
-    final resetValue = headers.value('x-ratelimit-reset') ??
+    final resetValue =
+        headers.value('x-ratelimit-reset') ??
         headers.value('ratelimit-reset') ??
         headers.value('x-rate-limit-reset') ??
         headers.value('X-RateLimit-Reset');
     final resetSeconds = int.tryParse(resetValue ?? '');
     if (resetSeconds != null && resetSeconds > 0) {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final delta =
-          resetSeconds > 1000000000 ? (resetSeconds - nowSeconds) : resetSeconds;
+      final delta = resetSeconds > 1000000000
+          ? (resetSeconds - nowSeconds)
+          : resetSeconds;
       if (delta > 0) return delta;
     }
     return null;

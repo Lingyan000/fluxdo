@@ -33,6 +33,7 @@ class CfChallengeService {
   BuildContext? _context;
   static DateTime? _lastToastAt;
   Completer<BuildContext>? _contextReadyCompleter;
+  VoidCallback? _activePromoteToForeground;
 
   /// 冷却机制：连续失败 N 次后进入冷却期
   DateTime? _cooldownUntil;
@@ -169,16 +170,11 @@ class CfChallengeService {
 
     // 如果已经在验证中 (Overlay 存在)
     if (_isVerifying) {
-      // 如果当前是后台模式，且请求强制前台，则提升为前台
       if (forceForeground) {
-        // 找到当前的 State 并调用 promoteToForeground
-        // 这里我们需要访问到 CfChallengePage 的 State
-        // 由于无法直接访问，我们将通过 EventBus 或简单的 GlobalKey/Callback 机制
-        // 在此简化处理：我们假设 _isVerifying 意味着正在运行
-        // 实际上，如果已经在运行，我们只需返回当前的 future
-        // 但我们需要通知 UI 切换到前台。
-        // FIXME: 这里简单的返回 future 可能无法触发 UI 变更。
-        // 由于 CfChallengeService 是单例，我们可以持有一个 key 或回调
+        _activePromoteToForeground?.call();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _activePromoteToForeground?.call();
+        });
       }
 
       final completer = Completer<bool>();
@@ -224,6 +220,9 @@ class CfChallengeService {
 
     // Page Key 用于触发内部弹窗
     final pageKey = GlobalKey<_CfChallengePageState>();
+    _activePromoteToForeground = () {
+      pageKey.currentState?._promoteToForeground();
+    };
 
     // 清理资源
     void cleanup() {
@@ -233,6 +232,7 @@ class CfChallengeService {
       if (interceptorRoute?.isActive ?? false) {
         interceptorRoute?.navigator?.removeRoute(interceptorRoute!);
       }
+      _activePromoteToForeground = null;
       _isVerifying = false;
     }
 
@@ -372,6 +372,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
   bool _hasMarkedPageReady = false;
   bool _hasPopped = false; // 防止重复 pop
   late bool _isBackground;
+  late bool _needsManualAttention;
+  bool _hasTimedOut = false;
   int _checkCount = 0;
   Timer? _timeoutTimer;
   Timer? _noChallengeCheckTimer;
@@ -394,6 +396,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void initState() {
     super.initState();
     _isBackground = widget.startInBackground;
+    _needsManualAttention = !widget.startInBackground;
     _snapshotInitialClearance();
   }
 
@@ -598,11 +601,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
         reason: 'new cf_clearance detected and page passed challenge',
       );
       await _syncLiveCookiesToCookieJar();
-      await BoundarySyncService.instance.syncFromWebView(
-        currentUrl: widget.verifyUrl,
-        controller: _controller,
-        cookieNames: {'cf_clearance'},
-      );
       // 验证 cf_clearance 是否真正写入了 CookieJar
       final synced = await CookieJarService().getCfClearance();
       if (synced != null && synced.isNotEmpty) {
@@ -646,7 +644,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
           CfChallengeLogger.log(
             '[VERIFY] Background timeout after $_activeMaxCheckCount seconds, prompting manual verify',
           );
-          _promoteToForeground();
+          _promoteToForeground(dueToTimeout: true);
           return;
         }
         timer.cancel();
@@ -655,10 +653,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
           reason: 'timeout after $_activeMaxCheckCount seconds',
         );
         if (mounted) {
-          _showError(S.current.cf_verifyTimeout);
-          Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) _finish(false);
+          setState(() {
+            _hasTimedOut = true;
+            _needsManualAttention = true;
           });
+          _showError(S.current.cf_verifyTimeout);
         }
       }
     });
@@ -698,11 +697,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
             reason: 'no challenge but new cf_clearance detected',
           );
           await _syncLiveCookiesToCookieJar();
-          await BoundarySyncService.instance.syncFromWebView(
-            currentUrl: widget.verifyUrl,
-            controller: _controller,
-            cookieNames: {'cf_clearance'},
-          );
           _timeoutTimer?.cancel();
           if (mounted) _finish(true);
         } else {
@@ -747,11 +741,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
         reason: 'polling detected new cf_clearance',
       );
       await _syncLiveCookiesToCookieJar();
-      await BoundarySyncService.instance.syncFromWebView(
-        currentUrl: widget.verifyUrl,
-        controller: _controller,
-        cookieNames: {'cf_clearance'},
-      );
       _timeoutTimer?.cancel();
       if (mounted) _finish(true);
     } catch (e) {
@@ -794,6 +783,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _pageReadyFallbackTimer?.cancel();
     _hasMarkedPageReady = false;
     _checkCount = 0;
+    _hasTimedOut = false;
+    _needsManualAttention = true;
     setState(() {
       _isLoading = true;
       _progress = 0;
@@ -801,18 +792,21 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _controller?.reload();
   }
 
-  void _promoteToForeground() {
+  void _promoteToForeground({bool dueToTimeout = false}) {
     if (!_isBackground) return;
     setState(() {
       _isBackground = false;
+      _needsManualAttention = true;
       _checkCount = 0;
     });
     widget.onPromoteRequest?.call();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _showInfo(S.current.cf_autoVerifyTimeout);
-    });
+    if (dueToTimeout) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showInfo(S.current.cf_autoVerifyTimeout);
+      });
+    }
   }
 
   void _finish(bool success) {
@@ -903,6 +897,120 @@ class _CfChallengePageState extends State<CfChallengePage> {
     });
   }
 
+  Widget _buildStatusBanner(BuildContext context, ThemeData theme) {
+    final l10n = context.l10n;
+    final colorScheme = theme.colorScheme;
+    final isTakingLong =
+        !_hasTimedOut &&
+        _checkCount > _activeMaxCheckCount - 10 &&
+        _checkCount <= _activeMaxCheckCount;
+    final Color backgroundColor;
+    final Color foregroundColor;
+    final IconData icon;
+    final String title;
+    final String message;
+
+    if (_hasTimedOut) {
+      backgroundColor = colorScheme.errorContainer;
+      foregroundColor = colorScheme.onErrorContainer;
+      icon = Icons.error_outline;
+      title = l10n.cf_verifyTimedOutTitle;
+      message = l10n.cf_verifyTimedOutMessage;
+    } else if (isTakingLong) {
+      backgroundColor = colorScheme.tertiaryContainer;
+      foregroundColor = colorScheme.onTertiaryContainer;
+      icon = Icons.hourglass_bottom;
+      title = l10n.cf_manualVerifyBannerTitle;
+      message = l10n.cf_verifyLonger(_activeMaxCheckCount - _checkCount);
+    } else if (_needsManualAttention) {
+      backgroundColor = colorScheme.secondaryContainer;
+      foregroundColor = colorScheme.onSecondaryContainer;
+      icon = Icons.touch_app_outlined;
+      title = l10n.cf_manualVerifyBannerTitle;
+      message = l10n.cf_manualVerifyBannerMessage;
+    } else {
+      backgroundColor = colorScheme.surfaceContainerHighest;
+      foregroundColor = colorScheme.onSurfaceVariant;
+      icon = Icons.verified_user_outlined;
+      title = l10n.cf_autoVerifyBannerTitle;
+      message = l10n.cf_autoVerifyBannerMessage;
+    }
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16,
+      child: SafeArea(
+        top: false,
+        child: Material(
+          color: backgroundColor,
+          elevation: 3,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_hasTimedOut || isTakingLong)
+                  Icon(icon, color: foregroundColor, size: 22)
+                else
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: foregroundColor,
+                    ),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: foregroundColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: foregroundColor.withValues(alpha: 0.88),
+                        ),
+                      ),
+                      if (_hasTimedOut) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: _refresh,
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: Text(l10n.cf_retryVerify),
+                            ),
+                            TextButton(
+                              onPressed: _confirmExit,
+                              child: Text(l10n.common_exit),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // build
   // ---------------------------------------------------------------------------
@@ -929,7 +1037,14 @@ class _CfChallengePageState extends State<CfChallengePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(context.l10n.cf_securityVerifyTitle),
-                          if (_checkCount > 0)
+                          if (_hasTimedOut)
+                            Text(
+                              context.l10n.cf_verifyTimedOutTitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            )
+                          else if (_checkCount > 0)
                             Text(
                               context.l10n.cf_verifying(_checkCount),
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -1044,42 +1159,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
                           ),
                         ),
 
-                        // 警告卡片
-                        if (showUi &&
-                            _checkCount > _activeMaxCheckCount - 10 &&
-                            _checkCount <= _activeMaxCheckCount)
-                          Positioned(
-                            bottom: 16,
-                            left: 16,
-                            right: 16,
-                            child: Card(
-                              color: theme.colorScheme.errorContainer,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.warning_amber_rounded,
-                                      color: theme.colorScheme.onErrorContainer,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        context.l10n.cf_verifyLonger(
-                                          _activeMaxCheckCount - _checkCount,
-                                        ),
-                                        style: TextStyle(
-                                          color: theme
-                                              .colorScheme
-                                              .onErrorContainer,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                        if (showUi) _buildStatusBanner(context, theme),
                       ],
                     ),
                   ),
@@ -1153,7 +1233,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
         if (_isBackground)
           DraggableFloatingPill(
             initialTop: 100,
-            onTap: _promoteToForeground,
+            initiallyExpanded: true,
+            tapToExpand: false,
+            onTap: () => _promoteToForeground(),
             child: Text(S.current.cf_backgroundVerifying),
           ),
       ],

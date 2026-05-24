@@ -7,6 +7,8 @@ class DraggableFloatingPill extends StatefulWidget {
   final VoidCallback? onTap;
   final EdgeInsets padding;
   final double initialTop;
+  final bool initiallyExpanded;
+  final bool tapToExpand;
 
   const DraggableFloatingPill({
     super.key,
@@ -14,6 +16,8 @@ class DraggableFloatingPill extends StatefulWidget {
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     this.initialTop = 100,
+    this.initiallyExpanded = false,
+    this.tapToExpand = true,
   });
 
   @override
@@ -26,8 +30,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
 
-  // 默认收起状态
-  bool _isExpanded = false;
+  late bool _isExpanded;
 
   @override
   double get floatingOverlap => 20.0;
@@ -42,6 +45,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
   void initState() {
     super.initState();
     initFloating();
+    _isExpanded = widget.initiallyExpanded;
 
     // 初始化呼吸动画
     _breathingController = AnimationController(
@@ -69,19 +73,21 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
 
   void _onPanStart(DragStartDetails details) {
     onFloatingPanStart(details);
-    setState(() {
-      _isExpanded = false; // 拖拽时自动收起
-    });
+    if (widget.tapToExpand) {
+      setState(() {
+        _isExpanded = false; // 拖拽时自动收起
+      });
+    }
   }
 
   void _handleTap() {
-    if (_isExpanded) {
-      widget.onTap?.call();
-    } else {
+    if (widget.tapToExpand && !_isExpanded) {
       setState(() {
         _isExpanded = true;
       });
+      return;
     }
+    widget.onTap?.call();
   }
 
   @override

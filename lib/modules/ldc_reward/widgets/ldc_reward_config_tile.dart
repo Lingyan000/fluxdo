@@ -157,8 +157,14 @@ class LdcRewardConfigTile extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              final clientId = clientIdController.text.trim();
-              final clientSecret = clientSecretController.text.trim();
+              // 清除所有空白字符（含中间）和零宽不可见字符，
+              // 避免用户从网页复制时混入换行、零宽空格、BOM 等导致 401。
+              // ​-‍: 零宽空格/非连接符/连接符；﻿: BOM
+              final invisible = RegExp('[\\s​-‍﻿]');
+              final clientId =
+                  clientIdController.text.replaceAll(invisible, '');
+              final clientSecret =
+                  clientSecretController.text.replaceAll(invisible, '');
               if (clientId.isEmpty || clientSecret.isEmpty) {
                 ToastService.showError(S.current.toast_credentialIncomplete);
                 return;

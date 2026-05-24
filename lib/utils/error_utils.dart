@@ -52,7 +52,7 @@ class ErrorUtils {
       return ErrorInfo(
         icon: Icons.shield_rounded,
         title: S.current.error_securityChallenge,
-        message: error.toString(),
+        message: _cfChallengeMessage(error),
       );
     }
 
@@ -64,7 +64,7 @@ class ErrorUtils {
         return ErrorInfo(
           icon: Icons.shield_rounded,
           title: S.current.error_securityChallenge,
-          message: innerError.toString(),
+          message: _cfChallengeMessage(innerError),
         );
       }
       if (innerError is RateLimitException) {
@@ -137,6 +137,11 @@ class ErrorUtils {
   /// 获取用户友好的错误消息
   static String getFriendlyMessage(Object? error) {
     return getErrorInfo(error).message;
+  }
+
+  static String _cfChallengeMessage(CfChallengeException error) {
+    if (error.inCooldown) return S.current.cf_dataBlockedByChallenge;
+    return error.toString();
   }
 
   /// 获取完整的错误详情（用于调试）
@@ -215,8 +220,7 @@ class ErrorUtils {
         }
         // 检查错误信息中的网络错误模式（如 Chromium/Cronet 的 net:: 错误）
         final errorStr = error.error?.toString().toUpperCase() ?? '';
-        if (errorStr.contains('TIMED_OUT') ||
-            errorStr.contains('TIMEOUT')) {
+        if (errorStr.contains('TIMED_OUT') || errorStr.contains('TIMEOUT')) {
           return ErrorInfo(
             icon: Icons.timer_off_rounded,
             title: S.current.error_connectionTimeout,
@@ -351,7 +355,9 @@ class ErrorUtils {
         return ErrorInfo(
           icon: Icons.error_outline_rounded,
           title: S.current.error_requestFailed,
-          message: serverMessage ?? S.current.error_requestFailedWithCode(statusCode ?? 0),
+          message:
+              serverMessage ??
+              S.current.error_requestFailedWithCode(statusCode ?? 0),
         );
     }
   }

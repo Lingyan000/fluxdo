@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
 
 import '../../l10n/s.dart';
+import '../../services/cf_challenge_service.dart';
+import '../../services/network/exceptions/api_exception.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
@@ -45,6 +48,7 @@ class ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final errorInfo = ErrorUtils.getErrorInfo(error);
+    final isCfChallengeError = _isCfChallengeError(error);
 
     return Center(
       child: Padding(
@@ -79,8 +83,20 @@ class ErrorView extends StatelessWidget {
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: [
-                if (onRetry != null)
+                if (isCfChallengeError)
                   FilledButton.icon(
+                    onPressed: () => _runManualCfVerify(context),
+                    icon: const Icon(Icons.shield_outlined, size: 18),
+                    label: Text(context.l10n.cf_manualVerifyAction),
+                  )
+                else if (onRetry != null)
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: Text(context.l10n.common_retry),
+                  ),
+                if (isCfChallengeError && onRetry != null)
+                  OutlinedButton.icon(
                     onPressed: onRetry,
                     icon: const Icon(Icons.refresh, size: 18),
                     label: Text(context.l10n.common_retry),
@@ -99,6 +115,36 @@ class ErrorView extends StatelessWidget {
     );
   }
 
+  bool _isCfChallengeError(Object error) {
+    if (error is CfChallengeException) return true;
+    if (error is DioException && error.error is CfChallengeException) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _runManualCfVerify(BuildContext context) async {
+    final cfService = CfChallengeService();
+    // 用户主动点击时应允许立即打开验证页，避免冷却期把恢复入口也挡住。
+    cfService.resetCooldown();
+
+    final result = await cfService.showManualVerify(context, true);
+    if (!context.mounted) return;
+
+    if (result == true) {
+      ToastService.showSuccess(S.current.cfVerify_success);
+      onRetry?.call();
+      return;
+    }
+
+    if (result == false) {
+      ToastService.showError(S.current.cf_verifyIncomplete);
+      return;
+    }
+
+    ToastService.showError(S.current.cf_cannotOpenVerifyPage);
+  }
+
   void _showErrorDetails(BuildContext context) {
     final details = ErrorUtils.getErrorDetails(error, stackTrace);
 
@@ -113,10 +159,7 @@ class ErrorView extends StatelessWidget {
 
 /// 错误详情底部弹窗
 class ErrorDetailsSheet extends StatelessWidget {
-  const ErrorDetailsSheet({
-    super.key,
-    required this.details,
-  });
+  const ErrorDetailsSheet({super.key, required this.details});
 
   final String details;
 
@@ -163,7 +206,9 @@ class ErrorDetailsSheet extends StatelessWidget {
                   tooltip: context.l10n.common_copy,
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: details));
-                    ToastService.showSuccess(S.current.common_copiedToClipboard);
+                    ToastService.showSuccess(
+                      S.current.common_copiedToClipboard,
+                    );
                   },
                 ),
                 IconButton(
