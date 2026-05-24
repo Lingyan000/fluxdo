@@ -157,14 +157,9 @@ class LdcRewardConfigTile extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              // 清除所有空白字符（含中间）和零宽不可见字符，
-              // 避免用户从网页复制时混入换行、零宽空格、BOM 等导致 401。
-              // ​-‍: 零宽空格/非连接符/连接符；﻿: BOM
-              final invisible = RegExp('[\\s​-‍﻿]');
-              final clientId =
-                  clientIdController.text.replaceAll(invisible, '');
+              final clientId = _sanitizeCredential(clientIdController.text);
               final clientSecret =
-                  clientSecretController.text.replaceAll(invisible, '');
+                  _sanitizeCredential(clientSecretController.text);
               if (clientId.isEmpty || clientSecret.isEmpty) {
                 ToastService.showError(S.current.toast_credentialIncomplete);
                 return;
@@ -181,4 +176,22 @@ class LdcRewardConfigTile extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 清理凭证中的空白与零宽不可见字符。
+/// 用户从网页 / IM 复制 Client ID / Secret 时常会混入：
+///   - 普通空白（空格、Tab、换行）
+///   - 零宽字符：U+200B / U+200C / U+200D（ZWSP / ZWNJ / ZWJ）
+///   - U+FEFF（BOM / 零宽不换行空格）
+/// 这些字符在 UI 上完全不可见，但会破坏 Basic Auth 签名导致 401。
+String _sanitizeCredential(String input) {
+  const invisibleCodes = <int>{0x200B, 0x200C, 0x200D, 0xFEFF};
+  final buf = StringBuffer();
+  for (final code in input.runes) {
+    if (invisibleCodes.contains(code)) continue;
+    final ch = String.fromCharCode(code);
+    if (RegExp(r'\s').hasMatch(ch)) continue;
+    buf.writeCharCode(code);
+  }
+  return buf.toString();
 }
