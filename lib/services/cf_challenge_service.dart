@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../constants.dart';
@@ -391,6 +393,7 @@ class CfChallengePage extends StatefulWidget {
 
 class _CfChallengePageState extends State<CfChallengePage> {
   InAppWebViewController? _controller;
+  final _webViewKey = GlobalKey();
   bool _isLoading = true;
   double _progress = 0;
   bool _hasMarkedPageReady = false;
@@ -420,7 +423,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void initState() {
     super.initState();
     _isBackground = widget.startInBackground;
-    _needsManualAttention = !widget.startInBackground;
+    _needsManualAttention = false;
     _snapshotInitialClearance();
   }
 
@@ -875,6 +878,12 @@ class _CfChallengePageState extends State<CfChallengePage> {
     ToastService.showError(message);
   }
 
+  bool get _shouldShowStatusBanner =>
+      _hasTimedOut ||
+      _needsManualAttention ||
+      (_checkCount > _activeMaxCheckCount - 10 &&
+          _checkCount <= _activeMaxCheckCount);
+
   Widget _buildStatusBanner(ThemeData theme) {
     final colorScheme = theme.colorScheme;
     late final Color backgroundColor;
@@ -905,10 +914,12 @@ class _CfChallengePageState extends State<CfChallengePage> {
       );
     }
 
-    return Card(
+    return Material(
       color: backgroundColor,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -916,7 +927,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: foregroundColor),
+                Icon(icon, color: foregroundColor, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -924,7 +935,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
                     children: [
                       Text(
                         title,
-                        style: theme.textTheme.titleSmall?.copyWith(
+                        style: theme.textTheme.labelLarge?.copyWith(
                           color: foregroundColor,
                           fontWeight: FontWeight.w600,
                         ),
@@ -943,14 +954,15 @@ class _CfChallengePageState extends State<CfChallengePage> {
             ),
             if (_hasTimedOut) ...[
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   TextButton(
                     onPressed: _refresh,
                     child: Text(context.l10n.cf_retryVerify),
                   ),
-                  const SizedBox(width: 8),
                   TextButton(
                     onPressed: _confirmExit,
                     child: Text(context.l10n.common_exit),
@@ -1016,6 +1028,233 @@ class _CfChallengePageState extends State<CfChallengePage> {
     });
   }
 
+  Widget _buildChallengeWebView({required bool showUi}) {
+    return IgnorePointer(
+      ignoring: _isBackground,
+      child: WebViewSettings.wrapWithScrollFix(
+        InAppWebView(
+          key: _webViewKey,
+          webViewEnvironment:
+              WindowsWebViewEnvironmentService.instance.environment,
+          initialUrlRequest: URLRequest(url: WebUri(widget.verifyUrl)),
+          initialSettings: InAppWebViewSettings(
+            javaScriptEnabled: true,
+            userAgent: AppConstants.webViewUserAgentOverride,
+            mediaPlaybackRequiresUserGesture: false,
+          ),
+          onReceivedServerTrustAuthRequest: (_, challenge) =>
+              WebViewSettings.handleServerTrustAuthRequest(challenge),
+          onWebViewCreated: (controller) {
+            _controller = controller;
+            // 注册 JS Handler，challenge-platform 响应到达时触发
+            controller.addJavaScriptHandler(
+              handlerName: 'onChallengeComplete',
+              callback: _onChallengeComplete,
+            );
+          },
+          onLoadStart: (controller, url) {
+            _loadStopFallbackTimer?.cancel();
+            _pageReadyFallbackTimer?.cancel();
+            _hasMarkedPageReady = false;
+            _hasTimedOut = false;
+            _needsManualAttention = false;
+            _schedulePageReadyFallback(controller);
+            setState(() {
+              _isLoading = true;
+              _progress = 0;
+            });
+          },
+          onPageCommitVisible: (controller, url) {
+            _handlePageReady(controller, reason: 'onPageCommitVisible');
+          },
+          onProgressChanged: (controller, progress) {
+            _progress = progress / 100;
+            _scheduleLoadStopFallback(controller, progress);
+            if (showUi) {
+              setState(() {});
+            }
+          },
+          onLoadStop: (controller, url) {
+            WebViewSettings.injectScrollFix(controller);
+            _handlePageReady(controller, reason: 'onLoadStop');
+          },
+          onReceivedError: (controller, request, error) {
+            _pageReadyFallbackTimer?.cancel();
+            if (mounted) {
+              setState(() => _isLoading = false);
+            }
+            if (showUi) {
+              _showError(context.l10n.cf_loadFailed(error.description));
+            }
+          },
+        ),
+        getController: () => _controller,
+      ),
+    );
+  }
+
+  Widget _buildPanelHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: context.l10n.common_exit,
+              onPressed: showExitConfirmation,
+            ),
+            Expanded(
+              child: Text(
+                context.l10n.cf_securityVerifyTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: context.l10n.common_refresh,
+              onPressed: _refresh,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              tooltip: context.l10n.common_help,
+              onPressed: _showHelp,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerifyPanel(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: colorScheme.surface,
+      elevation: 10,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          _buildPanelHeader(theme),
+          SizedBox(
+            height: 2,
+            child: _isLoading
+                ? LinearProgressIndicator(
+                    value: _progress > 0 ? _progress : null,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                  )
+                : ColoredBox(color: colorScheme.outlineVariant),
+          ),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: _buildChallengeWebView(showUi: true)),
+                if (_shouldShowStatusBanner)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: _buildStatusBanner(theme),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContextualVerifyLayer(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: [
+          ModalBarrier(
+            dismissible: false,
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.42 : 0.24,
+            ),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 640;
+                final horizontalMargin = isCompact ? 12.0 : 24.0;
+                final verticalMargin = isCompact ? 12.0 : 24.0;
+                final availableHeight = math.max(
+                  360.0,
+                  constraints.maxHeight - verticalMargin * 2,
+                );
+                final targetHeight = isCompact
+                    ? availableHeight * 0.88
+                    : math.min(720.0, availableHeight);
+                final minHeight = math.min(460.0, availableHeight);
+                final panelHeight = math.max(minHeight, targetHeight);
+
+                return Align(
+                  alignment: isCompact
+                      ? Alignment.bottomCenter
+                      : Alignment.center,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalMargin,
+                      verticalMargin,
+                      horizontalMargin,
+                      verticalMargin,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: panelHeight,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.16),
+                                blurRadius: 24,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                            border: Border.all(
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                          child: _buildVerifyPanel(theme),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // build
   // ---------------------------------------------------------------------------
@@ -1027,165 +1266,17 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
     return Stack(
       children: [
-        // 内容层：显示 WebView UI
-        IgnorePointer(
-          ignoring: _isBackground || _showExitDialog,
-          child: Opacity(
-            opacity: _isBackground ? 0 : 1,
-            child: Scaffold(
-              backgroundColor: showUi
-                  ? theme.colorScheme.surface
-                  : Colors.transparent,
-              appBar: showUi
-                  ? AppBar(
-                      title: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(context.l10n.cf_securityVerifyTitle),
-                          if (_hasTimedOut)
-                            Text(
-                              context.l10n.cf_verifyTimedOutTitle,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            )
-                          else if (_checkCount > 0)
-                            Text(
-                              context.l10n.cf_verifying(_checkCount),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                      leading: IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: showExitConfirmation,
-                      ),
-                      actions: [
-                        IconButton(
-                          icon: const Icon(Icons.refresh),
-                          onPressed: _refresh,
-                          tooltip: context.l10n.common_refresh,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.help_outline),
-                          onPressed: _showHelp,
-                          tooltip: context.l10n.common_help,
-                        ),
-                      ],
-                    )
-                  : null,
-              body: Column(
-                children: [
-                  if (showUi && _isLoading)
-                    LinearProgressIndicator(
-                      value: _progress > 0 ? _progress : null,
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
-                    ),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        IgnorePointer(
-                          ignoring: _isBackground,
-                          child: WebViewSettings.wrapWithScrollFix(
-                            InAppWebView(
-                              webViewEnvironment:
-                                  WindowsWebViewEnvironmentService
-                                      .instance
-                                      .environment,
-                              initialUrlRequest: URLRequest(
-                                url: WebUri(widget.verifyUrl),
-                              ),
-                              initialSettings: InAppWebViewSettings(
-                                javaScriptEnabled: true,
-                                userAgent:
-                                    AppConstants.webViewUserAgentOverride,
-                                mediaPlaybackRequiresUserGesture: false,
-                              ),
-                              onReceivedServerTrustAuthRequest: (_, challenge) =>
-                                  WebViewSettings.handleServerTrustAuthRequest(
-                                    challenge,
-                                  ),
-                              onWebViewCreated: (controller) {
-                                _controller = controller;
-                                // 注册 JS Handler，challenge-platform 响应到达时触发
-                                controller.addJavaScriptHandler(
-                                  handlerName: 'onChallengeComplete',
-                                  callback: _onChallengeComplete,
-                                );
-                              },
-                              onLoadStart: (controller, url) {
-                                _loadStopFallbackTimer?.cancel();
-                                _pageReadyFallbackTimer?.cancel();
-                                _hasMarkedPageReady = false;
-                                _hasTimedOut = false;
-                                _needsManualAttention = false;
-                                _schedulePageReadyFallback(controller);
-                                setState(() {
-                                  _isLoading = true;
-                                  _progress = 0;
-                                });
-                              },
-                              onPageCommitVisible: (controller, url) {
-                                _handlePageReady(
-                                  controller,
-                                  reason: 'onPageCommitVisible',
-                                );
-                              },
-                              onProgressChanged: (controller, progress) {
-                                _progress = progress / 100;
-                                _scheduleLoadStopFallback(controller, progress);
-                                if (showUi) {
-                                  setState(() {});
-                                }
-                              },
-                              onLoadStop: (controller, url) {
-                                WebViewSettings.injectScrollFix(controller);
-                                _handlePageReady(
-                                  controller,
-                                  reason: 'onLoadStop',
-                                );
-                              },
-                              onReceivedError: (controller, request, error) {
-                                _pageReadyFallbackTimer?.cancel();
-                                if (mounted) {
-                                  setState(() => _isLoading = false);
-                                }
-                                if (showUi) {
-                                  _showError(
-                                    context.l10n.cf_loadFailed(
-                                      error.description,
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                            getController: () => _controller,
-                          ),
-                        ),
-
-                        // 验证状态提示
-                        if (showUi &&
-                            (_hasTimedOut ||
-                                _needsManualAttention ||
-                                (_checkCount > _activeMaxCheckCount - 10 &&
-                                    _checkCount <= _activeMaxCheckCount)))
-                          Positioned(
-                            bottom: 16,
-                            left: 16,
-                            right: 16,
-                            child: _buildStatusBanner(theme),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+        if (showUi)
+          Positioned.fill(child: _buildContextualVerifyLayer(theme))
+        else
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0,
+                child: _buildChallengeWebView(showUi: false),
               ),
             ),
           ),
-        ),
 
         // 内部弹窗层
         if (_showExitDialog)
