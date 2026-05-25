@@ -34,6 +34,7 @@ class CfChallengeService {
   static DateTime? _lastToastAt;
   Completer<BuildContext>? _contextReadyCompleter;
   VoidCallback? _activePromoteToForeground;
+  bool _pendingPromoteToForeground = false;
 
   /// 冷却机制：连续失败 N 次后进入冷却期
   DateTime? _cooldownUntil;
@@ -171,7 +172,12 @@ class CfChallengeService {
     // 如果已经在验证中 (Overlay 存在)
     if (_isVerifying) {
       if (forceForeground) {
-        _activePromoteToForeground?.call();
+        final promote = _activePromoteToForeground;
+        if (promote == null) {
+          _pendingPromoteToForeground = true;
+        } else {
+          promote();
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _activePromoteToForeground?.call();
         });
@@ -192,6 +198,7 @@ class CfChallengeService {
       debugPrint('[CfChallenge] No overlay available for manual verify');
       CfChallengeLogger.log('[VERIFY] No overlay available');
       _isVerifying = false;
+      _pendingPromoteToForeground = false;
       return null;
     }
 
@@ -210,6 +217,7 @@ class CfChallengeService {
       debugPrint('[CfChallenge] Overlay no longer mounted');
       CfChallengeLogger.log('[VERIFY] Overlay not mounted');
       _isVerifying = false;
+      _pendingPromoteToForeground = false;
       return null;
     }
 
@@ -223,6 +231,12 @@ class CfChallengeService {
     _activePromoteToForeground = () {
       pageKey.currentState?._promoteToForeground();
     };
+    if (_pendingPromoteToForeground) {
+      _pendingPromoteToForeground = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _activePromoteToForeground?.call();
+      });
+    }
 
     // 清理资源
     void cleanup() {
@@ -233,6 +247,7 @@ class CfChallengeService {
         interceptorRoute?.navigator?.removeRoute(interceptorRoute!);
       }
       _activePromoteToForeground = null;
+      _pendingPromoteToForeground = false;
       _isVerifying = false;
     }
 
@@ -336,6 +351,15 @@ class CfChallengeService {
     }
 
     return result;
+  }
+
+  /// 用户主动触发的验证入口：允许绕过冷却期。
+  Future<bool?> showManualVerifyNow([
+    BuildContext? context,
+    bool forceForeground = true,
+  ]) {
+    resetCooldown();
+    return showManualVerify(context, forceForeground);
   }
 }
 
@@ -626,13 +650,14 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void _startTimeout() {
     _timeoutTimer?.cancel();
     _checkCount = 0;
+    _hasTimedOut = false;
     _timeoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
       _checkCount++;
-      if (!_isBackground) setState(() {}); // 更新计数显示
+      if (!_isBackground && !_hasTimedOut) setState(() {}); // 更新计数显示
 
       // 兜底轮询：验证通过后页面重定向会销毁 JS 上下文，
       // 导致 onChallengeComplete 回调丢失（macOS 上尤为明显），
@@ -647,18 +672,20 @@ class _CfChallengePageState extends State<CfChallengePage> {
           _promoteToForeground(dueToTimeout: true);
           return;
         }
-        timer.cancel();
-        CfChallengeLogger.logVerifyResult(
-          success: false,
-          reason: 'timeout after $_activeMaxCheckCount seconds',
-        );
-        if (mounted) {
-          setState(() {
-            _hasTimedOut = true;
-            _needsManualAttention = true;
-          });
-          _showError(S.current.cf_verifyTimeout);
+        if (!_hasTimedOut) {
+          CfChallengeLogger.logVerifyResult(
+            success: false,
+            reason: 'timeout after $_activeMaxCheckCount seconds',
+          );
+          if (mounted) {
+            setState(() {
+              _hasTimedOut = true;
+              _needsManualAttention = true;
+            });
+            _showInfo(S.current.cf_verifyTimeout);
+          }
         }
+        return;
       }
     });
   }
@@ -797,16 +824,19 @@ class _CfChallengePageState extends State<CfChallengePage> {
     setState(() {
       _isBackground = false;
       _needsManualAttention = true;
+      _hasTimedOut = false;
       _checkCount = 0;
     });
     widget.onPromoteRequest?.call();
 
-    if (dueToTimeout) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _showInfo(S.current.cf_autoVerifyTimeout);
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showInfo(
+        dueToTimeout
+            ? S.current.cf_autoVerifyTimeout
+            : S.current.cf_manualVerifyBannerMessage,
+      );
+    });
   }
 
   void _finish(bool success) {
@@ -843,6 +873,95 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void _showError(String message) {
     if (!mounted) return;
     ToastService.showError(message);
+  }
+
+  Widget _buildStatusBanner(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    late final Color backgroundColor;
+    late final Color foregroundColor;
+    late final IconData icon;
+    late final String title;
+    late final String message;
+
+    if (_hasTimedOut) {
+      backgroundColor = colorScheme.errorContainer;
+      foregroundColor = colorScheme.onErrorContainer;
+      icon = Icons.error_outline;
+      title = context.l10n.cf_verifyTimedOutTitle;
+      message = context.l10n.cf_verifyTimedOutMessage;
+    } else if (_needsManualAttention) {
+      backgroundColor = colorScheme.secondaryContainer;
+      foregroundColor = colorScheme.onSecondaryContainer;
+      icon = Icons.touch_app_outlined;
+      title = context.l10n.cf_manualVerifyBannerTitle;
+      message = context.l10n.cf_manualVerifyBannerMessage;
+    } else {
+      backgroundColor = colorScheme.tertiaryContainer;
+      foregroundColor = colorScheme.onTertiaryContainer;
+      icon = Icons.hourglass_bottom;
+      title = context.l10n.cf_manualVerifyBannerTitle;
+      message = context.l10n.cf_verifyLonger(
+        _activeMaxCheckCount - _checkCount,
+      );
+    }
+
+    return Card(
+      color: backgroundColor,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: foregroundColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: foregroundColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        message,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: foregroundColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_hasTimedOut) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _refresh,
+                    child: Text(context.l10n.cf_retryVerify),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _confirmExit,
+                    child: Text(context.l10n.common_exit),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   void _handlePageReady(InAppWebViewController controller, {String? reason}) {
@@ -895,120 +1014,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
       }
       _handlePageReady(controller, reason: 'progress fallback');
     });
-  }
-
-  Widget _buildStatusBanner(BuildContext context, ThemeData theme) {
-    final l10n = context.l10n;
-    final colorScheme = theme.colorScheme;
-    final isTakingLong =
-        !_hasTimedOut &&
-        _checkCount > _activeMaxCheckCount - 10 &&
-        _checkCount <= _activeMaxCheckCount;
-    final Color backgroundColor;
-    final Color foregroundColor;
-    final IconData icon;
-    final String title;
-    final String message;
-
-    if (_hasTimedOut) {
-      backgroundColor = colorScheme.errorContainer;
-      foregroundColor = colorScheme.onErrorContainer;
-      icon = Icons.error_outline;
-      title = l10n.cf_verifyTimedOutTitle;
-      message = l10n.cf_verifyTimedOutMessage;
-    } else if (isTakingLong) {
-      backgroundColor = colorScheme.tertiaryContainer;
-      foregroundColor = colorScheme.onTertiaryContainer;
-      icon = Icons.hourglass_bottom;
-      title = l10n.cf_manualVerifyBannerTitle;
-      message = l10n.cf_verifyLonger(_activeMaxCheckCount - _checkCount);
-    } else if (_needsManualAttention) {
-      backgroundColor = colorScheme.secondaryContainer;
-      foregroundColor = colorScheme.onSecondaryContainer;
-      icon = Icons.touch_app_outlined;
-      title = l10n.cf_manualVerifyBannerTitle;
-      message = l10n.cf_manualVerifyBannerMessage;
-    } else {
-      backgroundColor = colorScheme.surfaceContainerHighest;
-      foregroundColor = colorScheme.onSurfaceVariant;
-      icon = Icons.verified_user_outlined;
-      title = l10n.cf_autoVerifyBannerTitle;
-      message = l10n.cf_autoVerifyBannerMessage;
-    }
-
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16,
-      child: SafeArea(
-        top: false,
-        child: Material(
-          color: backgroundColor,
-          elevation: 3,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_hasTimedOut || isTakingLong)
-                  Icon(icon, color: foregroundColor, size: 22)
-                else
-                  SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: foregroundColor,
-                    ),
-                  ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: foregroundColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        message,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: foregroundColor.withValues(alpha: 0.88),
-                        ),
-                      ),
-                      if (_hasTimedOut) ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            FilledButton.tonalIcon(
-                              onPressed: _refresh,
-                              icon: const Icon(Icons.refresh, size: 18),
-                              label: Text(l10n.cf_retryVerify),
-                            ),
-                            TextButton(
-                              onPressed: _confirmExit,
-                              child: Text(l10n.common_exit),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1115,6 +1120,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
                                 _loadStopFallbackTimer?.cancel();
                                 _pageReadyFallbackTimer?.cancel();
                                 _hasMarkedPageReady = false;
+                                _hasTimedOut = false;
+                                _needsManualAttention = false;
                                 _schedulePageReadyFallback(controller);
                                 setState(() {
                                   _isLoading = true;
@@ -1159,7 +1166,18 @@ class _CfChallengePageState extends State<CfChallengePage> {
                           ),
                         ),
 
-                        if (showUi) _buildStatusBanner(context, theme),
+                        // 验证状态提示
+                        if (showUi &&
+                            (_hasTimedOut ||
+                                _needsManualAttention ||
+                                (_checkCount > _activeMaxCheckCount - 10 &&
+                                    _checkCount <= _activeMaxCheckCount)))
+                          Positioned(
+                            bottom: 16,
+                            left: 16,
+                            right: 16,
+                            child: _buildStatusBanner(theme),
+                          ),
                       ],
                     ),
                   ),
@@ -1235,7 +1253,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
             initialTop: 100,
             initiallyExpanded: true,
             tapToExpand: false,
-            onTap: () => _promoteToForeground(),
+            onTap: _promoteToForeground,
             child: Text(S.current.cf_backgroundVerifying),
           ),
       ],

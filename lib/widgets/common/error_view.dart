@@ -124,11 +124,10 @@ class ErrorView extends StatelessWidget {
   }
 
   Future<void> _runManualCfVerify(BuildContext context) async {
-    final cfService = CfChallengeService();
-    // 用户主动点击时应允许立即打开验证页，避免冷却期把恢复入口也挡住。
-    cfService.resetCooldown();
-
-    final result = await cfService.showManualVerify(context, true);
+    final result = await CfChallengeService().showManualVerifyNow(
+      context,
+      true,
+    );
     if (!context.mounted) return;
 
     if (result == true) {

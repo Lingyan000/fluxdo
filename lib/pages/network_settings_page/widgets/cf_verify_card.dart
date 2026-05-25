@@ -12,9 +12,7 @@ class CfVerifyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
         leading: const Icon(Icons.security),
         title: Text(context.l10n.cf_securityVerifyTitle),
@@ -26,7 +24,10 @@ class CfVerifyCard extends StatelessWidget {
   }
 
   Future<void> _showManualVerify(BuildContext context) async {
-    final result = await CfChallengeService().showManualVerify(context, true);
+    final result = await CfChallengeService().showManualVerifyNow(
+      context,
+      true,
+    );
 
     if (!context.mounted) return;
 
@@ -35,9 +36,7 @@ class CfVerifyCard extends StatelessWidget {
     } else if (result == false) {
       ToastService.showError(S.current.cf_failedRetry);
     } else {
-      if (CfChallengeService().isInCooldown) {
-        ToastService.showInfo(S.current.cf_cooldown);
-      }
+      ToastService.showError(S.current.cf_cannotOpenVerifyPage);
     }
   }
 }
