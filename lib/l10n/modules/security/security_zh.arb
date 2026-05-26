@@ -41,10 +41,17 @@
   "cf_manualVerifyAction": "手动验证",
   "cf_manualVerifyBannerMessage": "如果看到勾选框或提示，请按页面要求操作；通过后会自动继续。",
   "cf_manualVerifyBannerTitle": "请完成页面中的安全验证",
+  "cf_noChallengeMessage": "如果刚才的请求仍失败，请重新加载验证页或稍后再试。",
+  "cf_noChallengeTitle": "当前没有需要完成的安全验证",
   "cf_operationBlockedByChallenge": "操作被安全验证拦截，请先完成验证",
   "cf_retryVerify": "重新加载",
+  "cf_retryVerificationAction": "重新尝试验证",
+  "cf_verifyCompletingMessage": "验证结果已返回，正在同步状态…",
+  "cf_verifyCompletingTitle": "正在完成安全验证",
   "cf_verifyIncomplete": "验证未完成，请重试",
   "cf_verifyLonger": "验证时间较长，还剩 {seconds} 秒",
+  "cf_verifyOpeningMessage": "如果需要操作，安全验证页面会在这里显示。",
+  "cf_verifyOpeningTitle": "正在打开安全验证",
   "@cf_verifyLonger": {
     "placeholders": {
       "seconds": {

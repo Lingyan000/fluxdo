@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
@@ -14,6 +15,8 @@ import 'toast_service.dart';
 import 'webview_settings.dart';
 import 'windows_webview_environment_service.dart';
 import '../l10n/s.dart';
+import '../providers/preferences_provider.dart';
+import '../utils/blur_config.dart';
 import '../widgets/draggable_floating_pill.dart';
 
 CookieManager get _cfCookieManager =>
@@ -400,6 +403,12 @@ class _CfChallengePageState extends State<CfChallengePage> {
   bool _hasPopped = false; // 防止重复 pop
   late bool _isBackground;
   late bool _needsManualAttention;
+  bool _challengeWebViewVisible = false;
+  bool _hideOriginFallbackPage = false;
+  bool _checkingOriginFallback = false;
+  bool _originFallbackNeedsAction = false;
+  int _loadGeneration = 0;
+  int _challengeRevealProbeGeneration = 0;
   bool _hasTimedOut = false;
   int _checkCount = 0;
   Timer? _timeoutTimer;
@@ -592,6 +601,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
     CfChallengeLogger.log(
       '[VERIFY] Challenge response: url=$url, status=$status',
     );
+    _revealChallengeWebView();
 
     try {
       final cookieValue = await _readCookieValue('cf_clearance');
@@ -602,9 +612,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
       }
 
       // 关键：对比初始快照，过滤掉未被清除干净的旧值
-      if (_initialCfClearance != null &&
-          _initialCfClearance!.isNotEmpty &&
-          cookieValue == _initialCfClearance) {
+      if (!_isFreshClearance(cookieValue)) {
         debugPrint('[CfChallenge] cf_clearance 与初始值相同（旧值残留），忽略');
         return;
       }
@@ -697,30 +705,23 @@ class _CfChallengePageState extends State<CfChallengePage> {
   /// 如果页面加载完成后没有盾，快速退出避免死等超时导致循环
   void _scheduleNoChallengeCheck(InAppWebViewController controller) {
     _noChallengeCheckTimer?.cancel();
+    final generation = _loadGeneration;
     _noChallengeCheckTimer = Timer(_noChallengeCheckDelay, () async {
-      if (_hasPopped || !mounted) return;
+      if (_hasPopped || !mounted || generation != _loadGeneration) return;
 
       try {
-        final html = await controller.evaluateJavascript(
-          source: 'document.body ? document.body.innerHTML : ""',
-        );
-        if (_hasPopped) return;
-        if (html == null) return;
-
-        final hasChallenge = CfChallengeService.hasActiveCfChallenge(
-          html.toString(),
-        );
-        if (hasChallenge) return; // 页面有盾，等待正常验证流程
+        final hasChallenge = await _hasVisibleChallenge(controller);
+        if (_hasPopped || generation != _loadGeneration) return;
+        if (hasChallenge) {
+          _revealChallengeWebView();
+          return; // 页面有盾，等待正常验证流程
+        }
 
         // 页面没有盾，检查是否已有新的 cf_clearance（CF 可能自动放行了）
         final cookieValue = await _readCookieValue('cf_clearance');
-        if (_hasPopped) return;
+        if (_hasPopped || generation != _loadGeneration) return;
 
-        if (cookieValue != null &&
-            cookieValue.isNotEmpty &&
-            (_initialCfClearance == null ||
-                _initialCfClearance!.isEmpty ||
-                cookieValue != _initialCfClearance)) {
+        if (_isFreshClearance(cookieValue)) {
           debugPrint('[CfChallenge] 页面无盾但检测到新 cf_clearance，自动完成');
           CfChallengeLogger.logVerifyResult(
             success: true,
@@ -730,7 +731,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
           _timeoutTimer?.cancel();
           if (mounted) _finish(true);
         } else {
-          // 没有盾也没有新 cookie，非 CF 验证场景，快速退出
+          // 没有盾也没有新 cookie，非 CF 验证场景，不露出源站 404。
           debugPrint('[CfChallenge] 页面无盾且无新 cf_clearance，快速退出');
           CfChallengeLogger.logVerifyResult(
             success: false,
@@ -738,12 +739,79 @@ class _CfChallengePageState extends State<CfChallengePage> {
                 'no challenge detected after ${_noChallengeCheckDelay.inSeconds}s',
           );
           _timeoutTimer?.cancel();
-          if (mounted) _finish(false);
+          if (_isBackground) {
+            if (mounted) _finish(false);
+          } else if (mounted) {
+            setState(() {
+              _challengeWebViewVisible = false;
+              _hideOriginFallbackPage = true;
+              _originFallbackNeedsAction = true;
+              _needsManualAttention = false;
+              _isLoading = false;
+            });
+          }
         }
       } catch (e) {
         debugPrint('[CfChallenge] 检测 challenge 状态异常: $e');
       }
     });
+  }
+
+  Future<void> _handleVerifyOriginFallback(int generation) async {
+    if (_hasPopped || _checkingOriginFallback) return;
+
+    _checkingOriginFallback = true;
+    if (mounted) {
+      setState(() {
+        _challengeWebViewVisible = false;
+        _hideOriginFallbackPage = true;
+        _originFallbackNeedsAction = false;
+        _isLoading = false;
+      });
+    }
+
+    try {
+      for (var i = 0; i < 6; i++) {
+        if (_hasPopped || generation != _loadGeneration) return;
+        final cookieValue = await _readCookieValue('cf_clearance');
+        if (_isFreshClearance(cookieValue)) {
+          debugPrint('[CfChallenge] /challenge 返回 404，但检测到新 cf_clearance，自动完成');
+          CfChallengeLogger.logVerifyResult(
+            success: true,
+            reason: 'origin /challenge 404 after fresh cf_clearance',
+          );
+          await _syncLiveCookiesToCookieJar();
+          _timeoutTimer?.cancel();
+          if (mounted) _finish(true);
+          return;
+        }
+        await Future.delayed(const Duration(milliseconds: 250));
+      }
+
+      debugPrint('[CfChallenge] /challenge 返回 404，且未检测到新 cf_clearance');
+      CfChallengeLogger.logVerifyResult(
+        success: false,
+        reason: 'origin /challenge 404 without fresh cf_clearance',
+      );
+      if (_isBackground) {
+        _timeoutTimer?.cancel();
+        if (mounted) _finish(false);
+        return;
+      }
+      if (mounted && !_hasPopped) {
+        setState(() {
+          _originFallbackNeedsAction = true;
+          _needsManualAttention = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[CfChallenge] 处理 /challenge 404 fallback 异常: $e');
+    } finally {
+      _checkingOriginFallback = false;
+      if (mounted && !_hasPopped && generation == _loadGeneration) {
+        setState(() {});
+      }
+    }
   }
 
   /// 轮询检测 cf_clearance 变化（兜底 JS 回调被重定向吞掉的场景）
@@ -754,17 +822,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
     try {
       final cookieValue = await _readCookieValue('cf_clearance');
       if (_hasPopped) return;
-      if (cookieValue == null || cookieValue.isEmpty) return;
-
-      // 与初始快照对比，过滤旧值残留
-      if (_initialCfClearance != null &&
-          _initialCfClearance!.isNotEmpty &&
-          cookieValue == _initialCfClearance) {
-        return;
-      }
+      if (!_isFreshClearance(cookieValue)) return;
 
       debugPrint(
-        '[CfChallenge] ✓ 轮询检测到新 cf_clearance (${cookieValue.length} chars)',
+        '[CfChallenge] ✓ 轮询检测到新 cf_clearance (${cookieValue!.length} chars)',
       );
       CfChallengeLogger.logVerifyResult(
         success: true,
@@ -811,10 +872,15 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _noChallengeCheckTimer?.cancel();
     _loadStopFallbackTimer?.cancel();
     _pageReadyFallbackTimer?.cancel();
+    _challengeRevealProbeGeneration++;
     _hasMarkedPageReady = false;
     _checkCount = 0;
     _hasTimedOut = false;
     _needsManualAttention = true;
+    _challengeWebViewVisible = false;
+    _hideOriginFallbackPage = false;
+    _checkingOriginFallback = false;
+    _originFallbackNeedsAction = false;
     setState(() {
       _isLoading = true;
       _progress = 0;
@@ -876,6 +942,84 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void _showError(String message) {
     if (!mounted) return;
     ToastService.showError(message);
+  }
+
+  bool get _shouldCoverWebView =>
+      !_challengeWebViewVisible || _hideOriginFallbackPage;
+
+  bool _isFreshClearance(String? cookieValue) {
+    if (cookieValue == null || cookieValue.isEmpty) return false;
+    if (_initialCfClearance != null &&
+        _initialCfClearance!.isNotEmpty &&
+        cookieValue == _initialCfClearance) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isVerifyUrl(WebUri? url) {
+    if (url == null) return false;
+    final actual = Uri.tryParse(url.toString());
+    final expected = Uri.tryParse(widget.verifyUrl);
+    if (actual == null || expected == null) return false;
+    return actual.scheme == expected.scheme &&
+        actual.host == expected.host &&
+        actual.path == expected.path;
+  }
+
+  bool _isVerifyOriginFallback(
+    WebResourceRequest request,
+    WebResourceResponse response,
+  ) {
+    if (response.statusCode != 404) return false;
+    if (request.isForMainFrame != true) return false;
+    return _isVerifyUrl(request.url);
+  }
+
+  Future<bool> _hasVisibleChallenge(InAppWebViewController controller) async {
+    final html = await controller.evaluateJavascript(
+      source:
+          'document.documentElement ? document.documentElement.innerHTML : ""',
+    );
+    if (html == null) return false;
+    return CfChallengeService.hasActiveCfChallenge(html.toString());
+  }
+
+  void _revealChallengeWebView() {
+    if (_hasPopped || !mounted || _challengeWebViewVisible) return;
+    setState(() {
+      _challengeWebViewVisible = true;
+      _hideOriginFallbackPage = false;
+      _originFallbackNeedsAction = false;
+    });
+  }
+
+  void _startChallengeRevealProbe(
+    InAppWebViewController controller,
+    int generation,
+  ) {
+    final probeGeneration = ++_challengeRevealProbeGeneration;
+    unawaited(() async {
+      for (var i = 0; i < 20; i++) {
+        if (_hasPopped ||
+            !mounted ||
+            generation != _loadGeneration ||
+            probeGeneration != _challengeRevealProbeGeneration) {
+          return;
+        }
+
+        try {
+          if (await _hasVisibleChallenge(controller)) {
+            _revealChallengeWebView();
+            return;
+          }
+        } catch (e) {
+          debugPrint('[CfChallenge] 检测验证页可见状态异常: $e');
+        }
+
+        await Future.delayed(const Duration(milliseconds: 250));
+      }
+    }());
   }
 
   bool get _shouldShowStatusBanner =>
@@ -976,9 +1120,90 @@ class _CfChallengePageState extends State<CfChallengePage> {
     );
   }
 
+  Widget _buildOriginFallbackOverlay(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final isAction = _originFallbackNeedsAction;
+    final isCompleting = _checkingOriginFallback;
+    final title = isAction
+        ? context.l10n.cf_noChallengeTitle
+        : isCompleting
+        ? context.l10n.cf_verifyCompletingTitle
+        : context.l10n.cf_verifyOpeningTitle;
+    final message = isAction
+        ? context.l10n.cf_noChallengeMessage
+        : isCompleting
+        ? context.l10n.cf_verifyCompletingMessage
+        : context.l10n.cf_verifyOpeningMessage;
+
+    return ColoredBox(
+      color: colorScheme.surface,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isAction)
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.6),
+                  )
+                else
+                  Icon(
+                    Icons.verified_user_outlined,
+                    size: 32,
+                    color: colorScheme.primary,
+                  ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (isAction) ...[
+                  const SizedBox(height: 16),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: _refresh,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: Text(context.l10n.cf_retryVerificationAction),
+                      ),
+                      TextButton(
+                        onPressed: _confirmExit,
+                        child: Text(context.l10n.common_exit),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _handlePageReady(InAppWebViewController controller, {String? reason}) {
     if (_hasMarkedPageReady || _hasPopped) return;
     _hasMarkedPageReady = true;
+    final generation = _loadGeneration;
     _loadStopFallbackTimer?.cancel();
     _pageReadyFallbackTimer?.cancel();
 
@@ -992,6 +1217,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
     _injectChallengeInterceptor(controller);
     _startTimeout();
+    _startChallengeRevealProbe(controller, generation);
     _scheduleNoChallengeCheck(controller);
   }
 
@@ -1053,11 +1279,17 @@ class _CfChallengePageState extends State<CfChallengePage> {
             );
           },
           onLoadStart: (controller, url) {
+            _loadGeneration++;
+            _challengeRevealProbeGeneration++;
             _loadStopFallbackTimer?.cancel();
             _pageReadyFallbackTimer?.cancel();
             _hasMarkedPageReady = false;
             _hasTimedOut = false;
             _needsManualAttention = false;
+            _challengeWebViewVisible = false;
+            _hideOriginFallbackPage = false;
+            _checkingOriginFallback = false;
+            _originFallbackNeedsAction = false;
             _schedulePageReadyFallback(controller);
             setState(() {
               _isLoading = true;
@@ -1085,6 +1317,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
             }
             if (showUi) {
               _showError(context.l10n.cf_loadFailed(error.description));
+            }
+          },
+          onReceivedHttpError: (controller, request, errorResponse) {
+            if (_isVerifyOriginFallback(request, errorResponse)) {
+              unawaited(_handleVerifyOriginFallback(_loadGeneration));
             }
           },
         ),
@@ -1164,8 +1401,15 @@ class _CfChallengePageState extends State<CfChallengePage> {
           Expanded(
             child: Stack(
               children: [
-                Positioned.fill(child: _buildChallengeWebView(showUi: true)),
-                if (_shouldShowStatusBanner)
+                Positioned.fill(
+                  child: Offstage(
+                    offstage: _shouldCoverWebView,
+                    child: _buildChallengeWebView(showUi: true),
+                  ),
+                ),
+                if (_shouldCoverWebView)
+                  Positioned.fill(child: _buildOriginFallbackOverlay(theme))
+                else if (_shouldShowStatusBanner)
                   Positioned(
                     left: 12,
                     right: 12,
@@ -1180,78 +1424,96 @@ class _CfChallengePageState extends State<CfChallengePage> {
     );
   }
 
+  Widget _buildContextualBarrier(ThemeData theme, bool dialogBlur) {
+    final barrierColor = dialogBlur
+        ? blurBarrierColor(theme.brightness)
+        : Colors.black.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.42 : 0.24,
+          );
+    final barrier = ModalBarrier(dismissible: false, color: barrierColor);
+
+    if (!dialogBlur) return barrier;
+
+    return BackdropFilter(filter: createBlurFilter(blurSigma), child: barrier);
+  }
+
   Widget _buildContextualVerifyLayer(ThemeData theme) {
     final colorScheme = theme.colorScheme;
 
-    return Material(
-      type: MaterialType.transparency,
-      child: Stack(
-        children: [
-          ModalBarrier(
-            dismissible: false,
-            color: Colors.black.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.42 : 0.24,
-            ),
-          ),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isCompact = constraints.maxWidth < 640;
-                final horizontalMargin = isCompact ? 12.0 : 24.0;
-                final verticalMargin = isCompact ? 12.0 : 24.0;
-                final availableHeight = math.max(
-                  360.0,
-                  constraints.maxHeight - verticalMargin * 2,
-                );
-                final targetHeight = isCompact
-                    ? availableHeight * 0.88
-                    : math.min(720.0, availableHeight);
-                final minHeight = math.min(460.0, availableHeight);
-                final panelHeight = math.max(minHeight, targetHeight);
+    return Consumer(
+      builder: (context, ref, _) {
+        final dialogBlur = ref.watch(
+          preferencesProvider.select((prefs) => prefs.dialogBlur),
+        );
 
-                return Align(
-                  alignment: isCompact
-                      ? Alignment.bottomCenter
-                      : Alignment.center,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      horizontalMargin,
-                      verticalMargin,
-                      horizontalMargin,
-                      verticalMargin,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: panelHeight,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.16),
-                                blurRadius: 24,
-                                offset: const Offset(0, 10),
+        return Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: _buildContextualBarrier(theme, dialogBlur),
+              ),
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompact = constraints.maxWidth < 640;
+                    final horizontalMargin = isCompact ? 12.0 : 24.0;
+                    final verticalMargin = isCompact ? 12.0 : 24.0;
+                    final availableHeight = math.max(
+                      360.0,
+                      constraints.maxHeight - verticalMargin * 2,
+                    );
+                    final targetHeight = isCompact
+                        ? availableHeight * 0.88
+                        : math.min(720.0, availableHeight);
+                    final minHeight = math.min(460.0, availableHeight);
+                    final panelHeight = math.max(minHeight, targetHeight);
+
+                    return Align(
+                      alignment: isCompact
+                          ? Alignment.bottomCenter
+                          : Alignment.center,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalMargin,
+                          verticalMargin,
+                          horizontalMargin,
+                          verticalMargin,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: panelHeight,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.16),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
                               ),
-                            ],
-                            border: Border.all(
-                              color: colorScheme.outlineVariant.withValues(
-                                alpha: 0.6,
-                              ),
+                              child: _buildVerifyPanel(theme),
                             ),
                           ),
-                          child: _buildVerifyPanel(theme),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1270,11 +1532,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
           Positioned.fill(child: _buildContextualVerifyLayer(theme))
         else
           Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0,
-                child: _buildChallengeWebView(showUi: false),
-              ),
+            child: Offstage(
+              offstage: true,
+              child: _buildChallengeWebView(showUi: false),
             ),
           ),
 
