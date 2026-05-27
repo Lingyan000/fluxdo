@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/topic.dart';
 import '../pages/bookmarks/bookmarks_models.dart';
-import '../utils/bookmark_name_utils.dart';
 import 'bookmarks_repository.dart';
 import 'core_providers.dart';
 
@@ -23,9 +22,10 @@ final bookmarkNameSuggestionPageLoaderProvider =
 
 /// 书签名候选 Notifier。
 ///
-/// 方案 E 下：数据源从 [BookmarksRepository]（sqflite 缓存）派生，不再单独
+/// 方案 E 下：数据源从 [BookmarksRepository]（Hive 本地缓存）派生，不再单独
 /// 持久化候选名集合，也不再独立发起网络请求拉全量——这些职责归给 repository
-/// 与 [BookmarksReconciler]。
+/// 与 [BookmarksReconciler]。候选聚合通过 `repository.nameCounts` 直接在
+/// DAO 层完成，不需要 jsonDecode payload。
 ///
 /// 仍保留旧 API（[seedFromTopics] / [rememberName] / [markDirty] /
 /// [ensureLoaded] / [prefetchIfEmpty] / [clearCache]）以最小代价兼容现有
@@ -59,14 +59,8 @@ class BookmarkNameSuggestionsNotifier extends Notifier<List<String>> {
   Future<void> _refreshFromRepo(BookmarksRepository repo) async {
     final accountId = _accountId;
     if (accountId == null) return;
-    final records = await repo.readAll(accountId);
+    final counts = await repo.nameCounts(accountId);
     if (!ref.mounted) return;
-    final counts = <String, int>{};
-    for (final record in records) {
-      final name = normalizeBookmarkName(record.topic.bookmarkName);
-      if (name == null) continue;
-      counts.update(name, (value) => value + 1, ifAbsent: () => 1);
-    }
     final sorted = counts.keys.toList()
       ..sort((a, b) {
         final cmp = counts[b]!.compareTo(counts[a]!);

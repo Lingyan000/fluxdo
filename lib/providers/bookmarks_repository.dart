@@ -126,6 +126,21 @@ class BookmarksRepository {
     return entries.map(BookmarkRecord.fromEntry).toList(growable: false);
   }
 
+  /// 拿到按 updated_at DESC 排序的全部 bookmark_id，不反序列化 payload。
+  /// 上层用它做本地分页：先拿全量顺序，再用 [readByIds] 按需 hydrate。
+  Future<List<int>> idsOrderedByUpdated(String accountId) {
+    return _dao.idsOrderedByUpdated(accountId);
+  }
+
+  /// 按 id 批量反序列化为 [BookmarkRecord]，顺序与 [ids] 一致。
+  Future<List<BookmarkRecord>> readByIds(
+    String accountId,
+    List<int> ids,
+  ) async {
+    final entries = await _dao.readByIds(accountId, ids);
+    return entries.map(BookmarkRecord.fromEntry).toList(growable: false);
+  }
+
   Future<Map<int, String>> snapshotById(String accountId) {
     return _dao.snapshotById(accountId);
   }
@@ -176,13 +191,8 @@ class BookmarksRepository {
     required DateTime? reminderAt,
     required DateTime bookmarkUpdatedAt,
   }) async {
-    final snapshot = await _dao.snapshotById(accountId);
-    if (!snapshot.containsKey(bookmarkId)) return;
-    final all = await _dao.readAll(accountId);
-    final existing = all.firstWhere(
-      (e) => e.bookmarkId == bookmarkId,
-      orElse: () => throw StateError('bookmark $bookmarkId snapshot 与 readAll 不一致'),
-    );
+    final existing = await _dao.findOne(accountId, bookmarkId);
+    if (existing == null) return;
     final payload = Map<String, dynamic>.from(existing.payload);
     final normalizedName = normalizeBookmarkName(name);
     if (normalizedName == null) {
@@ -209,6 +219,12 @@ class BookmarksRepository {
       ),
     );
     _notify();
+  }
+
+  /// 派生书签名候选 (name -> count)。Suggestions provider 走这个接口，
+  /// dao 内部不会 jsonDecode payload。
+  Future<Map<String, int>> nameCounts(String accountId) {
+    return _dao.nameCounts(accountId);
   }
 
   void _notify() {

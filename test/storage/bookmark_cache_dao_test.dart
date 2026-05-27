@@ -1,32 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/storage/bookmark_cache_dao.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-Future<Database> _openInMemoryDb() async {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-  final db = await databaseFactory.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE bookmark_cache (
-            account_id TEXT NOT NULL,
-            bookmark_id INTEGER NOT NULL,
-            topic_id INTEGER NOT NULL,
-            name_normalized TEXT,
-            updated_at TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            PRIMARY KEY (account_id, bookmark_id)
-          )
-        ''');
-      },
-    ),
-  );
-  return db;
-}
+import 'bookmark_hive_test_support.dart';
 
 BookmarkCacheEntry _entry({
   required int bookmarkId,
@@ -44,23 +19,23 @@ BookmarkCacheEntry _entry({
       'id': topicId,
       '_bookmark_id': bookmarkId,
       '_bookmark_updated_at': updatedAt.toUtc().toIso8601String(),
-      if (name != null) '_bookmark_name': name,
+      '_bookmark_name': ?name,
       'title': 'Topic $topicId',
     },
   );
 }
 
 void main() {
-  late Database db;
+  late BookmarkHiveTestSupport storage;
   late BookmarkCacheDao dao;
 
   setUp(() async {
-    db = await _openInMemoryDb();
-    dao = BookmarkCacheDao(databaseFactory: () async => db);
+    storage = await BookmarkHiveTestSupport.create();
+    dao = BookmarkCacheDao(boxFactory: storage.openBox);
   });
 
   tearDown(() async {
-    await db.close();
+    await storage.dispose();
   });
 
   test('readAll 返回的条目按 updated_at 倒序', () async {
@@ -156,5 +131,88 @@ void main() {
     expect(payload['_bookmark_id'], 42);
     expect(payload['_bookmark_name'], 'image');
     expect(payload['_bookmark_updated_at'], updatedAt.toIso8601String());
+  });
+
+  test('findOne 按 id 单点读取', () async {
+    await dao.upsertAll('acct', [
+      _entry(bookmarkId: 1, updatedAt: DateTime.utc(2026, 1, 1)),
+      _entry(
+        bookmarkId: 2,
+        name: 'beta',
+        updatedAt: DateTime.utc(2026, 2, 1),
+      ),
+    ]);
+
+    final hit = await dao.findOne('acct', 2);
+    expect(hit, isNotNull);
+    expect(hit!.bookmarkId, 2);
+    expect(hit.nameNormalized, 'beta');
+
+    final miss = await dao.findOne('acct', 999);
+    expect(miss, isNull);
+  });
+
+  test('idsOrderedByUpdated 按 updated_at DESC 排序，不解 payload', () async {
+    await dao.upsertAll('acct', [
+      _entry(bookmarkId: 1, updatedAt: DateTime.utc(2026, 1, 1)),
+      _entry(bookmarkId: 7, updatedAt: DateTime.utc(2026, 3, 1)),
+      _entry(bookmarkId: 3, updatedAt: DateTime.utc(2026, 2, 1)),
+    ]);
+
+    final ids = await dao.idsOrderedByUpdated('acct');
+    expect(ids, [7, 3, 1]);
+  });
+
+  test('readByIds 按传入 id 顺序返回，跳过缺失', () async {
+    await dao.upsertAll('acct', [
+      _entry(
+        bookmarkId: 1,
+        topicId: 100,
+        updatedAt: DateTime.utc(2026, 1, 1),
+      ),
+      _entry(
+        bookmarkId: 2,
+        topicId: 200,
+        updatedAt: DateTime.utc(2026, 2, 1),
+      ),
+      _entry(
+        bookmarkId: 3,
+        topicId: 300,
+        updatedAt: DateTime.utc(2026, 3, 1),
+      ),
+    ]);
+
+    final picked = await dao.readByIds('acct', [3, 999, 1]);
+    expect(picked.map((e) => e.bookmarkId), [3, 1]);
+    expect(picked.map((e) => e.topicId), [300, 100]);
+  });
+
+  test('readByIds 空列表直接返回空', () async {
+    final picked = await dao.readByIds('acct', const []);
+    expect(picked, isEmpty);
+  });
+
+  test('nameCounts 聚合 name 出现次数，忽略空名', () async {
+    await dao.upsertAll('acct', [
+      _entry(
+        bookmarkId: 1,
+        name: 'image',
+        updatedAt: DateTime.utc(2026, 1, 1),
+      ),
+      _entry(
+        bookmarkId: 2,
+        name: 'image',
+        updatedAt: DateTime.utc(2026, 2, 1),
+      ),
+      _entry(
+        bookmarkId: 3,
+        name: 'beta',
+        updatedAt: DateTime.utc(2026, 3, 1),
+      ),
+      _entry(bookmarkId: 4, updatedAt: DateTime.utc(2026, 4, 1)),
+    ]);
+
+    final counts = await dao.nameCounts('acct');
+    expect(counts, {'image': 2, 'beta': 1});
   });
 }

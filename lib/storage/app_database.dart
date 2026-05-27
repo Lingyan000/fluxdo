@@ -1,113 +1,111 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-// ignore: unnecessary_import — analyzer 误判：测试环境下 Database 类型解析依赖
-// 该 import，不能仅靠 sqflite_common_ffi re-export。
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// 应用级 sqflite 数据库单例。
+/// 应用级 Hive 存储初始化与按账号 box 工厂。
 ///
-/// 移动端（iOS / Android）走默认 [databaseFactory]；桌面端（Windows / Linux /
-/// macOS）显式切到 [databaseFactoryFfi]。Web 不在支持范围内——若被错误地引入
-/// 到 Web 构建，[ensureInitialized] 会抛错以暴露问题。
+/// 书签缓存采用「每账号一个 box」的方式做隔离，box 名形如
+/// `bookmark_cache_<sanitized_account_id>`。box 中：
+/// - key   = `bookmark_id` (int)
+/// - value = `Map`，含 `topic_id` / `name_normalized` / `updated_at` /
+///   `cached_at` / `payload`（payload 为 normalize 后的 topic-like JSON 字符串）
+///
+/// 把 `name_normalized`、`updated_at` 拆成顶层字段是为了让聚合 /
+/// 增量对账等操作不必再 jsonDecode 整个 payload，发挥 Hive box 的随机访问优势。
+///
+/// 纯 Dart，无 native 依赖；移动端 / 桌面端 / Web 都可用。
 class AppDatabase {
   AppDatabase._();
 
-  static const String _fileName = 'fluxdo.db';
-  static const int _schemaVersion = 1;
+  static const String _bookmarkBoxPrefix = 'bookmark_cache_';
 
-  static Database? _instance;
-  static Future<Database>? _opening;
+  static bool _initialized = false;
+  static Future<void>? _initializing;
+  static final Map<String, Box<Map>> _openBoxes = <String, Box<Map>>{};
+  static final Map<String, Future<Box<Map>>> _openingBoxes =
+      <String, Future<Box<Map>>>{};
 
-  /// 获取数据库实例，按需打开。
-  static Future<Database> instance() {
-    if (_instance != null) return Future.value(_instance);
-    return _opening ??= _open().whenComplete(() => _opening = null);
-  }
-
-  /// 测试用：替换底层 [Database] 实例。
+  /// 测试可注入：替换 box 工厂（内存 box / 自定义临时目录等）。
   @visibleForTesting
-  static void debugOverrideInstance(Database? database) {
-    _instance = database;
+  static Future<Box<Map>> Function(String accountId)? debugBoxFactory;
+
+  /// 测试可注入：跳过默认初始化路径，直接走 [debugBoxFactory]。
+  @visibleForTesting
+  static void debugMarkInitialized() {
+    _initialized = true;
   }
 
-  /// 测试用：复位状态，下次调用 [instance] 会重新打开。
+  /// 测试用：复位状态。
   @visibleForTesting
   static Future<void> debugReset() async {
-    final current = _instance;
-    _instance = null;
-    _opening = null;
-    if (current != null && current.isOpen) {
-      await current.close();
+    _initialized = false;
+    _initializing = null;
+    debugBoxFactory = null;
+    _openBoxes.clear();
+    _openingBoxes.clear();
+  }
+
+  /// 获取某账号对应的书签缓存 box，按需初始化 Hive 并打开。
+  /// 一旦打开后会缓存 box 实例，后续调用直接命中缓存（同步路径，仅一次 await）。
+  static Future<Box<Map>> bookmarkBox(String accountId) async {
+    final factory = debugBoxFactory;
+    if (factory != null) {
+      return factory(accountId);
+    }
+    await _ensureInitialized();
+    final name = _bookmarkBoxName(accountId);
+    final cached = _openBoxes[name];
+    if (cached != null && cached.isOpen) return cached;
+    final pending = _openingBoxes[name];
+    if (pending != null) return pending;
+    final opening = Hive.openBox<Map>(name);
+    _openingBoxes[name] = opening;
+    try {
+      final box = await opening;
+      _openBoxes[name] = box;
+      return box;
+    } finally {
+      _openingBoxes.remove(name);
     }
   }
 
-  static Future<Database> _open() async {
+  static Future<void> _ensureInitialized() {
+    if (_initialized) return Future.value();
+    return _initializing ??= _initialize().whenComplete(
+      () => _initializing = null,
+    );
+  }
+
+  static Future<void> _initialize() async {
     if (kIsWeb) {
+      // Web 暂时不走本地缓存——上层 BookmarksNotifier 在 username 为空时
+      // 直接返回空表，这里抛错是为了在被错误地引入到 Web 构建时尽早暴露。
       throw UnsupportedError(
-        'AppDatabase 不支持 Web 平台：书签本地缓存仅在移动端与桌面端可用。',
+        'AppDatabase 暂不支持 Web 平台：书签本地缓存仅在移动端与桌面端启用。',
       );
     }
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
     final directory = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(directory.path, _fileName);
-    final db = await openDatabase(
-      dbPath,
-      version: _schemaVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-      onConfigure: _onConfigure,
-    );
-    _instance = db;
-    return db;
+    Hive.init(p.join(directory.path, 'hive'));
+    _initialized = true;
   }
 
-  static Future<void> _onConfigure(Database db) async {
-    await db.execute('PRAGMA foreign_keys = ON;');
+  static String _bookmarkBoxName(String accountId) {
+    // Hive box 名只允许字母/数字/下划线/连字符；把其它字符（如 @、空格、中文）
+    // 替换为 `_`，避免某些平台底层文件系统不接受。
+    final sanitized = accountId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return '$_bookmarkBoxPrefix$sanitized';
   }
 
-  static Future<void> _onCreate(Database db, int version) async {
-    await _createBookmarkCacheTable(db);
-  }
-
-  static Future<void> _onUpgrade(
-    Database db,
-    int oldVersion,
-    int newVersion,
-  ) async {
-    // 后续 schema 升级在此分支处理。当前只有 v1。
-  }
-
-  static Future<void> _createBookmarkCacheTable(Database db) async {
-    // 缓存书签元数据。account_id + bookmark_id 复合主键支持多账号隔离。
-    // payload 保存的是 bookmarks.json 接口里 normalize 后的 topic-like JSON，
-    // 反序列化时直接调 Topic.fromJson(payload)。
-    await db.execute('''
-      CREATE TABLE bookmark_cache (
-        account_id        TEXT    NOT NULL,
-        bookmark_id       INTEGER NOT NULL,
-        topic_id          INTEGER NOT NULL,
-        name_normalized   TEXT,
-        updated_at        TEXT    NOT NULL,
-        cached_at         TEXT    NOT NULL,
-        payload           TEXT    NOT NULL,
-        PRIMARY KEY (account_id, bookmark_id)
-      )
-    ''');
-    await db.execute(
-      'CREATE INDEX idx_bm_cache_acct_updated '
-      'ON bookmark_cache(account_id, updated_at DESC)',
-    );
-    await db.execute(
-      'CREATE INDEX idx_bm_cache_acct_name '
-      'ON bookmark_cache(account_id, name_normalized)',
-    );
+  /// 仅供 [BookmarkCacheDao.clearAccount] 在删除账号后顺手释放句柄。
+  static Future<void> closeBookmarkBox(String accountId) async {
+    if (debugBoxFactory != null) return; // 测试自行管理生命周期
+    final name = _bookmarkBoxName(accountId);
+    _openBoxes.remove(name);
+    if (Hive.isBoxOpen(name)) {
+      await Hive.box<Map>(name).close();
+    }
   }
 }

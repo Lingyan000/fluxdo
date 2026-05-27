@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:hive_ce/hive.dart';
 
 import 'app_database.dart';
 
@@ -27,56 +27,117 @@ class BookmarkCacheEntry {
   final Map<String, dynamic> payload;
 }
 
-/// 注入式数据库工厂，测试可传入内存库的工厂。
-typedef DatabaseFactoryAsync = Future<Database> Function();
+/// 注入式 box 工厂，测试可传入内存 box 的工厂。
+typedef BookmarkBoxFactory = Future<Box<Map>> Function(String accountId);
 
-/// 书签缓存 DAO：直接面向 sqflite，账号维度隔离。
+/// 书签缓存 DAO：直接面向 Hive box，账号维度隔离（每账号一个 box）。
+///
+/// box value 拆字段存储：`topic_id` / `name_normalized` / `updated_at` /
+/// `cached_at` / `payload`（payload 是 jsonEncode 的 topic-like map）。
+/// 拆字段是为了让聚合 / 对账等不需要 payload 的接口跳过 jsonDecode。
 class BookmarkCacheDao {
-  BookmarkCacheDao({DatabaseFactoryAsync? databaseFactory})
-    : _databaseFactory = databaseFactory ?? AppDatabase.instance;
+  BookmarkCacheDao({BookmarkBoxFactory? boxFactory})
+    : _boxFactory = boxFactory ?? AppDatabase.bookmarkBox;
 
-  final DatabaseFactoryAsync _databaseFactory;
+  final BookmarkBoxFactory _boxFactory;
 
-  static const String _table = 'bookmark_cache';
+  static const String _kTopicId = 'topic_id';
+  static const String _kName = 'name_normalized';
+  static const String _kUpdatedAt = 'updated_at';
+  static const String _kCachedAt = 'cached_at';
+  static const String _kPayload = 'payload';
 
-  /// 读取某账号下全部书签缓存，按 [updatedAt] 倒序（与服务端 bookmarks.json 默认顺序一致）。
+  /// 读取某账号下全部书签缓存，按 [updatedAt] 倒序。
   Future<List<BookmarkCacheEntry>> readAll(String accountId) async {
-    final db = await _databaseFactory();
-    final rows = await db.query(
-      _table,
-      where: 'account_id = ?',
-      whereArgs: [accountId],
-      orderBy: 'updated_at DESC',
-    );
-    return rows.map(_rowToEntry).toList(growable: false);
+    final box = await _boxFactory(accountId);
+    final entries = <BookmarkCacheEntry>[];
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final id = (key as num).toInt();
+      entries.add(_entryFromBox(id, raw));
+    }
+    entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return List.unmodifiable(entries);
   }
 
-  /// 拿到 (bookmark_id -> updated_at) 的快照，用于对账判断"本页是否全部已知未变"。
+  /// 拿到按 [updatedAt] 倒序的 bookmark_id 列表，不反序列化 payload。
+  /// 上层（Notifier）用它做本地分页：先拿全量顺序，再按需 [readByIds] 反序列化。
+  Future<List<int>> idsOrderedByUpdated(String accountId) async {
+    final box = await _boxFactory(accountId);
+    final pairs = <_IdUpdatedAtPair>[];
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final updatedAt = raw[_kUpdatedAt] as String?;
+      if (updatedAt == null) continue;
+      pairs.add(_IdUpdatedAtPair((key as num).toInt(), updatedAt));
+    }
+    // updated_at 是同源 ISO8601 字符串，逐字符比较即可保持 DESC 顺序。
+    pairs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return List.unmodifiable(pairs.map((p) => p.id));
+  }
+
+  /// 按 id 列表批量反序列化。返回顺序与 [ids] 一致；缺失的 id 会被跳过。
+  /// 用于本地分页 hydrate：上层拿 [idsOrderedByUpdated] 切片后调它。
+  Future<List<BookmarkCacheEntry>> readByIds(
+    String accountId,
+    List<int> ids,
+  ) async {
+    if (ids.isEmpty) return const [];
+    final box = await _boxFactory(accountId);
+    final entries = <BookmarkCacheEntry>[];
+    for (final id in ids) {
+      final raw = box.get(id);
+      if (raw == null) continue;
+      entries.add(_entryFromBox(id, raw));
+    }
+    return List.unmodifiable(entries);
+  }
+
+  /// 单点读取：用于本地编辑、增量对账中按 id 取出旧值。避免上层做 readAll 再 firstWhere。
+  Future<BookmarkCacheEntry?> findOne(String accountId, int bookmarkId) async {
+    final box = await _boxFactory(accountId);
+    final raw = box.get(bookmarkId);
+    if (raw == null) return null;
+    return _entryFromBox(bookmarkId, raw);
+  }
+
+  /// 拿到 (bookmark_id -> updated_at) 的快照，用于对账判断「本页是否全部已知未变」。
   /// updated_at 用 ISO8601 字符串比较（同源同格式，可逐字符相等判断）。
+  /// 不会 jsonDecode payload。
   Future<Map<int, String>> snapshotById(String accountId) async {
-    final db = await _databaseFactory();
-    final rows = await db.query(
-      _table,
-      columns: ['bookmark_id', 'updated_at'],
-      where: 'account_id = ?',
-      whereArgs: [accountId],
-    );
-    return {
-      for (final row in rows)
-        row['bookmark_id'] as int: row['updated_at'] as String,
-    };
+    final box = await _boxFactory(accountId);
+    final result = <int, String>{};
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final updatedAt = raw[_kUpdatedAt] as String?;
+      if (updatedAt == null) continue;
+      result[(key as num).toInt()] = updatedAt;
+    }
+    return result;
   }
 
   /// 拿到某账号下所有 bookmark_id 的集合，用于完整对账时检测远端删除。
   Future<Set<int>> allBookmarkIds(String accountId) async {
-    final db = await _databaseFactory();
-    final rows = await db.query(
-      _table,
-      columns: ['bookmark_id'],
-      where: 'account_id = ?',
-      whereArgs: [accountId],
-    );
-    return rows.map((row) => row['bookmark_id'] as int).toSet();
+    final box = await _boxFactory(accountId);
+    return {for (final key in box.keys) (key as num).toInt()};
+  }
+
+  /// 聚合 (name_normalized -> count)，用于书签名候选 / 顶部筛选条。
+  /// 只读 name 字段，不 jsonDecode payload。
+  Future<Map<String, int>> nameCounts(String accountId) async {
+    final box = await _boxFactory(accountId);
+    final counts = <String, int>{};
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final name = raw[_kName] as String?;
+      if (name == null || name.isEmpty) continue;
+      counts.update(name, (v) => v + 1, ifAbsent: () => 1);
+    }
+    return counts;
   }
 
   /// 批量 upsert：账号下同 bookmark_id 已存在则覆盖。
@@ -85,82 +146,68 @@ class BookmarkCacheDao {
     List<BookmarkCacheEntry> entries,
   ) async {
     if (entries.isEmpty) return;
-    final db = await _databaseFactory();
+    final box = await _boxFactory(accountId);
     final now = DateTime.now().toUtc().toIso8601String();
-    await db.transaction((txn) async {
-      final batch = txn.batch();
-      for (final entry in entries) {
-        batch.insert(
-          _table,
-          _entryToRow(accountId, entry, fallbackCachedAt: now),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-      await batch.commit(noResult: true);
+    await box.putAll({
+      for (final entry in entries)
+        entry.bookmarkId: _entryToBox(entry, fallbackCachedAt: now),
     });
   }
 
   Future<void> upsertOne(String accountId, BookmarkCacheEntry entry) async {
-    final db = await _databaseFactory();
+    final box = await _boxFactory(accountId);
     final now = DateTime.now().toUtc().toIso8601String();
-    await db.insert(
-      _table,
-      _entryToRow(accountId, entry, fallbackCachedAt: now),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    await box.put(
+      entry.bookmarkId,
+      _entryToBox(entry, fallbackCachedAt: now),
     );
   }
 
   Future<void> deleteByIds(String accountId, Set<int> bookmarkIds) async {
     if (bookmarkIds.isEmpty) return;
-    final db = await _databaseFactory();
-    // sqflite 不支持参数化数组，手动拼 placeholder。bookmark_id 是 int，无注入风险。
-    final placeholders = List.filled(bookmarkIds.length, '?').join(',');
-    await db.delete(
-      _table,
-      where: 'account_id = ? AND bookmark_id IN ($placeholders)',
-      whereArgs: [accountId, ...bookmarkIds],
-    );
+    final box = await _boxFactory(accountId);
+    await box.deleteAll(bookmarkIds);
   }
 
   Future<void> deleteOne(String accountId, int bookmarkId) async {
-    final db = await _databaseFactory();
-    await db.delete(
-      _table,
-      where: 'account_id = ? AND bookmark_id = ?',
-      whereArgs: [accountId, bookmarkId],
-    );
+    final box = await _boxFactory(accountId);
+    await box.delete(bookmarkId);
   }
 
   /// 清空整个账号的缓存（账号注销 / 数据损坏自愈使用）。
   Future<void> clearAccount(String accountId) async {
-    final db = await _databaseFactory();
-    await db.delete(_table, where: 'account_id = ?', whereArgs: [accountId]);
+    final box = await _boxFactory(accountId);
+    await box.clear();
   }
 
-  BookmarkCacheEntry _rowToEntry(Map<String, Object?> row) {
+  BookmarkCacheEntry _entryFromBox(int bookmarkId, Map raw) {
+    final payloadStr = raw[_kPayload] as String;
     return BookmarkCacheEntry(
-      bookmarkId: row['bookmark_id'] as int,
-      topicId: row['topic_id'] as int,
-      nameNormalized: row['name_normalized'] as String?,
-      updatedAt: DateTime.parse(row['updated_at'] as String),
-      cachedAt: DateTime.parse(row['cached_at'] as String),
-      payload: jsonDecode(row['payload'] as String) as Map<String, dynamic>,
+      bookmarkId: bookmarkId,
+      topicId: (raw[_kTopicId] as num).toInt(),
+      nameNormalized: raw[_kName] as String?,
+      updatedAt: DateTime.parse(raw[_kUpdatedAt] as String),
+      cachedAt: DateTime.parse(raw[_kCachedAt] as String),
+      payload: jsonDecode(payloadStr) as Map<String, dynamic>,
     );
   }
 
-  Map<String, Object?> _entryToRow(
-    String accountId,
+  Map<String, dynamic> _entryToBox(
     BookmarkCacheEntry entry, {
     required String fallbackCachedAt,
   }) {
     return {
-      'account_id': accountId,
-      'bookmark_id': entry.bookmarkId,
-      'topic_id': entry.topicId,
-      'name_normalized': entry.nameNormalized,
-      'updated_at': entry.updatedAt.toUtc().toIso8601String(),
-      'cached_at': fallbackCachedAt,
-      'payload': jsonEncode(entry.payload),
+      _kTopicId: entry.topicId,
+      _kName: entry.nameNormalized,
+      _kUpdatedAt: entry.updatedAt.toUtc().toIso8601String(),
+      _kCachedAt: fallbackCachedAt,
+      _kPayload: jsonEncode(entry.payload),
     };
   }
+}
+
+class _IdUpdatedAtPair {
+  const _IdUpdatedAtPair(this.id, this.updatedAt);
+  final int id;
+  final String updatedAt;
 }

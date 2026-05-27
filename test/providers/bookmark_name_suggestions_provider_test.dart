@@ -4,7 +4,8 @@ import 'package:fluxdo/providers/bookmark_name_suggestions_provider.dart';
 import 'package:fluxdo/providers/bookmarks_repository.dart';
 import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../storage/bookmark_hive_test_support.dart';
 
 // 方案 E 重构后 BookmarkNameSuggestionsNotifier 改为从 BookmarksRepository
 // 派生，自身不再独立发起网络请求。这里只覆盖旧 API 兼容性的契约：
@@ -13,54 +14,37 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 // repository.watch 自动派生的端到端流程已被 bookmarks_reconciler_test +
 // bookmarks_provider_test 覆盖，这里不重复。
 
-Future<Database> _openInMemoryDb() async {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-  return databaseFactory.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE bookmark_cache (
-            account_id TEXT NOT NULL,
-            bookmark_id INTEGER NOT NULL,
-            topic_id INTEGER NOT NULL,
-            name_normalized TEXT,
-            updated_at TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            PRIMARY KEY (account_id, bookmark_id)
-          )
-        ''');
-      },
-    ),
-  );
-}
-
-Future<ProviderContainer> _createContainer() async {
-  final db = await _openInMemoryDb();
+Future<ProviderContainer> _createContainer(
+  BookmarkHiveTestSupport storage,
+) async {
   final repo = BookmarksRepository(
-    BookmarkCacheDao(databaseFactory: () async => db),
+    BookmarkCacheDao(boxFactory: storage.openBox),
   );
   final container = ProviderContainer(
     overrides: [bookmarksRepositoryProvider.overrideWithValue(repo)],
   );
   addTearDown(() async {
     container.dispose();
-    await db.close();
+    await repo.dispose();
   });
   return container;
 }
 
 void main() {
-  setUp(() {
+  late BookmarkHiveTestSupport storage;
+
+  setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
+    storage = await BookmarkHiveTestSupport.create();
+  });
+
+  tearDown(() async {
+    await storage.dispose();
   });
 
   test('rememberName 立即把新名字加入候选', () async {
-    final container = await _createContainer();
+    final container = await _createContainer(storage);
     final notifier = container.read(bookmarkNameSuggestionsProvider.notifier);
 
     expect(container.read(bookmarkNameSuggestionsProvider), isEmpty);
@@ -72,7 +56,7 @@ void main() {
   });
 
   test('rememberName 跳过空白与重复值', () async {
-    final container = await _createContainer();
+    final container = await _createContainer(storage);
     final notifier = container.read(bookmarkNameSuggestionsProvider.notifier);
 
     notifier.rememberName('image');
@@ -85,7 +69,7 @@ void main() {
   });
 
   test('markDirty 等价于 rememberName(optimisticName)', () async {
-    final container = await _createContainer();
+    final container = await _createContainer(storage);
     final notifier = container.read(bookmarkNameSuggestionsProvider.notifier);
 
     notifier.markDirty(optimisticName: 'codex');
@@ -94,7 +78,7 @@ void main() {
   });
 
   test('clearCache 清空候选', () async {
-    final container = await _createContainer();
+    final container = await _createContainer(storage);
     final notifier = container.read(bookmarkNameSuggestionsProvider.notifier);
 
     notifier.rememberName('image');

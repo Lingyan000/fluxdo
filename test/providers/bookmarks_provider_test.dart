@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/bookmarks_repository.dart';
 import 'package:fluxdo/storage/bookmark_cache_dao.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../storage/bookmark_hive_test_support.dart';
 
 // 方案 E 重构后，旧的 BookmarksNotifier 行为（progressivelyLoadAllBookmarkTopics
 // + 整页 hydrate）被本地缓存 + 对账层替代。这里保留核心契约的测试：
@@ -11,31 +12,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 // 对账三路径（首次 / 增量 / 完整 / 下拉刷新）的测试见
 // `bookmarks_reconciler_test.dart`，DAO 持久化测试见
 // `test/storage/bookmark_cache_dao_test.dart`。
-
-Future<Database> _openInMemoryDb() async {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-  return databaseFactory.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE bookmark_cache (
-            account_id TEXT NOT NULL,
-            bookmark_id INTEGER NOT NULL,
-            topic_id INTEGER NOT NULL,
-            name_normalized TEXT,
-            updated_at TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            PRIMARY KEY (account_id, bookmark_id)
-          )
-        ''');
-      },
-    ),
-  );
-}
 
 BookmarkCacheEntry _entryWithName({
   required int bookmarkId,
@@ -52,25 +28,24 @@ BookmarkCacheEntry _entryWithName({
       'id': bookmarkId,
       '_bookmark_id': bookmarkId,
       '_bookmark_updated_at': updatedAt.toUtc().toIso8601String(),
-      if (name != null) '_bookmark_name': name,
+      '_bookmark_name': ?name,
       'title': 'Topic $bookmarkId',
     },
   );
 }
 
 void main() {
-  late Database db;
+  late BookmarkHiveTestSupport storage;
   late BookmarksRepository repo;
 
   setUp(() async {
-    db = await _openInMemoryDb();
-    repo = BookmarksRepository(
-      BookmarkCacheDao(databaseFactory: () async => db),
-    );
+    storage = await BookmarkHiveTestSupport.create();
+    repo = BookmarksRepository(BookmarkCacheDao(boxFactory: storage.openBox));
   });
 
   tearDown(() async {
-    await db.close();
+    await repo.dispose();
+    await storage.dispose();
   });
 
   test('applyMetadataChange 允许清空书签名（name 传 null）', () async {

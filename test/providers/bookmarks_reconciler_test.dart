@@ -3,32 +3,8 @@ import 'package:fluxdo/providers/bookmarks_reconciler.dart';
 import 'package:fluxdo/providers/bookmarks_repository.dart';
 import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-Future<Database> _openInMemoryDb() async {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-  return databaseFactory.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE bookmark_cache (
-            account_id TEXT NOT NULL,
-            bookmark_id INTEGER NOT NULL,
-            topic_id INTEGER NOT NULL,
-            name_normalized TEXT,
-            updated_at TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            PRIMARY KEY (account_id, bookmark_id)
-          )
-        ''');
-      },
-    ),
-  );
-}
+import '../storage/bookmark_hive_test_support.dart';
 
 BookmarkCacheEntry _entry({
   required int bookmarkId,
@@ -46,28 +22,27 @@ BookmarkCacheEntry _entry({
       'id': topicId,
       '_bookmark_id': bookmarkId,
       '_bookmark_updated_at': updatedAt.toUtc().toIso8601String(),
-      if (name != null) '_bookmark_name': name,
+      '_bookmark_name': ?name,
       'title': 'Topic $topicId',
     },
   );
 }
 
 void main() {
-  late Database db;
+  late BookmarkHiveTestSupport storage;
   late BookmarksRepository repo;
   late SharedPreferences prefs;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
-    db = await _openInMemoryDb();
-    repo = BookmarksRepository(
-      BookmarkCacheDao(databaseFactory: () async => db),
-    );
+    storage = await BookmarkHiveTestSupport.create();
+    repo = BookmarksRepository(BookmarkCacheDao(boxFactory: storage.openBox));
   });
 
   tearDown(() async {
-    await db.close();
+    await repo.dispose();
+    await storage.dispose();
   });
 
   BookmarksReconciler buildReconciler(BookmarkRawPageLoader fetchPage) {

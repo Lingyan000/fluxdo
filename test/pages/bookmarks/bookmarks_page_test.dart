@@ -20,7 +20,8 @@ import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../../storage/bookmark_hive_test_support.dart';
 
 Topic _bookmarkTopic({
   required int topicId,
@@ -52,34 +53,15 @@ Future<ProviderContainer> _createContainer({
   });
   final prefs = await SharedPreferences.getInstance();
 
-  // 用内存 sqflite 做 BookmarksRepository 的存储——避免 testWidgets 触发真实
-  // sqflite 初始化（需要 path_provider 等 native binding）。
-  sqfliteFfiInit();
-  final db = await databaseFactoryFfi.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE bookmark_cache (
-            account_id TEXT NOT NULL,
-            bookmark_id INTEGER NOT NULL,
-            topic_id INTEGER NOT NULL,
-            name_normalized TEXT,
-            updated_at TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            PRIMARY KEY (account_id, bookmark_id)
-          )
-        ''');
-      },
-    ),
-  );
-  addTearDown(db.close);
+  // 用临时目录 Hive box 做 BookmarksRepository 的存储——避免 testWidgets 触发
+  // 真实 path_provider 调用。
+  final storage = await BookmarkHiveTestSupport.create();
+  addTearDown(storage.dispose);
 
   final repo = BookmarksRepository(
-    BookmarkCacheDao(databaseFactory: () async => db),
+    BookmarkCacheDao(boxFactory: storage.openBox),
   );
+  addTearDown(repo.dispose);
 
   // 预填充 2 条书签：用 _bookmarkTopic 的 raw JSON 作 payload。
   Map<String, dynamic> payloadOf(Topic topic, int bookmarkId) {
