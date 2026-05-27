@@ -136,13 +136,11 @@ class CfChallengeService {
   /// 用于在 onReceivedHttpError 不可靠的平台上识别 Discourse 404 等非挑战页面
   static bool isOriginNotFound(String html) {
     if (html.isEmpty) return false;
-    // Discourse 自带 404 页面特征 + 通用 4xx 模板特征
+    // 仅保留稳定的 Discourse 自身特征，避免论坛名含 "404" 等场景误判
     return html.contains('page-not-found') ||
         html.contains('discourse-no-results') ||
-        html.contains('not-found-container') ||
         html.contains('"errorType":"notFound"') ||
-        html.contains('404-body') ||
-        (html.contains('<title>') && html.contains('404'));
+        html.contains('404-body');
   }
 
   /// 显示手动验证页面
@@ -757,6 +755,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
     if (_hasPopped || _checkingOriginFallback) return;
 
     _checkingOriginFallback = true;
+    // 取消其余探测路径：状态已经收敛到 fallback，避免重复 evaluateJavascript
+    _challengeRevealProbeGeneration++;
+    _noChallengeCheckTimer?.cancel();
     if (mounted) {
       setState(() {
         _challengeWebViewVisible = false;
@@ -1011,6 +1012,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
         if (watcherGeneration != _revealStateWatchGeneration) return;
         if (loadGeneration != _loadGeneration) return;
         if (!_challengeWebViewVisible) return;
+        // 超时后不再做主动监测，留给已有超时 UI / 用户操作
+        if (_hasTimedOut) return;
 
         final controller = _controller;
         if (controller == null) continue;
