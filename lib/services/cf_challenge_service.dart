@@ -132,6 +132,19 @@ class CfChallengeService {
         html.contains('cf_chl_opt');
   }
 
+  /// 检测页面 HTML 是否是源站返回的 404 / 非挑战内容
+  /// 用于在 onReceivedHttpError 不可靠的平台上识别 Discourse 404 等非挑战页面
+  static bool isOriginNotFound(String html) {
+    if (html.isEmpty) return false;
+    // Discourse 自带 404 页面特征 + 通用 4xx 模板特征
+    return html.contains('page-not-found') ||
+        html.contains('discourse-no-results') ||
+        html.contains('not-found-container') ||
+        html.contains('"errorType":"notFound"') ||
+        html.contains('404-body') ||
+        (html.contains('<title>') && html.contains('404'));
+  }
+
   /// 显示手动验证页面
   /// 返回值：true=验证成功, false=验证失败, null=冷却期内暂不可用或无 context
   /// [forceForeground] 是否强制前台显示（默认为 true）
@@ -417,7 +430,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
   Timer? _pageReadyFallbackTimer;
   static const _backgroundMaxCheckCount = 10;
   static const _foregroundMaxCheckCount = 60;
-  static const _noChallengeCheckDelay = Duration(seconds: 5);
+  static const _noChallengeCheckDelay = Duration(milliseconds: 1200);
+  static const _revealStateWatchInterval = Duration(milliseconds: 450);
   static const _loadStopFallbackDelay = Duration(milliseconds: 1200);
   static const _pageReadyFallbackDelay = Duration(seconds: 4);
 
@@ -593,6 +607,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
   }
 
   /// challenge-platform 响应到达时的回调
+  ///
+  /// 不再主动 reveal WebView：reveal 完全交给 _startChallengeRevealProbe，
+  /// 避免「完成响应到达 → reveal → 紧接着 CF 跳转回 /challenge 加载源站 404」
+  /// 期间 404 闪现。此处只负责 cf_clearance 探测与 finish(true)。
   Future<void> _onChallengeComplete(List<dynamic> args) async {
     if (_hasPopped) return;
     final url = args.isNotEmpty ? args[0] : '';
@@ -601,7 +619,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
     CfChallengeLogger.log(
       '[VERIFY] Challenge response: url=$url, status=$status',
     );
-    _revealChallengeWebView();
 
     try {
       final cookieValue = await _readCookieValue('cf_clearance');
@@ -702,7 +719,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
   }
 
   /// 延迟检测页面是否存在 CF 验证盾
-  /// 如果页面加载完成后没有盾，快速退出避免死等超时导致循环
+  /// 如果页面加载完成后没有盾，立刻走 fallback 流程，避免源站 404 露出
   void _scheduleNoChallengeCheck(InAppWebViewController controller) {
     _noChallengeCheckTimer?.cancel();
     final generation = _loadGeneration;
@@ -717,47 +734,26 @@ class _CfChallengePageState extends State<CfChallengePage> {
           return; // 页面有盾，等待正常验证流程
         }
 
-        // 页面没有盾，检查是否已有新的 cf_clearance（CF 可能自动放行了）
-        final cookieValue = await _readCookieValue('cf_clearance');
-        if (_hasPopped || generation != _loadGeneration) return;
-
-        if (_isFreshClearance(cookieValue)) {
-          debugPrint('[CfChallenge] 页面无盾但检测到新 cf_clearance，自动完成');
-          CfChallengeLogger.logVerifyResult(
-            success: true,
-            reason: 'no challenge but new cf_clearance detected',
-          );
-          await _syncLiveCookiesToCookieJar();
-          _timeoutTimer?.cancel();
-          if (mounted) _finish(true);
-        } else {
-          // 没有盾也没有新 cookie，非 CF 验证场景，不露出源站 404。
-          debugPrint('[CfChallenge] 页面无盾且无新 cf_clearance，快速退出');
-          CfChallengeLogger.logVerifyResult(
-            success: false,
-            reason:
-                'no challenge detected after ${_noChallengeCheckDelay.inSeconds}s',
-          );
-          _timeoutTimer?.cancel();
-          if (_isBackground) {
-            if (mounted) _finish(false);
-          } else if (mounted) {
-            setState(() {
-              _challengeWebViewVisible = false;
-              _hideOriginFallbackPage = true;
-              _originFallbackNeedsAction = true;
-              _needsManualAttention = false;
-              _isLoading = false;
-            });
-          }
-        }
+        // 页面无盾：统一交给 fallback 处理（先轮询 cf_clearance，无果再给重试）
+        await _handleVerifyOriginFallback(
+          generation,
+          reason: 'no challenge after ${_noChallengeCheckDelay.inMilliseconds}ms',
+        );
       } catch (e) {
         debugPrint('[CfChallenge] 检测 challenge 状态异常: $e');
       }
     });
   }
 
-  Future<void> _handleVerifyOriginFallback(int generation) async {
+  /// 处理「页面没有 CF 挑战」的统一入口
+  ///
+  /// 触发场景：源站 404 / onReceivedHttpError / reveal 后页面退化 / noChallengeCheck 命中。
+  /// 行为：立刻覆盖 WebView 显示「正在完成验证…」overlay，短期轮询 cf_clearance；
+  /// 拿到新 cf_clearance 则 finish(true)，否则前台显示「重试/退出」操作，后台直接 finish(false)。
+  Future<void> _handleVerifyOriginFallback(
+    int generation, {
+    String? reason,
+  }) async {
     if (_hasPopped || _checkingOriginFallback) return;
 
     _checkingOriginFallback = true;
@@ -766,8 +762,12 @@ class _CfChallengePageState extends State<CfChallengePage> {
         _challengeWebViewVisible = false;
         _hideOriginFallbackPage = true;
         _originFallbackNeedsAction = false;
+        _needsManualAttention = false;
         _isLoading = false;
       });
+    }
+    if (reason != null) {
+      debugPrint('[CfChallenge] fallback triggered: $reason');
     }
 
     try {
@@ -775,10 +775,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
         if (_hasPopped || generation != _loadGeneration) return;
         final cookieValue = await _readCookieValue('cf_clearance');
         if (_isFreshClearance(cookieValue)) {
-          debugPrint('[CfChallenge] /challenge 返回 404，但检测到新 cf_clearance，自动完成');
+          debugPrint('[CfChallenge] fallback 期间检测到新 cf_clearance，自动完成');
           CfChallengeLogger.logVerifyResult(
             success: true,
-            reason: 'origin /challenge 404 after fresh cf_clearance',
+            reason: reason ?? 'fresh cf_clearance during fallback',
           );
           await _syncLiveCookiesToCookieJar();
           _timeoutTimer?.cancel();
@@ -788,10 +788,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
         await Future.delayed(const Duration(milliseconds: 250));
       }
 
-      debugPrint('[CfChallenge] /challenge 返回 404，且未检测到新 cf_clearance');
+      debugPrint('[CfChallenge] fallback 结束仍无新 cf_clearance');
       CfChallengeLogger.logVerifyResult(
         success: false,
-        reason: 'origin /challenge 404 without fresh cf_clearance',
+        reason: reason ?? 'no fresh cf_clearance after fallback probe',
       );
       if (_isBackground) {
         _timeoutTimer?.cancel();
@@ -805,7 +805,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
         });
       }
     } catch (e) {
-      debugPrint('[CfChallenge] 处理 /challenge 404 fallback 异常: $e');
+      debugPrint('[CfChallenge] 处理 fallback 异常: $e');
     } finally {
       _checkingOriginFallback = false;
       if (mounted && !_hasPopped && generation == _loadGeneration) {
@@ -985,6 +985,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
     return CfChallengeService.hasActiveCfChallenge(html.toString());
   }
 
+  int _revealStateWatchGeneration = 0;
+
   void _revealChallengeWebView() {
     if (_hasPopped || !mounted || _challengeWebViewVisible) return;
     setState(() {
@@ -992,6 +994,55 @@ class _CfChallengePageState extends State<CfChallengePage> {
       _hideOriginFallbackPage = false;
       _originFallbackNeedsAction = false;
     });
+    _startRevealedStateWatcher();
+  }
+
+  /// reveal 后持续监测：若页面内容退化为非挑战（典型为源站 404），立即重新覆盖
+  ///
+  /// 触发场景：CF 在 reveal 期间内联跳走（替换 location 而未触发 onLoadStart）、
+  /// SPA 路由切换、或 onReceivedHttpError 在当前平台未触发但页面已渲染源站 404。
+  void _startRevealedStateWatcher() {
+    final watcherGeneration = ++_revealStateWatchGeneration;
+    final loadGeneration = _loadGeneration;
+    unawaited(() async {
+      while (true) {
+        await Future.delayed(_revealStateWatchInterval);
+        if (_hasPopped || !mounted) return;
+        if (watcherGeneration != _revealStateWatchGeneration) return;
+        if (loadGeneration != _loadGeneration) return;
+        if (!_challengeWebViewVisible) return;
+
+        final controller = _controller;
+        if (controller == null) continue;
+
+        try {
+          final html = await controller.evaluateJavascript(
+            source:
+                'document.documentElement ? document.documentElement.innerHTML : ""',
+          );
+          if (_hasPopped || !mounted) return;
+          if (watcherGeneration != _revealStateWatchGeneration) return;
+          if (loadGeneration != _loadGeneration) return;
+          if (html == null) continue;
+
+          final htmlStr = html.toString();
+          if (CfChallengeService.hasActiveCfChallenge(htmlStr)) continue;
+
+          // 页面无挑战。要么是 CF 已完成跳走，要么是源站 404 渲染出来。
+          // 统一交给 fallback 流程：先轮询 cf_clearance，没拿到再给用户重试入口。
+          debugPrint('[CfChallenge] reveal 后检测到页面无挑战，主动覆盖并探测 cf_clearance');
+          unawaited(
+            _handleVerifyOriginFallback(
+              loadGeneration,
+              reason: 'reveal watcher: page lost CF challenge markers',
+            ),
+          );
+          return;
+        } catch (e) {
+          debugPrint('[CfChallenge] reveal watcher 检测异常: $e');
+        }
+      }
+    }());
   }
 
   void _startChallengeRevealProbe(
@@ -1121,82 +1172,19 @@ class _CfChallengePageState extends State<CfChallengePage> {
   }
 
   Widget _buildOriginFallbackOverlay(ThemeData theme) {
-    final colorScheme = theme.colorScheme;
-    final isAction = _originFallbackNeedsAction;
-    final isCompleting = _checkingOriginFallback;
-    final title = isAction
-        ? context.l10n.cf_noChallengeTitle
-        : isCompleting
-        ? context.l10n.cf_verifyCompletingTitle
-        : context.l10n.cf_verifyOpeningTitle;
-    final message = isAction
-        ? context.l10n.cf_noChallengeMessage
-        : isCompleting
-        ? context.l10n.cf_verifyCompletingMessage
-        : context.l10n.cf_verifyOpeningMessage;
+    final _FallbackState state;
+    if (_originFallbackNeedsAction) {
+      state = _FallbackState.noChallenge;
+    } else if (_checkingOriginFallback) {
+      state = _FallbackState.completing;
+    } else {
+      state = _FallbackState.opening;
+    }
 
-    return ColoredBox(
-      color: colorScheme.surface,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!isAction)
-                  const SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.6),
-                  )
-                else
-                  Icon(
-                    Icons.verified_user_outlined,
-                    size: 32,
-                    color: colorScheme.primary,
-                  ),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (isAction) ...[
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: _refresh,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: Text(context.l10n.cf_retryVerificationAction),
-                      ),
-                      TextButton(
-                        onPressed: _confirmExit,
-                        child: Text(context.l10n.common_exit),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+    return _ChallengeFallbackOverlay(
+      state: state,
+      onRetry: _refresh,
+      onExit: _confirmExit,
     );
   }
 
@@ -1219,6 +1207,42 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _startTimeout();
     _startChallengeRevealProbe(controller, generation);
     _scheduleNoChallengeCheck(controller);
+    // 同步立刻探一次内容：识别明确的源站 404 / 非挑战页面时直接覆盖，
+    // 避免等到 _noChallengeCheckDelay 才决断，挤压可能的 404 露出窗口
+    unawaited(_probeContentImmediately(controller, generation));
+  }
+
+  /// 页面就绪后立刻探一次内容
+  ///
+  /// 命中明确的源站 404 → 直接走 fallback 覆盖；命中 CF 挑战 → reveal；
+  /// 介于两者之间（白屏/加载中）就交给 reveal probe + noChallengeCheck 兜底。
+  Future<void> _probeContentImmediately(
+    InAppWebViewController controller,
+    int generation,
+  ) async {
+    if (_hasPopped || !mounted) return;
+    if (generation != _loadGeneration) return;
+    try {
+      final html = await controller.evaluateJavascript(
+        source:
+            'document.documentElement ? document.documentElement.innerHTML : ""',
+      );
+      if (_hasPopped || !mounted || generation != _loadGeneration) return;
+      if (html == null) return;
+      final htmlStr = html.toString();
+      if (CfChallengeService.hasActiveCfChallenge(htmlStr)) {
+        _revealChallengeWebView();
+        return;
+      }
+      if (CfChallengeService.isOriginNotFound(htmlStr)) {
+        await _handleVerifyOriginFallback(
+          generation,
+          reason: 'immediate probe: origin 404 markers',
+        );
+      }
+    } catch (e) {
+      debugPrint('[CfChallenge] 即时内容探测异常: $e');
+    }
   }
 
   void _schedulePageReadyFallback(InAppWebViewController controller) {
@@ -1332,42 +1356,54 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
   Widget _buildPanelHeader(ThemeData theme) {
     final colorScheme = theme.colorScheme;
+    final iconColor = colorScheme.onSurfaceVariant;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: SizedBox(
-        height: 52,
+    return SizedBox(
+      height: 44,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.close_rounded, size: 20),
+              color: iconColor,
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
               tooltip: context.l10n.common_exit,
               onPressed: showExitConfirmation,
             ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.shield_outlined,
+              size: 16,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 6),
             Expanded(
               child: Text(
                 context.l10n.cf_securityVerifyTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
+                style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                  letterSpacing: 0.1,
                 ),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh_rounded, size: 20),
+              color: iconColor,
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
               tooltip: context.l10n.common_refresh,
               onPressed: _refresh,
             ),
             IconButton(
-              icon: const Icon(Icons.help_outline),
+              icon: const Icon(Icons.help_outline_rounded, size: 20),
+              color: iconColor,
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
               tooltip: context.l10n.common_help,
               onPressed: _showHelp,
             ),
@@ -1382,21 +1418,36 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
     return Material(
       color: colorScheme.surface,
-      elevation: 10,
-      shadowColor: Colors.black.withValues(alpha: 0.18),
-      borderRadius: BorderRadius.circular(8),
+      elevation: 0,
+      borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           _buildPanelHeader(theme),
           SizedBox(
             height: 2,
-            child: _isLoading
-                ? LinearProgressIndicator(
-                    value: _progress > 0 ? _progress : null,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                  )
-                : ColoredBox(color: colorScheme.outlineVariant),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: _isLoading
+                  ? LinearProgressIndicator(
+                      key: const ValueKey('loading'),
+                      value: _progress > 0 ? _progress : null,
+                      minHeight: 2,
+                      backgroundColor:
+                          colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.4,
+                          ),
+                      color: colorScheme.primary.withValues(alpha: 0.75),
+                    )
+                  : SizedBox.shrink(
+                      key: const ValueKey('idle'),
+                      child: ColoredBox(
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.35,
+                        ),
+                      ),
+                    ),
+            ),
           ),
           Expanded(
             child: Stack(
@@ -1407,9 +1458,18 @@ class _CfChallengePageState extends State<CfChallengePage> {
                     child: _buildChallengeWebView(showUi: true),
                   ),
                 ),
-                if (_shouldCoverWebView)
-                  Positioned.fill(child: _buildOriginFallbackOverlay(theme))
-                else if (_shouldShowStatusBanner)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: !_shouldCoverWebView,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _shouldCoverWebView ? 1 : 0,
+                      curve: Curves.easeOut,
+                      child: _buildOriginFallbackOverlay(theme),
+                    ),
+                  ),
+                ),
+                if (!_shouldCoverWebView && _shouldShowStatusBanner)
                   Positioned(
                     left: 12,
                     right: 12,
@@ -1487,17 +1547,21 @@ class _CfChallengePageState extends State<CfChallengePage> {
                             height: panelHeight,
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(20),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.16),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 10),
+                                    color: Colors.black.withValues(
+                                      alpha: theme.brightness == Brightness.dark
+                                          ? 0.45
+                                          : 0.12,
+                                    ),
+                                    blurRadius: 32,
+                                    offset: const Offset(0, 12),
                                   ),
                                 ],
                                 border: Border.all(
                                   color: colorScheme.outlineVariant.withValues(
-                                    alpha: 0.6,
+                                    alpha: 0.35,
                                   ),
                                 ),
                               ),
@@ -1608,6 +1672,321 @@ class _CfChallengePageState extends State<CfChallengePage> {
             child: Text(S.current.cf_backgroundVerifying),
           ),
       ],
+    );
+  }
+}
+
+/// Fallback overlay 的三种状态
+enum _FallbackState {
+  /// 正在打开验证页（默认初始态、加载中）
+  opening,
+
+  /// 验证响应已到达，正在做最后的 cookie 同步
+  completing,
+
+  /// 没有需要完成的验证（极少出现，留给用户重试或退出）
+  noChallenge,
+}
+
+/// 验证遮罩层
+///
+/// 三态切换 + shimmer 微动画。负责盖住 WebView 在加载/完成/无挑战时可能闪现的源站 404。
+class _ChallengeFallbackOverlay extends StatefulWidget {
+  const _ChallengeFallbackOverlay({
+    required this.state,
+    required this.onRetry,
+    required this.onExit,
+  });
+
+  final _FallbackState state;
+  final VoidCallback onRetry;
+  final VoidCallback onExit;
+
+  @override
+  State<_ChallengeFallbackOverlay> createState() =>
+      _ChallengeFallbackOverlayState();
+}
+
+class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
+    with TickerProviderStateMixin {
+  late final AnimationController _shimmerController;
+  late final AnimationController _haloController;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+    _haloController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    _haloController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final state = widget.state;
+
+    return ColoredBox(
+      color: colorScheme.surface,
+      child: Stack(
+        children: [
+          // 顶部 shimmer skeleton：模拟"页面正在加载"的轻量条带
+          if (state != _FallbackState.noChallenge)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _ShimmerStrip(
+                controller: _shimmerController,
+                color: colorScheme.primary,
+              ),
+            ),
+
+          // 中心三态卡片
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.04),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey(state),
+                      child: _buildCard(theme, colorScheme, state),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    _FallbackState state,
+  ) {
+    final l10n = context.l10n;
+    late final String title;
+    late final String message;
+    switch (state) {
+      case _FallbackState.opening:
+        title = l10n.cf_verifyOpeningTitle;
+        message = l10n.cf_verifyOpeningMessage;
+      case _FallbackState.completing:
+        title = l10n.cf_verifyCompletingTitle;
+        message = l10n.cf_verifyCompletingMessage;
+      case _FallbackState.noChallenge:
+        title = l10n.cf_noChallengeTitle;
+        message = l10n.cf_noChallengeMessage;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildStateIndicator(theme, colorScheme, state),
+        const SizedBox(height: 18),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.45,
+          ),
+        ),
+        if (state == _FallbackState.noChallenge) ...[
+          const SizedBox(height: 20),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: widget.onRetry,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(l10n.cf_retryVerificationAction),
+              ),
+              TextButton(
+                onPressed: widget.onExit,
+                child: Text(l10n.common_exit),
+              ),
+            ],
+          ),
+        ] else ...[
+          const SizedBox(height: 20),
+          _SkeletonRows(color: colorScheme.surfaceContainerHighest),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStateIndicator(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    _FallbackState state,
+  ) {
+    if (state == _FallbackState.noChallenge) {
+      return Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colorScheme.primary.withValues(alpha: 0.12),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.verified_user_outlined,
+          size: 28,
+          color: colorScheme.primary,
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _haloController,
+      builder: (context, child) {
+        final t = _haloController.value;
+        final haloRadius = 36 + 6 * t;
+        final haloAlpha = 0.16 + 0.18 * (1 - t);
+        return SizedBox(
+          width: 80,
+          height: 80,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: haloRadius * 2,
+                height: haloRadius * 2,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primary.withValues(alpha: haloAlpha),
+                ),
+              ),
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.6,
+                  valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.18),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 顶部 shimmer 条带：横向流动的渐变光，营造"加载中"感
+class _ShimmerStrip extends StatelessWidget {
+  const _ShimmerStrip({required this.controller, required this.color});
+
+  final AnimationController controller;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 2,
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          final t = controller.value;
+          return ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (rect) {
+              return LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  color.withValues(alpha: 0),
+                  color.withValues(alpha: 0.85),
+                  color.withValues(alpha: 0),
+                ],
+                stops: [
+                  (t - 0.25).clamp(0.0, 1.0),
+                  t.clamp(0.0, 1.0),
+                  (t + 0.25).clamp(0.0, 1.0),
+                ],
+              ).createShader(rect);
+            },
+            child: ColoredBox(color: color.withValues(alpha: 0.35)),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 中心卡片下方的骨架条：让"正在打开/完成"状态看起来有内容在准备
+class _SkeletonRows extends StatelessWidget {
+  const _SkeletonRows({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _bar(width: 220, height: 8),
+        const SizedBox(height: 8),
+        _bar(width: 180, height: 8),
+        const SizedBox(height: 8),
+        _bar(width: 140, height: 8),
+      ],
+    );
+  }
+
+  Widget _bar({required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
     );
   }
 }
