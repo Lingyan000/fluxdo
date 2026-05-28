@@ -112,7 +112,7 @@ class _RelativeTimeTextState extends State<RelativeTimeText> {
   @override
   Widget build(BuildContext context) {
     // TickerMode 为 false 时暂停 Timer
-    if (!TickerMode.of(context)) {
+    if (!TickerMode.valuesOf(context).enabled) {
       _timer?.cancel();
     } else if (_timer == null || !_timer!.isActive) {
       _scheduleTimer();

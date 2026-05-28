@@ -782,7 +782,7 @@ class _CategoryFilterItem extends StatelessWidget {
     final theme = Theme.of(context);
 
     // 图标逻辑
-    IconData? faIcon;
+    FaIconData? faIcon;
 
     if (category != null) {
       faIcon = FontAwesomeHelper.getIcon(category!.icon);

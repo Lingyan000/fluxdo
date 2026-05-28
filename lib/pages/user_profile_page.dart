@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1951,7 +1952,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                FaIcon(
                   BadgeUIUtils.getBadgeIcon(badgeType),
                   size: 14,
                   color: color,

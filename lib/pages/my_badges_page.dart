@@ -162,7 +162,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
               Positioned(
                 right: -20,
                 top: -20,
-                child: Icon(
+                child: FaIcon(
                   FontAwesomeIcons.medal,
                   size: 200,
                   color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),

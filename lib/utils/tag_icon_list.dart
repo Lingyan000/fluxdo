@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'font_awesome_helper.dart';
 
 class TagIconInfo {
-  final IconData icon;
+  final FaIconData icon;
   final Color color;
 
   const TagIconInfo({required this.icon, required this.color});
