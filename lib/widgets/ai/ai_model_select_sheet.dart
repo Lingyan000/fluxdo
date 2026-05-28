@@ -326,7 +326,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
   ) {
     return SliverReorderableList(
       itemCount: items.length,
-      onReorder: (oldIndex, newIndex) {
+      onReorderItem: (oldIndex, newIndex) {
         _handleFavoriteReorder(items, oldIndex, newIndex);
       },
       itemBuilder: (context, index) {
@@ -347,17 +347,12 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
   ) async {
     if (oldIndex == newIndex) return;
 
-    var targetIndex = newIndex;
-    if (targetIndex > oldIndex) {
-      targetIndex -= 1;
-    }
-
     final reorderedKeys = [
       for (final item in items)
         buildAiModelKey(item.provider.id, item.model.id),
     ];
     final movedKey = reorderedKeys.removeAt(oldIndex);
-    reorderedKeys.insert(targetIndex, movedKey);
+    reorderedKeys.insert(newIndex, movedKey);
     await reorderFavoriteAiModelKeys(ref, reorderedKeys);
   }
 

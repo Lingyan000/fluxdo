@@ -594,7 +594,7 @@ class _ExtendedImageState extends State<ExtendedImage>
           context.findAncestorStateOfType<ExtendedImageSlidePageState>();
     }
 
-    if (TickerMode.of(context)) {
+    if (TickerMode.valuesOf(context).enabled) {
       _listenToStream();
     } else {
       _stopListeningToStream(keepStreamAlive: true);

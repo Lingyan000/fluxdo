@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -261,7 +262,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           key: _contentAreaKey,
           child: CustomScrollView(
             controller: _scrollController,
-            cacheExtent: 500,
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
             slivers: _buildSlivers(
                 emojiGroups, groupKeys, hasRecent, recentEmojis),
           ),

@@ -413,7 +413,7 @@ class _CollapsibleTopicSummaryState
         // 展开的摘要内容，使用 SizeTransition 优化展开动画
         SizeTransition(
           sizeFactor: _animation,
-          axisAlignment: -1.0, // 从顶部展开
+          alignment: const Alignment(-1.0, -1.0), // 从顶部展开
           child: _hasRequested
               ? Padding(
                   padding: const EdgeInsets.only(top: 12),

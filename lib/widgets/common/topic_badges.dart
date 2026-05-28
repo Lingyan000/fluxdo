@@ -213,7 +213,7 @@ class RemovableCategoryBadge extends StatelessWidget {
 
 class CategoryBadge extends StatelessWidget {
   final Category category;
-  final IconData? faIcon;
+  final FaIconData? faIcon;
   final String? logoUrl;
   final BadgeSize size;
   final TextStyle? textStyle;
