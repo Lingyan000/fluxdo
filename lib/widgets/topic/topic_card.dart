@@ -55,7 +55,7 @@ class TopicCard extends ConsumerWidget {
     // 2. 本级 Logo
     // 3. 父级 FA Icon
     // 4. 父级 Logo
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
@@ -446,7 +446,7 @@ class CompactTopicCard extends ConsumerWidget {
     final category = categoryMap?[categoryId];
 
     // 图标逻辑
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&

@@ -260,7 +260,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
   }
 
   Widget _buildCategoryIcon(Category category, Category? parent) {
-    IconData? faIcon = FontAwesomeHelper.getIcon(category.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category.icon);
     String? logoUrl = category.uploadedLogo;
 
     if (faIcon == null && (logoUrl == null || logoUrl.isEmpty) && parent != null) {

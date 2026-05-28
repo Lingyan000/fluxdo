@@ -376,9 +376,8 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.presets.length,
       buildDefaultDragHandles: false,
-      onReorder: (oldIndex, newIndex) async {
+      onReorderItem: (oldIndex, newIndex) async {
         final ids = [for (final p in widget.presets) p.id];
-        if (newIndex > oldIndex) newIndex--;
         final id = ids.removeAt(oldIndex);
         ids.insert(newIndex, id);
         await ref

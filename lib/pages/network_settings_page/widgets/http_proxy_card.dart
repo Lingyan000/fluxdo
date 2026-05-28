@@ -290,7 +290,7 @@ class _HttpProxyCardInner extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<UpstreamProxyProtocol>(
-                      value: selectedProtocol,
+                      initialValue: selectedProtocol,
                       decoration: InputDecoration(labelText: dialogContext.l10n.httpProxy_protocol),
                       items: UpstreamProxyProtocol.values
                           .map(
@@ -369,7 +369,7 @@ class _HttpProxyCardInner extends StatelessWidget {
                     const SizedBox(height: 12),
                     if (isShadowsocks) ...[
                       DropdownButtonFormField<String>(
-                        value: selectedCipher,
+                        initialValue: selectedCipher,
                         decoration: InputDecoration(labelText: dialogContext.l10n.httpProxy_cipher),
                         items: ProxySettingsService.supportedShadowsocksCiphers
                             .map(

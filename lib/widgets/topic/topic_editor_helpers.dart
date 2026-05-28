@@ -293,7 +293,7 @@ class CategoryTrigger extends StatelessWidget {
     }
 
     final color = parseHexColor(category!.color);
-    IconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
     String? logoUrl = category!.uploadedLogo;
 
     return Material(

@@ -312,7 +312,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           key: _contentAreaKey,
           child: CustomScrollView(
             controller: _scrollController,
-            cacheExtent: 500,
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
             slivers: _buildSlivers(groups, hasRecent, recentStickers),
           ),
         ),

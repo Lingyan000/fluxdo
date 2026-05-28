@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/sticker.dart';
@@ -175,7 +176,7 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      cacheExtent: 200,
+      scrollCacheExtent: ScrollCacheExtent.pixels(200),
       itemExtent: 72,
       itemCount: itemCount,
       itemBuilder: (context, index) {

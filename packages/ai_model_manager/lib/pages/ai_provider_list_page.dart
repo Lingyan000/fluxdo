@@ -284,8 +284,7 @@ class _ProviderReorderSection extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
       itemCount: providers.length,
-      onReorder: (oldIndex, newIndex) async {
-        if (newIndex > oldIndex) newIndex--;
+      onReorderItem: (oldIndex, newIndex) async {
         await onReorder(pinned, oldIndex, newIndex);
       },
       itemBuilder: (context, index) {

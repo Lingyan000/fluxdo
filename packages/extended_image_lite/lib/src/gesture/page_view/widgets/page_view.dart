@@ -375,8 +375,7 @@ class _GesturePageViewState extends State<GesturePageView> {
             // TODO(dnfield): we should provide a way to set cacheExtent
             // independent of implicit scrolling:
             // https://github.com/flutter/flutter/issues/45632
-            cacheExtent: cacheExtent,
-            cacheExtentStyle: CacheExtentStyle.viewport,
+            scrollCacheExtent: ScrollCacheExtent.viewport(cacheExtent),
             axisDirection: axisDirection,
             offset: position,
             clipBehavior: widget.clipBehavior,
