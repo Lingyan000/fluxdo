@@ -578,7 +578,7 @@ class _EditContent extends ConsumerWidget {
             buildDefaultDragHandles: false,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: pinnedCategories.length,
-            onReorder: (oldIndex, newIndex) {
+            onReorderItem: (oldIndex, newIndex) {
               ref
                   .read(pinnedCategoriesProvider.notifier)
                   .reorder(oldIndex, newIndex);

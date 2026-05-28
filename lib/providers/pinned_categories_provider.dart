@@ -29,7 +29,6 @@ class PinnedCategoriesNotifier extends StateNotifier<List<int>> {
 
   void reorder(int oldIndex, int newIndex) {
     final list = [...state];
-    if (newIndex > oldIndex) newIndex--;
     final item = list.removeAt(oldIndex);
     list.insert(newIndex, item);
     state = list;

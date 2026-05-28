@@ -55,7 +55,7 @@ void main() {
 
     final reorderableList =
         tester.widget<ReorderableListView>(find.byType(ReorderableListView));
-    reorderableList.onReorder(2, 0);
+    reorderableList.onReorderItem!(2, 0);
     await tester.pumpAndSettle();
 
     expect(

@@ -310,7 +310,6 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   }
 
   void _reorderModels(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex--;
     if (oldIndex == newIndex) return;
     setState(() {
       final moved = _models.removeAt(oldIndex);
@@ -632,7 +631,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                 buildDefaultDragHandles: false,
                 itemCount: _models.length,
-                onReorder: _reorderModels,
+                onReorderItem: _reorderModels,
                 itemBuilder: (ctx, index) {
                   final model = _models[index];
                   return ReorderableDelayedDragStartListener(

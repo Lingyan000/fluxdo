@@ -1084,7 +1084,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 }
 
 class _ToolbarButton extends StatelessWidget {
-  final IconData icon;
+  final FaIconData icon;
   final VoidCallback? onPressed;
   final bool isLoading;
   final String? tooltip;

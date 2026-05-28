@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../providers/discourse_providers.dart';
@@ -44,7 +45,7 @@ class TopicDetailHeader extends ConsumerWidget {
     final categoryMap = ref.watch(categoryMapProvider).value;
     final category = categoryMap?[detail.categoryId];
 
-    IconData? faIcon;
+    FaIconData? faIcon;
     String? logoUrl;
 
     if (category != null) {
