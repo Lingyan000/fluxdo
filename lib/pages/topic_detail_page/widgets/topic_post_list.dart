@@ -1,6 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent, SelectedContent;
 import 'package:scroll_to_index/scroll_to_index.dart';
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
@@ -529,7 +529,7 @@ class _TopicPostListState extends State<TopicPostList> {
           child: CustomScrollView(
             controller: scrollController,
             center: centerKey,
-            cacheExtent: 500,
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),

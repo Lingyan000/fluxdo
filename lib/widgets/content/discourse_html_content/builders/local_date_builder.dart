@@ -156,7 +156,7 @@ class _LocalDateChipState extends State<_LocalDateChip> {
 
   @override
   Widget build(BuildContext context) {
-    if (!TickerMode.of(context)) {
+    if (!TickerMode.valuesOf(context).enabled) {
       _timer?.cancel();
     } else if (widget.opts.countdown &&
         (_timer == null || !_timer!.isActive)) {

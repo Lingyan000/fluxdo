@@ -147,7 +147,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     final category = categoryMap?[categoryId];
 
     // 图标逻辑
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
@@ -435,7 +435,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     BuildContext context,
     ThemeData theme,
     Category? category,
-    IconData? faIcon,
+    FaIconData? faIcon,
     String? logoUrl,
   ) {
     return Wrap(

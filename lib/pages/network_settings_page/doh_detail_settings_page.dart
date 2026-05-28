@@ -483,29 +483,35 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
         return SimpleDialog(
           title: Text(context.l10n.dohDetail_selectEchServer),
           children: [
-            RadioListTile<String?>(
-              title: Text(context.l10n.dohDetail_sameAsDns),
-              subtitle: Text(
-                context.l10n.dohDetail_echSameAsDnsDesc,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              value: null,
+            RadioGroup<String?>(
               groupValue: currentEch,
-              onChanged: (value) => Navigator.pop(context, '__null__'),
-            ),
-            for (final server in servers)
-              RadioListTile<String>(
-                title: Text(server.name),
-                subtitle: Text(
-                  server.url,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                value: server.url,
-                groupValue: currentEch,
-                onChanged: (value) => Navigator.pop(context, value),
+              onChanged: (value) =>
+                  Navigator.pop(context, value ?? '__null__'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RadioListTile<String?>(
+                    title: Text(context.l10n.dohDetail_sameAsDns),
+                    subtitle: Text(
+                      context.l10n.dohDetail_echSameAsDnsDesc,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    value: null,
+                  ),
+                  for (final server in servers)
+                    RadioListTile<String?>(
+                      title: Text(server.name),
+                      subtitle: Text(
+                        server.url,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      value: server.url,
+                    ),
+                ],
               ),
+            ),
           ],
         );
       },

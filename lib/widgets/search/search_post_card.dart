@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../models/category.dart';
 import '../../models/search_result.dart';
 import '../../providers/category_provider.dart';
@@ -37,7 +38,7 @@ class SearchPostCard extends ConsumerWidget {
     }
 
     // 图标逻辑：本级 FA Icon -> 本级 Logo -> 父级 FA Icon -> 父级 Logo
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
