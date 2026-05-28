@@ -7,7 +7,7 @@ on:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
-  FLUTTER_LINUX_VERSION: '3.41.5'
+  FLUTTER_LINUX_VERSION: '3.44.0'
 
 jobs:
   build:
@@ -59,7 +59,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.9'
+          flutter-version: '3.44.0'
           cache: true
 
       - name: Setup Rust
