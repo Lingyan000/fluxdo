@@ -99,6 +99,9 @@ dependencies:
   catcher_2: ^2.1.5
   timezone: ^0.11.0
   flutter_timezone: ^5.0.2
+  # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
+  # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
+  chinese_font_library: ^1.2.0
 
   window_manager: ^0.5.1
   flutter_acrylic: ^1.1.4
@@ -149,7 +152,10 @@ flutter:
   fonts:
     - family: MiSans
       fonts:
-        - asset: assets/fonts/MiSans-Regular.ttf
+        # MiSans Variable Font，单文件覆盖 100-900 全部 weight。
+        # Flutter 3.41+ FontWeight 会映射到 wght variation axis，因此即使
+        # 不显式声明 weight，TextStyle(fontWeight: FontWeight.wXXX) 也能精准命中。
+        - asset: assets/fonts/MiSansVF.ttf
 
 
 

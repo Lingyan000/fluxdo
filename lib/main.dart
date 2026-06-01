@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:catcher_2/catcher_2.dart';
+import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -377,6 +378,16 @@ Future<void> main() async {
   );
 }
 
+/// 只给 textTheme/primaryTextTheme 注入中文 fallback，保留 ThemeData 原本的
+/// fontFamily 与 weight 配置（避免覆盖 Android OEM 字体导致视觉变粗）。
+ThemeData _withChineseFallback(ThemeData base) {
+  final fallback = SystemChineseFont.fontFamilyFallback;
+  return base.copyWith(
+    textTheme: base.textTheme.apply(fontFamilyFallback: fallback),
+    primaryTextTheme: base.primaryTextTheme.apply(fontFamilyFallback: fallback),
+  );
+}
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -440,30 +451,37 @@ class MainApp extends ConsumerWidget {
               ],
               supportedLocales: AppLocaleUtils.supportedLocales,
               themeMode: themeState.mode,
-              theme: ThemeData(
-                colorScheme: lightScheme,
-                useMaterial3: true,
-                fontFamily: themeState.fontFamilyName,
-                cardTheme: CardThemeData(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              // 仅注入 fontFamilyFallback，不替换 textTheme，避免覆盖 Android OEM
+              // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
+              // 会强制改为 Roboto，导致字体显得比之前粗）。
+              theme: _withChineseFallback(
+                ThemeData(
+                  colorScheme: lightScheme,
+                  useMaterial3: true,
+                  fontFamily: themeState.fontFamilyName,
+                  cardTheme: CardThemeData(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: lightScheme.surfaceContainerLow,
+                    margin: EdgeInsets.zero,
                   ),
-                  color: lightScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
                 ),
               ),
-              darkTheme: ThemeData(
-                colorScheme: darkScheme,
-                useMaterial3: true,
-                fontFamily: themeState.fontFamilyName,
-                cardTheme: CardThemeData(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              darkTheme: _withChineseFallback(
+                ThemeData(
+                  colorScheme: darkScheme,
+                  useMaterial3: true,
+                  fontFamily: themeState.fontFamilyName,
+                  cardTheme: CardThemeData(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: darkScheme.surfaceContainerLow,
+                    margin: EdgeInsets.zero,
                   ),
-                  color: darkScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
                 ),
               ),
               builder: (context, child) {

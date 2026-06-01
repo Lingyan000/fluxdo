@@ -85,6 +85,12 @@ class _NoOuterScrollPhysics extends ScrollPhysics {
     return _NoOuterScrollPhysics(parent: buildParent(ancestor));
   }
 
+  // 完全吞掉 user drag delta：Flutter 3.41+ 的 NestedScrollView coordinator
+  // 在分发 delta 时不一定走 applyBoundaryConditions，必须在 applyPhysicsToUserOffset
+  // 也返回 0 才能保证 outer 永不移动。
+  @override
+  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) => 0.0;
+
   @override
   double applyBoundaryConditions(ScrollMetrics position, double value) {
     // 将全部增量当作越界返回，外层 position 不发生位移
@@ -775,7 +781,8 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     if (_outerScrollController.positions.length != 1) return;
 
     final startOffset = _outerScrollController.offset;
-    if (startOffset == target) return;
+    // 浮点误差容忍：差距 < 0.5px 不启动 200ms 动画，避免几乎到位时再触发回弹动画
+    if ((startOffset - target).abs() < 0.5) return;
 
     _isSnapping = true;
     _snapAnim?.dispose();
@@ -818,15 +825,18 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     if (_outerScrollController.positions.length != 1) return;
     final offset = _outerScrollController.offset;
 
-    // 关闭折叠时，始终吸附到顶部
+    // 关闭折叠时，始终吸附到顶部。
+    // 加 0.5px 阈值，避免 NestedScrollView coordinator 浮点累积误差导致
+    // outer 停在 ≈0.x 像素就触发 snap 动画看起来像回弹。
     if (!ref.read(preferencesProvider).hideBarOnScroll) {
-      if (offset > 0) {
+      if (offset > 0.5) {
         _outerScrollController.position.snapToPixels(0);
       }
       return;
     }
 
-    if (offset <= 0 || offset >= _collapsibleHeight) return;
+    // 折叠模式下，offset 接近两端时也不 snap（< 0.5px）
+    if (offset <= 0.5 || offset >= _collapsibleHeight - 0.5) return;
 
     final target = offset > _collapsibleHeight / 2 ? _collapsibleHeight : 0.0;
     _snapOuterScrollTo(target);
@@ -837,15 +847,18 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     if (_outerScrollController.positions.length != 1) return;
     final offset = _outerScrollController.offset;
 
-    // 关闭折叠时，始终吸附到顶部
+    // 关闭折叠时，始终吸附到顶部。
+    // 加 0.5px 阈值，避免 NestedScrollView coordinator 浮点累积误差导致
+    // outer 停在 ≈0.x 像素就触发 snap 动画看起来像回弹。
     if (!ref.read(preferencesProvider).hideBarOnScroll) {
-      if (offset > 0) {
+      if (offset > 0.5) {
         _outerScrollController.position.snapToPixels(0);
       }
       return;
     }
 
-    if (offset <= 0 || offset >= _collapsibleHeight) return;
+    // 折叠模式下，offset 接近两端时也不 snap（< 0.5px）
+    if (offset <= 0.5 || offset >= _collapsibleHeight - 0.5) return;
 
     // pointer scroll（滚轮/触控板）更符合方向意图：向下则折叠，向上则展开。
     final direction = _lastOuterScrollDirection;

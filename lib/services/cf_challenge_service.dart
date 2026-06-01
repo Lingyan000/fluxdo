@@ -1812,31 +1812,7 @@ class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
         minimum: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Stack(
           children: [
-            // 左上角：小 shield + "安全验证"
-            Align(
-              alignment: Alignment.topLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.shield_outlined,
-                    size: 16,
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    context.l10n.cf_securityVerifyTitle,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 中心：动画 + 文案
+            // 中心：动画 + 文案（panel 头部已有「安全验证」title，这里不重复）
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 360),
