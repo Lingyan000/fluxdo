@@ -180,9 +180,16 @@ class MigrationService {
     ),
   ];
 
+  /// 判断是否为 v0.1.x 以前的老用户。
+  ///
+  /// **不要**把 `cookie_clean_slate_v2` 当作老用户标记 —— 它是 v2 迁移的
+  /// 完成标记 (runAll 会对全新用户也 setBool true 表示"跳过"),把它作为
+  /// 老用户依据会让 v3 / v4 对全新用户误触发。
+  ///
+  /// 真正能区分"老用户"的只有 v0.1.x 时代的 `cookie_domain_migration_v2`,
+  /// 全新用户的 prefs 中不存在此 key。
   static bool _hasLegacyCookieMigrationMarker(SharedPreferences prefs) {
-    return prefs.getBool('cookie_clean_slate_v2') == true ||
-        prefs.getBool('cookie_domain_migration_v2') == true;
+    return prefs.getBool('cookie_domain_migration_v2') == true;
   }
 
   /// 在 main() 中调用，在所有网络服务启动之前执行
