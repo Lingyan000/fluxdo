@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:io' as io;
+
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
@@ -124,6 +129,66 @@ class MigrationService {
         if (!jar.isInitialized) await jar.initialize();
         await jar.clearAll();
         requiresRelogin = true;
+      },
+    ),
+    // v5 (cookie 引擎 v0.4.0): RawSetCookieQueue 移除
+    // 把 .cookies/pending_set_cookies.json 队列文件中残留的 cookie 回灌到 jar
+    // 然后删除文件。不强制重登。
+    // 设计依据: docs/cookie-sync-design-v0.4.0.md §8.5
+    Migration(
+      key: 'cookie_queue_removed_v5',
+      name: 'RawSetCookieQueue removal migration',
+      shouldRun: (prefs) async {
+        try {
+          final dir = await getApplicationDocumentsDirectory();
+          final queueFile = io.File(
+            p.join(dir.path, '.cookies', 'pending_set_cookies.json'),
+          );
+          return await queueFile.exists();
+        } catch (_) {
+          return false;
+        }
+      },
+      run: () async {
+        try {
+          final dir = await getApplicationDocumentsDirectory();
+          final queueFile = io.File(
+            p.join(dir.path, '.cookies', 'pending_set_cookies.json'),
+          );
+          if (!await queueFile.exists()) return;
+
+          final content = await queueFile.readAsString();
+          if (content.trim().isNotEmpty) {
+            final jar = CookieJarService();
+            if (!jar.isInitialized) await jar.initialize();
+            try {
+              final entries = jsonDecode(content) as List;
+              for (final raw in entries) {
+                if (raw is! Map) continue;
+                final url = raw['url']?.toString();
+                final header = raw['raw']?.toString();
+                if (url == null || header == null) continue;
+                final uri = Uri.tryParse(url);
+                if (uri == null) continue;
+                try {
+                  await jar.cookieJar.saveFromResponse(uri, [
+                    io.Cookie.fromSetCookieValue(header),
+                  ]);
+                } catch (e) {
+                  debugPrint(
+                    '[Migration v5] 单条 cookie 回灌失败 url=$url: $e',
+                  );
+                }
+              }
+            } catch (e) {
+              debugPrint('[Migration v5] 解析队列文件失败: $e');
+            }
+          }
+          await queueFile.delete();
+          debugPrint('[Migration v5] 已清理 RawSetCookieQueue 持久化文件');
+        } catch (e) {
+          debugPrint('[Migration v5] 失败 (忽略): $e');
+        }
       },
     ),
   ];
