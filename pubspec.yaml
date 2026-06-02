@@ -22,6 +22,7 @@ dependencies:
   slang: 4.14.0
   slang_flutter: 4.14.0
   collection: ^1.19.1
+  synchronized: ^3.4.0+1
   dio: ^5.9.0
   http: ^1.6.0
   dio_cookie_manager: ^3.1.1
