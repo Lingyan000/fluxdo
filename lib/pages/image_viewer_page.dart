@@ -182,7 +182,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     if (_showUI) {
       _restoreSystemUI();
     } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
+      // 用 immersiveSticky 而非 manual+overlays:[]。
+      // Android 15+ 默认 edge-to-edge，manual 模式会被系统忽略导致隐藏后
+      // 无法恢复。immersiveSticky 是专为 fullscreen 设计的模式，Android 15+
+      // 仍正常工作，且边缘上滑可临时显示 system bars。
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
 
