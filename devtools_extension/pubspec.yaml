@@ -1,0 +1,23 @@
+name: fluxdo_cookie_devtools
+description: Cookie 引擎 v0.4.0 Flutter DevTools Extension
+publish_to: 'none'
+version: 0.4.0
+
+environment:
+  sdk: ^3.6.0
+  flutter: '>=3.27.0'
+
+# 不参与主项目 workspace（独立 Flutter web app）
+resolution: null
+
+dependencies:
+  flutter:
+    sdk: flutter
+  devtools_extensions: ^0.5.1
+  vm_service: ^14.3.1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

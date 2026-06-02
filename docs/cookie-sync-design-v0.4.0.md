@@ -1249,11 +1249,26 @@ final migrations = <Migration>[
 推送 SweepEvent 给 DevTool。DevTool 通过 `eventStream.where(...)` 监听。
 事件类型: `SweepInvoked` / `SweepCompleted` / `SweepCancelled`。
 
-**DevTool 端 (Phase 6b 计划)**:
-- 独立 Flutter web app, 位于 `extension/devtools/`
-- 4 个 tab: Status (jar/WV 双视图) / Events (实时流) / Actions (手动 sweep 等) / Dump (JSON)
-- 用 `devtools_extensions` 包构建
-- 不依赖主 app 代码, 通过 vm_service 调用上述 service extensions
+**DevTool 端 (Phase 6b 已实现)**:
+
+源码位置: `devtools_extension/` (独立 Flutter web app, 不参与主 app workspace)
+构建产物: `extension/devtools/build/` (gitignored, 用 `tool/build_devtools_extension.sh` 生成)
+注册元数据: `extension/devtools/config.yaml`
+
+UI: 3 个 tab
+- **Overview**: jar / WV cookie 双视图 + Priming 状态 + critical 变体数实时告警
+  (默认 5s 自动刷新, 支持 raw JSON toggle)
+- **Events**: 实时订阅 `fluxdo.cookie.sweepEvent`, 保留最近 200 条
+  (按事件类型过滤, 点击查看 raw payload)
+- **Actions**: 手动 sweep (含 intent 选择) / Nuclear Reset / Invalidate Priming
+  (含 last result 显示)
+
+使用方式:
+```bash
+./tool/build_devtools_extension.sh   # 首次/UI 改动后构建
+flutter run                          # 启动主 app (debug/profile 模式)
+# 启动 Flutter DevTools → 看到 Cookie tab
+```
 
 ---
 

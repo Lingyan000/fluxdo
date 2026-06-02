@@ -95,3 +95,8 @@ apple/Local.xcconfig
 # L10n generated files
 lib/l10n/slang/
 lib/l10n/generated/app_localizations_compat.g.dart
+
+# DevTools extension 构建产物 (通过 tool/build_devtools_extension.sh 生成)
+extension/devtools/build/
+devtools_extension/.flutter-plugins
+devtools_extension/pubspec.lock

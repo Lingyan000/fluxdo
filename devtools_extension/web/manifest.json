@@ -1,0 +1,11 @@
+{
+  "name": "fluxdo_cookie_devtools",
+  "short_name": "Cookie DevTools",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0175C2",
+  "theme_color": "#0175C2",
+  "description": "Fluxdo Cookie 引擎 v0.4.0 DevTools Extension",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}
