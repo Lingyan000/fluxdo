@@ -4,6 +4,7 @@ import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 
 import 'cookie_jar_service.dart';
+import 'cookie_logger.dart';
 import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
 
@@ -111,6 +112,8 @@ class WebViewCookiePriming {
   // ---------------------------------------------------------------------------
 
   Future<void> _primeInternal(String url) async {
+    final stopwatch = Stopwatch()..start();
+    CookieLogger.priming(event: 'invoked', url: url, isPrimed: _isPrimed);
     try {
       // 1. 确保 jar 已初始化（兜底，调用方应该已经初始化）
       if (!_jar.isInitialized) {
@@ -145,6 +148,12 @@ class WebViewCookiePriming {
         debugPrint(
           '[Priming] WV cookies already present, sweepAll only ($url)',
         );
+        CookieLogger.priming(
+          event: 'completed',
+          url: url,
+          cookiesInjected: 0,
+          durationMs: stopwatch.elapsedMilliseconds,
+        );
         return;
       }
 
@@ -164,9 +173,21 @@ class WebViewCookiePriming {
       debugPrint(
         '[Priming] WV primed: $injected cookies injected for $url',
       );
+      CookieLogger.priming(
+        event: 'completed',
+        url: url,
+        cookiesInjected: injected,
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
     } catch (e, s) {
       debugPrint('[Priming] prime $url failed: $e\n$s');
       _isPrimed = false;
+      CookieLogger.priming(
+        event: 'failed',
+        url: url,
+        reason: '$e',
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
       throw WebViewPrimingException('prime failed for $url: $e', e);
     }
   }

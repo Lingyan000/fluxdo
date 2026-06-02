@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../cookie/cookie_jar_service.dart';
+import '../cookie/cookie_logger.dart';
 import '../cookie/session_cookie_sentinel.dart';
 
 /// Dio 拦截器：401 / discourse-logged-out 透明自愈。
@@ -144,21 +145,33 @@ class SelfHealingInterceptor extends Interceptor {
 
     // 检查 jar 中 _t 是否有效（jar 无 _t = 真登出）
     final jarT = await _jar.getCanonicalCookie('_t');
-    if (jarT == null || jarT.value.isEmpty) {
+    final jarValid = jarT != null &&
+        jarT.value.isNotEmpty &&
+        (jarT.expiresAt == null || jarT.expiresAt!.isAfter(DateTime.now()));
+
+    final origin = '${uri.scheme}://${uri.host}';
+
+    if (!jarValid) {
       debugPrint(
         '[SelfHealing] skip: jar has no valid _t (uri=$uri)',
       );
-      return null;
-    }
-    final expiresAt = jarT.expiresAt;
-    if (expiresAt != null && expiresAt.isBefore(DateTime.now())) {
-      debugPrint('[SelfHealing] skip: jar _t expired (uri=$uri)');
+      CookieLogger.selfHealing(
+        event: 'triggered',
+        url: origin,
+        status: response.statusCode,
+        jarHasValidToken: false,
+      );
       return null;
     }
 
-    final origin = '${uri.scheme}://${uri.host}';
     debugPrint(
       '[SelfHealing] triggered: status=${response.statusCode}, uri=$uri',
+    );
+    CookieLogger.selfHealing(
+      event: 'triggered',
+      url: origin,
+      status: response.statusCode,
+      jarHasValidToken: true,
     );
 
     // Phase 1: 常规 sweep + retry (最多 2 次)
@@ -170,10 +183,20 @@ class SelfHealingInterceptor extends Interceptor {
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
     for (var attempt = 1; attempt <= 2; attempt++) {
+      CookieLogger.selfHealing(
+        event: 'retry',
+        url: origin,
+        attempt: attempt,
+      );
       final result = await _attemptRetry(options, attempt);
       if (result != null) {
         debugPrint(
           '[SelfHealing] success on attempt $attempt (uri=$uri)',
+        );
+        CookieLogger.selfHealing(
+          event: 'success',
+          url: origin,
+          attemptsUsed: attempt,
         );
         return result;
       }
@@ -185,20 +208,42 @@ class SelfHealingInterceptor extends Interceptor {
       await _sentinel.nuclearReset(origin);
     } catch (e) {
       debugPrint('[SelfHealing] nuclearReset failed: $e');
+      CookieLogger.selfHealing(
+        event: 'failed',
+        url: origin,
+        attemptsUsed: 2,
+        finalAction: 'nuclear_reset_threw: $e',
+      );
       return null;
     }
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
+    CookieLogger.selfHealing(
+      event: 'retry',
+      url: origin,
+      attempt: 3,
+    );
     final finalResult = await _attemptRetry(options, 3);
     if (finalResult != null) {
       debugPrint(
         '[SelfHealing] success on nuclear-reset retry (uri=$uri)',
+      );
+      CookieLogger.selfHealing(
+        event: 'success',
+        url: origin,
+        attemptsUsed: 3,
       );
       return finalResult;
     }
 
     debugPrint(
       '[SelfHealing] all retries failed (uri=$uri) → 透传原 401',
+    );
+    CookieLogger.selfHealing(
+      event: 'failed',
+      url: origin,
+      attemptsUsed: 3,
+      finalAction: 'pass_through_401',
     );
     return null;
   }

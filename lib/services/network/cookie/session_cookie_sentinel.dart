@@ -8,6 +8,7 @@ import 'package:synchronized/synchronized.dart';
 import '../../auth_session.dart';
 import 'cookie_full_info.dart';
 import 'cookie_jar_service.dart';
+import 'cookie_logger.dart';
 import 'raw_cookie_writer.dart';
 
 /// Cookie 变体清扫内核（"Sweep" 操作）。
@@ -214,6 +215,13 @@ class SessionCookieSentinel {
   ) async {
     final stopwatch = Stopwatch()..start();
     _eventController.add(SweepInvoked(url: url, name: name, intent: intent));
+    CookieLogger.sweep(
+      event: 'invoked',
+      url: url,
+      name: name,
+      intent: intent.name,
+      entryGeneration: entryGen,
+    );
 
     // CHECK 1: generation
     if (_isCancelled(entryGen)) {
@@ -257,6 +265,14 @@ class SessionCookieSentinel {
         elapsed: stopwatch.elapsed,
       );
       _eventController.add(SweepCompleted(result: result));
+      CookieLogger.sweep(
+        event: 'noop',
+        url: url,
+        name: name,
+        intent: 'delete',
+        variantsBefore: 0,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
       return result;
     }
 
@@ -277,6 +293,15 @@ class SessionCookieSentinel {
         elapsed: stopwatch.elapsed,
       );
       _eventController.add(SweepCompleted(result: result));
+      CookieLogger.sweep(
+        event: 'swept',
+        url: url,
+        name: name,
+        intent: 'delete',
+        variantsBefore: variantsBefore,
+        variantsAfter: 0,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
       return result;
     }
 
@@ -300,6 +325,15 @@ class SessionCookieSentinel {
         elapsed: stopwatch.elapsed,
       );
       _eventController.add(SweepCompleted(result: result));
+      CookieLogger.sweep(
+        event: 'noop',
+        url: url,
+        name: name,
+        intent: 'ensureUnique',
+        variantsBefore: variantsBefore,
+        variantsAfter: variantsBefore,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
       return result;
     }
 
@@ -344,6 +378,16 @@ class SessionCookieSentinel {
         elapsed: stopwatch.elapsed,
       );
       _eventController.add(SweepCompleted(result: result));
+      CookieLogger.sweep(
+        event: 'swept',
+        url: url,
+        name: name,
+        intent: 'ensureUnique',
+        variantsBefore: variantsBefore,
+        variantsAfter: after,
+        winnerSource: winnerResult?.source,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
       return result;
     }
 
@@ -531,16 +575,39 @@ class SessionCookieSentinel {
     Stopwatch stopwatch,
   ) async {
     debugPrint('[Sentinel] nuclear reset for $name @ $url');
+    CookieLogger.nuclearReset(
+      event: 'triggered',
+      url: url,
+      reason: 'sweep verify failed for $name',
+    );
     final nuclear = await nuclearReset(url);
+    CookieLogger.nuclearReset(
+      event: 'completed',
+      url: url,
+      primingDurationMs: nuclear.primingDuration?.inMilliseconds,
+      totalElapsedMs: nuclear.elapsed.inMilliseconds,
+    );
     final after = await _writer.countCookiesByName(url, name);
+    final status = nuclear.success ? SweepStatus.nuclearReset : SweepStatus.failed;
     final result = SweepResult(
       name: name,
-      status: nuclear.success ? SweepStatus.nuclearReset : SweepStatus.failed,
+      status: status,
       variantsBefore: variantsBefore,
       variantsAfter: after,
       elapsed: stopwatch.elapsed,
     );
     _eventController.add(SweepCompleted(result: result));
+    if (!nuclear.success) {
+      CookieLogger.sweep(
+        event: 'failed',
+        url: url,
+        name: name,
+        variantsBefore: variantsBefore,
+        variantsAfter: after,
+        reason: 'nuclear reset failed: ${nuclear.error}',
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
+    }
     return result;
   }
 
@@ -563,6 +630,14 @@ class SessionCookieSentinel {
         currentGeneration: cur,
       ),
     );
+    CookieLogger.sweep(
+      event: 'cancelled',
+      url: url,
+      name: name,
+      entryGeneration: entryGen,
+      currentGeneration: cur,
+      elapsedMs: stopwatch.elapsedMilliseconds,
+    );
     return SweepResult(
       name: name,
       status: SweepStatus.cancelled,
@@ -584,6 +659,7 @@ class SessionCookieSentinel {
       '[Sentinel] lock timeout for $name (consecutive=$cur, '
       'max=$_maxConsecutiveLockTimeouts)',
     );
+    CookieLogger.lockTimeout(name: name, consecutiveCount: cur);
     return SweepResult(
       name: name,
       status: SweepStatus.failed,

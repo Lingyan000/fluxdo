@@ -1173,7 +1173,7 @@ final migrations = <Migration>[
 **清单执行约定**：
 - 实施每个模块时，对照本清单确认涉及的 V 项已验证
 - 验证结果直接更新到本文档（在该行后追加"已验证 / 结论：xxx"）
-- 未验证的 V 项不得进入灰度阶段 1（见 §12.5）
+- 未验证的 V 项不得进入正式 release（见 §13.4 上线 checklist）
 
 ---
 
@@ -1273,7 +1273,7 @@ class CookieDiagnostics {
 | INT-09 | 跨子域 `_t`（主域 + connect 子域）独立 sweep | 互不干扰 |
 | INT-10 | 服务器下发 `_t=del` | sweep 后 WV 中 `_t` 不存在 |
 | INT-11 | App 杀进程后启动 → 进入 WV | Priming 从 jar 重灌成功，登录态保持 |
-| INT-12 | 阶段 1 灰度的 v0.3.0 用户回退测试 | 远程切到 v03 后 App 启动正常 |
+| INT-12 | v0.3 用户冷启动 v0.4 (migration v5 触发) | 队列文件被解析回灌 jar 后删除, 登录态保持 |
 
 ### 12.3 故障注入
 
@@ -1296,204 +1296,72 @@ class CookieDiagnostics {
 | Priming 重灌 50 个 cookie | iOS 平均耗时 | < 300ms |
 | 自愈完整流程 | p99 | < 800ms |
 
-### 12.5 灰度阶段必跑
+### 12.5 上线前必跑
 
-| 阶段 | 测试要求 |
-|------|----------|
-| 阶段 1 (0.5%) 启动前 | 单元测试 + 集成测试全过 |
-| 阶段 2 (5%) 启动前 | 故障注入全过 |
-| 阶段 3 (50%) 启动前 | 性能测试达标 |
-| 阶段 4 (100%) 启动前 | 真机回归测试报告 |
+| 项 | 要求 |
+|----|------|
+| 单元测试 | §12.1 覆盖矩阵全过 |
+| 集成测试 | §12.2 INT-01 ~ INT-12 全过 |
+| 故障注入 | §12.3 6 条场景全过 |
+| 性能测试 | §12.4 阈值达标 |
+| 真机回归 | 至少 iOS 真机 + Android 真机各跑一遍登录 / 切账号 / CF 验证 / 长会话 |
 
 ---
 
-## 13. 发布与回退策略
+## 13. 发布与监控策略
 
 ### 13.1 设计原则
 
 | 原则 | 说明 |
 |------|------|
-| 用户无感 | 不暴露任何"引擎切换"UI；用户不应知道也不需要知道两个引擎的存在 |
-| 工程有退路 | 通过远程配置可在不发版的情况下紧急回退 |
-| 时间有限 | 旧引擎在 2-3 个版本周期内强制删除，不留长期技术债 |
-| 数据驱动 | 灰度推进由埋点指标决定，不由直觉决定 |
+| v0.4 单一引擎 | v0.3 (`RawSetCookieQueue` 等) 已物理删除，不维护双引擎 |
+| 无 in-app 灰度 | 应用商店渠道发版后所有升级用户直接走 v0.4，不做 user-id hash 分流 |
+| 无远程回退 | 没有 `cookieEngine: v03` 远程开关，出问题只能 hotfix 发版 |
+| 监控驱动 | 上线后通过埋点指标观察健康度，超阈值即触发 hotfix |
 
-### 13.2 远程开关
+**这套设计的代价**：发布后发现 v0.4 严重故障，只能等下一个 hotfix 版本通过审核（iOS App Store 通常 24-48h）。这个代价用更充分的发布前验证（§10 + §12）来对冲。
 
-| 项 | 内容 |
-|----|------|
-| 配置项名 | `cookieEngine` |
-| 类型 | `string`，`'v04'` 或 `'v03'`，默认 `'v04'` |
-| 下发方式 | 通过项目现有远程配置系统下发，不需要 App 发版 |
-| 读取时机 | **仅 App 启动时读取一次**，运行时不响应变更 |
-| 切换边界 | 写入 `SharedPreferences`，下次启动生效 |
-| 用户可见性 | 完全不可见，无任何 UI 选项 |
+### 13.2 关键埋点指标
 
-**为什么不允许运行时切换**：两个引擎的写入语义不同（v0.3.0 有持久化队列、v0.4.0 没有），运行时切换会让正在进行的 cookie 操作处于半完成状态，引入难以排查的 bug。
-
-### 13.3 双引擎共存期的隔离机制
-
-为避免分叉污染整个代码库（参见与用户讨论中拒绝"用户可切换引擎"的理由），在共存期采用**单一入口分流**：
-
-```
-所有 cookie 触发点 → CookieEngineSelector (单例) → 分流到 v0.4 或 v0.3 实现
-
-不在散落各处加 if (engine == v04) { } else { } 判断
-```
-
-| 入口 | 分流对象 |
-|------|----------|
-| `AppCookieManager.onResponse` | v0.4: 路径分流 + Sentinel；v0.3: enqueue |
-| `WebViewHttpAdapter.fetch` 前置 | v0.4: prime + sweep；v0.3: flush queue + repair |
-| WebView 启动 | v0.4: Priming.prime；v0.3: flush queue |
-| 401 拦截 | v0.4: SelfHealingInterceptor；v0.3: 透传 |
-
-代码层面通过抽象基类 `CookieEngine` + 两个实现类 `CookieEngineV3` / `CookieEngineV4` 实现，避免散落 if/else。
-
-### 13.4 灰度发布阶段
-
-```
-┌──────────┬──────────┬──────────────────────────────────────────────┐
-│ 阶段     │ 流量比例 │ 时长        │ 推进条件                           │
-├──────────┼──────────┼─────────────┼────────────────────────────────────┤
-│ Alpha    │ 内部团队 │ 1 周         │ 内部 dogfood,无 P0/P1 异常         │
-│ 阶段 1   │ 0.5%     │ 1 周         │ 关键指标在告警阈值内               │
-│ 阶段 2   │ 5%       │ 1 周         │ 指标稳定,用户反馈无新增登录类问题  │
-│ 阶段 3   │ 50%      │ 1 周         │ 指标持续稳定                       │
-│ 阶段 4   │ 100%     │ 2-4 周观察期 │ 准备进入清理阶段                   │
-│ 清理     │ 100%     │ -            │ 删除 v0.3 代码 + 远程开关          │
-└──────────┴──────────┴─────────────┴────────────────────────────────────┘
-```
-
-**灰度分流方式**：基于用户 ID hash 取模，保证同一用户始终走同一引擎（避免来回切换导致 cookie 污染）。
-
-### 13.5 关键埋点指标
-
-每条都需要在实现中显式埋点。
+实施已完成。所有事件通过 `CookieLogger`（详见 §11.2）持久化到 `LogWriter`，可在线上排查时取出 jsonl 分析。
 
 | 指标 | 定义 | 健康阈值 | 告警阈值 |
 |------|------|----------|----------|
-| `sweep_total` | sweep 调用总次数 | 观察 | - |
 | `sweep_noop_rate` | `noop / total` | ≥ 95% | < 90% |
-| `sweep_swept_rate` | `swept / total`（真的清理多变体） | < 5% | > 10% |
+| `sweep_swept_rate` | `swept / total`（真清理多变体） | < 5% | > 10% |
 | `sweep_variants_before_avg` | 平均触发前变体数 | ≈ 1.0 | > 1.2 |
 | `sweep_failed_rate` | `failed / total` | < 0.01% | > 0.1% |
-| `sweep_duration_p99` | sweep 耗时 p99 | iOS < 50ms / Android < 200ms | iOS > 100ms / Android > 500ms |
 | `nuclear_reset_rate` | Nuclear Reset 触发率 | < 0.001% | > 0.01% |
 | `self_healing_triggered_rate` | 401 自愈触发率 | < 0.1% | > 1% |
 | `self_healing_success_rate` | 自愈成功率 | > 95% | < 85% |
 | `self_healing_to_relogin_rate` | 自愈失败→真登录失效率 | < 0.01% | > 0.1% |
-| `priming_duration_p99` | WV 启动重灌耗时 p99 | < 300ms | > 1000ms |
 | `priming_failure_rate` | priming 失败率 | < 0.01% | > 0.1% |
+| `lock_timeout_rate` | per-name Lock 超时率 | 0 | > 0.001% |
 | `login_lost_user_report` | 用户上报"假登录失效"次数（人工统计） | 0 | > 10/天 |
-| `path_a_response_overhead` | 路径 A onResponse 增加的延迟 | < 50ms | > 200ms |
-| `path_b_response_overhead` | 路径 B onResponse 增加的延迟 | < 80ms | > 300ms |
 
-**重要补充**：除技术指标外，**必须**人工跟踪"登录类用户反馈"——许多多变体问题在埋点上是 sweep 成功（noop_rate 高），但用户体验仍可能因为路径覆盖不全而出现假失效。
+### 13.3 应急流程
 
-### 13.6 自动告警与回滚触发
+当任一指标超告警阈值或用户反馈集中：
 
-满足以下**任一**条件触发自动告警，由值班同学评估是否回滚：
+1. **诊断**：拉取受影响用户的 LogWriter jsonl，按 `type=cookie_engine` 过滤
+2. **判定**：根据事件序列定位失守环节（哪个 sweep 失败、自愈触发原因等）
+3. **止血**：
+   - 严重问题 → 紧急 hotfix 发版（针对性修复 + 提速审核）
+   - 轻微问题 → 收集更多数据后规划下个版本修复
+4. **复盘**：对应 §10 哪条 V 验证项未充分验证、§12 哪条测试未覆盖
 
-| 触发条件 | 严重程度 | 默认处置 |
-|----------|----------|----------|
-| `sweep_failed_rate > 1%` | P0 | 立即回滚 |
-| `nuclear_reset_rate > 0.5%` | P0 | 立即回滚 |
-| `self_healing_to_relogin_rate > 1%` | P0 | 立即回滚 |
-| `priming_failure_rate > 1%` | P1 | 暂停灰度推进 |
-| `sweep_duration_p99` 超阈值 | P2 | 性能调查,不立即回滚 |
-| 24h 内用户反馈"无故被踢出"上升 50% | P0 | 立即回滚 + 紧急排查 |
-| Crash 率上升 > 5% 且涉及 cookie 代码 | P0 | 立即回滚 |
+### 13.4 上线前 checklist
 
-### 13.7 回滚执行流程
-
-```
-1. 远程下发 cookieEngine: 'v03'
-2. 已运行 App 不切换（保护正在进行的操作）
-3. 下次启动 App 时切到 v0.3
-4. 切换是有损的:
-   - v0.4 期间写入的 cookie 在 v0.3 下被读取应该是兼容的（jar 格式不变）
-   - 但 v0.4 删除的 _repairDuplicatedSessionCookiesIfNeeded 在 v0.3 下重新生效
-   - 个别用户可能需要重新登录,这是回滚的必要代价
-5. 同步公告（如有用户感知）
-6. 召集复盘:
-   - 哪条 §10 待验证项失守了？
-   - 修复后下一次灰度从哪个阶段重启？
-```
-
-### 13.8 旧引擎清理时间线
-
-```
-v0.4.0 发布        ├─ 双引擎共存,默认 v0.4
-                  │
-观察期 (2-4 周)    ├─ 监控指标,根据数据决定推进
-                  │
-v0.4.x 稳定确认   ├─ 远程下发"禁用 v0.3 回退"标志
-                  │   代码层面 v0.3 仍存在但不可被切到
-                  │
-v0.5.0           ├─ ★ 代码层面删除 ★
-                  │   - lib/services/network/cookie/raw_set_cookie_queue.dart
-                  │   - lib/services/network/adapters/webview_http_adapter.dart 
-                  │     中的 _repairDuplicatedSessionCookiesIfNeeded
-                  │   - CookieEngineSelector / CookieEngine 抽象层
-                  │   - 远程开关相关代码
-                  │
-v0.5.x 验证      ├─ 确认无残留 v0.3 调用,清理 migration 标记
-```
-
-**硬性要求**：如果 v0.5.0 仍无法删除旧引擎，必须复盘原因——可能是 v0.4.0 设计存在尚未根治的问题，需要进一步设计而不是无限期保留旧引擎。
-
-### 13.9 配置示例
-
-```jsonc
-// 远程配置 schema
-{
-  "cookieEngine": {
-    "type": "string",
-    "default": "v04",
-    "enum": ["v03", "v04"],
-    "grayscale": {
-      "v04": {
-        "byUserIdHashMod": 1000,
-        "stages": [
-          { "version": "0.4.0", "thresholdMod": 5 },     // 0.5%
-          { "version": "0.4.1", "thresholdMod": 50 },    // 5%
-          { "version": "0.4.2", "thresholdMod": 500 },   // 50%
-          { "version": "0.4.3", "thresholdMod": 1000 }   // 100%
-        ]
-      }
-    }
-  }
-}
-```
-
-App 端读取逻辑（伪代码）：
-
-```dart
-Future<CookieEngineVersion> _resolveEngine() async {
-  // 0. 紧急回退：如果远程强制下发 'v03'，立即返回
-  final forced = await remoteConfig.getString('cookieEngine.forced');
-  if (forced == 'v03') return CookieEngineVersion.v03;
-
-  // 1. 灰度分流：基于用户 ID hash
-  final config = await remoteConfig.getMap('cookieEngine.grayscale.v04');
-  final userIdHash = userId.hashCode.abs() % 1000;
-  final stage = _currentStage(appVersion, config);
-  if (userIdHash < stage.thresholdMod) {
-    return CookieEngineVersion.v04;
-  }
-  return CookieEngineVersion.v03;
-}
-```
-
-### 13.10 与本设计文档其他章节的关系
-
-| 关系 | 说明 |
-|------|------|
-| §3 技术依据 | 不变。技术依据本身就是 v0.4 设计的基础,与发布策略无关 |
-| §5 模块设计 | 需补充 `CookieEngine` 抽象基类和 `CookieEngineV3` / `CookieEngineV4` 实现 |
-| §8 删除清单 | 调整时间表：清理动作从 v0.4.0 推迟到 v0.5.0 |
-| §10 待实施验证清单 | 阶段 1 灰度结束前必须全部验证完成 |
+| 项 | 状态 |
+|----|------|
+| §10 V1-V13 待验证清单全部完成 | □（V11 已确认；V1-V10、V12-V13 待真机验证） |
+| §12.1 单元测试覆盖矩阵 | □ |
+| §12.2 集成测试 INT-01 ~ INT-12 | □ |
+| §12.3 故障注入清单 6 条 | □ |
+| §12.4 性能预算达标 | □ |
+| 真机回归测试报告 | □ |
+| `dart analyze` 0 error / 0 warning（cookie 相关） | ✓ |
+| 埋点接入完成（11 类事件） | ✓ |
 
 ---
 
