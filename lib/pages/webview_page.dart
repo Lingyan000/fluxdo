@@ -321,7 +321,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                 setState(() => _currentTitle = title);
                               }
                             },
-                            onDownloadStartRequest: (controller, request) {
+                            onDownloadStarting: (controller, request) {
                               final url = request.url.toString();
                               ref
                                   .read(downloadProvider.notifier)
@@ -332,6 +332,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                     mimeType: request.mimeType,
                                     contentLength: request.contentLength,
                                   );
+                              return null;
                             },
                           ),
                           getController: () => _controller,

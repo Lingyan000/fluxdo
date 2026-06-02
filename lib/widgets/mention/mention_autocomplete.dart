@@ -480,7 +480,7 @@ class _MentionItemTile extends StatelessWidget {
           color: item.isGroup
               ? theme.colorScheme.onSecondaryContainer
               : theme.colorScheme.onPrimaryContainer,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           fontSize: 12, // 调小 (14->12)
         ),
       ),
@@ -499,7 +499,7 @@ class _MentionItemTile extends StatelessWidget {
         Text(
           '@$username',
           style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,

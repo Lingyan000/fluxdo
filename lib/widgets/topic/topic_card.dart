@@ -55,7 +55,7 @@ class TopicCard extends ConsumerWidget {
     // 2. 本级 Logo
     // 3. 父级 FA Icon
     // 4. 父级 Logo
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
@@ -120,7 +120,7 @@ class TopicCard extends ConsumerWidget {
                                     TextSpan(
                                       style: theme.textTheme.titleMedium
                                           ?.copyWith(
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.w500,
                                             height: 1.3,
                                             color: isUnread
                                                 ? theme.colorScheme.onSurface
@@ -185,7 +185,7 @@ class TopicCard extends ConsumerWidget {
                                           context,
                                           topic.title,
                                           theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.w500,
                                             height: 1.3,
                                             color: isUnread
                                                 ? theme.colorScheme.onSurface
@@ -332,7 +332,7 @@ class TopicCard extends ConsumerWidget {
           topic.lastPosterUsername![0].toUpperCase(),
           style: TextStyle(
             fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: theme.colorScheme.onSecondaryContainer,
           ),
         ),
@@ -356,7 +356,7 @@ class TopicCard extends ConsumerWidget {
           '${topic.unread}',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onPrimary,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       );
@@ -408,7 +408,7 @@ class TopicCard extends ConsumerWidget {
           NumberUtils.formatCount(count),
           style: theme.textTheme.labelSmall?.copyWith(
             color: effectiveColor,
-            fontWeight: bold ? FontWeight.w700 : null,
+            fontWeight: bold ? FontWeight.w600 : null,
           ),
         ),
       ],
@@ -446,7 +446,7 @@ class CompactTopicCard extends ConsumerWidget {
     final category = categoryMap?[categoryId];
 
     // 图标逻辑
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
@@ -519,7 +519,7 @@ class CompactTopicCard extends ConsumerWidget {
                     TextSpan(
                       style: theme.textTheme.labelMedium?.copyWith(
                         fontWeight: isUnread
-                            ? FontWeight.w600
+                            ? FontWeight.w500
                             : FontWeight.w400,
                         color: isUnread
                             ? theme.colorScheme.onSurface
@@ -569,7 +569,7 @@ class CompactTopicCard extends ConsumerWidget {
                           topic.title,
                           theme.textTheme.labelMedium?.copyWith(
                             fontWeight: isUnread
-                                ? FontWeight.w600
+                                ? FontWeight.w500
                                 : FontWeight.w400,
                             color: isUnread
                                 ? theme.colorScheme.onSurface
@@ -602,7 +602,7 @@ class CompactTopicCard extends ConsumerWidget {
                       '${topic.unread}',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         fontSize: 9,
                       ),
                     ),

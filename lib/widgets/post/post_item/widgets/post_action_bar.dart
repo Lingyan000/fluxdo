@@ -144,7 +144,7 @@ class _PostActionBarState extends State<PostActionBar> {
                                 color: showReplies
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -298,7 +298,7 @@ class _PostActionBarState extends State<PostActionBar> {
                         color: widget.currentUserReaction != null
                             ? theme.colorScheme.primary
                             : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(width: 6),

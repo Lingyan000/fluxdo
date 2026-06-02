@@ -72,7 +72,7 @@ class ReadLaterSheet extends ConsumerWidget {
                       Text(
                         context.l10n.readLater_title,
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(width: 6),

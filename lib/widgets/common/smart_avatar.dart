@@ -152,7 +152,7 @@ class _SmartAvatarState extends State<SmartAvatar> {
           widget.fallbackText![0].toUpperCase(),
           style: TextStyle(
             color: fgColor,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             fontSize: radius * 0.8,
           ),
         ),

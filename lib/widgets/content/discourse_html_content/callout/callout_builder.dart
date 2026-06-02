@@ -61,7 +61,7 @@ Widget buildCalloutBlock({
   final hasContent = textOnly.isNotEmpty || hasCodeBlock;
 
   final titleStyle = theme.textTheme.titleSmall?.copyWith(
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w500,
     color: config.color,
   );
 

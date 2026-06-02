@@ -75,7 +75,7 @@ class _HolographicTextState extends State<HolographicText>
         widget.text,
         style: TextStyle(
           fontSize: widget.fontSize,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
         ),
         overflow: TextOverflow.ellipsis,
         maxLines: 1,

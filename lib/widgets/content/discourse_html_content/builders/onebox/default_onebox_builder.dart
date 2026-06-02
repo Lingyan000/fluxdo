@@ -91,7 +91,7 @@ Widget _buildWithThumbnail({
               Text(
                 title,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -136,7 +136,7 @@ Widget _buildWithoutThumbnail({
         Text(
           title,
           style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,

@@ -115,7 +115,7 @@ class _ExportSheetState extends State<ExportSheet> {
               child: Text(
                 context.l10n.export_title,
                 style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

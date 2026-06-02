@@ -22,6 +22,7 @@ import '../services/hcaptcha_accessibility_service.dart';
 import '../services/webview_settings.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../services/log/log_writer.dart';
+import '../services/login_ready_coordinator.dart';
 import '../widgets/common/dismissible_popup_menu.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -168,13 +169,13 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                 Offstage(
                   offstage: _webViewSnapshot != null,
                   child: WebViewSettings.wrapWithScrollFix(
-                  InAppWebView(
-                    webViewEnvironment: windowsWebViewEnvironment,
-                    initialSettings: WebViewSettings.visible,
-                    initialUserScripts: UnmodifiableListView([
-                      ...WebViewSettings.ios15PolyfillScripts,
-                      UserScript(
-                        source: '''
+                    InAppWebView(
+                      webViewEnvironment: windowsWebViewEnvironment,
+                      initialSettings: WebViewSettings.visible,
+                      initialUserScripts: UnmodifiableListView([
+                        ...WebViewSettings.ios15PolyfillScripts,
+                        UserScript(
+                          source: '''
                           new MutationObserver(function(_, obs) {
                             var el = document.querySelector('[data-preloaded]');
                             if (!el) return;
@@ -188,104 +189,107 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                             window.__rawPreloaded = parts.join('\\n');
                           }).observe(document.documentElement, {childList: true, subtree: true});
                         ''',
-                        injectionTime:
-                            UserScriptInjectionTime.AT_DOCUMENT_START,
-                      ),
-                    ]),
-                    onReceivedServerTrustAuthRequest: (_, challenge) =>
-                        WebViewSettings.handleServerTrustAuthRequest(challenge),
-                    onWebViewCreated: (controller) async {
-                      _controller = controller;
-                      // 注册 JS Handler，用于在登录按钮点击时接收凭证
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onLoginCredentials',
-                        callback: (args) {
-                          if (args.isNotEmpty &&
-                              ref.read(preferencesProvider).autoFillLogin) {
-                            try {
-                              final data = args[0] as Map<String, dynamic>;
-                              final username = data['username'] as String?;
-                              final password = data['password'] as String?;
-                              if (username != null &&
-                                  username.isNotEmpty &&
-                                  password != null &&
-                                  password.isNotEmpty) {
-                                _credentialStore.save(username, password);
-                                if (mounted) {
-                                  setState(() => _savedUsername = username);
-                                }
-                              }
-                            } catch (_) {}
-                          }
-                        },
-                      );
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onFingerprintDone',
-                        callback: (_) {
-                          _fingerprintDone = true;
-                          final c = _fingerprintCompleter;
-                          if (c != null && !c.isCompleted) c.complete();
-                          return null;
-                        },
-                      );
-                      // 等待 cookie flush 完成再加载 URL，
-                      // 确保 WebView 引擎初始化后 cookie 已就位
-                      await _awaitInitialCookieFlush();
-                      await controller.loadUrl(
-                        urlRequest: URLRequest(
-                          url: WebUri(
-                            widget.initialUrl ??
-                                '${AppConstants.baseUrl}/login',
-                          ),
+                          injectionTime:
+                              UserScriptInjectionTime.AT_DOCUMENT_START,
                         ),
-                      );
-                      // Android: 启用 WebAuthn/PassKey 支持
-                      if (Platform.isAndroid) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          const MethodChannel('com.fluxdo/webauthn')
-                              .invokeMethod('enableWebAuthentication');
-                        });
-                      }
-                    },
-                    onLoadStart: (controller, url) => setState(() {
-                      _isLoading = true;
-                      _url = url?.toString() ?? '';
-                      _lastHomeResponseUrl = null;
-                    }),
-                    onProgressChanged: (controller, progress) =>
-                        setState(() => _progress = progress / 100),
-                    onLoadResource: (controller, resource) {
-                      _handleLoadedResource(controller, resource);
-                    },
-                    onLoadStop: (controller, url) async {
-                      setState(() {
-                        _isLoading = false;
+                      ]),
+                      onReceivedServerTrustAuthRequest: (_, challenge) =>
+                          WebViewSettings.handleServerTrustAuthRequest(
+                            challenge,
+                          ),
+                      onWebViewCreated: (controller) async {
+                        _controller = controller;
+                        // 注册 JS Handler，用于在登录按钮点击时接收凭证
+                        controller.addJavaScriptHandler(
+                          handlerName: 'onLoginCredentials',
+                          callback: (args) {
+                            if (args.isNotEmpty &&
+                                ref.read(preferencesProvider).autoFillLogin) {
+                              try {
+                                final data = args[0] as Map<String, dynamic>;
+                                final username = data['username'] as String?;
+                                final password = data['password'] as String?;
+                                if (username != null &&
+                                    username.isNotEmpty &&
+                                    password != null &&
+                                    password.isNotEmpty) {
+                                  _credentialStore.save(username, password);
+                                  if (mounted) {
+                                    setState(() => _savedUsername = username);
+                                  }
+                                }
+                              } catch (_) {}
+                            }
+                          },
+                        );
+                        controller.addJavaScriptHandler(
+                          handlerName: 'onFingerprintDone',
+                          callback: (_) {
+                            _fingerprintDone = true;
+                            final c = _fingerprintCompleter;
+                            if (c != null && !c.isCompleted) c.complete();
+                            return null;
+                          },
+                        );
+                        // 等待 cookie flush 完成再加载 URL，
+                        // 确保 WebView 引擎初始化后 cookie 已就位
+                        await _awaitInitialCookieFlush();
+                        await controller.loadUrl(
+                          urlRequest: URLRequest(
+                            url: WebUri(
+                              widget.initialUrl ??
+                                  '${AppConstants.baseUrl}/login',
+                            ),
+                          ),
+                        );
+                        // Android: 启用 WebAuthn/PassKey 支持
+                        if (Platform.isAndroid) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            const MethodChannel(
+                              'com.fluxdo/webauthn',
+                            ).invokeMethod('enableWebAuthentication');
+                          });
+                        }
+                      },
+                      onLoadStart: (controller, url) => setState(() {
+                        _isLoading = true;
                         _url = url?.toString() ?? '';
-                      });
-                      _recheckCount = 0;
-                      await WebViewSettings.injectScrollFix(controller);
-                      _injectFingerprintHook(controller);
-                      // 自动填充登录表单
-                      await _autoFillLoginForm(controller, url);
-                      // 自动检测登录状态
-                      await _checkLoginStatus(
-                        controller,
-                        currentUrl: url?.toString(),
-                      );
-                    },
-                    onUpdateVisitedHistory: (controller, url, isReload) {
-                      if (!_loginHandled && isReload != true) {
-                        // SPA 路由变化时也尝试检测登录状态
+                        _lastHomeResponseUrl = null;
+                      }),
+                      onProgressChanged: (controller, progress) =>
+                          setState(() => _progress = progress / 100),
+                      onLoadResource: (controller, resource) {
+                        _handleLoadedResource(controller, resource);
+                      },
+                      onLoadStop: (controller, url) async {
+                        setState(() {
+                          _isLoading = false;
+                          _url = url?.toString() ?? '';
+                        });
                         _recheckCount = 0;
-                        _checkLoginStatus(
+                        await WebViewSettings.injectScrollFix(controller);
+                        _injectFingerprintHook(controller);
+                        // 自动填充登录表单
+                        await _autoFillLoginForm(controller, url);
+                        // 自动检测登录状态
+                        await _checkLoginStatus(
                           controller,
                           currentUrl: url?.toString(),
                         );
-                      }
-                    },
+                      },
+                      onUpdateVisitedHistory: (controller, url, isReload) {
+                        if (!_loginHandled && isReload != true) {
+                          // SPA 路由变化时也尝试检测登录状态
+                          _recheckCount = 0;
+                          _checkLoginStatus(
+                            controller,
+                            currentUrl: url?.toString(),
+                          );
+                        }
+                      },
+                    ),
+                    getController: () => _controller,
                   ),
-                  getController: () => _controller,
-                ),
                 ),
                 if (_webViewSnapshot != null)
                   Positioned.fill(
@@ -510,34 +514,36 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       }
 
       _loginHandled = true;
-      final fingerprintFuture = _waitForFingerprintPost();
+      // 指纹 POST 改为 fire-and-forget：后续 _finalizeLoginBeforeExit +
+      // evaluateJavascript + _finalizeLoginBootstrap 链路本身就会 await 一段时间，
+      // 足以让 WebView 内的 visitor_id POST 自然完成；
+      // 不再为指纹单独等待最多 15 秒，避免阻塞登录交接。
+      unawaited(_waitForFingerprintPost());
       final finalToken = await _finalizeLoginBeforeExit(
         controller,
         username: username,
         currentUrl: currentUrl,
         webViewToken: tToken,
       );
-      await fingerprintFuture;
-
       String? pageHtml;
       try {
-        pageHtml = await controller.evaluateJavascript(
-          source: 'window.__rawPreloaded || null',
-        ) as String?;
+        pageHtml =
+            await controller.evaluateJavascript(
+                  source: 'window.__rawPreloaded || null',
+                )
+                as String?;
       } catch (_) {}
+
+      await _finalizeLoginBootstrap(
+        currentUrl: currentUrl,
+        token: finalToken,
+        pageHtml: pageHtml,
+      );
 
       if (mounted) {
         ToastService.showSuccess(S.current.webviewLogin_loginSuccess);
         Navigator.of(context).pop(true);
       }
-
-      unawaited(
-        _finalizeLoginAfterExit(
-          currentUrl: currentUrl,
-          token: finalToken,
-          pageHtml: pageHtml,
-        ),
-      );
     } finally {
       _loginInProgress = false;
     }
@@ -567,9 +573,10 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         ? jarToken
         : webViewToken;
     final tokenMatch = jarToken == webViewToken;
-    final jarSessionCookies = await _cookieJar.getSessionCookieDiagnosticsForRequest(
-      uri: Uri.parse(AppConstants.baseUrl),
-    );
+    final jarSessionCookies = await _cookieJar
+        .getSessionCookieDiagnosticsForRequest(
+          uri: Uri.parse(AppConstants.baseUrl),
+        );
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': tokenMatch ? 'info' : 'warning',
@@ -592,31 +599,40 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     }
 
     _service.setToken(finalToken);
-    _service.onLoginSuccess(finalToken);
     return finalToken;
   }
 
-  Future<void> _finalizeLoginAfterExit({
+  Future<void> _finalizeLoginBootstrap({
     required String? currentUrl,
     required String token,
     String? pageHtml,
   }) async {
+    // PreloadedDataService.refresh 底层 Dio 请求没有显式超时，极端网络下
+    // 可能挂住很久；这里整段限时 8 秒，超时也要兜底广播登录成功，
+    // 避免用户被永久卡在「正在同步登录状态…」界面。
+    const finalizeTimeout = Duration(seconds: 8);
+
+    var loginReadyNotified = false;
     try {
-      var reusedPreloaded = false;
-      if (pageHtml != null && pageHtml.isNotEmpty) {
-        reusedPreloaded =
-            await PreloadedDataService().hydrateFromHtml(pageHtml);
-      }
-      if (!reusedPreloaded) {
-        debugPrint('[Login] 当前页面无可复用首页数据，回退到 HTTP refresh');
-        await PreloadedDataService().refresh();
-      }
+      final reusedPreloaded =
+          await LoginReadyCoordinator(
+            hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
+            refreshPreloadedData: () async {
+              debugPrint('[Login] 当前页面无可复用首页数据，回退到 HTTP refresh');
+              await PreloadedDataService().refresh();
+            },
+            notifyLoginReady: (finalToken) {
+              loginReadyNotified = true;
+              _service.onLoginSuccess(finalToken);
+            },
+          ).finalize(token: token, pageHtml: pageHtml).timeout(finalizeTimeout);
 
       final jarToken = await _cookieJar.getTToken();
       final tokenMatch = jarToken == token;
-      final jarSessionCookies = await _cookieJar.getSessionCookieDiagnosticsForRequest(
-        uri: Uri.parse(AppConstants.baseUrl),
-      );
+      final jarSessionCookies = await _cookieJar
+          .getSessionCookieDiagnosticsForRequest(
+            uri: Uri.parse(AppConstants.baseUrl),
+          );
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
         'level': 'info',
@@ -627,11 +643,26 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         'webViewTokenLen': token.length,
         'tokenMatch': tokenMatch,
         'currentUrl': currentUrl,
+        'reusedPreloaded': reusedPreloaded,
         'jarSessionCookies': jarSessionCookies,
       });
-
+    } on TimeoutException {
+      debugPrint('[Login] 登录态收尾超时（${finalizeTimeout.inSeconds}s），走兜底广播');
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': 'warning',
+        'type': 'auth',
+        'event': 'login_bootstrap_timeout',
+        'message': '登录态收尾超时，已兜底广播登录成功',
+        'currentUrl': currentUrl,
+        'timeoutSeconds': finalizeTimeout.inSeconds,
+      });
     } catch (e) {
-      debugPrint('[Login] 登录态后台收尾失败: $e');
+      debugPrint('[Login] 登录态收尾失败: $e');
+    } finally {
+      if (!loginReadyNotified) {
+        _service.onLoginSuccess(token);
+      }
     }
   }
 
@@ -687,7 +718,8 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
   }
 
   void _injectFingerprintHook(InAppWebViewController controller) {
-    controller.evaluateJavascript(source: '''
+    controller.evaluateJavascript(
+      source: '''
       (function() {
         if (window.__fpHooked) return;
         window.__fpHooked = true;
@@ -712,7 +744,8 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
           return _s.apply(this, arguments);
         };
       })();
-    ''');
+    ''',
+    );
   }
 
   Future<void> _waitForFingerprintPost() async {

@@ -160,7 +160,7 @@ class _GroupedBoostBubble extends StatelessWidget {
                   '${group.count}',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     fontSize: 10,
                     height: 1.1,
                   ),

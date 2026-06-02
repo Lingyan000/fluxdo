@@ -250,7 +250,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
                   child: Text(
                     '$_quality%',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -602,7 +602,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                     child: Text(
                       '$_quality%',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),

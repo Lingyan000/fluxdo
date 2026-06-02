@@ -7,7 +7,10 @@ extension _PostFooterReplyActions on _PostFooterSectionState {
     _isLoadingRepliesNotifier.value = true;
     try {
       final after = _replies.isNotEmpty ? _replies.last.postNumber : 1;
-      final replies = await _service.getPostReplies(widget.post.id, after: after);
+      final replies = await _service.getPostReplies(
+        widget.post.id,
+        after: after,
+      );
       if (mounted) {
         _replies.addAll(replies);
         _isLoadingRepliesNotifier.value = false;
@@ -32,6 +35,8 @@ extension _PostFooterReplyActions on _PostFooterSectionState {
         context: context,
         post: widget.post,
         topicId: widget.topicId,
+        topicTitle: widget.topicTitle,
+        isPrivateMessageTopic: widget.isPrivateMessageTopic,
         onJumpToPost: widget.onJumpToPost,
       );
       return;

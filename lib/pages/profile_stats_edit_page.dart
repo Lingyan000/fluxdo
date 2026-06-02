@@ -99,7 +99,7 @@ class _SectionHeader extends StatelessWidget {
       child: Row(
         children: [
           Text(title, style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurfaceVariant,
           )),
           if (trailing != null) ...[const Spacer(), trailing!],

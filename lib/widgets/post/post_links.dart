@@ -124,7 +124,7 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
                     context.l10n.post_relatedLinks,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -138,7 +138,7 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
                       '${links.length}',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),

@@ -87,6 +87,7 @@ class SwipeActionCell extends StatefulWidget {
   final List<SwipeAction> trailingActions;
   final double actionWidth;
   final double borderRadius;
+  final bool enableLongPressMenu;
 
   const SwipeActionCell({
     super.key,
@@ -94,6 +95,7 @@ class SwipeActionCell extends StatefulWidget {
     required this.trailingActions,
     this.actionWidth = 74.0,
     this.borderRadius = 16.0,
+    this.enableLongPressMenu = true,
   });
 
   @override
@@ -287,7 +289,7 @@ class _SwipeActionCellState extends State<SwipeActionCell>
       onHorizontalDragStart: _onDragStart,
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
-      onLongPress: _onLongPress,
+      onLongPress: widget.enableLongPressMenu ? _onLongPress : null,
       behavior: HitTestBehavior.opaque,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(widget.borderRadius),

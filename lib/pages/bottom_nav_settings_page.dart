@@ -89,7 +89,6 @@ class _BottomNavSettingsPageState
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex -= 1;
     // 首页锁 0 位
     if (_enabledIds[oldIndex] == NavEntryIds.home) return;
     if (newIndex == 0) newIndex = 1;
@@ -274,7 +273,7 @@ class _SectionHeader extends StatelessWidget {
           Text(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: theme.colorScheme.primary,
             ),
           ),
@@ -321,7 +320,7 @@ class _PreviewBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         buildDefaultDragHandles: false,
-        onReorder: onReorder,
+        onReorderItem: onReorder,
         onReorderStart: (_) => HapticFeedback.mediumImpact(),
         onReorderEnd: (_) => HapticFeedback.selectionClick(),
         itemCount: entries.length,
@@ -535,7 +534,7 @@ class _GestureGroup extends StatelessWidget {
               Text(
                 group.title,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],

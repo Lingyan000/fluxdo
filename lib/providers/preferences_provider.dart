@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
@@ -37,6 +38,8 @@ enum BookmarksOpenMode {
 }
 
 class AppPreferences {
+  static const Object _unset = Object();
+
   final bool autoPanguSpacing;
 
   /// 阅读时自动优化中英文混排间距
@@ -56,6 +59,19 @@ class AppPreferences {
 
   /// 自动识别剪贴板中的 Linux.do 话题链接
   final bool clipboardTopicLinkDetection;
+
+  /// 话题关键词过滤列表（原样存储，仅 trim 去重去空，保留用户输入大小写以便回显）
+  final List<String> topicFilterKeywords;
+
+  /// 话题关键词过滤：是否启用完整词匹配（仅影响英文/数字等 word-char 关键词）
+  final bool topicFilterWholeWord;
+
+  /// 话题关键词过滤的归一化形式（lowercase），匹配时使用
+  late final List<String> normalizedFilterKeywords = List.unmodifiable(
+    topicFilterKeywords
+        .map((keyword) => keyword.trim().toLowerCase())
+        .where((keyword) => keyword.isNotEmpty),
+  );
 
   /// 崩溃日志上报（仅 Android）
   final bool crashlytics;
@@ -80,6 +96,12 @@ class AppPreferences {
 
   /// AI 助手左滑入口（PageView 模式）
   final bool aiSwipeEntry;
+
+  /// 发帖前 AI 审核
+  final bool aiPostReviewEnabled;
+
+  /// 发帖前 AI 审核使用的模型 key（providerId:modelId）
+  final String? aiPostReviewModelKey;
 
   /// 对话框背景高斯模糊
   final bool dialogBlur;
@@ -114,7 +136,10 @@ class AppPreferences {
   /// 底栏入口 id 列表（顺序即显示顺序）
   final List<String> bottomNavIds;
 
-  const AppPreferences({
+  /// Android 屏幕刷新率偏好（0 = auto/跟随系统，其它为目标刷新率，如 60 / 90 / 120）
+  final int displayModeRefreshRate;
+
+  AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
     required this.anonymousShare,
@@ -124,6 +149,8 @@ class AppPreferences {
     required this.shareImageThemeIndex,
     required this.autoFillLogin,
     required this.clipboardTopicLinkDetection,
+    required this.topicFilterKeywords,
+    this.topicFilterWholeWord = false,
     required this.crashlytics,
     required this.androidNativeCdp,
     required this.portraitLock,
@@ -132,6 +159,8 @@ class AppPreferences {
     required this.cfClearanceRefresh,
     required this.expandRelatedLinks,
     required this.aiSwipeEntry,
+    this.aiPostReviewEnabled = false,
+    this.aiPostReviewModelKey,
     required this.dialogBlur,
     this.showSignatures = true,
     this.defaultNestedView = false,
@@ -143,6 +172,7 @@ class AppPreferences {
     required this.bottomSingleTapAction,
     required this.bottomDoubleTapAction,
     required this.bottomNavIds,
+    this.displayModeRefreshRate = 0,
   });
 
   AppPreferences copyWith({
@@ -155,6 +185,8 @@ class AppPreferences {
     int? shareImageThemeIndex,
     bool? autoFillLogin,
     bool? clipboardTopicLinkDetection,
+    List<String>? topicFilterKeywords,
+    bool? topicFilterWholeWord,
     bool? crashlytics,
     bool? androidNativeCdp,
     bool? portraitLock,
@@ -163,6 +195,8 @@ class AppPreferences {
     bool? cfClearanceRefresh,
     bool? expandRelatedLinks,
     bool? aiSwipeEntry,
+    bool? aiPostReviewEnabled,
+    Object? aiPostReviewModelKey = _unset,
     bool? dialogBlur,
     bool? showSignatures,
     bool? defaultNestedView,
@@ -174,6 +208,7 @@ class AppPreferences {
     NavTapAction? bottomSingleTapAction,
     NavTapAction? bottomDoubleTapAction,
     List<String>? bottomNavIds,
+    int? displayModeRefreshRate,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -187,6 +222,8 @@ class AppPreferences {
       autoFillLogin: autoFillLogin ?? this.autoFillLogin,
       clipboardTopicLinkDetection:
           clipboardTopicLinkDetection ?? this.clipboardTopicLinkDetection,
+      topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
+      topicFilterWholeWord: topicFilterWholeWord ?? this.topicFilterWholeWord,
       crashlytics: crashlytics ?? this.crashlytics,
       androidNativeCdp: androidNativeCdp ?? this.androidNativeCdp,
       portraitLock: portraitLock ?? this.portraitLock,
@@ -195,6 +232,10 @@ class AppPreferences {
       cfClearanceRefresh: cfClearanceRefresh ?? this.cfClearanceRefresh,
       expandRelatedLinks: expandRelatedLinks ?? this.expandRelatedLinks,
       aiSwipeEntry: aiSwipeEntry ?? this.aiSwipeEntry,
+      aiPostReviewEnabled: aiPostReviewEnabled ?? this.aiPostReviewEnabled,
+      aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
+          ? this.aiPostReviewModelKey
+          : aiPostReviewModelKey as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
@@ -208,6 +249,8 @@ class AppPreferences {
       bottomDoubleTapAction:
           bottomDoubleTapAction ?? this.bottomDoubleTapAction,
       bottomNavIds: bottomNavIds ?? this.bottomNavIds,
+      displayModeRefreshRate:
+          displayModeRefreshRate ?? this.displayModeRefreshRate,
     );
   }
 }
@@ -224,6 +267,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _autoFillLoginKey = 'pref_auto_fill_login';
   static const String _clipboardTopicLinkDetectionKey =
       'pref_clipboard_topic_link_detection';
+  static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
+  static const String _topicFilterWholeWordKey = 'pref_topic_filter_whole_word';
   static const String _crashlyticsKey = 'pref_crashlytics';
   static const String _androidNativeCdpKey = AndroidCdpFeature.prefKey;
   static const String _portraitLockKey = 'pref_portrait_lock';
@@ -233,6 +278,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       CfClearanceRefreshService.prefKeyEnabled;
   static const String _expandRelatedLinksKey = 'pref_expand_related_links';
   static const String _aiSwipeEntryKey = 'pref_ai_swipe_entry';
+  static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
+  static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
@@ -246,6 +293,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _bottomDoubleTapActionKey =
       'pref_bottom_double_tap_action';
   static const String _bottomNavIdsKey = 'pref_bottom_nav_ids';
+  static const String _displayModeRefreshRateKey =
+      'pref_display_mode_refresh_rate';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -265,6 +314,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           autoFillLogin: _prefs.getBool(_autoFillLoginKey) ?? true,
           clipboardTopicLinkDetection:
               _prefs.getBool(_clipboardTopicLinkDetectionKey) ?? false,
+          topicFilterKeywords:
+              _prefs.getStringList(_topicFilterKeywordsKey) ?? const [],
+          topicFilterWholeWord:
+              _prefs.getBool(_topicFilterWholeWordKey) ?? false,
           crashlytics: _prefs.getBool(_crashlyticsKey) ?? true,
           androidNativeCdp: _prefs.getBool(_androidNativeCdpKey) ?? false,
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
@@ -273,6 +326,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           cfClearanceRefresh: _prefs.getBool(_cfClearanceRefreshKey) ?? false,
           expandRelatedLinks: _prefs.getBool(_expandRelatedLinksKey) ?? false,
           aiSwipeEntry: _prefs.getBool(_aiSwipeEntryKey) ?? false,
+          aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
+          aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
@@ -296,6 +351,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           bottomNavIds:
               _prefs.getStringList(_bottomNavIdsKey) ??
               const [NavEntryIds.home, NavEntryIds.profile],
+          displayModeRefreshRate:
+              _prefs.getInt(_displayModeRefreshRateKey) ?? 0,
         ),
       ) {
     isPortraitLocked = state.portraitLock;
@@ -351,6 +408,27 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setBool(_clipboardTopicLinkDetectionKey, enabled);
   }
 
+  Future<void> setTopicFilterKeywords(List<String> keywords) async {
+    final deduped = keywords
+        .map((keyword) => keyword.trim())
+        .where((keyword) => keyword.isNotEmpty)
+        .toSet()
+        .toList();
+    final current = state.topicFilterKeywords;
+    if (deduped.length == current.length &&
+        const ListEquality<String>().equals(deduped, current)) {
+      return;
+    }
+    state = state.copyWith(topicFilterKeywords: deduped);
+    await _prefs.setStringList(_topicFilterKeywordsKey, deduped);
+  }
+
+  Future<void> setTopicFilterWholeWord(bool enabled) async {
+    if (state.topicFilterWholeWord == enabled) return;
+    state = state.copyWith(topicFilterWholeWord: enabled);
+    await _prefs.setBool(_topicFilterWholeWordKey, enabled);
+  }
+
   Future<void> setCrashlytics(bool enabled) async {
     state = state.copyWith(crashlytics: enabled);
     await _prefs.setBool(_crashlyticsKey, enabled);
@@ -403,6 +481,20 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setAiSwipeEntry(bool enabled) async {
     state = state.copyWith(aiSwipeEntry: enabled);
     await _prefs.setBool(_aiSwipeEntryKey, enabled);
+  }
+
+  Future<void> setAiPostReviewEnabled(bool enabled) async {
+    state = state.copyWith(aiPostReviewEnabled: enabled);
+    await _prefs.setBool(_aiPostReviewEnabledKey, enabled);
+  }
+
+  Future<void> setAiPostReviewModelKey(String? key) async {
+    state = state.copyWith(aiPostReviewModelKey: key);
+    if (key == null || key.isEmpty) {
+      await _prefs.remove(_aiPostReviewModelPrefKey);
+    } else {
+      await _prefs.setString(_aiPostReviewModelPrefKey, key);
+    }
   }
 
   Future<void> setDialogBlur(bool enabled) async {
@@ -465,6 +557,14 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setBottomNavIds(List<String> ids) async {
     state = state.copyWith(bottomNavIds: ids);
     await _prefs.setStringList(_bottomNavIdsKey, ids);
+  }
+
+  /// 设置 Android 屏幕刷新率偏好（0 = auto，其它为目标刷新率整数）。
+  /// 实际生效由调用方在写入后调用 FlutterDisplayMode.setPreferredMode 完成。
+  Future<void> setDisplayModeRefreshRate(int rate) async {
+    if (state.displayModeRefreshRate == rate) return;
+    state = state.copyWith(displayModeRefreshRate: rate);
+    await _prefs.setInt(_displayModeRefreshRateKey, rate);
   }
 
   void _syncSchedulerConfig() {

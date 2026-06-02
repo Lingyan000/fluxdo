@@ -216,22 +216,65 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
   ({AiProvider provider, AiModel model})? _currentModel() {
     final selected = ref.read(topicSelectedAiModelProvider(widget.topicId));
     if (selected != null) return selected;
-    // 用户没有显式选择 → 看当前模式的"上次使用"，再看"该模式默认"，
-    // 再 fallback 到该模式可用的第一个，最后才退到全局 default
+
+    // 用户没有显式选择 → 有明确模式时按该模式选；首次进入没有模式时
+    // 默认按文本聊天选，避免被生图默认/上次生图模型带进 image 模式。
     final mode = ref.read(topicChatModeProvider(widget.topicId));
     if (mode != null) {
-      final lastModeUsed = mode == PromptType.image
-          ? ref.read(lastUsedImageAiModelProvider)
-          : ref.read(lastUsedTextAiModelProvider);
-      if (lastModeUsed != null) return lastModeUsed;
-      final modeDefault = mode == PromptType.image
-          ? ref.read(defaultImageAiModelProvider)
-          : ref.read(defaultTextAiModelProvider);
-      if (modeDefault != null) return modeDefault;
+      final modeModel = _preferredModelForMode(mode);
+      if (modeModel != null) return modeModel;
     }
+
+    final textModel = _preferredModelForMode(PromptType.text);
+    if (textModel != null) return textModel;
+
     final defaultModel = ref.read(defaultAiModelProvider);
     final lastUsed = ref.read(lastUsedAiAssistantModelProvider);
     return defaultModel ?? lastUsed;
+  }
+
+  ({AiProvider provider, AiModel model})? _modelByKey(String? key) {
+    if (key == null || key.isEmpty) return null;
+    final separator = key.indexOf(':');
+    if (separator <= 0 || separator == key.length - 1) return null;
+    final providerId = key.substring(0, separator);
+    final modelId = key.substring(separator + 1);
+    final all = ref.read(allAvailableAiModelsProvider);
+    for (final item in all) {
+      if (item.provider.id == providerId && item.model.id == modelId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  bool _matchesMode(AiModel model, PromptType mode) {
+    return mode == PromptType.image
+        ? model.output.contains(Modality.image)
+        : model.output.contains(Modality.text);
+  }
+
+  ({AiProvider provider, AiModel model})? _preferredModelForMode(
+    PromptType mode,
+  ) {
+    final explicitDefault = _modelByKey(
+      mode == PromptType.image
+          ? ref.read(defaultImageAiModelKeyProvider)
+          : ref.read(defaultTextAiModelKeyProvider),
+    );
+    if (explicitDefault != null &&
+        _matchesMode(explicitDefault.model, mode)) {
+      return explicitDefault;
+    }
+
+    final lastModeUsed = mode == PromptType.image
+        ? ref.read(lastUsedImageAiModelProvider)
+        : ref.read(lastUsedTextAiModelProvider);
+    if (lastModeUsed != null && _matchesMode(lastModeUsed.model, mode)) {
+      return lastModeUsed;
+    }
+
+    return _firstModelForMode(mode);
   }
 
   void _rememberModel(({AiProvider provider, AiModel model}) model) {
@@ -255,19 +298,23 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
   ///
   /// 优先级：该模式的 default → 全局 default 如果匹配 → allModels 第一个匹配
   ({AiProvider provider, AiModel model})? _firstModelForMode(PromptType mode) {
-    final modeDefault = mode == PromptType.image
-        ? ref.read(defaultImageAiModelProvider)
-        : ref.read(defaultTextAiModelProvider);
-    if (modeDefault != null) return modeDefault;
-    bool matches(AiModel m) => mode == PromptType.image
-        ? m.output.contains(Modality.image)
-        : m.output.contains(Modality.text);
+    final explicitDefault = _modelByKey(
+      mode == PromptType.image
+          ? ref.read(defaultImageAiModelKeyProvider)
+          : ref.read(defaultTextAiModelKeyProvider),
+    );
+    if (explicitDefault != null &&
+        _matchesMode(explicitDefault.model, mode)) {
+      return explicitDefault;
+    }
 
     final defaultModel = ref.read(defaultAiModelProvider);
-    if (defaultModel != null && matches(defaultModel.model)) return defaultModel;
+    if (defaultModel != null && _matchesMode(defaultModel.model, mode)) {
+      return defaultModel;
+    }
     final all = ref.read(allAvailableAiModelsProvider);
     for (final item in all) {
-      if (matches(item.model)) return item;
+      if (_matchesMode(item.model, mode)) return item;
     }
     return null;
   }
@@ -289,10 +336,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       ref.read(topicChatModeProvider(widget.topicId).notifier).state = mode;
       return;
     }
-    final lastModeUsed = mode == PromptType.image
-        ? ref.read(lastUsedImageAiModelProvider)
-        : ref.read(lastUsedTextAiModelProvider);
-    final target = lastModeUsed ?? _firstModelForMode(mode);
+    final target = _preferredModelForMode(mode);
     ref.read(topicChatModeProvider(widget.topicId).notifier).state = mode;
     if (target != null) {
       _rememberModel(target);
@@ -547,7 +591,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                   Text(
                     title,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                       fontSize: dense ? 15 : 16,
                     ),
                     maxLines: 1,
@@ -908,7 +952,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                       title,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         letterSpacing: 0.5,
                         color: accent,
                       ),
@@ -1009,7 +1053,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
               context.l10n.ai_selectedCount(_selectedMessageIds.length),
               style: const TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -1112,6 +1156,9 @@ class _ModelLogoButton extends StatelessWidget {
             context: context,
             allModels: allModels,
             current: current,
+            mode: current.model.output.contains(Modality.image)
+                ? PromptType.image
+                : PromptType.text,
           );
           if (picked != null) onChanged(picked);
         },
@@ -1206,7 +1253,7 @@ class _SessionHistorySheetState extends State<_SessionHistorySheet> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight:
-                            isCurrent ? FontWeight.w600 : FontWeight.normal,
+                            isCurrent ? FontWeight.w500 : FontWeight.normal,
                         color: isCurrent
                             ? theme.colorScheme.primary
                             : null,
@@ -1358,7 +1405,7 @@ class _ThinkingButton extends StatelessWidget {
       leading: _IdeaIcon(asset: _svgAsset(level), color: color, size: 22),
       title: Text(label, style: TextStyle(
           color: isSelected ? cs.primary : null,
-          fontWeight: isSelected ? FontWeight.w600 : null)),
+          fontWeight: isSelected ? FontWeight.w500 : null)),
       trailing: isSelected
           ? Icon(Icons.check, color: cs.primary, size: 20) : null,
       onTap: () {
@@ -1377,10 +1424,10 @@ class _ThinkingButton extends StatelessWidget {
           color: isSelected ? cs.primary : cs.onSurfaceVariant),
       title: Text(AiL10n.current.thinkingCustom, style: TextStyle(
           color: isSelected ? cs.primary : null,
-          fontWeight: isSelected ? FontWeight.w600 : null)),
+          fontWeight: isSelected ? FontWeight.w500 : null)),
       trailing: isSelected
           ? Text('${current.customBudget}', style: TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary))
+              fontSize: 13, fontWeight: FontWeight.w500, color: cs.primary))
           : null,
       onTap: () {
         Navigator.pop(context);

@@ -130,7 +130,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
                   Text(
                     context.l10n.post_reactions,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Spacer(),
@@ -250,7 +250,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
                     color: isSelected
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 )
               else if (emojiId != null)
@@ -267,7 +267,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
                   color: isSelected
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

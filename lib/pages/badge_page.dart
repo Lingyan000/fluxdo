@@ -134,7 +134,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
                               Text(
                                 context.l10n.badge_grantees,
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: FontWeight.w600,
                                       fontSize: 18,
                                     ),
                               ),
@@ -148,7 +148,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
                                 child: Text(
                                   context.l10n.badge_granteeCount(_badgeDetail!.totalCount),
                                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
@@ -294,7 +294,7 @@ class _BadgeInfoCard extends StatelessWidget {
           Text(
             badge.name,
             style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               height: 1.2,
             ),
             textAlign: TextAlign.center,
@@ -311,7 +311,7 @@ class _BadgeInfoCard extends StatelessWidget {
               typeName,
               style: TextStyle(
                 color: badgeColor,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
             ),
@@ -363,7 +363,7 @@ class _BadgeInfoCard extends StatelessWidget {
                 context.l10n.badge_grantedCount(badge.grantCount),
                 style: TextStyle(
                   color: theme.colorScheme.secondary,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   fontSize: 15,
                 ),
               ),
@@ -430,7 +430,7 @@ class _UserBadgeItem extends StatelessWidget {
                           child: Text(
                             user.username,
                             style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),

@@ -1,51 +1,9 @@
 PODS:
-  - app_links (7.0.0):
-    - Flutter
-  - audio_session (0.0.1):
-    - Flutter
   - chat_bottom_container (0.0.1):
-    - Flutter
-  - connectivity_plus (0.0.1):
     - Flutter
   - cupertino_http (0.0.1):
     - Flutter
     - FlutterMacOS
-  - device_info_plus (0.0.1):
-    - Flutter
-  - DKImagePickerController/Core (4.3.9):
-    - DKImagePickerController/ImageDataManager
-    - DKImagePickerController/Resource
-  - DKImagePickerController/ImageDataManager (4.3.9)
-  - DKImagePickerController/PhotoGallery (4.3.9):
-    - DKImagePickerController/Core
-    - DKPhotoGallery
-  - DKImagePickerController/Resource (4.3.9)
-  - DKPhotoGallery (0.0.19):
-    - DKPhotoGallery/Core (= 0.0.19)
-    - DKPhotoGallery/Model (= 0.0.19)
-    - DKPhotoGallery/Preview (= 0.0.19)
-    - DKPhotoGallery/Resource (= 0.0.19)
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Core (0.0.19):
-    - DKPhotoGallery/Model
-    - DKPhotoGallery/Preview
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Model (0.0.19):
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Preview (0.0.19):
-    - DKPhotoGallery/Model
-    - DKPhotoGallery/Resource
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Resource (0.0.19):
-    - SDWebImage
-    - SwiftyGif
-  - file_picker (0.0.1):
-    - DKImagePickerController/PhotoGallery
-    - Flutter
   - Flutter (1.0.0)
   - flutter_avif_ios (0.0.1):
     - Flutter
@@ -59,32 +17,14 @@ PODS:
     - Mantle
     - SDWebImage
     - SDWebImageWebPCoder
-  - flutter_inappwebview_ios (0.0.1):
-    - Flutter
-    - flutter_inappwebview_ios/Core (= 0.0.1)
-    - swift-collections (~> 1.1.1)
-  - flutter_inappwebview_ios/Core (0.0.1):
-    - Flutter
-    - swift-collections (~> 1.1.1)
-  - flutter_local_notifications (0.0.1):
-    - Flutter
   - flutter_mailer (0.0.1):
     - Flutter
   - flutter_secure_storage (6.0.0):
     - Flutter
   - fluttertoast (0.0.2):
     - Flutter
-  - gal (1.0.0):
-    - Flutter
-    - FlutterMacOS
-  - image_picker_ios (0.0.1):
-    - Flutter
-  - InternalCollectionsUtilities (1.1.1)
   - irondash_engine_context (0.0.1):
     - Flutter
-  - just_audio (0.0.1):
-    - Flutter
-    - FlutterMacOS
   - libwebp (1.5.0):
     - libwebp/demux (= 1.5.0)
     - libwebp/mux (= 1.5.0)
@@ -102,8 +42,6 @@ PODS:
   - Mantle/extobjc (2.2.0)
   - open_filex (0.0.2):
     - Flutter
-  - package_info_plus (0.4.5):
-    - Flutter
   - rhttp (0.0.1):
     - Flutter
   - SDWebImage (5.21.7):
@@ -112,113 +50,42 @@ PODS:
   - SDWebImageWebPCoder (0.15.0):
     - libwebp (~> 1.0)
     - SDWebImage/Core (~> 5.17)
-  - share_plus (0.0.1):
-    - Flutter
-  - shared_preferences_foundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
-  - sqflite_darwin (0.0.4):
-    - Flutter
-    - FlutterMacOS
   - super_native_extensions (0.0.1):
     - Flutter
-  - swift-collections (1.1.1):
-    - swift-collections/BitCollections (= 1.1.1)
-    - swift-collections/DequeModule (= 1.1.1)
-    - swift-collections/HashTreeCollections (= 1.1.1)
-    - swift-collections/HeapModule (= 1.1.1)
-    - swift-collections/OrderedCollections (= 1.1.1)
-  - swift-collections/BitCollections (1.1.1):
-    - InternalCollectionsUtilities (= 1.1.1)
-  - swift-collections/DequeModule (1.1.1):
-    - InternalCollectionsUtilities (= 1.1.1)
-  - swift-collections/HashTreeCollections (1.1.1):
-    - InternalCollectionsUtilities (= 1.1.1)
-  - swift-collections/HeapModule (1.1.1):
-    - InternalCollectionsUtilities (= 1.1.1)
-  - swift-collections/OrderedCollections (1.1.1):
-    - InternalCollectionsUtilities (= 1.1.1)
   - SwiftTryCatch (1.0.0)
-  - SwiftyGif (5.4.5)
-  - ua_client_hints (1.4.1):
-    - Flutter
-  - url_launcher_ios (0.0.1):
-    - Flutter
-  - video_player_avfoundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
-  - wakelock_plus (0.0.1):
-    - Flutter
-  - webview_flutter_wkwebview (0.0.1):
-    - Flutter
-    - FlutterMacOS
   - workmanager_apple (0.0.1):
     - Flutter
 
 DEPENDENCIES:
-  - app_links (from `.symlinks/plugins/app_links/ios`)
-  - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - chat_bottom_container (from `.symlinks/plugins/chat_bottom_container/ios`)
-  - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
   - cupertino_http (from `.symlinks/plugins/cupertino_http/darwin`)
-  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
-  - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
   - flutter_avif_ios (from `.symlinks/plugins/flutter_avif_ios/ios`)
   - flutter_dynamic_icon_plus (from `.symlinks/plugins/flutter_dynamic_icon_plus/ios`)
   - flutter_foreground_task (from `.symlinks/plugins/flutter_foreground_task/ios`)
   - flutter_image_compress_common (from `.symlinks/plugins/flutter_image_compress_common/ios`)
-  - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
-  - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_mailer (from `.symlinks/plugins/flutter_mailer/ios`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
-  - gal (from `.symlinks/plugins/gal/darwin`)
-  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - irondash_engine_context (from `.symlinks/plugins/irondash_engine_context/ios`)
-  - just_audio (from `.symlinks/plugins/just_audio/darwin`)
   - open_filex (from `.symlinks/plugins/open_filex/ios`)
-  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - rhttp (from `.symlinks/plugins/rhttp/ios`)
-  - share_plus (from `.symlinks/plugins/share_plus/ios`)
-  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
-  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
   - super_native_extensions (from `.symlinks/plugins/super_native_extensions/ios`)
   - SwiftTryCatch (from `https://github.com/williamFalcon/SwiftTryCatch.git`, commit `6effaa3`)
-  - ua_client_hints (from `.symlinks/plugins/ua_client_hints/ios`)
-  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
-  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
-  - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
-  - webview_flutter_wkwebview (from `.symlinks/plugins/webview_flutter_wkwebview/darwin`)
   - workmanager_apple (from `.symlinks/plugins/workmanager_apple/ios`)
 
 SPEC REPOS:
   trunk:
-    - DKImagePickerController
-    - DKPhotoGallery
-    - InternalCollectionsUtilities
     - libwebp
     - Mantle
     - SDWebImage
     - SDWebImageWebPCoder
-    - swift-collections
-    - SwiftyGif
 
 EXTERNAL SOURCES:
-  app_links:
-    :path: ".symlinks/plugins/app_links/ios"
-  audio_session:
-    :path: ".symlinks/plugins/audio_session/ios"
   chat_bottom_container:
     :path: ".symlinks/plugins/chat_bottom_container/ios"
-  connectivity_plus:
-    :path: ".symlinks/plugins/connectivity_plus/ios"
   cupertino_http:
     :path: ".symlinks/plugins/cupertino_http/darwin"
-  device_info_plus:
-    :path: ".symlinks/plugins/device_info_plus/ios"
-  file_picker:
-    :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
     :path: Flutter
   flutter_avif_ios:
@@ -229,51 +96,23 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_foreground_task/ios"
   flutter_image_compress_common:
     :path: ".symlinks/plugins/flutter_image_compress_common/ios"
-  flutter_inappwebview_ios:
-    :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
-  flutter_local_notifications:
-    :path: ".symlinks/plugins/flutter_local_notifications/ios"
   flutter_mailer:
     :path: ".symlinks/plugins/flutter_mailer/ios"
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
   fluttertoast:
     :path: ".symlinks/plugins/fluttertoast/ios"
-  gal:
-    :path: ".symlinks/plugins/gal/darwin"
-  image_picker_ios:
-    :path: ".symlinks/plugins/image_picker_ios/ios"
   irondash_engine_context:
     :path: ".symlinks/plugins/irondash_engine_context/ios"
-  just_audio:
-    :path: ".symlinks/plugins/just_audio/darwin"
   open_filex:
     :path: ".symlinks/plugins/open_filex/ios"
-  package_info_plus:
-    :path: ".symlinks/plugins/package_info_plus/ios"
   rhttp:
     :path: ".symlinks/plugins/rhttp/ios"
-  share_plus:
-    :path: ".symlinks/plugins/share_plus/ios"
-  shared_preferences_foundation:
-    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
-  sqflite_darwin:
-    :path: ".symlinks/plugins/sqflite_darwin/darwin"
   super_native_extensions:
     :path: ".symlinks/plugins/super_native_extensions/ios"
   SwiftTryCatch:
     :commit: 6effaa3
     :git: https://github.com/williamFalcon/SwiftTryCatch.git
-  ua_client_hints:
-    :path: ".symlinks/plugins/ua_client_hints/ios"
-  url_launcher_ios:
-    :path: ".symlinks/plugins/url_launcher_ios/ios"
-  video_player_avfoundation:
-    :path: ".symlinks/plugins/video_player_avfoundation/darwin"
-  wakelock_plus:
-    :path: ".symlinks/plugins/wakelock_plus/ios"
-  webview_flutter_wkwebview:
-    :path: ".symlinks/plugins/webview_flutter_wkwebview/darwin"
   workmanager_apple:
     :path: ".symlinks/plugins/workmanager_apple/ios"
 
@@ -283,49 +122,25 @@ CHECKOUT OPTIONS:
     :git: https://github.com/williamFalcon/SwiftTryCatch.git
 
 SPEC CHECKSUMS:
-  app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
-  audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
   chat_bottom_container: f1eb8323db77a87db50f361142c679f11e892d1b
-  connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
   cupertino_http: 94ac07f5ff090b8effa6c5e2c47871d48ab7c86c
-  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
-  DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
-  DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
-  file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_avif_ios: 2553d2aafda56339cf924e943da89ad3f40af2dd
   flutter_dynamic_icon_plus: 3ddd12bc2316b98ffdd4048e9cdd3cf51e02095d
   flutter_foreground_task: a159d2c2173b33699ddb3e6c2a067045d7cebb89
   flutter_image_compress_common: 1697a328fd72bfb335507c6bca1a65fa5ad87df1
-  flutter_inappwebview_ios: 9cde7869829d54b4110df350f3eedd192c5a4aea
-  flutter_local_notifications: 643a3eda1ce1c0599413ca31672536d423dee214
   flutter_mailer: 3a8cd4f36c960fb04528d5471097270c19fec1c4
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
   fluttertoast: 2c67e14dce98bbdb200df9e1acf610d7a6264ea1
-  gal: baecd024ebfd13c441269ca7404792a7152fde89
-  image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
-  InternalCollectionsUtilities: af3f471602c4a67cbcb0bee0a80f6f55a33ae453
   irondash_engine_context: 8e58ca8e0212ee9d1c7dc6a42121849986c88486
-  just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   Mantle: c5aa8794a29a022dfbbfc9799af95f477a69b62d
   open_filex: 432f3cd11432da3e39f47fcc0df2b1603854eff1
-  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   rhttp: 359daed992674fc912552df3106bfbc746bcc929
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
-  share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
-  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
-  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
   super_native_extensions: b763c02dc3a8fd078389f410bf15149179020cb4
-  swift-collections: ba248ecaf44ef500b27d5cf94d304218c89892ff
   SwiftTryCatch: 2f4ef36cf5396bdb450006b70633dbce5260d3b3
-  SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
-  ua_client_hints: 92fe0d139619b73ec9fcb46cc7e079a26178f586
-  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
-  video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a
-  wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
-  webview_flutter_wkwebview: 8ebf4fded22593026f7dbff1fbff31ea98573c8d
   workmanager_apple: 904529ae31e97fc5be632cf628507652294a0778
 
 PODFILE CHECKSUM: e3424fc25a444b66fb0da7d21a04610d160ad5a0

@@ -301,7 +301,7 @@ class _Label extends StatelessWidget {
         text,
         style: theme.textTheme.labelMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

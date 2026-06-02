@@ -87,7 +87,7 @@ class UpdateDialog extends StatelessWidget {
                           Text(
                             context.l10n.update_newVersionFound,
                             style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               fontSize: 18,
                             ),
                           ),
@@ -123,7 +123,7 @@ class UpdateDialog extends StatelessWidget {
                       context.l10n.update_changelog,
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -169,7 +169,7 @@ class UpdateDialog extends StatelessWidget {
                           ),
                         ),
                         child: Text(context.l10n.update_now,
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -236,7 +236,7 @@ class UpdateDialog extends StatelessWidget {
         'v$version',
         style: TextStyle(
           fontSize: 12,
-          fontWeight: isNew ? FontWeight.bold : FontWeight.normal,
+          fontWeight: isNew ? FontWeight.w600 : FontWeight.normal,
           color: isNew ? colorScheme.primary : colorScheme.onSurfaceVariant,
         ),
       ),

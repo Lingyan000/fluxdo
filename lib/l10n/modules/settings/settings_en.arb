@@ -36,8 +36,25 @@
   "preferences_clipboardTopicLinkDetectionDesc": "Check for Linux.do topic links in the clipboard when returning to the app and ask before opening",
   "preferences_clipboardTopicLink_detected": "Topic link found in clipboard",
   "preferences_clipboardTopicLink_open": "Open",
+  "preferences_topicFilterKeywords": "Title keyword filter",
+  "preferences_topicFilterKeywordsDesc": "Filter topics whose title contains the configured keywords, one per line",
+  "preferences_topicFilterKeywordsEmpty": "No keywords set",
+  "preferences_topicFilterKeywordsCount": "{count} keywords set",
+  "@preferences_topicFilterKeywordsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "preferences_topicFilterKeywordsHint": "Enter one keyword per line",
+  "preferences_topicFilterKeywordsHelper": "Only topic titles are matched as substrings, case-insensitively",
+  "preferences_topicFilterWholeWord": "Whole-word match",
+  "preferences_topicFilterWholeWordDesc": "When enabled, English keywords no longer match as substrings (e.g. \"ai\" will not hit \"Main thread\"). CJK keywords are unaffected.",
   "preferences_autoPanguSpacing": "Auto CJK spacing",
   "preferences_autoPanguSpacingDesc": "Auto-insert spaces between CJK and Latin text",
+  "preferences_aiPostReview": "AI review before posting",
+  "preferences_aiPostReviewDesc": "Ask AI for opinions and edit directions based on the community guidelines before publishing. It will not block posting.",
+  "preferences_aiPostReviewModel": "Review model",
+  "preferences_aiPostReviewModelNotSelected": "No model selected",
   "preferences_basic": "Basic",
   "preferences_cfClearanceRefresh": "cf_clearance auto refresh",
   "preferences_cfClearanceRefreshDesc": "Refresh the cf_clearance cookie through a background WebView.",

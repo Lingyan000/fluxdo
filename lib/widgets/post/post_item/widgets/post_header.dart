@@ -127,7 +127,7 @@ class PostHeader extends StatelessWidget {
                     child: Text(
                       (post.name != null && post.name!.isNotEmpty) ? post.name! : post.username,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         fontSize: 14,
                         color: (post.moderator || post.admin)
                             ? theme.colorScheme.primary
@@ -285,7 +285,7 @@ class PostHeader extends StatelessWidget {
                   )
                 : null,
             child: replyToUser.avatarTemplate.isEmpty
-                ? Text(replyToUser.username[0].toUpperCase(), style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold))
+                ? Text(replyToUser.username[0].toUpperCase(), style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600))
                 : null,
           ),
           if (showUsername) ...[

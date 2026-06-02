@@ -5,6 +5,8 @@ import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/pagination_helper.dart';
+import '../utils/topic_keyword_filter.dart';
+import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -56,7 +58,6 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
     _ascending = ref.read(topicSortAscendingProvider);
     _scrollController.addListener(_onScroll);
     _loadTopics();
-
   }
 
   @override
@@ -65,9 +66,51 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
     super.dispose();
   }
 
+  /// 关键词过滤场景下，loadMore 自动续加载的并发标志
+  bool _isAutoContinueLoading = false;
+
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      _loadMore();
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreWithAutoContinue();
+    }
+  }
+
+  /// 触发 loadMore；若关键词命中率高、可见增量不足，自动续加载至多 3 次。
+  Future<void> _loadMoreWithAutoContinue() async {
+    if (_isAutoContinueLoading) return;
+    _isAutoContinueLoading = true;
+    try {
+      final prefs = ref.read(preferencesProvider);
+      final keywords = prefs.normalizedFilterKeywords;
+      final wholeWord = prefs.topicFilterWholeWord;
+
+      var attempts = 0;
+      while (true) {
+        final (visBefore, _) = TopicKeywordFilter.apply(
+          _topics,
+          normalizedKeywords: keywords,
+          wholeWord: wholeWord,
+        );
+        await _loadMore();
+        if (!mounted) return;
+        final (visAfter, _) = TopicKeywordFilter.apply(
+          _topics,
+          normalizedKeywords: keywords,
+          wholeWord: wholeWord,
+        );
+        if (!TopicKeywordFilter.shouldAutoLoadMore(
+          visibleBefore: visBefore.length,
+          visibleAfter: visAfter.length,
+          hasMore: _hasMore,
+          attempts: attempts,
+        )) {
+          break;
+        }
+        attempts++;
+      }
+    } finally {
+      _isAutoContinueLoading = false;
     }
   }
 
@@ -85,14 +128,19 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         period: _currentFilter.period,
         page: 0,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
         subset: _currentFilter == TopicListFilter.newTopics
             ? _currentSubset.apiValue
             : null,
       );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -123,14 +171,19 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         period: _currentFilter.period,
         page: 0,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
         subset: _currentFilter == TopicListFilter.newTopics
             ? _currentSubset.apiValue
             : null,
       );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -162,7 +215,9 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         period: _currentFilter.period,
         page: nextPage,
         order: _currentOrder.apiValue,
-        ascending: _currentOrder != TopicSortOrder.defaultOrder ? _ascending : null,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
         subset: _currentFilter == TopicListFilter.newTopics
             ? _currentSubset.apiValue
             : null,
@@ -171,7 +226,10 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
       final currentState = PaginationState(items: _topics);
       final result = _paginationHelper.processLoadMore(
         currentState,
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       if (mounted) {
@@ -252,11 +310,11 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             icon: const Icon(Icons.search),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => SearchPage(
-                initialFilter: SearchFilter(
-                  tags: [widget.tagName],
+              MaterialPageRoute(
+                builder: (_) => SearchPage(
+                  initialFilter: SearchFilter(tags: [widget.tagName]),
                 ),
-              )),
+              ),
             ),
             tooltip: context.l10n.common_search,
           ),
@@ -287,16 +345,11 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
 
   Widget _buildBody(int? selectedTopicId) {
     if (_isLoading) {
-      return const TopicListSkeleton(
-        padding: EdgeInsets.all(12),
-      );
+      return const TopicListSkeleton(padding: EdgeInsets.all(12));
     }
 
     if (_error != null) {
-      return ErrorView(
-        error: _error!,
-        onRetry: _loadTopics,
-      );
+      return ErrorView(error: _error!, onRetry: _loadTopics);
     }
 
     if (_topics.isEmpty) {
@@ -304,7 +357,11 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Icons.inbox_outlined,
+              size: 48,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(height: 12),
             Text(context.l10n.tagTopics_empty),
           ],
@@ -312,20 +369,40 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
       );
     }
 
+    final keywords = ref.watch(
+      preferencesProvider.select((p) => p.normalizedFilterKeywords),
+    );
+    final wholeWord = ref.watch(
+      preferencesProvider.select((p) => p.topicFilterWholeWord),
+    );
+    final (visible, hidden) = TopicKeywordFilter.apply(
+      _topics,
+      normalizedKeywords: keywords,
+      wholeWord: wholeWord,
+    );
+    final hintOffset = hidden > 0 ? 1 : 0;
+
     return DesktopRefreshIndicator(
       onRefresh: _loadTopics,
       child: ListView.builder(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(12),
-        itemCount: _topics.length + 1,
+        itemCount: visible.length + hintOffset + 1,
         itemBuilder: (context, index) {
-          if (index >= _topics.length) {
+          if (hintOffset > 0 && index == 0) {
+            return KeywordFilterHintBar(hiddenCount: hidden);
+          }
+          final topicIndex = index - hintOffset;
+          if (topicIndex >= visible.length) {
             if (!_hasMore) {
               return Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Center(
-                  child: Text(context.l10n.common_noMore, style: const TextStyle(color: Colors.grey)),
+                  child: Text(
+                    context.l10n.common_noMore,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
                 ),
               );
             }
@@ -341,11 +418,18 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.refresh, size: 16, color: Theme.of(context).colorScheme.primary),
+                        Icon(
+                          Icons.refresh,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           context.l10n.common_loadFailedTapRetry,
-                          style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
                       ],
                     ),
@@ -359,8 +443,10 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             );
           }
 
-          final topic = _topics[index];
-          final enableLongPress = ref.watch(preferencesProvider).longPressPreview;
+          final topic = visible[topicIndex];
+          final enableLongPress = ref
+              .watch(preferencesProvider)
+              .longPressPreview;
 
           return buildTopicItem(
             context: context,

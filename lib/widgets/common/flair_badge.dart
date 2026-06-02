@@ -171,7 +171,7 @@ class FlairBadge extends StatelessWidget {
                 initial,
                 style: TextStyle(
                   fontSize: size * 0.6,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                   color: Colors.grey,
                 ),
               );

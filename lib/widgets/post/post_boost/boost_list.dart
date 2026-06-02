@@ -382,7 +382,7 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
   double _estimateGroupedBubbleWidth(BuildContext context, BoostGroup group) {
     final theme = Theme.of(context);
     final style = theme.textTheme.bodySmall?.copyWith(height: 1.2);
-    final labelStyle = theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700);
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600);
     final textWidth = _measureDisplayTextWidth(
       context,
       group.displayText,

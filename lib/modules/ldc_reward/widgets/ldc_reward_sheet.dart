@@ -179,7 +179,7 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
               child: Text(
                 context.l10n.reward_sheetTitle,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -201,7 +201,7 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
                         Text(
                           target.name!,
                           style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       Text(
@@ -236,7 +236,7 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.bold : null,
+                            fontWeight: isSelected ? FontWeight.w600 : null,
                           ),
                         ),
                       ),

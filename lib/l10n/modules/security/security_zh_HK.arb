@@ -7,13 +7,16 @@
   "cfVerify_title": "Cloudflare 驗證",
   "cf_abandonVerifyMessage": "退出驗證將導致相關功能無法使用，確定要退出嗎？",
   "cf_abandonVerifyTitle": "放棄驗證？",
-  "cf_autoVerifyTimeout": "自動驗證超時，請手動完成驗證",
-  "cf_backgroundVerifying": "後台驗證中... (點擊打開)",
+  "cf_autoVerifyBannerMessage": "你可以繼續瀏覽；如果需要操作，我們會打開驗證頁面。",
+  "cf_autoVerifyBannerTitle": "正在自動處理安全驗證",
+  "cf_autoVerifyTimeout": "自動驗證需要你確認，請按頁面提示完成",
+  "cf_backgroundVerifying": "正在自動驗證，點擊查看",
   "cf_cannotOpenVerifyPage": "無法打開驗證頁面，請稍後重試",
   "cf_challengeFailedCooldown": "安全驗證失敗，已進入冷卻期，請稍後再試",
   "cf_challengeNotEffective": "驗證未生效，請稍後重試",
   "cf_continueVerify": "繼續驗證",
   "cf_cooldown": "請稍後再試",
+  "cf_dataBlockedByChallenge": "內容被安全驗證攔截，請完成驗證後重試",
   "cf_failedRetry": "安全驗證失敗，請重試",
   "cf_failedWithCause": "安全驗證失敗: {cause}",
   "@cf_failedWithCause": {
@@ -35,8 +38,20 @@
   },
   "cf_securityVerifyTitle": "安全驗證",
   "cf_userCancelled": "驗證已取消",
+  "cf_manualVerifyAction": "手動驗證",
+  "cf_manualVerifyBannerMessage": "如果看到勾選框或提示，請按頁面要求操作；通過後會自動繼續。",
+  "cf_manualVerifyBannerTitle": "請完成頁面中的安全驗證",
+  "cf_noChallengeMessage": "如果剛才的請求仍失敗，請重新加載驗證頁或稍後再試。",
+  "cf_noChallengeTitle": "目前沒有需要完成的安全驗證",
+  "cf_operationBlockedByChallenge": "操作被安全驗證攔截，請先完成驗證",
+  "cf_retryVerify": "重新加載",
+  "cf_retryVerificationAction": "重新嘗試驗證",
+  "cf_verifyCompletingMessage": "驗證結果已返回，正在同步狀態…",
+  "cf_verifyCompletingTitle": "正在完成安全驗證",
   "cf_verifyIncomplete": "驗證未完成，請重試",
   "cf_verifyLonger": "驗證時間較長，還剩 {seconds} 秒",
+  "cf_verifyOpeningMessage": "如果需要操作，安全驗證頁面會在這裏顯示。",
+  "cf_verifyOpeningTitle": "正在打開安全驗證",
   "@cf_verifyLonger": {
     "placeholders": {
       "seconds": {
@@ -44,8 +59,10 @@
       }
     }
   },
-  "cf_verifyTimeout": "驗證超時，請重試",
-  "cf_verifying": "驗證中... {seconds}s",
+  "cf_verifyTimedOutMessage": "頁面還保留着，你可以重新加載驗證頁，或退出後稍後再試。",
+  "cf_verifyTimedOutTitle": "驗證還沒完成",
+  "cf_verifyTimeout": "驗證還沒完成，可以重新加載後再試",
+  "cf_verifying": "正在驗證，已等待 {seconds}s",
   "@cf_verifying": {
     "placeholders": {
       "seconds": {

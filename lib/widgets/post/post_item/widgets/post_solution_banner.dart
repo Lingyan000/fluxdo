@@ -107,7 +107,7 @@ class PostSolutionBanner extends StatelessWidget {
                                 style: TextStyle(
                                   color: Colors.green.shade800,
                                   fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w600,
                                   fontFamily: 'monospace',
                                 ),
                               ),

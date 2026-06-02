@@ -158,7 +158,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
         Text(
           title,
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],

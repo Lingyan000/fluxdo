@@ -104,7 +104,7 @@ class TechOneboxBuilder {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -118,7 +118,7 @@ class TechOneboxBuilder {
                 Text(
                   title,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     color: const Color(0xFF0077cc),
                   ),
                   maxLines: 2,
@@ -241,7 +241,7 @@ class TechOneboxBuilder {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 14,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -269,7 +269,7 @@ class TechOneboxBuilder {
           Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -378,7 +378,7 @@ class TechOneboxBuilder {
                       title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -405,7 +405,7 @@ class TechOneboxBuilder {
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
@@ -426,7 +426,7 @@ class TechOneboxBuilder {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -502,7 +502,7 @@ class _StatBox extends StatelessWidget {
             value,
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: textColor,
             ),
           ),

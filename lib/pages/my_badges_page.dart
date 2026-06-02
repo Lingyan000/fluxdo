@@ -162,7 +162,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
               Positioned(
                 right: -20,
                 top: -20,
-                child: Icon(
+                child: FaIcon(
                   FontAwesomeIcons.medal,
                   size: 200,
                   color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
@@ -188,7 +188,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                       '$totalCount',
                       style: TextStyle(
                         fontSize: 36,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.onSurface,
                         height: 1.0,
                       ),
@@ -231,7 +231,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                 Text(
                   sectionTitle,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: sectionColor,
                         fontSize: 18,
                       ),
@@ -249,7 +249,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                     style: TextStyle(
                       color: sectionColor,
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -389,7 +389,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                         badge.name,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           fontSize: 14,
                           height: 1.2,
                         ),

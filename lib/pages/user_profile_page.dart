@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -406,7 +407,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       Text(
                         context.l10n.common_about,
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const Spacer(),
@@ -451,7 +452,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           context.l10n.userProfile_bio,
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -470,7 +471,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           context.l10n.userProfile_moreInfo,
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -530,7 +531,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             title,
             style: theme.textTheme.titleSmall?.copyWith(
               color: color,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
@@ -554,7 +555,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         label,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: color,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -1051,7 +1052,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 22,
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight: FontWeight.w600,
                                           shadows: [Shadow(color: Colors.black45, offset: Offset(0, 1), blurRadius: 2)],
                                         ),
                                       ),
@@ -1090,7 +1091,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -1318,7 +1319,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -1349,7 +1350,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             style: const TextStyle(
               color: Colors.white,
               fontSize: 17,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 4),
@@ -1397,7 +1398,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
               minimumSize: const Size(0, 32),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           );
   }
@@ -1428,7 +1429,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   style: TextStyle(
                     color: color,
                     fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -1649,7 +1650,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           Text(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: theme.colorScheme.primary,
             ),
           ),
@@ -1865,7 +1866,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   '${user.count}',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     fontSize: 10,
                   ),
                 ),
@@ -1951,7 +1952,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                FaIcon(
                   BadgeUIUtils.getBadgeIcon(badgeType),
                   size: 14,
                   color: color,
@@ -1960,7 +1961,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 Text(
                   badge.name,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -2061,7 +2062,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                     _getActionLabel(action.actionType),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Spacer(),
@@ -2082,7 +2083,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               
@@ -2155,7 +2156,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                     context.l10n.userProfile_reacted,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Spacer(),
@@ -2177,7 +2178,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
 

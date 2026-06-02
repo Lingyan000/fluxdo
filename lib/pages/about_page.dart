@@ -247,7 +247,7 @@ class _AboutPageState extends State<AboutPage> {
                 Text(
                   'FluxDO',
                   style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     color: theme.colorScheme.onSurface,
                   ),
                 ),
@@ -351,7 +351,7 @@ class _AboutPageState extends State<AboutPage> {
         title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
           color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

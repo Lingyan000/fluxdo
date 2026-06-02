@@ -79,7 +79,7 @@ Widget buildQuoteCard({
                       '$username:',
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     if (titleHtml != null) ...[

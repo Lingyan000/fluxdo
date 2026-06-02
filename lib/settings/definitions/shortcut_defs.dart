@@ -118,7 +118,7 @@ class _ShortcutTile extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     height: 1.3,
                   ),
                 ),
@@ -249,7 +249,7 @@ class _RecordKeyDialogState extends State<_RecordKeyDialog> {
                     : Text(
                         l10n.shortcuts_recordKey,
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -372,7 +372,7 @@ class _ShortcutMetaChip extends StatelessWidget {
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: color,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

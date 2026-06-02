@@ -72,7 +72,7 @@ class _PromptPresetsSheet extends ConsumerWidget {
                   Text(
                     S.current.ai_quickPromptsTitle,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const Spacer(),
@@ -162,7 +162,7 @@ class _SectionHeader extends StatelessWidget {
         text,
         style: theme.textTheme.labelSmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           letterSpacing: 0.5,
         ),
       ),
@@ -416,7 +416,7 @@ class _DimensionConfigSheetState extends State<_DimensionConfigSheet> {
             Text(
               widget.preset.name,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 12),

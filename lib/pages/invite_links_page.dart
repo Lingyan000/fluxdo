@@ -535,7 +535,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             Text(
               context.l10n.invite_createLink,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
@@ -587,7 +587,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             Text(
               context.l10n.invite_inviteMembers,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 16),
@@ -614,7 +614,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             Text(
               context.l10n.invite_maxRedemptions,
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 8),
@@ -623,7 +623,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             Text(
               context.l10n.invite_expiryTime,
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 12),
@@ -674,7 +674,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             context.l10n.invite_fixed,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -695,7 +695,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
             Text(
               context.l10n.invite_latestResult,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
@@ -804,7 +804,7 @@ class _MetaChip extends StatelessWidget {
             label,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],

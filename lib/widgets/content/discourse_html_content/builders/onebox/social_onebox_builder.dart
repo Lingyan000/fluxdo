@@ -79,7 +79,7 @@ class SocialOneboxBuilder {
                       Text(
                         displayName,
                         style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -108,7 +108,7 @@ class SocialOneboxBuilder {
                     '𝕏',
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: theme.brightness == Brightness.dark
                           ? Colors.black
                           : Colors.white,
@@ -253,7 +253,7 @@ class SocialOneboxBuilder {
                       Text(
                         subreddit.startsWith('r/') ? subreddit : 'r/$subreddit',
                         style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     if (author.isNotEmpty)
@@ -277,7 +277,7 @@ class SocialOneboxBuilder {
                 child: Text(
                   title,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
@@ -396,7 +396,7 @@ class SocialOneboxBuilder {
                 child: Text(
                   username.startsWith('@') ? username : '@$username',
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),

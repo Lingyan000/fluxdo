@@ -114,7 +114,7 @@ class _SliderTile extends StatelessWidget {
             child: Text(
               suffix != null ? '$value$suffix' : '$value',
               style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 color: theme.colorScheme.primary,
               ),
               textAlign: TextAlign.end,

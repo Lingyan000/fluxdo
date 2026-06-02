@@ -37,6 +37,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
     this.extended = false,
     this.leading,
     this.bottomLeading,
+    this.topDestinationCount = 0,
     this.bottomDestinationCount = 1,
   });
 
@@ -50,6 +51,9 @@ class AdaptiveNavigationRail extends StatelessWidget {
   /// 底部导航项上方的自定义组件
   final Widget? bottomLeading;
 
+  /// 固定在顶部的导航项数量（从前往后算起）
+  final int topDestinationCount;
+
   /// 固定在底部的导航项数量（从末尾算起）
   final int bottomDestinationCount;
 
@@ -59,9 +63,19 @@ class AdaptiveNavigationRail extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isDesktop = PlatformUtils.isDesktop;
 
-    final splitIndex = destinations.length - bottomDestinationCount;
-    final topDestinations = destinations.sublist(0, splitIndex);
-    final bottomDestinations = destinations.sublist(splitIndex);
+    final safeTopCount = topDestinationCount.clamp(0, destinations.length);
+    final remainingAfterTop = destinations.length - safeTopCount;
+    final safeBottomCount = bottomDestinationCount.clamp(0, remainingAfterTop);
+    final bottomStartIndex = destinations.length - safeBottomCount;
+    final topDestinations = destinations.sublist(0, safeTopCount);
+    // 既不在 top 也不在 bottom 的剩余项，渲染在 categoryShortcuts 下方、
+    // bottomDestinations 上方（视觉上仍归属"底部分组"，只是排在底部分组之前）。
+    // 当 topCount + bottomCount == destinations.length 时为空。
+    final extraBottomDestinations = destinations.sublist(
+      safeTopCount,
+      bottomStartIndex,
+    );
+    final bottomDestinations = destinations.sublist(bottomStartIndex);
 
     Widget rail = SafeArea(
       child: SizedBox(
@@ -103,9 +117,28 @@ class AdaptiveNavigationRail extends StatelessWidget {
               bottomLeading!,
               const SizedBox(height: 8),
             ],
+            ...extraBottomDestinations.asMap().entries.map((entry) {
+              final index = entry.key + safeTopCount;
+              final dest = entry.value;
+              final selected = index == selectedIndex;
+
+              return _NavigationRailItem(
+                icon: selected
+                    ? _ActiveDestinationIcon(
+                        dest: dest,
+                        defaultIcon: dest.selectedIcon,
+                      )
+                    : dest.icon,
+                label: dest.label,
+                selected: selected,
+                extended: extended,
+                colorScheme: colorScheme,
+                onTap: () => onDestinationSelected(index),
+              );
+            }),
             // 底部导航项
             ...bottomDestinations.asMap().entries.map((entry) {
-              final index = entry.key + splitIndex;
+              final index = entry.key + bottomStartIndex;
               final dest = entry.value;
               final selected = index == selectedIndex;
 
@@ -193,7 +226,7 @@ class _NavigationRailItem extends StatelessWidget {
                           style: TextStyle(
                             color: iconColor,
                             fontWeight: selected
-                                ? FontWeight.w600
+                                ? FontWeight.w500
                                 : FontWeight.normal,
                           ),
                         ),
@@ -279,7 +312,8 @@ class _AdaptiveBottomNavigationState
     final id = widget.destinations[index].id;
 
     // 判定是否为双击
-    final isDouble = hasDouble &&
+    final isDouble =
+        hasDouble &&
         _lastActiveTapIndex == index &&
         _lastActiveTapTime != null &&
         now.difference(_lastActiveTapTime!) < _doubleTapWindow;
@@ -351,10 +385,7 @@ class _AdaptiveBottomNavigationState
 /// 这样用户滚到深处后就能"预览"单击会发生什么，符合 Twitter/Telegram 的交互惯例。
 /// 只应放在 NavigationBar 的 selectedIcon 位置（或侧栏 selected 状态下）。
 class _ActiveDestinationIcon extends ConsumerWidget {
-  const _ActiveDestinationIcon({
-    required this.dest,
-    required this.defaultIcon,
-  });
+  const _ActiveDestinationIcon({required this.dest, required this.defaultIcon});
 
   final AdaptiveDestination dest;
   final Widget defaultIcon;
@@ -367,16 +398,14 @@ class _ActiveDestinationIcon extends ConsumerWidget {
     );
 
     final actionIcon = action.icon;
-    final showActionIcon = progress >= navScrollIconThreshold &&
+    final showActionIcon =
+        progress >= navScrollIconThreshold &&
         action != NavTapAction.none &&
         actionIcon != null;
 
     final child = showActionIcon
         ? Icon(actionIcon, key: ValueKey('nav-action-${action.name}'))
-        : KeyedSubtree(
-            key: const ValueKey('nav-default'),
-            child: defaultIcon,
-          );
+        : KeyedSubtree(key: const ValueKey('nav-default'), child: defaultIcon);
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),

@@ -257,7 +257,7 @@ class _PreheatLoadingState extends State<_PreheatLoading>
                   'FluxDO',
                   style: theme.textTheme.headlineMedium?.copyWith(
                     color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -424,7 +424,7 @@ class _PreheatFailed extends StatelessWidget {
                     Text(
                       errorInfo.title,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: colorScheme.onSurface,
                       ),
                     ),

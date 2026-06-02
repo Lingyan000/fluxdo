@@ -21,6 +21,7 @@ import 'search_page.dart';
 import '../models/search_filter.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
 import '../widgets/topic/filter_dropdown.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -30,6 +31,7 @@ import '../widgets/common/tag_selection_sheet.dart';
 import '../navigation/nav_action_bus.dart';
 import '../providers/app_state_refresher.dart';
 import '../providers/preferences_provider.dart';
+import '../utils/topic_keyword_filter.dart';
 import '../utils/responsive.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/common/error_view.dart';
@@ -572,8 +574,14 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         onNotification: _handleOuterScrollNotification,
         child: ScrollConfiguration(
           // 禁用自动 Scrollbar，避免 NestedScrollView + TabBarView
-          // 多个 ScrollPosition 同时存在时 Scrollbar 报错
-          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          // 多个 ScrollPosition 同时存在时 Scrollbar 报错。
+          // 同时禁用 overscroll indicator：Material 3 在 Android 上默认
+          // StretchingOverscrollIndicator，与 NestedScrollView/SliverPersistentHeader
+          // 组合存在 framework bug（flutter/flutter #100967、#116522、#100538），
+          // 表现为上滑松手时 tab 区域回弹抖动。
+          behavior: ScrollConfiguration.of(
+            context,
+          ).copyWith(scrollbars: false, overscroll: false),
           child: ExtendedNestedScrollView(
             controller: _outerScrollController,
             floatHeaderSlivers: true,
@@ -1060,7 +1068,7 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                       isScrollable: true,
                       tabAlignment: TabAlignment.start,
                       tabs: _buildTabs(),
-                      labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      labelStyle: const TextStyle(fontWeight: FontWeight.w600),
                       unselectedLabelStyle: const TextStyle(
                         fontWeight: FontWeight.normal,
                       ),
@@ -1184,6 +1192,9 @@ class _TopicListState extends ConsumerState<_TopicList>
   /// J/K 防抖：上次触发时间
   DateTime _lastKeyNavTime = DateTime(0);
 
+  /// 关键词过滤场景下，loadMore 自动续加载的并发标志
+  bool _isAutoContinueLoading = false;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -1296,6 +1307,55 @@ class _TopicListState extends ConsumerState<_TopicList>
     setState(() => _keyboardFocusIndex = index);
   }
 
+  /// 触发 loadMore，并在关键词命中率高、可见增量不足时自动续加载，
+  /// 避免用户在话题列表里看到「滑到底但只多了 1-2 条」。
+  Future<void> _triggerLoadMore(int? providerKey) async {
+    if (_isAutoContinueLoading) return;
+    final notifier = ref.read(topicListProvider(providerKey).notifier);
+    if (!notifier.hasMore) {
+      // 单次仍然交给 notifier，让其内部状态/错误处理生效
+      await notifier.loadMore();
+      return;
+    }
+
+    _isAutoContinueLoading = true;
+    try {
+      final prefs = ref.read(preferencesProvider);
+      final keywords = prefs.normalizedFilterKeywords;
+      final wholeWord = prefs.topicFilterWholeWord;
+
+      int countVisible() {
+        final async = ref.read(topicListProvider(providerKey));
+        final raw = async.value ?? const <Topic>[];
+        final (vis, _) = TopicKeywordFilter.apply(
+          raw,
+          normalizedKeywords: keywords,
+          wholeWord: wholeWord,
+        );
+        return vis.length;
+      }
+
+      var attempts = 0;
+      while (true) {
+        final before = countVisible();
+        await notifier.loadMore();
+        if (!mounted) return;
+        final after = countVisible();
+        if (!TopicKeywordFilter.shouldAutoLoadMore(
+          visibleBefore: before,
+          visibleAfter: after,
+          hasMore: notifier.hasMore,
+          attempts: attempts,
+        )) {
+          break;
+        }
+        attempts++;
+      }
+    } finally {
+      _isAutoContinueLoading = false;
+    }
+  }
+
   void _openTopic(Topic topic) {
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
@@ -1366,6 +1426,22 @@ class _TopicListState extends ConsumerState<_TopicList>
           : (_cachedTopicsAsync ?? const AsyncValue.loading());
     }
 
+    final keywords = ref.watch(
+      preferencesProvider.select((p) => p.normalizedFilterKeywords),
+    );
+    final wholeWord = ref.watch(
+      preferencesProvider.select((p) => p.topicFilterWholeWord),
+    );
+    var hiddenCount = 0;
+    final visibleTopicsAsync = topicsAsync.whenData((topics) {
+      final (visible, hidden) = TopicKeywordFilter.apply(
+        topics,
+        normalizedKeywords: keywords,
+        wholeWord: wholeWord,
+      );
+      hiddenCount = hidden;
+      return visible;
+    });
     final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
 
     // 桌面端：注册 J/K/Enter 导航到主面板快捷键
@@ -1373,10 +1449,11 @@ class _TopicListState extends ConsumerState<_TopicList>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _listShortcutBinding.register(context, {
-          ShortcutAction.nextItem: () => _moveKeyboardFocus(1, topicsAsync),
+          ShortcutAction.nextItem: () =>
+              _moveKeyboardFocus(1, visibleTopicsAsync),
           ShortcutAction.previousItem: () =>
-              _moveKeyboardFocus(-1, topicsAsync),
-          ShortcutAction.openItem: () => _openFocusedTopic(topicsAsync),
+              _moveKeyboardFocus(-1, visibleTopicsAsync),
+          ShortcutAction.openItem: () => _openFocusedTopic(visibleTopicsAsync),
         });
       });
     } else if (PlatformUtils.isDesktop) {
@@ -1386,7 +1463,7 @@ class _TopicListState extends ConsumerState<_TopicList>
       });
     }
 
-    return topicsAsync.when(
+    return visibleTopicsAsync.when(
       data: (topics) {
         if (topics.isEmpty) {
           return RefreshIndicator(
@@ -1418,7 +1495,9 @@ class _TopicListState extends ConsumerState<_TopicList>
         final newTopicCount = incomingState.incomingCountForCategory(
           widget.categoryId,
         );
+        final hintOffset = hiddenCount > 0 ? 1 : 0;
         final newTopicOffset = hasNewTopics ? 1 : 0;
+        final headerOffset = hintOffset + newTopicOffset;
 
         return DesktopRefreshIndicator(
           refreshIndicatorKey: _refreshIndicatorKey,
@@ -1443,14 +1522,14 @@ class _TopicListState extends ConsumerState<_TopicList>
                 if (notification.depth == 0 &&
                     notification.metrics.pixels >=
                         notification.metrics.maxScrollExtent - 200) {
-                  ref.read(topicListProvider(providerKey).notifier).loadMore();
+                  _triggerLoadMore(providerKey);
                 }
                 return false;
               },
               child: ListView.builder(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(top: 8, bottom: 12),
-                itemCount: topics.length + newTopicOffset + 1,
+                itemCount: topics.length + headerOffset + 1,
                 itemBuilder: (context, index) {
                   if (hasNewTopics && index == 0) {
                     return _buildNewTopicIndicator(
@@ -1459,8 +1538,11 @@ class _TopicListState extends ConsumerState<_TopicList>
                       providerKey,
                     );
                   }
+                  if (hintOffset > 0 && index == newTopicOffset) {
+                    return KeywordFilterHintBar(hiddenCount: hiddenCount);
+                  }
 
-                  final topicIndex = index - newTopicOffset;
+                  final topicIndex = index - headerOffset;
                   if (topicIndex >= topics.length) {
                     final notifier = ref.watch(
                       topicListProvider(providerKey).notifier,

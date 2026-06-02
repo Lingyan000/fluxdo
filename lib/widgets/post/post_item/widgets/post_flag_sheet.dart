@@ -134,7 +134,7 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
                   Text(
                     context.l10n.post_flagTitle,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Spacer(),
@@ -230,7 +230,7 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
       child: Text(
         title,
         style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

@@ -131,7 +131,7 @@ class AiShareImageWidget extends StatelessWidget {
           'LINUX DO',
           style: TextStyle(
             fontSize: 16,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             color: textColor.withValues(alpha: 0.8),
           ),
         ),
@@ -156,7 +156,7 @@ class AiShareImageWidget extends StatelessWidget {
   Widget _buildTitle(BuildContext context, Color textColor) {
     final titleStyle = TextStyle(
       fontSize: 16,
-      fontWeight: FontWeight.bold,
+      fontWeight: FontWeight.w600,
       color: textColor.withValues(alpha: 0.9),
       height: 1.4,
     );
@@ -188,7 +188,7 @@ class AiShareImageWidget extends StatelessWidget {
           isUser ? S.current.share_aiQuestion : S.current.share_aiReply,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: secondaryTextColor,
           ),
         ),

@@ -84,7 +84,7 @@ class LdcBalanceCard extends ConsumerWidget {
                           Text(
                             userInfo.availableBalance,
                             style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               color: theme.colorScheme.onSurface,
                             ),
                           ),
@@ -190,7 +190,7 @@ class LdcBalanceCard extends ConsumerWidget {
                   Text(
                     userInfo.availableBalance,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
@@ -329,7 +329,7 @@ class LdcBalanceCard extends ConsumerWidget {
                   Text(
                     userInfo.availableBalance,
                     style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white,
                       fontSize: 36,
                     ),
@@ -416,7 +416,7 @@ class LdcBalanceCard extends ConsumerWidget {
                         Text(
                           isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                             color: isExpired
                                 ? theme.colorScheme.error
                                 : theme.colorScheme.onSurface,
@@ -501,7 +501,7 @@ class LdcBalanceCard extends ConsumerWidget {
                     Text(
                       isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: isExpired
                             ? theme.colorScheme.error
                             : theme.colorScheme.onSurface,
@@ -615,7 +615,7 @@ class LdcBalanceCard extends ConsumerWidget {
                   Text(
                     isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                     style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white,
                       fontSize: 28,
                     ),

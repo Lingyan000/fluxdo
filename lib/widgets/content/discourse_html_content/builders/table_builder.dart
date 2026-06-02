@@ -275,7 +275,7 @@ List<double> _computeColumnWidths(
       if (text.isEmpty) continue;
 
       final style = row[col].isHeader
-          ? baseStyle.copyWith(fontWeight: FontWeight.bold)
+          ? baseStyle.copyWith(fontWeight: FontWeight.w600)
           : baseStyle;
 
       final painter = TextPainter(
@@ -355,7 +355,7 @@ Widget _buildCellContent(
     return Text(
       text,
       style: cellData.isHeader
-          ? const TextStyle(fontWeight: FontWeight.bold)
+          ? const TextStyle(fontWeight: FontWeight.w600)
           : null,
     );
   }

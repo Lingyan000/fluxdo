@@ -202,5 +202,14 @@
         "type": "int"
       }
     }
-  }
+  },
+  "topic_keywordFilter_hiddenCount": "已隱藏 {count} 則話題",
+  "@topic_keywordFilter_hiddenCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topic_keywordFilter_manage": "管理"
 }

@@ -156,7 +156,7 @@ class _LocalDateChipState extends State<_LocalDateChip> {
 
   @override
   Widget build(BuildContext context) {
-    if (!TickerMode.of(context)) {
+    if (!TickerMode.valuesOf(context).enabled) {
       _timer?.cancel();
     } else if (widget.opts.countdown &&
         (_timer == null || !_timer!.isActive)) {
@@ -276,7 +276,7 @@ class _LocalDatePopover extends StatelessWidget {
           Text(
             entry.label,
             style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: entry.isLocal
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,

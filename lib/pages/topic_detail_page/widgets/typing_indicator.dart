@@ -121,7 +121,7 @@ class TypingAvatars extends StatelessWidget {
                     '+$extraCount',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

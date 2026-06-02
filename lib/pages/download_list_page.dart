@@ -258,7 +258,7 @@ class _DownloadCard extends StatelessWidget {
                   Text(
                     item.fileName,
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                        ?.copyWith(fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

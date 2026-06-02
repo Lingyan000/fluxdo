@@ -96,7 +96,8 @@ final defaultImageAiModelKeyProvider = StateProvider<String?>((ref) {
 /// [isImageMode]：true 写入图像默认 key，false 写入文本默认 key，
 /// null 仅写入通用 key（向后兼容旧调用）。
 ///
-/// 通用 key 始终也会被写入，让旧 [defaultAiModelKeyProvider] 仍能取到。
+/// 旧通用 key 只跟随文本默认模型。图像默认模型不能写入通用 key，
+/// 否则 AI 助手首次打开会被误判为生图模式。
 Future<void> setDefaultAiModel(
   WidgetRef ref,
   String providerId,
@@ -105,14 +106,21 @@ Future<void> setDefaultAiModel(
 }) async {
   final prefs = ref.read(aiSharedPreferencesProvider);
   final key = '$providerId:$modelId';
-  await prefs.setString(_kDefaultModelKey, key);
-  ref.read(defaultAiModelKeyProvider.notifier).state = key;
   if (isImageMode == true) {
     await prefs.setString(_kDefaultImageModelKey, key);
     ref.read(defaultImageAiModelKeyProvider.notifier).state = key;
+    if (prefs.getString(_kDefaultModelKey) == key) {
+      await prefs.remove(_kDefaultModelKey);
+      ref.read(defaultAiModelKeyProvider.notifier).state = null;
+    }
   } else if (isImageMode == false) {
+    await prefs.setString(_kDefaultModelKey, key);
+    ref.read(defaultAiModelKeyProvider.notifier).state = key;
     await prefs.setString(_kDefaultTextModelKey, key);
     ref.read(defaultTextAiModelKeyProvider.notifier).state = key;
+  } else {
+    await prefs.setString(_kDefaultModelKey, key);
+    ref.read(defaultAiModelKeyProvider.notifier).state = key;
   }
 }
 
@@ -126,13 +134,23 @@ Future<void> clearDefaultAiModel(
 }) async {
   final prefs = ref.read(aiSharedPreferencesProvider);
   if (isImageMode == true) {
+    final imageKey = prefs.getString(_kDefaultImageModelKey);
     await prefs.remove(_kDefaultImageModelKey);
     ref.read(defaultImageAiModelKeyProvider.notifier).state = null;
+    if (imageKey != null && prefs.getString(_kDefaultModelKey) == imageKey) {
+      await prefs.remove(_kDefaultModelKey);
+      ref.read(defaultAiModelKeyProvider.notifier).state = null;
+    }
     return;
   }
   if (isImageMode == false) {
+    final textKey = prefs.getString(_kDefaultTextModelKey);
     await prefs.remove(_kDefaultTextModelKey);
     ref.read(defaultTextAiModelKeyProvider.notifier).state = null;
+    if (textKey != null && prefs.getString(_kDefaultModelKey) == textKey) {
+      await prefs.remove(_kDefaultModelKey);
+      ref.read(defaultAiModelKeyProvider.notifier).state = null;
+    }
     return;
   }
   await prefs.remove(_kDefaultModelKey);
@@ -189,6 +207,7 @@ class AiProviderListNotifier extends StateNotifier<List<AiProvider>> {
       type: type,
       baseUrl: baseUrl,
       models: _inferAll(models),
+      pinned: false,
     );
     state = [...state, provider];
     await _save();
@@ -227,12 +246,67 @@ class AiProviderListNotifier extends StateNotifier<List<AiProvider>> {
     await _deleteApiKey(id);
   }
 
+  /// 批量删除供应商，并同步清理 API Key。
+  Future<void> removeProviders(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+    state = state.where((p) => !idSet.contains(p.id)).toList();
+    await _save();
+    await Future.wait(idSet.map(_deleteApiKey));
+  }
+
   /// 更新模型列表
   Future<void> updateModels(String id, List<AiModel> models) async {
     state = state.map((p) {
       if (p.id != id) return p;
       return p.copyWith(models: _inferAll(models));
     }).toList();
+    await _save();
+  }
+
+  /// 切换置顶状态。
+  ///
+  /// - 未置顶 -> 插到置顶区最前
+  /// - 已置顶 -> 取消置顶并移到普通区最后
+  Future<void> togglePin(String id) async {
+    final index = state.indexWhere((p) => p.id == id);
+    if (index == -1) return;
+    final provider = state[index];
+    final next = [...state]..removeAt(index);
+    if (provider.pinned) {
+      next.add(provider.copyWith(pinned: false));
+    } else {
+      next.insert(0, provider.copyWith(pinned: true));
+    }
+    state = next;
+    await _save();
+  }
+
+  /// 仅重排序置顶区内部顺序。
+  Future<void> reorderPinned(int oldIndex, int newIndex) async {
+    await _reorderByPinned(true, oldIndex, newIndex);
+  }
+
+  /// 仅重排普通区内部顺序。
+  Future<void> reorderUnpinned(int oldIndex, int newIndex) async {
+    await _reorderByPinned(false, oldIndex, newIndex);
+  }
+
+  Future<void> _reorderByPinned(bool pinned, int oldIndex, int newIndex) async {
+    final pinnedItems =
+        state.where((provider) => provider.pinned == pinned).toList();
+    if (pinnedItems.isEmpty) return;
+    if (oldIndex < 0 ||
+        oldIndex >= pinnedItems.length ||
+        newIndex < 0 ||
+        newIndex >= pinnedItems.length) {
+      return;
+    }
+    final moved = pinnedItems.removeAt(oldIndex);
+    pinnedItems.insert(newIndex, moved);
+    final otherItems =
+        state.where((provider) => provider.pinned != pinned).toList();
+    state = pinned ? [...pinnedItems, ...otherItems] : [...otherItems, ...pinnedItems];
     await _save();
   }
 

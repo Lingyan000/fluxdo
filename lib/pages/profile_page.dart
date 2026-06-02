@@ -364,7 +364,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       fallbackText: displayName,
                     ),
                     const SizedBox(width: 8),
-                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   ],
                 ),
               )
@@ -909,7 +909,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         child: TextButton.icon(
           onPressed: _logout,
           icon: Icon(Icons.logout_rounded, size: 18, color: theme.colorScheme.error.withValues(alpha:0.8)),
-          label: Text(context.l10n.profile_logoutCurrentAccount, style: TextStyle(color: theme.colorScheme.error.withValues(alpha:0.8), fontWeight: FontWeight.w600)),
+          label: Text(context.l10n.profile_logoutCurrentAccount, style: TextStyle(color: theme.colorScheme.error.withValues(alpha:0.8), fontWeight: FontWeight.w500)),
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             backgroundColor: theme.colorScheme.errorContainer.withValues(alpha:0.1),
@@ -923,7 +923,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         child: FilledButton.icon(
           onPressed: _goToLogin,
           icon: const Icon(Icons.login_rounded, size: 20),
-          label: Text(context.l10n.profile_loginLinuxDo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          label: Text(context.l10n.profile_loginLinuxDo, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
           style: FilledButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -1028,7 +1028,7 @@ class _ProfileInfoSection extends ConsumerWidget {
         Text(
           name ?? username ?? (isLoggedIn ? context.l10n.common_loading : context.l10n.profile_notLoggedIn),
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             fontSize: 22,
           ),
           maxLines: 1,
@@ -1058,7 +1058,7 @@ class _ProfileInfoSection extends ConsumerWidget {
                   _getTrustLevelLabel(trustLevel ?? 0),
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),

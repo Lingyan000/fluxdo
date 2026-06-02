@@ -223,7 +223,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                                                               Text(
                                                                                 cat.name,
                                                                                 style: theme.textTheme.titleSmall?.copyWith(
-                                                                                  fontWeight: FontWeight.bold,
+                                                                                  fontWeight: FontWeight.w600,
                                                                                   color: _parseColor(cat.color),
                                                                                 ),
                                                                               ),
@@ -260,7 +260,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
   }
 
   Widget _buildCategoryIcon(Category category, Category? parent) {
-    IconData? faIcon = FontAwesomeHelper.getIcon(category.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category.icon);
     String? logoUrl = category.uploadedLogo;
 
     if (faIcon == null && (logoUrl == null || logoUrl.isEmpty) && parent != null) {

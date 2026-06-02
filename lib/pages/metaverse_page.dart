@@ -173,7 +173,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                           child: Text(
                             context.l10n.metaverse_myServices,
                             style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               color: colorScheme.onSurface,
                             ),
                           ),
@@ -297,7 +297,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                     Text(
                       context.l10n.metaverse_ldcService,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -375,7 +375,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                     Text(
                       context.l10n.metaverse_cdkService,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),

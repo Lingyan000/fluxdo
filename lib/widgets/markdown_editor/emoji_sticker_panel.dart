@@ -247,7 +247,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: selected ? FontWeight.w500 : FontWeight.normal,
                   color: selected
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant,

@@ -441,7 +441,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                     Text(
                       S.current.bookmark_editBookmark,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const Spacer(),
@@ -469,7 +469,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                 Text(
                   S.current.bookmark_setReminder,
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 8),

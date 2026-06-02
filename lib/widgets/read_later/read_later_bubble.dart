@@ -127,7 +127,7 @@ class _ReadLaterBubbleState extends ConsumerState<ReadLaterBubble>
                         style: TextStyle(
                           color: colorScheme.onError,
                           fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),

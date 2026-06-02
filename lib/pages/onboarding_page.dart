@@ -201,7 +201,7 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                   context.l10n.common_login,
                   style: const TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     letterSpacing: 1.0,
                   ),
                 ),

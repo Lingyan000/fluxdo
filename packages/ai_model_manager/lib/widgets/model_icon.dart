@@ -86,7 +86,7 @@ class ModelIcon extends StatelessWidget {
         _firstLetter(colorSeed),
         style: TextStyle(
           color: letterColor,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           fontSize: size * 0.46,
           height: 1.0,
           fontFeatures: const [FontFeature.tabularFigures()],

@@ -102,5 +102,7 @@
   "topics_topicId": "Topic ID",
   "topics_topicIdHint": "e.g., 1095754",
   "topics_unreadTopics": "Unread topics",
-  "topics_viewNewTopics": "View {count} new or updated topics"
+  "topics_viewNewTopics": "View {count} new or updated topics",
+  "topic_keywordFilter_hiddenCount": "{count} topics hidden",
+  "topic_keywordFilter_manage": "Manage"
 }

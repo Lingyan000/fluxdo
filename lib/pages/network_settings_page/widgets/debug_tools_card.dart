@@ -136,7 +136,7 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
                       Text(
                         '调试日志',
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const Spacer(),
@@ -304,7 +304,7 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
                       Text(
                         'CF 验证日志',
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const Spacer(),

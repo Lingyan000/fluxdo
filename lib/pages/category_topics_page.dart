@@ -6,7 +6,9 @@ import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/pagination_helper.dart';
+import '../utils/topic_keyword_filter.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_notification_button.dart';
@@ -81,10 +83,51 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     }
   }
 
+  /// 关键词过滤场景下，loadMore 自动续加载的并发标志
+  bool _isAutoContinueLoading = false;
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      _loadMore();
+      _loadMoreWithAutoContinue();
+    }
+  }
+
+  /// 触发 loadMore；若关键词命中率高、可见增量不足，自动续加载至多 3 次。
+  Future<void> _loadMoreWithAutoContinue() async {
+    if (_isAutoContinueLoading) return;
+    _isAutoContinueLoading = true;
+    try {
+      final prefs = ref.read(preferencesProvider);
+      final keywords = prefs.normalizedFilterKeywords;
+      final wholeWord = prefs.topicFilterWholeWord;
+
+      var attempts = 0;
+      while (true) {
+        final (visBefore, _) = TopicKeywordFilter.apply(
+          _topics,
+          normalizedKeywords: keywords,
+          wholeWord: wholeWord,
+        );
+        await _loadMore();
+        if (!mounted) return;
+        final (visAfter, _) = TopicKeywordFilter.apply(
+          _topics,
+          normalizedKeywords: keywords,
+          wholeWord: wholeWord,
+        );
+        if (!TopicKeywordFilter.shouldAutoLoadMore(
+          visibleBefore: visBefore.length,
+          visibleAfter: visAfter.length,
+          hasMore: _hasMore,
+          attempts: attempts,
+        )) {
+          break;
+        }
+        attempts++;
+      }
+    } finally {
+      _isAutoContinueLoading = false;
     }
   }
 
@@ -467,15 +510,32 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
       );
     }
 
+    final keywords = ref.watch(
+      preferencesProvider.select((p) => p.normalizedFilterKeywords),
+    );
+    final wholeWord = ref.watch(
+      preferencesProvider.select((p) => p.topicFilterWholeWord),
+    );
+    final (visible, hidden) = TopicKeywordFilter.apply(
+      _topics,
+      normalizedKeywords: keywords,
+      wholeWord: wholeWord,
+    );
+    final hintOffset = hidden > 0 ? 1 : 0;
+
     return DesktopRefreshIndicator(
       onRefresh: _loadTopics,
       child: ListView.builder(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(12),
-        itemCount: _topics.length + 1,
+        itemCount: visible.length + hintOffset + 1,
         itemBuilder: (context, index) {
-          if (index >= _topics.length) {
+          if (hintOffset > 0 && index == 0) {
+            return KeywordFilterHintBar(hiddenCount: hidden);
+          }
+          final topicIndex = index - hintOffset;
+          if (topicIndex >= visible.length) {
             if (!_hasMore) {
               return Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -524,7 +584,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             );
           }
 
-          final topic = _topics[index];
+          final topic = visible[topicIndex];
           final enableLongPress = ref
               .watch(preferencesProvider)
               .longPressPreview;

@@ -927,7 +927,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       child: Text.rich(
         TextSpan(
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
           children: [
             if (detail?.isPrivateMessage ?? false)
@@ -965,7 +965,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             ...EmojiText.buildEmojiSpans(
               context,
               detail?.title ?? widget.initialTitle ?? '',
-              theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+              theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -1007,12 +1007,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final useSwipeEntry = ref.watch(
       preferencesProvider.select((p) => p.aiSwipeEntry),
     );
+    final hasAiModel = ref.watch(hasAvailableAiModelProvider);
+    final isAiGenerating = hasAiModel
+        ? ref.watch(
+            topicAiChatProvider(
+              widget.topicId,
+            ).select((state) => state.isGenerating),
+          )
+        : false;
 
     return [
       // AI 助手按钮（滑动入口模式下隐藏）
-      if (!useSwipeEntry && ref.watch(hasAvailableAiModelProvider))
+      if (!useSwipeEntry && hasAiModel)
         IconButton(
-          icon: const Icon(Icons.auto_awesome),
+          icon: _AiAssistantActionIcon(isGenerating: isAiGenerating),
           tooltip: context.l10n.topicDetail_aiAssistant,
           onPressed: () => _showAiAssistantSheet(detail),
         ),
@@ -1459,9 +1467,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       preferencesProvider.select((p) => p.aiSwipeEntry),
     );
 
-    // 保持 AI 聊天 provider 存活，避免 BottomSheet 关闭后状态丢失
+    // 保持当前话题页内的 AI 状态存活，避免 BottomSheet 关闭后丢失
+    // 已选模型、文本/生图模式和消息列表。离开话题页后仍由 autoDispose 释放。
     if (hasAiModel) {
       ref.watch(topicAiChatProvider(widget.topicId));
+      ref.watch(topicSelectedAiModelProvider(widget.topicId));
+      ref.watch(topicChatModeProvider(widget.topicId));
     }
 
     // 首次引导检查（仅滑动入口模式）
@@ -1554,6 +1565,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                               topicId: widget.topicId,
                               categoryId: detail.categoryId,
                               initialContent: '$imageMarkdown\n',
+                              topicTitle: detail.title,
                               isPrivateMessageTopic: detail.isPrivateMessage,
                             );
                           },
@@ -1568,6 +1580,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _showAiAssistantSheet(TopicDetail detail) {
+    _isAiSheetOpen = true;
     // 在 modal 外部获取状态栏高度，因为 showModalBottomSheet 会清零 padding.top
     final topPadding = MediaQuery.of(context).padding.top;
     showAppBottomSheet(
@@ -1592,6 +1605,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             topicId: widget.topicId,
             categoryId: detail.categoryId,
             initialContent: '$imageMarkdown\n',
+            topicTitle: detail.title,
             isPrivateMessageTopic: detail.isPrivateMessage,
           );
         },
@@ -1932,6 +1946,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     context: context,
                     post: post,
                     topicId: widget.topicId,
+                    topicTitle: detail.title,
+                    isPrivateMessageTopic: detail.isPrivateMessage,
                     onJumpToPost: _scrollToPost,
                   ),
                 );
@@ -1963,6 +1979,39 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         return Opacity(opacity: isPositioned ? 1.0 : 0.0, child: child);
       },
       child: scrollView,
+    );
+  }
+}
+
+class _AiAssistantActionIcon extends StatelessWidget {
+  const _AiAssistantActionIcon({required this.isGenerating});
+
+  final bool isGenerating;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isGenerating) {
+      return const Icon(Icons.auto_awesome);
+    }
+
+    final color = IconTheme.of(context).color;
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: color,
+            ),
+          ),
+          Icon(Icons.auto_awesome, size: 13, color: color),
+        ],
+      ),
     );
   }
 }

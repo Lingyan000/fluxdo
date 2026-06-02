@@ -7,6 +7,8 @@ class DraggableFloatingPill extends StatefulWidget {
   final VoidCallback? onTap;
   final EdgeInsets padding;
   final double initialTop;
+  final bool initiallyExpanded;
+  final bool tapToExpand;
 
   const DraggableFloatingPill({
     super.key,
@@ -14,6 +16,8 @@ class DraggableFloatingPill extends StatefulWidget {
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     this.initialTop = 100,
+    this.initiallyExpanded = false,
+    this.tapToExpand = true,
   });
 
   @override
@@ -26,8 +30,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
 
-  // 默认收起状态
-  bool _isExpanded = false;
+  late bool _isExpanded;
 
   @override
   double get floatingOverlap => 20.0;
@@ -42,6 +45,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
   void initState() {
     super.initState();
     initFloating();
+    _isExpanded = widget.initiallyExpanded;
 
     // 初始化呼吸动画
     _breathingController = AnimationController(
@@ -69,12 +73,19 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
 
   void _onPanStart(DragStartDetails details) {
     onFloatingPanStart(details);
-    setState(() {
-      _isExpanded = false; // 拖拽时自动收起
-    });
+    if (widget.tapToExpand) {
+      setState(() {
+        _isExpanded = false; // 拖拽时自动收起
+      });
+    }
   }
 
   void _handleTap() {
+    if (!widget.tapToExpand) {
+      widget.onTap?.call();
+      return;
+    }
+
     if (_isExpanded) {
       widget.onTap?.call();
     } else {
@@ -129,7 +140,8 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                     ),
                     BoxShadow(
                       color: colorScheme.primary.withValues(
-                          alpha: 0.1 + 0.3 * _breathingAnimation.value),
+                        alpha: 0.1 + 0.3 * _breathingAnimation.value,
+                      ),
                       blurRadius: 12 + 8 * _breathingAnimation.value,
                       spreadRadius: 2 + 4 * _breathingAnimation.value,
                     ),
@@ -171,12 +183,10 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: DefaultTextStyle(
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge!
+                              style: Theme.of(context).textTheme.labelLarge!
                                   .copyWith(
                                     color: contentColor,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w600,
                                   ),
                               child: widget.child,
                             ),

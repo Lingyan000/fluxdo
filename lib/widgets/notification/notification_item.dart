@@ -180,7 +180,7 @@ class NotificationItem extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final iconColor = _getNotificationColor(context);
     final titleStyle = TextStyle(
-      fontWeight: notification.read ? FontWeight.normal : FontWeight.w600,
+      fontWeight: notification.read ? FontWeight.normal : FontWeight.w500,
     );
 
     return ListTile(

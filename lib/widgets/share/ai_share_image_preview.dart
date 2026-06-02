@@ -277,7 +277,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                     widget.messages.length > 1 ? context.l10n.share_exportChatImage : context.l10n.share_exportImage,
                     style: const TextStyle(
                       fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -379,7 +379,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurfaceVariant,
                           fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.normal,
+                              isSelected ? FontWeight.w500 : FontWeight.normal,
                         ),
                       ),
                     ],

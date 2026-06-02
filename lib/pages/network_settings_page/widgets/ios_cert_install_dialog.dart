@@ -122,7 +122,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
                 Text(
                   l10n.dohSettings_certDialogTitle,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const Spacer(),
@@ -222,7 +222,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
                             color: isActive
                                 ? theme.colorScheme.onPrimary
                                 : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                 ),
@@ -233,7 +233,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
                     color: isActive || isDone
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
-                    fontWeight: isActive ? FontWeight.bold : null,
+                    fontWeight: isActive ? FontWeight.w600 : null,
                   ),
                 ),
               ],

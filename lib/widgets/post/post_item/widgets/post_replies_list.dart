@@ -57,7 +57,7 @@ class PostRepliesList extends StatelessWidget {
                 Text(
                   context.l10n.post_replyCount(replyCount),
                   style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -104,7 +104,7 @@ class PostRepliesList extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       (reply.name != null && reply.name!.isNotEmpty) ? reply.name! : reply.username,
-                                      style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
+                                      style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),

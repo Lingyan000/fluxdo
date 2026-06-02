@@ -285,7 +285,7 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
                         displayLanguage,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),

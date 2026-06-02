@@ -1,6 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent, SelectedContent;
 import 'package:scroll_to_index/scroll_to_index.dart';
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
@@ -529,7 +529,7 @@ class _TopicPostListState extends State<TopicPostList> {
           child: CustomScrollView(
             controller: scrollController,
             center: centerKey,
-            cacheExtent: 500,
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
@@ -737,6 +737,8 @@ class _TopicPostListState extends State<TopicPostList> {
           onQuoteImage: onQuoteImage,
           onExpandHiddenPost: onExpandHiddenPost,
           useReplyDialog: useReplyDialog,
+          topicTitle: detail.title,
+          isPrivateMessageTopic: detail.isPrivateMessage,
           onShowPostDetail: widget.onShowPostDetail != null
               ? () => widget.onShowPostDetail!(post)
               : null,
@@ -787,6 +789,8 @@ class _TopicPostListState extends State<TopicPostList> {
           onJumpToPost: onJumpToPost,
           onSolutionChanged: onSolutionChanged,
           useReplyDialog: useReplyDialog,
+          topicTitle: detail.title,
+          isPrivateMessageTopic: detail.isPrivateMessage,
           onShowPostDetail: widget.onShowPostDetail != null
               ? () => widget.onShowPostDetail!(post)
               : null,

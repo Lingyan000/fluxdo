@@ -63,7 +63,7 @@ class TopicProgress extends StatelessWidget {
                       '$currentIndex',
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
                     ),
@@ -81,7 +81,7 @@ class TopicProgress extends StatelessWidget {
                       '$totalCount',
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         fontSize: 15,
                       ),
                     ),
@@ -271,7 +271,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                 child: Text(
                   widget.title!,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -415,7 +415,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                                 _selectedIndex == widget.currentIndex ? S.current.topic_atCurrentPosition : S.current.topic_readyToJump,
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: theme.colorScheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -520,7 +520,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      child: Text(S.current.topic_jump, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      child: Text(S.current.topic_jump, style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],

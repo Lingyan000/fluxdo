@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:catcher_2/catcher_2.dart';
+import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,7 @@ import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/clipboard_topic_link_snack_content.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'services/network/cookie/android_cdp_feature.dart';
 import 'services/network/cookie/csrf_token_service.dart';
@@ -91,6 +93,36 @@ import 'utils/platform_utils.dart';
 Future<bool> _initRhttp() async {
   await rhttp.Rhttp.init();
   return true;
+}
+
+/// 应用 Android 屏幕刷新率偏好。
+/// 偏好值 0 表示跟随系统（auto），非 0 则按目标刷新率从 supported 中选最匹配的 mode。
+/// 失败不阻塞启动。
+Future<void> _applyAndroidDisplayMode(SharedPreferences prefs) async {
+  final targetRate = prefs.getInt('pref_display_mode_refresh_rate') ?? 0;
+  try {
+    if (targetRate == 0) {
+      await FlutterDisplayMode.setPreferredMode(DisplayMode.auto);
+      return;
+    }
+    final modes = await FlutterDisplayMode.supported;
+    final active = await FlutterDisplayMode.active;
+    // 优先选分辨率匹配 active 的相同刷新率 mode；否则退化为任意分辨率
+    final matches = modes
+        .where((m) => m.refreshRate.round() == targetRate)
+        .toList();
+    if (matches.isEmpty) {
+      await FlutterDisplayMode.setPreferredMode(DisplayMode.auto);
+      return;
+    }
+    final picked = matches.firstWhere(
+      (m) => m.width == active.width && m.height == active.height,
+      orElse: () => matches.first,
+    );
+    await FlutterDisplayMode.setPreferredMode(picked);
+  } catch (e) {
+    debugPrint('[Main] 应用屏幕刷新率失败: $e');
+  }
 }
 
 Future<void> main() async {
@@ -239,6 +271,11 @@ Future<void> main() async {
     }
   }
 
+  // 应用 Android 屏幕刷新率偏好（不阻塞启动）
+  if (Platform.isAndroid) {
+    unawaited(_applyAndroidDisplayMode(prefs));
+  }
+
   // 提前触发预加载数据请求，与 runApp 并行执行
   // PreheatGate 中的 ensureLoaded() 会复用这个已在进行的请求
   unawaited(PreloadedDataService().ensureLoaded().catchError((Object _) {}));
@@ -343,6 +380,16 @@ Future<void> main() async {
   );
 }
 
+/// 只给 textTheme/primaryTextTheme 注入中文 fallback，保留 ThemeData 原本的
+/// fontFamily 与 weight 配置（避免覆盖 Android OEM 字体导致视觉变粗）。
+ThemeData _withChineseFallback(ThemeData base) {
+  final fallback = SystemChineseFont.fontFamilyFallback;
+  return base.copyWith(
+    textTheme: base.textTheme.apply(fontFamilyFallback: fallback),
+    primaryTextTheme: base.primaryTextTheme.apply(fontFamilyFallback: fallback),
+  );
+}
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -406,30 +453,37 @@ class MainApp extends ConsumerWidget {
               ],
               supportedLocales: AppLocaleUtils.supportedLocales,
               themeMode: themeState.mode,
-              theme: ThemeData(
-                colorScheme: lightScheme,
-                useMaterial3: true,
-                fontFamily: themeState.fontFamilyName,
-                cardTheme: CardThemeData(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              // 仅注入 fontFamilyFallback，不替换 textTheme，避免覆盖 Android OEM
+              // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
+              // 会强制改为 Roboto，导致字体显得比之前粗）。
+              theme: _withChineseFallback(
+                ThemeData(
+                  colorScheme: lightScheme,
+                  useMaterial3: true,
+                  fontFamily: themeState.fontFamilyName,
+                  cardTheme: CardThemeData(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: lightScheme.surfaceContainerLow,
+                    margin: EdgeInsets.zero,
                   ),
-                  color: lightScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
                 ),
               ),
-              darkTheme: ThemeData(
-                colorScheme: darkScheme,
-                useMaterial3: true,
-                fontFamily: themeState.fontFamilyName,
-                cardTheme: CardThemeData(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              darkTheme: _withChineseFallback(
+                ThemeData(
+                  colorScheme: darkScheme,
+                  useMaterial3: true,
+                  fontFamily: themeState.fontFamilyName,
+                  cardTheme: CardThemeData(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: darkScheme.surfaceContainerLow,
+                    margin: EdgeInsets.zero,
                   ),
-                  color: darkScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
                 ),
               ),
               builder: (context, child) {
@@ -1011,6 +1065,14 @@ class _MainPageState extends ConsumerState<MainPage>
         ),
     ];
 
+    // 通知入口在桌面侧栏可能出现两处：
+    // 1) 用户把 notifications 加入底栏布局，作为 NavEntry 渲染
+    // 2) railBottomLeading 默认提供的 NotificationIconButton
+    // 已在底栏配置时不再额外渲染，避免重复。
+    final hasNotificationEntry = entries.any(
+      (e) => e.id == NavEntryIds.notifications,
+    );
+
     // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁
     Widget page = PopScope(
       canPop: false,
@@ -1033,7 +1095,9 @@ class _MainPageState extends ConsumerState<MainPage>
         selectedIndex: selectedBottomIndex,
         onDestinationSelected: _onDestinationSelected,
         destinations: destinations,
-        railBottomLeading: user != null ? const NotificationIconButton() : null,
+        railBottomLeading: (user != null && !hasNotificationEntry)
+            ? const NotificationIconButton()
+            : null,
         body: IndexedStack(
           index: safePageIndex,
           children: [

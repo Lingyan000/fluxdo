@@ -28,6 +28,8 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   late TextEditingController _apiKeyCtrl;
   late AiProviderType _selectedType;
   late List<AiModel> _models;
+  late List<int> _modelRowIds;
+  int _nextModelRowId = 0;
 
   final PageController _pageCtrl = PageController();
   int _tabIndex = 0;
@@ -51,6 +53,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
         text: widget.provider?.baseUrl ?? _selectedType.defaultBaseUrl);
     _apiKeyCtrl = TextEditingController();
     _models = List.from(widget.provider?.models ?? []);
+    _modelRowIds = List.generate(_models.length, (_) => _nextModelRowId++);
     if (_isEditing) _loadApiKey();
   }
 
@@ -161,6 +164,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
     }
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -170,27 +174,33 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
               child: Text(
                 AiL10n.current.selectModelToTest,
                 style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600),
+                    fontSize: 16, fontWeight: FontWeight.w500),
               ),
             ),
-            ...List.generate(_models.length, (i) {
-              final m = _models[i];
-              return ListTile(
-                leading: ModelIcon(
-                  providerName: widget.provider?.name ?? '',
-                  modelName: m.name ?? m.id,
-                  size: 24,
-                ),
-                title: Text(m.name ?? m.id),
-                subtitle: m.name != null
-                    ? Text(m.id, style: const TextStyle(fontSize: 12))
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _testModel(m.id);
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _models.length,
+                itemBuilder: (ctx, i) {
+                  final m = _models[i];
+                  return ListTile(
+                    leading: ModelIcon(
+                      providerName: widget.provider?.name ?? '',
+                      modelName: m.name ?? m.id,
+                      size: 24,
+                    ),
+                    title: Text(m.name ?? m.id),
+                    subtitle: m.name != null
+                        ? Text(m.id, style: const TextStyle(fontSize: 12))
+                        : null,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _testModel(m.id);
+                    },
+                  );
                 },
-              );
-            }),
+              ),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -221,10 +231,13 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
         fetchFuture: fetchFuture,
         currentModels: _models,
         onAdd: (model) {
-          setState(() => _models.add(ModelCapabilities.infer(model)));
+          setState(() {
+            _models.add(ModelCapabilities.infer(model));
+            _modelRowIds.add(_nextModelRowId++);
+          });
         },
         onRemove: (modelId) {
-          setState(() => _models.removeWhere((m) => m.id == modelId));
+          setState(() => _removeModelsById(modelId));
         },
       ),
     );
@@ -233,7 +246,10 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   Future<void> _addModelManually() async {
     final result = await showCreateModelSheet(context);
     if (result != null && mounted) {
-      setState(() => _models.add(ModelCapabilities.infer(result)));
+      setState(() {
+        _models.add(ModelCapabilities.infer(result));
+        _modelRowIds.add(_nextModelRowId++);
+      });
     }
   }
 
@@ -290,6 +306,29 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
     final result = await showModelDetailSheet(context, model: model);
     if (result != null && mounted) {
       setState(() => _models[index] = result);
+    }
+  }
+
+  void _reorderModels(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    setState(() {
+      final moved = _models.removeAt(oldIndex);
+      final movedRowId = _modelRowIds.removeAt(oldIndex);
+      _models.insert(newIndex, moved);
+      _modelRowIds.insert(newIndex, movedRowId);
+    });
+  }
+
+  void _removeModelAt(int index) {
+    _models.removeAt(index);
+    _modelRowIds.removeAt(index);
+  }
+
+  void _removeModelsById(String modelId) {
+    for (var i = _models.length - 1; i >= 0; i--) {
+      if (_models[i].id == modelId) {
+        _removeModelAt(i);
+      }
     }
   }
 
@@ -588,14 +627,21 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                   ],
                 ),
               )
-            : ListView.builder(
+            : ReorderableListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                buildDefaultDragHandles: false,
                 itemCount: _models.length,
+                onReorderItem: _reorderModels,
                 itemBuilder: (ctx, index) {
-                  return _buildModelItem(
-                    theme: theme,
-                    model: _models[index],
+                  final model = _models[index];
+                  return ReorderableDelayedDragStartListener(
+                    key: ValueKey('provider_model_${_modelRowIds[index]}'),
                     index: index,
+                    child: _buildModelItem(
+                      theme: theme,
+                      model: model,
+                      index: index,
+                    ),
                   );
                 },
               ),
@@ -687,7 +733,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                       Text(
                         model.name ?? model.id,
                         style: theme.textTheme.bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                            ?.copyWith(fontWeight: FontWeight.w500),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -714,7 +760,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                   tooltip: AiL10n.current.remove,
                   visualDensity: VisualDensity.compact,
                   onPressed: () =>
-                      setState(() => _models.removeAt(index)),
+                      setState(() => _removeModelAt(index)),
                 ),
               ],
             ),
@@ -772,7 +818,7 @@ class _FloatingPill extends StatelessWidget {
                 style: TextStyle(
                   color: cs.primary,
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -1060,7 +1106,7 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
                       group,
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         color: cs.onSurface.withValues(alpha: 0.7),
                       ),
                     ),

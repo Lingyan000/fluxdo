@@ -47,11 +47,17 @@ dependencies:
   file_picker: ^10.3.10
   intl: ^0.20.2
   url_launcher: ^6.3.1
-  font_awesome_flutter: ^10.12.0
-  phosphor_flutter: ^2.1.0
+  font_awesome_flutter: ^11.0.0
+  phosphor_flutter:
+    # 临时使用 fork 仓库（PR #62），等官方合并后切回 pub.dev
+    # https://github.com/phosphor-icons/phosphor-flutter/pull/62
+    git:
+      url: https://github.com/subarnaPdl/phosphor_icons.git
+      ref: 514f0a883571c4453dbd6ee3041d1dcba4fb8fc7
   # NOTE: If updating font_awesome_flutter, run:
   #   dart run tool/gen_fa_name_mapping.dart
   shared_preferences: ^2.5.4
+  flutter_displaymode: ^0.7.0  # Android 高刷新率支持
   dynamic_color: ^1.8.1
   scroll_to_index: ^3.0.1
   visibility_detector: ^0.4.0+2
@@ -94,6 +100,9 @@ dependencies:
   catcher_2: ^2.1.5
   timezone: ^0.11.0
   flutter_timezone: ^5.0.2
+  # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
+  # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
+  chinese_font_library: ^1.2.0
 
   window_manager: ^0.5.1
   flutter_acrylic: ^1.1.4
@@ -116,6 +125,9 @@ dependency_overrides:
   device_info_plus: 12.3.0
   flutter_inappwebview_linux:
     path: packages/flutter_inappwebview_linux
+  # 锁定 flutter_rust_bridge 版本，与 rhttp 插件的 codegen 版本保持一致
+  # rhttp 预编译原生库基于 2.11.1，升级会导致 rhttp.Rhttp.init() 失败
+  flutter_rust_bridge: 2.11.1
 
 dev_dependencies:
   flutter_test:
@@ -141,7 +153,10 @@ flutter:
   fonts:
     - family: MiSans
       fonts:
-        - asset: assets/fonts/MiSans-Regular.ttf
+        # MiSans Variable Font，单文件覆盖 100-900 全部 weight。
+        # Flutter 3.41+ FontWeight 会映射到 wght variation axis，因此即使
+        # 不显式声明 weight，TextStyle(fontWeight: FontWeight.wXXX) 也能精准命中。
+        - asset: assets/fonts/MiSansVF.ttf
 
 
 

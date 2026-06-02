@@ -84,7 +84,7 @@ class CdkBalanceCard extends ConsumerWidget {
                           Text(
                             '${userInfo.score}',
                             style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               color: theme.colorScheme.onSurface,
                             ),
                           ),
@@ -164,7 +164,7 @@ class CdkBalanceCard extends ConsumerWidget {
                   Text(
                     '${userInfo.score}',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
@@ -281,7 +281,7 @@ class CdkBalanceCard extends ConsumerWidget {
                       Text(
                         '${userInfo.score}',
                         style: theme.textTheme.displaySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           color: Colors.white,
                           fontSize: 36,
                         ),
@@ -348,7 +348,7 @@ class CdkBalanceCard extends ConsumerWidget {
                         Text(
                           isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                             color: isExpired
                                 ? theme.colorScheme.error
                                 : theme.colorScheme.onSurface,
@@ -433,7 +433,7 @@ class CdkBalanceCard extends ConsumerWidget {
                     Text(
                       isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: isExpired
                             ? theme.colorScheme.error
                             : theme.colorScheme.onSurface,
@@ -547,7 +547,7 @@ class CdkBalanceCard extends ConsumerWidget {
                   Text(
                     isExpired ? S.current.common_authExpired : S.current.common_loadFailed,
                     style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white,
                       fontSize: 28,
                     ),

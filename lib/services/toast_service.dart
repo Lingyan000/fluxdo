@@ -332,7 +332,7 @@ class _ToastWidgetState extends State<_ToastWidget>
                               widget.message,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onInverseSurface, // Adapt text color
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                                 letterSpacing: 0.2,
                               ),
                               maxLines: 2,
@@ -363,7 +363,7 @@ class _ToastWidgetState extends State<_ToastWidget>
                               ),
                               child: Text(
                                 widget.actionLabel!,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -525,7 +525,7 @@ class _DownloadToastWidgetState extends State<_DownloadToastWidget>
                                     name,
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       color: colorScheme.onInverseSurface,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w500,
                                       letterSpacing: 0.2,
                                     ),
                                     maxLines: 1,
@@ -540,7 +540,7 @@ class _DownloadToastWidgetState extends State<_DownloadToastWidget>
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onInverseSurface
                                         .withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],

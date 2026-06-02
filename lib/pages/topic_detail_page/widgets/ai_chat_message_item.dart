@@ -197,6 +197,7 @@ class AiChatMessageItem extends StatelessWidget {
                   attachments: attachments,
                   isStreaming: isStreaming,
                   loadingStage: message.loadingStage,
+                  startedAt: message.createdAt,
                 ),
               ],
               // 优化后的 image prompt（用户可展开验证 optimizer 真的工作了）
@@ -459,10 +460,12 @@ class _GeneratedImagesGrid extends StatelessWidget {
   final List<AiChatAttachment> attachments;
   final bool isStreaming;
   final String? loadingStage;
+  final DateTime startedAt;
 
   const _GeneratedImagesGrid({
     required this.attachments,
     required this.isStreaming,
+    required this.startedAt,
     this.loadingStage,
   });
 
@@ -470,7 +473,10 @@ class _GeneratedImagesGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     // 流式中且还没有任何图片 → 整体显示占位
     if (attachments.isEmpty && isStreaming) {
-      return _ImageGenerationPlaceholder(stage: loadingStage);
+      return _ImageGenerationPlaceholder(
+        stage: loadingStage,
+        startedAt: startedAt,
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,7 +489,7 @@ class _GeneratedImagesGrid extends StatelessWidget {
         // 已有部分图片但仍在生成（多张图场景）
         if (isStreaming && attachments.isNotEmpty) ...[
           const SizedBox(height: 8),
-          const _ImageGenerationPlaceholder(compact: true),
+          _ImageGenerationPlaceholder(compact: true, startedAt: startedAt),
         ],
       ],
     );
@@ -738,7 +744,14 @@ class _ImageGenerationPlaceholder extends StatefulWidget {
   /// 加载阶段标识，决定显示文案
   final String? stage;
 
-  const _ImageGenerationPlaceholder({this.compact = false, this.stage});
+  /// 生成开始时间。用消息创建时间做基准，避免关闭弹框后重开计时归零。
+  final DateTime startedAt;
+
+  const _ImageGenerationPlaceholder({
+    this.compact = false,
+    this.stage,
+    required this.startedAt,
+  });
 
   @override
   State<_ImageGenerationPlaceholder> createState() =>
@@ -749,7 +762,6 @@ class _ImageGenerationPlaceholderState
     extends State<_ImageGenerationPlaceholder>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Stopwatch _stopwatch;
   Timer? _ticker;
   int _seconds = 0;
 
@@ -760,11 +772,16 @@ class _ImageGenerationPlaceholderState
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
-    _stopwatch = Stopwatch()..start();
+    _syncElapsedSeconds();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() => _seconds = _stopwatch.elapsed.inSeconds);
+      setState(_syncElapsedSeconds);
     });
+  }
+
+  void _syncElapsedSeconds() {
+    final elapsed = DateTime.now().difference(widget.startedAt).inSeconds;
+    _seconds = elapsed < 0 ? 0 : elapsed;
   }
 
   @override

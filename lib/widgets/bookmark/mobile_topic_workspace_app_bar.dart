@@ -127,7 +127,7 @@ class MobileWorkspaceCountButton extends StatelessWidget {
                   color: disabled
                       ? colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
                       : colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0,
                   height: 1.0,
                 ),

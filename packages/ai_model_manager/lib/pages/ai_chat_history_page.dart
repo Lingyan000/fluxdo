@@ -324,7 +324,7 @@ class _MaxSessionsRow extends StatelessWidget {
                 child: Text(
                   '$maxSessions',
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                      ?.copyWith(fontWeight: FontWeight.w500),
                 ),
               ),
             ],

@@ -182,12 +182,27 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     if (_showUI) {
       _restoreSystemUI();
     } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
+      // 用 immersiveSticky 而非 manual+overlays:[]。
+      // Android 15+ 默认 edge-to-edge，manual 模式会被系统忽略导致隐藏后
+      // 无法恢复。immersiveSticky 是专为 fullscreen 设计的模式，Android 15+
+      // 仍正常工作，且边缘上滑可临时显示 system bars。
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
 
-  void _restoreSystemUI() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  Future<void> _restoreSystemUI() async {
+    // Flutter 3.41+ 引擎在 setSystemChromeEnabledSystemUIMode 的 EDGE_TO_EDGE
+    // 分支不清除前一个模式（immersiveSticky）设的 SYSTEM_UI_FLAG_FULLSCREEN
+    // 和 SYSTEM_UI_FLAG_HIDE_NAVIGATION，导致直接切 edgeToEdge 不能恢复 bars。
+    //
+    // 解决：先走 manual+all overlays 路径（对应 setSystemChromeEnabledSystemUIOverlays），
+    // 该路径会显式清除上述 immersive flags 并显示 bars；然后再切回 edgeToEdge
+    // 恢复全局 edge-to-edge 布局。
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   /// 预加载相邻图片

@@ -44,9 +44,9 @@ run *args:
 build *args:
   @dart run tool/flutterw.dart build {{args}}
 
-# 执行 flutter test；额外参数透传给 flutter test
+# 执行工作区测试；额外参数透传给 flutter test
 test *args:
-  @dart run tool/flutterw.dart test {{args}}
+  @dart run tool/project_tasks.dart test:all {{args}}
 
 # 执行 flutter drive；额外参数透传给 flutter drive
 drive *args:

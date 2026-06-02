@@ -64,7 +64,7 @@ class VpnAutoToggleCard extends StatelessWidget {
                           color: vpnActive
                               ? theme.colorScheme.tertiary
                               : theme.colorScheme.onSurfaceVariant,
-                          fontWeight: vpnActive ? FontWeight.w600 : null,
+                          fontWeight: vpnActive ? FontWeight.w500 : null,
                         ),
                       ),
                     ],

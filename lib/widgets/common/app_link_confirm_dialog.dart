@@ -290,7 +290,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                               Text(
                                 context.l10n.appLink_continueVisitConfirm(widget.displayName),
                                 style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w500,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

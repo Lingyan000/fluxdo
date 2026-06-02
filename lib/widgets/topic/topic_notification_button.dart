@@ -150,7 +150,7 @@ class _NotificationLevelSheet extends StatelessWidget {
             child: Text(
               S.current.topic_notificationSettings,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -164,7 +164,7 @@ class _NotificationLevelSheet extends StatelessWidget {
               title: Text(
                 level.label,
                 style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   color: isSelected ? theme.colorScheme.primary : null,
                 ),
               ),
@@ -319,7 +319,7 @@ class _CategoryNotificationLevelSheet extends StatelessWidget {
             child: Text(
               S.current.topic_notificationSettings,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -337,7 +337,7 @@ class _CategoryNotificationLevelSheet extends StatelessWidget {
                     title: Text(
                       level.label,
                       style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected ? theme.colorScheme.primary : null,
                       ),
                     ),

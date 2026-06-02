@@ -355,7 +355,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
                   Text(
                     _workspaceSwitcherLabel(_workspaceState.topicTabs.length),
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 12),

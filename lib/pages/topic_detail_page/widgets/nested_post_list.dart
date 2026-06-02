@@ -292,7 +292,7 @@ class _SortChip extends StatelessWidget {
             color: isActive
                 ? theme.colorScheme.primary
                 : theme.colorScheme.onSurfaceVariant,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),

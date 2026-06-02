@@ -394,7 +394,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
                     context.l10n.share_shareImageTitle,
                     style: TextStyle(
                       fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -467,7 +467,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
                           color: isSelected
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurfaceVariant,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
                         ),
                       ),
                     ],

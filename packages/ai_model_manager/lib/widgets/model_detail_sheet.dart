@@ -227,7 +227,7 @@ class _ModelDetailSheetState extends State<_ModelDetailSheet> {
                             : AiL10n.current.modelDetailTitle,
                         style: const TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -614,7 +614,7 @@ class _SegmentedMulti extends StatelessWidget {
                               options[i],
                               style: TextStyle(
                                 color: cs.onSurface,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],

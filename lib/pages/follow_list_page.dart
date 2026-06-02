@@ -105,7 +105,7 @@ class _FollowListPageState extends ConsumerState<FollowListPage> {
                               title: Text(
                                 user.name?.isNotEmpty == true ? user.name! : user.username,
                                 style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                               subtitle: Text(

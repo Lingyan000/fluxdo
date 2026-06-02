@@ -192,7 +192,7 @@ class _TopicVoteButtonState extends ConsumerState<TopicVoteButton> {
                   color: _userVoted
                       ? theme.colorScheme.onPrimary
                       : theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                   fontSize: 14,
                 ),
               ),
@@ -215,7 +215,7 @@ class _TopicVoteButtonState extends ConsumerState<TopicVoteButton> {
                           ? theme.colorScheme.onPrimary
                           : theme.colorScheme.primary,
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

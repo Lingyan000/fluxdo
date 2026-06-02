@@ -9,8 +9,10 @@ import 'package:fluxdo/models/shortcut_binding.dart';
 import 'package:fluxdo/providers/discourse_providers.dart';
 import 'package:fluxdo/services/toast_service.dart';
 import 'package:dio/dio.dart';
+import 'package:fluxdo/services/ai_post_review_service.dart';
 import 'package:fluxdo/services/app_error_handler.dart';
 import 'package:fluxdo/services/network/exceptions/api_exception.dart';
+import 'package:fluxdo/widgets/ai/ai_post_review_button.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_renderer.dart';
 import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
@@ -22,8 +24,14 @@ import '../utils/dialog_utils.dart';
 class CreateTopicPage extends ConsumerStatefulWidget {
   final int? initialCategoryId;
   final List<String>? initialTags;
+  final String draftKey;
 
-  const CreateTopicPage({super.key, this.initialCategoryId, this.initialTags});
+  const CreateTopicPage({
+    super.key,
+    this.initialCategoryId,
+    this.initialTags,
+    this.draftKey = Draft.newTopicKey,
+  });
 
   @override
   ConsumerState<CreateTopicPage> createState() => _CreateTopicPageState();
@@ -67,7 +75,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _contentController.addListener(_updateContentLength);
 
     // 初始化草稿控制器
-    _draftController = DraftController(draftKey: Draft.newTopicKey);
+    _draftController = DraftController(draftKey: widget.draftKey);
 
     // 添加草稿自动保存监听
     _titleController.addListener(_onDraftContentChanged);
@@ -494,6 +502,15 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
             TextButton(
               onPressed: _isSubmitting ? null : _discardDraft,
               child: Text(context.l10n.common_discard),
+            ),
+            AiPostReviewButton(
+              titleBuilder: () => _titleController.text,
+              contentBuilder: () => _contentController.text,
+              target: AiPostReviewTarget.topic,
+              enabled: !_isSubmitting,
+              categoryNameBuilder: () => _selectedCategory?.name,
+              categoryDescriptionBuilder: () => _selectedCategory?.description,
+              tagsBuilder: () => _selectedTags,
             ),
             const SizedBox(width: 8),
             Padding(

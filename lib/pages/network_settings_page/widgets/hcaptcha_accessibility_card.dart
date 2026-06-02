@@ -92,7 +92,7 @@ class _HCaptchaAccessibilityCardState extends State<HCaptchaAccessibilityCard> {
                       color: hasCookie
                           ? theme.colorScheme.tertiary
                           : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: hasCookie ? FontWeight.w600 : null,
+                      fontWeight: hasCookie ? FontWeight.w500 : null,
                     ),
                   ),
                 ],

@@ -131,7 +131,7 @@ class ShareImageWidget extends ConsumerWidget {
           'LINUX DO',
           style: TextStyle(
             fontSize: 16,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             color: textColor.withValues(alpha: 0.8),
           ),
         ),
@@ -142,7 +142,7 @@ class ShareImageWidget extends ConsumerWidget {
   Widget _buildTitle(BuildContext context, Color textColor) {
     final titleStyle = TextStyle(
       fontSize: 16,
-      fontWeight: FontWeight.bold,
+      fontWeight: FontWeight.w600,
       color: textColor.withValues(alpha: 0.9),
       height: 1.4,
     );
@@ -189,7 +189,7 @@ class ShareImageWidget extends ConsumerWidget {
                 post.name?.isNotEmpty == true ? post.name! : post.username,
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: textColor.withValues(alpha: 0.85),
                 ),
               ),

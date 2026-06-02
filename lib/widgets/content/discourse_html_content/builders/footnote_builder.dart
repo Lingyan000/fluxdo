@@ -102,7 +102,7 @@ class _FootnoteRefWidget extends StatelessWidget {
             style: TextStyle(
               color: theme.colorScheme.primary,
               fontSize: 11,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               height: 1,
             ),
           ),

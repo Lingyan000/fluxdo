@@ -91,7 +91,7 @@ class _NetworkAdapterSettingsPageState
                 Text(
                   context.l10n.networkAdapter_currentStatus,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -142,7 +142,7 @@ class _NetworkAdapterSettingsPageState
                 Text(
                   context.l10n.networkAdapter_controlOptions,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -189,7 +189,7 @@ class _NetworkAdapterSettingsPageState
                 Text(
                   context.l10n.networkAdapter_fallbackStatus,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     color: theme.colorScheme.error,
                   ),
                 ),
@@ -254,7 +254,7 @@ class _NetworkAdapterSettingsPageState
                 Text(
                   context.l10n.networkAdapter_devTest,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     color: theme.colorScheme.tertiary,
                   ),
                 ),

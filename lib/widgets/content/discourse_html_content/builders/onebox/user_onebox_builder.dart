@@ -66,7 +66,7 @@ Widget buildUserOnebox({
               Text(
                 '@$username',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: theme.colorScheme.primary,
                 ),
               ),

@@ -122,7 +122,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
         style: TextStyle(
           color: textColor,
           fontSize: 10,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
           height: 1.1,
         ),
       ),

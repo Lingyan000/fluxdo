@@ -216,7 +216,7 @@ class _ShortcutDialogHeader extends StatelessWidget {
               Text(
                 l10n.settings_shortcuts,
                 style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 4),
@@ -267,7 +267,7 @@ class _ShortcutEmptyState extends StatelessWidget {
           Text(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
             ),
           ),
           if (query.trim().isNotEmpty) ...[
@@ -318,7 +318,7 @@ class _ShortcutCategoryCard extends StatelessWidget {
             title,
             style: theme.textTheme.titleSmall?.copyWith(
               color: theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 10),

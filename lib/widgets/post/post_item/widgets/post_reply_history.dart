@@ -48,7 +48,7 @@ class PostReplyHistory extends StatelessWidget {
                   context.l10n.post_replyTo,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const Spacer(),
@@ -95,7 +95,7 @@ class PostReplyHistory extends StatelessWidget {
                             children: [
                               Text(
                                 (replyPost.name != null && replyPost.name!.isNotEmpty) ? replyPost.name! : replyPost.username,
-                                style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
+                                style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(width: 6),
                               Text(

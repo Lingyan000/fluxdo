@@ -226,7 +226,7 @@ class ProfileStatsCardPreview extends StatelessWidget {
                 ? item.value
                 : NumberUtils.formatCount(item.rawValue),
             style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
             maxLines: 1,

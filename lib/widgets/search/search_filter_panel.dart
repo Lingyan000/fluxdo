@@ -196,7 +196,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                 Text(
                   context.l10n.search_advancedSearch,
                   style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 // 重置按钮
@@ -229,7 +229,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                 Text(
                   context.l10n.search_status,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -241,7 +241,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                 Text(
                   context.l10n.search_dateRange,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -253,7 +253,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                 Text(
                   context.l10n.search_category,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -280,7 +280,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                     Text(
                       context.l10n.search_tags,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const Spacer(),
@@ -663,7 +663,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                       color: isSelected
                           ? colorScheme.primary
                           : colorScheme.onSurfaceVariant,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
                 ],
@@ -742,7 +742,7 @@ class _FilterChip extends StatelessWidget {
                   color: isSelected
                       ? colorScheme.primary
                       : colorScheme.onSurfaceVariant,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
               if (isSelected) ...[
@@ -782,7 +782,7 @@ class _CategoryFilterItem extends StatelessWidget {
     final theme = Theme.of(context);
 
     // 图标逻辑
-    IconData? faIcon;
+    FaIconData? faIcon;
 
     if (category != null) {
       faIcon = FontAwesomeHelper.getIcon(category!.icon);
@@ -836,7 +836,7 @@ class _CategoryFilterItem extends StatelessWidget {
               Text(
                 name,
                 style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   color: theme.colorScheme.onSurface,
                   fontSize: isSubcategory ? 12 : null,
                 ),
@@ -915,7 +915,7 @@ class ActiveSearchFiltersBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           color: colorScheme.primary,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const Spacer(),

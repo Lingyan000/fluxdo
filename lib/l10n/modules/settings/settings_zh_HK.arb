@@ -36,8 +36,25 @@
   "preferences_clipboardTopicLinkDetectionDesc": "回到應用時檢測剪貼板中的 Linux.do 話題鏈接，並在底部詢問是否打開",
   "preferences_clipboardTopicLink_detected": "檢測到剪貼板中的話題鏈接",
   "preferences_clipboardTopicLink_open": "打開",
+  "preferences_topicFilterKeywords": "標題關鍵詞過濾",
+  "preferences_topicFilterKeywordsDesc": "過濾標題包含指定關鍵詞的話題，每行一個關鍵詞",
+  "preferences_topicFilterKeywordsEmpty": "未設定關鍵詞",
+  "preferences_topicFilterKeywordsCount": "已設定 {count} 個關鍵詞",
+  "@preferences_topicFilterKeywordsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "preferences_topicFilterKeywordsHint": "每行輸入一個關鍵詞",
+  "preferences_topicFilterKeywordsHelper": "只匹配話題標題，子串匹配，不區分大小寫",
+  "preferences_topicFilterWholeWord": "完整詞匹配",
+  "preferences_topicFilterWholeWordDesc": "開啟後英文關鍵詞不再匹配子串，如 ai 不會命中 Main thread；中文關鍵詞無影響",
   "preferences_autoPanguSpacing": "自動混排優化",
   "preferences_autoPanguSpacingDesc": "輸入時自動插入中英文混排空格",
+  "preferences_aiPostReview": "發帖前 AI 審核",
+  "preferences_aiPostReviewDesc": "發佈前讓 AI 根據社區準則給出意見和修改方向，不會阻止發佈",
+  "preferences_aiPostReviewModel": "審核模型",
+  "preferences_aiPostReviewModelNotSelected": "未選擇模型",
   "preferences_basic": "基礎",
   "preferences_cfClearanceRefresh": "cf_clearance 自動續期",
   "preferences_cfClearanceRefreshDesc": "透過後台 WebView 自動續期 cf_clearance Cookie",

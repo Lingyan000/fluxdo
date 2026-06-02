@@ -18,8 +18,11 @@ class CfChallengeInterceptor extends Interceptor {
 
   final Dio dio;
   final CookieJarService cookieJarService;
+
   /// 共享的 cookie 同步 Future：验证成功后只执行一次 sync
   static Future<bool>? _activeSyncFuture;
+
+  static const _mutationMethods = {'POST', 'PUT', 'DELETE', 'PATCH'};
 
   /// 验证成功后的共享 Cookie 同步（只执行一次）
   Future<bool> _syncCookiesOnce() async {
@@ -70,6 +73,29 @@ class CfChallengeInterceptor extends Interceptor {
       '[INTERCEPTOR] cf_clearance verified: ${cfClearance.length} chars',
     );
     return true;
+  }
+
+  bool _shouldShowActionPrompt(RequestOptions options) {
+    if (options.extra['isSilent'] == true) return false;
+    if (options.extra.containsKey('showErrorToast')) {
+      return options.extra['showErrorToast'] == true;
+    }
+    return _mutationMethods.contains(options.method.toUpperCase());
+  }
+
+  String _requestMode(RequestOptions options) {
+    if (options.extra['isSilent'] == true) return 'silent';
+    return _shouldShowActionPrompt(options) ? 'action' : 'data';
+  }
+
+  Future<void> _refreshCookieHeader(RequestOptions options) async {
+    options.headers.remove('cookie');
+    options.headers.remove('Cookie');
+
+    final cookieHeader = await cookieJarService.getCookieHeader();
+    if (cookieHeader != null && cookieHeader.isNotEmpty) {
+      options.headers['Cookie'] = cookieHeader;
+    }
   }
 
   /// 综合响应头 + 响应体判断是否是 CF 验证页面
@@ -134,46 +160,54 @@ class CfChallengeInterceptor extends Interceptor {
       );
 
       final cfService = CfChallengeService();
+      final isSilent = err.requestOptions.extra['isSilent'] == true;
+      final shouldShowActionPrompt = _shouldShowActionPrompt(
+        err.requestOptions,
+      );
+      final requestMode = _requestMode(err.requestOptions);
 
-      // 检查是否在冷却期
-      if (cfService.isInCooldown) {
-        debugPrint('[Dio] CF Challenge in cooldown, rejecting request');
-        CfChallengeLogger.log('[INTERCEPTOR] Skipped: in cooldown');
-        CfChallengeService.showGlobalMessage(
-          S.current.cf_challengeFailedCooldown,
-        );
-        return handler.reject(
-          DioException(
-            requestOptions: err.requestOptions,
-            error: CfChallengeException(inCooldown: true),
-            type: DioExceptionType.unknown,
-          ),
+      DioException cfException(CfChallengeException error) {
+        return DioException(
+          requestOptions: err.requestOptions,
+          error: error,
+          type: DioExceptionType.unknown,
         );
       }
 
-      // 检查请求是否标记为静默（后台验证）
-      final isSilent = err.requestOptions.extra['isSilent'] == true;
-      // 默认为前台强制验证，除非明确标记为静默
-      final forceForeground = !isSilent;
+      if (cfService.isInCooldown) {
+        debugPrint('[Dio] CF Challenge in cooldown, rejecting request');
+        CfChallengeLogger.log(
+          '[INTERCEPTOR] Cooldown after 403: $requestMethod $requestUrl '
+          'mode=$requestMode',
+        );
+        if (shouldShowActionPrompt) {
+          CfChallengeService.showGlobalMessage(
+            S.current.cf_operationBlockedByChallenge,
+          );
+        }
+        return handler.reject(
+          cfException(CfChallengeException(inCooldown: true)),
+        );
+      }
 
-      final result = await cfService.showManualVerify(null, forceForeground);
+      // 静默请求只在后台尝试验证；页面数据/操作请求在前台展示验证。
+      final result = await cfService.showManualVerify(null, !isSilent);
 
       if (result == true) {
-        // 共享 cookie 同步（多个 403 请求只执行一次）
         final syncOk = await _syncCookiesOnce();
         if (!syncOk) {
+          cfService.startCooldown();
           debugPrint(
             '[Dio] cf_clearance not found after sync, entering cooldown',
           );
-          cfService.startCooldown();
-          CfChallengeService.showGlobalMessage(
-            S.current.cf_challengeNotEffective,
-          );
+          if (shouldShowActionPrompt) {
+            CfChallengeService.showGlobalMessage(
+              S.current.cf_challengeNotEffective,
+            );
+          }
           return handler.reject(
-            DioException(
-              requestOptions: err.requestOptions,
-              error: CfChallengeException(cause: 'cf_clearance cookie 同步失败'),
-              type: DioExceptionType.unknown,
+            cfException(
+              CfChallengeException(cause: 'cf_clearance cookie 同步失败'),
             ),
           );
         }
@@ -182,11 +216,13 @@ class CfChallengeInterceptor extends Interceptor {
         final retryOptions = err.requestOptions;
         try {
           retryOptions.extra['skipCfChallenge'] = true;
-          // 清除原始请求中残留的 cookie header，让 CookieManager 重新读取最新的 cookie
-          retryOptions.headers.remove('cookie');
-          retryOptions.headers.remove('Cookie');
+          // 清除原始请求中残留的 cookie header，并补上最新 Cookie。
+          // 这样即使 dio.fetch 不重新经过 CookieManager，也不会继续发送旧值。
+          await _refreshCookieHeader(retryOptions);
           // 诊断：记录 CookieJar 中的 cookie 名称和 cf_clearance 状态
-          final cookieHeader = await cookieJarService.getCookieHeader();
+          final cookieHeader =
+              retryOptions.headers['Cookie']?.toString() ??
+              retryOptions.headers['cookie']?.toString();
           final hasCfClearance =
               cookieHeader?.contains('cf_clearance=') ?? false;
           final cookieNames = cookieHeader
@@ -236,45 +272,50 @@ class CfChallengeInterceptor extends Interceptor {
             ),
           );
         }
-      } else if (result == null) {
-        // null 可能是冷却期内，也可能是无 context
+      }
+
+      if (result == null) {
         if (cfService.isInCooldown) {
-          CfChallengeService.showGlobalMessage(
-            S.current.cf_challengeFailedCooldown,
+          CfChallengeLogger.log(
+            '[INTERCEPTOR] Verification skipped by cooldown: '
+            '$requestMethod $requestUrl mode=$requestMode',
           );
+          if (shouldShowActionPrompt) {
+            CfChallengeService.showGlobalMessage(
+              S.current.cf_operationBlockedByChallenge,
+            );
+          }
           return handler.reject(
-            DioException(
-              requestOptions: err.requestOptions,
-              error: CfChallengeException(inCooldown: true),
-              type: DioExceptionType.unknown,
-            ),
+            cfException(CfChallengeException(inCooldown: true)),
           );
         }
+
         // 无 context（应用刚启动，context 还没设置好）
         debugPrint(
           '[Dio] CF Challenge: no context available, cannot show verify page',
         );
         CfChallengeLogger.log('[INTERCEPTOR] No context available');
-        CfChallengeService.showGlobalMessage(S.current.cf_cannotOpenVerifyPage);
+        if (shouldShowActionPrompt) {
+          CfChallengeService.showGlobalMessage(
+            S.current.cf_cannotOpenVerifyPage,
+          );
+        }
         return handler.reject(
-          DioException(
-            requestOptions: err.requestOptions,
-            error: CfChallengeException(cause: '无法获取 context，验证页面未展示'),
-            type: DioExceptionType.unknown,
-          ),
-        );
-      } else {
-        // result == false：用户取消或验证失败
-        CfChallengeLogger.log('[INTERCEPTOR] User cancelled or verify failed');
-        CfChallengeService.showGlobalMessage(S.current.cf_verifyIncomplete);
-        return handler.reject(
-          DioException(
-            requestOptions: err.requestOptions,
-            error: CfChallengeException(userCancelled: true),
-            type: DioExceptionType.unknown,
-          ),
+          cfException(CfChallengeException(cause: '无法获取 context，验证页面未展示')),
         );
       }
+
+      // 用户取消或验证失败。页面数据请求交给 ErrorView 展示按钮；操作请求给即时提示；静默请求不打扰。
+      CfChallengeLogger.log(
+        '[INTERCEPTOR] User cancelled or verify failed: '
+        '$requestMethod $requestUrl mode=$requestMode',
+      );
+      if (shouldShowActionPrompt) {
+        CfChallengeService.showGlobalMessage(S.current.cf_verifyIncomplete);
+      }
+      return handler.reject(
+        cfException(CfChallengeException(userCancelled: true)),
+      );
     }
 
     handler.next(err);

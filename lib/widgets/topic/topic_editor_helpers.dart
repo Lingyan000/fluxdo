@@ -293,7 +293,7 @@ class CategoryTrigger extends StatelessWidget {
     }
 
     final color = parseHexColor(category!.color);
-    IconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
     String? logoUrl = category!.uploadedLogo;
 
     return Material(
@@ -333,7 +333,7 @@ class CategoryTrigger extends StatelessWidget {
                 category!.name,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(width: 4),

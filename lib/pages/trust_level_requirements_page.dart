@@ -330,7 +330,7 @@ class _TrustLevelRequirementsPageState
                        _data!.title,
                        style: TextStyle(
                          fontSize: 28,
-                         fontWeight: FontWeight.bold,
+                         fontWeight: FontWeight.w600,
                          color: colorScheme.onSurface,
                          height: 1.2,
                        ),
@@ -348,7 +348,7 @@ class _TrustLevelRequirementsPageState
                            _data!.badgeText,
                            style: theme.textTheme.labelSmall?.copyWith(
                              color: badgeText,
-                             fontWeight: FontWeight.bold,
+                             fontWeight: FontWeight.w600,
                            ),
                          ),
                        ),
@@ -388,7 +388,7 @@ class _TrustLevelRequirementsPageState
             child: Text(
               title,
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
                 color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
               ),
@@ -513,7 +513,7 @@ class _TrustLevelRequirementsPageState
               Text(
                  bar.current,
                  style: theme.textTheme.bodyMedium?.copyWith(
-                   fontWeight: FontWeight.w700,
+                   fontWeight: FontWeight.w600,
                    color: labelColor,
                  ),
                ),
@@ -626,7 +626,7 @@ class _TrustLevelRequirementsPageState
               Text(
                 quota.value,
                 style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   color: textColor,
                 ),
               ),
@@ -716,7 +716,7 @@ class _TrustLevelRequirementsPageState
                Text(
                  veto.value,
                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     color: iconColor,
                  ),
                ),
@@ -726,7 +726,7 @@ class _TrustLevelRequirementsPageState
           Text(
             veto.label,
              style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
@@ -783,7 +783,7 @@ class _TrustLevelRequirementsPageState
                         _data!.statusText,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: statusColor,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),

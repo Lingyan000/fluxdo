@@ -218,7 +218,7 @@ class _WorkspaceTabButton extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: foregroundColor,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: active ? FontWeight.w500 : FontWeight.w500,
                     ),
                   ),
                 ),

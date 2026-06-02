@@ -82,7 +82,7 @@ class SearchPreviewDialog extends ConsumerWidget {
     }
 
     // 图标逻辑
-    IconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
+    FaIconData? faIcon = FontAwesomeHelper.getIcon(category?.icon);
     String? logoUrl = category?.uploadedLogo;
 
     if (faIcon == null &&
@@ -173,7 +173,7 @@ class SearchPreviewDialog extends ConsumerWidget {
     return Text.rich(
       TextSpan(
         style: theme.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
           height: 1.3,
         ),
         children: [
@@ -261,7 +261,7 @@ class SearchPreviewDialog extends ConsumerWidget {
     BuildContext context,
     ThemeData theme,
     Category? category,
-    IconData? faIcon,
+    FaIconData? faIcon,
     String? logoUrl,
     SearchTopic? topic,
   ) {

@@ -107,7 +107,7 @@ Future<void> _showSubcategoryMenu({
             const SizedBox(width: 10),
             Text(
               S.current.common_all,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -178,7 +178,7 @@ class CategoryTabManagerSheet extends ConsumerWidget {
             child: Text(
               S.current.category_browse,
               style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -249,7 +249,7 @@ class _BrowseContent extends ConsumerWidget {
             Text(
               S.current.category_myCategories,
               style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 color: colorScheme.outline,
                 letterSpacing: 0.5,
               ),
@@ -302,7 +302,7 @@ class _BrowseContent extends ConsumerWidget {
         Text(
           S.current.category_allCategories,
           style: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: colorScheme.outline,
             letterSpacing: 0.5,
           ),
@@ -450,7 +450,7 @@ class _CategoryGridItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: isSelected
-                        ? FontWeight.bold
+                        ? FontWeight.w600
                         : FontWeight.normal,
                     color: isSelected ? color : colorScheme.onSurface,
                   ),
@@ -552,7 +552,7 @@ class _EditContent extends ConsumerWidget {
         Text(
           S.current.common_added,
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: colorScheme.onSurfaceVariant,
           ),
         ),
@@ -578,7 +578,7 @@ class _EditContent extends ConsumerWidget {
             buildDefaultDragHandles: false,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: pinnedCategories.length,
-            onReorder: (oldIndex, newIndex) {
+            onReorderItem: (oldIndex, newIndex) {
               ref
                   .read(pinnedCategoriesProvider.notifier)
                   .reorder(oldIndex, newIndex);
@@ -616,7 +616,7 @@ class _EditContent extends ConsumerWidget {
         Text(
           S.current.category_available,
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: colorScheme.onSurfaceVariant,
           ),
         ),
@@ -704,7 +704,7 @@ class _EditContent extends ConsumerWidget {
                 child: Text(
                   isParent ? S.current.category_parentAll(cat.name) : cat.name,
                   style: TextStyle(
-                    fontWeight: isParent ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight: isParent ? FontWeight.w500 : FontWeight.normal,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

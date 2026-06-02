@@ -586,7 +586,7 @@ class _HistoryCard extends StatelessWidget {
                   Text(
                     item.title.isNotEmpty ? item.title : item.url,
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                        ?.copyWith(fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -663,7 +663,7 @@ class _BookmarkCard extends StatelessWidget {
                   Text(
                     item.title.isNotEmpty ? item.title : item.url,
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                        ?.copyWith(fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

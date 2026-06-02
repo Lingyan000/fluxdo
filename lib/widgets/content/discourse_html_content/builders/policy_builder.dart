@@ -441,7 +441,7 @@ class _PolicyWidgetState extends State<_PolicyWidget> {
             Text(
               '$count',
               style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 color: active ? color : theme.colorScheme.onSurfaceVariant,
               ),
             ),

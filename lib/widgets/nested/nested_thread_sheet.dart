@@ -217,7 +217,7 @@ class _NestedThreadSheetContentState
             child: Text(
               '@${post.username} · ${context.l10n.nested_continueThread}',
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
               overflow: TextOverflow.ellipsis,
             ),

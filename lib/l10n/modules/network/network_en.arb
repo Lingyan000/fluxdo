@@ -65,6 +65,7 @@
   "rhttpEngine_proxyDohOnly": "Proxy/DOH Only",
   "rhttpEngine_title": "rhttp Engine",
   "rhttpEngine_useMode": "Usage Mode",
+  "rhttpEngine_initFailedHint": "rhttp engine initialization failed, fallback adapter in use, will retry on next launch",
   "webviewAdapter_disabledDesc": "Use browser engine for requests, may improve login stability",
   "webviewAdapter_enabledDesc": "Main site API requests sent via browser engine",
   "webviewAdapter_hint": "Only main site API requests go through WebView; images and push notifications are not affected",

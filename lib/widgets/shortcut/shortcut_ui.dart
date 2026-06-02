@@ -145,7 +145,7 @@ class ShortcutKeyCap extends StatelessWidget {
         textAlign: TextAlign.center,
         style: (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
           color: textColor,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           fontSize: fontSize,
           height: 1.1,
           letterSpacing: 0,
