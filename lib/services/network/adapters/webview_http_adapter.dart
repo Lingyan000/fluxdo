@@ -3,17 +3,15 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../constants.dart';
 import '../../auth_session.dart';
-import '../../auth_issue_notice_service.dart';
-import '../../log/log_writer.dart';
+import '../cookie/app_cookie_manager.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
-import '../cookie/raw_set_cookie_queue.dart';
-import '../cookie/strategy/platform_cookie_strategy.dart';
+import '../cookie/session_cookie_sentinel.dart';
+import '../cookie/webview_cookie_priming.dart';
 import '../../webview_settings.dart';
 import '../../windows_webview_environment_service.dart';
 import 'adapter_log_metadata.dart';
@@ -62,43 +60,15 @@ class WebViewHttpAdapter implements HttpClientAdapter {
   };
   @visibleForTesting
   static const String defaultApiFetchCacheMode = 'no-store';
-  static Future<void>? _startupSessionCookieSelfCheckFuture;
-  static bool _startupSessionCookieSelfCheckDone = false;
-
   HeadlessInAppWebView? _headlessWebView;
   InAppWebViewController? _controller;
   bool _isInitialized = false;
   Completer<void>? _initCompleter;
   Future<void>? _activeCriticalCookieSync;
   DateTime? _lastCriticalCookieSyncAt;
-  Future<bool>? _activeSessionCookieRepair;
-  DateTime? _lastSessionCookieRepairAt;
 
   final Map<String, Completer<String>> _pendingRequests = {};
   int _requestId = 0;
-
-  Future<void> runStartupSessionCookieSelfCheckOnce({
-    String reason = 'startup',
-  }) {
-    if (_startupSessionCookieSelfCheckDone) {
-      return Future.value();
-    }
-
-    final active = _startupSessionCookieSelfCheckFuture;
-    if (active != null) {
-      return active;
-    }
-
-    final future = _runStartupSessionCookieSelfCheck(reason: reason)
-        .then((_) {
-          _startupSessionCookieSelfCheckDone = true;
-        })
-        .whenComplete(() {
-          _startupSessionCookieSelfCheckFuture = null;
-        });
-    _startupSessionCookieSelfCheckFuture = future;
-    return future;
-  }
 
   /// 初始化 WebView
   Future<void> initialize() async {
@@ -211,11 +181,18 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     final shouldSyncAppCookies = _shouldSyncAppCookies(requestUri, baseUri);
 
     if (shouldSyncAppCookies) {
-      final written = await RawSetCookieQueue.instance.flushToWebView();
-      final repaired = await _repairDuplicatedSessionCookiesIfNeeded(requestUri);
-      if (written == 0 && !repaired) {
-        await _syncCookiesFromJar(requestUri);
+      // v0.4.0: 取代 RawSetCookieQueue.flush + _repair + _syncCookiesFromJar
+      // 1. Priming: 确保 WV 中 jar 的 critical cookies 已就绪
+      // 2. sweepAll: 清理 critical cookies 的多变体 (兜底)
+      // 3. mark as path B: 让 onResponse 走路径 B 处理 (跳过 jar 写入,
+      //    sweep 反向同步)
+      try {
+        await WebViewCookiePriming.instance.prime(url);
+      } catch (e) {
+        debugPrint('[WebViewAdapter] priming failed (continuing): $e');
       }
+      await SessionCookieSentinel.instance.sweepAll(url);
+      AppCookieManager.markAsWebViewAdapter(options);
     }
 
     // 非应用站点的备选路径：通过 CookieManager 写入 cookie
@@ -404,8 +381,6 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     _initCompleter = null;
     _activeCriticalCookieSync = null;
     _lastCriticalCookieSyncAt = null;
-    _activeSessionCookieRepair = null;
-    _lastSessionCookieRepairAt = null;
     for (final completer in _pendingRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError('WebView adapter closed');
@@ -876,357 +851,6 @@ class WebViewHttpAdapter implements HttpClientAdapter {
         : CookieManager.instance();
   }
 
-  Future<void> _syncCookiesFromJar(Uri requestUri) async {
-    final jar = CookieJarService();
-    if (!jar.isInitialized) {
-      await jar.initialize();
-    }
-
-    final cookies = await jar.loadCanonicalCookiesForRequest(requestUri);
-    if (cookies.isEmpty) return;
-
-    final cookieManager = _resolveCookieManager();
-    var synced = 0;
-
-    for (final cookie in cookies) {
-      try {
-        await _writeCanonicalCookieToWebView(cookieManager, requestUri, cookie);
-        synced++;
-      } catch (e) {
-        debugPrint(
-          '[WebViewAdapter] Failed to backfill cookie ${cookie.name} to WebView: $e',
-        );
-      }
-    }
-
-    if (synced > 0) {
-      debugPrint('[WebViewAdapter] Backfilled $synced cookies from jar');
-    }
-  }
-
-  HTTPCookieSameSitePolicy? _toWebViewSameSite(CookieSameSite sameSite) {
-    switch (sameSite) {
-      case CookieSameSite.lax:
-        return HTTPCookieSameSitePolicy.LAX;
-      case CookieSameSite.strict:
-        return HTTPCookieSameSitePolicy.STRICT;
-      case CookieSameSite.none:
-        return HTTPCookieSameSitePolicy.NONE;
-      case CookieSameSite.unspecified:
-        return null;
-    }
-  }
-
-  Future<void> _writeCanonicalCookieToWebView(
-    CookieManager cookieManager,
-    Uri requestUri,
-    CanonicalCookie cookie,
-  ) async {
-    final cookieUri = Uri(
-      scheme: requestUri.scheme,
-      host: requestUri.host,
-      port: requestUri.hasPort ? requestUri.port : null,
-      path: cookie.path.isEmpty ? '/' : cookie.path,
-    );
-
-    await cookieManager.setCookie(
-      url: WebUri(cookieUri.toString()),
-      name: cookie.name,
-      value: cookie.value,
-      path: cookie.path.isEmpty ? '/' : cookie.path,
-      domain: cookie.hostOnly ? null : cookie.domain,
-      expiresDate: cookie.expiresAt?.millisecondsSinceEpoch,
-      maxAge: cookie.maxAge,
-      isSecure: cookie.secure,
-      isHttpOnly: cookie.httpOnly,
-      sameSite: _toWebViewSameSite(cookie.sameSite),
-    );
-  }
-
-  Future<void> _runStartupSessionCookieSelfCheck({
-    required String reason,
-  }) async {
-    final requestUri = Uri.parse(AppConstants.baseUrl);
-    final duplicates = await _scanDuplicateSessionCookies(requestUri);
-    final duplicateNames = duplicates.keys.toList(growable: false)..sort();
-
-    LogWriter.instance.write({
-      'timestamp': DateTime.now().toIso8601String(),
-      'level': duplicateNames.isEmpty ? 'info' : 'warning',
-      'type': 'cookie_trace',
-      'event': 'startup_session_cookie_self_check',
-      'message': duplicateNames.isEmpty
-          ? '启动时未发现重复 session cookie'
-          : '启动时发现重复 session cookie，准备修复',
-      'reason': reason,
-      'url': requestUri.toString(),
-      'duplicateNames': duplicateNames,
-      'duplicateCount': duplicates.values.fold<int>(
-        0,
-        (sum, cookies) => sum + cookies.length,
-      ),
-    });
-
-    if (duplicates.isEmpty) {
-      return;
-    }
-
-    final repaired = await _repairDuplicatedSessionCookies(
-      requestUri,
-      preloadedDuplicates: duplicates,
-    );
-    if (repaired) {
-      await AuthIssueNoticeService.instance.recordSessionCookieRepair(
-        cookieNames: duplicateNames,
-        source: reason,
-      );
-    }
-    LogWriter.instance.write({
-      'timestamp': DateTime.now().toIso8601String(),
-      'level': repaired ? 'warning' : 'error',
-      'type': 'cookie_trace',
-      'event': 'startup_session_cookie_self_check_result',
-      'message': repaired ? '启动时重复 session cookie 已修复' : '启动时重复 session cookie 修复失败',
-      'reason': reason,
-      'url': requestUri.toString(),
-      'duplicateNames': duplicateNames,
-      'repaired': repaired,
-    });
-  }
-
-  Future<bool> _repairDuplicatedSessionCookiesIfNeeded(Uri requestUri) async {
-    final active = _activeSessionCookieRepair;
-    if (active != null) {
-      return active;
-    }
-
-    final lastRepairAt = _lastSessionCookieRepairAt;
-    if (lastRepairAt != null &&
-        DateTime.now().difference(lastRepairAt) <
-            const Duration(seconds: 2)) {
-      return false;
-    }
-
-    final future = _repairDuplicatedSessionCookies(requestUri).onError(
-      (Object error, StackTrace stackTrace) {
-        debugPrint('[WebViewAdapter] Session cookie repair failed: $error');
-        return false;
-      },
-    );
-    _activeSessionCookieRepair = future;
-
-    try {
-      return await future;
-    } finally {
-      _lastSessionCookieRepairAt = DateTime.now();
-      if (identical(_activeSessionCookieRepair, future)) {
-        _activeSessionCookieRepair = null;
-      }
-    }
-  }
-
-  Future<bool> _repairDuplicatedSessionCookies(
-    Uri requestUri, {
-    Map<String, List<Cookie>>? preloadedDuplicates,
-  }) async {
-    final cookieManager = _resolveCookieManager();
-    final duplicates =
-        preloadedDuplicates ?? await _scanDuplicateSessionCookies(requestUri);
-    if (duplicates.isEmpty) {
-      return false;
-    }
-
-    final jar = CookieJarService();
-    if (!jar.isInitialized) {
-      await jar.initialize();
-    }
-
-    final canonicalCookies = await jar.loadCanonicalCookiesForRequest(requestUri);
-    final canonicalByName = <String, CanonicalCookie>{
-      for (final cookie in canonicalCookies)
-        if (CookieJarService.sessionCookieNames.contains(cookie.name) &&
-            cookie.value.isNotEmpty)
-          cookie.name: cookie,
-    };
-
-    final affectedNames = duplicates.keys.toSet();
-    for (final entry in duplicates.entries) {
-      final selected = canonicalByName[entry.key] ??
-          _selectCanonicalCookieFromWebView(entry.value, requestUri);
-      _logDuplicateSessionCookies(
-        requestUri: requestUri,
-        name: entry.key,
-        cookies: entry.value,
-        selected: selected,
-      );
-    }
-
-    await RawSetCookieQueue.instance.clearCookieNames(affectedNames);
-
-    final cookiesToRestore = <CanonicalCookie>[];
-    for (final name in affectedNames) {
-      await jar.deleteWebViewCookie(name);
-
-      final canonical =
-          canonicalByName[name] ?? _selectCanonicalCookieFromWebView(
-            duplicates[name]!,
-            requestUri,
-          );
-      if (canonical == null) {
-        continue;
-      }
-
-      if (!canonicalByName.containsKey(name)) {
-        await jar.setCookie(
-          canonical.name,
-          canonical.value,
-          url: canonical.originUrl ?? requestUri.toString(),
-          domain: canonical.hostOnly ? null : canonical.domain,
-          path: canonical.path,
-          expires: canonical.expiresAt,
-          secure: canonical.secure,
-          httpOnly: canonical.httpOnly,
-        );
-      }
-      cookiesToRestore.add(canonical);
-    }
-
-    for (final cookie in cookiesToRestore) {
-      await _writeCanonicalCookieToWebView(cookieManager, requestUri, cookie);
-    }
-
-    return true;
-  }
-
-  Future<Map<String, List<Cookie>>> _scanDuplicateSessionCookies(
-    Uri requestUri,
-  ) async {
-    final cookieManager = _resolveCookieManager();
-    final strategy = PlatformCookieStrategy.create();
-    final webViewCookies = await strategy.readCookiesFromWebView(
-      cookieManager,
-      requestUri.toString(),
-    );
-
-    final duplicates = <String, List<Cookie>>{};
-    for (final cookie in webViewCookies) {
-      final name = cookie.name;
-      if (!CookieJarService.sessionCookieNames.contains(name)) continue;
-      final value = cookie.value?.toString() ?? '';
-      if (value.isEmpty) continue;
-      duplicates.putIfAbsent(name, () => <Cookie>[]).add(cookie);
-    }
-    duplicates.removeWhere((_, cookies) => cookies.length < 2);
-    return duplicates;
-  }
-
-  CanonicalCookie? _selectCanonicalCookieFromWebView(
-    List<Cookie> cookies,
-    Uri requestUri,
-  ) {
-    if (cookies.isEmpty) return null;
-    final selected = [...cookies]
-      ..sort((a, b) {
-        final scoreDiff =
-            _scoreSessionCookie(b, requestUri.host) -
-            _scoreSessionCookie(a, requestUri.host);
-        if (scoreDiff != 0) return scoreDiff;
-
-        final pathDiff = (b.path?.length ?? 1).compareTo(a.path?.length ?? 1);
-        if (pathDiff != 0) return pathDiff;
-
-        return (b.value?.length ?? 0).compareTo(a.value?.length ?? 0);
-      });
-
-    final cookie = selected.first;
-    final value = cookie.value?.toString() ?? '';
-    if (value.isEmpty) return null;
-
-    final normalizedDomain =
-        CookieJarService.normalizeWebViewCookieDomain(cookie.domain);
-    final expires = CookieJarService.parseWebViewCookieExpires(cookie.expiresDate);
-
-    return CanonicalCookie(
-      name: cookie.name,
-      value: value,
-      domain: normalizedDomain ?? requestUri.host,
-      path: cookie.path?.isNotEmpty == true ? cookie.path! : '/',
-      expiresAt: expires?.toUtc(),
-      secure: cookie.isSecure ?? requestUri.scheme == 'https',
-      httpOnly: cookie.isHttpOnly ?? false,
-      sameSite: CookieSameSite.unspecified,
-      hostOnly: normalizedDomain == null || normalizedDomain.isEmpty,
-      persistent: expires != null,
-      originUrl: requestUri.toString(),
-    );
-  }
-
-  int _scoreSessionCookie(Cookie cookie, String requestHost) {
-    var score = 0;
-    final value = cookie.value?.toString() ?? '';
-    if (value.isNotEmpty) score += 100000;
-
-    final expires = CookieJarService.parseWebViewCookieExpires(cookie.expiresDate);
-    if (expires == null || expires.isAfter(DateTime.now())) {
-      score += 50000;
-    }
-
-    final normalizedDomain =
-        CookieJarService.normalizeWebViewCookieDomain(cookie.domain);
-    if (normalizedDomain == null || normalizedDomain.isEmpty) {
-      score += 40000;
-    } else if (normalizedDomain == requestHost) {
-      score += 30000 + normalizedDomain.length;
-    } else if (requestHost.endsWith('.$normalizedDomain')) {
-      score += 20000 + normalizedDomain.length;
-    } else {
-      score += normalizedDomain.length;
-    }
-
-    if (cookie.isHttpOnly == true) score += 500;
-    if (cookie.isSecure == true) score += 250;
-    score += cookie.path?.length ?? 1;
-    score += value.length;
-    return score;
-  }
-
-  void _logDuplicateSessionCookies({
-    required Uri requestUri,
-    required String name,
-    required List<Cookie> cookies,
-    required CanonicalCookie? selected,
-  }) {
-    LogWriter.instance.write({
-      'timestamp': DateTime.now().toIso8601String(),
-      'level': 'warning',
-      'type': 'cookie_conflict',
-      'event': 'duplicate_session_cookie_in_webview',
-      'message': '检测到 WebView 重复会话 Cookie，已尝试清理并重建',
-      'url': requestUri.toString(),
-      'host': requestUri.host,
-      'name': name,
-      'duplicateCount': cookies.length,
-      if (selected != null)
-        'selected': {
-          'domain': selected.domain,
-          'path': selected.path,
-          'valueLength': selected.value.length,
-          'hostOnly': selected.hostOnly,
-        },
-      'cookies': cookies
-          .map(
-            (cookie) => {
-              'domain': cookie.domain,
-              'path': cookie.path,
-              'valueLength': cookie.value?.length ?? 0,
-              'httpOnly': cookie.isHttpOnly,
-              'secure': cookie.isSecure,
-              'expiresDate': cookie.expiresDate,
-            },
-          )
-          .toList(growable: false),
-    });
-  }
 
   void _throwIfSessionExpired(RequestOptions options) {
     final requestGeneration = options.extra['_sessionGeneration'] as int?;

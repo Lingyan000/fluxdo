@@ -25,6 +25,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'services/network/cookie/android_cdp_feature.dart';
 import 'services/network/cookie/csrf_token_service.dart';
 import 'services/network/cookie/cookie_jar_service.dart';
+import 'services/network/cookie/webview_cookie_priming.dart';
 import 'services/network/adapters/cronet_fallback_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/data_management/cache_size_service.dart';
@@ -179,12 +180,13 @@ Future<void> main() async {
   await RhttpSettingsService.instance.initialize(prefs);
   // WebView 适配器设置
   await WebViewAdapterSettingsService.instance.initialize(prefs);
+  // v0.4.0: 启动时执行 WV cookie 重灌 (取代 RawSetCookieQueue + 启动自检)
   unawaited(
-    WebViewHttpAdapter().runStartupSessionCookieSelfCheckOnce().catchError((
+    WebViewCookiePriming.instance.prime(AppConstants.baseUrl).catchError((
       Object e,
       StackTrace _,
     ) {
-      debugPrint('[Main] WebView session cookie 自检失败: $e');
+      debugPrint('[Main] WebView cookie priming 失败: $e');
     }),
   );
   try {

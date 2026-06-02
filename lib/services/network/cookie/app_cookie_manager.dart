@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../auth_session.dart';
 import '../../log/log_writer.dart';
 import 'cookie_jar_service.dart';
-import 'raw_set_cookie_queue.dart';
+import 'session_cookie_sentinel.dart';
 
 /// App-specific CookieManager.
 /// Avoids saving Set-Cookie into redirect target domains by default.
@@ -26,6 +26,33 @@ class AppCookieManager extends Interceptor {
   final bool saveRedirectedCookies;
 
   static final _setCookieReg = RegExp('(?<=)(,)(?=[^;]+?=)');
+
+  // v0.4.0 路径分流标记
+  // 路径 A (纯 Dio): 默认, jar 是权威源, 写 jar 后 sweep 同步到 WV
+  // 路径 B (WebViewHttpAdapter): WV 是权威源, 跳过 critical 的 jar 写入,
+  //                              sweep 后从 WV 反向同步到 jar
+  // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.5
+  static const String _viaExtraKey = '_via';
+  static const String _viaAdapter = 'wv-adapter';
+
+  /// 标记请求来自 WebViewHttpAdapter (路径 B)。
+  /// 由 WebViewHttpAdapter.fetch 入口调用。
+  static void markAsWebViewAdapter(RequestOptions options) {
+    options.extra[_viaExtraKey] = _viaAdapter;
+  }
+
+  /// 判定 cookie 的 sweep 意图。
+  /// 服务器下发 value=del / 空值 / 已过期时按 [SweepIntent.delete] 处理。
+  static SweepIntent _intentForCookie(Cookie cookie) {
+    if (cookie.value == 'del' || cookie.value.isEmpty) {
+      return SweepIntent.delete;
+    }
+    final expires = cookie.expires;
+    if (expires != null && expires.isBefore(DateTime.now())) {
+      return SweepIntent.delete;
+    }
+    return SweepIntent.ensureUnique;
+  }
 
   /// Select cookies for a request.
   /// Cookies with longer paths are listed before cookies with shorter paths.
@@ -466,28 +493,64 @@ class AppCookieManager extends Interceptor {
     final enhancedJar = cookieJar is EnhancedPersistCookieJar
         ? cookieJar as EnhancedPersistCookieJar
         : null;
-    if (enhancedJar != null) {
-      await enhancedJar.saveFromSetCookieHeaders(
-        resolvedUri,
-        filteredSetCookieHeaders,
-      );
-    } else {
-      await cookieJar.saveFromResponse(
-        resolvedUri,
-        filteredCookies,
-      );
+
+    // 路径判别 (v0.4.0):
+    // - 路径 A (默认): 全部写 jar, 后续 sweep 同步到 WV
+    // - 路径 B (WebViewHttpAdapter): critical cookies 跳过 jar 写入,
+    //   后续 sweep 从 WV 反向同步到 jar (WV 已自写)
+    final isPathB =
+        response.requestOptions.extra[_viaExtraKey] == _viaAdapter;
+    final criticalNames = SessionCookieSentinel.criticalCookieNames;
+
+    final cookiesToSaveToJar = <Cookie>[];
+    final headersToSaveToJar = <String>[];
+    final criticalCookiesForSweep = <Cookie>[];
+    for (var i = 0; i < filteredCookies.length; i++) {
+      final cookie = filteredCookies[i];
+      final isCritical = criticalNames.contains(cookie.name);
+      if (isCritical) {
+        criticalCookiesForSweep.add(cookie);
+      }
+      // 路径 B 时跳过 critical cookies 的 jar 写入 (sweep 反向同步)
+      if (isPathB && isCritical) continue;
+      cookiesToSaveToJar.add(cookie);
+      headersToSaveToJar.add(filteredSetCookieHeaders[i]);
+    }
+
+    if (cookiesToSaveToJar.isNotEmpty) {
+      if (enhancedJar != null) {
+        await enhancedJar.saveFromSetCookieHeaders(
+          resolvedUri,
+          headersToSaveToJar,
+        );
+      } else {
+        await cookieJar.saveFromResponse(
+          resolvedUri,
+          cookiesToSaveToJar,
+        );
+      }
     }
 
     if (hasAuthSessionToken) {
       debugPrint(
         '[CookieManager] auth.session-token primary save uri: '
-        '${resolvedUri.toString()}',
+        '${resolvedUri.toString()} (pathB=$isPathB)',
       );
     }
 
-    // 将原始 Set-Cookie 头逐条入队，供后续处理使用
-    for (final rawHeader in filteredSetCookieHeaders) {
-      RawSetCookieQueue.instance.enqueue(resolvedUri.toString(), rawHeader);
+    // 对每条 critical cookie 同步触发 sweep:
+    // - 路径 A: sweep 内部从 jar 读 winner 写 WV (保证两端一致)
+    // - 路径 B: sweep 内部从 WV 读 winner 反向写 jar (WV 已自写)
+    // 同步等所有 sweep 完成,保证 next handler 时两端一致
+    if (criticalCookiesForSweep.isNotEmpty) {
+      final sweepFutures = criticalCookiesForSweep.map((cookie) {
+        return SessionCookieSentinel.instance.sweep(
+          resolvedUri.toString(),
+          cookie.name,
+          intent: _intentForCookie(cookie),
+        );
+      }).toList();
+      await Future.wait(sweepFutures);
     }
 
     // Optionally save cookies for redirected locations.

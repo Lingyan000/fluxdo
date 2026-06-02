@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../utils/link_launcher.dart';
 import '../services/toast_service.dart';
 import '../services/app_link_service.dart';
-import '../services/network/cookie/raw_set_cookie_queue.dart';
+import '../services/network/cookie/webview_cookie_priming.dart';
 import '../services/webview_settings.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../widgets/common/app_link_confirm_dialog.dart';
@@ -249,8 +249,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                             onWebViewCreated: (controller) async {
                               _controller = controller;
                               if (widget.url.isNotEmpty) {
-                                await RawSetCookieQueue.instance
-                                    .flushToWebView();
+                                // v0.4.0: 取代 RawSetCookieQueue.flush
+                                await WebViewCookiePriming.instance
+                                    .prime(widget.url);
                                 await controller.loadUrl(
                                   urlRequest:
                                       URLRequest(url: WebUri(widget.url)),

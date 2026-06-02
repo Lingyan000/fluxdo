@@ -11,7 +11,6 @@ import '../../../constants.dart';
 import '../../windows_webview_environment_service.dart';
 import 'cookie_logger.dart';
 import 'cookie_value_codec.dart';
-import 'raw_set_cookie_queue.dart';
 import 'strategy/platform_cookie_strategy.dart';
 
 export 'cookie_value_codec.dart';
@@ -78,9 +77,6 @@ class CookieJarService {
       _initialized = true;
       _strategy = PlatformCookieStrategy.create();
       debugPrint('[CookieJar] Initialized with path: $cookiePath');
-
-      // 初始化原始头队列
-      await RawSetCookieQueue.instance.initialize(directory.path);
     } catch (e) {
       debugPrint(
         '[CookieJar] Failed to create persistent storage, using memory: $e',
@@ -210,7 +206,7 @@ class CookieJarService {
     );
   }
 
-  /// 加载所有 CanonicalCookie（供 RawSetCookieQueue 兜底使用）
+  /// 加载所有 CanonicalCookie。
   Future<List<CanonicalCookie>> loadAllCanonicalCookies() async {
     if (!_initialized) await initialize();
     final jar = _cookieJar;
@@ -287,8 +283,6 @@ class CookieJarService {
         }
       }
 
-      await RawSetCookieQueue.instance.clearCookieNames({name});
-
       CookieLogger.delete(name: name, source: 'deleteCookie');
     } catch (e) {
       debugPrint('[CookieJar] Failed to delete cookie $name: $e');
@@ -305,7 +299,6 @@ class CookieJarService {
       final knownHosts = await getKnownHostsForDomain(baseHost);
 
       await _cookieJar!.deleteAll();
-      await RawSetCookieQueue.instance.clear();
 
       // WebView cookie store 清理（平台策略处理差异）
       await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
@@ -322,8 +315,6 @@ class CookieJarService {
     if (!_initialized) await initialize();
 
     try {
-      await RawSetCookieQueue.instance.clearCookieNames({name});
-
       final baseHost = Uri.parse(AppConstants.baseUrl).host;
       final hosts = await getKnownHostsForDomain(baseHost);
 
