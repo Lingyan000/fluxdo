@@ -24,8 +24,8 @@ import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/clipboard_topic_link_snack_content.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'services/network/cookie/android_cdp_feature.dart';
 import 'services/network/cookie/csrf_token_service.dart';
+import 'services/network/cookie/cookie_devtools_extension.dart';
 import 'services/network/cookie/cookie_jar_service.dart';
 import 'services/network/cookie/webview_cookie_priming.dart';
 import 'services/network/adapters/cronet_fallback_service.dart';
@@ -71,7 +71,6 @@ import 'utils/time_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'services/network/adapters/platform_adapter.dart';
-import 'services/network/adapters/webview_http_adapter.dart';
 import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -164,6 +163,10 @@ Future<void> main() async {
   final prefs = results[0] as SharedPreferences;
   await AuthIssueNoticeService.instance.initialize(prefs);
 
+  // v0.4.0: 注册 Cookie 引擎 DevTools service extensions (仅 debug/profile 模式)
+  // 设计依据: docs/cookie-sync-design-v0.4.0.md §11.4
+  CookieDevtoolsExtension.instance.register();
+
   // 桌面平台：恢复窗口状态后再显示，避免默认位置闪烁
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await acrylic.Window.setEffect(
@@ -202,7 +205,6 @@ Future<void> main() async {
     CfChallengeLogger.setEnabled(prefs.getBool('developer_mode') ?? false),
     CronetFallbackService.instance.initialize(prefs),
     ProxySettingsService.instance.initialize(prefs),
-    if (Platform.isAndroid) AndroidCdpFeature.initialize(prefs),
     if (Platform.isAndroid)
       MethodChannel(
         'com.github.lingyan000.fluxdo/crashlytics',

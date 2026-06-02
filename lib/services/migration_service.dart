@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
 import 'network/cookie/cookie_jar_service.dart';
-import 'network/cookie/android_cdp_feature.dart';
 
 /// 迁移项定义
 class Migration {
@@ -90,18 +89,6 @@ class MigrationService {
         if (!jar.isInitialized) await jar.initialize();
         await jar.clearAll();
         requiresRelogin = true;
-      },
-    ),
-    Migration(
-      key: 'android_native_cdp_default_off_v1',
-      name: 'Android native CDP default off',
-      shouldRun: (prefs) async {
-        return defaultTargetPlatform == TargetPlatform.android &&
-            prefs.containsKey(AndroidCdpFeature.prefKey);
-      },
-      run: () async {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(AndroidCdpFeature.prefKey, false);
       },
     ),
     // v4: storageKey 放宽（去掉 hostOnly）— 清理旧 cookie 防止多副本残留

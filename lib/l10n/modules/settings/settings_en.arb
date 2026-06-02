@@ -26,8 +26,6 @@
   "navTapAction_scrollToTop": "Scroll to top",
   "config_seedUserTitle": "Seed user",
   "preferences_advanced": "Advanced",
-  "preferences_androidNativeCdp": "WebView cookie sync",
-  "preferences_androidNativeCdpDesc": "Uses native CDP first. Disable to fall back to compatibility mode.",
   "preferences_anonymousShare": "Anonymous share",
   "preferences_anonymousShareDesc": "Share links without personal user identifier",
   "preferences_autoFillLogin": "Auto-fill login",

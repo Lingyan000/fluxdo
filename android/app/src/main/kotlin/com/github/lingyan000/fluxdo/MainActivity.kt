@@ -32,11 +32,8 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val TAG = "AppLink"
         private const val RAW_COOKIE_CHANNEL = "com.fluxdo/raw_cookie"
-        private const val ANDROID_CDP_CHANNEL = "com.fluxdo/android_cdp"
         private const val WEBAUTHN_CHANNEL = "com.fluxdo/webauthn"
     }
-
-    private val androidCdpBridge = AndroidCdpBridge()
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -51,8 +48,6 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        Log.i("AndroidCdp", "MainActivity.configureFlutterEngine loaded")
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "openInBrowser" -> {
@@ -271,144 +266,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ANDROID_CDP_CHANNEL).setMethodCallHandler { call, result ->
-            Log.i("AndroidCdp", "channel method=${call.method}")
-            when (call.method) {
-                "isAvailable" -> {
-                    ioExecutor.execute {
-                        try {
-                            Log.i("AndroidCdp", "handling isAvailable")
-                            result.success(androidCdpBridge.isAvailable())
-                        } catch (e: Exception) {
-                            Log.e("AndroidCdp", "isAvailable failed: ${e.message}", e)
-                            result.success(false)
-                        }
-                    }
-                }
-                "getCookies" -> {
-                    val urls = call.argument<List<String>>("urls")
-                    Log.i("AndroidCdp", "handling getCookies urls=${urls?.size ?: 0}")
-                    if (urls == null || urls.isEmpty()) {
-                        result.error(
-                            "INVALID_ARGS",
-                            "urls required",
-                            mapOf(
-                                "method" to "getCookies",
-                                "urlCount" to (urls?.size ?: 0),
-                            ),
-                        )
-                    } else {
-                        ioExecutor.execute {
-                            try {
-                                result.success(androidCdpBridge.getCookies(urls))
-                            } catch (e: Exception) {
-                                Log.e("AndroidCdp", "getCookies failed: ${e.message}", e)
-                                result.error(
-                                    "CDP_FAILED",
-                                    e.message,
-                                    mapOf(
-                                        "method" to "getCookies",
-                                        "urlCount" to urls.size,
-                                        "errorType" to e.javaClass.name,
-                                        "retryableDisconnect" to androidCdpBridge.isRetryableDisconnectError(e),
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-                "awaitTargetReady" -> {
-                    val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 2500L
-                    Log.i("AndroidCdp", "handling awaitTargetReady timeoutMs=$timeoutMs")
-                    ioExecutor.execute {
-                        try {
-                            result.success(androidCdpBridge.awaitTargetReady(timeoutMs))
-                        } catch (e: Exception) {
-                            Log.e("AndroidCdp", "awaitTargetReady failed: ${e.message}", e)
-                                result.error(
-                                    "CDP_FAILED",
-                                    e.message,
-                                    mapOf(
-                                        "method" to "awaitTargetReady",
-                                        "timeoutMs" to timeoutMs,
-                                        "errorType" to e.javaClass.name,
-                                        "retryableDisconnect" to androidCdpBridge.isRetryableDisconnectError(e),
-                                    ),
-                                )
-                        }
-                    }
-                }
-                "setCookie" -> {
-                    val params = call.arguments<Map<String, Any?>>()
-                    Log.i("AndroidCdp", "handling setCookie keys=${params?.keys ?: emptySet<String>()}")
-                    if (params == null || params.isEmpty()) {
-                        result.error(
-                            "INVALID_ARGS",
-                            "params required",
-                            mapOf(
-                                "method" to "setCookie",
-                                "keys" to (params?.keys?.toList() ?: emptyList<String>()),
-                            ),
-                        )
-                    } else {
-                        ioExecutor.execute {
-                            try {
-                                result.success(androidCdpBridge.setCookie(params))
-                            } catch (e: Exception) {
-                                Log.e("AndroidCdp", "setCookie failed: ${e.message}", e)
-                                result.error(
-                                    "CDP_FAILED",
-                                    e.message,
-                                    mapOf(
-                                        "method" to "setCookie",
-                                        "keys" to params.keys.toList(),
-                                        "cookieName" to params["name"],
-                                        "url" to params["url"],
-                                        "errorType" to e.javaClass.name,
-                                        "retryableDisconnect" to androidCdpBridge.isRetryableDisconnectError(e),
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-                "deleteCookies" -> {
-                    val params = call.arguments<Map<String, Any?>>()
-                    Log.i("AndroidCdp", "handling deleteCookies keys=${params?.keys ?: emptySet<String>()}")
-                    if (params == null || params.isEmpty()) {
-                        result.error(
-                            "INVALID_ARGS",
-                            "params required",
-                            mapOf(
-                                "method" to "deleteCookies",
-                                "keys" to (params?.keys?.toList() ?: emptyList<String>()),
-                            ),
-                        )
-                    } else {
-                        ioExecutor.execute {
-                            try {
-                                result.success(androidCdpBridge.deleteCookies(params))
-                            } catch (e: Exception) {
-                                Log.e("AndroidCdp", "deleteCookies failed: ${e.message}", e)
-                                result.error(
-                                    "CDP_FAILED",
-                                    e.message,
-                                    mapOf(
-                                        "method" to "deleteCookies",
-                                        "keys" to params.keys.toList(),
-                                        "cookieName" to params["name"],
-                                        "url" to params["url"],
-                                        "errorType" to e.javaClass.name,
-                                        "retryableDisconnect" to androidCdpBridge.isRetryableDisconnectError(e),
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         // WebAuthn/PassKey 支持通道
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WEBAUTHN_CHANNEL).setMethodCallHandler { call, result ->

@@ -1225,19 +1225,35 @@ final migrations = <Migration>[
 | `lock_timeout` / `sweep_failed`（连续） | error |
 | 用户真登录失效 | error |
 
-### 11.4 用户调试 dump 工具（v0.4.1 计划）
+### 11.4 DevTools service extensions (v0.4.0 已实现)
 
-实施时不强制，但接口预留：
+通过 `dart:developer.registerExtension` 暴露 6 类 `ext.fluxdo.cookie.*`
+供 Flutter DevTools Extension (位于 `extension/devtools/`, Phase 6b 计划)
+通过 vm_service 调用。
 
-```dart
-class CookieDiagnostics {
-  /// 导出当前 jar + WV cookie 状态快照
-  /// 包含: jar 中所有 cookie、WV 中各 critical name 的变体数、
-  ///       Sentinel 状态、Priming 状态
-  /// 用户反馈问题时, 引导用户在调试面板触发 dump, 交给开发者
-  Future<Map<String, dynamic>> dump({required String url});
-}
-```
+**仅在 debug / profile 模式生效**, release 模式编译期被剔除, 零开销且安全。
+
+实现: `lib/services/network/cookie/cookie_devtools_extension.dart`
+注册时机: `main.dart` 中 `CookieJarService.initialize` 后立即注册。
+
+| service extension | 用途 | 参数 |
+|-------------------|------|------|
+| `ext.fluxdo.cookie.dump` | 完整快照 (jar / WV / Priming / 变体数) | `url` (可选) |
+| `ext.fluxdo.cookie.sweep` | 手动触发 sweep | `url` `name` `intent` (可选, ensureUnique/delete) |
+| `ext.fluxdo.cookie.nuclearReset` | 手动触发 Nuclear Reset | `url` (可选) |
+| `ext.fluxdo.cookie.invalidatePriming` | 强制 Priming 重新执行 | 无 |
+| `ext.fluxdo.cookie.config` | 当前配置 / 状态查询 | 无 |
+| `ext.fluxdo.cookie.criticalNames` | critical cookie 名集合 | 无 |
+
+**事件桥接**: 通过 `developer.postEvent('fluxdo.cookie.sweepEvent', payload)`
+推送 SweepEvent 给 DevTool。DevTool 通过 `eventStream.where(...)` 监听。
+事件类型: `SweepInvoked` / `SweepCompleted` / `SweepCancelled`。
+
+**DevTool 端 (Phase 6b 计划)**:
+- 独立 Flutter web app, 位于 `extension/devtools/`
+- 4 个 tab: Status (jar/WV 双视图) / Events (实时流) / Actions (手动 sweep 等) / Dump (JSON)
+- 用 `devtools_extensions` 包构建
+- 不依赖主 app 代码, 通过 vm_service 调用上述 service extensions
 
 ---
 

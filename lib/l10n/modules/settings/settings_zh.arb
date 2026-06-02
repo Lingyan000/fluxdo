@@ -43,8 +43,6 @@
   "navTapAction_scrollToTop": "回到顶部",
   "config_seedUserTitle": "种子用户",
   "preferences_advanced": "高级",
-  "preferences_androidNativeCdp": "WebView Cookie 同步",
-  "preferences_androidNativeCdpDesc": "优先使用原生 CDP；异常时可关闭并回退兼容模式。",
   "preferences_anonymousShare": "匿名分享",
   "preferences_anonymousShareDesc": "分享链接时不附带个人用户标识",
   "preferences_autoFillLogin": "自动填充登录",
