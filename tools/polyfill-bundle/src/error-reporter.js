@@ -1,17 +1,44 @@
-// WebView 内 JS 错误回传：window.error + unhandledrejection。
-// 通过 `flutter_inappwebview.callHandler('onWebViewJsError', ...)` 落到 Dart LogWriter，
-// 节流到每页 30 条避免极端情况下日志洪水。
+// WebView 内 JS 错误回传 + polyfill 自检上报。
+// 通过 `flutter_inappwebview.callHandler('onWebViewJsError', ...)` 落到 Dart LogWriter。
 //
-// 设计为「打开页面就装」，所以走立即执行 IIFE + 全局哨兵防重入。
+// 三类信号：
+// 1) lifecycle 'compat_bundle_loaded' — 启动期自检：polyfill bundle 是否完整执行 +
+//    一组已知 ES2022~2024 / stage 3 API 当前可用性。这条信号能突破跨域 sanitization
+//    告诉我们「polyfill 跑没跑、Discourse 实际能用哪些 API」。
+// 2) 'console.error' 拦截 — 突破跨域 sanitization 的关键。Discourse 自家
+//    try/catch 输出的错误对象在 catch 块里是完整的（JS 层语义不受 sanitization
+//    限制），通过包裹 console.error 拿到 stack。
+// 3) 'window.error' / 'unhandledrejection' — 兜底捕获 uncaught 错误。
+//    跨域脚本错误会被 WebKit sanitize 成 "Script error." + null，但同源错误完整。
 (function () {
   if (window.__fluxdoErrHooked) return;
   window.__fluxdoErrHooked = true;
-  var count = 0;
-  var MAX = 30;
 
-  function report(payload) {
-    if (count >= MAX) return;
-    count++;
+  var errCount = 0;
+  var ERR_MAX = 30;
+  var consoleErrCount = 0;
+  var CONSOLE_ERR_MAX = 20;
+
+  function safeStringify(v) {
+    if (v == null) return null;
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    try {
+      var seen = [];
+      return JSON.stringify(v, function (k, val) {
+        if (typeof val === 'object' && val !== null) {
+          if (seen.indexOf(val) !== -1) return '[circular]';
+          seen.push(val);
+        }
+        if (typeof val === 'function') return '[function]';
+        return val;
+      });
+    } catch (e) {
+      try { return String(v); } catch (_) { return null; }
+    }
+  }
+
+  function send(payload) {
     try {
       var h = window.flutter_inappwebview;
       if (h && h.callHandler) {
@@ -20,21 +47,134 @@
     } catch (_) {}
   }
 
+  function reportError(payload) {
+    if (errCount >= ERR_MAX) return;
+    errCount++;
+    send(payload);
+  }
+
+  // ===== 1) 启动期自检：lifecycle 信号 + API 探针 =====
+  // 用 typeof 防御未定义的全局 (Iterator / AbortSignal 等老 WebKit 可能没有)。
+  function probe(getter) {
+    try {
+      return getter() ? true : false;
+    } catch (_) {
+      return false;
+    }
+  }
+  var probes = {
+    // ES2022 (Safari 15.4)
+    'Object.hasOwn': probe(function () { return typeof Object.hasOwn === 'function'; }),
+    'Array.prototype.at': probe(function () { return typeof Array.prototype.at === 'function'; }),
+    'String.prototype.at': probe(function () { return typeof String.prototype.at === 'function'; }),
+    'Array.prototype.findLast': probe(function () { return typeof Array.prototype.findLast === 'function'; }),
+    'Array.prototype.findLastIndex': probe(function () { return typeof Array.prototype.findLastIndex === 'function'; }),
+    'structuredClone': probe(function () { return typeof structuredClone === 'function'; }),
+    'Element.prototype.replaceChildren': probe(function () { return typeof Element !== 'undefined' && typeof Element.prototype.replaceChildren === 'function'; }),
+    'crypto.randomUUID': probe(function () { return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'; }),
+    'Error.cause': probe(function () { return 'cause' in new Error('', { cause: 1 }); }),
+    // ES2023 (Safari 16)
+    'Array.prototype.toReversed': probe(function () { return typeof Array.prototype.toReversed === 'function'; }),
+    'Array.prototype.toSorted': probe(function () { return typeof Array.prototype.toSorted === 'function'; }),
+    'Array.prototype.toSpliced': probe(function () { return typeof Array.prototype.toSpliced === 'function'; }),
+    'Array.prototype.with': probe(function () { return typeof Array.prototype['with'] === 'function'; }),
+    // ES2024 (Safari 17/17.4)
+    'Promise.withResolvers': probe(function () { return typeof Promise.withResolvers === 'function'; }),
+    'Promise.any': probe(function () { return typeof Promise.any === 'function'; }),
+    'Object.groupBy': probe(function () { return typeof Object.groupBy === 'function'; }),
+    'Map.groupBy': probe(function () { return typeof Map.groupBy === 'function'; }),
+    'Set.prototype.intersection': probe(function () { return typeof Set.prototype.intersection === 'function'; }),
+    'Set.prototype.union': probe(function () { return typeof Set.prototype.union === 'function'; }),
+    'Set.prototype.difference': probe(function () { return typeof Set.prototype.difference === 'function'; }),
+    'Set.prototype.symmetricDifference': probe(function () { return typeof Set.prototype.symmetricDifference === 'function'; }),
+    'Set.prototype.isSubsetOf': probe(function () { return typeof Set.prototype.isSubsetOf === 'function'; }),
+    'Set.prototype.isSupersetOf': probe(function () { return typeof Set.prototype.isSupersetOf === 'function'; }),
+    'Set.prototype.isDisjointFrom': probe(function () { return typeof Set.prototype.isDisjointFrom === 'function'; }),
+    'AbortSignal.timeout': probe(function () { return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'; }),
+    'AbortSignal.any': probe(function () { return typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function'; }),
+    // Stage 3 (Safari 18.4+)
+    'Promise.try': probe(function () { return typeof Promise['try'] === 'function'; }),
+    'Iterator.prototype.map': probe(function () { return typeof Iterator !== 'undefined' && typeof Iterator.prototype.map === 'function'; }),
+    'Iterator.prototype.filter': probe(function () { return typeof Iterator !== 'undefined' && typeof Iterator.prototype.filter === 'function'; }),
+    'Iterator.prototype.toArray': probe(function () { return typeof Iterator !== 'undefined' && typeof Iterator.prototype.toArray === 'function'; }),
+    'RegExp.escape': probe(function () { return typeof RegExp.escape === 'function'; }),
+    // RegExp v flag (语法层，不可 polyfill；用 new RegExp + 'v' 检测)
+    'RegExp /v flag': probe(function () { new RegExp('a', 'v'); return true; }),
+  };
+  // 把缺失的 API 单独列一份，方便日志一眼看
+  var missing = [];
+  for (var k in probes) {
+    if (Object.prototype.hasOwnProperty.call(probes, k) && !probes[k]) missing.push(k);
+  }
+  send({
+    source: 'lifecycle',
+    message: 'compat_bundle_loaded',
+    probes: probes,
+    missing: missing,
+    url: location.href,
+    ua: navigator.userAgent,
+  });
+
+  // ===== 2) console.error 拦截 — 突破跨域 sanitization =====
+  try {
+    var origConsoleError = console.error;
+    console.error = function () {
+      try {
+        if (consoleErrCount < CONSOLE_ERR_MAX) {
+          consoleErrCount++;
+          var parts = [];
+          var firstStack = null;
+          for (var i = 0; i < arguments.length; i++) {
+            var a = arguments[i];
+            if (a instanceof Error) {
+              parts.push(a.name + ': ' + (a.message || ''));
+              if (!firstStack && a.stack) firstStack = a.stack;
+            } else if (typeof a === 'string') {
+              parts.push(a);
+            } else {
+              parts.push(safeStringify(a));
+            }
+          }
+          send({
+            source: 'console.error',
+            message: parts.join(' '),
+            stack: firstStack,
+            url: location.href,
+            ua: navigator.userAgent,
+          });
+        }
+      } catch (_) {}
+      return origConsoleError.apply(this, arguments);
+    };
+  } catch (_) {}
+
+  // ===== 3) uncaught 错误兜底 =====
   window.addEventListener(
     'error',
     function (e) {
       if (!e) return;
       var err = e.error;
-      report({
+      var info = {
         source: 'window.error',
-        message: e.message || (err && err.message) || 'unknown',
+        message: e.message || (err && err.message) || null,
         filename: e.filename || null,
         lineno: e.lineno || null,
         colno: e.colno || null,
         stack: (err && err.stack) || null,
         url: location.href,
         ua: navigator.userAgent,
-      });
+      };
+      // sanitized 跨域错误兜底：所有字段都空，补上 target hint 用于定位是哪个资源
+      if (!info.message && !info.filename && !info.stack) {
+        info.message = '(sanitized cross-origin script error)';
+        info.eventType = e.type || null;
+        var target = e.target;
+        if (target && target !== window && target.nodeType) {
+          info.targetTag = target.tagName || null;
+          info.targetSrc = target.src || target.href || null;
+        }
+      }
+      reportError(info);
     },
     true,
   );
@@ -43,7 +183,7 @@
     'unhandledrejection',
     function (e) {
       var reason = e && e.reason;
-      var msg = 'unknown';
+      var msg = null;
       var stack = null;
       if (reason) {
         if (typeof reason === 'string') {
@@ -52,14 +192,10 @@
           msg = reason.message;
           stack = reason.stack || null;
         } else {
-          try {
-            msg = JSON.stringify(reason);
-          } catch (_) {
-            msg = String(reason);
-          }
+          msg = safeStringify(reason);
         }
       }
-      report({
+      reportError({
         source: 'unhandledrejection',
         message: msg,
         stack: stack,

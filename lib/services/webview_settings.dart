@@ -155,8 +155,14 @@ class WebViewSettings {
     return UnmodifiableListView<UserScript>([]);
   }
 
-  /// 注册 JS 错误回传 handler，把 WebView 内的错误落到 LogWriter。
+  /// 注册 JS 错误 / lifecycle 回传 handler，把 WebView 内的事件落到 LogWriter。
   /// 在 `onWebViewCreated` 拿到 controller 后调用一次。
+  ///
+  /// JS 侧通过 `flutter_inappwebview.callHandler('onWebViewJsError', payload)` 发，
+  /// 按 `source` 字段路由：
+  /// - `lifecycle` → info 级别 + event=webview_compat_ready，带 polyfill 自检 probes/missing
+  /// - `console.error` → error 级别，能突破跨域 sanitization 拿到 Discourse 自家 stack
+  /// - `window.error` / `unhandledrejection` → error 级别，uncaught 兜底（跨域时 sanitized）
   static void registerJsErrorReporter(InAppWebViewController controller) {
     controller.addJavaScriptHandler(
       handlerName: 'onWebViewJsError',
@@ -166,22 +172,43 @@ class WebViewSettings {
           final raw = args[0];
           if (raw is! Map) return null;
           final data = Map<String, dynamic>.from(raw);
-          LogWriter.instance.write({
-            'timestamp': DateTime.now().toIso8601String(),
-            'level': 'error',
-            'type': 'webview_js',
-            'event': 'js_runtime_error',
-            'message': data['message']?.toString() ?? 'unknown',
-            'jsSource': data['source'],
-            'jsFilename': data['filename'],
-            'jsLineno': data['lineno'],
-            'jsColno': data['colno'],
-            'jsStack': data['stack'],
-            'pageUrl': data['url'],
-            'pageUa': data['ua'],
-            'platform': Platform.operatingSystem,
-            'platformVersion': Platform.operatingSystemVersion,
-          });
+          final source = data['source']?.toString() ?? 'unknown';
+
+          if (source == 'lifecycle') {
+            LogWriter.instance.write({
+              'timestamp': DateTime.now().toIso8601String(),
+              'level': 'info',
+              'type': 'webview_compat',
+              'event': 'webview_compat_ready',
+              'message': data['message']?.toString() ?? 'compat_bundle_loaded',
+              'probes': data['probes'],
+              'missing': data['missing'],
+              'pageUrl': data['url'],
+              'pageUa': data['ua'],
+              'platform': Platform.operatingSystem,
+              'platformVersion': Platform.operatingSystemVersion,
+            });
+          } else {
+            LogWriter.instance.write({
+              'timestamp': DateTime.now().toIso8601String(),
+              'level': 'error',
+              'type': 'webview_js',
+              'event': 'js_runtime_error',
+              'message': data['message']?.toString() ?? 'unknown',
+              'jsSource': source,
+              'jsFilename': data['filename'],
+              'jsLineno': data['lineno'],
+              'jsColno': data['colno'],
+              'jsStack': data['stack'],
+              'jsEventType': data['eventType'],
+              'jsTargetTag': data['targetTag'],
+              'jsTargetSrc': data['targetSrc'],
+              'pageUrl': data['url'],
+              'pageUa': data['ua'],
+              'platform': Platform.operatingSystem,
+              'platformVersion': Platform.operatingSystemVersion,
+            });
+          }
         } catch (_) {}
         return null;
       },
