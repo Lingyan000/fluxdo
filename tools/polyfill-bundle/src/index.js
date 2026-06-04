@@ -1,3 +1,7 @@
+// 绕过 Discourse 在 iOS 15 上的 CSS 特性检测，必须在 core-js 之前，
+// 因为它是 Discourse boot 流程的"门"，过不去后面的 polyfill 都白搭。
+import './discourse-compat.js';
+
 // 入口：'core-js/actual' 这一行会被 @babel/preset-env (useBuiltIns: 'entry')
 // 按 package.json 里的 browserslist (iOS >= 15.0) 展开成精确的
 // `import 'core-js/modules/<feature>'` 列表，只引入老 WKWebView 缺失的 API。
