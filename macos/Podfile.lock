@@ -11,6 +11,8 @@ PODS:
   - FlutterMacOS (1.0.0)
   - irondash_engine_context (0.0.1):
     - FlutterMacOS
+  - native_animated_image_macos (0.1.0):
+    - FlutterMacOS
   - rhttp (0.0.1):
     - FlutterMacOS
   - screen_retriever_macos (0.0.1):
@@ -27,6 +29,7 @@ DEPENDENCIES:
   - flutter_secure_storage_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - irondash_engine_context (from `Flutter/ephemeral/.symlinks/plugins/irondash_engine_context/macos`)
+  - native_animated_image_macos (from `Flutter/ephemeral/.symlinks/plugins/native_animated_image_macos/macos`)
   - rhttp (from `Flutter/ephemeral/.symlinks/plugins/rhttp/macos`)
   - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
   - super_native_extensions (from `Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos`)
@@ -45,6 +48,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
   irondash_engine_context:
     :path: Flutter/ephemeral/.symlinks/plugins/irondash_engine_context/macos
+  native_animated_image_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/native_animated_image_macos/macos
   rhttp:
     :path: Flutter/ephemeral/.symlinks/plugins/rhttp/macos
   screen_retriever_macos:
@@ -61,6 +66,7 @@ SPEC CHECKSUMS:
   flutter_secure_storage_macos: 7f45e30f838cf2659862a4e4e3ee1c347c2b3b54
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   irondash_engine_context: 893c7d96d20ce361d7e996f39d360c4c2f9869ba
+  native_animated_image_macos: bf63641b9dbeb4f746b19108a5070b4b4660a4a8
   rhttp: 08d791d6373089de796318f4cfb172cbcf34e78b
   screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
   super_native_extensions: c2795d6d9aedf4a79fae25cb6160b71b50549189

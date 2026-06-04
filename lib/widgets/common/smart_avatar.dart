@@ -73,8 +73,26 @@ class _SmartAvatarState extends State<SmartAvatar> {
         height: innerSize,
         child: ScalableImageWidget(si: si, fit: BoxFit.cover),
       );
+    } else if (isNativeAnimatedUrl(widget.imageUrl!)) {
+      // 动图(GIF/APNG/动画 WebP)走 native_animated_image Rust pipeline,
+      // 绕开 Flutter Skia multi_frame_codec 的 #85831 bug
+      child = Image(
+        image: discourseImageProvider(widget.imageUrl!),
+        width: innerSize,
+        height: innerSize,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        frameBuilder: (context, displayChild, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) return displayChild;
+          return _buildLoading(fgColor, innerRadius);
+        },
+        errorBuilder: (context, error, stack) {
+          // 动图链路出错(网络 / Rust 解码失败),退化到字母 fallback
+          return _buildFallback(fgColor, innerRadius);
+        },
+      );
     } else {
-      // 使用 CachedNetworkImage，解码失败时检测 SVG
+      // 静态图使用 CachedNetworkImage，解码失败时检测 SVG
       child = CachedNetworkImage(
         imageUrl: widget.imageUrl!,
         cacheManager: _cacheManager,

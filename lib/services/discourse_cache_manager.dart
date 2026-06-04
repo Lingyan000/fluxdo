@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:native_animated_image/native_animated_image.dart';
 import 'avif_image_provider.dart';
 export 'avif_image_provider.dart' show AvifImageProvider;
 import 'dio_http_client.dart';
@@ -198,10 +199,31 @@ bool _isAvifUrl(String url) {
   }
 }
 
+/// 检查 URL 是否指向需要走 native 解码器的动图(GIF / APNG / 动画 WebP)
+///
+/// 走 native_animated_image 的 Rust pipeline,绕开 Flutter Skia
+/// multi_frame_codec 的 #85831 bug。
+bool isNativeAnimatedUrl(String url) => _isNativeAnimatedUrl(url);
+
+bool _isNativeAnimatedUrl(String url) {
+  try {
+    final path = Uri.parse(url).path.toLowerCase();
+    // .gif 一定走 native(Skia 在某些 disposal 组合下会失败)
+    // .apng / .webp 也走 native(后续 Rust 端补全解码器)
+    return path.endsWith('.gif') ||
+        path.endsWith('.apng') ||
+        path.endsWith('.webp');
+  } catch (_) {
+    return false;
+  }
+}
+
 /// 创建 Discourse 图片 Provider
 ///
 /// 用于需要 ImageProvider 的场景（CircleAvatar、DecorationImage 等）
-/// AVIF URL 自动使用 AvifImageProvider 解码，其他格式使用 CachedNetworkImageProvider
+/// - AVIF URL → AvifImageProvider
+/// - GIF / APNG / 动画 WebP → NativeAnimatedImageProvider (Rust pipeline)
+/// - 其他静态格式 → CachedNetworkImageProvider
 ImageProvider discourseImageProvider(
   String url, {
   double scale = 1.0,
@@ -210,6 +232,20 @@ ImageProvider discourseImageProvider(
 }) {
   if (_isAvifUrl(url)) {
     return AvifImageProvider(url, scale: scale);
+  }
+  if (_isNativeAnimatedUrl(url)) {
+    final cache = DiscourseCacheManager();
+    return NativeAnimatedImageProvider.fromBytesProvider(
+      loader: () async {
+        final bytes = await cache.getImageBytes(url);
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('NativeAnimatedImageProvider: empty bytes for $url');
+        }
+        return bytes;
+      },
+      tag: url,
+      scale: scale,
+    );
   }
   return CachedNetworkImageProvider(
     url,

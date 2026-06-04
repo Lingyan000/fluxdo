@@ -125,6 +125,9 @@ class _DiscourseImageState extends State<DiscourseImage> {
     Widget imageWidget;
     if (_isSvg) {
       imageWidget = _buildSvgImage(theme);
+    } else if (isNativeAnimatedUrl(_resolvedUrl!)) {
+      // 动图(GIF/APNG/动画 WebP)走 native_animated_image Rust pipeline
+      imageWidget = _buildNativeAnimatedImage(theme);
     } else {
       imageWidget = _buildCachedImage(theme);
     }
@@ -143,6 +146,23 @@ class _DiscourseImageState extends State<DiscourseImage> {
     }
 
     return imageWidget;
+  }
+
+  /// 动图渲染 — 走 native_animated_image (Rust pipeline),不踩 Flutter Skia
+  /// multi_frame_codec 的 #85831 / #94205 bug。
+  Widget _buildNativeAnimatedImage(ThemeData theme) {
+    return Image(
+      image: discourseImageProvider(_resolvedUrl!),
+      width: widget.width,
+      height: widget.height,
+      fit: widget.fit,
+      gaplessPlayback: true,
+      frameBuilder: (context, displayChild, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) return displayChild;
+        return _buildPlaceholder(theme);
+      },
+      errorBuilder: (context, error, stack) => _buildErrorWidget(theme),
+    );
   }
 
   Widget _buildCachedImage(ThemeData theme) {
