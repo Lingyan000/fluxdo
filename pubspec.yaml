@@ -36,7 +36,7 @@ dependencies:
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
-  native_animated_image: ^0.2.1
+  native_animated_image: ^0.2.2
   flutter_riverpod: ^3.1.0
   flutter_widget_from_html: ^0.17.1
   extended_image_lite:
