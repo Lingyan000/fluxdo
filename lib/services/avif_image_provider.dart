@@ -2,13 +2,12 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:flutter_avif/flutter_avif.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:native_animated_image/native_animated_image.dart' show NativeAvifPlatform;
 import '../l10n/s.dart';
 import 'discourse_cache_manager.dart';
 
-/// 限制并发 AVIF 解码数(thumbnail batch 场景 / fallback flutter_avif)。
+/// 限制并发 AVIF 解码数(thumbnail batch 场景)。
 ///
 /// 当前调到 8 —— 用户机器 8+ 核常见(M 系列、骁龙 8 Gen 2+),平台 native
 /// ImageIO 内存友好,并发 8 同屏内存峰值可控。完整解码路径(长按预览 /
@@ -17,11 +16,24 @@ final _avifDecodeSemaphore = _Semaphore(8);
 final _pendingThumbnailTasks = <String, Future<void>>{};
 final _knownThumbnailKeys = <String>{};
 
+/// AVIF 解码出的单帧(image + 该帧展示时长)。
+///
+/// 取代了 flutter_avif 的 `AvifFrameInfo` —— 现在 AVIF 解码统一走
+/// [NativeAvifPlatform.decode],它内部已经处理 platform native →
+/// 纯 Rust zenavif 两级回退,无需再引第三方 libavif 兜底。
+class _AvifFrame {
+  const _AvifFrame({required this.image, required this.duration});
+  final ui.Image image;
+  final Duration duration;
+}
+
 /// AVIF 图片 Provider
 ///
-/// 通过 CacheManager 下载/缓存文件，
-/// 使用 flutter_avif 的 decodeAvif 解码为 dart:ui Image
-/// 支持单帧和多帧（动画）AVIF
+/// 通过 CacheManager 下载/缓存文件，使用 [NativeAvifPlatform] 解码:
+/// - iOS 16.4+/macOS 13.4+/Android 31+ → 系统 ImageIO/ImageDecoder(优)
+/// - 其他平台 / 解码失败 → 纯 Rust zenavif(rav1d + zenavif-parse)
+///
+/// 支持单帧和多帧（动画）AVIF。
 ///
 /// 当 [singleFrame] 且 [targetSize] 不为 null 时，走缩略图快速路径：
 /// 首次解码后将缩放结果以 PNG 写入磁盘缓存，后续直接读取 PNG，
@@ -201,8 +213,8 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     try {
       final file = await manager.getSingleFile(url);
       final bytes = await file.readAsBytes();
-      // 平台 native 优先 + flutter_avif fallback
-      final frames = await _decodeViaPlatformOrFallback(bytes);
+      // 平台 native 优先 + Rust zenavif 内部回退(均由 NativeAvifPlatform 处理)
+      final frames = await _decodeViaNative(bytes);
       srcImage = frames.first.image;
       for (int i = 1; i < frames.length; i++) {
         frames[i].image.dispose();
@@ -263,7 +275,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
 
   // ==================== 完整解码路径 ====================
 
-  Future<List<AvifFrameInfo>> _decodeAvif(AvifImageProvider key) async {
+  Future<List<_AvifFrame>> _decodeAvif(AvifImageProvider key) async {
     // 完整解码路径(singleFrame=false): 长按预览、大图查看等单张交互场景。
     // 这条路不走 [_avifDecodeSemaphore] —— 否则 sticker grid 的 thumbnail 解码
     // (走 _decodeThumbnailImage,会 acquire semaphore)会把用户长按预览的请求
@@ -274,10 +286,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     final file = await manager.getSingleFile(key.url);
     final bytes = await file.readAsBytes();
 
-    // 优先走系统 ImageIO/ImageDecoder(Safari iOS 16.4+/macOS 13.4+/Android 31+),
-    // Apple/Google 的内部 AVIF 实现含 SIMD + 部分硬件加速,比 flutter_avif
-    // 自带的第三方 libavif 快 2-5x。平台不支持时无缝回退 flutter_avif。
-    final frames = await _decodeViaPlatformOrFallback(bytes);
+    final frames = await _decodeViaNative(bytes);
 
     if (key.singleFrame && frames.length > 1) {
       for (int i = 1; i < frames.length; i++) {
@@ -288,27 +297,18 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     return frames;
   }
 
-  /// 优先平台 native(ImageIO/ImageDecoder),失败 fallback flutter_avif。
-  static Future<List<AvifFrameInfo>> _decodeViaPlatformOrFallback(
-      Uint8List bytes) async {
-    if (await NativeAvifPlatform.canUse()) {
-      try {
-        final decoded = await NativeAvifPlatform.decode(bytes);
-        final frames = <AvifFrameInfo>[];
-        for (final frame in decoded.frames) {
-          final image = await _rgbaToUiImage(
-              frame.rgba, decoded.width, decoded.height);
-          frames.add(AvifFrameInfo(image: image, duration: frame.delay));
-        }
-        return frames;
-      } catch (e, st) {
-        // 平台 decoder 异常(罕见,如不支持的 profile) → fallback flutter_avif,保证不退化
-        debugPrint(
-            '[AvifImageProvider] platform decode failed, fallback flutter_avif: $e\n$st');
-      }
+  /// 走 [NativeAvifPlatform.decode]: 内部 platform native(iOS/macOS ImageIO、
+  /// Android ImageDecoder) → 纯 Rust zenavif 两级回退。任一成功即返回;
+  /// 双失败抛异常,由调用方上报 image stream error。
+  static Future<List<_AvifFrame>> _decodeViaNative(Uint8List bytes) async {
+    final decoded = await NativeAvifPlatform.decode(bytes);
+    final frames = <_AvifFrame>[];
+    for (final frame in decoded.frames) {
+      final image = await _rgbaToUiImage(
+          frame.rgba, decoded.width, decoded.height);
+      frames.add(_AvifFrame(image: image, duration: frame.delay));
     }
-    // Fallback: flutter_avif (bundled libavif)
-    return decodeAvif(bytes);
+    return frames;
   }
 
   static Future<ui.Image> _rgbaToUiImage(
@@ -347,7 +347,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
 /// 无监听时自动暂停动画，重新添加监听时恢复。
 class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
   _AvifAnimatedImageStreamCompleter({
-    required Future<List<AvifFrameInfo>> framesLoader,
+    required Future<List<_AvifFrame>> framesLoader,
     required this.scale,
   }) {
     framesLoader.then(
@@ -363,11 +363,11 @@ class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
   }
 
   final double scale;
-  List<AvifFrameInfo>? _frames;
+  List<_AvifFrame>? _frames;
   int _currentFrameIndex = 0;
   Timer? _timer;
 
-  void _handleFrames(List<AvifFrameInfo> frames) {
+  void _handleFrames(List<_AvifFrame> frames) {
     if (frames.isEmpty) {
       reportError(
         context: ErrorDescription(S.current.error_avifDecodeNoFrames),

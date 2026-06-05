@@ -33,16 +33,27 @@ final stickerGroupDetailProvider =
     FutureProvider.family<StickerGroupDetail, String>((ref, groupId) async {
       final service = ref.watch(stickerMarketServiceProvider);
       final detail = await service.getGroupDetail(groupId);
-      unawaited(_prefetchFirstScreenThumbnails(detail.emojis));
+      unawaited(_prefetchFirstScreenThumbnails(groupId, detail.emojis));
       return detail;
     });
+
+/// 当前活跃 prefetch 的 groupId。每次新组进来就覆盖,旧组 task 通过
+/// `_activePrefetchGroupId != myGroupId` 自我作废,避免用户快速切组后
+/// 老组的 30 张 thumbnail 还在后台占 CPU + ImageCache。
+///
+/// SchedulerBinding.scheduleTask 本身没有 cancel API,task 一旦 schedule
+/// 就会跑;但 task 内部 short-circuit 就够了 —— 没解码 = 没成本。
+String? _activePrefetchGroupId;
 
 /// 后台 idle 时预解 sticker thumbnail。
 ///
 /// 用 [SchedulerBinding.scheduleTask] + [Priority.idle],只在 Flutter 帧
 /// 渲染空闲间隙跑,不抢主线程。配合 [AvifImageProvider.precacheThumbnail]
 /// 内部去重(已预热过的 URL 立即跳过),即使 panel 已经 open 也不会重复 work。
-Future<void> _prefetchFirstScreenThumbnails(List<StickerItem> emojis) async {
+Future<void> _prefetchFirstScreenThumbnails(
+  String groupId,
+  List<StickerItem> emojis,
+) async {
   // sticker_picker grid 用 maxCrossAxisExtent=80,8 列 × 4 行 ≈ 32 张同屏。
   // 预解 30 张覆盖首屏 + 一点滚动 buffer。
   const prefetchCount = 30;
@@ -53,9 +64,12 @@ Future<void> _prefetchFirstScreenThumbnails(List<StickerItem> emojis) async {
       ? emojis
       : emojis.sublist(0, prefetchCount);
 
+  _activePrefetchGroupId = groupId;
+
   for (final sticker in visible) {
     SchedulerBinding.instance.scheduleTask<void>(
       () async {
+        if (_activePrefetchGroupId != groupId) return;
         try {
           await AvifImageProvider.precacheThumbnail(
             sticker.url,

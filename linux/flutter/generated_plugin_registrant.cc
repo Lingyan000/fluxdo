@@ -9,7 +9,6 @@
 #include <dynamic_color/dynamic_color_plugin.h>
 #include <file_selector_linux/file_selector_plugin.h>
 #include <flutter_acrylic/flutter_acrylic_plugin.h>
-#include <flutter_avif_linux/flutter_avif_linux_plugin.h>
 #include <flutter_inappwebview_linux/flutter_inappwebview_linux_plugin.h>
 #include <flutter_secure_storage_linux/flutter_secure_storage_linux_plugin.h>
 #include <flutter_timezone/flutter_timezone_plugin.h>
@@ -30,9 +29,6 @@ void fl_register_plugins(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) flutter_acrylic_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterAcrylicPlugin");
   flutter_acrylic_plugin_register_with_registrar(flutter_acrylic_registrar);
-  g_autoptr(FlPluginRegistrar) flutter_avif_linux_registrar =
-      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterAvifLinuxPlugin");
-  flutter_avif_linux_plugin_register_with_registrar(flutter_avif_linux_registrar);
   g_autoptr(FlPluginRegistrar) flutter_inappwebview_linux_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterInappwebviewLinuxPlugin");
   flutter_inappwebview_linux_plugin_register_with_registrar(flutter_inappwebview_linux_registrar);

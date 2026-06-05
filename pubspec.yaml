@@ -100,7 +100,6 @@ dependencies:
   ota_update: ^7.1.0
   app_links: ^7.0.0
   chat_bottom_container: ^0.4.0
-  flutter_avif: ^3.1.0
   catcher_2: ^2.1.5
   timezone: ^0.11.0
   flutter_timezone: ^5.0.2
