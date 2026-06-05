@@ -4,3 +4,4 @@ extensions:
   - provider: true
   - hive_ce: true
   - fluxdo_cookie_devtools: true
+  - shared_preferences: true
