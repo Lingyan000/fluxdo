@@ -1,16 +1,19 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_avif/flutter_avif.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:native_animated_image/native_animated_image.dart' show NativeAvifPlatform;
 import '../l10n/s.dart';
 import 'discourse_cache_manager.dart';
 
-/// 限制并发 AVIF 解码数。
-/// AV1 解码 CPU 开销大，不加限制时大量图同时解码会阻塞渲染线程。
-final _avifDecodeSemaphore = _Semaphore(3);
+/// 限制并发 AVIF 解码数(thumbnail batch 场景 / fallback flutter_avif)。
+///
+/// 当前调到 8 —— 用户机器 8+ 核常见(M 系列、骁龙 8 Gen 2+),平台 native
+/// ImageIO 内存友好,并发 8 同屏内存峰值可控。完整解码路径(长按预览 /
+/// 大图)已经在 _decodeAvif 内 bypass 这个 semaphore,见 _decodeAvif 注释。
+final _avifDecodeSemaphore = _Semaphore(8);
 final _pendingThumbnailTasks = <String, Future<void>>{};
 final _knownThumbnailKeys = <String>{};
 
@@ -198,7 +201,8 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     try {
       final file = await manager.getSingleFile(url);
       final bytes = await file.readAsBytes();
-      final frames = await decodeAvif(bytes);
+      // 平台 native 优先 + flutter_avif fallback
+      final frames = await _decodeViaPlatformOrFallback(bytes);
       srcImage = frames.first.image;
       for (int i = 1; i < frames.length; i++) {
         frames[i].image.dispose();
@@ -260,22 +264,64 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
   // ==================== 完整解码路径 ====================
 
   Future<List<AvifFrameInfo>> _decodeAvif(AvifImageProvider key) async {
-    await _avifDecodeSemaphore.acquire();
-    try {
-      final manager = key.cacheManager ?? DiscourseCacheManager();
-      final file = await manager.getSingleFile(key.url);
-      final bytes = await file.readAsBytes();
-      final frames = await decodeAvif(bytes);
-      if (key.singleFrame && frames.length > 1) {
-        for (int i = 1; i < frames.length; i++) {
-          frames[i].image.dispose();
-        }
-        return [frames.first];
+    // 完整解码路径(singleFrame=false): 长按预览、大图查看等单张交互场景。
+    // 这条路不走 [_avifDecodeSemaphore] —— 否则 sticker grid 的 thumbnail 解码
+    // (走 _decodeThumbnailImage,会 acquire semaphore)会把用户长按预览的请求
+    // 挤在队列后面,长按预览感知慢。
+    //
+    // 单张完整解码本来就 1 个任务,不会有 batch 内存爆炸的问题。
+    final manager = key.cacheManager ?? DiscourseCacheManager();
+    final file = await manager.getSingleFile(key.url);
+    final bytes = await file.readAsBytes();
+
+    // 优先走系统 ImageIO/ImageDecoder(Safari iOS 16.4+/macOS 13.4+/Android 31+),
+    // Apple/Google 的内部 AVIF 实现含 SIMD + 部分硬件加速,比 flutter_avif
+    // 自带的第三方 libavif 快 2-5x。平台不支持时无缝回退 flutter_avif。
+    final frames = await _decodeViaPlatformOrFallback(bytes);
+
+    if (key.singleFrame && frames.length > 1) {
+      for (int i = 1; i < frames.length; i++) {
+        frames[i].image.dispose();
       }
-      return frames;
-    } finally {
-      _avifDecodeSemaphore.release();
+      return [frames.first];
     }
+    return frames;
+  }
+
+  /// 优先平台 native(ImageIO/ImageDecoder),失败 fallback flutter_avif。
+  static Future<List<AvifFrameInfo>> _decodeViaPlatformOrFallback(
+      Uint8List bytes) async {
+    if (await NativeAvifPlatform.canUse()) {
+      try {
+        final decoded = await NativeAvifPlatform.decode(bytes);
+        final frames = <AvifFrameInfo>[];
+        for (final frame in decoded.frames) {
+          final image = await _rgbaToUiImage(
+              frame.rgba, decoded.width, decoded.height);
+          frames.add(AvifFrameInfo(image: image, duration: frame.delay));
+        }
+        return frames;
+      } catch (e, st) {
+        // 平台 decoder 异常(罕见,如不支持的 profile) → fallback flutter_avif,保证不退化
+        debugPrint(
+            '[AvifImageProvider] platform decode failed, fallback flutter_avif: $e\n$st');
+      }
+    }
+    // Fallback: flutter_avif (bundled libavif)
+    return decodeAvif(bytes);
+  }
+
+  static Future<ui.Image> _rgbaToUiImage(
+      Uint8List rgba, int width, int height) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      rgba,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      (image) => completer.complete(image),
+    );
+    return completer.future;
   }
 
   @override

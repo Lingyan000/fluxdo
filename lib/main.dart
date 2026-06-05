@@ -128,6 +128,10 @@ Future<void> _applyAndroidDisplayMode(SharedPreferences prefs) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Flutter ImageCache 默认 100 MB / 1000 项,sticker market + 帖子图同时活跃
+  // 容易把 sticker 挤出去导致反复重新解码。调到 300 MB 给 sticker 留位置。
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 300 * 1024 * 1024;
+
   // 启用 Edge-to-Edge 模式（小白条沉浸式）
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 

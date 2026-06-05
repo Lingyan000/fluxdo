@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/sticker.dart';
+import '../services/avif_image_provider.dart';
+import '../services/discourse_cache_manager.dart' show StickerCacheManager;
 import '../services/sticker_market_service.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
 
@@ -20,11 +25,52 @@ final stickerGroupsProvider = FutureProvider<List<StickerGroup>>((ref) async {
 });
 
 /// 分组详情（按 groupId 懒加载）
+///
+/// 加载完成后,异步(idle 优先级)批量 precache 第一屏 sticker 的 thumbnail —
+/// 这样用户实际打开 sticker panel / 切到这个 group 时,首屏多数 sticker 已经
+/// 在 PNG cache,只需 Flutter 内置 codec 几 ms 解出,不用等 AVIF 解码。
 final stickerGroupDetailProvider =
     FutureProvider.family<StickerGroupDetail, String>((ref, groupId) async {
       final service = ref.watch(stickerMarketServiceProvider);
-      return service.getGroupDetail(groupId);
+      final detail = await service.getGroupDetail(groupId);
+      unawaited(_prefetchFirstScreenThumbnails(detail.emojis));
+      return detail;
     });
+
+/// 后台 idle 时预解 sticker thumbnail。
+///
+/// 用 [SchedulerBinding.scheduleTask] + [Priority.idle],只在 Flutter 帧
+/// 渲染空闲间隙跑,不抢主线程。配合 [AvifImageProvider.precacheThumbnail]
+/// 内部去重(已预热过的 URL 立即跳过),即使 panel 已经 open 也不会重复 work。
+Future<void> _prefetchFirstScreenThumbnails(List<StickerItem> emojis) async {
+  // sticker_picker grid 用 maxCrossAxisExtent=80,8 列 × 4 行 ≈ 32 张同屏。
+  // 预解 30 张覆盖首屏 + 一点滚动 buffer。
+  const prefetchCount = 30;
+  // 与 sticker_picker `_StickerItemWidget` 的 memCacheWidth=160 一致。
+  const targetSize = 160;
+  final cache = StickerCacheManager();
+  final visible = emojis.length <= prefetchCount
+      ? emojis
+      : emojis.sublist(0, prefetchCount);
+
+  for (final sticker in visible) {
+    SchedulerBinding.instance.scheduleTask<void>(
+      () async {
+        try {
+          await AvifImageProvider.precacheThumbnail(
+            sticker.url,
+            targetSize: targetSize,
+            cacheManager: cache,
+          );
+        } catch (e) {
+          // prefetch 失败不影响用户实际访问时的兜底解码
+          debugPrint('[sticker_prefetch] ${sticker.url}: $e');
+        }
+      },
+      Priority.idle,
+    );
+  }
+}
 
 /// 市场分组分页加载（供市场浏览面板使用）
 final marketGroupsProvider =
