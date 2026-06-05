@@ -15,5 +15,8 @@
   },
   "browserslist": [
     "iOS >= 15.0"
-  ]
+  ],
+  "dependencies": {
+    "es-module-shims": "^2.8.1"
+  }
 }

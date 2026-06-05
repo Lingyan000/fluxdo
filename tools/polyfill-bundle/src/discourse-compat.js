@@ -57,4 +57,69 @@
       configurable: false,
     });
   } catch (_) {}
+
+  // ===== 3) patch document.createElement 给 script 加 crossorigin =====
+  // 突破 WebKit 的 cross-origin script error sanitization。
+  // cdn*.ldstatic.com 实测已返回 Access-Control-Allow-Origin: https://linux.do，
+  // 给 script 加 crossorigin="anonymous" 后，window.error 能拿到完整 stack 而非
+  // "(sanitized cross-origin script error)"。
+  // 只 patch JS 动态 createElement 创建的 script (Ember Loader 加载主 bundle 走这条),
+  // server-side HTML 里的 <script> 标签 patch 不到。
+  try {
+    var origCreateElement = document.createElement;
+    document.createElement = function (tagName) {
+      var el = origCreateElement.apply(this, arguments);
+      try {
+        if (typeof tagName === 'string' && tagName.toLowerCase() === 'script') {
+          el.crossOrigin = 'anonymous';
+        }
+      } catch (_) {}
+      return el;
+    };
+  } catch (_) {}
+
+  // ===== 4) AbortSignal.timeout / AbortSignal.any polyfill =====
+  // Safari 17.4+ 才有，core-js 不覆盖 (它们是 WHATWG DOM API，不属 ECMAScript)。
+  // 启动期 probes 报这俩 missing，Discourse 主 bundle 或其依赖大概率用到了。
+  try {
+    if (typeof AbortSignal !== 'undefined') {
+      if (typeof AbortSignal.timeout !== 'function') {
+        AbortSignal.timeout = function (ms) {
+          var ctrl = new AbortController();
+          setTimeout(function () {
+            try {
+              ctrl.abort(new DOMException('TimeoutError', 'TimeoutError'));
+            } catch (_) {
+              ctrl.abort();
+            }
+          }, ms);
+          return ctrl.signal;
+        };
+      }
+      if (typeof AbortSignal.any !== 'function') {
+        AbortSignal.any = function (signals) {
+          var ctrl = new AbortController();
+          var arr = Array.prototype.slice.call(signals);
+          // 已 aborted 的 signal 立即触发
+          for (var i = 0; i < arr.length; i++) {
+            var s = arr[i];
+            if (s && s.aborted) {
+              try { ctrl.abort(s.reason); } catch (_) { ctrl.abort(); }
+              return ctrl.signal;
+            }
+          }
+          var onAbort = function (e) {
+            try { ctrl.abort(e.target && e.target.reason); } catch (_) { ctrl.abort(); }
+            for (var j = 0; j < arr.length; j++) {
+              try { arr[j].removeEventListener('abort', onAbort); } catch (_) {}
+            }
+          };
+          for (var k = 0; k < arr.length; k++) {
+            try { arr[k].addEventListener('abort', onAbort, { once: true }); } catch (_) {}
+          }
+          return ctrl.signal;
+        };
+      }
+    }
+  } catch (_) {}
 })();

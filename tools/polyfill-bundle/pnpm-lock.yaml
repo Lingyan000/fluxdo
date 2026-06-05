@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+dependencies:
+  es-module-shims:
+    specifier: ^2.8.1
+    version: 2.8.1
+
 devDependencies:
   '@babel/core':
     specifier: ^7.29.7
@@ -1445,6 +1450,10 @@ packages:
     resolution: {integrity: sha1-BfdaJdq5jk+x3NXhRywFRtUFfI8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-errors/download/es-errors-1.3.0.tgz}
     engines: {node: '>= 0.4'}
     dev: true
+
+  /es-module-shims@2.8.1:
+    resolution: {integrity: sha512-Ztg5TxFCT/ffzmSf/ginHIvSbsneH60X9tpaMBD/jWXHQZT1JJNj8tOO3mRmUT3ar7Qn3YK4EbM1SjJpN5dPBA==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-module-shims/-/es-module-shims-2.8.1.tgz}
+    dev: false
 
   /esbuild@0.28.0:
     resolution: {integrity: sha512-sNR9MHpXSUV/XB4zmsFKN+QgVG82Cc7+/aaxJ8Adi8hyOac+EXptIp45QBPaVyX3N70664wRbTcLTOemCAnyqw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/esbuild/-/esbuild-0.28.0.tgz}

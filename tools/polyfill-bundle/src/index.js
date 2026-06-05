@@ -1,3 +1,11 @@
+// es-module-shims: 给 Safari < 16.4 polyfill import maps + 现代 module 加载。
+// 必须放最前 —— linux.do 用 <script type="importmap"> 加 <script type="module">
+// 加载 vendor / discourse 主 bundle，iOS 15.7 不识别 importmap，bare specifier
+// (import "ember-source" 之类) 无法 resolve，整个 Ember app 起不来。
+// es-module-shims 通过 fetch + 重写 import + Blob URL 接管。
+// AT_DOCUMENT_START 注入保证在 HTML parser 扫到 <script> 之前 ready。
+import 'es-module-shims';
+
 // 绕过 Discourse 在 iOS 15 上的 CSS 特性检测，必须在 core-js 之前，
 // 因为它是 Discourse boot 流程的"门"，过不去后面的 polyfill 都白搭。
 import './discourse-compat.js';
