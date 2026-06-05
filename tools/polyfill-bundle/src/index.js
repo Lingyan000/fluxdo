@@ -1,3 +1,22 @@
+// AT_DOCUMENT_START 时 HTML parser 还没扫到 <head>，document.head 是 null。
+// es-module-shims 启动时会 document.head.appendChild(modulepreload link) 直接
+// TypeError 把自己崩掉，于是 importmap 没人接管 → Discourse bundle 还是
+// resolve 失败 → splash 永驻。提前同步插入一个空 head，parser 后续遇到
+// HTML 里的 <head> 会复用同一个，无副作用。
+//
+// (这条修复是从 iOS 15.7 实测日志反推: error stack 指向 user-script:15:6:118511
+//  的 document.head.appendChild,说明 es-module-shims 内部因 head=null 自己挂了。)
+if (typeof document !== 'undefined' && document.documentElement) {
+  try {
+    if (!document.head) {
+      document.documentElement.insertBefore(
+        document.createElement('head'),
+        document.documentElement.firstChild,
+      );
+    }
+  } catch (e) {}
+}
+
 // es-module-shims: 给 Safari < 16.4 polyfill import maps + 现代 module 加载。
 // 必须放最前 —— linux.do 用 <script type="importmap"> 加 <script type="module">
 // 加载 vendor / discourse 主 bundle，iOS 15.7 不识别 importmap，bare specifier
