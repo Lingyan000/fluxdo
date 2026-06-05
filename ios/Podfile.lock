@@ -40,6 +40,8 @@ PODS:
   - Mantle (2.2.0):
     - Mantle/extobjc (= 2.2.0)
   - Mantle/extobjc (2.2.0)
+  - native_animated_image_ios (0.1.2):
+    - Flutter
   - open_filex (0.0.2):
     - Flutter
   - rhttp (0.0.1):
@@ -68,6 +70,7 @@ DEPENDENCIES:
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
   - irondash_engine_context (from `.symlinks/plugins/irondash_engine_context/ios`)
+  - native_animated_image_ios (from `.symlinks/plugins/native_animated_image_ios/ios`)
   - open_filex (from `.symlinks/plugins/open_filex/ios`)
   - rhttp (from `.symlinks/plugins/rhttp/ios`)
   - super_native_extensions (from `.symlinks/plugins/super_native_extensions/ios`)
@@ -104,6 +107,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/fluttertoast/ios"
   irondash_engine_context:
     :path: ".symlinks/plugins/irondash_engine_context/ios"
+  native_animated_image_ios:
+    :path: ".symlinks/plugins/native_animated_image_ios/ios"
   open_filex:
     :path: ".symlinks/plugins/open_filex/ios"
   rhttp:
@@ -135,6 +140,7 @@ SPEC CHECKSUMS:
   irondash_engine_context: 8e58ca8e0212ee9d1c7dc6a42121849986c88486
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   Mantle: c5aa8794a29a022dfbbfc9799af95f477a69b62d
+  native_animated_image_ios: 87dc5ce774f71e44033b0e9ca83b56fd81fa1c8a
   open_filex: 432f3cd11432da3e39f47fcc0df2b1603854eff1
   rhttp: 359daed992674fc912552df3106bfbc746bcc929
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
