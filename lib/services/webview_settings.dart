@@ -120,7 +120,15 @@ class WebViewSettings {
         UserScript(
           source: source,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          forMainFrameOnly: false,
+          // 必须 true: es-module-shims 在 iOS 15 上为每个 module 评估创建
+          // about:blank iframe。实测 Discourse vendor bundle 触发它创建 1100+
+          // 个 iframe (10 秒内, 110/秒)。如果对每个 iframe 都注入这 155KB
+          // polyfill, parse + 跑 + callHandler 把主线程霸占, Discourse 永远
+          // 启动不了 (splash 永驻)。
+          // iframe 不需要 polyfill: es-module-shims 的 stub iframe 只评估
+          // module、不跑业务代码;CF turnstile / Stripe / Google GSI 等真实
+          // 第三方 iframe 用 IIFE 不依赖 importmap, 也不需要我们的 polyfill。
+          forMainFrameOnly: true,
         ),
       ]);
     } catch (e) {

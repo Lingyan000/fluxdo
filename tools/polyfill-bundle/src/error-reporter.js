@@ -53,6 +53,15 @@
     send(payload);
   }
 
+  // 跳过 about:blank / about:srcdoc 这类 stub frame:
+  // es-module-shims 在 iOS 15 上为每个 module 创建 about:blank iframe 评估,
+  // 实测 10 秒内能触发 1100+ 次 user script 注入。我们在每个 stub frame 都
+  // 跑探针 + 发 lifecycle 信号 → callHandler 把 Flutter native bridge 打爆
+  // → 主线程被霸占 → 后续 priming/GET 都来不及调度 → Discourse 永远启动不了。
+  // 错误捕获仍然装上 (cheap),但探针 + lifecycle 信号只在真实页面跑。
+  var isStubFrame =
+    location.href === 'about:blank' || location.href === 'about:srcdoc';
+
   // ===== 1) 启动期自检：lifecycle 信号 + API 探针 =====
   // 用 typeof 防御未定义的全局 (Iterator / AbortSignal 等老 WebKit 可能没有)。
   function probe(getter) {
@@ -62,6 +71,9 @@
       return false;
     }
   }
+  if (isStubFrame) {
+    // stub frame 不跑探针, 不发 lifecycle 信号, 直接进入错误捕获注册。
+  } else {
   var probes = {
     // ES2022 (Safari 15.4)
     'Object.hasOwn': probe(function () { return typeof Object.hasOwn === 'function'; }),
@@ -114,6 +126,7 @@
     url: location.href,
     ua: navigator.userAgent,
   });
+  } // end isStubFrame else
 
   // ===== 2) console.error 拦截 — 突破跨域 sanitization =====
   try {
