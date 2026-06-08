@@ -183,14 +183,26 @@ class WebViewSettings {
           final source = data['source']?.toString() ?? 'unknown';
 
           if (source == 'lifecycle') {
+            // 把 message 用作 event 名,日志里能直接看到 boot 阶段:
+            //   compat_bundle_loaded         - polyfill 跑完
+            //   discourse_boot_dom           - DOMContentLoaded
+            //   discourse_boot_load          - window load
+            //   discourse_boot_init          - Discourse dispatchEvent(discourse-init)
+            //   discourse_boot_ready         - Ember ready,#d-splash 被移除
+            //   discourse_boot_status_30s    - 30 秒兜底,看 stages 字段哪一步没到
+            final msg = data['message']?.toString() ?? 'compat_bundle_loaded';
             LogWriter.instance.write({
               'timestamp': DateTime.now().toIso8601String(),
               'level': 'info',
               'type': 'webview_compat',
-              'event': 'webview_compat_ready',
-              'message': data['message']?.toString() ?? 'compat_bundle_loaded',
+              'event': msg,
+              'message': msg,
               'probes': data['probes'],
               'missing': data['missing'],
+              'stage': data['stage'],
+              'stages': data['stages'],
+              'extra': data['extra'],
+              'hasSplash': data['hasSplash'],
               'pageUrl': data['url'],
               'pageUa': data['ua'],
               'platform': Platform.operatingSystem,

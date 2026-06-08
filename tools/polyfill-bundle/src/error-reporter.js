@@ -126,6 +126,63 @@
     url: location.href,
     ua: navigator.userAgent,
   });
+
+  // ===== Discourse boot 阶段追踪 =====
+  // splash 永驻 + 无 error → Discourse 启动卡在某 await/事件等待。
+  // 监听 Discourse boot 链路的关键节点,看具体卡哪一步。
+  // 链路 (按时间顺序):
+  //   1. DOMContentLoaded   - DOM 解析完
+  //   2. window load        - 资源全部加载完(含 vendor/discourse bundle)
+  //   3. discourse-init     - discourse-boot.js dispatch,触发 Ember.create
+  //   4. discourse-ready    - Ember Application.ready() (移除 #d-splash 的时机)
+  // 任何一步在 30 秒后还没触发 → 上报 'stalled_at_<step>',告诉我们卡在哪。
+  function bootMark(stage, extra) {
+    send({
+      source: 'lifecycle',
+      message: 'discourse_boot_' + stage,
+      stage: stage,
+      url: location.href,
+      ua: navigator.userAgent,
+      extra: extra || null,
+    });
+  }
+  var bootStages = { dom: false, load: false, init: false, ready: false };
+  function track(stage, fire) {
+    if (bootStages[stage]) return;
+    bootStages[stage] = true;
+    bootMark(stage, fire);
+  }
+  try {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { track('dom'); }, { once: true });
+    } else {
+      track('dom', 'already-' + document.readyState);
+    }
+    if (document.readyState !== 'complete') {
+      window.addEventListener('load', function () { track('load'); }, { once: true });
+    } else {
+      track('load', 'already-complete');
+    }
+    document.addEventListener('discourse-init', function () { track('init'); }, { once: true });
+    // ready 信号:监听 #d-splash 节点被移除 (app.js:157 触发)
+    var splashWatch = setInterval(function () {
+      if (!document.querySelector('#d-splash')) {
+        clearInterval(splashWatch);
+        track('ready');
+      }
+    }, 500);
+    // 30 秒后强制上报当前状态,告诉我们卡哪
+    setTimeout(function () {
+      clearInterval(splashWatch);
+      send({
+        source: 'lifecycle',
+        message: 'discourse_boot_status_30s',
+        stages: bootStages,
+        hasSplash: !!document.querySelector('#d-splash'),
+        url: location.href,
+      });
+    }, 30000);
+  } catch (_) {}
   } // end isStubFrame else
 
   // ===== 2) console.error 拦截 — 突破跨域 sanitization =====
