@@ -6,9 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:native_animated_image/native_animated_image.dart'
-    show NativeAvifPlatform, NativeAnimatedImageFfi;
+    show NativeAnimatedImageFfi, NativeAnimatedImageException;
 
 import 'discourse_cache_manager.dart';
+
+// 与 native_animated_image 内部定义的错误码保持一致(Rust 端 ERR_UNSUPPORTED = -2),
+// dart 端没单独 export 这个常量,我们直接复用数字 — 这是 stable FFI contract。
+const int _kErrUnsupported = -2;
 
 /// 通用 sticker thumbnail provider — 单帧解码 + 缩放 + PNG cache。
 ///
@@ -59,9 +63,96 @@ class StickerThumbnailProvider
     }
   }
 
-  /// 预热缩略图缓存(后台 idle 时调用,sticker_provider 的 prefetch hook 用)。
+  /// 批量预热缩略图缓存(sticker 面板打开时一次性 30 张这种场景)。
   ///
-  /// 命中 cache 或已经在解的 URL 直接 short-circuit,避免重复 work。
+  /// 关键优化:把 30 个 `Isolate.run` 调用换成 chunked batch(默认 8 张一组),
+  /// spawn 开销从 30× 摊到 ~4×。每个 chunk 之前调一次 [shouldContinue],
+  /// 用户切组 / 关 panel 时立即停下后续 chunk,避免无效 CPU。
+  ///
+  /// 已在 cache 或正在解的 URL 自动跳过,主 isolate 只做轻量 IO + ui.Image 创建。
+  static Future<void> precacheBatch(
+    List<String> urls, {
+    required int targetSize,
+    required BaseCacheManager cacheManager,
+    bool Function()? shouldContinue,
+  }) async {
+    // Phase 1: 过滤掉不支持 / 已 cache / in-flight 的 URL,异步拉 bytes
+    final pending = <(String, Uint8List)>[];
+    for (final url in urls) {
+      if (shouldContinue != null && !shouldContinue()) return;
+      if (!supports(url)) continue;
+      final thumbKey = _thumbnailCacheKey(url, targetSize);
+      if (_knownThumbnailKeys.contains(thumbKey)) continue;
+      if (_pendingThumbnailTasks.containsKey(thumbKey)) continue;
+
+      // 抢占式:同 URL 不会重复进 batch(同时跑的 single-URL precache 也会被 dedupe)
+      final cachedBytes = await _readCachedThumbnailBytes(cacheManager, thumbKey);
+      if (cachedBytes != null) continue;
+
+      try {
+        final file = await cacheManager.getSingleFile(url);
+        pending.add((url, await file.readAsBytes()));
+      } catch (e) {
+        debugPrint('[StickerThumbnail] fetch bytes failed $url: $e');
+      }
+    }
+    if (pending.isEmpty) return;
+
+    // Phase 2: chunked isolate batch decode
+    const chunkSize = 8;
+    for (int i = 0; i < pending.length; i += chunkSize) {
+      if (shouldContinue != null && !shouldContinue()) return;
+      final end = (i + chunkSize < pending.length) ? i + chunkSize : pending.length;
+      final chunk = pending.sublist(i, end);
+      final chunkBytes = chunk.map((e) => e.$2).toList(growable: false);
+
+      final results = await Isolate.run(
+        () => _batchDecodeFirstFramesInIsolate(chunkBytes),
+        debugName: 'StickerThumbnail.batch',
+      );
+
+      // Phase 3: 主 isolate 转 ui.Image + 缩放 + 存 PNG(每张完成都检查 cancel)
+      for (int j = 0; j < chunk.length; j++) {
+        if (shouldContinue != null && !shouldContinue()) return;
+        final url = chunk[j].$1;
+        final bytes = chunk[j].$2;
+        final raw = results[j];
+
+        ui.Image? srcImage;
+        try {
+          if (raw != null) {
+            srcImage = await _rgbaToUiImage(raw.$3, raw.$1, raw.$2);
+          } else {
+            // Rust 不识别 → Flutter codec fallback(静态 webp / png / jpeg)
+            try {
+              srcImage = await _decodeFirstFrameViaFlutterCodec(bytes);
+            } catch (e) {
+              debugPrint('[StickerThumbnail] both decoders failed $url: $e');
+              continue;
+            }
+          }
+
+          final displayImage =
+              (srcImage.width > targetSize || srcImage.height > targetSize)
+                  ? await _resize(srcImage, targetSize)
+                  : srcImage;
+          await _cacheThumbnail(
+            cacheManager,
+            _thumbnailCacheKey(url, targetSize),
+            displayImage,
+          );
+          _knownThumbnailKeys.add(_thumbnailCacheKey(url, targetSize));
+          if (displayImage != srcImage) displayImage.dispose();
+        } finally {
+          srcImage?.dispose();
+        }
+      }
+    }
+  }
+
+  /// 单 URL 预热(已 cache 立即 short-circuit;in-flight 等同一个 future)。
+  ///
+  /// 用于用户实际访问 + 没命中 batch prefetch 的 cache miss 路径。
   static Future<void> precache(
     String url, {
     required int targetSize,
@@ -237,36 +328,74 @@ Future<ui.Image> _decodeFirstFrameImage({
   return srcImage;
 }
 
-/// 按 URL 后缀分发到对应 backend,解出第一帧 ui.Image。
+/// 解第一帧,统一走 Rust FFI(在 Isolate 内,主线程不阻塞)。
+/// 任何 Rust 不识别的格式(静态 webp / png / jpeg / 老 AVIF profile)走
+/// Flutter 内置 codec fallback。
 ///
-/// - `.avif` → `NativeAvifPlatform`(平台 ImageIO/ImageDecoder + 内部 Rust 回退)
-/// - `.gif/.webp/.apng` → `NativeAnimatedImageFfi`(Rust pipeline,Isolate 内跑;
-///   静态 webp/png 会被 native_animated_image 内部 fallback 到 Flutter 内置 codec)
-/// - 其它 → Flutter 内置 codec(理论不会进这条 — supports() 已 gate)
+/// 为什么不分 backend 按 URL 后缀路由:
+/// - sticker thumbnail 只要"第一帧",不需要平台 ImageIO 的硬件加速
+///   (微秒级差异 vs Isolate 化收益,后者重要得多)
+/// - NativeAvifPlatform 走 method channel + 大 RGBA marshal,完全在主 isolate,
+///   30 张并发会把主线程锁死(这是 v0.2.x 卡的真正根因)
+/// - 统一 Rust FFI + Isolate 后,主 isolate 几乎只做 ui.Image 创建(几 ms)
 Future<ui.Image> _decodeFirstFrame(String url, Uint8List bytes) async {
-  final lower = url.toLowerCase();
-
-  if (lower.endsWith('.avif')) {
-    // AVIF: NativeAvifPlatform.decode 内部已经做 platform → Rust 两级回退
-    final decoded = await NativeAvifPlatform.decode(bytes);
+  try {
+    final decoded = await Isolate.run(
+      () => NativeAnimatedImageFfi.instance.decode(bytes),
+      debugName: 'StickerThumbnail.decode',
+    );
     if (decoded.frames.isEmpty) {
-      throw StateError('AVIF decoded 0 frames: $url');
+      throw StateError('Rust decoded 0 frames: $url');
     }
     final first = decoded.frames.first;
     return _rgbaToUiImage(first.rgba, decoded.width, decoded.height);
+  } on NativeAnimatedImageException catch (e) {
+    if (e.code == _kErrUnsupported) {
+      // Rust 不识别 → Flutter 内置 codec(静态 webp / png / jpeg 都走这里)
+      return _decodeFirstFrameViaFlutterCodec(bytes);
+    }
+    rethrow;
   }
+}
 
-  // GIF / animated WebP / APNG → 走 Isolate 解,主线程不阻塞
-  // (NativeAnimatedImageFfi 是 sync FFI,必须放 Isolate 里)
-  final decoded = await Isolate.run(
-    () => NativeAnimatedImageFfi.instance.decode(bytes),
-    debugName: 'StickerThumbnail.decode',
-  );
-  if (decoded.frames.isEmpty) {
-    throw StateError('Animated image decoded 0 frames: $url');
+/// Flutter 内置 codec fallback:Rust pipeline 不识别的格式走这条
+/// (主要是静态 webp / png / jpeg)。只取第一帧,丢弃多余 codec 资源。
+Future<ui.Image> _decodeFirstFrameViaFlutterCodec(Uint8List bytes) async {
+  final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+  final codec = await ui.instantiateImageCodecFromBuffer(buffer);
+  try {
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  } finally {
+    codec.dispose();
   }
-  final first = decoded.frames.first;
-  return _rgbaToUiImage(first.rgba, decoded.width, decoded.height);
+}
+
+/// Isolate 入口:批量解第一帧 → 返回 (width, height, rgba) 列表。
+/// Rust 不识别(kErrUnsupported)的 entry 返 null,主 isolate 用 Flutter codec fallback。
+List<(int, int, Uint8List)?> _batchDecodeFirstFramesInIsolate(
+  List<Uint8List> chunkBytes,
+) {
+  final results = <(int, int, Uint8List)?>[];
+  for (final bytes in chunkBytes) {
+    try {
+      final decoded = NativeAnimatedImageFfi.instance.decode(bytes);
+      if (decoded.frames.isEmpty) {
+        results.add(null);
+        continue;
+      }
+      final first = decoded.frames.first;
+      results.add((decoded.width, decoded.height, first.rgba));
+    } on NativeAnimatedImageException catch (e) {
+      // Unsupported → 主 isolate 跑 Flutter fallback;其它错误也 null,让上层兜底
+      results.add(null);
+      if (e.code != _kErrUnsupported) {
+        // ignore: avoid_print
+        print('[batchDecode] rust error code=${e.code}: ${e.message}');
+      }
+    }
+  }
+  return results;
 }
 
 Future<ui.Image> _rgbaToUiImage(Uint8List rgba, int width, int height) {

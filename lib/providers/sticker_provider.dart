@@ -41,15 +41,12 @@ final stickerGroupDetailProvider =
 /// 老组的 30 张 thumbnail 还在后台占 CPU + ImageCache。
 String? _activePrefetchGroupId;
 
-/// 后台异步预解 sticker thumbnail。
+/// 后台异步批量预解 sticker thumbnail。
 ///
-/// **不用** [SchedulerBinding.scheduleTask] + [Priority.idle] —— 现代手机 UI
-/// 几乎从不真正 idle(ripple/scroll 一直占 frame budget),idle priority
-/// 实测会拖到几秒后才跑,赶不上用户打开 panel。
-///
-/// 直接 unawaited Future:微任务队列里 IO + Isolate decode 不抢主 frame,
-/// [StickerThumbnailProvider] 内部已有 `_decodeSemaphore` 限流 8 并发,
-/// 跟用户实际请求竞速也无伤(同 URL 内部去重)。
+/// **关键优化:用 [StickerThumbnailProvider.precacheBatch] 一次解 30 张,
+/// 把 30 个 `Isolate.run` 摊薄成 ~4 个**(chunked,每 chunk 8 张)。
+/// Isolate spawn 是几十 ms 量级开销,30× 累加起来主线程会感知卡顿;
+/// chunk 化后 spawn 开销可控,且 chunk 间能 cancel(切组 / 关 panel)。
 Future<void> _prefetchFirstScreenThumbnails(
   String groupId,
   List<StickerItem> emojis,
@@ -66,20 +63,15 @@ Future<void> _prefetchFirstScreenThumbnails(
 
   _activePrefetchGroupId = groupId;
 
-  for (final sticker in visible) {
-    unawaited(() async {
-      if (_activePrefetchGroupId != groupId) return;
-      try {
-        await StickerThumbnailProvider.precache(
-          sticker.url,
-          targetSize: targetSize,
-          cacheManager: cache,
-        );
-      } catch (e) {
-        // prefetch 失败不影响用户实际访问时的兜底解码
-        debugPrint('[sticker_prefetch] ${sticker.url}: $e');
-      }
-    }());
+  try {
+    await StickerThumbnailProvider.precacheBatch(
+      visible.map((s) => s.url).toList(growable: false),
+      targetSize: targetSize,
+      cacheManager: cache,
+      shouldContinue: () => _activePrefetchGroupId == groupId,
+    );
+  } catch (e) {
+    debugPrint('[sticker_prefetch] batch failed (group=$groupId): $e');
   }
 }
 
