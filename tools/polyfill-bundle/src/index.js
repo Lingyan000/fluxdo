@@ -27,3 +27,11 @@ import 'core-js/actual';
 
 // WebView 内 JS 运行时错误捕获 + 启动期 polyfill 自检，回传到 Dart 侧 LogWriter。
 import './error-reporter.js';
+
+// Eruda 设备内 DevTools: 没 Mac 做 Safari 远程调试时, 用户在 iPhone 上直接
+// 点页面右下角 ⚙ 按钮打开完整 Console / Network / Elements / Sources 面板。
+// 关键场景: Discourse 主 bundle 是跨域 SCRIPT 标签, 真正的 error stack 被
+// WebKit cross-origin sanitization 吃掉, 日志里只能看到 "(sanitized cross-origin
+// script error)"。Eruda 在页面同源 realm 内拿 console 输出 — 包括 Discourse
+// 自家 try/catch + console.error 报的完整 stack, 以及每个 fetch 的具体状态。
+import './eruda-init.js';
