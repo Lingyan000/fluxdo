@@ -1,15 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/sticker.dart';
-import '../services/avif_image_provider.dart';
 import '../services/discourse_cache_manager.dart' show StickerCacheManager;
 import '../services/sticker_market_service.dart';
+import '../services/sticker_thumbnail_provider.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
 
 /// 表情包市场服务 Provider
@@ -26,9 +25,9 @@ final stickerGroupsProvider = FutureProvider<List<StickerGroup>>((ref) async {
 
 /// 分组详情（按 groupId 懒加载）
 ///
-/// 加载完成后,异步(idle 优先级)批量 precache 第一屏 sticker 的 thumbnail —
+/// 加载完成后,异步批量 precache 第一屏 sticker 的 thumbnail —
 /// 这样用户实际打开 sticker panel / 切到这个 group 时,首屏多数 sticker 已经
-/// 在 PNG cache,只需 Flutter 内置 codec 几 ms 解出,不用等 AVIF 解码。
+/// 在 PNG cache,只需 Flutter 内置 codec 几 ms 解出,不用等动图解码。
 final stickerGroupDetailProvider =
     FutureProvider.family<StickerGroupDetail, String>((ref, groupId) async {
       final service = ref.watch(stickerMarketServiceProvider);
@@ -40,16 +39,17 @@ final stickerGroupDetailProvider =
 /// 当前活跃 prefetch 的 groupId。每次新组进来就覆盖,旧组 task 通过
 /// `_activePrefetchGroupId != myGroupId` 自我作废,避免用户快速切组后
 /// 老组的 30 张 thumbnail 还在后台占 CPU + ImageCache。
-///
-/// SchedulerBinding.scheduleTask 本身没有 cancel API,task 一旦 schedule
-/// 就会跑;但 task 内部 short-circuit 就够了 —— 没解码 = 没成本。
 String? _activePrefetchGroupId;
 
-/// 后台 idle 时预解 sticker thumbnail。
+/// 后台异步预解 sticker thumbnail。
 ///
-/// 用 [SchedulerBinding.scheduleTask] + [Priority.idle],只在 Flutter 帧
-/// 渲染空闲间隙跑,不抢主线程。配合 [AvifImageProvider.precacheThumbnail]
-/// 内部去重(已预热过的 URL 立即跳过),即使 panel 已经 open 也不会重复 work。
+/// **不用** [SchedulerBinding.scheduleTask] + [Priority.idle] —— 现代手机 UI
+/// 几乎从不真正 idle(ripple/scroll 一直占 frame budget),idle priority
+/// 实测会拖到几秒后才跑,赶不上用户打开 panel。
+///
+/// 直接 unawaited Future:微任务队列里 IO + Isolate decode 不抢主 frame,
+/// [StickerThumbnailProvider] 内部已有 `_decodeSemaphore` 限流 8 并发,
+/// 跟用户实际请求竞速也无伤(同 URL 内部去重)。
 Future<void> _prefetchFirstScreenThumbnails(
   String groupId,
   List<StickerItem> emojis,
@@ -67,22 +67,19 @@ Future<void> _prefetchFirstScreenThumbnails(
   _activePrefetchGroupId = groupId;
 
   for (final sticker in visible) {
-    SchedulerBinding.instance.scheduleTask<void>(
-      () async {
-        if (_activePrefetchGroupId != groupId) return;
-        try {
-          await AvifImageProvider.precacheThumbnail(
-            sticker.url,
-            targetSize: targetSize,
-            cacheManager: cache,
-          );
-        } catch (e) {
-          // prefetch 失败不影响用户实际访问时的兜底解码
-          debugPrint('[sticker_prefetch] ${sticker.url}: $e');
-        }
-      },
-      Priority.idle,
-    );
+    unawaited(() async {
+      if (_activePrefetchGroupId != groupId) return;
+      try {
+        await StickerThumbnailProvider.precache(
+          sticker.url,
+          targetSize: targetSize,
+          cacheManager: cache,
+        );
+      } catch (e) {
+        // prefetch 失败不影响用户实际访问时的兜底解码
+        debugPrint('[sticker_prefetch] ${sticker.url}: $e');
+      }
+    }());
   }
 }
 

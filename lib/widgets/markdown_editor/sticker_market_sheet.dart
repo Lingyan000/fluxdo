@@ -281,6 +281,7 @@ class _StickerGroupTile extends StatelessWidget {
             height: 40,
             memCacheWidth: 80,
             memCacheHeight: 80,
+            thumbnailMode: true,
             fit: BoxFit.cover,
             cacheManager: StickerCacheManager(),
             placeholder: (_) => _buildFallbackIcon(theme),

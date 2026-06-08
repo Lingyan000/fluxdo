@@ -418,6 +418,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           height: 24,
           memCacheWidth: 48,
           memCacheHeight: 48,
+          thumbnailMode: true,
           fit: BoxFit.cover,
           cacheManager: StickerCacheManager(),
           placeholder: (_) => _buildFallbackIcon(group.name),
@@ -635,7 +636,16 @@ class _StickerItemWidget extends StatelessWidget {
             fit: BoxFit.contain,
             memCacheWidth: 160,
             memCacheHeight: 160,
+            thumbnailMode: true,
             cacheManager: StickerCacheManager(),
+            // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
+            // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。
+            placeholder: (ctx) => DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
             errorBuilder: (_, _, _) => Icon(
               Icons.broken_image_outlined,
               size: 24,
