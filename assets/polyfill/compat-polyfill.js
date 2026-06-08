@@ -26,43 +26,32 @@
     }
   } catch (e) {}
 
-  // ===== 2) SCRIPT cross-origin patch =====
-  // HTML parser 解析 <script src="..."> 时走 setAttribute("src", ...)
-  // (不走 .src setter 也不走 createElement)。我们 patch 全局
-  // Element.prototype.setAttribute,在 SCRIPT 上设 src 且 src 跨域且
-  // 没 crossorigin 属性时,先把 crossorigin="anonymous" 设上,再 set src。
-  // Script 此时还没挂到 DOM,fetch 还没开始 → crossorigin 生效。
-  // cdn3.ldstatic.com 已经返 ACAO https://linux.do,所以加 crossorigin 后
-  // window.error 拿到的就是完整 stack(不再 sanitize)。
+  // ===== 2) SCRIPT cross-origin patch (域白名单) =====
+  // HTML parser 解析 <script src="..."> 走 setAttribute("src",...),
+  // 我们 hook 这里加 crossorigin="anonymous",突破 WebKit cross-origin
+  // script error sanitization,让 Discourse 主 bundle 抛错时 stack 完整可见。
+  //
+  // 危险:如果某 CDN 没返 ACAO,加了 crossorigin 反而 CORS 拒绝加载该 script,
+  // 让站点比之前更糟。所以严格白名单 — 只对**已确认返 ACAO**的域生效。
+  // 当前白名单:*.ldstatic.com (linux.do 的 Discourse 静态资源 CDN,curl 验过)。
+  // 其他第三方 (Stripe / Google / CF turnstile) 不动 — 它们的 error 本就
+  // sanitize 拿不到,我们不亏;但万一不返 ACAO 也不会破坏加载。
+  var CROSS_ORIGIN_WHITELIST = /^https?:\/\/[a-z0-9-]+\.ldstatic\.com\//i;
   try {
     if (typeof Element !== 'undefined' && Element.prototype) {
       var origSetAttribute = Element.prototype.setAttribute;
-      var pageOrigin =
-        typeof location !== 'undefined' && location.origin
-          ? location.origin
-          : '';
       Element.prototype.setAttribute = function (name, value) {
         try {
           if (
-            pageOrigin &&
             this &&
             this.tagName === 'SCRIPT' &&
             typeof name === 'string' &&
             name.toLowerCase() === 'src' &&
             typeof value === 'string' &&
+            CROSS_ORIGIN_WHITELIST.test(value) &&
             !this.hasAttribute('crossorigin')
           ) {
-            // 简单跨域检测:相对路径 / 同 origin 跳过,绝对路径才解析
-            var isProto =
-              value.indexOf('http:') === 0 ||
-              value.indexOf('https:') === 0 ||
-              value.indexOf('//') === 0;
-            if (isProto) {
-              var srcOrigin = new URL(value, location.href).origin;
-              if (srcOrigin !== pageOrigin) {
-                origSetAttribute.call(this, 'crossorigin', 'anonymous');
-              }
-            }
+            origSetAttribute.call(this, 'crossorigin', 'anonymous');
           }
         } catch (_) {}
         return origSetAttribute.apply(this, arguments);
