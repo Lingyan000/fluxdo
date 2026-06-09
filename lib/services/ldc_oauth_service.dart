@@ -1,15 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart' as html_parser;
+
+import '../models/ldc_user_info.dart';
+import '../pages/ldc_oauth_webview_page.dart';
+import '../l10n/s.dart';
 import 'network/discourse_dio.dart';
 import 'network/exceptions/oauth_exception.dart';
-import '../l10n/s.dart';
-import '../utils/dialog_utils.dart';
-import 'toast_service.dart';
-import '../models/ldc_user_info.dart';
 
 class LdcOAuthService {
   static const String baseUrl = 'https://credit.linux.do';
+
   late final Dio _dio;
 
   LdcOAuthService() {
@@ -22,14 +22,6 @@ class LdcOAuthService {
       options: Options(extra: {'skipCsrf': true}),
     );
     return response.data['data'] as String;
-  }
-
-  Future<void> callback(String code, String state) async {
-    await _dio.post(
-      '$baseUrl/api/v1/oauth/callback',
-      data: {'code': code, 'state': state},
-      options: Options(extra: {'skipCsrf': true}),
-    );
   }
 
   Future<void> logout() async {
@@ -85,117 +77,26 @@ class LdcOAuthService {
       throw Exception(S.current.oauth_getAuthUrlFailed);
     }
 
-    final Response response;
-    try {
-      response = await _dio.get(
-        authUrl,
-        options: Options(
-          followRedirects: false,
-          validateStatus: (status) => status != null && status < 500,
-          extra: {'skipCsrf': true, 'allowRedirectSetCookie': true},
-        ),
-      );
-    } on DioException {
-      throw Exception(S.current.oauth_networkError);
-    }
-
-    final document = html_parser.parse(response.data);
-    final approveLink = document.querySelector('a[href*="/oauth2/approve/"]')?.attributes['href'];
-
     if (!context.mounted) return false;
-    if (approveLink == null) {
-      throw Exception(S.current.oauth_approvePageParseFailed);
-    }
 
-    final confirmed = await showAppDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _AuthDialog(
-        onApprove: () async {
-          final approveResponse = await _dio.get(
-            'https://connect.linux.do$approveLink',
-            options: Options(
-              followRedirects: false,
-              validateStatus: (status) => status != null && status < 500,
-              extra: {
-                'skipCsrf': true,
-                'skipRedirect': true,
-                'allowRedirectSetCookie': true,
-              },
-            ),
-          );
-
-          final location = approveResponse.headers.value('location');
-          if (location == null) {
-            throw Exception(S.current.oauth_noRedirectResponse);
-          }
-
-          final uri = Uri.parse(location);
-          final code = uri.queryParameters['code'];
-          final state = uri.queryParameters['state'];
-
-          if (code == null || state == null) {
-            throw Exception(S.current.oauth_missingParams);
-          }
-
-          await callback(code, state);
-          return true;
-        },
-      ),
-    );
-
-    return confirmed ?? false;
+    return await LdcOAuthWebViewPage.open(
+          context,
+          authUrl: authUrl,
+          checkAuthorized: hasAuthorizedSession,
+        ) ??
+        false;
   }
-}
 
-class _AuthDialog extends StatefulWidget {
-  final Future<bool> Function() onApprove;
-
-  const _AuthDialog({required this.onApprove});
-
-  @override
-  State<_AuthDialog> createState() => _AuthDialogState();
-}
-
-class _AuthDialogState extends State<_AuthDialog> {
-  bool _isLoading = false;
-
-  Future<void> _handleApprove() async {
-    setState(() => _isLoading = true);
+  Future<bool> hasAuthorizedSession() async {
     try {
-      final result = await widget.onApprove();
-      if (mounted) {
-        Navigator.pop(context, result);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ToastService.showError('${S.current.reward_authFailed}: $e');
-      }
+      final response = await _dio.get(
+        '$baseUrl/api/v1/oauth/user-info',
+        options: Options(extra: {'skipCsrf': true, 'showErrorToast': false}),
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      debugPrint('[LDC OAuth] 检查授权状态失败: $e');
+      return false;
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(context.l10n.auth_ldcConfirmTitle),
-      content: Text(context.l10n.auth_ldcConfirmMessage),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.pop(context, false),
-          child: Text(context.l10n.common_deny),
-        ),
-        FilledButton(
-          onPressed: _isLoading ? null : _handleApprove,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(context.l10n.common_allow),
-        ),
-      ],
-    );
   }
 }
