@@ -5,6 +5,7 @@
   "boost_deleteFailed": "Failed to delete boost",
   "boost_deleted": "Boost deleted",
   "boost_failed": "Failed to send boost",
+  "boost_flagAlreadyReported": "You have already reported this boost",
   "boost_flagSubmitted": "Flag submitted",
   "boost_flagTitle": "Flag Boost",
   "boost_limitReached": "Boost limit reached for this post",

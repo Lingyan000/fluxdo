@@ -17,6 +17,7 @@ import '../post_action_bar.dart';
 import '../../../../bookmark/bookmark_edit_sheet.dart';
 import '../../../../post/post_boost/boost_list.dart';
 import '../../../../post/post_boost/boost_input.dart';
+import '../boost_flag_sheet.dart';
 import '../post_flag_sheet.dart';
 import '../post_reaction_picker.dart';
 import '../post_reaction_users_sheet.dart';
@@ -169,6 +170,20 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
     );
   }
 
+  void _handleBoostChanged(Boost boost) {
+    if (!mounted) return;
+    final index = _boosts.indexWhere((b) => b.id == boost.id);
+    if (index == -1) return;
+    setState(() {
+      final updated = [..._boosts];
+      updated[index] = boost;
+      _boosts = updated;
+    });
+    widget.onBoostUpdated?.call(
+      widget.post.copyWith(boosts: List.from(_boosts), canBoost: _canBoost),
+    );
+  }
+
   List<Boost> _dedupeBoostsById(List<Boost> boosts) {
     final byId = <int, Boost>{};
     for (final boost in boosts) {
@@ -210,12 +225,115 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
     }
   }
 
-  void _showBoostActions(Boost boost) {
-    final currentUser = ref.read(currentUserProvider).value;
-    final isOwn =
-        currentUser != null && boost.user.username == currentUser.username;
+  bool _shouldFetchBoostActionState({
+    required Boost boost,
+    required String currentUsername,
+  }) {
+    final isOwnBoost = currentUsername == boost.user.username;
+    if (isOwnBoost) {
+      return false;
+    }
+    if (boost.canFlag && boost.availableFlags == null) {
+      return true;
+    }
+    return !boost.canDelete &&
+        !boost.canFlag &&
+        boost.availableFlags == null &&
+        boost.userFlagStatus == null;
+  }
 
-    if (!isOwn && !boost.canDelete) return;
+  Future<Boost> _resolveBoostActionState({
+    required Boost boost,
+    required String currentUsername,
+  }) async {
+    if (!_shouldFetchBoostActionState(
+      boost: boost,
+      currentUsername: currentUsername,
+    )) {
+      return boost;
+    }
+    final detailedBoost = await _service.getBoost(boost.id);
+    if (mounted) {
+      _handleBoostChanged(detailedBoost);
+    }
+    return detailedBoost;
+  }
+
+  Future<void> _refreshBoostAfterFlag(Boost boost) async {
+    try {
+      final updatedBoost = await _service.getBoost(boost.id);
+      if (!mounted) return;
+      _handleBoostChanged(updatedBoost);
+    } catch (_) {
+      if (!mounted) return;
+      _handleBoostChanged(
+        boost.copyWith(
+          canFlag: false,
+          userFlagStatus: boost.userFlagStatus ?? 1,
+        ),
+      );
+    }
+  }
+
+  void _showBoostFlagSheet(Boost boost) {
+    showAppBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => BoostFlagSheet(
+        boost: boost,
+        submitFlag: (flagTypeId, message) async {
+          await _service.flagBoost(
+            boost.id,
+            flagTypeId: flagTypeId,
+            message: message,
+          );
+          await _refreshBoostAfterFlag(boost);
+        },
+        onSuccess: () => ToastService.showSuccess(S.current.boost_flagSubmitted),
+      ),
+    );
+  }
+
+  Future<void> _showBoostActions(Boost boost) async {
+    final currentUsername = ref.read(currentUserProvider).value?.username;
+    if (currentUsername == null || currentUsername.isEmpty) {
+      return;
+    }
+    Boost resolvedBoost;
+    try {
+      resolvedBoost = await _resolveBoostActionState(
+        boost: boost,
+        currentUsername: currentUsername,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ToastService.showError(S.current.common_loadFailed);
+      return;
+    }
+    if (!mounted) return;
+    final canDelete = canDeleteBoostAction(
+      boost: resolvedBoost,
+      currentUsername: currentUsername,
+    );
+    if (boostAlreadyReportedByCurrentUser(
+          boost: resolvedBoost,
+          currentUsername: currentUsername,
+        ) &&
+        !canDelete) {
+      ToastService.showInfo(S.current.boost_flagAlreadyReported);
+      return;
+    }
+    final canFlag = canFlagBoostAction(
+      boost: resolvedBoost,
+      currentUsername: currentUsername,
+    );
+    if (!canOpenBoostActionMenu(
+      boost: resolvedBoost,
+      currentUsername: currentUsername,
+    )) {
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -224,14 +342,27 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: Text(S.current.common_delete),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _deleteBoost(boost);
-                },
-              ),
+              if (canFlag)
+                ListTile(
+                  leading: const Icon(Icons.flag_outlined, color: Colors.red),
+                  title: Text(
+                    S.current.common_report,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showBoostFlagSheet(resolvedBoost);
+                  },
+                ),
+              if (canDelete)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text(S.current.common_delete),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deleteBoost(resolvedBoost);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.close),
                 title: Text(S.current.common_cancel),
@@ -329,7 +460,9 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
               boosts: _boosts,
               canBoost: _canBoost,
               onAddBoost: _openBoostInput,
-              onBoostTap: _showBoostActions,
+              onBoostTap: (boost) {
+                _showBoostActions(boost);
+              },
               highlightUsername: widget.highlightBoostUsername,
             ),
           ValueListenableBuilder<bool>(

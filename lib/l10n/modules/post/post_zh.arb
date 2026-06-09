@@ -5,6 +5,7 @@
   "boost_deleteFailed": "Boost 删除失败",
   "boost_deleted": "Boost 已删除",
   "boost_failed": "Boost 发送失败",
+  "boost_flagAlreadyReported": "你已经举报过这条 Boost",
   "boost_flagSubmitted": "举报已提交",
   "boost_flagTitle": "举报 Boost",
   "boost_limitReached": "此帖子的 Boost 数量已达上限",

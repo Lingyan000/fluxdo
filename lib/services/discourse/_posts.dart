@@ -437,16 +437,20 @@ mixin _PostsMixin on _DiscourseServiceBase {
 
   /// 举报 Boost
   Future<void> flagBoost(int boostId, {required int flagTypeId, String? message}) async {
-    final data = <String, dynamic>{
-      'flag_type_id': flagTypeId,
-    };
-    if (message != null && message.isNotEmpty) {
-      data['message'] = message;
+    try {
+      final data = <String, dynamic>{
+        'flag_type_id': flagTypeId,
+      };
+      if (message != null && message.isNotEmpty) {
+        data['message'] = message;
+      }
+      await _dio.post(
+        '/discourse-boosts/boosts/$boostId/flags',
+        data: data,
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+    } on DioException catch (e) {
+      _throwApiError(e);
     }
-    await _dio.post(
-      '/discourse-boosts/boosts/$boostId/flags',
-      data: data,
-      options: Options(contentType: Headers.formUrlEncodedContentType),
-    );
   }
 }

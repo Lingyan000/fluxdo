@@ -40,6 +40,7 @@
   },
   "post_flagDescriptionHint": "請描述具體問題...",
   "post_flagFailed": "舉報失敗，請稍後重試",
+  "boost_flagAlreadyReported": "你已經舉報過這條 Boost",
   "post_flagMessageUser": "向 @{username} 傳送訊息",
   "@post_flagMessageUser": {
     "placeholders": {
