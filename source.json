@@ -10,6 +10,13 @@
       "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
       "versions": [
         {
+          "version": "0.2.16",
+          "date": "2026-06-09T12:48:34Z",
+          "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.16/fluxdo-unsigned.ipa",
+          "size": 50580206,
+          "localizedDescription": "🌟 新功能\n- 俺也一样: OP 帖底部 ME TOO 表态按钮 (discourse-solved shared_issue)\n- Notion 同步: 帖子/话题 -> Notion Database (close [#230](https://github.com/lingyan000/fluxdo/issues/230))\n- 导出历史: 帖子导出/同步统一可追溯 (PR1/2 → #227)\n- native 应用登录页: WebView 内 JS 全流程登录\n- 多解决方案支持: 列表化 banner + 兼容 discourse-solved 新分支\n- 老 WKWebView 兼容层: core-js polyfill 子工程 + JS 错误回传\n- Cookie 引擎 v0.4.0 闭环: 全量同步 + 跨平台 observer + Win/Linux 接通\n- 进度悬浮条手势：按压时间反馈 + 长按菜单设置页\n- 进度悬浮条手势：左右上滑 + 长按半圆菜单\n- CF 盾自动验证开关\n- APK 更新支持后台下载 + 通知栏进度\n- Release 日志改造：接入 git-cliff + TG 通知重构\n- Cookie 引擎 v0.4.0 (#276)\n- : 更新桌面端 App Icon\n- 字体粗细调整\n- CF 验证样式优化\n- Flutter 更新到 3.44.0\n- 刷新率设置支持\n- 优化 CF 盾处理与验证体验 (#266)\n- 添加话题关键词过滤功能，允许用户根据标题关键词筛选话题 (#268)\n- 跨平台我的书签工作区与统一书签编辑体验（clean） (#262)\n- AI 提供商排序置顶与模型收藏排序，新增发帖 AI 审核，修复网页端草稿编辑问题 (#261)\n- 优化桌面布局与侧边栏导航分组 (#249)\n- AI 助手功能优化\n\n🐛 修复\n- 修 AI 测试模型弹框标题撞状态栏\n- 修 _t 被错存为 domain cookie 挂到子域名\n- 修 cdk/ldc OAuth callback \"CSRF 验证失败\"\n- cdk/ldc OAuth 链路拟人化, 缓解 429\n- 修 iOS 切换应用图标无法切回主图标\n- 修 iOS 真机 AI「未收到 AI 回复」+ 跟随网络 Claude 第二次起必挂\n- 修日志文件含非法 utf-8 字节时日志页面崩溃打不开\n- 修双栏布局下正在输入指示器居中显示\n- 修 cdk/ldc OAuth user-info 双发 + 链路无间隔触发 429\n- 修 Priming 与 cf_challenge 竞态导致 CF 第一次验证关闭\n- 修 CF 验证循环 bug + sameSite 字段全链路保留\n- 修复 release notes stable 漏合 beta + TG 双消息缺少关联\n- 修复 Priming 同步失败: 去掉 fast path + 加 verify\n- 修复查看图片隐藏状态栏之后不再显示的问题\n- Flutter 升级兼容性修复\n- 修复 AI 功能跟随应用网络配置失效的问题\n- LDC 功能错误提示优化\n- Fix post-login loading handoff (#258)\n- 修复 rhttp 引擎开关退出重进自动关闭问题 (#254)"
+        },
+        {
           "version": "0.2.15",
           "date": "2026-05-09T17:45:57Z",
           "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.15/fluxdo-unsigned.ipa",
