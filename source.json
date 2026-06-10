@@ -10,6 +10,13 @@
       "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
       "versions": [
         {
+          "version": "0.2.17",
+          "date": "2026-06-10T08:49:38Z",
+          "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.17/fluxdo-unsigned.ipa",
+          "size": 50599163,
+          "localizedDescription": "🌟 新功能\n- hcaptcha create endpoint 可配置 + fallback 列表\n- hcaptcha create endpoint 可配置 + fallback 列表\n\n🐛 修复\n- apiKey 改明文存储 + 诊断走应用日志,根治「未收到 AI 回复」\n- 修 Android nukeAllVariants 因无 Looper 线程致空操作\n- 升 native_animated_image 0.3.1: 修不透明动画 WebP 解码 crash\n- 修请求调度器按 dio 实例独立窗口, 导致服务端 429\n- 修请求调度器按 dio 实例独立窗口, 导致服务端 429\n- release notes 从上个 stable 起算 + Pages 图标路径动态化"
+        },
+        {
           "version": "0.2.16",
           "date": "2026-06-09T12:48:34Z",
           "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.16/fluxdo-unsigned.ipa",
