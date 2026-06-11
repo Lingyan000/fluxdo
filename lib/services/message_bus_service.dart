@@ -31,6 +31,9 @@ class MessageBusMessage {
 /// MessageBus 频道订阅
 typedef MessageBusCallback = void Function(MessageBusMessage message);
 
+bool get _disableRealtimeOnIOS =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
 class _ChannelSubscription {
   final String channel;
   int lastMessageId;
@@ -142,6 +145,11 @@ class MessageBusService {
 
   /// 订阅频道
   void subscribe(String channel, MessageBusCallback callback, {int lastMessageId = -1}) {
+    if (_disableRealtimeOnIOS) {
+      debugPrint('[MessageBus] iOS realtime disabled, skip $channel');
+      return;
+    }
+
     if (!_subscriptions.containsKey(channel)) {
       _subscriptions[channel] = _ChannelSubscription(
         channel: channel,
@@ -180,6 +188,11 @@ class MessageBusService {
 
   /// 使用指定的 messageId 订阅
   void subscribeWithMessageId(String channel, MessageBusCallback callback, int messageId) {
+    if (_disableRealtimeOnIOS) {
+      debugPrint('[MessageBus] iOS realtime disabled, skip $channel');
+      return;
+    }
+
     if (_subscriptions.containsKey(channel)) {
       _subscriptions[channel]!.callbacks.add(callback);
       if (messageId > _subscriptions[channel]!.lastMessageId) {
