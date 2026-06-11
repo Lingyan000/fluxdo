@@ -15,16 +15,23 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    _logRequest(
-      options: response.requestOptions,
-      statusCode: response.statusCode,
-      level: 'info',
-    );
+    if (response.requestOptions.extra['skipNetworkLog'] != true) {
+      _logRequest(
+        options: response.requestOptions,
+        statusCode: response.statusCode,
+        level: 'info',
+      );
+    }
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.requestOptions.extra['skipNetworkLog'] == true &&
+        err.type == DioExceptionType.cancel) {
+      handler.next(err);
+      return;
+    }
     final isSilent = err.requestOptions.extra['isSilent'] == true;
     final isTimeout = err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionTimeout ||

@@ -116,6 +116,19 @@ void configureWebViewFallbackAdapter(Dio dio) {
   _currentAdapterType = AdapterType.webview;
 }
 
+/// 配置稳定的 NativeAdapter,绕过 _DynamicAdapter 的 rhttp/proxy 切换。
+///
+/// 适用于 long polling 等长期运行的场景:
+/// - iOS/macOS 走 URLSession,享受系统级后台 suspend 和 radio coalescing,
+///   功耗显著低于 rhttp 的用户态 reqwest。
+/// - 不参与 rhttp/proxy 设置版本号轮换,连接复用更稳定。
+///
+/// 仍走 [_GatewayAdapterWrapper] 包装,以保持 gateway 模式下的 URL 改写一致。
+void configureStableNativeAdapter(Dio dio) {
+  final adapter = _GatewayAdapterWrapper(_createNativeAdapter());
+  dio.httpClientAdapter = adapter;
+}
+
 /// 配置 WebView 适配器
 void _configureWebViewAdapter(Dio dio) {
   final adapter = WebViewHttpAdapter();
