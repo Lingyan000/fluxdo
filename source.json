@@ -10,6 +10,13 @@
       "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
       "versions": [
         {
+          "version": "0.2.19",
+          "date": "2026-06-16T02:44:08Z",
+          "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.19/fluxdo-unsigned.ipa",
+          "size": 51285738,
+          "localizedDescription": "🐛 修复\n- 修复 LDC 余额趋势符号显示\n- 修复实时 Boost 权限误判\n- harden WebView session cookie sync\n- 修复 Windows 登录验证和加载卡住\n- 兼容伪装成 PNG 的 SVG 头像\n\n♻️ 重构\n- 抽象分页加载状态\n\n🔧 其他\n- :bug: fix: 收敛 Discourse 登录态与上报逻辑"
+        },
+        {
           "version": "0.2.18",
           "date": "2026-06-13T09:15:00Z",
           "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.18/fluxdo-unsigned.ipa",
