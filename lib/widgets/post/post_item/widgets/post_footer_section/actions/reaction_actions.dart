@@ -63,23 +63,6 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
     }
   }
 
-  void _showReactionPicker(BuildContext context, ThemeData theme) async {
-    HapticFeedback.mediumImpact();
-
-    final reactions = await _service.getEnabledReactions();
-    if (!context.mounted || reactions.isEmpty) return;
-
-    // ignore: use_build_context_synchronously
-    PostReactionPicker.show(
-      context: context,
-      theme: theme,
-      likeButtonKey: _likeButtonKey,
-      reactions: reactions,
-      currentUserReaction: _currentUserReaction,
-      onReactionSelected: _toggleReaction,
-    );
-  }
-
   void _showReactionUsers(BuildContext context, {String? reactionId}) {
     showAppBottomSheet(
       context: context,

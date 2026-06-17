@@ -250,6 +250,11 @@ List<Map<String, dynamic>>? get topicTrackingStatesSync =>
     return _enabledReactions ?? ['heart', '+1', 'laughing', 'open_mouth'];
   }
 
+  /// 同步获取可用回应表情列表（仅返回已 preload 结果，未 preload 时返回兜底）
+  /// 用于"按下立即弹出"等零延迟场景
+  List<String> get enabledReactionsSync =>
+      _enabledReactions ?? const ['heart', '+1', 'laughing', 'open_mouth'];
+
   /// 获取 MessageBus 跨域认证 key（仅独立域名时有值）
   String? get sharedSessionKey => _sharedSessionKey;
 

@@ -22,7 +22,6 @@ import '../../../../post/post_boost/boost_list.dart';
 import '../../../../post/post_boost/boost_input.dart';
 import '../boost_flag_sheet.dart';
 import '../post_flag_sheet.dart';
-import '../post_reaction_picker.dart';
 import '../post_reaction_users_sheet.dart';
 import '../post_replies_list.dart';
 import '../post_solution_banner.dart';
@@ -496,7 +495,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
             showRepliesNotifier: _showRepliesNotifier,
             hideRepliesButton: widget.hideRepliesButton,
             onToggleLike: _toggleLike,
-            onShowReactionPicker: () => _showReactionPicker(context, theme),
+            onReactionSelected: _toggleReaction,
             onShowReactionUsers: (reactionId) =>
                 _showReactionUsers(context, reactionId: reactionId),
             onReply: widget.onReply == null ? null : () => widget.onReply!(),

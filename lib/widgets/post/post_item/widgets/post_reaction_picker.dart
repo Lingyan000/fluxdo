@@ -5,249 +5,575 @@ import 'package:flutter/services.dart';
 import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/emoji_handler.dart';
-import '../../../../utils/platform_utils.dart';
 
-/// 获取 emoji 图片 URL（未加载完成时返回空字符串，由 errorBuilder 处理）
 String _getEmojiUrl(String emojiName) {
   return EmojiHandler().getEmojiUrl(emojiName);
 }
 
-/// 回应选择器弹窗
-class PostReactionPicker {
-  /// 显示回应选择器
-  static void show({
-    required BuildContext context,
-    required ThemeData theme,
-    required GlobalKey likeButtonKey,
-    required List<String> reactions,
-    required PostReaction? currentUserReaction,
-    required void Function(String reactionId) onReactionSelected,
-  }) {
-    final box = likeButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null) return;
+// ============================== 布局常量 ==============================
 
-    final buttonPos = box.localToGlobal(Offset.zero);
-    final buttonSize = box.size;
-    final screenWidth = MediaQuery.of(context).size.width;
+const double _kItemSize = 40.0;
+const double _kIconSize = 26.0;
+const double _kItemSpacing = 1.0;
+const double _kPadding = 4.0;
+const int _kCrossAxisCount = 5;
+const double _kHighlightScale = 1.35;
 
-    // 配置参数
-    const double itemSize = 40.0;
-    const double iconSize = 26.0;
-    const double spacing = 1.0;
-    const double padding = 4.0;
-    const int crossAxisCount = 5;
+const Duration _kEnterDuration = Duration(milliseconds: 180);
+const Duration _kExitDuration = Duration(milliseconds: 160);
+const Duration _kDesktopHoverLeaveDelay = Duration(milliseconds: 120);
 
-    // 计算尺寸
-    final int count = reactions.length;
-    final int cols = count < crossAxisCount ? count : crossAxisCount;
-    final int rows = (count / crossAxisCount).ceil();
+// ============================== 控制器 ==============================
 
-    final double pickerWidth = (itemSize * cols) + (spacing * (cols - 1)) + (padding * 2) + 4.0;
-    final double pickerHeight = (itemSize * rows) + (spacing * (rows - 1)) + (padding * 2);
+/// picker 的工作模式：
+/// - [touch]：移动端长按手势驱动；动画完整跑完 180ms 才算"展开完成"
+/// - [desktop]：桌面端 hover 触发；按下即直接展开
+enum ReactionPickerMode { touch, desktop }
 
-    // 计算左边位置：居中于按钮，但限制在屏幕内
-    double left = (buttonPos.dx + buttonSize.width / 2) - (pickerWidth / 2);
-    if (left < 16) left = 16;
-    if (left + pickerWidth > screenWidth - 16) left = screenWidth - pickerWidth - 16;
-
-    // 计算顶部位置：默认在按钮上方
-    bool isAbove = true;
-    double top = buttonPos.dy - pickerHeight - 12;
-    if (top < 80) {
-      top = buttonPos.dy + buttonSize.height + 12;
-      isAbove = false;
-    }
-
-    // 计算动画原点 Alignment
-    final buttonCenterX = buttonPos.dx + buttonSize.width / 2;
-    final relativeX = (buttonCenterX - left) / pickerWidth;
-    final alignmentX = relativeX * 2 - 1;
-    final alignmentY = isAbove ? 1.0 : -1.0;
-
-    final transformAlignment = Alignment(alignmentX, alignmentY);
-
-    // 触发按钮区域（含上下 12px 间隙，使按钮与气泡之间的空隙也是安全区域）
-    final buttonRect = Rect.fromLTWH(
-      buttonPos.dx, buttonPos.dy - 12, buttonSize.width, buttonSize.height + 24,
-    );
-
-    // 防止多个 pop 入口（barrier 点击 / hover 离开 / 选择表情）重复 pop
-    bool dismissed = false;
-    late final BuildContext dialogContext;
-
-    void safePop() {
-      if (dismissed) return;
-      dismissed = true;
-      Navigator.pop(dialogContext);
-    }
-
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: false,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.transparent,
-      transitionDuration: PlatformUtils.isDesktop
-          ? const Duration(milliseconds: 150)
-          : const Duration(milliseconds: 450),
-      pageBuilder: (ctx, _, _) {
-        dialogContext = ctx;
-        // 桌面端：鼠标离开气泡+按钮区域后自动关闭
-        if (PlatformUtils.isDesktop) {
-          return _DesktopReactionPickerHost(
-            pickerRect: Rect.fromLTWH(left, top, pickerWidth, pickerHeight),
-            buttonRect: buttonRect,
-            onDismiss: safePop,
-          );
-        }
-        return const SizedBox();
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        // 桌面端：干脆的缩放动画；移动端：弹性回弹
-        final double curvedValue;
-        final double opacity;
-        if (PlatformUtils.isDesktop) {
-          curvedValue = Curves.easeOutCubic.transform(animation.value);
-          opacity = animation.value;
-        } else {
-          curvedValue = Curves.elasticOut.transform(animation.value);
-          opacity = (animation.value / 0.15).clamp(0.0, 1.0);
-        }
-
-        return Stack(
-          children: [
-            // 全屏透明点击层
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: safePop,
-                child: child, // 桌面端 host 在此，处理鼠标追踪
-              ),
-            ),
-            // 气泡主体
-            Positioned(
-              left: left,
-              top: top,
-              child: Transform.scale(
-                scale: curvedValue,
-                alignment: transformAlignment,
-                child: Opacity(
-                  opacity: opacity,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Container(
-                      width: pickerWidth,
-                      height: pickerHeight,
-                      padding: const EdgeInsets.all(padding),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 16,
-                            spreadRadius: 2,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                        border: Border.all(
-                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        alignment: WrapAlignment.center,
-                        children: reactions.map((r) {
-                          final isCurrent = currentUserReaction?.id == r;
-                          return GestureDetector(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              safePop();
-                              onReactionSelected(r);
-                            },
-                            child: Container(
-                              width: itemSize,
-                              height: itemSize,
-                              decoration: BoxDecoration(
-                                color: isCurrent ? theme.colorScheme.primaryContainer : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Image(
-                                  image: emojiImageProvider(_getEmojiUrl(r)),
-                                  width: iconSize,
-                                  height: iconSize,
-                                  errorBuilder: (_, _, _) => const Icon(Icons.emoji_emotions_outlined, size: 24),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// 桌面端：追踪鼠标位置，离开气泡和触发按钮区域后自动关闭
-class _DesktopReactionPickerHost extends StatefulWidget {
-  final Rect pickerRect;
-  final Rect buttonRect;
-  final VoidCallback onDismiss;
-
-  const _DesktopReactionPickerHost({
-    required this.pickerRect,
-    required this.buttonRect,
-    required this.onDismiss,
+/// 表情选择器控制器，由触发入口（PostActionBar）持有，贯穿按下→展开→拖动→抬起整个生命周期
+class ReactionPickerController {
+  ReactionPickerController({
+    required this.vsync,
+    required this.onReactionSelected,
   });
 
-  @override
-  State<_DesktopReactionPickerHost> createState() => _DesktopReactionPickerHostState();
-}
+  final TickerProvider vsync;
+  final void Function(String reactionId) onReactionSelected;
 
-class _DesktopReactionPickerHostState extends State<_DesktopReactionPickerHost> {
-  Timer? _dismissTimer;
+  late final AnimationController animation = AnimationController(
+    vsync: vsync,
+    duration: _kEnterDuration,
+    reverseDuration: _kExitDuration,
+  );
 
-  /// 安全区域：气泡 + 触发按钮（含间隙）
-  bool _isInSafeZone(Offset globalPos) {
-    // 气泡区域加 8px 容差
-    final expandedPickerRect = widget.pickerRect.inflate(8);
-    if (expandedPickerRect.contains(globalPos)) return true;
-    // 触发按钮区域
-    if (widget.buttonRect.contains(globalPos)) return true;
-    return false;
+  OverlayEntry? _entry;
+  _OverlayBinding? _binding;
+  Timer? _desktopLeaveTimer;
+  bool _closing = false;
+  bool _disposed = false;
+
+  /// 监听祖先 Scrollable 的位置变化，滚动时立刻关闭 picker
+  /// （否则桌面端鼠标不动、列表被滚动后 picker 会"飘"在原地）
+  final List<ScrollPosition> _watchedPositions = [];
+
+  // 上一次启动时计算好的几何数据
+  Rect _buttonRect = Rect.zero;
+  double _pickerLeft = 0;
+  double _pickerTop = 0;
+  double _pickerWidth = 0;
+  double _pickerHeight = 0;
+  Alignment _transformAlignment = Alignment.center;
+  List<String> _reactions = const [];
+  PostReaction? _currentUserReaction;
+  ThemeData? _theme;
+  ReactionPickerMode _mode = ReactionPickerMode.touch;
+
+  // 当前 picker rect、item rect、highlight
+  Rect get pickerRect =>
+      Rect.fromLTWH(_pickerLeft, _pickerTop, _pickerWidth, _pickerHeight);
+  Rect get buttonRect => _buttonRect;
+  Alignment get transformAlignment => _transformAlignment;
+  List<String> get reactions => _reactions;
+  PostReaction? get currentUserReaction => _currentUserReaction;
+  ThemeData? get theme => _theme;
+  ReactionPickerMode get mode => _mode;
+
+  int? _highlightIndex;
+  int? get highlightIndex => _highlightIndex;
+
+  /// 是否处于"选择模式"（移动端 = 长按阈值已达成；桌面端 = 一直为 true）
+  bool _inSelectionMode = false;
+  bool get inSelectionMode => _inSelectionMode;
+
+  bool get isOpen => _entry != null && !_closing;
+  bool get isClosing => _closing;
+
+  /// 打开 picker。计算几何、插入 OverlayEntry、启动正向动画
+  void open({
+    required BuildContext context,
+    required Rect buttonRect,
+    required List<String> reactions,
+    required PostReaction? currentUserReaction,
+    required ThemeData theme,
+    required ReactionPickerMode mode,
+  }) {
+    if (_disposed) return;
+    if (reactions.isEmpty) return;
+
+    // 如果正在收回，直接复用：取消收回，重新正向播放
+    if (_entry != null && _closing) {
+      _closing = false;
+      animation.forward();
+      return;
+    }
+    if (_entry != null) return;
+
+    _buttonRect = buttonRect;
+    _reactions = reactions;
+    _currentUserReaction = currentUserReaction;
+    _theme = theme;
+    _mode = mode;
+    _highlightIndex = null;
+    _inSelectionMode = mode == ReactionPickerMode.desktop;
+
+    _computeGeometry(context);
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    _entry = OverlayEntry(builder: (_) {
+      return _ReactionPickerOverlay(
+        controller: this,
+        onBindingReady: (b) => _binding = b,
+      );
+    });
+    overlay.insert(_entry!);
+
+    _attachScrollListeners(context);
+
+    animation.forward(from: 0);
   }
 
-  void _onPointerMove(PointerEvent event) {
-    if (_isInSafeZone(event.position)) {
-      _dismissTimer?.cancel();
-      _dismissTimer = null;
-    } else {
-      _dismissTimer ??= Timer(const Duration(milliseconds: 300), widget.onDismiss);
+  /// 沿 context 向上找所有 Scrollable，订阅其 position 变化
+  void _attachScrollListeners(BuildContext context) {
+    _detachScrollListeners();
+    // 顺着 context 链找祖先 Scrollable；可能嵌套多层（外层主滚动 + 内层列表）
+    BuildContext? ctx = context;
+    while (ctx != null) {
+      final state = Scrollable.maybeOf(ctx);
+      if (state == null) break;
+      final position = state.position;
+      position.isScrollingNotifier.addListener(_onScrollingChanged);
+      _watchedPositions.add(position);
+      ctx = state.context;
     }
   }
 
-  @override
+  void _detachScrollListeners() {
+    for (final p in _watchedPositions) {
+      p.isScrollingNotifier.removeListener(_onScrollingChanged);
+    }
+    _watchedPositions.clear();
+  }
+
+  void _onScrollingChanged() {
+    // 任一祖先 Scrollable 开始滚动 → 立即关闭，避免 picker 飘在原地
+    for (final p in _watchedPositions) {
+      if (p.isScrollingNotifier.value) {
+        close();
+        return;
+      }
+    }
+  }
+
+  void _computeGeometry(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final screenHeight = mediaQuery.size.height;
+    final padding = mediaQuery.padding;
+
+    final count = _reactions.length;
+    final cols = count < _kCrossAxisCount ? count : _kCrossAxisCount;
+    final rows = (count / _kCrossAxisCount).ceil();
+
+    _pickerWidth =
+        (_kItemSize * cols) + (_kItemSpacing * (cols - 1)) + (_kPadding * 2) + 4.0;
+    _pickerHeight =
+        (_kItemSize * rows) + (_kItemSpacing * (rows - 1)) + (_kPadding * 2);
+
+    _pickerLeft =
+        (_buttonRect.left + _buttonRect.width / 2) - (_pickerWidth / 2);
+    if (_pickerLeft < 16) _pickerLeft = 16;
+    if (_pickerLeft + _pickerWidth > screenWidth - 16) {
+      _pickerLeft = screenWidth - _pickerWidth - 16;
+    }
+
+    // 默认气泡在按钮上方，预留 12px 间隙
+    bool isAbove = true;
+    _pickerTop = _buttonRect.top - _pickerHeight - 12;
+    if (_pickerTop < padding.top + 8) {
+      _pickerTop = _buttonRect.bottom + 12;
+      isAbove = false;
+    }
+    // 防止超出屏幕底
+    if (_pickerTop + _pickerHeight > screenHeight - padding.bottom - 8) {
+      _pickerTop = screenHeight - padding.bottom - 8 - _pickerHeight;
+    }
+
+    final buttonCenterX = _buttonRect.left + _buttonRect.width / 2;
+    final relativeX = (buttonCenterX - _pickerLeft) / _pickerWidth;
+    final alignmentX = relativeX * 2 - 1;
+    final alignmentY = isAbove ? 1.0 : -1.0;
+    _transformAlignment = Alignment(alignmentX, alignmentY);
+  }
+
+  /// 长按阈值达成 / 桌面 hover 触发后进入"选择模式"，允许更新 highlight
+  void enterSelectionMode() {
+    if (_disposed || !isOpen) return;
+    if (_inSelectionMode) return;
+    _inSelectionMode = true;
+  }
+
+  /// 根据指针的全局坐标更新 highlight
+  void updateHighlight(Offset globalPos) {
+    if (_disposed || !isOpen) return;
+    if (!_inSelectionMode) return;
+    final rects = _binding?.itemRects;
+    if (rects == null || rects.isEmpty) return;
+
+    int? newIndex;
+    for (int i = 0; i < rects.length; i++) {
+      final r = rects[i];
+      if (r == null) continue;
+      if (r.inflate(4).contains(globalPos)) {
+        newIndex = i;
+        break;
+      }
+    }
+
+    if (newIndex != _highlightIndex) {
+      _highlightIndex = newIndex;
+      if (newIndex != null) {
+        HapticFeedback.selectionClick();
+      }
+      _entry?.markNeedsBuild();
+    }
+  }
+
+  /// 提交选中（如果有 highlight）
+  void commitSelection() {
+    if (_disposed) return;
+    final idx = _highlightIndex;
+    if (idx != null && idx >= 0 && idx < _reactions.length) {
+      HapticFeedback.lightImpact();
+      onReactionSelected(_reactions[idx]);
+    }
+    close();
+  }
+
+  /// 直接选中指定 id（桌面端点击 emoji 用）
+  void selectReaction(String id) {
+    if (_disposed) return;
+    HapticFeedback.lightImpact();
+    onReactionSelected(id);
+    close();
+  }
+
+  /// 关闭 picker：反向播放动画，结束后真正 dispose entry
+  void close() {
+    if (_disposed) return;
+    if (_entry == null || _closing) return;
+    _closing = true;
+    _highlightIndex = null;
+    _desktopLeaveTimer?.cancel();
+    _desktopLeaveTimer = null;
+    animation.reverse().whenCompleteOrCancel(_disposeEntryIfNeeded);
+  }
+
+  void _disposeEntryIfNeeded() {
+    if (!_closing) return;
+    _entry?.remove();
+    _entry = null;
+    _binding = null;
+    _closing = false;
+    _inSelectionMode = false;
+    _highlightIndex = null;
+    _detachScrollListeners();
+  }
+
+  // ============================== 桌面端 hover 安全区 ==============================
+
+  /// 桌面端鼠标 hover 进入 picker 或按钮区域：取消"延迟关闭"定时器
+  void onDesktopHoverEnterSafeZone() {
+    _desktopLeaveTimer?.cancel();
+    _desktopLeaveTimer = null;
+  }
+
+  /// 桌面端鼠标离开安全区：300ms 后自动关闭
+  void onDesktopHoverLeaveSafeZone() {
+    if (!isOpen || _mode != ReactionPickerMode.desktop) return;
+    _desktopLeaveTimer?.cancel();
+    _desktopLeaveTimer = Timer(_kDesktopHoverLeaveDelay, close);
+  }
+
+  /// 鼠标位置变化：判断是否在安全区内，并相应地启动/取消延迟关闭
+  void onDesktopPointerHover(Offset globalPos) {
+    if (!isOpen || _mode != ReactionPickerMode.desktop) return;
+    final inSafe =
+        pickerRect.inflate(8).contains(globalPos) || _buttonRect.contains(globalPos);
+    if (inSafe) {
+      onDesktopHoverEnterSafeZone();
+      updateHighlight(globalPos);
+    } else {
+      onDesktopHoverLeaveSafeZone();
+    }
+  }
+
+  // ============================== Item rect 上报 ==============================
+
+  /// item widget build 完毕后上报自己的全局 Rect
+  void reportItemRect(int index, Rect rect) {
+    _binding?.reportItemRect(index, rect);
+  }
+
+  // ============================== 生命周期 ==============================
+
   void dispose() {
-    _dismissTimer?.cancel();
-    super.dispose();
+    if (_disposed) return;
+    _disposed = true;
+    _desktopLeaveTimer?.cancel();
+    _detachScrollListeners();
+    _entry?.remove();
+    _entry = null;
+    _binding = null;
+    animation.dispose();
+  }
+}
+
+// ============================== Overlay binding ==============================
+
+/// Overlay state 暴露给 controller 的回调接口
+class _OverlayBinding {
+  _OverlayBinding({
+    required this.itemRects,
+    required this.reportItemRect,
+  });
+
+  final List<Rect?> itemRects;
+  final void Function(int index, Rect rect) reportItemRect;
+}
+
+// ============================== Overlay widget ==============================
+
+class _ReactionPickerOverlay extends StatefulWidget {
+  const _ReactionPickerOverlay({
+    required this.controller,
+    required this.onBindingReady,
+  });
+
+  final ReactionPickerController controller;
+  final void Function(_OverlayBinding) onBindingReady;
+
+  @override
+  State<_ReactionPickerOverlay> createState() => _ReactionPickerOverlayState();
+}
+
+class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
+  late final List<Rect?> _itemRects =
+      List<Rect?>.filled(widget.controller.reactions.length, null);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.onBindingReady(
+      _OverlayBinding(
+        itemRects: _itemRects,
+        reportItemRect: _reportItemRect,
+      ),
+    );
+  }
+
+  void _reportItemRect(int index, Rect rect) {
+    if (index < 0 || index >= _itemRects.length) return;
+    // 动画期间 rect 不稳定，只在接近完全展开时接受写入
+    if (widget.controller.animation.value < 0.95) return;
+    _itemRects[index] = rect;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerHover: _onPointerMove,
-      onPointerMove: _onPointerMove,
-      child: const SizedBox.expand(),
+    final ctrl = widget.controller;
+    final theme = ctrl.theme;
+    if (theme == null) return const SizedBox.shrink();
+
+    return Stack(
+      children: [
+        // 全屏点击层：移动端用于取消（虽然 long press 已经包揽，但作为兜底）；
+        // 桌面端用于点击空白处关闭
+        if (ctrl.mode == ReactionPickerMode.desktop)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: ctrl.close,
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerHover: (e) => ctrl.onDesktopPointerHover(e.position),
+                onPointerMove: (e) => ctrl.onDesktopPointerHover(e.position),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+
+        // picker 主体
+        AnimatedBuilder(
+          animation: ctrl.animation,
+          builder: (context, _) {
+            final t = ctrl.animation.value;
+            final isReversing =
+                ctrl.animation.status == AnimationStatus.reverse;
+            final scaleCurve = isReversing
+                ? Curves.easeInCubic.transform(t)
+                : Curves.easeOutBack.transform(t);
+            // opacity 用线性曲线快速淡入，避免动画刚启动时 picker 完全不可见
+            final opacity = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+
+            return Positioned(
+              left: ctrl.pickerRect.left,
+              top: ctrl.pickerRect.top,
+              child: IgnorePointer(
+                // 移动端：picker 完全不接受指针事件，所有手势走父层 RawGestureDetector
+                // 桌面端：picker 需要接收 hover 与 tap，IgnorePointer 关闭
+                ignoring: ctrl.mode == ReactionPickerMode.touch,
+                child: Transform.scale(
+                  scale: scaleCurve.clamp(0.0, 1.5),
+                  alignment: ctrl.transformAlignment,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: _buildPickerBody(theme),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPickerBody(ThemeData theme) {
+    final ctrl = widget.controller;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: ctrl.pickerRect.width,
+        height: ctrl.pickerRect.height,
+        padding: const EdgeInsets.all(_kPadding),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 16,
+              spreadRadius: 2,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
+            width: 0.5,
+          ),
+        ),
+        child: Wrap(
+          spacing: _kItemSpacing,
+          runSpacing: _kItemSpacing,
+          alignment: WrapAlignment.center,
+          children: [
+            for (int i = 0; i < ctrl.reactions.length; i++)
+              _ReactionItem(
+                index: i,
+                reactionId: ctrl.reactions[i],
+                isCurrent: ctrl.currentUserReaction?.id == ctrl.reactions[i],
+                isHighlighted: ctrl.highlightIndex == i,
+                onTap: ctrl.mode == ReactionPickerMode.desktop
+                    ? () => ctrl.selectReaction(ctrl.reactions[i])
+                    : null,
+                onRectReported: (r) => _reportItemRect(i, r),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
+
+// ============================== 单项 ==============================
+
+class _ReactionItem extends StatefulWidget {
+  const _ReactionItem({
+    required this.index,
+    required this.reactionId,
+    required this.isCurrent,
+    required this.isHighlighted,
+    required this.onTap,
+    required this.onRectReported,
+  });
+
+  final int index;
+  final String reactionId;
+  final bool isCurrent;
+  final bool isHighlighted;
+  final VoidCallback? onTap;
+  final void Function(Rect rect) onRectReported;
+
+  @override
+  State<_ReactionItem> createState() => _ReactionItemState();
+}
+
+class _ReactionItemState extends State<_ReactionItem> {
+  final GlobalKey _key = GlobalKey();
+
+  void _reportRect() {
+    final ctx = _key.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final topLeft = box.localToGlobal(Offset.zero);
+    widget.onRectReported(topLeft & box.size);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportRect());
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReactionItem old) {
+    super.didUpdateWidget(old);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportRect());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scale = widget.isHighlighted ? _kHighlightScale : 1.0;
+
+    Widget content = Container(
+      key: _key,
+      width: _kItemSize,
+      height: _kItemSize,
+      decoration: BoxDecoration(
+        color: widget.isCurrent
+            ? theme.colorScheme.primaryContainer
+            : Colors.transparent,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Image(
+          image: emojiImageProvider(_getEmojiUrl(widget.reactionId)),
+          width: _kIconSize,
+          height: _kIconSize,
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.emoji_emotions_outlined, size: 24),
+        ),
+      ),
+    );
+
+    if (widget.onTap != null) {
+      content = GestureDetector(onTap: widget.onTap, child: content);
+    }
+
+    return AnimatedScale(
+      scale: scale,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutBack,
+      child: content,
+    );
+  }
+}
+
+// ============================== 桌面端兼容入口（已废弃） ==============================
+//
+// 旧版 `PostReactionPicker.show` 已被移除。
+// 调用方应使用 [ReactionPickerController] + [RawGestureDetector] 模式，
+// 由触发入口（如 [PostActionBar]）持有 controller，移动端走长按驱动、
+// 桌面端走 hover 驱动，共用同一套 overlay 与选择逻辑。
