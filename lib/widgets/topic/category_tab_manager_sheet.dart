@@ -8,7 +8,7 @@ import '../../utils/font_awesome_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/url_helper.dart';
 import '../../pages/category_topics_page.dart';
-import '../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../../../../l10n/s.dart';
 
 // ============================================================

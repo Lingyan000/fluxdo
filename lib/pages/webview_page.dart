@@ -15,7 +15,7 @@ import '../widgets/common/app_link_confirm_dialog.dart';
 import '../providers/web_bookmark_provider.dart';
 import '../providers/web_history_provider.dart';
 import '../providers/download_provider.dart';
-import '../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 

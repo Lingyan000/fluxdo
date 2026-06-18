@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/s.dart';
 import '../providers/export_history_provider.dart';
 import '../services/toast_service.dart';
+import 'package:common_ui/common_ui.dart';
 import '../storage/export_history_dao.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
@@ -183,7 +184,7 @@ class _FilterMenu extends StatelessWidget {
       (ExportHistoryFormat.html, 'HTML'),
       (ExportHistoryFormat.notion, 'Notion'),
     ];
-    return PopupMenuButton<String>(
+    return SwipeDismissiblePopupMenuButton<String>(
       tooltip: context.l10n.exportHistory_filterAll,
       icon: Stack(
         clipBehavior: Clip.none,

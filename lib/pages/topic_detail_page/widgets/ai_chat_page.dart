@@ -19,7 +19,7 @@ import '../../../services/toast_service.dart';
 import '../../../widgets/ai/ai_model_select_sheet.dart';
 import '../../../widgets/ai/ai_quick_prompts_bar.dart';
 import '../../../widgets/share/ai_share_image_preview.dart';
-import '../../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import 'ai_chat_input.dart';
 import 'ai_chat_message_item.dart';
 import 'ai_context_selector.dart';

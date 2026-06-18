@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../l10n/s.dart';
-import '../../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 
 /// 话题详情页底部操作栏
 class TopicBottomBar extends StatelessWidget {
@@ -112,59 +112,75 @@ class TopicBottomBar extends StatelessWidget {
 
   /// 未激活：筛选菜单按钮
   Widget _buildFilterMenuButton(BuildContext context, ThemeData theme) {
-    return IconButton(
-      onPressed: isLoading ? null : () => _showFilterMenu(context),
+    return SwipeDismissiblePopupMenuButton<String>(
+      enabled: !isLoading,
       icon: const Icon(Icons.filter_list),
+      iconColor: theme.colorScheme.onSurfaceVariant,
       tooltip: context.l10n.topicDetail_filter,
-    );
-  }
-
-  void _showFilterMenu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
+      onSelected: (value) {
+        switch (value) {
+          case 'hot':
+            onShowTopReplies?.call();
+          case 'author':
+            onShowAuthorOnly?.call();
+          case 'top_level':
+            onShowTopLevelReplies?.call();
+          case 'nested':
+            onShowNestedView?.call();
+        }
+      },
+      itemBuilder: (context) => [
+        if (hasSummary)
+          PopupMenuItem(
+            value: 'hot',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.local_fire_department_outlined,
+                    size: 20, color: theme.colorScheme.onSurface),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_hotOnly),
+              ],
+            ),
+          ),
+        PopupMenuItem(
+          value: 'author',
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (hasSummary)
-                ListTile(
-                  leading: const Icon(Icons.local_fire_department_outlined),
-                  title: Text(context.l10n.topicDetail_hotOnly),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    onShowTopReplies?.call();
-                  },
-                ),
-              ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: Text(context.l10n.topicDetail_authorOnly),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  onShowAuthorOnly?.call();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.account_tree_outlined),
-                title: Text(context.l10n.topicDetail_topLevelOnly),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  onShowTopLevelReplies?.call();
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.forum_outlined),
-                title: Text(context.l10n.nested_title),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  onShowNestedView?.call();
-                },
-              ),
+              Icon(Icons.person_outline,
+                  size: 20, color: theme.colorScheme.onSurface),
+              const SizedBox(width: 12),
+              Text(context.l10n.topicDetail_authorOnly),
             ],
           ),
-        );
-      },
+        ),
+        PopupMenuItem(
+          value: 'top_level',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.account_tree_outlined,
+                  size: 20, color: theme.colorScheme.onSurface),
+              const SizedBox(width: 12),
+              Text(context.l10n.topicDetail_topLevelOnly),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'nested',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.forum_outlined,
+                  size: 20, color: theme.colorScheme.onSurface),
+              const SizedBox(width: 12),
+              Text(context.l10n.nested_title),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

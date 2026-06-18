@@ -11,6 +11,8 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  common_ui:
+    path: ../common_ui
   flutter_riverpod:
   dio:
   http: ^1.6.0

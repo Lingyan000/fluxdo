@@ -8,6 +8,7 @@ environment:
 
 workspace:
   - packages/ai_model_manager
+  - packages/common_ui
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/pangutext
@@ -74,6 +75,8 @@ dependencies:
     path: packages/pangutext
   ai_model_manager:
     path: packages/ai_model_manager
+  common_ui:
+    path: packages/common_ui
   paper_shaders:
     path: packages/paper_shaders
   flutter_local_notifications: ^21.0.0

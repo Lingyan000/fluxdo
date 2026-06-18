@@ -19,7 +19,7 @@ import 'editor_tools.dart';
 import 'image_upload_dialog.dart';
 import 'link_insert_dialog.dart';
 import 'template_insert_dialog.dart';
-import '../common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../../../../l10n/s.dart';
 
 /// Markdown 工具栏组件

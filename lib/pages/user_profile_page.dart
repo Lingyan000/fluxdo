@@ -37,7 +37,7 @@ import 'search_page.dart';
 import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
-import '../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 

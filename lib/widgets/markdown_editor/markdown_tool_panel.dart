@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/preferences_provider.dart';
-import '../common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import 'editor_tools.dart';
 import 'markdown_toolbar.dart';
 import '../../../../../l10n/s.dart';

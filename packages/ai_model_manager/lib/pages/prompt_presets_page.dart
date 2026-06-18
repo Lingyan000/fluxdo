@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,8 +28,7 @@ class PromptPresetsPage extends ConsumerStatefulWidget {
   final PromptType initialType;
 
   @override
-  ConsumerState<PromptPresetsPage> createState() =>
-      _PromptPresetsPageState();
+  ConsumerState<PromptPresetsPage> createState() => _PromptPresetsPageState();
 }
 
 class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
@@ -56,7 +56,8 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
             icon: const Icon(Icons.add),
             onPressed: _addNew,
           ),
-          PopupMenuButton<String>(
+          SwipeDismissiblePopupMenuButton<String>(
+            clipBehavior: Clip.antiAlias,
             onSelected: (v) {
               switch (v) {
                 case 'reset':
@@ -83,8 +84,7 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
                     dense: true,
-                    leading:
-                        const Icon(Icons.file_upload_outlined, size: 20),
+                    leading: const Icon(Icons.file_upload_outlined, size: 20),
                     title: Text(AiL10n.current.presetExportAll),
                   ),
                 ),
@@ -129,7 +129,8 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: [
                   if (builtIns.isNotEmpty) ...[
-                    _SectionLabel(text: AiL10n.current.quickPromptsBuiltInSection),
+                    _SectionLabel(
+                        text: AiL10n.current.quickPromptsBuiltInSection),
                     _ReorderableGroup(
                       presets: builtIns,
                       type: _type,
@@ -363,8 +364,7 @@ class _ReorderableGroup extends ConsumerStatefulWidget {
   final void Function(PromptPreset) onEdit;
 
   @override
-  ConsumerState<_ReorderableGroup> createState() =>
-      _ReorderableGroupState();
+  ConsumerState<_ReorderableGroup> createState() => _ReorderableGroupState();
 }
 
 class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
@@ -457,8 +457,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
                           padding: const EdgeInsets.all(8),
                           child: Icon(
                             Icons.drag_indicator,
-                            color:
-                                theme.colorScheme.onSurfaceVariant,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -487,8 +486,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
                                 Flexible(
                                   child: Text(
                                     preset.name,
-                                    style: theme.textTheme.bodyMedium
-                                        ?.copyWith(
+                                    style: theme.textTheme.bodyMedium?.copyWith(
                                       fontWeight: FontWeight.w500,
                                       color: preset.hidden
                                           ? theme.colorScheme.onSurfaceVariant
@@ -502,8 +500,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
                                   Icon(
                                     Icons.visibility_off_outlined,
                                     size: 14,
-                                    color:
-                                        theme.colorScheme.onSurfaceVariant,
+                                    color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ],
                               ],

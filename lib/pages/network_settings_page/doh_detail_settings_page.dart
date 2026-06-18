@@ -6,7 +6,7 @@ import '../../services/network/doh/doh_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../services/network/doh/network_settings_service.dart';
 import '../../services/toast_service.dart';
-import '../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 
 /// DOH 详细设置页面（服务器列表、IPv6、服务端 IP、ECH）
 class DohDetailSettingsPage extends StatefulWidget {

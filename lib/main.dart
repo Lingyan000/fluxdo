@@ -522,6 +522,15 @@ class MainApp extends ConsumerWidget {
                     color: lightScheme.surfaceContainerLow,
                     margin: EdgeInsets.zero,
                   ),
+                  popupMenuTheme: PopupMenuThemeData(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    elevation: 3,
+                    color: lightScheme.surfaceContainerLow,
+                    surfaceTintColor: Colors.transparent,
+                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
                 ),
               ),
               darkTheme: _withChineseFallback(
@@ -536,6 +545,15 @@ class MainApp extends ConsumerWidget {
                     ),
                     color: darkScheme.surfaceContainerLow,
                     margin: EdgeInsets.zero,
+                  ),
+                  popupMenuTheme: PopupMenuThemeData(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    elevation: 3,
+                    color: darkScheme.surfaceContainerLow,
+                    surfaceTintColor: Colors.transparent,
+                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                 ),
               ),

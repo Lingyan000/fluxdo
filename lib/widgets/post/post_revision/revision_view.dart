@@ -12,6 +12,7 @@ import '../../../utils/dialog_utils.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/time_utils.dart';
 import '../../common/loading_spinner.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/discourse_html_content.dart';
 
@@ -370,7 +371,7 @@ class _RevisionToolbar extends StatelessWidget {
               visualDensity: VisualDensity.compact,
             ),
           if (onModeChanged != null)
-            PopupMenuButton<_DiffMode>(
+            SwipeDismissiblePopupMenuButton<_DiffMode>(
               tooltip: _modeLabel(l10n, diffMode),
               icon: Icon(_modeIcon(diffMode)),
               onSelected: onModeChanged,
@@ -393,7 +394,7 @@ class _RevisionToolbar extends StatelessWidget {
               ],
             ),
           if (isMobile && (onFirst != null || onLast != null))
-            PopupMenuButton<String>(
+            SwipeDismissiblePopupMenuButton<String>(
               tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
               icon: const Icon(Icons.more_vert),
               onSelected: (value) {

@@ -5,7 +5,7 @@ import '../../providers/topic_list/sort_provider.dart';
 import '../../providers/topic_list/tab_state_provider.dart';
 import '../../providers/message_bus/topic_tracking_providers.dart';
 import 'sort_and_tags_bar.dart';
-import '../common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../l10n/s.dart';
 
 /// 下拉样式

@@ -41,7 +41,7 @@ import '../../widgets/post/post_revision/revision_modal.dart';
 import '../../widgets/post/reply_sheet.dart';
 import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
-import '../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../widgets/content/discourse_html_content/chunked/chunked_html_content.dart';
@@ -1049,19 +1049,189 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }) {
     final bookmarkTarget = _bookmarkEditTarget(detail);
     final hasEditableBookmark = bookmarkTarget != null || detail.bookmarked;
+    final isInReadLater = ref
+        .read(readLaterProvider.notifier)
+        .contains(widget.topicId);
+    final hasFilter = notifier.isSummaryMode ||
+        notifier.isAuthorOnlyMode ||
+        notifier.isTopLevelMode ||
+        _isNestedView;
+    final bool subscribed =
+        detail.notificationLevel.value >= TopicNotificationLevel.tracking.value;
+
+    void doBookmark() {
+      final traceTarget = _bookmarkEditTarget(detail);
+      final traceId = createBookmarkEditTraceId();
+      writeBookmarkEditTrace(
+        phase: 'menu_selected',
+        traceId: traceId,
+        source: 'topic_detail_topic_menu',
+        message: '详情页更多菜单已选中编辑书签',
+        topicId: widget.topicId,
+        postId: traceTarget?.postId,
+        bookmarkId: traceTarget?.bookmarkId ?? detail.bookmarkId,
+        bookmarkName: traceTarget?.initialName ?? detail.bookmarkName,
+        bookmarked: detail.bookmarked,
+        hasReminder: traceTarget?.initialReminderAt != null ||
+            detail.bookmarkReminderAt != null,
+        selectedAction: 'bookmark',
+      );
+      unawaited(_handleBookmark(
+        notifier,
+        traceId: traceId,
+        source: 'topic_detail_topic_menu',
+      ));
+    }
+
+    void doSubscribe() {
+      showNotificationLevelSheet(
+        context,
+        detail.notificationLevel,
+        (level) => _handleNotificationLevelChanged(notifier, level),
+      );
+    }
+
     return SwipeDismissiblePopupMenuButton<String>(
       key: _usesEmbeddedMobileWorkspaceChrome
           ? const ValueKey('bookmark-workspace-mobile-more')
           : null,
       icon: const Icon(Icons.more_vert),
       tooltip: context.l10n.topicDetail_moreOptions,
+      headerActions: [
+        MenuQuickAction(
+          icon: hasEditableBookmark ? Icons.bookmark : Icons.bookmark_border,
+          tooltip: hasEditableBookmark
+              ? context.l10n.topicDetail_editBookmark
+              : context.l10n.common_addBookmark,
+          active: hasEditableBookmark,
+          onTap: doBookmark,
+        ),
+        MenuQuickAction(
+          icon: isInReadLater ? Icons.layers : Icons.layers_outlined,
+          tooltip: isInReadLater
+              ? context.l10n.topicDetail_removeFromReadLater
+              : context.l10n.topicDetail_addToReadLater,
+          active: isInReadLater,
+          onTap: _handleReadLater,
+        ),
+        MenuQuickAction(
+          icon: TopicNotificationButton.getIcon(detail.notificationLevel),
+          tooltip: context.l10n.topic_notificationSettings,
+          active: subscribed,
+          submenu: MenuQuickActionSubmenu(
+            icon: TopicNotificationButton.getIcon(detail.notificationLevel),
+            label: context.l10n.topic_notificationSettings,
+            iconColor: subscribed
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            children: [
+              for (final level in TopicNotificationLevel.values)
+                MenuQuickActionSubmenuChild(
+                  icon: TopicNotificationButton.getIcon(level),
+                  label: level.label,
+                  subtitle: level.description,
+                  selected: level == detail.notificationLevel,
+                  onTap: () =>
+                      _handleNotificationLevelChanged(notifier, level),
+                ),
+            ],
+          ),
+        ),
+        if (!detail.isPrivateMessage)
+          MenuQuickAction(
+            icon: Icons.link,
+            tooltip: context.l10n.topicDetail_shareLink,
+            onTap: _shareTopic,
+          ),
+        MenuQuickAction(
+          icon: Icons.filter_list,
+          tooltip: context.l10n.topicDetail_filter,
+          active: hasFilter,
+          submenu: MenuQuickActionSubmenu(
+            icon: Icons.filter_list,
+            label: context.l10n.topicDetail_filter,
+            iconColor: hasFilter
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            children: [
+              if (detail.hasSummary)
+                MenuQuickActionSubmenuChild(
+                  icon: notifier.isSummaryMode
+                      ? Icons.local_fire_department
+                      : Icons.local_fire_department_outlined,
+                  label: context.l10n.topicDetail_hotOnly,
+                  selected: notifier.isSummaryMode,
+                  onTap: () {
+                    if (notifier.isSummaryMode) {
+                      _handleCancelFilter();
+                    } else {
+                      _handleShowTopReplies();
+                    }
+                  },
+                ),
+              MenuQuickActionSubmenuChild(
+                icon: notifier.isAuthorOnlyMode
+                    ? Icons.person
+                    : Icons.person_outline,
+                label: context.l10n.topicDetail_authorOnly,
+                selected: notifier.isAuthorOnlyMode,
+                onTap: () {
+                  if (notifier.isAuthorOnlyMode) {
+                    _handleCancelFilter();
+                  } else {
+                    _handleShowAuthorOnly();
+                  }
+                },
+              ),
+              MenuQuickActionSubmenuChild(
+                icon: notifier.isTopLevelMode
+                    ? Icons.account_tree
+                    : Icons.account_tree_outlined,
+                label: context.l10n.topicDetail_topLevelOnly,
+                selected: notifier.isTopLevelMode,
+                onTap: () {
+                  if (notifier.isTopLevelMode) {
+                    _handleCancelFilter();
+                  } else {
+                    _handleShowTopLevelReplies();
+                  }
+                },
+              ),
+              MenuQuickActionSubmenuChild(
+                icon: _isNestedView ? Icons.forum : Icons.forum_outlined,
+                label: context.l10n.nested_title,
+                selected: _isNestedView,
+                onTap: _toggleNestedView,
+              ),
+              if (hasFilter)
+                MenuQuickActionSubmenuChild(
+                  icon: Icons.filter_list_off,
+                  label: context.l10n.common_cancel,
+                  onTap: _handleCancelFilter,
+                ),
+            ],
+          ),
+        ),
+      ],
       onSelected: (value) {
-        final bookmarkTraceTarget = value == 'bookmark'
-            ? _bookmarkEditTarget(detail)
-            : null;
-        final bookmarkTraceId = value == 'bookmark'
-            ? createBookmarkEditTraceId()
-            : null;
+        // 行内展开的订阅子项：value 形如 'subscribe_level_<int>'
+        const subscribePrefix = 'subscribe_level_';
+        if (value.startsWith(subscribePrefix)) {
+          final levelValue =
+              int.tryParse(value.substring(subscribePrefix.length));
+          if (levelValue != null) {
+            final level = TopicNotificationLevel.values.firstWhere(
+              (e) => e.value == levelValue,
+              orElse: () => detail.notificationLevel,
+            );
+            _handleNotificationLevelChanged(notifier, level);
+          }
+          return;
+        }
+        final bookmarkTraceTarget =
+            value == 'bookmark' ? _bookmarkEditTarget(detail) : null;
+        final bookmarkTraceId =
+            value == 'bookmark' ? createBookmarkEditTraceId() : null;
         if (bookmarkTraceId != null) {
           writeBookmarkEditTrace(
             phase: 'menu_selected',
@@ -1091,13 +1261,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             ),
           ),
           onReadLater: _handleReadLater,
-          onSubscribe: () {
-            showNotificationLevelSheet(
-              context,
-              detail.notificationLevel,
-              (level) => _handleNotificationLevelChanged(notifier, level),
-            );
-          },
+          onSubscribe: doSubscribe,
           onShareLink: _shareTopic,
           onShareImage: _shareAsImage,
           onExport: _showExportSheet,
@@ -1125,87 +1289,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
                 const SizedBox(width: 12),
                 Text(context.l10n.topicDetail_editTopic),
-              ],
-            ),
-          ),
-        PopupMenuItem(
-          value: 'bookmark',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hasEditableBookmark ? Icons.bookmark : Icons.bookmark_border,
-                size: 20,
-                color: hasEditableBookmark
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurface,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                hasEditableBookmark
-                    ? context.l10n.topicDetail_editBookmark
-                    : context.l10n.common_addBookmark,
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'read_later',
-          child: Builder(
-            builder: (context) {
-              final isInReadLater = ref
-                  .read(readLaterProvider.notifier)
-                  .contains(widget.topicId);
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isInReadLater ? Icons.layers : Icons.layers_outlined,
-                    size: 20,
-                    color: isInReadLater
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    isInReadLater
-                        ? context.l10n.topicDetail_removeFromReadLater
-                        : context.l10n.topicDetail_addToReadLater,
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        PopupMenuItem(
-          value: 'subscribe',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                TopicNotificationButton.getIcon(detail.notificationLevel),
-                size: 20,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              const SizedBox(width: 12),
-              Text(context.l10n.topic_notificationSettings),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        if (!detail.isPrivateMessage)
-          PopupMenuItem(
-            value: 'share_link',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.link,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 12),
-                Text(context.l10n.topicDetail_shareLink),
               ],
             ),
           ),
@@ -1253,40 +1336,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               const SizedBox(width: 12),
               Text(context.l10n.topicDetail_openInBrowser),
             ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'filter',
-          child: Builder(
-            builder: (context) {
-              final hasFilter =
-                  notifier.isSummaryMode ||
-                  notifier.isAuthorOnlyMode ||
-                  notifier.isTopLevelMode ||
-                  _isNestedView;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.filter_list,
-                    size: 20,
-                    color: hasFilter
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    context.l10n.topicDetail_filter,
-                    style: hasFilter
-                        ? TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                          )
-                        : null,
-                  ),
-                ],
-              );
-            },
           ),
         ),
         const PopupMenuDivider(),

@@ -1,6 +1,6 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
-import '../../../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../../../l10n/s.dart';
 
 /// 上下文范围选择器

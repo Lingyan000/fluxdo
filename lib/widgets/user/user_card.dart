@@ -19,6 +19,7 @@ import '../../utils/platform_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../utils/time_utils.dart';
 import '../common/flair_badge.dart';
+import 'package:common_ui/common_ui.dart';
 import '../common/skeleton.dart';
 import '../common/smart_avatar.dart';
 import '../content/discourse_html_content/discourse_html_content_widget.dart';
@@ -914,7 +915,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   }
 
   Widget _buildMoreMenu(ThemeData theme, bool canMute, bool canIgnore) {
-    return PopupMenuButton<String>(
+    return SwipeDismissiblePopupMenuButton<String>(
       tooltip: '',
       icon: const Icon(Icons.more_horiz_rounded),
       style: IconButton.styleFrom(

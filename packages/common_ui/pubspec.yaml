@@ -1,0 +1,13 @@
+name: common_ui
+description: "应用内通用 UI 组件(可被主 app 与各子包共享)。"
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter

@@ -23,7 +23,7 @@ import '../services/webview_session_cookie_refresh_service.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../services/log/log_writer.dart';
 import '../services/login_ready_coordinator.dart';
-import '../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 

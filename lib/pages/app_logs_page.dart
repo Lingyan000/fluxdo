@@ -11,7 +11,7 @@ import '../services/discourse/discourse_service.dart';
 import '../services/log/logger_utils.dart';
 import '../services/network/adapters/platform_adapter.dart';
 import '../services/toast_service.dart';
-import '../widgets/common/dismissible_popup_menu.dart';
+import 'package:common_ui/common_ui.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -1161,7 +1161,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
         ? theme.colorScheme.onSecondaryContainer
         : theme.colorScheme.onSurfaceVariant;
 
-    return PopupMenuButton<LogTypeFilter>(
+    return SwipeDismissiblePopupMenuButton<LogTypeFilter>(
       initialValue: _typeFilter,
       tooltip: S.current.appLogs_type,
       onSelected: (filter) {
