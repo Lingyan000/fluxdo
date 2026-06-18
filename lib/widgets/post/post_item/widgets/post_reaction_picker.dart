@@ -107,6 +107,10 @@ class ReactionPickerController {
   bool _inSelectionMode = false;
   bool get inSelectionMode => _inSelectionMode;
 
+  /// 移动端长按松手后停驻，允许用户抬起手指后再点击选择。
+  bool _touchPinned = false;
+  bool get touchPinned => _touchPinned;
+
   bool get isOpen => _entry != null && !_closing;
   bool get isClosing => _closing;
 
@@ -137,6 +141,7 @@ class ReactionPickerController {
     _mode = mode;
     _highlightIndex = null;
     _inSelectionMode = mode == ReactionPickerMode.desktop;
+    _touchPinned = false;
 
     _computeGeometry(context);
 
@@ -249,7 +254,19 @@ class ReactionPickerController {
   void enterSelectionMode() {
     if (_disposed || !isOpen) return;
     if (_inSelectionMode) return;
+    _touchPinned = false;
     _inSelectionMode = true;
+  }
+
+  /// 移动端长按已展开但没有滑中表情时，让 picker 留在屏幕上。
+  /// 停驻后 picker 自己接收点击，空白处点击关闭。
+  void pinForTouchSelection() {
+    if (_disposed || !isOpen) return;
+    if (_mode != ReactionPickerMode.touch) return;
+    _highlightIndex = null;
+    _inSelectionMode = false;
+    _touchPinned = true;
+    _entry?.markNeedsBuild();
   }
 
   /// 根据指针的全局坐标更新 highlight
@@ -303,6 +320,7 @@ class ReactionPickerController {
     if (_entry == null || _closing) return;
     _closing = true;
     _highlightIndex = null;
+    _touchPinned = false;
     _desktopLeaveTimer?.cancel();
     _desktopLeaveTimer = null;
     animation.reverse().whenCompleteOrCancel(_disposeEntryIfNeeded);
@@ -316,6 +334,7 @@ class ReactionPickerController {
     _closing = false;
     _inSelectionMode = false;
     _highlightIndex = null;
+    _touchPinned = false;
     _detachScrollListeners();
     _detachLifecycleObserver();
   }
@@ -445,19 +464,22 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
 
     return Stack(
       children: [
-        // 全屏点击层：移动端用于取消（虽然 long press 已经包揽，但作为兜底）；
-        // 桌面端用于点击空白处关闭
-        if (ctrl.mode == ReactionPickerMode.desktop)
+        // 全屏点击层：桌面端和移动端停驻后用于点击空白处关闭。
+        if (ctrl.mode == ReactionPickerMode.desktop || ctrl.touchPinned)
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: ctrl.close,
-              child: Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerHover: (e) => ctrl.onDesktopPointerHover(e.position),
-                onPointerMove: (e) => ctrl.onDesktopPointerHover(e.position),
-                child: const SizedBox.expand(),
-              ),
+              child: ctrl.mode == ReactionPickerMode.desktop
+                  ? Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerHover: (e) =>
+                          ctrl.onDesktopPointerHover(e.position),
+                      onPointerMove: (e) =>
+                          ctrl.onDesktopPointerHover(e.position),
+                      child: const SizedBox.expand(),
+                    )
+                  : const SizedBox.expand(),
             ),
           ),
 
@@ -475,9 +497,10 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
               left: ctrl.pickerRect.left,
               top: ctrl.pickerRect.top,
               child: IgnorePointer(
-                // 移动端：picker 完全不接受指针事件，所有手势走父层 RawGestureDetector
-                // 桌面端：picker 需要接收 hover 与 tap，IgnorePointer 关闭
-                ignoring: ctrl.mode == ReactionPickerMode.touch,
+                // 移动端长按拖选时：picker 不接收指针事件，所有手势走父层 RawGestureDetector。
+                // 移动端停驻/桌面端：picker 需要接收 tap，IgnorePointer 关闭。
+                ignoring:
+                    ctrl.mode == ReactionPickerMode.touch && !ctrl.touchPinned,
                 child: Transform.scale(
                   scale: scale,
                   alignment: ctrl.transformAlignment,
@@ -529,7 +552,9 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
                 reactionId: ctrl.reactions[i],
                 isCurrent: ctrl.currentUserReaction?.id == ctrl.reactions[i],
                 isHighlighted: ctrl.highlightIndex == i,
-                onTap: ctrl.mode == ReactionPickerMode.desktop
+                onTap:
+                    (ctrl.mode == ReactionPickerMode.desktop ||
+                        ctrl.touchPinned)
                     ? () => ctrl.selectReaction(ctrl.reactions[i])
                     : null,
                 onRectReported: (r) => _reportItemRect(i, r),

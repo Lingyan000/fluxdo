@@ -214,7 +214,7 @@ class _PostActionBarState extends State<PostActionBar>
     if (_pickerController.highlightIndex != null) {
       _pickerController.commitSelection();
     } else {
-      _pickerController.close();
+      _pickerController.pinForTouchSelection();
     }
   }
 
@@ -446,7 +446,7 @@ class _PostActionBarState extends State<PostActionBar>
   /// 手势分配：
   /// - 点击 reaction stack（左半区，仅在已有 reactions 时存在）→ 查看回应人
   /// - 长按 reaction stack / like 图标 → 按下立即开始 picker 衍生动画，
-  ///   180ms 阈值达成后进入选择模式；不抬手继续滑动选择
+  ///   180ms 阈值达成后进入选择模式；滑到表情松手即选，未滑中则停驻后点选
   /// - 点击 like 图标（右半区）→ toggleLike
   /// - 桌面端 hover 300ms → 触发 picker（直接进入选择模式）
   Widget _buildLikeReactionArea(ThemeData theme) {
