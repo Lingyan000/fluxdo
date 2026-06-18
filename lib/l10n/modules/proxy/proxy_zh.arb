@@ -187,6 +187,7 @@
   "vpnToggle_and": " 和 ",
   "vpnToggle_connected": "VPN 已连接",
   "vpnToggle_disconnected": "VPN 未连接",
+  "vpnToggle_lockedHint": "VPN 活跃，已由自动切换接管",
   "vpnToggle_subtitle": "检测到 VPN 时自动关闭 DOH 和代理，断开后恢复",
   "vpnToggle_suppressedSuffix": "已被自动关闭，VPN 断开后将自动恢复",
   "vpnToggle_title": "VPN 自动切换",

@@ -27,6 +27,7 @@ class DohSettingsCard extends StatelessWidget {
         service.isApplying,
         vpnService.enabledNotifier,
         vpnService.vpnActiveNotifier,
+        vpnService.suppressionNotifier,
       ]),
       builder: (context, _) {
         final settings = service.notifier.value;
@@ -63,6 +64,9 @@ class _DohSettingsCardInner extends StatelessWidget {
     final showLoading = isApplying ||
         service.pendingStart ||
         (settings.dohEnabled && !isRunning && !service.lastStartFailed);
+    // VPN 活跃 + 自动切换开启 = 接管期，DOH 开关在此期间一律锁定
+    final vpnLocked = VpnAutoToggleService.instance.enabled &&
+        VpnAutoToggleService.instance.vpnActive;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -81,23 +85,31 @@ class _DohSettingsCardInner extends StatelessWidget {
           SwitchListTile(
             title: const Text('DNS over HTTPS'),
             subtitle: Text(
-              isSuppressedByVpn
-                  ? context.l10n.dohSettings_suppressedByVpn
+              vpnLocked
+                  ? (isSuppressedByVpn
+                      ? context.l10n.dohSettings_suppressedByVpn
+                      : context.l10n.vpnToggle_lockedHint)
                   : settings.dohEnabled
                       ? context.l10n.dohSettings_enabledDesc
                       : context.l10n.dohSettings_disabledDesc,
             ),
             secondary: Icon(
-              settings.dohEnabled ? Icons.shield : Icons.shield_outlined,
-              color: settings.dohEnabled ? theme.colorScheme.primary : null,
+              (vpnLocked ? isSuppressedByVpn : settings.dohEnabled)
+                  ? Icons.shield
+                  : Icons.shield_outlined,
+              color: (vpnLocked ? isSuppressedByVpn : settings.dohEnabled)
+                  ? theme.colorScheme.primary
+                  : null,
             ),
-            value: settings.dohEnabled,
-            onChanged: (value) async {
-              await service.setDohEnabled(value);
-              if (value && isSuppressedByVpn) {
-                VpnAutoToggleService.instance.clearDohSuppression();
-              }
-            },
+            // VPN 接管期间：开关照常可拨，但操作的是"VPN 断开后是否启用"的意图标记，
+            // 不立即生效（功能仍由自动切换接管，subtitle 说明当前状态）。
+            value: vpnLocked ? isSuppressedByVpn : settings.dohEnabled,
+            onChanged: vpnLocked
+                ? (value) =>
+                    VpnAutoToggleService.instance.setDohSuppressed(value)
+                : (value) async {
+                    await service.setDohEnabled(value);
+                  },
           ),
 
           // 仅在开启 DOH 后显示以下内容

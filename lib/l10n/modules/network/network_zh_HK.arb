@@ -2,6 +2,28 @@
   "@@locale": "zh_HK",
   "advancedSettings_networkAdapter": "網絡適配器",
   "advancedSettings_networkAdapterDesc": "管理 Cronet 和備用適配器設置",
+  "enginePreset_compat": "兼容",
+  "enginePreset_compatDesc": "用瀏覽器內核發送，改善登錄穩定性",
+  "enginePreset_custom": "自定義",
+  "enginePreset_customDesc": "手動組合下方開關",
+  "enginePreset_performance": "高性能",
+  "enginePreset_performanceDesc": "使用 rhttp 引擎（HTTP/2 · Rust）",
+  "enginePreset_standard": "標準",
+  "enginePreset_standardDesc": "系統自動選擇最優引擎",
+  "engineStatus_currentEngine": "當前引擎",
+  "engineStatus_reasonFallback": "Cronet 已降級，使用備用適配器",
+  "engineStatus_reasonGateway": "DoH 直連模式（省一層 TLS）",
+  "engineStatus_reasonNative": "系統默認直連",
+  "engineStatus_reasonProxy": "透過本地代理轉發",
+  "engineStatus_reasonRhttp": "rhttp 引擎已啟用",
+  "engineStatus_webviewSplit": "主站 API 請求走 WebView，其餘請求走{engine}",
+  "@engineStatus_webviewSplit": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "networkAdapter_adapterType": "適配器類型",
   "networkAdapter_autoFallback": "已自動降級",
   "networkAdapter_autoFallbackDesc": "檢測到 Cronet 不可用，已切換到備用適配器",

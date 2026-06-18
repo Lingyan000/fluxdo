@@ -24,6 +24,23 @@ enum AdapterType {
   rhttp, // rhttp 引擎（Rust reqwest）
 }
 
+/// 当前适配器生效的原因（用于 UI 解释"为什么是这个引擎"）
+enum AdapterReason {
+  rhttp, // rhttp 已启用且满足使用条件
+  gateway, // DoH 直连模式（Native + URL 改写到本地代理）
+  proxy, // 本地代理（MITM）转发
+  fallback, // Cronet 已降级，走备用适配器
+  native, // 默认直连
+}
+
+/// 当前生效的适配器及其原因
+class EffectiveAdapter {
+  const EffectiveAdapter(this.type, this.reason);
+
+  final AdapterType type;
+  final AdapterReason reason;
+}
+
 /// 全局变量：记录当前使用的适配器类型
 AdapterType? _currentAdapterType;
 
@@ -149,20 +166,50 @@ AdapterType _resolveAdapterType(
   CronetFallbackService fallbackService,
   RhttpSettingsService rhttpSettings,
 ) {
+  return _resolveEffective(
+    settings,
+    proxySettings,
+    fallbackService,
+    rhttpSettings,
+  ).type;
+}
+
+/// 实时解析当前生效的适配器及原因（UI 单一数据源）。
+///
+/// 不依赖请求触发，读取各 service 当前状态即时推算，
+/// 与 [_DynamicAdapter] 每次请求时的判断完全同源。
+EffectiveAdapter resolveEffectiveAdapter() {
+  return _resolveEffective(
+    NetworkSettingsService.instance,
+    ProxySettingsService.instance,
+    CronetFallbackService.instance,
+    RhttpSettingsService.instance,
+  );
+}
+
+EffectiveAdapter _resolveEffective(
+  NetworkSettingsService settings,
+  ProxySettingsService proxySettings,
+  CronetFallbackService fallbackService,
+  RhttpSettingsService rhttpSettings,
+) {
   // rhttp 优先（满足条件时）
   if (rhttpSettings.shouldUseRhttp(settings.current, proxySettings.current)) {
-    return AdapterType.rhttp;
+    return const EffectiveAdapter(AdapterType.rhttp, AdapterReason.rhttp);
   }
   // Gateway 模式：NativeAdapter 直连 + 拦截器改写 URL 到 localhost 代理
   // 比 MITM 少一层 TLS，作为 rhttp 不可用时的次优方案
   if (settings.isGatewayMode && !fallbackService.hasFallenBack) {
-    return AdapterType.native;
+    return const EffectiveAdapter(AdapterType.native, AdapterReason.gateway);
   }
   // MITM 代理模式（Cronet 降级、或 gateway 不可用时的 fallback）
   if (settings.shouldRunLocalProxy || fallbackService.hasFallenBack) {
-    return AdapterType.network;
+    final reason = fallbackService.hasFallenBack
+        ? AdapterReason.fallback
+        : AdapterReason.proxy;
+    return EffectiveAdapter(AdapterType.network, reason);
   }
-  return AdapterType.native;
+  return const EffectiveAdapter(AdapterType.native, AdapterReason.native);
 }
 
 /// 创建当前平台对应的 NativeAdapter

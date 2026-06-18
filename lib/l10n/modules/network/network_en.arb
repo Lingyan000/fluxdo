@@ -2,6 +2,28 @@
   "@@locale": "en",
   "advancedSettings_networkAdapter": "Network Adapter",
   "advancedSettings_networkAdapterDesc": "Manage Cronet and fallback adapter settings",
+  "enginePreset_compat": "Compatible",
+  "enginePreset_compatDesc": "Send via browser engine, improves login stability",
+  "enginePreset_custom": "Custom",
+  "enginePreset_customDesc": "Combine the switches below manually",
+  "enginePreset_performance": "Performance",
+  "enginePreset_performanceDesc": "Use rhttp engine (HTTP/2 · Rust)",
+  "enginePreset_standard": "Standard",
+  "enginePreset_standardDesc": "Let the app pick the best engine",
+  "engineStatus_currentEngine": "Current engine",
+  "engineStatus_reasonFallback": "Cronet fell back to the backup adapter",
+  "engineStatus_reasonGateway": "DoH direct mode (saves a TLS layer)",
+  "engineStatus_reasonNative": "System default direct connection",
+  "engineStatus_reasonProxy": "Forwarded via local proxy",
+  "engineStatus_reasonRhttp": "rhttp engine enabled",
+  "engineStatus_webviewSplit": "Main-site API requests use WebView, others use {engine}",
+  "@engineStatus_webviewSplit": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "networkAdapter_adapterType": "Adapter type",
   "networkAdapter_autoFallback": "Auto fallback",
   "networkAdapter_autoFallbackDesc": "Cronet unavailable, switched to fallback adapter",

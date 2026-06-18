@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/s.dart';
-import '../../pages/network_settings_page/widgets/advanced_settings_card.dart';
 import '../../pages/network_settings_page/widgets/cf_verify_card.dart';
 import '../../pages/network_settings_page/widgets/debug_tools_card.dart';
 import '../../pages/network_settings_page/widgets/doh_settings_card.dart';
+import '../../pages/network_settings_page/widgets/engine_card.dart';
 import '../../pages/network_settings_page/widgets/eruda_card.dart';
 import '../../pages/network_settings_page/widgets/http_proxy_card.dart';
 import '../../pages/network_settings_page/widgets/rate_limit_card.dart';
-import '../../pages/network_settings_page/widgets/rhttp_engine_card.dart';
 import '../../pages/network_settings_page/widgets/vpn_auto_toggle_card.dart';
-import '../../pages/network_settings_page/widgets/webview_adapter_card.dart';
 import '../settings_model.dart';
 
 /// 网络设置数据声明
@@ -24,16 +22,10 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
       wrapInCard: false,
       items: [
         CustomModel(
-          id: 'rhttpEngine',
-          title: l10n.rhttpEngine_title,
-          subtitle: l10n.networkSettings_engine,
-          builder: (context, ref) => const RhttpEngineCard(),
-        ),
-        CustomModel(
-          id: 'webviewAdapter',
-          title: l10n.webviewAdapter_title,
-          subtitle: l10n.networkSettings_engine,
-          builder: (context, ref) => const WebViewAdapterCard(),
+          id: 'engine',
+          title: l10n.networkSettings_engine,
+          subtitle: 'rhttp · WebView',
+          builder: (context, ref) => const EngineCard(),
         ),
       ],
     ),
@@ -86,12 +78,6 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
       icon: Icons.settings_outlined,
       wrapInCard: false,
       items: [
-        CustomModel(
-          id: 'advancedSettings',
-          title: l10n.networkAdapter_title,
-          subtitle: l10n.networkSettings_advanced,
-          builder: (context, ref) => const AdvancedSettingsCard(),
-        ),
         CustomModel(
           id: 'rateLimit',
           title: l10n.networkSettings_rateLimitTitle,

@@ -2,6 +2,28 @@
   "@@locale": "zh",
   "advancedSettings_networkAdapter": "网络适配器",
   "advancedSettings_networkAdapterDesc": "管理 Cronet 和备用适配器设置",
+  "enginePreset_compat": "兼容",
+  "enginePreset_compatDesc": "用浏览器内核发送，改善登录稳定性",
+  "enginePreset_custom": "自定义",
+  "enginePreset_customDesc": "手动组合下方开关",
+  "enginePreset_performance": "高性能",
+  "enginePreset_performanceDesc": "使用 rhttp 引擎（HTTP/2 · Rust）",
+  "enginePreset_standard": "标准",
+  "enginePreset_standardDesc": "系统自动选择最优引擎",
+  "engineStatus_currentEngine": "当前引擎",
+  "engineStatus_reasonFallback": "Cronet 已降级，使用备用适配器",
+  "engineStatus_reasonGateway": "DoH 直连模式（省一层 TLS）",
+  "engineStatus_reasonNative": "系统默认直连",
+  "engineStatus_reasonProxy": "通过本地代理转发",
+  "engineStatus_reasonRhttp": "rhttp 引擎已启用",
+  "engineStatus_webviewSplit": "主站 API 请求走 WebView，其余请求走{engine}",
+  "@engineStatus_webviewSplit": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "networkAdapter_adapterType": "适配器类型",
   "networkAdapter_autoFallback": "已自动降级",
   "networkAdapter_autoFallbackDesc": "检测到 Cronet 不可用，已切换到备用适配器",

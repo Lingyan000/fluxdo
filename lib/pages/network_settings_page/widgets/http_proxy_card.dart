@@ -25,6 +25,7 @@ class HttpProxyCard extends StatelessWidget {
         networkService.notifier,
         vpnService.enabledNotifier,
         vpnService.vpnActiveNotifier,
+        vpnService.suppressionNotifier,
       ]),
       builder: (context, _) {
         final proxySettings = proxyService.notifier.value;
@@ -64,6 +65,9 @@ class _HttpProxyCardInner extends StatelessWidget {
       builder: (context, _) {
         final isTesting = proxyService.isTesting.value;
         final testResult = proxyService.testResultNotifier.value;
+        // VPN 活跃 + 自动切换开启 = 接管期，代理开关在此期间一律锁定
+        final vpnLocked = VpnAutoToggleService.instance.enabled &&
+            VpnAutoToggleService.instance.vpnActive;
 
         return Card(
           clipBehavior: Clip.antiAlias,
@@ -83,48 +87,53 @@ class _HttpProxyCardInner extends StatelessWidget {
               SwitchListTile(
                 title: Text(context.l10n.httpProxy_title),
                 subtitle: Text(
-                  isSuppressedByVpn
-                      ? context.l10n.httpProxy_suppressedByVpn
+                  vpnLocked
+                      ? (isSuppressedByVpn
+                          ? context.l10n.httpProxy_suppressedByVpn
+                          : context.l10n.vpnToggle_lockedHint)
                       : proxySettings.enabled
                           ? context.l10n.httpProxy_enabledDesc(proxySettings.protocol.displayName)
                           : context.l10n.httpProxy_disabledDesc,
                 ),
                 secondary: Icon(
-                  proxySettings.enabled ? Icons.vpn_key : Icons.vpn_key_outlined,
-                  color: proxySettings.enabled
+                  (vpnLocked ? isSuppressedByVpn : proxySettings.enabled)
+                      ? Icons.vpn_key
+                      : Icons.vpn_key_outlined,
+                  color: (vpnLocked ? isSuppressedByVpn : proxySettings.enabled)
                       ? theme.colorScheme.tertiary
                       : null,
                 ),
-                value: proxySettings.enabled,
-                onChanged: (value) async {
-                  if (value && !proxySettings.hasServer) {
-                    final saved = await _showProxyConfigDialog(
-                      context,
-                      proxySettings,
-                    );
-                    if (!saved) {
-                      return;
-                    }
-                  }
+                // VPN 接管期间：开关照常可拨，但操作的是"VPN 断开后是否启用"的意图标记，
+                // 不立即生效（功能仍由自动切换接管）。
+                value: vpnLocked ? isSuppressedByVpn : proxySettings.enabled,
+                onChanged: vpnLocked
+                    ? (value) =>
+                        VpnAutoToggleService.instance.setProxySuppressed(value)
+                    : (value) async {
+                        if (value && !proxySettings.hasServer) {
+                          final saved = await _showProxyConfigDialog(
+                            context,
+                            proxySettings,
+                          );
+                          if (!saved) {
+                            return;
+                          }
+                        }
 
-                  await proxyService.setEnabled(value);
-                  // 用户在 VPN 活跃时手动开启，清除压制标记
-                  if (value && isSuppressedByVpn) {
-                    VpnAutoToggleService.instance.clearProxySuppression();
-                  }
-                  if (!value) {
-                    return;
-                  }
+                        await proxyService.setEnabled(value);
+                        if (!value) {
+                          return;
+                        }
 
-                  final previous = proxyService.testResultNotifier.value;
-                  final shouldRetest = previous == null ||
-                      !previous.success ||
-                      DateTime.now().difference(previous.testedAt) >
-                          const Duration(seconds: 30);
-                  if (shouldRetest) {
-                    await _runProxyTest(showToast: true);
-                  }
-                },
+                        final previous = proxyService.testResultNotifier.value;
+                        final shouldRetest = previous == null ||
+                            !previous.success ||
+                            DateTime.now().difference(previous.testedAt) >
+                                const Duration(seconds: 30);
+                        if (shouldRetest) {
+                          await _runProxyTest(showToast: true);
+                        }
+                      },
               ),
               if (proxySettings.hasServer || proxySettings.enabled) ...[
                 Divider(

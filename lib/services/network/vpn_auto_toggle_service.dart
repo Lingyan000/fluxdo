@@ -26,8 +26,13 @@ class VpnAutoToggleService {
   /// 当前是否检测到 VPN
   final vpnActiveNotifier = ValueNotifier<bool>(false);
 
+  /// 压制标记变化通知（UI 据此刷新"VPN 断开后是否启用"的意图显示）
+  final suppressionNotifier = ValueNotifier<int>(0);
+
   /// 防重入标记
   bool _isSuppressing = false;
+
+  void _bumpSuppression() => suppressionNotifier.value++;
 
   bool get enabled => enabledNotifier.value;
   bool get vpnActive => vpnActiveNotifier.value;
@@ -109,6 +114,7 @@ class VpnAutoToggleService {
       }
     } finally {
       _isSuppressing = false;
+      _bumpSuppression();
     }
   }
 
@@ -133,6 +139,7 @@ class VpnAutoToggleService {
       }
     } finally {
       _isSuppressing = false;
+      _bumpSuppression();
     }
   }
 
@@ -147,5 +154,25 @@ class VpnAutoToggleService {
   void clearProxySuppression() {
     _prefs.remove(_keySuppressedProxy);
     debugPrint('[VpnAutoToggle] 清除代理压制标记（用户手动开启）');
+  }
+
+  /// VPN 活跃期间用户拨动开关：仅记录"VPN 断开后是否启用"的意图，
+  /// 不改动实际设置、不立即生效（UI 与功能分离）。
+  Future<void> setDohSuppressed(bool wantEnabled) async {
+    if (wantEnabled) {
+      await _prefs.setBool(_keySuppressedDoh, true);
+    } else {
+      await _prefs.remove(_keySuppressedDoh);
+    }
+    _bumpSuppression();
+  }
+
+  Future<void> setProxySuppressed(bool wantEnabled) async {
+    if (wantEnabled) {
+      await _prefs.setBool(_keySuppressedProxy, true);
+    } else {
+      await _prefs.remove(_keySuppressedProxy);
+    }
+    _bumpSuppression();
   }
 }

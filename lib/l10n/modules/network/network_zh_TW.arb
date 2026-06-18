@@ -2,6 +2,28 @@
   "@@locale": "zh_TW",
   "advancedSettings_networkAdapter": "網路介面卡",
   "advancedSettings_networkAdapterDesc": "管理 Cronet 和備用介面卡設定",
+  "enginePreset_compat": "相容",
+  "enginePreset_compatDesc": "用瀏覽器核心傳送，改善登入穩定性",
+  "enginePreset_custom": "自訂",
+  "enginePreset_customDesc": "手動組合下方開關",
+  "enginePreset_performance": "高效能",
+  "enginePreset_performanceDesc": "使用 rhttp 引擎（HTTP/2 · Rust）",
+  "enginePreset_standard": "標準",
+  "enginePreset_standardDesc": "系統自動選擇最優引擎",
+  "engineStatus_currentEngine": "目前引擎",
+  "engineStatus_reasonFallback": "Cronet 已降級，使用備用介面卡",
+  "engineStatus_reasonGateway": "DoH 直連模式（省一層 TLS）",
+  "engineStatus_reasonNative": "系統預設直連",
+  "engineStatus_reasonProxy": "透過本地代理轉發",
+  "engineStatus_reasonRhttp": "rhttp 引擎已啟用",
+  "engineStatus_webviewSplit": "主站 API 請求走 WebView，其餘請求走{engine}",
+  "@engineStatus_webviewSplit": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "networkAdapter_adapterType": "介面卡型別",
   "networkAdapter_autoFallback": "已自動降級",
   "networkAdapter_autoFallbackDesc": "檢測到 Cronet 不可用，已切換到備用介面卡",

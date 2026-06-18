@@ -108,6 +108,7 @@
   "vpnToggle_and": " and ",
   "vpnToggle_connected": "VPN Connected",
   "vpnToggle_disconnected": "VPN Disconnected",
+  "vpnToggle_lockedHint": "VPN active, managed by auto-toggle",
   "vpnToggle_subtitle": "Auto-disable DOH and proxy when VPN detected, restore on disconnect",
   "vpnToggle_suppressedSuffix": " auto-disabled, will restore when VPN disconnects",
   "vpnToggle_title": "VPN Auto Toggle",
