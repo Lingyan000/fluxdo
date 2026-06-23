@@ -2010,6 +2010,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     bool isLoggedIn,
   ) {
     final posts = detail.postStream.posts;
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
     // read 而非 watch：sessionState 只用于合成 readPostNumbers 推给 controller,
     // 不驱动任何 UI(未读圆点由 PostItem 内部细粒度 Consumer 自行监听)。
@@ -2089,6 +2092,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           nestedState: nestedState,
           params: nestedParams,
           detail: detail,
+          blockedUsernames: blockedUsernames,
           topicId: widget.topicId,
           scrollController: _controller.scrollController,
           headerKey: _headerKey,
@@ -2121,6 +2125,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           builder: (context, highlightPostNumber, _) {
             return TopicPostList(
               detail: detail,
+              blockedUsernames: blockedUsernames,
               scrollController: _controller.scrollController,
               centerKey: _centerKey,
               viewportAnchor: _viewportAnchor,

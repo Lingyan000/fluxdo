@@ -4,6 +4,8 @@ import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic.dart';
 import '../../providers/nested_topic_provider.dart';
+import '../../providers/preferences_provider.dart';
+import '../../utils/blocked_user_filter.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
 import 'nested_post_card.dart';
@@ -123,6 +125,13 @@ class _NestedThreadSheetContentState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final post = widget.node.post;
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
+    final children = BlockedUserFilter.visibleNestedNodes(
+      _children,
+      blockedUsernames,
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -146,16 +155,17 @@ class _NestedThreadSheetContentState
             padding: const EdgeInsets.only(bottom: 32),
             children: [
               // 子回复列表，depth 从 0 重新开始
-              for (int i = 0; i < _children.length; i++)
+              for (int i = 0; i < children.length; i++)
                 NestedPostCard(
-                  node: _children[i],
+                  node: children[i],
                   topicId: widget.topicId,
                   detail: widget.detail,
                   params: widget.params,
                   depth: 0,
                   maxDepth: widget.maxDepth,
-                  isLastChild: i == _children.length - 1 && !_hasMore,
+                  isLastChild: i == children.length - 1 && !_hasMore,
                   isLoggedIn: widget.isLoggedIn,
+                  blockedUsernames: blockedUsernames,
                   onReply: widget.onReply,
                   onEdit: widget.onEdit,
                   onRefreshPost: widget.onRefreshPost,

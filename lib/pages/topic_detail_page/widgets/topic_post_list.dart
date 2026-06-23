@@ -9,6 +9,7 @@ import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../providers/message_bus_providers.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/loading_spinner.dart';
@@ -29,6 +30,7 @@ import 'typing_indicator.dart';
 /// 保留跨块文本选择能力。
 class TopicPostList extends StatefulWidget {
   final TopicDetail detail;
+  final Set<String> blockedUsernames;
   final AutoScrollController scrollController;
   final GlobalKey centerKey;
   final GlobalKey headerKey;
@@ -94,6 +96,7 @@ class TopicPostList extends StatefulWidget {
   const TopicPostList({
     super.key,
     required this.detail,
+    required this.blockedUsernames,
     required this.scrollController,
     required this.centerKey,
     required this.headerKey,
@@ -145,6 +148,9 @@ class TopicPostList extends StatefulWidget {
 class _TopicPostListState extends State<TopicPostList> {
   int? _lastReportedPostNumber;
   bool _isThrottled = false;
+
+  List<Post> get _visiblePosts =>
+      BlockedUserFilter.visiblePosts(detail.postStream.posts, widget.blockedUsernames);
   List<_PostRenderSegment> _renderSegments = const [];
   Map<int, int> _postIndexToScrollIndex = const {};
   Map<int, int> _scrollIndexToPostNumber = const {};
@@ -219,7 +225,7 @@ class _TopicPostListState extends State<TopicPostList> {
   /// - 滚到最底时，eyeline 在视口底部，确保能显示最后一个帖子
   /// 这使得进度指示器在整个滚动过程中平滑过渡，无需硬编码特殊情况。
   void _updateFirstVisiblePost() {
-    final posts = detail.postStream.posts;
+    final posts = _visiblePosts;
     if (posts.isEmpty) return;
 
     final tagMap = scrollController.tagMap;
@@ -555,10 +561,19 @@ class _TopicPostListState extends State<TopicPostList> {
 
   @override
   Widget build(BuildContext context) {
-    final posts = detail.postStream.posts;
+    final posts = _visiblePosts;
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
     _buildRenderSegments(posts);
-    final centerScrollIndex = _postIndexToScrollIndex[centerPostIndex] ?? 0;
+    final centerPostNumber =
+        widget.centerPostIndex >= 0 &&
+            widget.centerPostIndex < detail.postStream.posts.length
+        ? detail.postStream.posts[widget.centerPostIndex].postNumber
+        : null;
+    final centerVisibleIndex = centerPostNumber == null
+        ? null
+        : _postNumberToIndex[centerPostNumber];
+    final centerScrollIndex =
+        centerVisibleIndex == null ? 0 : (_postIndexToScrollIndex[centerVisibleIndex] ?? 0);
 
     // 不再包系统 SelectionArea:正文选区全部由 FluxdoRender 自研选区承担
     // (含未登录场景 —— toolbar 降级只留「复制」),header/footer 等本就
@@ -748,7 +763,7 @@ class _TopicPostListState extends State<TopicPostList> {
 
   /// 判断是否需要显示日期分割线
   bool _shouldShowDateSeparator(int postIndex) {
-    final posts = detail.postStream.posts;
+    final posts = _visiblePosts;
     if (postIndex <= 0) return false;
 
     final currentDate = posts[postIndex].createdAt;
@@ -776,7 +791,7 @@ class _TopicPostListState extends State<TopicPostList> {
     final dateSeparatorLabel = showTopSeparator
         ? TimeUtils.formatSmartDate(post.createdAt)
         : null;
-    final posts_ = detail.postStream.posts;
+    final posts_ = _visiblePosts;
     final nextPostIndex = postIndex + 1;
     final showBottomSeparator =
         nextPostIndex < posts_.length &&
@@ -790,7 +805,10 @@ class _TopicPostListState extends State<TopicPostList> {
     // 能匹配到具体 boost 时不高亮帖子，匹配不到时回退到高亮帖子
     final canLocateBoost =
         boostUsername != null &&
-        (post.boosts ?? []).any((b) => b.user.username == boostUsername);
+        BlockedUserFilter.visibleBoosts(
+          post.boosts ?? const <Boost>[],
+          widget.blockedUsernames,
+        ).any((b) => b.user.username == boostUsername);
     final highlight = isTargetPost && !canLocateBoost;
     final replyTarget = post.postNumber == 1 ? null : post;
     // OP 帖底部的 "俺也一样" 按钮; 非 OP 或服务端没启用时为 null

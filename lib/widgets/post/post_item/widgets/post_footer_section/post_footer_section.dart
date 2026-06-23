@@ -11,6 +11,7 @@ import '../../../../../models/topic.dart';
 import '../../../../../modules/ldc_reward/ldc_reward.dart';
 import '../../../../../providers/discourse_providers.dart';
 import '../../../../../providers/preferences_provider.dart';
+import '../../../../../utils/blocked_user_filter.dart';
 import 'package:dio/dio.dart';
 import '../../../../../services/app_error_handler.dart';
 import '../../../../../services/discourse/discourse_service.dart';
@@ -479,8 +480,11 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
     if (isDanmaku && !widget.forceShowBoostList) {
       return const SizedBox.shrink();
     }
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
     return BoostList(
-      boosts: _boosts,
+      boosts: BlockedUserFilter.visibleBoosts(_boosts, blockedUsernames),
       canBoost: _canBoost,
       onAddBoost: _openBoostInput,
       onBoostTap: _showBoostActions,

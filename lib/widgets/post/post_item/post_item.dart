@@ -6,6 +6,7 @@ import '../../../models/topic.dart';
 import '../../../l10n/s.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/code_selection_context.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../content/collapsed_html_content.dart';
@@ -145,13 +146,20 @@ class _PostItemState extends ConsumerState<PostItem> {
     final danmakuPref = ref.watch(
       preferencesProvider.select((p) => p.boostDanmaku),
     );
-    final hasBoosts = post.boosts?.isNotEmpty ?? false;
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
+    final visibleBoosts = BlockedUserFilter.visibleBoosts(
+      post.boosts ?? const <Boost>[],
+      blockedUsernames,
+    );
+    final hasBoosts = visibleBoosts.isNotEmpty;
     final danmakuActive = danmakuPref && (_danmakuOverride ?? true);
     final showDanmaku = danmakuActive && hasBoosts;
     // 仅当全局开关开启且有 boost 时，才展示帖子级 toggle 按钮
     final showDanmakuToggle = danmakuPref && hasBoosts;
     // 按 boost 数量决定轨道数：1 条用 1 轨，2-4 用 2 轨，5+ 用 3 轨
-    final boostCount = post.boosts?.length ?? 0;
+    final boostCount = visibleBoosts.length;
     final danmakuTrackCount = boostCount <= 1
         ? 1
         : boostCount <= 4
@@ -270,7 +278,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                     Positioned.fill(
                       child: BoostDanmaku(
                         visibilityKey: post.id,
-                        boosts: post.boosts!,
+                        boosts: visibleBoosts,
                         maxTrackCount: danmakuTrackCount,
                         trackHeight: danmakuTrackHeight,
                         highlightUsername: widget.highlightBoostUsername,

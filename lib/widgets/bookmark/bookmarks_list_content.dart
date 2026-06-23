@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/s.dart';
 import '../../models/topic.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
+import '../../providers/preferences_provider.dart';
+import '../../utils/blocked_user_filter.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/time_utils.dart';
 import 'bookmark_preview_quick_editor.dart';
@@ -16,7 +18,7 @@ import '../topic/topic_list_skeleton.dart';
 import '../topic/topic_item_builder.dart';
 import '../topic/topic_preview_dialog.dart';
 
-class BookmarksListContent extends StatelessWidget {
+class BookmarksListContent extends ConsumerWidget {
   const BookmarksListContent({
     super.key,
     required this.bookmarksAsync,
@@ -61,11 +63,19 @@ class BookmarksListContent extends StatelessWidget {
   final Future<void> Function(Topic topic) onDeleteBookmark;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return DesktopRefreshIndicator(
       onRefresh: onRefresh,
       child: bookmarksAsync.when(
-        data: (topics) => _buildDataContent(context, topics),
+        data: (topics) => _buildDataContent(
+          context,
+          BlockedUserFilter.visibleTopics(
+            topics,
+            ref.watch(
+              preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+            ),
+          ),
+        ),
         loading: () => const TopicListSkeleton(),
         error: (error, stack) =>
             ErrorView(error: error, stackTrace: stack, onRetry: onRefresh),

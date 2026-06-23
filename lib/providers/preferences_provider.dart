@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/cf_challenge_service.dart';
+import '../utils/blocked_user_filter.dart';
 import 'theme_provider.dart';
 
 /// 嵌套视图连接线样式
@@ -108,12 +109,19 @@ class AppPreferences {
   /// 话题关键词过滤：是否启用完整词匹配（仅影响英文/数字等 word-char 关键词）
   final bool topicFilterWholeWord;
 
+  /// 本地内容屏蔽用户名列表。只影响本客户端的展示，不会同步到 Discourse。
+  final List<String> blockedUsernames;
+
   /// 话题关键词过滤的归一化形式（lowercase），匹配时使用
   late final List<String> normalizedFilterKeywords = List.unmodifiable(
     topicFilterKeywords
         .map((keyword) => keyword.trim().toLowerCase())
         .where((keyword) => keyword.isNotEmpty),
   );
+
+  /// 本地内容屏蔽用户名的归一化集合，匹配时使用。
+  late final Set<String> normalizedBlockedUsernames =
+      BlockedUserFilter.normalizedUsernames(blockedUsernames);
 
   /// 崩溃日志上报（仅 Android）
   final bool crashlytics;
@@ -219,6 +227,7 @@ class AppPreferences {
     required this.clipboardTopicLinkDetection,
     required this.topicFilterKeywords,
     this.topicFilterWholeWord = false,
+    this.blockedUsernames = const [],
     required this.crashlytics,
     required this.portraitLock,
     required this.hideBarOnScroll,
@@ -263,6 +272,7 @@ class AppPreferences {
     bool? clipboardTopicLinkDetection,
     List<String>? topicFilterKeywords,
     bool? topicFilterWholeWord,
+    List<String>? blockedUsernames,
     bool? crashlytics,
     bool? portraitLock,
     bool? hideBarOnScroll,
@@ -308,6 +318,7 @@ class AppPreferences {
           clipboardTopicLinkDetection ?? this.clipboardTopicLinkDetection,
       topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
       topicFilterWholeWord: topicFilterWholeWord ?? this.topicFilterWholeWord,
+      blockedUsernames: blockedUsernames ?? this.blockedUsernames,
       crashlytics: crashlytics ?? this.crashlytics,
       portraitLock: portraitLock ?? this.portraitLock,
       hideBarOnScroll: hideBarOnScroll ?? this.hideBarOnScroll,
@@ -370,6 +381,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       'pref_clipboard_topic_link_detection';
   static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
   static const String _topicFilterWholeWordKey = 'pref_topic_filter_whole_word';
+  static const String _blockedUsernamesKey = 'pref_blocked_usernames';
   static const String _crashlyticsKey = 'pref_crashlytics';
   static const String _portraitLockKey = 'pref_portrait_lock';
   static const String _hideBarOnScrollKey = 'pref_hide_bar_on_scroll';
@@ -433,6 +445,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               _prefs.getStringList(_topicFilterKeywordsKey) ?? const [],
           topicFilterWholeWord:
               _prefs.getBool(_topicFilterWholeWordKey) ?? false,
+          blockedUsernames:
+              _prefs.getStringList(_blockedUsernamesKey) ?? const [],
           crashlytics: _prefs.getBool(_crashlyticsKey) ?? true,
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
           hideBarOnScroll: _prefs.getBool(_hideBarOnScrollKey) ?? true,
@@ -565,6 +579,17 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.topicFilterWholeWord == enabled) return;
     state = state.copyWith(topicFilterWholeWord: enabled);
     await _prefs.setBool(_topicFilterWholeWordKey, enabled);
+  }
+
+  Future<void> setBlockedUsernames(List<String> usernames) async {
+    final sanitized = BlockedUserFilter.sanitizeUsernames(usernames);
+    final current = state.blockedUsernames;
+    if (sanitized.length == current.length &&
+        const ListEquality<String>().equals(sanitized, current)) {
+      return;
+    }
+    state = state.copyWith(blockedUsernames: sanitized);
+    await _prefs.setStringList(_blockedUsernamesKey, sanitized);
   }
 
   Future<void> setCrashlytics(bool enabled) async {

@@ -3,11 +3,12 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../providers/preferences_provider.dart';
 import '../../settings/definitions/preferences_defs.dart';
 
-/// 话题列表顶部的「关键词过滤」提示。
+/// 话题列表顶部的「本地内容过滤」提示。
 ///
-/// 仅在有话题被隐藏时显示。整行可点击，打开关键词编辑弹窗。
+/// 仅在有话题被隐藏时显示。整行可点击，优先打开本地屏蔽名单。
 /// 形态与 `_buildNewTopicIndicator` 保持一致（同样的胶囊容器、margin、圆角），
 /// 但使用 surfaceVariant 系颜色而非 primaryContainer，刻意做成次要状态层级，
 /// 与新话题 CTA 堆叠时形成「主操作 + 次要状态」的视觉层次。
@@ -22,6 +23,9 @@ class KeywordFilterHintBar extends ConsumerWidget {
     final theme = Theme.of(context);
     final l10n = context.l10n;
     final mutedColor = theme.colorScheme.onSurfaceVariant;
+    final hasBlockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.blockedUsernames.isNotEmpty),
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -30,7 +34,9 @@ class KeywordFilterHintBar extends ConsumerWidget {
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => showTopicFilterKeywordsDialog(context, ref),
+          onTap: () => hasBlockedUsernames
+              ? showBlockedUsernamesDialog(context, ref)
+              : showTopicFilterKeywordsDialog(context, ref),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(

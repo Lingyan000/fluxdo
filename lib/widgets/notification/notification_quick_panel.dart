@@ -10,6 +10,7 @@ import '../../pages/notifications_page.dart';
 import '../../utils/blur_config.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
+import '../../utils/blocked_user_filter.dart';
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
 
@@ -470,7 +471,18 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
     return Expanded(
       child: notificationsAsync.when(
         data: (notifications) {
-          if (notifications.isEmpty) {
+          final blockedUsernames = ref.watch(
+            preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+          );
+          final visibleNotifications = notifications
+              .where(
+                (notification) => !BlockedUserFilter.isBlockedNotification(
+                  notification,
+                  blockedUsernames,
+                ),
+              )
+              .toList(growable: false);
+          if (visibleNotifications.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -494,9 +506,9 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
             padding: EdgeInsets.only(
               bottom: MediaQuery.of(context).padding.bottom,
             ),
-            itemCount: notifications.length,
+            itemCount: visibleNotifications.length,
             itemBuilder: (context, index) {
-              final notification = notifications[index];
+              final notification = visibleNotifications[index];
               return NotificationItem(
                 notification: notification,
                 systemAvatarTemplate: systemAvatarTemplate,

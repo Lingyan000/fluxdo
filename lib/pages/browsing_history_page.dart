@@ -7,6 +7,7 @@ import '../navigation/nav_action_bus.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/user_content_search_provider.dart';
 import '../utils/load_more_coordinator.dart';
+import '../utils/blocked_user_filter.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
@@ -187,7 +188,14 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
       onRefresh: _onRefresh,
       child: historyAsync.when(
         data: (topics) {
-          if (topics.isEmpty) {
+          final blockedUsernames = ref.watch(
+            preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+          );
+          final visibleTopics = BlockedUserFilter.visibleTopics(
+            topics,
+            blockedUsernames,
+          );
+          if (visibleTopics.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -206,9 +214,9 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
           return ListView.builder(
             controller: _scrollController,
             padding: const EdgeInsets.all(12),
-            itemCount: topics.length + 1,
+            itemCount: visibleTopics.length + 1,
             itemBuilder: (context, index) {
-              if (index == topics.length) {
+              if (index == visibleTopics.length) {
                 final notifier = ref.watch(browsingHistoryProvider.notifier);
                 return PagedListFooter(
                   hasMore: notifier.hasMore,
@@ -218,7 +226,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
                 );
               }
 
-              final topic = topics[index];
+              final topic = visibleTopics[index];
               final enableLongPress = ref
                   .watch(preferencesProvider)
                   .longPressPreview;

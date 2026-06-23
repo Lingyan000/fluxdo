@@ -58,6 +58,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   bool _ascending = false;
   List<String> _selectedTags = [];
   List<String> _lastAutoLoadKeywords = const [];
+  Set<String> _lastAutoLoadBlockedUsernames = const <String>{};
   bool? _lastAutoLoadWholeWord;
 
   static final _paginationHelper = PaginationHelpers.forTopics<Topic>(
@@ -105,12 +106,14 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     final prefs = ref.read(preferencesProvider);
     final keywords = prefs.normalizedFilterKeywords;
     final wholeWord = prefs.topicFilterWholeWord;
+    final blockedUsernames = prefs.normalizedBlockedUsernames;
 
     int visibleItemCount() {
       final (visible, _) = TopicKeywordFilter.apply(
         _topics,
         normalizedKeywords: keywords,
         wholeWord: wholeWord,
+        blockedUsernames: blockedUsernames,
       );
       return visible.length;
     }
@@ -121,7 +124,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
       isActive: () => mounted,
       itemCount: () => _topics.length,
       visibleItemCount: visibleItemCount,
-      hasKeywordFilter: keywords.isNotEmpty,
+      hasKeywordFilter: keywords.isNotEmpty || blockedUsernames.isNotEmpty,
     );
   }
 
@@ -313,13 +316,19 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     _loadTopics();
   }
 
-  void _syncAutoLoadFilter(List<String> keywords, bool wholeWord) {
+  void _syncAutoLoadFilter(
+    List<String> keywords,
+    bool wholeWord,
+    Set<String> blockedUsernames,
+  ) {
     if (listEquals(_lastAutoLoadKeywords, keywords) &&
-        _lastAutoLoadWholeWord == wholeWord) {
+        _lastAutoLoadWholeWord == wholeWord &&
+        setEquals(_lastAutoLoadBlockedUsernames, blockedUsernames)) {
       return;
     }
     _lastAutoLoadKeywords = List.unmodifiable(keywords);
     _lastAutoLoadWholeWord = wholeWord;
+    _lastAutoLoadBlockedUsernames = Set.unmodifiable(blockedUsernames);
     _loadMoreCoordinator.resetCooldown();
   }
 
@@ -530,11 +539,15 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     final wholeWord = ref.watch(
       preferencesProvider.select((p) => p.topicFilterWholeWord),
     );
-    _syncAutoLoadFilter(keywords, wholeWord);
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
+    _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
     final (visible, hidden) = TopicKeywordFilter.apply(
       _topics,
       normalizedKeywords: keywords,
       wholeWord: wholeWord,
+      blockedUsernames: blockedUsernames,
     );
     final hintOffset = hidden > 0 ? 1 : 0;
 

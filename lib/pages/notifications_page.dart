@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../utils/notification_navigation.dart';
@@ -10,6 +11,7 @@ import '../widgets/notification/notification_list_skeleton.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../l10n/s.dart';
+import '../utils/blocked_user_filter.dart';
 
 /// 通知历史列表页面（独立分页，不受 messageBus 干扰）
 class NotificationsPage extends ConsumerStatefulWidget {
@@ -86,7 +88,18 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
         onRefresh: _onRefresh,
         child: notificationsAsync.when(
           data: (notifications) {
-            if (notifications.isEmpty) {
+            final blockedUsernames = ref.watch(
+              preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+            );
+            final visibleNotifications = notifications
+                .where(
+                  (notification) => !BlockedUserFilter.isBlockedNotification(
+                    notification,
+                    blockedUsernames,
+                  ),
+                )
+                .toList(growable: false);
+            if (visibleNotifications.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -108,9 +121,9 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
 
             return ListView.builder(
               controller: _scrollController,
-              itemCount: notifications.length + 1,
+              itemCount: visibleNotifications.length + 1,
               itemBuilder: (context, index) {
-                if (index == notifications.length) {
+                if (index == visibleNotifications.length) {
                   final notifier = ref.read(notificationListProvider.notifier);
                   return PagedListFooter(
                     hasMore: notifier.hasMore,
@@ -119,7 +132,7 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
                     onRetry: notifier.retryLoadMore,
                   );
                 }
-                final notification = notifications[index];
+                final notification = visibleNotifications[index];
                 return NotificationItem(
                   notification: notification,
                   systemAvatarTemplate: systemAvatarTemplate,
