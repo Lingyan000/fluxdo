@@ -10,6 +10,13 @@
       "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
       "versions": [
         {
+          "version": "0.2.21",
+          "date": "2026-06-23T12:54:44Z",
+          "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.21/fluxdo-unsigned.ipa",
+          "size": 51470466,
+          "localizedDescription": "🌟 新功能\n- 全局图标统一为 Material Symbols Rounded + 支持自绘\n- 加载更多统一使用自定义 LoadingSpinner\n- 支持查看 DNS 缓存记录\n- 支持 Premium 回复最小长度\n- 统一底部弹框为 AppSheetScaffold(贴边/卡片双形态)\n\n🐛 修复\n- 修复网络适配器与 Cookie 同步稳定性\n- 修复用户卡片更多菜单层级\n- 修复 CF 静默验证页布局异常\n\n⚡ 性能\n- 合并 HTML 解析路径,长帖渲染走 isolate 预热\n- 隔离自驱动重绘 + 头像 SVG 探测短路\n- 优化后台 WebView 资源占用"
+        },
+        {
           "version": "0.2.20",
           "date": "2026-06-19T09:59:41Z",
           "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.20/fluxdo-unsigned.ipa",
