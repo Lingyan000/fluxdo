@@ -5,6 +5,8 @@ import '../../services/message_bus_service.dart';
 import '../../services/local_notification_service.dart';
 import '../../models/notification.dart';
 import '../discourse_providers.dart';
+import '../preferences_provider.dart';
+import '../../utils/blocked_user_filter.dart';
 import 'models.dart';
 import 'message_bus_service_provider.dart';
 import 'topic_tracking_providers.dart';
@@ -113,8 +115,16 @@ class NotificationChannelNotifier extends Notifier<void> {
               if (notification is Map<String, dynamic>) {
                 try {
                   final newNotification = DiscourseNotification.fromJson(notification);
-                  debugPrint('[Notification] 添加新通知到列表: id=${newNotification.id}');
-                  recentNotifier.addNotification(newNotification);
+                  final blockedUsernames = ref
+                      .read(preferencesProvider)
+                      .normalizedBlockedUsernames;
+                  if (!BlockedUserFilter.isBlockedNotification(
+                    newNotification,
+                    blockedUsernames,
+                  )) {
+                    debugPrint('[Notification] 添加新通知到列表: id=${newNotification.id}');
+                    recentNotifier.addNotification(newNotification);
+                  }
                 } catch (e) {
                   debugPrint('[Notification] 解析新通知失败: $e');
                 }
@@ -215,6 +225,13 @@ class NotificationAlertChannelNotifier extends Notifier<void> {
         final excerpt = data['excerpt'] as String? ?? '';
         final username = data['username'] as String? ?? '';
         final notificationType = data['notification_type'] as int?;
+
+        final blockedUsernames = ref
+            .read(preferencesProvider)
+            .normalizedBlockedUsernames;
+        if (BlockedUserFilter.isBlockedUsername(username, blockedUsernames)) {
+          return;
+        }
 
         // 构建通知标题（参考 desktop-notifications.js 的 i18nKey 逻辑）
         String title = topicTitle;

@@ -54,7 +54,7 @@
   "preferences_clipboardTopicLink_detected": "检测到剪贴板中的话题链接",
   "preferences_clipboardTopicLink_open": "打开",
   "preferences_topicFilterKeywords": "标题关键词过滤",
-  "preferences_topicFilterKeywordsDesc": "过滤标题包含指定关键词的话题，每行一个关键词",
+  "preferences_topicFilterKeywordsDesc": "过滤标题包含指定关键词的话题，输入后按回车添加",
   "preferences_topicFilterKeywordsEmpty": "未设置关键词",
   "preferences_topicFilterKeywordsCount": "已设置 {count} 个关键词",
   "@preferences_topicFilterKeywordsCount": {
@@ -62,10 +62,21 @@
       "count": {"type": "int"}
     }
   },
-  "preferences_topicFilterKeywordsHint": "每行输入一个关键词",
+  "preferences_topicFilterKeywordsHint": "输入关键词后按回车添加",
   "preferences_topicFilterKeywordsHelper": "仅匹配话题标题，子串匹配，不区分大小写",
   "preferences_topicFilterWholeWord": "完整词匹配",
   "preferences_topicFilterWholeWordDesc": "开启后英文关键词不再匹配子串，如 ai 不会命中 Main thread；中文关键词无影响",
+  "preferences_blockedUsernames": "本地拉黑用户",
+  "preferences_blockedUsernamesDesc": "在本机隐藏这些用户发布的话题、回复和 Boost；名单不会同步到 Linux.do",
+  "preferences_blockedUsernamesEmpty": "未拉黑任何用户",
+  "preferences_blockedUsernamesCount": "已拉黑 {count} 个用户",
+  "@preferences_blockedUsernamesCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "preferences_blockedUsernamesHint": "输入用户名后按回车添加",
+  "preferences_blockedUsernamesHelper": "无需输入 @；用户名精确匹配，不区分大小写；不会调用 Discourse 的忽略功能",
   "preferences_autoPanguSpacing": "自动混排优化",
   "preferences_autoPanguSpacingDesc": "输入时自动插入中英文混排空格",
   "preferences_aiPostReview": "发帖前 AI 审核",

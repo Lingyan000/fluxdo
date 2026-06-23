@@ -37,7 +37,7 @@
   "preferences_clipboardTopicLink_detected": "檢測到剪貼板中的話題鏈接",
   "preferences_clipboardTopicLink_open": "打開",
   "preferences_topicFilterKeywords": "標題關鍵詞過濾",
-  "preferences_topicFilterKeywordsDesc": "過濾標題包含指定關鍵詞的話題，每行一個關鍵詞",
+  "preferences_topicFilterKeywordsDesc": "過濾標題包含指定關鍵詞的話題，輸入後按 Enter 新增",
   "preferences_topicFilterKeywordsEmpty": "未設定關鍵詞",
   "preferences_topicFilterKeywordsCount": "已設定 {count} 個關鍵詞",
   "@preferences_topicFilterKeywordsCount": {
@@ -45,10 +45,21 @@
       "count": {"type": "int"}
     }
   },
-  "preferences_topicFilterKeywordsHint": "每行輸入一個關鍵詞",
+  "preferences_topicFilterKeywordsHint": "輸入關鍵詞後按 Enter 新增",
   "preferences_topicFilterKeywordsHelper": "只匹配話題標題，子串匹配，不區分大小寫",
   "preferences_topicFilterWholeWord": "完整詞匹配",
   "preferences_topicFilterWholeWordDesc": "開啟後英文關鍵詞不再匹配子串，如 ai 不會命中 Main thread；中文關鍵詞無影響",
+  "preferences_blockedUsernames": "本機封鎖用戶",
+  "preferences_blockedUsernamesDesc": "在本機隱藏這些用戶發表的話題、回覆與 Boost；名單不會同步到 Linux.do",
+  "preferences_blockedUsernamesEmpty": "未封鎖任何用戶",
+  "preferences_blockedUsernamesCount": "已封鎖 {count} 位用戶",
+  "@preferences_blockedUsernamesCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "preferences_blockedUsernamesHint": "輸入用戶名後按 Enter 新增",
+  "preferences_blockedUsernamesHelper": "無需輸入 @；用戶名精確匹配，不區分大小寫；不會調用 Discourse 的忽略功能",
   "preferences_autoPanguSpacing": "自動混排優化",
   "preferences_autoPanguSpacingDesc": "輸入時自動插入中英文混排空格",
   "preferences_aiPostReview": "發帖前 AI 審核",

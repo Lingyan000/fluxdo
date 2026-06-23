@@ -4,6 +4,7 @@ import '../../../l10n/s.dart';
 import '../../../models/nested_topic.dart';
 import '../../../models/topic.dart';
 import '../../../providers/nested_topic_provider.dart';
+import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/responsive.dart';
 import '../../../widgets/nested/nested_post_card.dart';
 import '../../../widgets/post/post_item/post_item.dart';
@@ -15,6 +16,7 @@ class NestedPostList extends ConsumerStatefulWidget {
   final NestedTopicState nestedState;
   final NestedTopicParams params;
   final TopicDetail detail;
+  final Set<String> blockedUsernames;
   final int topicId;
   final ScrollController scrollController;
   final GlobalKey headerKey;
@@ -38,6 +40,7 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.nestedState,
     required this.params,
     required this.detail,
+    required this.blockedUsernames,
     required this.topicId,
     required this.scrollController,
     required this.headerKey,
@@ -112,7 +115,18 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
     // OP 也算可见
     final ns = widget.nestedState;
-    if (ns.opPost != null) _builtPostNumbers.add(ns.opPost!.postNumber);
+    final opPost = ns.opPost != null &&
+            !BlockedUserFilter.isBlockedUsername(
+              ns.opPost!.username,
+              widget.blockedUsernames,
+            )
+        ? ns.opPost
+        : null;
+    final roots = BlockedUserFilter.visibleNestedNodes(
+      ns.roots,
+      widget.blockedUsernames,
+    );
+    if (opPost != null) _builtPostNumbers.add(opPost.postNumber);
     final p = widget.params;
 
     return NotificationListener<ScrollNotification>(
@@ -133,10 +147,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             ),
           ),
 
-          if (ns.opPost != null)
+          if (opPost != null)
             SliverToBoxAdapter(
               child: PostItem(
-                post: ns.opPost!,
+                post: opPost,
                 topicId: widget.topicId,
                 isTopicOwner: true,
                 topicHasAcceptedAnswer: widget.detail.hasAcceptedAnswer,
@@ -219,22 +233,23 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
           SliverList.builder(
             itemCount:
-                ns.roots.length + (ns.hasMoreRoots || ns.isLoadingMore ? 1 : 0),
+                roots.length + (ns.hasMoreRoots || ns.isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
-              if (index >= ns.roots.length) {
+              if (index >= roots.length) {
                 return _buildLoadMore(context);
               }
               // 收集可见帖子号（含子节点）
-              _collectVisiblePostNumbers(ns.roots[index]);
+              _collectVisiblePostNumbers(roots[index]);
               return NestedPostCard(
-                node: ns.roots[index],
+                node: roots[index],
                 topicId: widget.topicId,
                 detail: widget.detail,
                 params: p,
                 depth: 0,
                 maxDepth: maxDepth,
-                isLastChild: index == ns.roots.length - 1,
+                isLastChild: index == roots.length - 1,
                 isLoggedIn: widget.isLoggedIn,
+                blockedUsernames: widget.blockedUsernames,
                 onReply: widget.onReply,
                 onEdit: widget.onEdit,
                 onRefreshPost: widget.onRefreshPost,

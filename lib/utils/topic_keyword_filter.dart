@@ -1,4 +1,5 @@
 import '../models/topic.dart';
+import 'blocked_user_filter.dart';
 
 /// 标题关键词过滤工具。
 ///
@@ -21,8 +22,10 @@ class TopicKeywordFilter {
     List<Topic> topics, {
     required List<String> normalizedKeywords,
     required bool wholeWord,
+    Set<String> blockedUsernames = const <String>{},
   }) {
-    if (normalizedKeywords.isEmpty || topics.isEmpty) {
+    if ((normalizedKeywords.isEmpty && blockedUsernames.isEmpty) ||
+        topics.isEmpty) {
       return (topics, 0);
     }
 
@@ -41,7 +44,8 @@ class TopicKeywordFilter {
     final visible = <Topic>[];
     var hidden = 0;
     for (final topic in topics) {
-      if (_matches(topic.title, substrings, regexes)) {
+      if (BlockedUserFilter.isBlockedTopic(topic, blockedUsernames) ||
+          _matches(topic.title, substrings, regexes)) {
         hidden++;
       } else {
         visible.add(topic);

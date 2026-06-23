@@ -10,6 +10,7 @@ import '../../providers/ai_post_review_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
+import '../../utils/blocked_user_filter.dart';
 import '../../widgets/ai/ai_model_select_sheet.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/sticker_market_service.dart';
@@ -66,6 +67,21 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             return l10n.preferences_topicFilterKeywordsCount(count);
           },
           onTap: (context, ref) => showTopicFilterKeywordsDialog(context, ref),
+        ),
+        ActionModel(
+          id: 'blockedUsernames',
+          title: l10n.preferences_blockedUsernames,
+          subtitle: l10n.preferences_blockedUsernamesDesc,
+          icon: Symbols.person_off_rounded,
+          getDynamicSubtitle: (ref) {
+            final count = ref
+                .watch(preferencesProvider)
+                .blockedUsernames
+                .length;
+            if (count == 0) return l10n.preferences_blockedUsernamesEmpty;
+            return l10n.preferences_blockedUsernamesCount(count);
+          },
+          onTap: (context, ref) => showBlockedUsernamesDialog(context, ref),
         ),
         PlatformConditionalModel(
           inner: SwitchModel(
@@ -227,14 +243,14 @@ class _TopicFilterKeywordsDialogState
     extends State<_TopicFilterKeywordsDialog> {
   late final TextEditingController _controller;
   late bool _wholeWord;
+  late final List<String> _keywords;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(
-      text: widget.initialKeywords.join('\n'),
-    );
+    _controller = TextEditingController(text: '');
     _wholeWord = widget.initialWholeWord;
+    _keywords = List<String>.from(widget.initialKeywords);
   }
 
   @override
@@ -248,6 +264,7 @@ class _TopicFilterKeywordsDialogState
     final l10n = context.l10n;
 
     return AlertDialog(
+      scrollable: true,
       title: Text(l10n.preferences_topicFilterKeywords),
       content: SizedBox(
         width: 420,
@@ -260,26 +277,30 @@ class _TopicFilterKeywordsDialogState
               child: TextButton.icon(
                 icon: const Icon(Symbols.clear_all_rounded, size: 18),
                 label: Text(l10n.common_clear),
-                onPressed: () => _controller.clear(),
+                onPressed: () => setState(() {
+                  _keywords.clear();
+                  _controller.clear();
+                }),
               ),
             ),
-            TextField(
+            _EntryChipsEditor(
               controller: _controller,
-              decoration: InputDecoration(
-                hintText: l10n.preferences_topicFilterKeywordsHint,
-                helperText: l10n.preferences_topicFilterKeywordsHelper,
-                helperMaxLines: 2,
-                border: const OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.multiline,
-              minLines: 5,
-              maxLines: 10,
-              autofocus: true,
+              entries: _keywords,
+              hintText: l10n.preferences_topicFilterKeywordsHint,
+              helperText: l10n.preferences_topicFilterKeywordsHelper,
+              normalizeEntry: (value) => value.trim(),
+              isDuplicate: (existing, candidate) => existing == candidate,
+              onEntriesChanged: (entries) {
+                setState(() {
+                  _keywords
+                    ..clear()
+                    ..addAll(entries);
+                });
+              },
             ),
             const SizedBox(height: 8),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              dense: true,
               title: Text(l10n.preferences_topicFilterWholeWord),
               subtitle: Text(l10n.preferences_topicFilterWholeWordDesc),
               value: _wholeWord,
@@ -295,14 +316,245 @@ class _TopicFilterKeywordsDialogState
         ),
         FilledButton(
           onPressed: () {
-            final keywords = _controller.text
-                .split('\n')
-                .map((keyword) => keyword.trim())
-                .where((keyword) => keyword.isNotEmpty)
-                .toList();
+            final keywords = _appendTokenEntries(
+              _keywords,
+              _controller.text,
+              normalizeEntry: (value) => value.trim(),
+              isDuplicate: (existing, candidate) => existing == candidate,
+            );
             Navigator.pop(context, (keywords: keywords, wholeWord: _wholeWord));
           },
           child: Text(l10n.common_confirm),
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> showBlockedUsernamesDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final usernames = ref.read(preferencesProvider).blockedUsernames;
+  final result = await showAppDialog<List<String>>(
+    context: context,
+    builder: (_) => _BlockedUsernamesDialog(initialUsernames: usernames),
+  );
+  if (result == null || !context.mounted) return;
+  await ref.read(preferencesProvider.notifier).setBlockedUsernames(result);
+}
+
+class _BlockedUsernamesDialog extends StatefulWidget {
+  final List<String> initialUsernames;
+
+  const _BlockedUsernamesDialog({required this.initialUsernames});
+
+  @override
+  State<_BlockedUsernamesDialog> createState() =>
+      _BlockedUsernamesDialogState();
+}
+
+class _BlockedUsernamesDialogState extends State<_BlockedUsernamesDialog> {
+  late final TextEditingController _controller;
+  late final List<String> _usernames;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '');
+    _usernames = BlockedUserFilter.sanitizeUsernames(widget.initialUsernames);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      scrollable: true,
+      title: Text(l10n.preferences_blockedUsernames),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                icon: const Icon(Symbols.clear_all_rounded, size: 18),
+                label: Text(l10n.common_clear),
+                onPressed: () => setState(() {
+                  _usernames.clear();
+                  _controller.clear();
+                }),
+              ),
+            ),
+            _EntryChipsEditor(
+              controller: _controller,
+              entries: _usernames,
+              hintText: l10n.preferences_blockedUsernamesHint,
+              helperText: l10n.preferences_blockedUsernamesHelper,
+              normalizeEntry: BlockedUserFilter.stripAtPrefix,
+              isDuplicate: (existing, candidate) =>
+                  BlockedUserFilter.normalizeUsername(existing) ==
+                  BlockedUserFilter.normalizeUsername(candidate),
+              onEntriesChanged: (entries) {
+                setState(() {
+                  _usernames
+                    ..clear()
+                    ..addAll(entries);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.common_cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            final usernames = _appendTokenEntries(
+              _usernames,
+              _controller.text,
+              normalizeEntry: BlockedUserFilter.stripAtPrefix,
+              isDuplicate: (existing, candidate) =>
+                  BlockedUserFilter.normalizeUsername(existing) ==
+                  BlockedUserFilter.normalizeUsername(candidate),
+            );
+            Navigator.pop(
+              context,
+              BlockedUserFilter.sanitizeUsernames(usernames),
+            );
+          },
+          child: Text(l10n.common_confirm),
+        ),
+      ],
+    );
+  }
+}
+
+typedef _TokenDuplicate = bool Function(String existing, String candidate);
+
+List<String> _appendTokenEntries(
+  List<String> existing,
+  String rawInput, {
+  required String Function(String value) normalizeEntry,
+  required _TokenDuplicate isDuplicate,
+}) {
+  final entries = List<String>.from(existing);
+  for (final part in rawInput.split(RegExp(r'[\r\n]+'))) {
+    final candidate = normalizeEntry(part);
+    if (candidate.isEmpty ||
+        entries.any((entry) => isDuplicate(entry, candidate))) {
+      continue;
+    }
+    entries.add(candidate);
+  }
+  return entries;
+}
+
+/// 回车后将本次输入立刻转成可删除的气泡，避免多行文本框在移动端键盘出现时
+/// 挤压其余设置项。粘贴多行内容时也会一次识别为多个条目。
+class _EntryChipsEditor extends StatefulWidget {
+  final TextEditingController controller;
+  final List<String> entries;
+  final String hintText;
+  final String helperText;
+  final String Function(String value) normalizeEntry;
+  final _TokenDuplicate isDuplicate;
+  final ValueChanged<List<String>> onEntriesChanged;
+
+  const _EntryChipsEditor({
+    required this.controller,
+    required this.entries,
+    required this.hintText,
+    required this.helperText,
+    required this.normalizeEntry,
+    required this.isDuplicate,
+    required this.onEntriesChanged,
+  });
+
+  @override
+  State<_EntryChipsEditor> createState() => _EntryChipsEditorState();
+}
+
+class _EntryChipsEditorState extends State<_EntryChipsEditor> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _commitInput([String? submittedValue]) {
+    final nextEntries = _appendTokenEntries(
+      widget.entries,
+      submittedValue ?? widget.controller.text,
+      normalizeEntry: widget.normalizeEntry,
+      isDuplicate: widget.isDuplicate,
+    );
+    widget.controller.clear();
+    if (nextEntries.length != widget.entries.length) {
+      widget.onEntriesChanged(nextEntries);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.entries.isNotEmpty) ...[
+          Semantics(
+            liveRegion: true,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var index = 0; index < widget.entries.length; index++)
+                  InputChip(
+                    label: Text(widget.entries[index]),
+                    onDeleted: () {
+                      final nextEntries = List<String>.from(widget.entries)
+                        ..removeAt(index);
+                      widget.onEntriesChanged(nextEntries);
+                    },
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        TextField(
+          controller: widget.controller,
+          focusNode: _focusNode,
+          decoration: InputDecoration(
+            hintText: widget.hintText,
+            helperText: widget.helperText,
+            helperMaxLines: 2,
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
+          autofocus: true,
+          onSubmitted: _commitInput,
+          onChanged: (value) {
+            if (value.contains('\n')) _commitInput(value);
+          },
+          style: theme.textTheme.bodyLarge,
         ),
       ],
     );

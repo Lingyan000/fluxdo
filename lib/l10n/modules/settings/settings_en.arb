@@ -37,7 +37,7 @@
   "preferences_clipboardTopicLink_detected": "Topic link found in clipboard",
   "preferences_clipboardTopicLink_open": "Open",
   "preferences_topicFilterKeywords": "Title keyword filter",
-  "preferences_topicFilterKeywordsDesc": "Filter topics whose title contains the configured keywords, one per line",
+  "preferences_topicFilterKeywordsDesc": "Filter topics whose title contains the configured keywords. Press Enter to add each keyword",
   "preferences_topicFilterKeywordsEmpty": "No keywords set",
   "preferences_topicFilterKeywordsCount": "{count} keywords set",
   "@preferences_topicFilterKeywordsCount": {
@@ -45,10 +45,21 @@
       "count": {"type": "int"}
     }
   },
-  "preferences_topicFilterKeywordsHint": "Enter one keyword per line",
+  "preferences_topicFilterKeywordsHint": "Enter a keyword, then press Enter",
   "preferences_topicFilterKeywordsHelper": "Only topic titles are matched as substrings, case-insensitively",
   "preferences_topicFilterWholeWord": "Whole-word match",
   "preferences_topicFilterWholeWordDesc": "When enabled, English keywords no longer match as substrings (e.g. \"ai\" will not hit \"Main thread\"). CJK keywords are unaffected.",
+  "preferences_blockedUsernames": "Locally blocked users",
+  "preferences_blockedUsernamesDesc": "Hide topics, replies, and Boosts from these users. The list stays only on this device and is never synced to Linux.do",
+  "preferences_blockedUsernamesEmpty": "No users locally blocked",
+  "preferences_blockedUsernamesCount": "{count} users blocked",
+  "@preferences_blockedUsernamesCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "preferences_blockedUsernamesHint": "Enter a username, then press Enter",
+  "preferences_blockedUsernamesHelper": "Do not include @. Usernames are matched exactly, case-insensitively. This does not use Discourse ignore.",
   "preferences_autoPanguSpacing": "Auto CJK spacing",
   "preferences_autoPanguSpacingDesc": "Auto-insert spaces between CJK and Latin text",
   "preferences_aiPostReview": "AI review before posting",

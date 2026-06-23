@@ -1992,6 +1992,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     bool isLoggedIn,
   ) {
     final posts = detail.postStream.posts;
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
     final sessionState = ref.watch(topicSessionProvider(widget.topicId));
 
@@ -2055,6 +2058,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           nestedState: nestedState,
           params: nestedParams,
           detail: detail,
+          blockedUsernames: blockedUsernames,
           topicId: widget.topicId,
           scrollController: _controller.scrollController,
           headerKey: _headerKey,
@@ -2091,6 +2095,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               builder: (context, highlightPostNumber, _) {
                 return TopicPostList(
                   detail: detail,
+                  blockedUsernames: blockedUsernames,
                   scrollController: _controller.scrollController,
                   centerKey: _centerKey,
                   headerKey: _headerKey,
