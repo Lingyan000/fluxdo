@@ -50,9 +50,11 @@ class TagBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tagInfo = TagIconList.get(name);
-    final bg = backgroundColor ??
+    final bg =
+        backgroundColor ??
         theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
-    final text = textStyle ??
+    final text =
+        textStyle ??
         theme.textTheme.labelSmall?.copyWith(
           fontSize: size.fontSize,
           color: theme.colorScheme.onSurfaceVariant,
@@ -69,11 +71,7 @@ class TagBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (tagInfo != null) ...[
-            FaIcon(
-              tagInfo.icon,
-              size: size.iconSize,
-              color: tagInfo.color,
-            ),
+            FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
             const SizedBox(width: 4),
           ],
           Text(name, style: text),
@@ -107,7 +105,8 @@ class RemovableTagBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tagInfo = TagIconList.get(name);
-    final bg = backgroundColor ??
+    final bg =
+        backgroundColor ??
         theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6);
 
     return Material(
@@ -125,11 +124,7 @@ class RemovableTagBadge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (tagInfo != null) ...[
-                FaIcon(
-                  tagInfo.icon,
-                  size: size.iconSize,
-                  color: tagInfo.color,
-                ),
+                FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
                 const SizedBox(width: 4),
               ],
               Text(
@@ -143,7 +138,9 @@ class RemovableTagBadge extends StatelessWidget {
               Icon(
                 Symbols.close_rounded,
                 size: size.iconSize + 2,
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.7,
+                ),
               ),
             ],
           ),
@@ -202,7 +199,9 @@ class RemovableCategoryBadge extends StatelessWidget {
               Icon(
                 Symbols.close_rounded,
                 size: size.iconSize + 2,
-                color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
+                color: theme.colorScheme.onSecondaryContainer.withValues(
+                  alpha: 0.7,
+                ),
               ),
             ],
           ),
@@ -236,7 +235,8 @@ class CategoryBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final categoryColor = _parseColor(category.color);
-    final text = textStyle ??
+    final text =
+        textStyle ??
         theme.textTheme.labelSmall?.copyWith(
           fontSize: size.fontSize,
           fontWeight: FontWeight.w500,
@@ -259,11 +259,7 @@ class CategoryBadge extends StatelessWidget {
           if (faIcon != null)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: FaIcon(
-                faIcon,
-                size: size.iconSize,
-                color: categoryColor,
-              ),
+              child: FaIcon(faIcon, size: size.iconSize, color: categoryColor),
             )
           else if (logoUrl != null && logoUrl!.isNotEmpty)
             Image(
@@ -282,7 +278,17 @@ class CategoryBadge extends StatelessWidget {
           else
             _buildCategoryDot(categoryColor),
           const SizedBox(width: 4),
-          Text(category.name, style: text),
+          // Flexible + ellipsis：外部限宽（如 TopicCard 单行折叠）时截断
+          // 而不是 RenderFlex overflow；不限宽时仍按内容自适应。
+          Flexible(
+            child: Text(
+              category.name,
+              style: text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -297,19 +303,12 @@ class CategoryBadge extends StatelessWidget {
     return Container(
       width: size.iconSize * 0.6,
       height: size.iconSize * 0.6,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 
   Widget _buildCategoryLock(Color color) {
-    return Icon(
-      Symbols.lock_rounded,
-      size: size.iconSize,
-      color: color,
-    );
+    return Icon(Symbols.lock_rounded, size: size.iconSize, color: color);
   }
 
   Color _parseColor(String hex) {
