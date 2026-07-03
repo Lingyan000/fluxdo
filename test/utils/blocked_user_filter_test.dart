@@ -58,7 +58,63 @@ void main() {
       expect(visible, hasLength(1));
       expect(visible.single.post.username, 'bob');
     });
+
+    test('filterTopicDetail 过滤楼层与 Boost 但保留 stream', () {
+      final blocked = BlockedUserFilter.normalizedUsernames(['alice']);
+      final detail = _detail([
+        _post(1, 'bob'),
+        _post(2, 'alice'),
+        _post(3, 'carol', boosts: [_boost(31, 'alice'), _boost(32, 'bob')]),
+      ]);
+
+      final filtered = BlockedUserFilter.filterTopicDetail(detail, blocked);
+
+      expect(filtered.postStream.posts.map((post) => post.id), [1, 3]);
+      // stream 是分页窗口定位依据，必须保持服务端原始序列
+      expect(filtered.postStream.stream, detail.postStream.stream);
+      expect(
+        filtered.postStream.posts.last.boosts!.map((boost) => boost.id),
+        [32],
+      );
+    });
+
+    test('filterTopicDetail 名单为空或无命中时返回原实例', () {
+      final detail = _detail([_post(1, 'bob')]);
+      expect(
+        identical(
+          BlockedUserFilter.filterTopicDetail(detail, const <String>{}),
+          detail,
+        ),
+        isTrue,
+      );
+      expect(
+        identical(
+          BlockedUserFilter.filterTopicDetail(
+            detail,
+            BlockedUserFilter.normalizedUsernames(['alice']),
+          ),
+          detail,
+        ),
+        isTrue,
+      );
+    });
   });
+}
+
+TopicDetail _detail(List<Post> posts) {
+  return TopicDetail(
+    id: 1,
+    title: 'topic',
+    slug: 'topic',
+    postsCount: posts.length,
+    postStream: PostStream(
+      posts: posts,
+      stream: posts.map((post) => post.id).toList(),
+    ),
+    categoryId: 0,
+    closed: false,
+    archived: false,
+  );
 }
 
 Topic _topic(int id, String username) {
@@ -83,7 +139,7 @@ Topic _topic(int id, String username) {
   );
 }
 
-Post _post(int id, String username) {
+Post _post(int id, String username, {List<Boost>? boosts}) {
   final now = DateTime(2026, 1, 1);
   return Post(
     id: id,
@@ -96,6 +152,7 @@ Post _post(int id, String username) {
     createdAt: now,
     likeCount: 0,
     replyCount: 0,
+    boosts: boosts,
   );
 }
 

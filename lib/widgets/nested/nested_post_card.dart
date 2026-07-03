@@ -100,8 +100,25 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   int _page = 0;
   bool _depthLineHovered = false;
 
+  /// 过滤结果缓存：visibleNestedNodes 递归复制整棵子树，开销不小；
+  /// _children 只在明确的变更点（insert/addAll）改动，名单变化走
+  /// didUpdateWidget，两处都手动失效即可安全复用
+  List<NestedNode>? _visibleChildrenCache;
+
   List<NestedNode> get _visibleChildren =>
-      BlockedUserFilter.visibleNestedNodes(_children, widget.blockedUsernames);
+      _visibleChildrenCache ??= BlockedUserFilter.visibleNestedNodes(
+        _children,
+        widget.blockedUsernames,
+      );
+
+  @override
+  void didUpdateWidget(covariant NestedPostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.blockedUsernames, widget.blockedUsernames) ||
+        !identical(oldWidget.node, widget.node)) {
+      _visibleChildrenCache = null;
+    }
+  }
 
   @override
   void initState() {
@@ -136,6 +153,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
 
         setState(() {
           _children.insert(0, NestedNode(post: next.post));
+          _visibleChildrenCache = null;
           _expanded = true;
           _collapsed = false;
           widget.expansionState?[widget.node.post.postNumber] = true;
@@ -187,6 +205,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       if (!mounted) return;
       setState(() {
         _children.addAll(response.children);
+        _visibleChildrenCache = null;
         _hasMore = response.hasMore;
         _page = response.page + 1;
         _isLoadingMore = false;

@@ -779,7 +779,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     if (posts.isEmpty && users.isEmpty && !_isLoadingMore) {
-      if (_currentPage == 1) {
+      // 只有原始结果也为空才可能是首页请求仍在途；
+      // 原始结果非空但过滤后为空 = 全部被本地屏蔽，必须显示空态而非转圈
+      if (_currentPage == 1 && _allPosts.isEmpty && _allUsers.isEmpty) {
         return const Center(child: LoadingSpinner());
       }
       return _buildNoResults();

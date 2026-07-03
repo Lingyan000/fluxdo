@@ -146,7 +146,9 @@ extension _ScrollActions on _TopicDetailPageState {
 
   Future<void> _scrollToTop() async {
     final params = _params;
-    final detail = ref.read(topicDetailProvider(params)).value;
+    final rawDetail = ref.read(topicDetailProvider(params)).value;
+    // postIndex 数学必须基于与列表渲染一致的过滤后数据
+    final detail = rawDetail == null ? null : _filteredDetail(rawDetail);
 
     if (detail != null &&
         detail.postStream.posts.isNotEmpty &&
@@ -196,8 +198,10 @@ extension _ScrollActions on _TopicDetailPageState {
   Future<void> _navigateByPostOrViewport(int delta) async {
     if (!mounted || delta == 0) return;
 
-    final detail = ref.read(topicDetailProvider(_params)).value;
-    if (detail == null) return;
+    final rawDetail = ref.read(topicDetailProvider(_params)).value;
+    if (rawDetail == null) return;
+    // 用过滤后列表导航，J/K 自然跳过被屏蔽楼层
+    final detail = _filteredDetail(rawDetail);
 
     final posts = detail.postStream.posts;
     if (posts.isEmpty) return;
@@ -410,10 +414,13 @@ extension _ScrollActions on _TopicDetailPageState {
 
   Future<void> _scrollToPost(int postNumber) async {
     final params = _params;
-    final detail = ref.read(topicDetailProvider(params)).value;
-    if (detail == null) return;
+    final rawDetail = ref.read(topicDetailProvider(params)).value;
+    if (rawDetail == null) return;
     _controller.selectKeyboardPostNumber(postNumber);
 
+    // postIndex 供 isPostRendered/scrollToPost 查滚动映射表，映射表由
+    // TopicPostList 基于过滤后列表构建，这里必须用同一份数据
+    final detail = _filteredDetail(rawDetail);
     final posts = detail.postStream.posts;
     final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
     final notifier = ref.read(topicDetailProvider(params).notifier);
@@ -465,8 +472,10 @@ extension _ScrollActions on _TopicDetailPageState {
 
   Future<void> _scrollToPostById(int postId) async {
     final params = _params;
-    final detail = ref.read(topicDetailProvider(params)).value;
-    if (detail == null) return;
+    final rawDetail = ref.read(topicDetailProvider(params)).value;
+    if (rawDetail == null) return;
+    // 同 _scrollToPost：postIndex 与滚动映射表基于同一份过滤后列表
+    final detail = _filteredDetail(rawDetail);
 
     final posts = detail.postStream.posts;
     final postIndex = posts.indexWhere((p) => p.id == postId);

@@ -7,8 +7,10 @@ import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/providers/category_provider.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Topic _topic({required int id, required String title, String? bookmarkName}) {
   return Topic(
@@ -25,10 +27,19 @@ Topic _topic({required int id, required String title, String? bookmarkName}) {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late SharedPreferences prefs;
+
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
+  });
+
   testWidgets('汇总条只统计非空名称并按数量降序展示', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -54,6 +65,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -87,6 +99,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -113,6 +126,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -157,6 +171,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -200,6 +215,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -259,6 +275,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),
@@ -323,6 +340,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           categoryMapProvider.overrideWith(
             (ref) => const AsyncValue.data(<int, Category>{}),
           ),

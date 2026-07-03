@@ -24,7 +24,7 @@ void main() {
     ];
 
     test('空关键词返回原列表，hidden 为 0', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const [],
         wholeWord: false,
@@ -34,7 +34,7 @@ void main() {
     });
 
     test('空话题列表直接返回，hidden 为 0', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         const [],
         normalizedKeywords: const ['ai'],
         wholeWord: false,
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('子串匹配不区分大小写', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const ['ai'],
         wholeWord: false,
@@ -58,7 +58,7 @@ void main() {
     });
 
     test('中文关键词命中', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const ['水帖'],
         wholeWord: false,
@@ -68,7 +68,7 @@ void main() {
     });
 
     test('多关键词任一命中即过滤', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const ['ai', '水帖'],
         wholeWord: false,
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('完整词模式下英文不再误匹配子串', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const ['ai'],
         wholeWord: true,
@@ -93,7 +93,7 @@ void main() {
     });
 
     test('完整词模式对中文关键词等价于子串', () {
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: const ['水帖'],
         wholeWord: true,
@@ -107,7 +107,7 @@ void main() {
         _topic(10, 'Use a.b.c notation'),
         _topic(11, 'No dots here'),
       ];
-      final (visible, hidden) = TopicKeywordFilter.apply(
+      final (visible, hidden, _) = TopicKeywordFilter.apply(
         special,
         normalizedKeywords: const ['a.b.c'],
         wholeWord: false,

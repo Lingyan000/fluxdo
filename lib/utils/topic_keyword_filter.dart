@@ -11,14 +11,15 @@ class TopicKeywordFilter {
   static const int autoLoadVisibleThreshold = 5;
   static const int autoLoadMaxAttempts = 3;
 
-  /// 应用关键词过滤，返回 `(可见列表, 隐藏数量)`。
+  /// 应用关键词与本地屏蔽名单过滤，返回
+  /// `(可见列表, 隐藏总数, 其中因屏蔽名单隐藏的数量)`。
   ///
   /// - [normalizedKeywords] 必须是已 trim + lowercase + 去空的列表。
   /// - [wholeWord] 为 true 时：对纯 ASCII word-char 关键词（如 `ai`、`db_2`）
   ///   使用单词边界（`\b`）匹配；对含非 word-char（如中文）的关键词依然走子串
   ///   匹配——Dart 的 `\b` 不在两个非 word-char 之间产生边界，强制套 `\b`
   ///   会让 `\b中文\b` 几乎不可能命中。
-  static (List<Topic> visible, int hiddenCount) apply(
+  static (List<Topic> visible, int hiddenCount, int hiddenByBlocked) apply(
     List<Topic> topics, {
     required List<String> normalizedKeywords,
     required bool wholeWord,
@@ -26,7 +27,7 @@ class TopicKeywordFilter {
   }) {
     if ((normalizedKeywords.isEmpty && blockedUsernames.isEmpty) ||
         topics.isEmpty) {
-      return (topics, 0);
+      return (topics, 0, 0);
     }
 
     final substrings = <String>[];
@@ -43,15 +44,18 @@ class TopicKeywordFilter {
 
     final visible = <Topic>[];
     var hidden = 0;
+    var hiddenByBlocked = 0;
     for (final topic in topics) {
-      if (BlockedUserFilter.isBlockedTopic(topic, blockedUsernames) ||
-          _matches(topic.title, substrings, regexes)) {
+      if (BlockedUserFilter.isBlockedTopic(topic, blockedUsernames)) {
+        hidden++;
+        hiddenByBlocked++;
+      } else if (_matches(topic.title, substrings, regexes)) {
         hidden++;
       } else {
         visible.add(topic);
       }
     }
-    return (visible, hidden);
+    return (visible, hidden, hiddenByBlocked);
   }
 
   static bool _matches(

@@ -89,6 +89,47 @@ class BlockedUserFilter {
         .toList(growable: false);
   }
 
+  /// 过滤话题详情：移除被屏蔽用户的楼层，并剔除可见楼层上他们的 Boost。
+  ///
+  /// 只替换 postStream.posts，stream（原始楼层 id 序列）保持不动——
+  /// 分页加载依赖 stream 定位窗口边界，必须始终反映服务端真实数据。
+  /// 名单为空或无命中时原样返回同一实例，调用方可据此做身份缓存。
+  static TopicDetail filterTopicDetail(
+    TopicDetail detail,
+    Set<String> blockedUsernames,
+  ) {
+    if (blockedUsernames.isEmpty) return detail;
+
+    final source = detail.postStream.posts;
+    final visible = <Post>[];
+    var changed = false;
+    for (final post in source) {
+      if (isBlockedUsername(post.username, blockedUsernames)) {
+        changed = true;
+        continue;
+      }
+      final boosts = post.boosts;
+      if (boosts != null && boosts.isNotEmpty) {
+        final filteredBoosts = visibleBoosts(boosts, blockedUsernames);
+        if (filteredBoosts.length != boosts.length) {
+          changed = true;
+          visible.add(post.copyWith(boosts: filteredBoosts));
+          continue;
+        }
+      }
+      visible.add(post);
+    }
+    if (!changed) return detail;
+
+    return detail.copyWith(
+      postStream: PostStream(
+        posts: visible,
+        stream: detail.postStream.stream,
+        gaps: detail.postStream.gaps,
+      ),
+    );
+  }
+
   static bool isBlockedNotification(
     DiscourseNotification notification,
     Set<String> blockedUsernames,

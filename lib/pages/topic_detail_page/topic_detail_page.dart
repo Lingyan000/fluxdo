@@ -21,6 +21,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../../models/draft.dart';
 import '../../models/topic.dart';
+import '../../utils/blocked_user_filter.dart';
 import '../../utils/responsive.dart';
 import '../../utils/share_utils.dart';
 import '../../providers/preferences_provider.dart';
@@ -167,6 +168,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
+
+  /// 本地屏蔽名单过滤缓存：provider 状态与名单实例都未变时复用同一份
+  /// 过滤结果，保证同一帧内多处读取拿到 identical 的 posts 列表
+  TopicDetail? _blockedFilterInput;
+  Set<String>? _blockedFilterBlocked;
+  TopicDetail? _blockedFilterOutput;
 
   /// 标题是否显示（用 ValueNotifier 隔离 AppBar 更新）
   final ValueNotifier<bool> _showTitleNotifier = ValueNotifier<bool>(false);
@@ -1584,7 +1591,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           });
         }
       }
-      final posts = detail?.postStream.posts;
+      // 与 _buildPostListContent 一致，用过滤后列表判断 1 楼是否存在
+      final posts = detail == null
+          ? null
+          : _filteredDetail(detail).postStream.posts;
       if (posts != null && posts.isNotEmpty) {
         final hasFirstPost = posts.first.postNumber == 1;
         if (_hasFirstPost != hasFirstPost) {
@@ -2003,16 +2013,38 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
+  /// 对 detail 应用本地屏蔽名单（带身份缓存）。
+  ///
+  /// build 与各 action（跳楼、翻页判断等）都要基于同一份过滤后列表做
+  /// postIndex 数学，riverpod 状态实例与名单实例都未变时直接复用上次
+  /// 结果，避免每次 read 都重新过滤。
+  TopicDetail _filteredDetail(TopicDetail detail) {
+    final blocked = ref.read(preferencesProvider).normalizedBlockedUsernames;
+    if (identical(_blockedFilterInput, detail) &&
+        identical(_blockedFilterBlocked, blocked)) {
+      return _blockedFilterOutput!;
+    }
+    final filtered = BlockedUserFilter.filterTopicDetail(detail, blocked);
+    _blockedFilterInput = detail;
+    _blockedFilterBlocked = blocked;
+    _blockedFilterOutput = filtered;
+    return filtered;
+  }
+
   Widget _buildPostListContent(
     BuildContext context,
     TopicDetail detail,
     TopicDetailNotifier notifier,
     bool isLoggedIn,
   ) {
-    final posts = detail.postStream.posts;
+    // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（centerPostIndex/
+    // dividerPostIndex/滚动映射）都基于同一份过滤后列表，语义天然一致。
+    // watch 保证名单变化时整页重建。
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
+    detail = _filteredDetail(detail);
+    final posts = detail.postStream.posts;
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
     // read 而非 watch：sessionState 只用于合成 readPostNumbers 推给 controller,
     // 不驱动任何 UI(未读圆点由 PostItem 内部细粒度 Consumer 自行监听)。
@@ -2125,7 +2157,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           builder: (context, highlightPostNumber, _) {
             return TopicPostList(
               detail: detail,
-              blockedUsernames: blockedUsernames,
               scrollController: _controller.scrollController,
               centerKey: _centerKey,
               viewportAnchor: _viewportAnchor,

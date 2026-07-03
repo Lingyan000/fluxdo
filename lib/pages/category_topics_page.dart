@@ -109,7 +109,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     final blockedUsernames = prefs.normalizedBlockedUsernames;
 
     int visibleItemCount() {
-      final (visible, _) = TopicKeywordFilter.apply(
+      final (visible, _, _) = TopicKeywordFilter.apply(
         _topics,
         normalizedKeywords: keywords,
         wholeWord: wholeWord,
@@ -543,7 +543,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
     _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
-    final (visible, hidden) = TopicKeywordFilter.apply(
+    final (visible, hidden, hiddenByBlocked) = TopicKeywordFilter.apply(
       _topics,
       normalizedKeywords: keywords,
       wholeWord: wholeWord,
@@ -560,7 +560,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         itemCount: visible.length + hintOffset + 1,
         itemBuilder: (context, index) {
           if (hintOffset > 0 && index == 0) {
-            return KeywordFilterHintBar(hiddenCount: hidden);
+            return KeywordFilterHintBar(
+              hiddenCount: hidden,
+              hiddenByBlocked: hiddenByBlocked,
+            );
           }
           final topicIndex = index - hintOffset;
           if (topicIndex >= visible.length) {

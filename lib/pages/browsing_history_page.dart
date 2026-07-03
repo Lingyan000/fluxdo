@@ -195,7 +195,15 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
             topics,
             blockedUsernames,
           );
-          if (visibleTopics.isEmpty) {
+          final notifier = ref.read(browsingHistoryProvider.notifier);
+          // 已加载页全部被本地屏蔽时列表不可滚，滚动触发的翻页永远不会发生；
+          // 主动补载下一页（coordinator 自带冷却，不会打转），footer 显示加载中
+          if (visibleTopics.isEmpty && topics.isNotEmpty && notifier.hasMore) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _loadMore();
+            });
+          }
+          if (visibleTopics.isEmpty && (topics.isEmpty || !notifier.hasMore)) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

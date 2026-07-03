@@ -22,6 +22,7 @@ import 'search_page.dart';
 import '../models/search_filter.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
 import '../widgets/topic/filter_dropdown.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -1337,7 +1338,7 @@ class _TopicListState extends ConsumerState<_TopicList>
     int visibleItemCount() {
       final raw =
           ref.read(topicListProvider(providerKey)).value ?? const <Topic>[];
-      final (visible, _) = TopicKeywordFilter.apply(
+      final (visible, _, _) = TopicKeywordFilter.apply(
         raw,
         normalizedKeywords: keywords,
         wholeWord: wholeWord,
@@ -1454,13 +1455,17 @@ class _TopicListState extends ConsumerState<_TopicList>
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
     _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
+    var hiddenCount = 0;
+    var hiddenByBlocked = 0;
     final visibleTopicsAsync = topicsAsync.whenData((topics) {
-      final (visible, _) = TopicKeywordFilter.apply(
+      final (visible, hidden, byBlocked) = TopicKeywordFilter.apply(
         topics,
         normalizedKeywords: keywords,
         wholeWord: wholeWord,
         blockedUsernames: blockedUsernames,
       );
+      hiddenCount = hidden;
+      hiddenByBlocked = byBlocked;
       return visible;
     });
     final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
@@ -1518,7 +1523,8 @@ class _TopicListState extends ConsumerState<_TopicList>
           widget.categoryId,
         );
         final newTopicOffset = hasNewTopics ? 1 : 0;
-        final headerOffset = newTopicOffset;
+        final hintOffset = hiddenCount > 0 ? 1 : 0;
+        final headerOffset = newTopicOffset + hintOffset;
 
         return DesktopRefreshIndicator(
           refreshIndicatorKey: _refreshIndicatorKey,
@@ -1561,6 +1567,12 @@ class _TopicListState extends ConsumerState<_TopicList>
                       context,
                       newTopicCount,
                       providerKey,
+                    );
+                  }
+                  if (hintOffset > 0 && index == newTopicOffset) {
+                    return KeywordFilterHintBar(
+                      hiddenCount: hiddenCount,
+                      hiddenByBlocked: hiddenByBlocked,
                     );
                   }
                   final topicIndex = index - headerOffset;
