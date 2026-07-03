@@ -75,7 +75,7 @@ class UpdateDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                           Symbols.auto_awesome_rounded,
+                           Symbols.auto_awesome_rounded, 
                            color: colorScheme.onPrimaryContainer,
                            size: 20,
                         ),
