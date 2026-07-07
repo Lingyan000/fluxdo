@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show GestureBinding;
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/clipboard_topic_link_snack_content.dart';
+import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'services/network/cookie/csrf_token_service.dart';
@@ -492,6 +494,26 @@ IconThemeData _appIconTheme(Color color) => IconThemeData(
   opticalSize: 24,
 );
 
+/// 页面转场:框架在 Android 的默认(PredictiveBack,常规导航兜底到
+/// FadeForwards)是入场/离场两页各套一个整页 FadeTransition —— Impeller
+/// 下每个半透明整页 = 一次全屏 saveLayer 离屏,且 Impeller 没有 Skia 的
+/// raster cache,转场每帧都在重光栅化两个页面。详情页↔列表页这种复杂
+/// 内容在 120Hz(8.3ms 预算)下每帧 raster 10~50ms,整段转场连串掉帧
+/// (诊断日志里 NAV 后成串的纯 raster 大帧,即"一般场景动不动抽")。
+/// 统一换 Cupertino 滑动转场:纯平移 + 边缘阴影,零整页 saveLayer。
+/// Android 用拷贝改造的 PredictiveBackCupertinoPageTransitionsBuilder:
+/// 系统预测返回手势保留原生 shared-element 预览,其余导航(push/按钮
+/// 返回)降级到 Cupertino 而非官方硬编码的 FadeForwards。
+const _pageTransitionsTheme = PageTransitionsTheme(
+  builders: <TargetPlatform, PageTransitionsBuilder>{
+    TargetPlatform.android: PredictiveBackCupertinoPageTransitionsBuilder(),
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+  },
+);
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -564,6 +586,7 @@ class MainApp extends ConsumerWidget {
                   colorScheme: lightScheme,
                   useMaterial3: true,
                   fontFamily: themeState.fontFamilyName,
+                  pageTransitionsTheme: _pageTransitionsTheme,
                   iconTheme: _appIconTheme(lightScheme.onSurface),
                   primaryIconTheme: _appIconTheme(lightScheme.onPrimary),
                   cardTheme: CardThemeData(
@@ -590,6 +613,7 @@ class MainApp extends ConsumerWidget {
                   colorScheme: darkScheme,
                   useMaterial3: true,
                   fontFamily: themeState.fontFamilyName,
+                  pageTransitionsTheme: _pageTransitionsTheme,
                   iconTheme: _appIconTheme(darkScheme.onSurface),
                   primaryIconTheme: _appIconTheme(darkScheme.onPrimary),
                   cardTheme: CardThemeData(
