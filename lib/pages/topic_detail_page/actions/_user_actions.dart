@@ -1143,10 +1143,9 @@ extension _UserActions on _TopicDetailPageState {
   }
 
   void _applyPostUpdate(TopicDetailNotifier notifier, PostUpdate update) {
-    // 静默更新落地:武装锚定哨兵,本帧上方内容的高度位移被同帧补偿。
-    // 只有这类"非用户发起"的变化需要锚定;用户主动交互(展开引用等)
-    // 不经过这里,布局位移按预期自然发生。
-    AnchorGuardSliver.arm();
+    // 锚定哨兵的武装(AnchorGuardSliver.arm)不在这里做:acted/revised
+    // 等走异步 refreshPost,高度变化在响应落地帧,这里武装会错帧失效。
+    // 武装点在 provider 的落地方法(_updatePostById/_applyPostUpdate)。
     switch (update.type) {
       case TopicMessageType.created:
         notifier.onNewPostCreated(update.postId);

@@ -77,6 +77,11 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final index = currentPosts.indexWhere((p) => p.id == postId);
     if (index == -1) return;
 
+    // refreshPost 网络响应落地(msgbus acted/revised/deleted 的真正
+    // 高度变化时刻,与发起请求隔了一次网络往返):在这里武装锚定哨兵
+    // 才能覆盖到落地帧;在消息分发处武装会因异步而错帧失效。
+    AnchorGuardSliver.arm();
+
     final oldPost = currentPosts[index];
 
     // /posts/{id}.json 单帖接口不会预加载 boosts 关联，
