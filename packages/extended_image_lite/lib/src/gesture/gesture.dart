@@ -195,6 +195,10 @@ class ExtendedImageGestureState extends State<ExtendedImageGesture>
   void initState() {
     super.initState();
     _initGestureConfig();
+    // 滑动关闭进行中因树重建(如大图加载完成替换 loading 层)而新建时,
+    // 接管滑动驱动 —— 否则回弹/结算动画只通知旧(已卸载)载体,图片
+    // 定格在切换瞬间的偏移处
+    extendedImageSlidePageState?.rebindSlideTarget(gestureState: this);
   }
 
   void reset() {

@@ -34,6 +34,8 @@ class ExtendedImageSlidePageHandlerState
     _extendedImageSlidePageState =
         widget.extendedImageSlidePageState ??
         context.findAncestorStateOfType<ExtendedImageSlidePageState>();
+    // 滑动进行中因树重建而新建时接管滑动驱动(同 gesture 层的重绑逻辑)
+    _extendedImageSlidePageState?.rebindSlideTarget(handlerState: this);
     super.didChangeDependencies();
   }
 

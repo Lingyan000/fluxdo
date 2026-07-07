@@ -124,6 +124,15 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   bool _showUI = true;
   final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
 
+  /// 滑动关闭状态入口:loadStateChanged 用它判断"滑动进行中",冻结
+  /// loading→completed 的树切换(切换会销毁正在驱动滑动的手势载体,
+  /// pointer 流中断,本次滑动作废,表现为"滑动关闭停在某帧/需再滑一次")
+  final GlobalKey<ExtendedImageSlidePageState> _slidePageKey = GlobalKey();
+
+  /// 上一次 onSlidingPage 回调时是否在滑动(检测下降沿,滑动结束后
+  /// setState 让被冻结的 loading→completed 切换补齐)
+  bool _wasSlidingPage = false;
+
   /// 通知所有缓存页面当前活跃的 Hero 页码变化，确保只有当前页有 Hero
   late final ValueNotifier<int> _activeHeroPage;
 
@@ -674,8 +683,19 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           statusBarBrightness: Brightness.dark,
         ),
         child: ExtendedImageSlidePage(
+          key: _slidePageKey,
           slideAxis: SlideAxis.vertical, // 仅垂直滑动关闭，避免与左右切换图片冲突
           slideType: SlideType.onlyImage,
+          // 滑动结束下降沿:若滑动期间冻结过 loading→completed 树切换,
+          // 此刻补一次 setState 完成切换(见 _slidePageKey 注释)
+          onSlidingPage: (state) {
+            if (state.isSliding) {
+              _wasSlidingPage = true;
+            } else if (_wasSlidingPage) {
+              _wasSlidingPage = false;
+              if (mounted) setState(() {});
+            }
+          },
           // 只处理背景透明度，不干预关闭逻辑，让库自己处理 pop
           slidePageBackgroundHandler: (Offset offset, Size pageSize) {
             // 使用垂直偏移量计算背景透明度（与 slideAxis: vertical 匹配）
@@ -756,6 +776,22 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                                 imageInfo.image.width.toDouble(),
                                 imageInfo.image.height.toDouble(),
                               ),
+                            );
+                          }
+                          // 滑动关闭进行中不做 loading→completed 树切换:
+                          // 切换会销毁正在驱动滑动的手势载体,pointer 流
+                          // 中断、本次滑动作废(表现为图片停在半路,需再
+                          // 滑一次)。继续显示缩略图,滑动结束后由
+                          // onSlidingPage 下降沿补 setState 完成切换。
+                          if ((_slidePageKey.currentState?.isSliding ??
+                                  false) &&
+                              widget.thumbnailUrl != null &&
+                              widget.thumbnailUrl != widget.imageUrl) {
+                            return Image(
+                              image: discourseImageProvider(
+                                widget.thumbnailUrl!,
+                              ),
+                              fit: BoxFit.contain,
                             );
                           }
                         }
@@ -868,6 +904,22 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                                         imageInfo.image.width.toDouble(),
                                         imageInfo.image.height.toDouble(),
                                       ),
+                                    );
+                                  }
+                                  // 同单图:滑动关闭进行中冻结树切换,
+                                  // 滑动结束后 onSlidingPage 下降沿补切
+                                  if (_slidePageKey.currentState?.isSliding ??
+                                      false) {
+                                    if (thumbUrl != null && thumbUrl != url) {
+                                      return Image(
+                                        image: discourseImageProvider(
+                                          thumbUrl,
+                                        ),
+                                        fit: BoxFit.contain,
+                                      );
+                                    }
+                                    return const Center(
+                                      child: LoadingSpinner(),
                                     );
                                   }
                                 }

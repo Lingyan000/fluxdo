@@ -283,6 +283,29 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
     }
   }
 
+  /// 滑动/回弹进行中,滑动载体(图片 gesture 层 / loading-failed 的
+  /// handler 层)因树重建被更换时,新载体挂载后调用以重新接管驱动。
+  ///
+  /// 典型场景:滑动关闭进行中大图恰好加载完成,ExtendedImage 内部从
+  /// loading(handler 包裹)切到 gesture 树 —— 旧载体被 dispose,回弹/
+  /// 结算动画每 tick 只通知旧(已卸载)载体,新载体读过一次半路偏移后
+  /// 再无人触发它重绘,图片定格在切换瞬间的位置("滑动关闭停在某一帧,
+  /// 必须再滑一次")。重绑后动画驱动新载体,回弹/关闭正常完成。
+  void rebindSlideTarget({
+    ExtendedImageGestureState? gestureState,
+    ExtendedImageSlidePageHandlerState? handlerState,
+  }) {
+    if (!_isSliding && !_backAnimationController.isAnimating) {
+      return;
+    }
+    if (gestureState != null) {
+      _extendedImageGestureState = gestureState;
+    }
+    if (handlerState != null) {
+      _extendedImageSlidePageHandlerState = handlerState;
+    }
+  }
+
   void popPage() {
     if (mounted) {
       setState(() {
