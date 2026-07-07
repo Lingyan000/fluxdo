@@ -10,6 +10,13 @@
       "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
       "versions": [
         {
+          "version": "0.2.22",
+          "date": "2026-07-07T05:16:34Z",
+          "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.22/fluxdo-unsigned.ipa",
+          "size": 51688479,
+          "localizedDescription": "🐛 修复\n- fingerprint 端点正则不再写死压缩函数名"
+        },
+        {
           "version": "0.2.21",
           "date": "2026-06-23T12:54:44Z",
           "downloadURL": "https://github.com/lingyan000/fluxdo/releases/download/v0.2.21/fluxdo-unsigned.ipa",
