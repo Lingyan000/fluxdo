@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/s.dart';
 import '../../providers/topic_search_provider.dart';
 import '../../utils/load_more_coordinator.dart';
-import '../common/loading_spinner.dart';
 import '../common/paged_list_footer.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
+import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
 
 /// 话题内搜索结果视图
@@ -17,11 +17,7 @@ class TopicSearchView extends ConsumerStatefulWidget {
   /// 跳转到指定帖子的回调（用于话题内跳转）
   final void Function(int postNumber)? onJumpToPost;
 
-  const TopicSearchView({
-    super.key,
-    required this.topicId,
-    this.onJumpToPost,
-  });
+  const TopicSearchView({super.key, required this.topicId, this.onJumpToPost});
 
   @override
   ConsumerState<TopicSearchView> createState() => _TopicSearchViewState();
@@ -64,7 +60,9 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
 
   Future<void> _retryLoadMore() async {
     _loadMoreCoordinator.resetCooldown();
-    await ref.read(topicSearchProvider(widget.topicId).notifier).retryLoadMore();
+    await ref
+        .read(topicSearchProvider(widget.topicId).notifier)
+        .retryLoadMore();
   }
 
   @override
@@ -78,7 +76,11 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Symbols.search_rounded, size: 64, color: theme.colorScheme.outline),
+            Icon(
+              Symbols.search_rounded,
+              size: 64,
+              color: theme.colorScheme.outline,
+            ),
             const SizedBox(height: 16),
             Text(
               context.l10n.search_topicSearchHint,
@@ -93,7 +95,9 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
 
     // 加载中（首次搜索）
     if (searchState.isLoading && searchState.results.isEmpty) {
-      return const Center(child: LoadingSpinner());
+      return const SearchListSkeleton(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      );
     }
 
     // 错误状态
@@ -102,7 +106,11 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Symbols.error_rounded, size: 48, color: theme.colorScheme.error),
+            Icon(
+              Symbols.error_rounded,
+              size: 48,
+              color: theme.colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(context.l10n.search_error, style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -124,7 +132,11 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Symbols.search_off_rounded, size: 64, color: theme.colorScheme.outline),
+            Icon(
+              Symbols.search_off_rounded,
+              size: 64,
+              color: theme.colorScheme.outline,
+            ),
             const SizedBox(height: 16),
             Text(
               context.l10n.search_noResults,
@@ -153,7 +165,10 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
           child: Row(
             children: [
               Text(
-                context.l10n.search_resultCount(searchState.results.length, searchState.hasMore ? '+' : ''),
+                context.l10n.search_resultCount(
+                  searchState.results.length,
+                  searchState.hasMore ? '+' : '',
+                ),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),

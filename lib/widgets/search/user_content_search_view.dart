@@ -6,10 +6,10 @@ import '../../models/search_filter.dart';
 import '../../providers/user_content_search_provider.dart';
 import '../../utils/load_more_coordinator.dart';
 import '../../utils/dialog_utils.dart';
-import '../common/loading_spinner.dart';
 import '../common/paged_list_footer.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import 'search_filter_panel.dart';
+import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
 import 'search_preview_dialog.dart';
 import '../../providers/preferences_provider.dart';
@@ -28,7 +28,8 @@ class UserContentSearchView extends ConsumerStatefulWidget {
     required int topicId,
     required String title,
     int? scrollToPostNumber,
-  })? onOpenTopic;
+  })?
+  onOpenTopic;
 
   const UserContentSearchView({
     super.key,
@@ -85,31 +86,41 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
   }
 
   void _onClearCategory() {
-    final notifier = ref.read(userContentSearchProvider(widget.inType).notifier);
+    final notifier = ref.read(
+      userContentSearchProvider(widget.inType).notifier,
+    );
     notifier.setCategory();
     _refreshIfHasQuery();
   }
 
   void _onRemoveTag(String tag) {
-    final notifier = ref.read(userContentSearchProvider(widget.inType).notifier);
+    final notifier = ref.read(
+      userContentSearchProvider(widget.inType).notifier,
+    );
     notifier.removeTag(tag);
     _refreshIfHasQuery();
   }
 
   void _onClearStatus() {
-    final notifier = ref.read(userContentSearchProvider(widget.inType).notifier);
+    final notifier = ref.read(
+      userContentSearchProvider(widget.inType).notifier,
+    );
     notifier.setStatus(null);
     _refreshIfHasQuery();
   }
 
   void _onClearDateRange() {
-    final notifier = ref.read(userContentSearchProvider(widget.inType).notifier);
+    final notifier = ref.read(
+      userContentSearchProvider(widget.inType).notifier,
+    );
     notifier.setDateRange();
     _refreshIfHasQuery();
   }
 
   void _onClearAll() {
-    final notifier = ref.read(userContentSearchProvider(widget.inType).notifier);
+    final notifier = ref.read(
+      userContentSearchProvider(widget.inType).notifier,
+    );
     notifier.clearFilters();
     _refreshIfHasQuery();
   }
@@ -166,7 +177,9 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
         onClearAll: _onClearAll,
       );
     }
-    final filterWidgets = filterBar == null ? const <Widget>[] : <Widget>[filterBar];
+    final filterWidgets = filterBar == null
+        ? const <Widget>[]
+        : <Widget>[filterBar];
 
     // 未搜索状态
     if (searchState.query.isEmpty && searchState.results.isEmpty) {
@@ -178,7 +191,11 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Symbols.search_rounded, size: 64, color: theme.colorScheme.outline),
+                  Icon(
+                    Symbols.search_rounded,
+                    size: 64,
+                    color: theme.colorScheme.outline,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     widget.emptySearchHint,
@@ -199,7 +216,11 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
       return Column(
         children: [
           ...filterWidgets,
-          const Expanded(child: Center(child: LoadingSpinner())),
+          const Expanded(
+            child: SearchListSkeleton(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
         ],
       );
     }
@@ -214,9 +235,16 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Symbols.error_rounded, size: 48, color: theme.colorScheme.error),
+                  Icon(
+                    Symbols.error_rounded,
+                    size: 48,
+                    color: theme.colorScheme.error,
+                  ),
                   const SizedBox(height: 16),
-                  Text(context.l10n.search_error, style: theme.textTheme.titleMedium),
+                  Text(
+                    context.l10n.search_error,
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     searchState.error!,
@@ -243,7 +271,11 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Symbols.search_off_rounded, size: 64, color: theme.colorScheme.outline),
+                  Icon(
+                    Symbols.search_off_rounded,
+                    size: 64,
+                    color: theme.colorScheme.outline,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.search_noResults,
@@ -276,7 +308,10 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
           child: Row(
             children: [
               Text(
-                context.l10n.search_resultCount(searchState.results.length, searchState.hasMore ? '+' : ''),
+                context.l10n.search_resultCount(
+                  searchState.results.length,
+                  searchState.hasMore ? '+' : '',
+                ),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -301,7 +336,9 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
               }
 
               final post = searchState.results[index];
-              final enableLongPress = ref.watch(preferencesProvider).longPressPreview;
+              final enableLongPress = ref
+                  .watch(preferencesProvider)
+                  .longPressPreview;
               return SearchPostCard(
                 post: post,
                 onTap: () {
@@ -316,19 +353,19 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
                 },
                 onLongPress: enableLongPress
                     ? () => SearchPreviewDialog.show(
-                          context,
-                          post: post,
-                          onOpen: () {
-                            final topic = post.topic;
-                            if (topic != null) {
-                              _openTopic(
-                                topicId: topic.id,
-                                title: topic.title,
-                                scrollToPostNumber: post.postNumber,
-                              );
-                            }
-                          },
-                        )
+                        context,
+                        post: post,
+                        onOpen: () {
+                          final topic = post.topic;
+                          if (topic != null) {
+                            _openTopic(
+                              topicId: topic.id,
+                              title: topic.title,
+                              scrollToPostNumber: post.postNumber,
+                            );
+                          }
+                        },
+                      )
                     : null,
               );
             },
