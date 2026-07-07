@@ -11,6 +11,7 @@ import '../widgets/common/error_view.dart';
 import '../widgets/common/loading_spinner.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/search/search_filter_panel.dart';
+import '../widgets/search/search_list_skeleton.dart';
 import '../widgets/search/search_post_card.dart';
 import '../widgets/search/search_preview_dialog.dart';
 import '../providers/preferences_provider.dart';
@@ -695,7 +696,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.search_rounded, size: 64, color: theme.colorScheme.outline),
+          Icon(
+            Symbols.search_rounded,
+            size: 64,
+            color: theme.colorScheme.outline,
+          ),
           const SizedBox(height: 16),
           Text(
             context.l10n.search_emptyHint,
@@ -746,7 +751,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(Symbols.north_west_rounded, size: 16, color: theme.colorScheme.outline),
+            Icon(
+              Symbols.north_west_rounded,
+              size: 16,
+              color: theme.colorScheme.outline,
+            ),
           ],
         ),
       ),
@@ -759,14 +768,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
     final posts = _allPosts
         .where(
-          (post) =>
-              !BlockedUserFilter.isBlockedUsername(post.username, blockedUsernames),
+          (post) => !BlockedUserFilter.isBlockedUsername(
+            post.username,
+            blockedUsernames,
+          ),
         )
         .toList(growable: false);
     final users = _allUsers
         .where(
-          (user) =>
-              !BlockedUserFilter.isBlockedUsername(user.username, blockedUsernames),
+          (user) => !BlockedUserFilter.isBlockedUsername(
+            user.username,
+            blockedUsernames,
+          ),
         )
         .toList(growable: false);
 
@@ -782,7 +795,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       // 只有原始结果也为空才可能是首页请求仍在途；
       // 原始结果非空但过滤后为空 = 全部被本地屏蔽，必须显示空态而非转圈
       if (_currentPage == 1 && _allPosts.isEmpty && _allUsers.isEmpty) {
-        return const Center(child: LoadingSpinner());
+        return const SearchListSkeleton();
       }
       return _buildNoResults();
     }
@@ -890,9 +903,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             controller: _scrollController,
             padding: const EdgeInsets.all(16),
             itemCount:
-                posts.length +
-                (users.isNotEmpty ? users.length + 1 : 0) +
-                1,
+                posts.length + (users.isNotEmpty ? users.length + 1 : 0) + 1,
             itemBuilder: (context, index) {
               // 帖子结果（标准 + AI 混合）
               if (index < posts.length) {
@@ -974,8 +985,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
               return PagedListFooter(
                 hasMore: _hasMorePosts,
-                isLoadingMore:
-                    _loadMoreCoordinator.isRunning && _isLoadingMore,
+                isLoadingMore: _loadMoreCoordinator.isRunning && _isLoadingMore,
                 isLoadMoreFailed: _isLoadMoreFailed,
                 onRetry: () {
                   _loadMoreCoordinator.resetCooldown();
@@ -996,7 +1006,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.search_off_rounded, size: 64, color: theme.colorScheme.outline),
+          Icon(
+            Symbols.search_off_rounded,
+            size: 64,
+            color: theme.colorScheme.outline,
+          ),
           const SizedBox(height: 16),
           Text(
             context.l10n.search_noResults,
@@ -1087,7 +1101,10 @@ class _SearchUserCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Symbols.chevron_right_rounded, color: theme.colorScheme.outline),
+              Icon(
+                Symbols.chevron_right_rounded,
+                color: theme.colorScheme.outline,
+              ),
             ],
           ),
         ),
