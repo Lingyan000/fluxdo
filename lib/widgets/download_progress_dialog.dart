@@ -101,7 +101,7 @@ class DownloadProgressDialog extends ConsumerWidget {
             '${state.progress}%',
             style: TextStyle(
               fontSize: 64,
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w400,
               color: color,
               height: 1.0,
               fontFamily: 'monospace',

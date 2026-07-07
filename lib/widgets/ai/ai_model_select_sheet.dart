@@ -648,7 +648,7 @@ class _CapabilityBadge extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 9,
+              fontSize: 10,
               color: color,
               fontWeight: FontWeight.w500,
             ),

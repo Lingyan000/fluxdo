@@ -331,7 +331,7 @@ class _ExportEntryCard extends StatelessWidget {
                     DefaultTextStyle.merge(
                       style: theme.textTheme.bodySmall!.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
-                        fontSize: 11.5,
+                        fontSize: 12,
                       ),
                       child: Wrap(
                         spacing: 10,
