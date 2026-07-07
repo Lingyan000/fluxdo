@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import '../../common/anchor_guard_sliver.dart';
 import '../../common/hero_image.dart';
 
 /// 帖子正文内容图组件:固定占位尺寸 + 解码分辨率约束 + 重绘隔离 + Hero。
@@ -18,7 +19,12 @@ import '../../common/hero_image.dart';
 /// - **RepaintBoundary**:加载 spinner / 动图逐帧 / 解码完成首绘的
 ///   markNeedsPaint 都隔离在图片自身区域,不再冒泡到帖子 segment 的
 ///   RepaintBoundary 造成整帖每帧重绘。
-class LazyImage extends StatelessWidget {
+/// - **占位挂在 frameBuilder 而非 loadingBuilder**:loadingProgress 只在
+///   provider 上报 ImageChunkEvent 时非 null —— 自解码 provider(AVIF /
+///   native 动图)从不上报,普通网络图在首字节到达前也是 null,只靠
+///   loadingBuilder 意味着这些阶段显示的是"还没有帧的空 RawImage" =
+///   空白一块。frameBuilder 以"首帧是否到达"为准,覆盖所有 provider。
+class LazyImage extends StatefulWidget {
   /// 解码高度上限(物理像素):防长截图类窄高图按宽度解出超高位图。
   /// 见 build 内注释。
   static const int _kMaxDecodeHeight = 4096;
@@ -53,8 +59,22 @@ class LazyImage extends StatelessWidget {
   });
 
   @override
+  State<LazyImage> createState() => _LazyImageState();
+}
+
+class _LazyImageState extends State<LazyImage> {
+  /// 无声明尺寸的图,首帧落地会把占位高度(200)换成真实高度 —— 只在
+  /// 第一次落地帧武装锚定哨兵,后续 rebuild(frame 仍为 0)不再重复武装
+  bool _armedForFirstFrame = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final width = widget.width;
+    final height = widget.height;
+
+    // 声明了完整尺寸 → 外层 AspectRatio 恒定,加载完成不改布局
+    final hasFixedBox = width != null && height != null && height > 0;
 
     // 解码目标宽 = 显示逻辑宽(调用方已按列宽 clamp) × dpr;无声明尺寸的
     // 图退化到屏宽。fit 策略 = contain(保持宽高比,只缩不放)。
@@ -67,49 +87,69 @@ class LazyImage extends StatelessWidget {
     final logicalWidth = width ?? MediaQuery.sizeOf(context).width;
     final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
 
+    // 统一的占位框:frameBuilder(无进度事件的 provider / 首字节前)与
+    // loadingBuilder(有进度事件)共用同一外观,避免阶段切换时闪变。
+    // RepaintBoundary 包住 spinner:指示器每帧动画,不隔离的话脏区
+    // 冒泡到外层图片级 RepaintBoundary,慢加载的大图占位(整图尺寸
+    // 的层)会被每帧全量重栅格化 —— 实测就是"无动图页面 raster
+    // 每帧 8ms 常驻、加载完自愈"的来源。
+    Widget placeholderBox({double? progress}) {
+      return Container(
+        width: width,
+        height: height ?? 200,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.2,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: RepaintBoundary(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              value: progress,
+            ),
+          ),
+        ),
+      );
+    }
+
     final imageChild = Image(
       image: ResizeImage(
-        imageProvider,
+        widget.imageProvider,
         width: cacheWidth,
-        height: _kMaxDecodeHeight,
+        height: LazyImage._kMaxDecodeHeight,
         policy: ResizeImagePolicy.fit,
       ),
-      fit: fit,
+      fit: widget.fit,
       width: width,
       height: height,
       // provider 变化(如窗口宽变化导致解码宽变)时保留旧帧,避免闪白
       gaplessPlayback: true,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (frame != null) {
+          // 无固定框的图首帧落地 = 占位高度(200)换真实高度的布局变化,
+          // 武装哨兵让视口上方的这类图不把内容拉走。缓存命中的同步加载
+          // (wasSynchronouslyLoaded)首建即终态,无布局变化。
+          if (!hasFixedBox && !wasSynchronouslyLoaded && !_armedForFirstFrame) {
+            _armedForFirstFrame = true;
+            AnchorGuardSliver.arm();
+          }
+          return child;
+        }
+        return placeholderBox();
+      },
       loadingBuilder: (context, child, loadingProgress) {
+        // 无进度事件(AVIF/native 动图全程、网络图首字节前)时,child 已由
+        // frameBuilder 决定(占位或图),直接透传;有进度时显示进度值。
         if (loadingProgress == null) return child;
-
-        // 加载中显示进度指示器。
-        // RepaintBoundary 包住 spinner:指示器每帧动画,不隔离的话脏区
-        // 冒泡到外层图片级 RepaintBoundary,慢加载的大图占位(整图尺寸
-        // 的层)会被每帧全量重栅格化 —— 实测就是"无动图页面 raster
-        // 每帧 8ms 常驻、加载完自愈"的来源。
-        return Container(
-          width: width,
-          height: height ?? 200,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.2,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: RepaintBoundary(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            ),
-          ),
+        if (loadingProgress.expectedTotalBytes == null) return child;
+        return placeholderBox(
+          progress: loadingProgress.cumulativeBytesLoaded /
+              loadingProgress.expectedTotalBytes!,
         );
       },
       errorBuilder: (context, error, stackTrace) {
@@ -134,19 +174,19 @@ class LazyImage extends StatelessWidget {
 
     // 使用 HeroImage 封装 Hero 动画及可见性控制
     Widget imageWidget = HeroImage(
-      heroTag: heroTag,
-      onTap: onTap,
-      onLongPress: onLongPress,
-      onSecondaryTapUp: onSecondaryTapUp,
+      heroTag: widget.heroTag,
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      onSecondaryTapUp: widget.onSecondaryTapUp,
       child: imageChild,
     );
 
     // 重绘隔离:spinner/动图/首绘只重画图片区域,不连带整个帖子 segment
     imageWidget = RepaintBoundary(child: imageWidget);
 
-    if (width != null && height != null && height! > 0) {
+    if (hasFixedBox) {
       return AspectRatio(
-        aspectRatio: width! / height!,
+        aspectRatio: width / height,
         child: imageWidget,
       );
     }
