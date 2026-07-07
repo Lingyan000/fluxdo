@@ -180,9 +180,41 @@ class _TopicPostListState extends State<TopicPostList> {
   /// 语义同上;data 实例由 [_longPostDataFor] 的内容签名保证稳定。
   final Map<(int, int), _ChunkWidgetCacheEntry> _chunkWidgetCache = {};
 
+  /// 首屏渐进物化上限(段数,null = 不限制)。
+  ///
+  /// 生产归因日志:数据到达帧一次物化 viewport+cacheExtent 内的 8~10 帖,
+  /// build 25~29ms(120Hz 预算 8.3ms)。挂载后的前几帧限制顶部进入分支
+  /// (centerPostIndex == 0)的 after 列表 childCount:首帧 header + 4 段,
+  /// 之后每帧 +4,追平即永久置 null —— 铺满全程 2~3 帧(120Hz 下 ~25ms)
+  /// 不可感知,列表只向下增长,已布局项不动、零跳变。跳转进入
+  /// (centerPostIndex > 0)不启用;cap 只存在于挂载初期,刷新/翻页/
+  /// msgbus 更新等后续重建永不受影响。
+  int? _materializeCap;
+  static const int _materializeStep = 4;
+
+  void _scheduleMaterializeStep() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final cap = _materializeCap;
+      if (cap == null) return;
+      if (cap >= _renderSegments.length) {
+        // childCount 已是全量(min 取长度),置 null 无需重建
+        _materializeCap = null;
+        return;
+      }
+      setState(() => _materializeCap = cap + _materializeStep);
+      _scheduleMaterializeStep();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    // 首屏渐进物化:仅顶部进入启用(跳转进入需要立即定位到目标楼层)
+    if (widget.centerPostIndex == 0) {
+      _materializeCap = _materializeStep;
+      _scheduleMaterializeStep();
+    }
     // 首帧渲染后触发一次可见性检测，确保进入页面时即上报阅读状态
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -799,7 +831,12 @@ class _TopicPostListState extends State<TopicPostList> {
                       ),
                     ),
                     SliverList.builder(
-                      itemCount: _renderSegments.length,
+                      // 首屏渐进物化:挂载初期逐帧放开(见 _materializeCap)
+                      itemCount: _materializeCap == null
+                          ? _renderSegments.length
+                          : (_materializeCap! < _renderSegments.length
+                              ? _materializeCap!
+                              : _renderSegments.length),
                       itemBuilder: (context, index) =>
                           _buildSegmentItem(context, _renderSegments[index]),
                     ),
