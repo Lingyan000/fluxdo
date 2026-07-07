@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:chewie/chewie.dart' as lib;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart' as lib;
 import 'package:window_manager/window_manager.dart';
@@ -9,6 +10,7 @@ import '../../../../providers/preferences_provider.dart';
 import '../../../../services/navigation/app_route_observer.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/platform_utils.dart';
+import '../../../common/anchor_guard_sliver.dart';
 
 /// 自定义视频播放器，基于 fwfh_chewie 的 VideoPlayer，
 /// 增加全屏时 LayoutLock 保护，防止横屏导致底层页面重新布局。
@@ -66,6 +68,21 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   lib.VideoPlayerController? _vpc;
   bool _didLockLayout = false;
 
+  /// 视频真实宽高比缓存(url → 实测比例)。HTML 无尺寸的视频占位只能猜
+  /// 16:9,初始化完成才知道真实比例;帖子滚出 cacheExtent 被销毁、滚
+  /// 回来重建时若没有这份记忆,每次路过都会"占位比 → 真实比"跳一次,
+  /// 布局高度突变把滚动拉断(视口上方的视频尤甚)。有记忆后重建直接
+  /// 以真实比例占位,初始化完成零布局变化。
+  static final Map<String, double> _knownAspectRatios = {};
+
+  /// 展示用宽高比:构建期 = 记忆值 ?? widget.aspectRatio;autoResize
+  /// 时初始化完成后在安全时机(静止帧,武装锚定哨兵)更新为实测值
+  late double _displayAspectRatio;
+
+  /// 等待滚停再展开真实比例的一次性监听(见 [_maybeApplyRealAspectRatio])
+  ValueListenable<bool>? _scrollIdleNotifier;
+  VoidCallback? _scrollIdleListener;
+
   /// 上层路由（对话框/BottomSheet）弹出时自动暂停视频，
   /// 避免 BackdropFilter 对视频纹理每帧重做高斯模糊造成卡顿。
   /// 只有在被我们主动暂停时才在路由返回后恢复播放。
@@ -90,6 +107,9 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   @override
   void initState() {
     super.initState();
+    _displayAspectRatio = widget.autoResize
+        ? (_knownAspectRatios[widget.url] ?? widget.aspectRatio)
+        : widget.aspectRatio;
     WidgetsBinding.instance.addObserver(this);
     if (_isDesktop) {
       windowManager.addListener(this);
@@ -128,6 +148,11 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   void dispose() {
     appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
+    if (_scrollIdleListener != null) {
+      _scrollIdleNotifier?.removeListener(_scrollIdleListener!);
+      _scrollIdleListener = null;
+      _scrollIdleNotifier = null;
+    }
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -151,10 +176,11 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final aspectRatio = ((widget.autoResize && _controller != null)
-            ? _vpc?.value.aspectRatio
-            : null) ??
-        widget.aspectRatio;
+    // 展示比例由 [_displayAspectRatio] 统一供给:初始 = 记忆值/占位值,
+    // 真实比例的展开时机由 [_maybeApplyRealAspectRatio] 治理(静止帧 +
+    // 武装哨兵),不在 build 里直接追 controller 的实测值 —— 那会让
+    // 初始化完成瞬间高度突变,滚动路径上方的视频把内容拉断。
+    final aspectRatio = _displayAspectRatio;
 
     Widget? child;
     final controller = _controller;
@@ -191,6 +217,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
       _didLockLayout = true;
       LayoutLock.acquire();
       if (mounted) setState(() {});
+      _maybeApplyRealAspectRatio();
       return;
     }
 
@@ -224,6 +251,56 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
       controller.addListener(_onControllerChanged);
       _controller = controller;
     });
+    if (vpcError == null) {
+      _maybeApplyRealAspectRatio();
+    }
+  }
+
+  /// 初始化完成后把展示比例安全地展开为实测比例。
+  ///
+  /// - 记忆命中(比例差 < 1%):零布局变化,什么都不用做;
+  /// - 静止:武装锚定哨兵后立即展开,视口上方视频的高度变化被同帧补偿;
+  /// - 滚动中:保持占位比例(视频暂以 letterbox 居中显示,不变形),
+  ///   滚停后推迟一帧再展开 —— 与 msgbus 滚停回放同一哲学:滚动中
+  ///   不动布局;推迟一帧是因为 isScrollingNotifier 翻 false 与惯性
+  ///   末 tick 同帧,当帧 pixels 仍在变,哨兵无法比较基线。
+  void _maybeApplyRealAspectRatio() {
+    if (!widget.autoResize || !mounted) return;
+    final real = _vpc?.value.aspectRatio;
+    if (real == null || real <= 0) return;
+    _knownAspectRatios[widget.url] = real;
+    if ((real - _displayAspectRatio).abs() < 0.01) return;
+
+    final position = Scrollable.maybeOf(context)?.position;
+    final notifier = position?.isScrollingNotifier;
+    if (notifier == null || !notifier.value) {
+      _applyRealAspectRatio();
+      return;
+    }
+
+    if (_scrollIdleListener != null) return; // 已在等滚停
+    void listener() {
+      if (notifier.value) return;
+      notifier.removeListener(listener);
+      _scrollIdleListener = null;
+      _scrollIdleNotifier = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyRealAspectRatio();
+      });
+    }
+
+    _scrollIdleNotifier = notifier;
+    _scrollIdleListener = listener;
+    notifier.addListener(listener);
+  }
+
+  void _applyRealAspectRatio() {
+    final real = _vpc?.value.aspectRatio;
+    if (real == null || real <= 0) return;
+    if ((real - _displayAspectRatio).abs() < 0.01) return;
+    // 静默布局变化落地:武装哨兵,上方视频的比例展开被同帧补偿
+    AnchorGuardSliver.arm();
+    setState(() => _displayAspectRatio = real);
   }
 
   @override
