@@ -187,6 +187,11 @@ class _TopicPostListState extends State<TopicPostList> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _updateFirstVisiblePost();
+        // 进话题即开始空闲预热(不等首次滚停):长帖 chunk 的解析是
+        // 同步的(1-3ms/块,复杂块更高),滚动帧里首遇未解析块会直接
+        // 吃掉帧预算 —— 提前在 idle 里烫平。Priority.idle 任务在
+        // 滚动期间(帧持续调度)不会执行,天然不与滚动抢主线程。
+        _scheduleChunkWarmUp();
       }
     });
     // 滚动回跳探针:捕捉"滚动中内容被反向拉回"。单帧内 offset 反向
@@ -604,6 +609,11 @@ class _TopicPostListState extends State<TopicPostList> {
     widget.onScrollIndexMappingChanged?.call(postIndexToScrollIndex);
     widget.onScrollIndexToPostNumberChanged?.call(scrollIndexToPostNumber);
     widget.onPostSegmentRangesChanged?.call(postSegmentRanges);
+    // 段落集变化(分页落地/内容更新)后重新排队空闲预热,把新进列表的
+    // 长帖 chunk 在滚动碰到之前解析掉(generation 机制保证幂等)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scheduleChunkWarmUp();
+    });
   }
 
   _LongPostRenderCacheEntry _longPostDataFor(Post post) {

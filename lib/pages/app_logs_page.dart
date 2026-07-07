@@ -955,7 +955,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
       color: theme.colorScheme.outline,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    final titleStyle = theme.textTheme.bodyMedium?.copyWith(fontSize: 13.5);
+    final titleStyle = theme.textTheme.bodyMedium?.copyWith(fontSize: 13);
     final subtitleStyle = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );

@@ -685,7 +685,7 @@ class _TrustLevelRequirementsPageState
                 Text(
                   '${ring.current}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: colorScheme.onSurface,
                   ),
                 ),

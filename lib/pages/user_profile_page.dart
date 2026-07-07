@@ -1593,7 +1593,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 17,
+              fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),

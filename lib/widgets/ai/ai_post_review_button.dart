@@ -605,7 +605,7 @@ class _SuggestionList extends StatelessWidget {
                     '${index + 1}',
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),

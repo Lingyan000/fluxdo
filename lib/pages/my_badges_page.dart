@@ -315,7 +315,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                     '×${userBadge.count}',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: iconColor,
                     ),
                   ),
