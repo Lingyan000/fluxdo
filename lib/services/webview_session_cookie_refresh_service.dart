@@ -133,6 +133,21 @@ class WebViewSessionCookieRefreshService {
         DateTime.now().difference(lastSuccessAt) < _successTtl;
   }
 
+  /// 登出复位:换账号 = 新浏览器会话,下一个登录会话需要重新 bootstrap。
+  /// 同时清掉失败退避与 fresh 标记,新会话从干净状态开始。
+  void resetSessionState({String reason = 'logout'}) {
+    _lastSuccessAt = null;
+    _lastSuccessToken = null;
+    _lastAttemptAt = null;
+    _failureStreak = 0;
+    _forceFreshPlugin = false;
+    _logEnsureEvent(
+      event: 'webview_session_sync_reset',
+      reason: reason,
+      level: 'info',
+    );
+  }
+
   /// 确保当前进程已经让 WebView 登录页面跑过一次并同步 cookie。
   Future<SessionBootstrapResult> ensureSynced({
     String reason = 'unknown',
@@ -160,19 +175,22 @@ class WebViewSessionCookieRefreshService {
       return const SessionBootstrapResult.failure(phase: 'no_t');
     }
 
-    final lastSuccessAt = _lastSuccessAt;
-    if (!force &&
-        lastSuccessAt != null &&
-        _lastSuccessToken == tToken &&
-        DateTime.now().difference(lastSuccessAt) < _successTtl) {
+    // fingerprint 上报对齐浏览器语义:每次完整页面加载跑一次(SPA 内路由
+    // 切换不重跑,标签页挂几天也不重跑)→ app 的对应物 = 每「进程 × 登录
+    // 会话」一次。此前按 15min TTL 反复重跑:挂后台回来 / 挂机后的首个
+    // 请求都会白烧一整个 headless WebView(mac 上 6~20s,创建销毁抢平台
+    // 主线程,恰是"长时间挂后台回来卡"的来源之一)。产物 _rt/_forum_session
+    // 不随 _t 轮换失效;换账号由 logout → [resetSessionState] 复位,
+    // CF recover 走 force,失败补跑由退避链继续。
+    if (!force && _lastSuccessAt != null) {
       _logEnsureEvent(
         event: 'webview_session_sync_skipped',
         reason: reason,
         level: 'info',
         extra: {
-          'skipReason': 'success_ttl',
+          'skipReason': 'synced_this_session',
           'lastSuccessAgeMs': DateTime.now()
-              .difference(lastSuccessAt)
+              .difference(_lastSuccessAt!)
               .inMilliseconds,
         },
       );

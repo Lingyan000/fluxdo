@@ -1493,6 +1493,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
     _userSummaryCacheTime = null;
     await _storage.delete(key: DiscourseService._usernameKey);
     _credentialsLoaded = false;
+    // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
+    // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
+    WebViewSessionCookieRefreshService.instance.resetSessionState();
 
     // ===== 第五步：清除 Cookie（保留 cf_clearance）=====
     await _cookieSync.reset();
