@@ -71,12 +71,36 @@ class WebViewSessionCookieRefreshService {
   static const Duration _successTtl = Duration(minutes: 15);
   static const Duration _bootstrapTimeout = Duration(seconds: 18);
 
+  /// 连续失败的最大冷却(与 _successTtl 对齐):端点 404 等"重试也不会好"
+  /// 的失败,不该比成功路径(15min 免打扰)更频繁地烧 WebView。
+  static const Duration _maxFailureCooldown = Duration(minutes: 15);
+
   final CookieJarService _jar = CookieJarService();
 
   Future<SessionBootstrapResult>? _activeRefresh;
   DateTime? _lastAttemptAt;
   DateTime? _lastSuccessAt;
   String? _lastSuccessToken;
+
+  /// 连续失败次数(成功清零)。每次 bootstrap = 一整个 headless WebView
+  /// 生命周期 + FingerprintJS 全套采集,失败按 45s 固定冷却重试曾造成
+  /// 生产事故:站点轮换 fingerprint 端点后旧端点永远 404,用户挂在帖子页
+  /// 的周期 POST(drafts/presence/timings)每分钟拉起一次完整 bootstrap,
+  /// 数小时不停 → CPU 常驻 100%+、打字/滚动被平台主线程 WebView
+  /// 创建销毁反复打断。指数退避把"永不成功"场景压到与成功 TTL 同频。
+  int _failureStreak = 0;
+
+  /// 上次 fingerprint 上报 404 → 判定弹药过期(预加载插件候选 / WebView
+  /// 缓存里的旧插件 JS 提取出的端点已被站点轮换)。置位后下一次 bootstrap
+  /// 绕过注入候选并以 no-cache 拉插件 JS,强制新鲜 discover;成功即复位。
+  bool _forceFreshPlugin = false;
+
+  /// 当前失败退避冷却:45s → 90s → 3m → 6m → 12m → 15m 封顶。
+  Duration get _effectiveCooldown {
+    if (_failureStreak <= 1) return _attemptCooldown;
+    final shifted = _attemptCooldown * (1 << (_failureStreak - 1).clamp(0, 5));
+    return shifted > _maxFailureCooldown ? _maxFailureCooldown : shifted;
+  }
 
   DateTime? get lastSuccessAt => _lastSuccessAt;
 
@@ -87,6 +111,8 @@ class WebViewSessionCookieRefreshService {
   }) {
     _lastSuccessAt = DateTime.now();
     _lastSuccessToken = tToken;
+    // 外部路径确认同步成功 = 会话链路健康,失败退避一并复位。
+    _failureStreak = 0;
     _logEnsureEvent(
       event: 'webview_session_sync_marked',
       reason: reason,
@@ -105,6 +131,21 @@ class WebViewSessionCookieRefreshService {
         _lastSuccessToken == tToken &&
         lastSuccessAt != null &&
         DateTime.now().difference(lastSuccessAt) < _successTtl;
+  }
+
+  /// 登出复位:换账号 = 新浏览器会话,下一个登录会话需要重新 bootstrap。
+  /// 同时清掉失败退避与 fresh 标记,新会话从干净状态开始。
+  void resetSessionState({String reason = 'logout'}) {
+    _lastSuccessAt = null;
+    _lastSuccessToken = null;
+    _lastAttemptAt = null;
+    _failureStreak = 0;
+    _forceFreshPlugin = false;
+    _logEnsureEvent(
+      event: 'webview_session_sync_reset',
+      reason: reason,
+      level: 'info',
+    );
   }
 
   /// 确保当前进程已经让 WebView 登录页面跑过一次并同步 cookie。
@@ -134,19 +175,22 @@ class WebViewSessionCookieRefreshService {
       return const SessionBootstrapResult.failure(phase: 'no_t');
     }
 
-    final lastSuccessAt = _lastSuccessAt;
-    if (!force &&
-        lastSuccessAt != null &&
-        _lastSuccessToken == tToken &&
-        DateTime.now().difference(lastSuccessAt) < _successTtl) {
+    // fingerprint 上报对齐浏览器语义:每次完整页面加载跑一次(SPA 内路由
+    // 切换不重跑,标签页挂几天也不重跑)→ app 的对应物 = 每「进程 × 登录
+    // 会话」一次。此前按 15min TTL 反复重跑:挂后台回来 / 挂机后的首个
+    // 请求都会白烧一整个 headless WebView(mac 上 6~20s,创建销毁抢平台
+    // 主线程,恰是"长时间挂后台回来卡"的来源之一)。产物 _rt/_forum_session
+    // 不随 _t 轮换失效;换账号由 logout → [resetSessionState] 复位,
+    // CF recover 走 force,失败补跑由退避链继续。
+    if (!force && _lastSuccessAt != null) {
       _logEnsureEvent(
         event: 'webview_session_sync_skipped',
         reason: reason,
         level: 'info',
         extra: {
-          'skipReason': 'success_ttl',
+          'skipReason': 'synced_this_session',
           'lastSuccessAgeMs': DateTime.now()
-              .difference(lastSuccessAt)
+              .difference(_lastSuccessAt!)
               .inMilliseconds,
         },
       );
@@ -165,9 +209,10 @@ class WebViewSessionCookieRefreshService {
 
     final now = DateTime.now();
     final lastAttemptAt = _lastAttemptAt;
+    final cooldown = _effectiveCooldown;
     if (!force &&
         lastAttemptAt != null &&
-        now.difference(lastAttemptAt) < _attemptCooldown) {
+        now.difference(lastAttemptAt) < cooldown) {
       _logEnsureEvent(
         event: 'webview_session_sync_skipped',
         reason: reason,
@@ -175,6 +220,8 @@ class WebViewSessionCookieRefreshService {
         extra: {
           'skipReason': 'attempt_cooldown',
           'lastAttemptAgeMs': now.difference(lastAttemptAt).inMilliseconds,
+          if (_failureStreak > 0) 'failureStreak': _failureStreak,
+          if (_failureStreak > 0) 'cooldownMs': cooldown.inMilliseconds,
         },
       );
       return const SessionBootstrapResult.failure(phase: 'attempt_cooldown');
@@ -184,6 +231,13 @@ class WebViewSessionCookieRefreshService {
     late final Future<SessionBootstrapResult> future;
     future = _refreshBrowserSession(reason: reason)
         .then((result) {
+          // 失败退避计数:这里只会看到真正执行过的尝试(no_t / TTL /
+          // cooldown / join 都在上面早退,不进本回调)。
+          if (result.ok) {
+            _failureStreak = 0;
+          } else {
+            _failureStreak++;
+          }
           _logEnsureEvent(
             event: 'webview_session_sync_completed',
             reason: reason,
@@ -192,6 +246,7 @@ class WebViewSessionCookieRefreshService {
               'ok': result.ok,
               if (result.cfBlocked) 'cfBlocked': true,
               if (result.status != null) 'status': result.status,
+              if (!result.ok) 'failureStreak': _failureStreak,
               'elapsedMs': DateTime.now().difference(startedAt).inMilliseconds,
             },
           );
@@ -417,6 +472,11 @@ class WebViewSessionCookieRefreshService {
     final handlerName =
         'fluxdo_session_bootstrap_${DateTime.now().microsecondsSinceEpoch}';
     final completer = Completer<Map<String, dynamic>>();
+    // 上次 fingerprint 上报 404 → 候选列表/WebView 缓存里的插件 JS 已过期
+    // (站点会轮换混淆端点)。本次绕过注入候选、以 no-cache 拉插件 JS,
+    // 走全新 discover —— 唯一能拿到新端点的路径;否则同一份旧弹药
+    // 无论重试多少次都是 404。
+    final freshPlugin = _forceFreshPlugin;
 
     controller.addJavaScriptHandler(
       handlerName: handlerName,
@@ -440,7 +500,13 @@ class WebViewSessionCookieRefreshService {
     );
 
     try {
-      await _injectPluginCandidates(controller, pluginCandidates);
+      await _injectPluginCandidates(
+        controller,
+        freshPlugin ? null : pluginCandidates,
+      );
+      await controller.evaluateJavascript(
+        source: 'window.__fluxdoFreshPlugin = ${freshPlugin ? 'true' : 'false'};',
+      );
       final script = _bootstrapScript(handlerName);
       await controller.evaluateJavascript(source: script);
       final result = await completer.future.timeout(timeout);
@@ -449,11 +515,19 @@ class WebViewSessionCookieRefreshService {
       final endpoint = result['endpoint']?.toString();
       final status = (result['status'] as num?)?.toInt();
       final phase = result['phase']?.toString();
+      if (ok) {
+        _forceFreshPlugin = false;
+      } else if (status == 404 || phase == 'discover') {
+        // 端点 404 / 候选里找不到插件 = 弹药过期,下一轮强制新鲜 discover;
+        // 同时废掉 PreloadedDataService 里的旧候选,别的调用方也不再拿它。
+        _forceFreshPlugin = true;
+        PreloadedDataService().invalidatePluginCandidates();
+      }
       debugPrint(
         '[WebViewSessionSync] bootstrap result: ok=$ok cfBlocked=$cfBlocked '
         'reason=$reason phase=$phase '
         'plugin=${result['plugin']} endpoint=$endpoint status=$status '
-        'error=${result['error']}',
+        'fresh=$freshPlugin error=${result['error']}',
       );
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
@@ -464,6 +538,7 @@ class WebViewSessionCookieRefreshService {
         'reason': reason,
         'ok': ok,
         if (cfBlocked) 'cfBlocked': true,
+        if (freshPlugin) 'freshPlugin': true,
         'phase': phase,
         'plugin': result['plugin']?.toString(),
         'endpoint': endpoint,
@@ -636,13 +711,16 @@ document.close();
   }
 
   async function findFingerprintPlugin() {
+    // dart 侧在上次端点 404 后置位:插件 JS 必须绕过 HTTP 缓存重新拉,
+    // 否则 force-cache 会一直命中旧 JS,提取出的过期端点重试也是 404。
+    const freshPlugin = window.__fluxdoFreshPlugin === true;
     const candidates = await discoverPluginUrls();
     for (const url of candidates) {
       try {
         const response = await fetch(url, {
           method: 'GET',
           credentials: 'omit',
-          cache: 'force-cache'
+          cache: freshPlugin ? 'reload' : 'force-cache'
         });
         if (!response.ok) continue;
         const source = await response.text();
