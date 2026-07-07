@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show GestureBinding;
 import 'package:flutter/material.dart';
@@ -492,6 +493,24 @@ IconThemeData _appIconTheme(Color color) => IconThemeData(
   opticalSize: 24,
 );
 
+/// 页面转场:框架在 Android 的默认(PredictiveBack,常规导航兜底到
+/// FadeForwards)是入场/离场两页各套一个整页 FadeTransition —— Impeller
+/// 下每个半透明整页 = 一次全屏 saveLayer 离屏,且 Impeller 没有 Skia 的
+/// raster cache,转场每帧都在重光栅化两个页面。详情页↔列表页这种复杂
+/// 内容在 120Hz(8.3ms 预算)下每帧 raster 10~50ms,整段转场连串掉帧
+/// (诊断日志里 NAV 后成串的纯 raster 大帧,即"一般场景动不动抽")。
+/// 统一换 Cupertino 滑动转场:纯平移 + 边缘阴影,零整页 saveLayer。
+/// 代价仅是 Android 14+ 系统预测返回的缩放预览特效退化为滑动。
+const _pageTransitionsTheme = PageTransitionsTheme(
+  builders: <TargetPlatform, PageTransitionsBuilder>{
+    TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+  },
+);
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -564,6 +583,7 @@ class MainApp extends ConsumerWidget {
                   colorScheme: lightScheme,
                   useMaterial3: true,
                   fontFamily: themeState.fontFamilyName,
+                  pageTransitionsTheme: _pageTransitionsTheme,
                   iconTheme: _appIconTheme(lightScheme.onSurface),
                   primaryIconTheme: _appIconTheme(lightScheme.onPrimary),
                   cardTheme: CardThemeData(
@@ -590,6 +610,7 @@ class MainApp extends ConsumerWidget {
                   colorScheme: darkScheme,
                   useMaterial3: true,
                   fontFamily: themeState.fontFamilyName,
+                  pageTransitionsTheme: _pageTransitionsTheme,
                   iconTheme: _appIconTheme(darkScheme.onSurface),
                   primaryIconTheme: _appIconTheme(darkScheme.onPrimary),
                   cardTheme: CardThemeData(
