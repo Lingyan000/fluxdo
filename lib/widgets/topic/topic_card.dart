@@ -6,6 +6,7 @@ import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
 import '../../utils/font_awesome_helper.dart';
+import '../../utils/frame_jank_monitor.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/url_helper.dart';
 import '../common/smart_avatar.dart';
@@ -52,6 +53,9 @@ class TopicCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 帧内构建归因:pop 回列表页 / 列表滚动的 build 大帧此前全是
+    // "无构建记录"盲区,补上话题卡片(监控关闭零开销)
+    FrameJankMonitor.noteBuild('card#${topic.id}');
     final theme = Theme.of(context);
     // 新内容信号(蓝点/未读数/时间高亮):新话题或有未读回复
     final isUnread = topic.unseen || topic.unread > 0;
@@ -636,6 +640,7 @@ class CompactTopicCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    FrameJankMonitor.noteBuild('card#${topic.id}');
     final theme = Theme.of(context);
     final isUnread = topic.unseen || topic.unread > 0;
 
