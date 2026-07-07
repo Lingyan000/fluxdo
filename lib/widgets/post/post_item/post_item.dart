@@ -9,6 +9,7 @@ import '../../../services/toast_service.dart';
 import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/code_selection_context.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
+import '../../../utils/frame_jank_monitor.dart';
 import '../../content/collapsed_html_content.dart';
 import '../post_boost/boost_danmaku.dart';
 import '../small_action_item.dart';
@@ -142,6 +143,12 @@ class _PostItemState extends ConsumerState<PostItem> {
   Widget build(BuildContext context) {
     final post = widget.post;
     final theme = Theme.of(context);
+    // 帧内构建归因:JANK 大帧 detail 会列出本帧构建的帖子与正文大小,
+    // 区分"物化新帖成本 / rebuild 风暴 / GC·线程挤占"(监控关闭零开销)
+    FrameJankMonitor.noteBuild(
+      'post#${post.postNumber}/'
+      '${(post.cooked.length / 1000).toStringAsFixed(1)}k',
+    );
 
     if (post.postType == PostTypes.smallAction) {
       return SmallActionItem(post: post, selected: widget.selected);

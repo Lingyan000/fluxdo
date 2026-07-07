@@ -221,6 +221,44 @@ class FrameJankMonitor {
   /// 兼容旧调用:导航事件
   static void noteNavigation(String desc) => logEvent('NAV', desc);
 
+  // ---------------------------------------------------------------------------
+  // 帧内构建归因(release 可用):回答"这个 build 大帧在建什么"。
+  //
+  // 稳态滚动的掉帧几乎全是 build 型(6~16ms),但 release 无 VM Service,
+  // JANK 行分不清是"物化新帖的一次性成本"、"整页 rebuild 风暴"还是
+  // "GC/UI 线程被非帧工作挤占"(三者修法完全不同)。重组件(PostItem /
+  // 长帖分段)在 build 时上报自己,按帧号存最近 64 帧;JANK 记录时把
+  // 同帧清单写进 detail:
+  // - 清单只有 1~2 个新帖 = 单帖首建成本(树/排版瘦身方向)
+  // - 清单一大串 = rebuild 风暴(缓存/短路方向)
+  // - 清单为空但 build 巨大 = GC 停顿或 UI 线程被挤占(另案)
+  // ---------------------------------------------------------------------------
+
+  static final Map<int, List<String>> _buildNotes = {};
+
+  /// 重组件 build 时上报(监控关闭时零开销)
+  static void noteBuild(String key) {
+    if (!_started) return;
+    final frame =
+        WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
+    (_buildNotes[frame] ??= []).add(key);
+    if (_buildNotes.length > 64) {
+      int? oldest;
+      for (final k in _buildNotes.keys) {
+        if (oldest == null || k < oldest) oldest = k;
+      }
+      _buildNotes.remove(oldest);
+    }
+  }
+
+  static String? _buildNotesFor(int frameNumber) {
+    final notes = _buildNotes[frameNumber];
+    if (notes == null || notes.isEmpty) return null;
+    final head = notes.take(12).join(' ');
+    final more = notes.length > 12 ? ' +${notes.length - 12}' : '';
+    return 'build[$head$more]';
+  }
+
   static void clear() {
     jankRecords.clear();
     events.clear();
@@ -273,6 +311,16 @@ class FrameJankMonitor {
           vsyncOverhead: t.vsyncOverhead,
           cause: cause,
         );
+        final details = <String>[];
+        // build 大帧:附本帧构建清单(为空 = 空转/GC/线程挤占,见 noteBuild)
+        if (t.buildDuration > const Duration(milliseconds: 6)) {
+          final notes = _buildNotesFor(t.frameNumber);
+          if (notes != null) {
+            details.add(notes);
+          } else {
+            details.add('build[无构建记录:疑 rebuild/GC/线程挤占]');
+          }
+        }
         // raster 大帧(>40ms)十有八九是纹理上传:附 ImageCache 增量快照,
         // 生产日志(无 VM Service)也能指认"这帧前后进了几张/多大的图"
         if (t.rasterDuration > const Duration(milliseconds: 40)) {
@@ -282,9 +330,12 @@ class FrameJankMonitor {
           final deltaMb = ((cache.currentSizeBytes - _lastImageCacheBytes) /
                   (1024 * 1024))
               .toStringAsFixed(1);
-          record.detail =
+          details.add(
               'imageCache ${cache.currentSize}张/${sizeMb}MB (Δ${deltaMb}MB) '
-              'pending=${cache.pendingImageCount}';
+              'pending=${cache.pendingImageCount}');
+        }
+        if (details.isNotEmpty) {
+          record.detail = details.join(' | ');
         }
         _lastImageCacheBytes =
             PaintingBinding.instance.imageCache.currentSizeBytes;

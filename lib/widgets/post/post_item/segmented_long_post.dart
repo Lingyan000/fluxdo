@@ -6,6 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../providers/preferences_provider.dart';
+import '../../../utils/frame_jank_monitor.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../content/collapsed_html_content.dart';
@@ -216,6 +217,10 @@ class NewEngineChunkSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    FrameJankMonitor.noteBuild(
+      'chk#${post.postNumber}:$chunkIndex/'
+      '${(chunk.html.length / 1000).toStringAsFixed(1)}k',
+    );
     return PostSegmentFrame(
       post: post,
       selected: selected,
@@ -304,6 +309,7 @@ class LongPostHeaderSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    FrameJankMonitor.noteBuild('hdr#${post.postNumber}');
     return PostSegmentFrame(
       post: post,
       selected: selected,
@@ -377,6 +383,7 @@ class LongPostFooterSegment extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    FrameJankMonitor.noteBuild('ftr#${post.postNumber}');
     final theme = Theme.of(context);
     final showSignatures = ref.watch(preferencesProvider).showSignatures;
     return PostSegmentFrame(
