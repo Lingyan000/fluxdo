@@ -223,6 +223,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _userMutatedFallback = false;
   ModalRoute<dynamic>? _route;
   bool _isRouteVisible = true;
+
+  /// 进入转场是否已完成。转场期间物化真实帖子列表(缓存命中时首屏多个
+  /// PostItem 的构建 + 中文排版)会把大 build 帧砸在动画中间 —— 换什么
+  /// 转场曲线都掉帧。未完成前一律先渲染骨架(与首次加载视觉一致),
+  /// completed 后下一帧再物化,把成本挪出动画窗口。无转场进入(动画
+  /// 初始即 completed)时保持 true,零影响。
+  bool _routeTransitionDone = true;
   bool _isParentActive = true;
   bool _isScreenTrackRunning = false;
 
@@ -545,6 +552,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _route = route;
     appRouteObserver.subscribe(this, route);
     _isRouteVisible = route.isCurrent;
+    final enterAnim = route.animation;
+    if (enterAnim != null && !enterAnim.isCompleted) {
+      _routeTransitionDone = false;
+      enterAnim.addStatusListener(_onRouteEnterAnimStatus);
+    }
     _schedulePostShortcutRegistration();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -552,10 +564,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     });
   }
 
+  void _onRouteEnterAnimStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _route?.animation?.removeStatusListener(_onRouteEnterAnimStatus);
+    if (!mounted) return;
+    setState(() => _routeTransitionDone = true);
+  }
+
   @override
   void dispose() {
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
+    _route?.animation?.removeStatusListener(_onRouteEnterAnimStatus);
     if (_route != null) {
       appRouteObserver.unsubscribe(this);
     }
@@ -1958,6 +1978,16 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），
     // 也应该优先显示错误页面而不是骨架屏
     if (_isSwitchingMode) {
+      final showHeaderSkeleton =
+          widget.scrollToPostNumber == null || widget.scrollToPostNumber == 0;
+      return _wrapWithConstraint(
+        PostListSkeleton(withHeader: showHeaderSkeleton),
+      );
+    }
+
+    // 进入转场未完成:先骨架(缓存命中时首帧物化真实列表会把大 build 帧
+    // 砸进转场动画,见 _routeTransitionDone),completed 后下一帧再物化。
+    if (!_routeTransitionDone) {
       final showHeaderSkeleton =
           widget.scrollToPostNumber == null || widget.scrollToPostNumber == 0;
       return _wrapWithConstraint(
