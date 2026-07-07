@@ -20,7 +20,11 @@ class RenderParseCache {
   RenderParseCache._();
 
   static const int _shortCap = 256;
-  static const int _longCap = 64;
+
+  /// 分块阈值 5000→2000 后,2~5K 字符的中等帖子全部涌入长帖(分块)
+  /// 体系,64 的容量会频繁驱逐、滚回来重付解析,相应扩容。
+  /// 单条 LongPostParseData 持有的是节点树而非位图,内存量级可控。
+  static const int _longCap = 128;
 
   /// 短帖:post.id → (签名, preprocessed, parsedNodes)
   static final _short = <int, _ShortEntry>{};
