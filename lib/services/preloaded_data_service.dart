@@ -64,6 +64,17 @@ class PreloadedDataService {
   /// 避免重复 fetch 首页）。未加载或没扫到时返回 null。
   List<String>? get pluginCandidatesSync => _pluginCandidates;
 
+  /// 废弃插件候选列表(bootstrap 的 fingerprint 端点 404 时调用)。
+  ///
+  /// 站点会随构建轮换 fingerprint 插件的混淆端点;端点 404 说明本快照
+  /// 已过期,继续提供只会让所有调用方拿同一份旧弹药反复 404。清空后
+  /// bootstrap 脚本降级到自己的新鲜 discover,下次首页解析自然重建。
+  void invalidatePluginCandidates() {
+    if (_pluginCandidates == null) return;
+    _pluginCandidates = null;
+    debugPrint('[PreloadedData] pluginCandidates 已废弃(端点过期)');
+  }
+
   List<Map<String, dynamic>>? get topicTrackingStatesSync =>
       _topicTrackingStates;
 
