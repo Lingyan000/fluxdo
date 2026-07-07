@@ -63,9 +63,115 @@ class LazyImage extends StatefulWidget {
 }
 
 class _LazyImageState extends State<LazyImage> {
-  /// 无声明尺寸的图,首帧落地会把占位高度(200)换成真实高度 —— 只在
-  /// 第一次落地帧武装锚定哨兵,后续 rebuild(frame 仍为 0)不再重复武装
+  /// 无声明尺寸图片的实测宽高比记忆(cacheKey/URL → w/h)。
+  ///
+  /// 这类图首次加载只能用 200px 高占位;若不记忆,图片滚出 cacheExtent
+  /// 被回收、ImageCache 又驱逐了解码位图时,滚回来重建 = 再次 200 占位
+  /// → SliverList 的记账(上次真实高度)对不上 → scrollOffsetCorrection
+  /// 回跳(SCROLL-PROBE 抓到的负偏移区 backward jump 的图片份额)。
+  /// 有记忆后重建首帧即以真实比例占位,重访零布局变化 —— 与
+  /// DiscourseVideoPlayer 的比例记忆同款策略。
+  static final Map<String, double> _knownAspectRatios = {};
+
+  /// 本次会话解析到的实测比例(优先于静态记忆,驱动 AspectRatio)
+  double? _resolvedRatio;
+
+  ImageStream? _ratioStream;
+  ImageStreamListener? _ratioListener;
+
+  /// 无声明尺寸的图,首帧落地会把占位换成真实高度 —— 只武装一次哨兵
   bool _armedForFirstFrame = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolveRatioIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(LazyImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageProvider != widget.imageProvider) {
+      _stopRatioResolve();
+      _resolvedRatio = null;
+      _resolveRatioIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopRatioResolve();
+    super.dispose();
+  }
+
+  bool get _hasFixedBox =>
+      widget.width != null && widget.height != null && widget.height! > 0;
+
+  /// 监听与 build 中同一 provider 的 ImageStream 拿实测尺寸(共享
+  /// ImageCache 条目,不产生第二次解码),记入比例记忆。仅无声明尺寸
+  /// 的图需要;拿到首帧即移除监听。
+  void _resolveRatioIfNeeded() {
+    if (_hasFixedBox || _ratioListener != null) return;
+
+    final stream = _buildProvider(context).resolve(
+      createLocalImageConfiguration(context),
+    );
+    void onImage(ImageInfo info, bool synchronousCall) {
+      final ratio = info.image.height == 0
+          ? null
+          : info.image.width / info.image.height;
+      info.dispose();
+      if (ratio == null) return;
+      final key = widget.cacheKey;
+      if (key != null && key.isNotEmpty) {
+        _knownAspectRatios[key] = ratio;
+      }
+      // 首帧已到,后续动图帧不再需要
+      _stopRatioResolve();
+      if (_resolvedRatio != null && (ratio - _resolvedRatio!).abs() < 0.01) {
+        return;
+      }
+      if (synchronousCall) {
+        // 缓存命中的同步回调发生在首次 build 前,直接赋值即可
+        _resolvedRatio = ratio;
+      } else if (mounted) {
+        // 200 占位 → 真实比例的布局变化帧:武装哨兵,视口上方的图
+        // 加载完成不把内容拉走
+        if (!_armedForFirstFrame) {
+          _armedForFirstFrame = true;
+          AnchorGuardSliver.arm();
+        }
+        setState(() => _resolvedRatio = ratio);
+      }
+    }
+
+    final listener = ImageStreamListener(onImage, onError: (_, _) {});
+    _ratioStream = stream;
+    _ratioListener = listener;
+    stream.addListener(listener);
+  }
+
+  void _stopRatioResolve() {
+    final listener = _ratioListener;
+    if (listener != null) {
+      _ratioStream?.removeListener(listener);
+    }
+    _ratioListener = null;
+    _ratioStream = null;
+  }
+
+  /// 与 build 使用完全相同的 provider 参数,保证 ImageStream 同 key 共享
+  ImageProvider _buildProvider(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final logicalWidth = widget.width ?? MediaQuery.sizeOf(context).width;
+    final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
+    return ResizeImage(
+      widget.imageProvider,
+      width: cacheWidth,
+      height: LazyImage._kMaxDecodeHeight,
+      policy: ResizeImagePolicy.fit,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,9 +189,7 @@ class _LazyImageState extends State<LazyImage> {
     // 2000+ 解码 → 高 20000+ → 单张 100MB+ 纹理且超 GPU 纹理上限,
     // 上传瞬间 raster 冻结几百 ms(转场首绘大帧的元凶之一)。4096 是
     // 低端 GPU 的普遍安全上限;长图看细节走查看器的独立高清路径。
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final logicalWidth = width ?? MediaQuery.sizeOf(context).width;
-    final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
+    // provider 构造统一走 _buildProvider。
 
     // 统一的占位框:frameBuilder(无进度事件的 provider / 首字节前)与
     // loadingBuilder(有进度事件)共用同一外观,避免阶段切换时闪变。
@@ -118,28 +222,16 @@ class _LazyImageState extends State<LazyImage> {
     }
 
     final imageChild = Image(
-      image: ResizeImage(
-        widget.imageProvider,
-        width: cacheWidth,
-        height: LazyImage._kMaxDecodeHeight,
-        policy: ResizeImagePolicy.fit,
-      ),
+      // 解码目标宽 = 显示逻辑宽 × dpr(见 _buildProvider);与比例监听
+      // 使用同一 provider 参数,共享 ImageStream 与缓存条目
+      image: _buildProvider(context),
       fit: widget.fit,
       width: width,
       height: height,
       // provider 变化(如窗口宽变化导致解码宽变)时保留旧帧,避免闪白
       gaplessPlayback: true,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (frame != null) {
-          // 无固定框的图首帧落地 = 占位高度(200)换真实高度的布局变化,
-          // 武装哨兵让视口上方的这类图不把内容拉走。缓存命中的同步加载
-          // (wasSynchronouslyLoaded)首建即终态,无布局变化。
-          if (!hasFixedBox && !wasSynchronouslyLoaded && !_armedForFirstFrame) {
-            _armedForFirstFrame = true;
-            AnchorGuardSliver.arm();
-          }
-          return child;
-        }
+        if (frame != null) return child;
         return placeholderBox();
       },
       loadingBuilder: (context, child, loadingProgress) {
@@ -189,6 +281,16 @@ class _LazyImageState extends State<LazyImage> {
         aspectRatio: width / height,
         child: imageWidget,
       );
+    }
+
+    // 无声明尺寸:有实测/记忆比例就以其占位 —— 重访(回收后重建)首帧
+    // 即终态高度,SliverList 记账一致,不再触发回滚时的 correction 回跳
+    final knownRatio = _resolvedRatio ??
+        ((widget.cacheKey != null && widget.cacheKey!.isNotEmpty)
+            ? _knownAspectRatios[widget.cacheKey!]
+            : null);
+    if (knownRatio != null && knownRatio > 0) {
+      return AspectRatio(aspectRatio: knownRatio, child: imageWidget);
     }
 
     return imageWidget;
