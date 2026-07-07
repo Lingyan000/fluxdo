@@ -113,6 +113,7 @@
   "post_topicSolved": "This topic is solved",
   "post_unacceptSolution": "Unaccept solution",
   "post_unsolved": "Unsolved",
+  "post_videoLoadFailed": "Video failed to load. Tap to open in browser.",
   "post_viewBestAnswer": "View best answer",
   "post_solutionsCount": "{count} solutions",
   "@post_solutionsCount": {

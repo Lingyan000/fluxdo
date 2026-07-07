@@ -431,7 +431,10 @@ class FluxdoRenderCallbacks {
                       ),
                       fit: BoxFit.contain,
                     ),
-              errorBuilder: (c, _, _) => const SizedBox.shrink(),
+              errorBuilder: (c, failedUrl, error) => _VideoErrorFallback(
+                url: failedUrl,
+                error: error,
+              ),
               loadingBuilder: (c, _, child) => Center(
                 child: posterUrl != null
                     ? child
@@ -1675,4 +1678,52 @@ String _injectClickCounts(String html, List<LinkCount>? linkCounts) {
 String _formatClickCount(int count) {
   if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
   return count.toString();
+}
+
+/// 视频初始化失败的降级卡:失败提示 + 点击用浏览器打开。
+///
+/// 此前失败路径是 SizedBox.shrink() —— 视频区域直接空白,用户既看
+/// 不到视频也无从知道失败了(macOS 的 AVFoundation 对签名 URL/容器
+/// 细节远比 Android ExoPlayer 挑剔,"桌面端看不到视频"多半落在这)。
+/// 卡片外层由 DiscourseVideoPlayer 的 AspectRatio 约束,自动占位。
+class _VideoErrorFallback extends StatelessWidget {
+  const _VideoErrorFallback({required this.url, this.error});
+
+  final String url;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: () => launchInExternalBrowser(url),
+      child: Container(
+        alignment: Alignment.center,
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.3,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Symbols.videocam_off_rounded,
+              size: 32,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                S.current.post_videoLoadFailed,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

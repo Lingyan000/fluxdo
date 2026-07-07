@@ -186,6 +186,7 @@
   "post_topicSolved": "此话题已解决",
   "post_unacceptSolution": "取消采纳",
   "post_unsolved": "待解决",
+  "post_videoLoadFailed": "视频无法播放，点按用浏览器打开",
   "post_viewBestAnswer": "查看最佳答案",
   "post_solutionsCount": "{count} 解决方案",
   "@post_solutionsCount": {

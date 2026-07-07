@@ -137,6 +137,7 @@
   "post_topicSolved": "此話題已解決",
   "post_unacceptSolution": "取消採納",
   "post_unsolved": "待解決",
+  "post_videoLoadFailed": "影片無法播放，點按用瀏覽器開啟",
   "post_viewBestAnswer": "檢視最佳答案",
   "post_solutionsCount": "{count} 解決方案",
   "@post_solutionsCount": {

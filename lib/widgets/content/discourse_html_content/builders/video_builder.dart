@@ -228,6 +228,9 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
       await vpc.initialize();
     } catch (error) {
       vpcError = error;
+      // 平台差异排查的关键线索:AVFoundation(iOS/macOS)对签名 URL、
+      // Content-Type、容器细节远比 ExoPlayer 挑剔,失败原因只在这里可见
+      debugPrint('[Video] 初始化失败 url=${widget.url} error=$error');
     }
 
     if (!mounted) {
