@@ -1216,12 +1216,21 @@ class _TopicListState extends ConsumerState<_TopicList>
   List<Topic>? _visibleIndexSource;
   Map<int, int> _topicIdToVisibleIndex = const {};
 
+  /// 上次 build 的列表头部行数(pill/过滤提示),变化 = 行 index 平移
+  int? _lastHeaderOffset;
+
   Map<int, int> _visibleIndexMapFor(List<Topic> topics) {
     if (!identical(_visibleIndexSource, topics)) {
+      final hadPrevious = _visibleIndexSource != null;
       _visibleIndexSource = topics;
       _topicIdToVisibleIndex = <int, int>{
         for (var i = 0; i < topics.length; i++) topics[i].id: i,
       };
+      // 列表数据换代(顶部插入/全量替换/单行刷新):静默结构变化落地帧,
+      // 武装锚定哨兵补偿 keyed 迁移产生的位移。首建不武装。
+      if (hadPrevious) {
+        AnchorGuardSliver.arm();
+      }
     }
     return _topicIdToVisibleIndex;
   }
@@ -1564,6 +1573,12 @@ class _TopicListState extends ConsumerState<_TopicList>
         final hintOffset = hiddenCount > 0 ? 1 : 0;
         final headerOffset = newTopicOffset + hintOffset;
         final idToIndex = _visibleIndexMapFor(topics);
+        // pill/过滤提示行出现或消失 = 全列表行 index 平移(数据身份未变,
+        // _visibleIndexMapFor 检测不到),同样属于静默结构变化,武装哨兵
+        if (_lastHeaderOffset != null && _lastHeaderOffset != headerOffset) {
+          AnchorGuardSliver.arm();
+        }
+        _lastHeaderOffset = headerOffset;
 
         return DesktopRefreshIndicator(
           refreshIndicatorKey: _refreshIndicatorKey,
