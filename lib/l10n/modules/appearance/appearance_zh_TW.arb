@@ -11,6 +11,7 @@
   "appearance_colorRed": "紅色",
   "appearance_colorTeal": "青色",
   "appearance_contentFontSize": "內容字型大小",
+  "appearance_topicTitleFontSize": "帖子列表標題字型大小",
   "appearance_dialogBlur": "對話框模糊",
   "appearance_dialogBlurDesc": "對話框彈出時模糊背景",
   "appearance_displayMode": "螢幕影格率",
