@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
+import '../../providers/preferences_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/url_helper.dart';
@@ -42,6 +43,20 @@ class TopicCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isUnread = topic.unseen || topic.unread > 0;
+    final topicTitleFontScale = ref.watch(
+      preferencesProvider.select(
+        (preferences) => preferences.topicTitleFontScale,
+      ),
+    );
+    final baseTitleStyle = theme.textTheme.titleMedium ?? const TextStyle();
+    final titleStyle = baseTitleStyle.copyWith(
+      fontSize: (baseTitleStyle.fontSize ?? 16) * topicTitleFontScale,
+      fontWeight: FontWeight.w500,
+      height: 1.3,
+      color: isUnread
+          ? theme.colorScheme.onSurface
+          : theme.colorScheme.onSurfaceVariant,
+    );
     // 全部读完：进入过话题且没有未读帖子
     final isFullyRead =
         !topic.unseen && topic.unread == 0 && topic.lastReadPostNumber != null;
@@ -119,16 +134,7 @@ class TopicCard extends ConsumerWidget {
                                 Expanded(
                                   child: Text.rich(
                                     TextSpan(
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            height: 1.3,
-                                            color: isUnread
-                                                ? theme.colorScheme.onSurface
-                                                : theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                          ),
+                                      style: titleStyle,
                                       children: [
                                         if (topic.closed)
                                           WidgetSpan(
@@ -175,7 +181,8 @@ class TopicCard extends ConsumerWidget {
                                                 right: 4,
                                               ),
                                               child: Icon(
-                                                Symbols.check_box_outline_blank_rounded,
+                                                Symbols
+                                                    .check_box_outline_blank_rounded,
                                                 size: 16,
                                                 color:
                                                     theme.colorScheme.outline,
@@ -185,15 +192,7 @@ class TopicCard extends ConsumerWidget {
                                         ...EmojiText.buildEmojiSpans(
                                           context,
                                           topic.title,
-                                          theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            height: 1.3,
-                                            color: isUnread
-                                                ? theme.colorScheme.onSurface
-                                                : theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                          ),
+                                          titleStyle,
                                         ),
                                         // 未读蓝点追加在标题末尾
                                         if (topic.unseen)
@@ -440,6 +439,19 @@ class CompactTopicCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isUnread = topic.unseen || topic.unread > 0;
+    final topicTitleFontScale = ref.watch(
+      preferencesProvider.select(
+        (preferences) => preferences.topicTitleFontScale,
+      ),
+    );
+    final baseTitleStyle = theme.textTheme.labelMedium ?? const TextStyle();
+    final titleStyle = baseTitleStyle.copyWith(
+      fontSize: (baseTitleStyle.fontSize ?? 12) * topicTitleFontScale,
+      fontWeight: isUnread ? FontWeight.w500 : FontWeight.w400,
+      color: isUnread
+          ? theme.colorScheme.onSurface
+          : theme.colorScheme.onSurfaceVariant,
+    );
 
     // 获取分类信息
     final categoryMap = ref.watch(categoryMapProvider).value;
@@ -518,14 +530,7 @@ class CompactTopicCard extends ConsumerWidget {
                 Expanded(
                   child: Text.rich(
                     TextSpan(
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: isUnread
-                            ? FontWeight.w500
-                            : FontWeight.w400,
-                        color: isUnread
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: titleStyle,
                       children: [
                         if (topic.closed)
                           WidgetSpan(
@@ -568,14 +573,7 @@ class CompactTopicCard extends ConsumerWidget {
                         ...EmojiText.buildEmojiSpans(
                           context,
                           topic.title,
-                          theme.textTheme.labelMedium?.copyWith(
-                            fontWeight: isUnread
-                                ? FontWeight.w500
-                                : FontWeight.w400,
-                            color: isUnread
-                                ? theme.colorScheme.onSurface
-                                : theme.colorScheme.onSurfaceVariant,
-                          ),
+                          titleStyle,
                         ),
                       ],
                     ),
