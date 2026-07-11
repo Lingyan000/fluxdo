@@ -432,7 +432,8 @@ class _TopSnapScrollPhysics extends ScrollPhysics {
       target = endPixels > band / 2 ? band : 0.0;
     }
     if (target > position.maxScrollExtent) target = 0.0;
-    if (target == position.pixels && velocity.abs() < toleranceFor(position).velocity) {
+    if (target == position.pixels &&
+        velocity.abs() < toleranceFor(position).velocity) {
       return null;
     }
     return ScrollSpringSimulation(
@@ -1024,8 +1025,17 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     // （setter 的副作用推迟帧末，build 期调用安全）
     _headerController.extent = _collapsibleExtentFor(pinnedIds, currentTags);
 
-    // 聚合筛选菜单（筛选/子过滤/排序/标签/忽略五合一）
-    final filterMenu = _buildFilterMenu(isLoggedIn, currentFilter);
+    // 聚合筛选菜单（筛选/子过滤/排序/标签/忽略五合一）;折叠态标题
+    // 前缀承接 chips 收起后的"你在哪"信息（「水源 · 最新」）
+    final titlePrefix = _TitleTabPrefix(
+      headerController: _headerController,
+      tabController: _tabController,
+      nameResolver: (index) {
+        if (index <= 0 || index - 1 >= pinnedIds.length) return null;
+        return categoryMap?[pinnedIds[index - 1]]?.name;
+      },
+    );
+    final filterMenu = _buildFilterMenu(isLoggedIn, currentFilter, titlePrefix);
 
     return Listener(
       onPointerDown: (_) => _cancelSnap(cancelPointerScrollSession: true),
@@ -1108,8 +1118,12 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
             tooltip: context.l10n.topics_browseCategories,
             visualDensity: VisualDensity.compact,
           ),
-          filterMenu,
-          const Spacer(),
+          // 标题区弹性化：窄面板（桌面 master-detail 列表栏）空间不足
+          // 时标题内部自行让步（前缀先缩，见 _TitleTabPrefix），刚性
+          // Row + Spacer 版在窄面板直接撑破右簇
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: filterMenu),
+          ),
           // 搜索落位格：展开态零宽（右簇紧凑无空洞），折叠时随 morph
           // 同曲线张开迎接胶囊缩成的图标（胶囊本体在
           // _CollapsibleHeader 的 overlay 层绘制，这里只占位）
@@ -1244,7 +1258,11 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
 
   /// 聚合筛选菜单按钮。用 Consumer 局部订阅排序/子过滤状态，收放轻壳
   /// 与 State 整树都不因排序变化而重建。
-  Widget _buildFilterMenu(bool isLoggedIn, TopicListFilter currentFilter) {
+  Widget _buildFilterMenu(
+    bool isLoggedIn,
+    TopicListFilter currentFilter,
+    Widget titlePrefix,
+  ) {
     final showDismiss =
         isLoggedIn &&
         (currentFilter == TopicListFilter.newTopics ||
@@ -1261,6 +1279,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
           currentFilter: currentFilter,
           isLoggedIn: isLoggedIn,
           titleStyle: true,
+          titlePrefix: titlePrefix,
           onFilterChanged: (filter) {
             ref.read(topicFilterProvider.notifier).setFilter(filter);
           },
@@ -1361,8 +1380,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
       // 胶囊段是位置纯函数，天然免疫（深处恒为图标态）。
       final beyondBottom =
           metrics.pixels > metrics.maxScrollExtent ||
-          (delta != null &&
-              metrics.pixels - delta > metrics.maxScrollExtent);
+          (delta != null && metrics.pixels - delta > metrics.maxScrollExtent);
       if (delta != null && delta != 0) {
         _headerController.handleScroll(
           delta,
@@ -1410,8 +1428,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
       if (_pointerScrolling) return false;
       _headerController.snapBarToNearest(
         null,
-        velocity: -(notification.dragDetails?.velocity.pixelsPerSecond.dy ??
-            0),
+        velocity: -(notification.dragDetails?.velocity.pixelsPerSecond.dy ?? 0),
       );
     }
 
@@ -1740,6 +1757,114 @@ class _ListCornerShimPainter extends CustomPainter {
 /// 工具栏搜索落位 spacer：展开态零宽（右簇紧凑无空洞），随折叠进度
 /// 张开到 44px（40 图标格 + 4 间隔），与胶囊 morph 同曲线 —— 🔔 等
 /// 右侧成员不动（Spacer 吸收），左侧的分类铃铛被自然推开。
+/// 折叠态标题前缀：chips 收起后「你在哪个分类」迁入标题——
+/// 「水源 · 最新 ▾」。与 chips 淡出共用同一进度源（barProgress），
+/// 宽度 ClipRect+widthFactor 连续显隐，读作信息在两处间"交接"，
+/// 零新增常驻元素。折叠中横滑切 tab：名字快速淡切（与 chips 高亮
+/// 同款 round 判定;文字真跟手交叉会叠影）+ AnimatedSize 平滑宽差。
+/// 「全部」tab 无前缀（全部=无分类，前缀出现即有信息量），宽度
+/// 收敛到 0 而非跳没。
+class _TitleTabPrefix extends StatelessWidget {
+  const _TitleTabPrefix({
+    required this.headerController,
+    required this.tabController,
+    required this.nameResolver,
+  });
+
+  final _HeaderCollapseController headerController;
+  final TabController tabController;
+
+  /// tab index → 分类名（0/越界 = null，无前缀）
+  final String? Function(int index) nameResolver;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        headerController,
+        tabController.animation ?? tabController,
+      ]),
+      builder: (context, _) {
+        final p = Curves.easeInOutCubic.transform(headerController.barProgress);
+        // 展开态（chips 在场）标题只管筛选，前缀零存在
+        if (p <= 0.001) return const SizedBox.shrink();
+
+        final index =
+            (tabController.animation?.value ?? tabController.index.toDouble())
+                .round()
+                .clamp(0, tabController.length - 1);
+        final name = nameResolver(index);
+
+        final label = name == null
+            ? const SizedBox.shrink(key: ValueKey('none'))
+            : Row(
+                key: ValueKey(name),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: ConstrainedBox(
+                      // 长分类名截断：上限 110，窄面板下随外层 Flexible
+                      // 进一步收缩（省略号），空间永远先由前缀让出
+                      constraints: const BoxConstraints(maxWidth: 110),
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    child: Text(
+                      '·',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.55,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+
+        return ClipRect(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            widthFactor: p,
+            child: Opacity(
+              opacity: p,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.centerLeft,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  // 默认 layout 居中叠放，名字宽差时会左右晃;钉左缘
+                  layoutBuilder: (currentChild, previousChildren) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [...previousChildren, ?currentChild],
+                  ),
+                  child: label,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _SearchSlotSpacer extends StatelessWidget {
   const _SearchSlotSpacer({required this.controller});
 
@@ -2562,8 +2687,7 @@ class _TopicListState extends ConsumerState<_TopicList>
           builder: (context, _) => TopicListSkeleton(
             padding: EdgeInsets.only(
               top:
-                  widget.headerController.visibleExtentFor(widget.topInset) +
-                  8,
+                  widget.headerController.visibleExtentFor(widget.topInset) + 8,
               bottom: 12,
             ),
           ),

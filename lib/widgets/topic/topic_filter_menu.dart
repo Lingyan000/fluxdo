@@ -47,6 +47,10 @@ class TopicFilterMenuButton extends ConsumerStatefulWidget {
   /// `Home ▾` 顶栏模式）；false = 灰底 chip（列表页内嵌样式）
   final bool titleStyle;
 
+  /// 标题前缀槽（仅 titleStyle）：首页折叠态把当前 tab 名迁入标题
+  /// （「水源 · 最新 ▾」），动画由外部自持——本按钮不感知收放进度
+  final Widget? titlePrefix;
+
   const TopicFilterMenuButton({
     super.key,
     required this.currentFilter,
@@ -62,6 +66,7 @@ class TopicFilterMenuButton extends ConsumerStatefulWidget {
     this.onSelectTags,
     this.selectedTagCount = 0,
     this.titleStyle = false,
+    this.titlePrefix,
   });
 
   @override
@@ -283,6 +288,10 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // 前缀是弹性项：窄面板空间不足时先于筛选名让步
+                  // （内部文本省略号收缩），刚性并排会撑破工具栏
+                  if (widget.titlePrefix != null)
+                    Flexible(child: widget.titlePrefix!),
                   Text(
                     buttonLabel(),
                     style: TextStyle(
@@ -421,4 +430,3 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
     }
   }
 }
-
