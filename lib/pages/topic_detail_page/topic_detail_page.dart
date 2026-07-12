@@ -1905,6 +1905,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     onProgressTap: () => _showTimelineSheet(detail),
                     onProgressGesture: (action) =>
                         _handleProgressGesture(action, detail, notifier),
+                    onProgressScrubToPostNumber: (postNumber) =>
+                        unawaited(_scrubToPostNumber(postNumber)),
+                    onProgressScrubEnd: (postNumber) => unawaited(
+                      _scrubToPostNumber(postNumber, finalize: true),
+                    ),
+                    currentPostNumber: _controller.viewportPostNumber ??
+                        _controller.keyboardSelectedPostNumber ??
+                        _resolvePostNumberFromStreamIndex(
+                          detail,
+                          currentStreamIndex,
+                        ),
+                    maxPostNumber: detail.postsCount > 0
+                        ? detail.postsCount
+                        : detail.postStream.stream.length,
                     isSummaryMode: notifier.isSummaryMode,
                     isAuthorOnlyMode: notifier.isAuthorOnlyMode,
                     isTopLevelMode: notifier.isTopLevelMode,

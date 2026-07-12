@@ -366,6 +366,86 @@ extension _ScrollActions on _TopicDetailPageState {
     _controller.triggerHighlight(postNumber);
   }
 
+  /// 进度条水平 scrub：按真实楼层号跳转（拖动中尽量轻量，避免狂刷 rebuild）
+  Future<void> _scrubToPostNumber(
+    int postNumber, {
+    bool finalize = false,
+  }) async {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null) return;
+
+    final maxPost = detail.postsCount > 0
+        ? detail.postsCount
+        : detail.postStream.stream.length;
+    final target = postNumber.clamp(1, maxPost < 1 ? 1 : maxPost);
+
+    final posts = detail.postStream.posts;
+    final postIndex = posts.indexWhere((p) => p.postNumber == target);
+
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      _controller.updateViewportPostNumber(post.postNumber);
+
+      final streamIndex = detail.postStream.stream.indexOf(post.id);
+      if (streamIndex != -1) {
+        _controller.updateStreamIndex(streamIndex + 1);
+      }
+
+      // 已渲染：直接 scrollToIndex（1ms），不重置列表状态
+      if (_controller.isPostRendered(postIndex)) {
+        await _controller.scrollToPost(post.postNumber, posts);
+        return;
+      }
+
+      // 已加载未渲染：本地瞬跳，不 setState、不高亮
+      int? anchorPostNumber;
+      if (posts.length - 1 - postIndex < 20) {
+        final safeIndex = (posts.length - 20).clamp(0, posts.length - 1);
+        anchorPostNumber = posts[safeIndex].postNumber;
+      }
+      _controller.jumpToPostLocally(
+        post.postNumber,
+        anchorPostNumber: anchorPostNumber,
+      );
+      return;
+    }
+
+    // 目标楼未加载：拖动中先落到最近已加载楼，避免每次 reload
+    if (!finalize && posts.isNotEmpty) {
+      Post nearest = posts.first;
+      var best = (posts.first.postNumber - target).abs();
+      for (final p in posts) {
+        final d = (p.postNumber - target).abs();
+        if (d < best) {
+          best = d;
+          nearest = p;
+        }
+      }
+      if (nearest.postNumber != target) {
+        await _scrubToPostNumber(nearest.postNumber, finalize: false);
+      }
+      return;
+    }
+
+    // 松手时再做完整跳转（可能 reload）
+    await _scrollToPost(target);
+  }
+
+  /// stream 1-based 索引 → 真实 post_number（隐藏楼时二者不等）
+  int _resolvePostNumberFromStreamIndex(
+    TopicDetail detail,
+    int streamIndex1Based,
+  ) {
+    final stream = detail.postStream.stream;
+    if (stream.isEmpty) return 1;
+    final index = streamIndex1Based.clamp(1, stream.length) - 1;
+    final postId = stream[index];
+    final posts = detail.postStream.posts;
+    final loaded = posts.where((p) => p.id == postId).firstOrNull;
+    if (loaded != null) return loaded.postNumber;
+    return streamIndex1Based;
+  }
+
   Future<void> _scrollToPostById(int postId) async {
     final params = _params;
     final detail = ref.read(topicDetailProvider(params)).value;
