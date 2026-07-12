@@ -332,6 +332,48 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     }
   }
 
+  /// 切换板块等级：留在首页主从布局，固定并切换对应 Tab
+  void _switchCategoryLevel(Category category) {
+    final currentId = _currentCategoryId();
+    if (currentId == category.id) return;
+
+    final pinned = ref.read(pinnedCategoriesProvider);
+    final notifier = ref.read(pinnedCategoriesProvider.notifier);
+
+    if (pinned.contains(category.id)) {
+      // 目标已固定：直接切 Tab
+      final tabIndex = _visiblePinnedIds.indexOf(category.id);
+      if (tabIndex >= 0) {
+        _tabController.animateTo(tabIndex + 1);
+      } else {
+        ref.read(activeSidebarCategoryIdProvider.notifier).state = category.id;
+      }
+      return;
+    }
+
+    if (currentId != null && pinned.contains(currentId)) {
+      // 用同级等级替换当前固定项，保持 Tab 位置与主从布局
+      notifier.replace(currentId, category.id);
+      // 索引不变时不会触发 tab change，需手动同步
+      ref.read(currentTabCategoryIdProvider.notifier).state = category.id;
+      ref.read(activeSidebarCategoryIdProvider.notifier).state = category.id;
+      setState(() {});
+      return;
+    }
+
+    // 当前未固定：追加到 Tab 栏并切过去
+    notifier.add(category.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(activeSidebarCategoryIdProvider.notifier).state = category.id;
+      ref.read(currentTabCategoryIdProvider.notifier).state = category.id;
+      final tabIndex = _visiblePinnedIds.indexOf(category.id);
+      if (tabIndex >= 0 && _tabController.index != tabIndex + 1) {
+        _tabController.animateTo(tabIndex + 1);
+      }
+    });
+  }
+
   Future<void> _openTagSelection() async {
     final categoryId = _currentCategoryId();
     final currentTags = ref.read(tabTagsProvider(categoryId));
@@ -636,6 +678,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
                     }
                   },
                   onCategoryManager: _openCategoryManager,
+                  onCategoryChanged: _switchCategoryLevel,
                   onSearch: () {
                     SearchFilter? filter;
                     if (currentCategory != null) {
@@ -909,6 +952,7 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
   final VoidCallback onAddTag;
   final ValueChanged<int> onTabTap;
   final VoidCallback onCategoryManager;
+  final ValueChanged<Category> onCategoryChanged;
   final VoidCallback onSearch;
   final VoidCallback onDebugTopicId;
   final Widget? trailing;
@@ -928,6 +972,7 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.onAddTag,
     required this.onTabTap,
     required this.onCategoryManager,
+    required this.onCategoryChanged,
     required this.onSearch,
     required this.onDebugTopicId,
     this.trailing,
@@ -1147,6 +1192,8 @@ class _TopicsHeaderDelegate extends SliverPersistentHeaderDelegate {
                         selectedTags: currentTags,
                         onTagRemoved: onTagRemoved,
                         onAddTag: onAddTag,
+                        currentCategory: currentCategory,
+                        onCategoryChanged: onCategoryChanged,
                         trailing: trailing,
                       );
                     },

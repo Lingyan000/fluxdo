@@ -401,6 +401,16 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     }
   }
 
+  /// 切换板块等级：替换当前分类页，保留返回栈
+  void _switchCategoryLevel(Category category) {
+    if (category.id == widget.category.id || !mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => CategoryTopicsPage(category: category),
+      ),
+    );
+  }
+
   Future<void> _openTopic(Topic topic) async {
     // 分类详情页是独立 push 的页面，不在首页 MasterDetailLayout 内，
     // 始终 push 全屏详情页，禁用 autoSwitchToMasterDetail 防止双栏模式下自动 pop。
@@ -465,6 +475,8 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             selectedTags: _selectedTags,
             onTagRemoved: _removeTag,
             onAddTag: _openTagSelection,
+            currentCategory: widget.category,
+            onCategoryChanged: _switchCategoryLevel,
             trailing: isLoggedIn
                 ? Row(
                     mainAxisSize: MainAxisSize.min,

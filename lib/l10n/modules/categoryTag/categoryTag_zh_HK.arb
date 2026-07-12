@@ -38,6 +38,7 @@
       }
     }
   },
+  "category_levelAll": "全部LV",
   "category_searchHint": "搜索分類...",
   "tagTopics_empty": "該標籤下暫無話題",
   "tag_maxTagsReached": "最多隻能選擇 {max} 個標籤",
