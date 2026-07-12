@@ -14,6 +14,7 @@ import '../content/collapsed_html_content.dart';
 import '../content/discourse_html_content/chunked/chunked_html_content.dart';
 import '../post/post_item/widgets/post_footer_section/post_footer_section.dart';
 import '../common/smart_avatar.dart';
+import '../post/post_item/widgets/post_segment_frame.dart';
 import 'nested_collapsed_bar.dart';
 import 'nested_post_gutter.dart';
 import 'nested_thread_sheet.dart';
@@ -476,20 +477,67 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       );
     }
 
-    // 根帖子底部分隔
+    // 根帖子底部分隔 / 护眼气泡
     if (isRoot) {
-      card = Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              width: 0.5,
+      final eyeCareBubbles = ref.watch(
+        preferencesProvider.select((p) => p.eyeCareBubbles),
+      );
+      final isOp = widget.detail.createdBy?.username == post.username;
+      if (eyeCareBubbles) {
+        final palette = eyeCareBubblePalette(theme, isTopicOwner: isOp);
+        card = Padding(
+          padding: eyeCareBubbleMargin(EyeCareBubblePart.full),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            decoration: BoxDecoration(
+              color: palette.card,
+              gradient: palette.gradient,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: palette.border),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.shadow,
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: card,
+          ),
+        );
+      } else {
+        card = Container(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                width: 0.5,
+              ),
             ),
           ),
-        ),
-        child: card,
+          child: card,
+        );
+      }
+    } else {
+      final eyeCareBubbles = ref.watch(
+        preferencesProvider.select((p) => p.eyeCareBubbles),
       );
+      if (eyeCareBubbles && !isDeletedPlaceholder && !_collapsed) {
+        final isOp = widget.detail.createdBy?.username == post.username;
+        final palette = eyeCareBubblePalette(theme, isTopicOwner: isOp);
+        card = Container(
+          decoration: BoxDecoration(
+            color: palette.card.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: palette.border.withValues(alpha: 0.72),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+          child: card,
+        );
+      }
     }
 
     return card;

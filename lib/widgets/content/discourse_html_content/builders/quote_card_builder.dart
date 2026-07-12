@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../common/smart_avatar.dart';
 import '../../../../l10n/s.dart';
+import 'eye_care_quote_style.dart';
 
 /// 构建回复引用卡片
 Widget buildQuoteCard({
@@ -43,10 +44,10 @@ Widget buildQuoteCard({
   return Container(
     margin: const EdgeInsets.symmetric(vertical: 8),
     decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      color: eyeCareAwareQuoteBackground(context, theme),
       border: Border(
         left: BorderSide(
-          color: theme.colorScheme.outline,
+          color: eyeCareAwareQuoteBorder(context, theme),
           width: 4,
         ),
       ),

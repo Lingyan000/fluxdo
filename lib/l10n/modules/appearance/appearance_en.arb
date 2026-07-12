@@ -84,6 +84,8 @@
   "reading_aiSwipeEntryDesc": "Swipe left in topic detail to open AI Assistant",
   "reading_boostDanmaku": "Boost as danmaku",
   "reading_boostDanmakuDesc": "Overlay Boosts on top of post content as scrolling danmaku. Pauses on touch.",
+  "reading_eyeCareBubbles": "Eye-care bubbles",
+  "reading_eyeCareBubblesDesc": "Use soft card backgrounds for each post: green for the topic owner, warm yellow for others",
   "reading_expandRelatedLinks": "Expand related links by default",
   "reading_expandRelatedLinksDesc": "Show related links expanded in posts",
   "reading_showSignatures": "Show user signatures",

@@ -51,6 +51,15 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setBoostDanmaku(v),
         ),
+        SwitchModel(
+          id: 'eyeCareBubbles',
+          title: l10n.reading_eyeCareBubbles,
+          subtitle: l10n.reading_eyeCareBubblesDesc,
+          icon: Symbols.blur_on_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).eyeCareBubbles,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setEyeCareBubbles(v),
+        ),
       ],
     ),
     SettingsGroup(
