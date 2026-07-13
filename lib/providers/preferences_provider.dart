@@ -79,6 +79,14 @@ const List<ProgressGestureAction> _defaultProgressGestureMenu = [
 
 const int kProgressGestureMenuMax = 8;
 
+const double kReadingFontScaleMin = 0.8;
+const double kReadingFontScaleMax = 3.0;
+const double kReadingFontScaleDefault = 1.0;
+const int kReadingFontScaleDivisions = 44;
+
+double _clampReadingFontScale(double value) =>
+    value.clamp(kReadingFontScaleMin, kReadingFontScaleMax).toDouble();
+
 class AppPreferences {
   static const Object _unset = Object();
 
@@ -90,8 +98,11 @@ class AppPreferences {
   final bool longPressPreview;
   final bool openExternalLinksInAppBrowser;
 
-  /// 内容字体缩放比例，范围 0.8 ~ 1.4，默认 1.0
+  /// 内容字体缩放比例，范围 0.8 ~ 3.0，默认 1.0
   final double contentFontScale;
+
+  /// 帖子列表标题字体缩放比例，范围 0.8 ~ 3.0，默认 1.0
+  final double topicTitleFontScale;
 
   /// 分享图片主题索引
   final int shareImageThemeIndex;
@@ -214,6 +225,7 @@ class AppPreferences {
     required this.longPressPreview,
     required this.openExternalLinksInAppBrowser,
     required this.contentFontScale,
+    required this.topicTitleFontScale,
     required this.shareImageThemeIndex,
     required this.autoFillLogin,
     required this.clipboardTopicLinkDetection,
@@ -258,6 +270,7 @@ class AppPreferences {
     bool? longPressPreview,
     bool? openExternalLinksInAppBrowser,
     double? contentFontScale,
+    double? topicTitleFontScale,
     int? shareImageThemeIndex,
     bool? autoFillLogin,
     bool? clipboardTopicLinkDetection,
@@ -302,6 +315,7 @@ class AppPreferences {
       openExternalLinksInAppBrowser:
           openExternalLinksInAppBrowser ?? this.openExternalLinksInAppBrowser,
       contentFontScale: contentFontScale ?? this.contentFontScale,
+      topicTitleFontScale: topicTitleFontScale ?? this.topicTitleFontScale,
       shareImageThemeIndex: shareImageThemeIndex ?? this.shareImageThemeIndex,
       autoFillLogin: autoFillLogin ?? this.autoFillLogin,
       clipboardTopicLinkDetection:
@@ -364,6 +378,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _openExternalLinksInAppBrowserKey =
       'pref_open_external_links_in_app_browser';
   static const String _contentFontScaleKey = 'pref_content_font_scale';
+  static const String _topicTitleFontScaleKey = 'pref_topic_title_font_scale';
   static const String _shareImageThemeIndexKey = 'pref_share_image_theme_index';
   static const String _autoFillLoginKey = 'pref_auto_fill_login';
   static const String _clipboardTopicLinkDetectionKey =
@@ -424,7 +439,13 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           longPressPreview: _prefs.getBool(_longPressPreviewKey) ?? true,
           openExternalLinksInAppBrowser:
               _prefs.getBool(_openExternalLinksInAppBrowserKey) ?? false,
-          contentFontScale: _prefs.getDouble(_contentFontScaleKey) ?? 1.0,
+          contentFontScale: _clampReadingFontScale(
+            _prefs.getDouble(_contentFontScaleKey) ?? kReadingFontScaleDefault,
+          ),
+          topicTitleFontScale: _clampReadingFontScale(
+            _prefs.getDouble(_topicTitleFontScaleKey) ??
+                kReadingFontScaleDefault,
+          ),
           shareImageThemeIndex: _prefs.getInt(_shareImageThemeIndexKey) ?? 0,
           autoFillLogin: _prefs.getBool(_autoFillLoginKey) ?? true,
           clipboardTopicLinkDetection:
@@ -525,10 +546,15 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   }
 
   Future<void> setContentFontScale(double scale) async {
-    // 限制范围在 0.8 ~ 1.4
-    final clampedScale = scale.clamp(0.8, 1.4);
+    final clampedScale = _clampReadingFontScale(scale);
     state = state.copyWith(contentFontScale: clampedScale);
     await _prefs.setDouble(_contentFontScaleKey, clampedScale);
+  }
+
+  Future<void> setTopicTitleFontScale(double scale) async {
+    final clampedScale = _clampReadingFontScale(scale);
+    state = state.copyWith(topicTitleFontScale: clampedScale);
+    await _prefs.setDouble(_topicTitleFontScaleKey, clampedScale);
   }
 
   Future<void> setShareImageThemeIndex(int index) async {

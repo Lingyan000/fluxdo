@@ -55,4 +55,51 @@ void main() {
       BookmarksOpenMode.defaultRoute,
     );
   });
+
+  group('reading font scales', () {
+    test('both font scales default to 100 percent', () async {
+      final container = await _createContainer();
+      addTearDown(container.dispose);
+
+      final preferences = container.read(preferencesProvider);
+      expect(preferences.contentFontScale, kReadingFontScaleDefault);
+      expect(preferences.topicTitleFontScale, kReadingFontScaleDefault);
+    });
+
+    test('persisted font scales are clamped on initialization', () async {
+      final container = await _createContainer(
+        initialValues: {
+          'pref_content_font_scale': 4.2,
+          'pref_topic_title_font_scale': 0.2,
+        },
+      );
+      addTearDown(container.dispose);
+
+      final preferences = container.read(preferencesProvider);
+      expect(preferences.contentFontScale, kReadingFontScaleMax);
+      expect(preferences.topicTitleFontScale, kReadingFontScaleMin);
+    });
+
+    test('font scale setters clamp and persist values', () async {
+      final container = await _createContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(preferencesProvider.notifier);
+
+      await notifier.setContentFontScale(9);
+      await notifier.setTopicTitleFontScale(0.1);
+
+      final preferences = container.read(preferencesProvider);
+      final storage = container.read(sharedPreferencesProvider);
+      expect(preferences.contentFontScale, kReadingFontScaleMax);
+      expect(preferences.topicTitleFontScale, kReadingFontScaleMin);
+      expect(
+        storage.getDouble('pref_content_font_scale'),
+        kReadingFontScaleMax,
+      );
+      expect(
+        storage.getDouble('pref_topic_title_font_scale'),
+        kReadingFontScaleMin,
+      );
+    });
+  });
 }

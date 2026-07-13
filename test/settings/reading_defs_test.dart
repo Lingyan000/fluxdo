@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/settings/definitions/reading_defs.dart';
 import 'package:fluxdo/settings/settings_model.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
@@ -10,6 +11,7 @@ Future<List<SettingsModel>> _pumpAndCollectBasicItems(
   WidgetTester tester, {
   required Size size,
   bool? desktopOverride,
+  bool readingGroup = false,
 }) async {
   addTearDown(() async {
     PlatformUtils.debugDesktopOverride = null;
@@ -31,8 +33,11 @@ Future<List<SettingsModel>> _pumpAndCollectBasicItems(
           data: MediaQueryData(size: size),
           child: Builder(
             builder: (context) {
+              final targetTitle = readingGroup
+                  ? context.l10n.appearance_reading
+                  : context.l10n.preferences_basic;
               items = buildReadingGroups(context)
-                  .firstWhere((group) => group.title == context.l10n.preferences_basic)
+                  .firstWhere((group) => group.title == targetTitle)
                   .items
                   .where((item) {
                     if (item is PlatformConditionalModel) {
@@ -40,7 +45,10 @@ Future<List<SettingsModel>> _pumpAndCollectBasicItems(
                     }
                     return true;
                   })
-                  .map((item) => item is PlatformConditionalModel ? item.inner : item)
+                  .map(
+                    (item) =>
+                        item is PlatformConditionalModel ? item.inner : item,
+                  )
                   .toList();
               return const SizedBox.shrink();
             },
@@ -82,5 +90,32 @@ void main() {
     );
 
     expect(items.map((item) => item.id), contains('bookmarksOpenMode'));
+  });
+
+  testWidgets('reading font sliders share the 80 to 300 percent range', (
+    tester,
+  ) async {
+    final items = await _pumpAndCollectBasicItems(
+      tester,
+      size: const Size(390, 844),
+      desktopOverride: false,
+      readingGroup: true,
+    );
+    final ids = items.map((item) => item.id).toList();
+    final contentIndex = ids.indexOf('contentFontScale');
+    final topicIndex = ids.indexOf('topicTitleFontScale');
+
+    expect(contentIndex, greaterThanOrEqualTo(0));
+    expect(topicIndex, contentIndex + 1);
+    for (final slider in <DoubleSliderModel>[
+      items[contentIndex] as DoubleSliderModel,
+      items[topicIndex] as DoubleSliderModel,
+    ]) {
+      expect(slider.min, kReadingFontScaleMin);
+      expect(slider.max, kReadingFontScaleMax);
+      expect(slider.divisions, kReadingFontScaleDivisions);
+      expect(slider.labelBuilder(1.75), '175%');
+      expect(slider.onReset, isNotNull);
+    }
   });
 }

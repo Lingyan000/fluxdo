@@ -11,6 +11,7 @@
   "appearance_colorRed": "Red",
   "appearance_colorTeal": "Teal",
   "appearance_contentFontSize": "Content font size",
+  "appearance_topicTitleFontSize": "Topic list title font size",
   "appearance_dialogBlur": "Dialog Blur",
   "appearance_dialogBlurDesc": "Blur background when dialog appears",
   "appearance_displayMode": "Display refresh rate",
