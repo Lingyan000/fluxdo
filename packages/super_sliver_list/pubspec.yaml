@@ -1,0 +1,28 @@
+name: super_sliver_list
+description: "Drop-in replacement for SliverList and ListView that can handle large lists with variable extents and jump/animate to specific items."
+version: 0.4.1
+homepage: https://github.com/superlistapp/super_sliver_list
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  collection: ^1.17.2
+  logging: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lint: ^2.0.0
+  test: ^1.24.9
+  sliver_tools: ^0.2.12
+  test_api:
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:

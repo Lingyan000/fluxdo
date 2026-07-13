@@ -58,6 +58,8 @@ dependencies:
   flutter_riverpod: ^3.3.2
   extended_image_lite:
     path: packages/extended_image_lite
+  super_sliver_list:
+    path: packages/super_sliver_list
   enhanced_cookie_jar:
     path: packages/enhanced_cookie_jar
   re_highlight: ^0.0.3

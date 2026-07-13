@@ -12,6 +12,7 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
@@ -2917,7 +2918,13 @@ class _TopicListState extends ConsumerState<_TopicList>
                           top: _headerInset + 8,
                           bottom: 12 + MediaQuery.paddingOf(context).bottom,
                         ),
-                        sliver: SliverList.builder(
+                        // SuperSliverList:实测高度进账本(Fenwick 前缀和),
+                        // 未挂载区间才估算且误差只发生一次 —— SliverList
+                        // 估算记账导致的回滚 scroll offset correction
+                        // ("内容跳动"、卡片越多越卡)机制性消解。
+                        // 包已 vendor(见 packages/super_sliver_list/VENDOR.md);
+                        // delegate/key/复用语义与 SliverList 完全同构。
+                        sliver: SuperSliverList.builder(
                           itemCount: topics.length + headerOffset + 1,
                           // 卡片无 keepalive 需求(无视频/表单/KeepAliveNotification
                           // 使用者),默认的 AutomaticKeepAlive+_SelectionKeepAlive

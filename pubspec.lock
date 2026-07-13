@@ -2210,6 +2210,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.9.1"
+  super_sliver_list:
+    dependency: "direct main"
+    description:
+      path: "packages/super_sliver_list"
+      relative: true
+    source: path
+    version: "0.4.1"
   sync_http:
     dependency: transitive
     description:
