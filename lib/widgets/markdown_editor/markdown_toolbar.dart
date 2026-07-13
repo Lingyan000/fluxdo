@@ -18,6 +18,8 @@ import '../../services/toast_service.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'editor_tools.dart';
+import 'media_upload_helper.dart';
+import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
 import 'link_insert_dialog.dart';
 import 'template_insert_dialog.dart';
@@ -916,6 +918,45 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    }
+  }
+
+  /// 音/视频改名上传(.xz 绕扩展名白名单,4MB 上限)→ 插 HTML 标签。
+  Future<void> pickAndUploadMedia({required bool isAudio}) async {
+    final tag = await pickAndUploadMediaTag(context, isAudio: isAudio);
+    if (tag == null || !mounted) return;
+    final selection = widget.controller.selection;
+    final text = widget.controller.text;
+    final needsLeadingNewline = selection.isValid &&
+        selection.start > 0 &&
+        text[selection.start - 1] != '\n';
+    final prefix = needsLeadingNewline ? '\n' : '';
+    insertText('$prefix$tag\n');
+  }
+
+  /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
+  Future<void> recordAndInsertVoice() async {
+    final path = await showVoiceRecorderSheet(context);
+    if (path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: path.split('/').last,
+        isAudio: true,
+        voice: true,
+      );
+      if (tag == null || !mounted) return;
+      final selection = widget.controller.selection;
+      final text = widget.controller.text;
+      final needsLeadingNewline = selection.isValid &&
+          selection.start > 0 &&
+          text[selection.start - 1] != '\n';
+      final prefix = needsLeadingNewline ? '\n' : '';
+      insertText('$prefix$tag\n');
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
     }
   }
 

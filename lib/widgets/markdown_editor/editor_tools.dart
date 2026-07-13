@@ -61,6 +61,21 @@ final List<EditorTool> editorTools = [
     label: (s) => s.toolPanel_attachment,
     action: (t) => t.pickAndUploadFile(),
   ),
+  // 音视频改名上传(.xz 绕站点扩展名白名单,4MB 上限;插 <audio>/<video>
+  // 标签,网页端原生播放)
+  EditorTool(
+    id: 'media',
+    icon: const FaIcon(FontAwesomeIcons.film),
+    label: (s) => '音视频',
+    menuItems: (s) => const [
+      PopupMenuItem(value: 'audio', child: Text('上传音频')),
+      PopupMenuItem(value: 'video', child: Text('上传视频')),
+      PopupMenuItem(value: 'voice', child: Text('语音消息')),
+    ],
+    onMenuSelected: (t, value) => value == 'voice'
+        ? t.recordAndInsertVoice()
+        : t.pickAndUploadMedia(isAudio: value == 'audio'),
+  ),
   EditorTool(
     id: 'heading',
     icon: const FaIcon(FontAwesomeIcons.heading),

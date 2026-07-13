@@ -157,3 +157,32 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/fluxdo.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   COMPONENT Runtime)
+
+# === 媒体压缩:随包分发 ffmpeg(构建期下载,开发机缓存一次)===
+# 系统未装 ffmpeg 的用户开箱可用;Dart 侧随包版优先、系统 PATH 兜底。
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(FFMPEG_STATIC_ARCH "linux-arm64")
+else()
+  set(FFMPEG_STATIC_ARCH "linux-x64")
+endif()
+set(FFMPEG_CACHE_BIN "${CMAKE_CURRENT_SOURCE_DIR}/.ffmpeg-cache/ffmpeg-${FFMPEG_STATIC_ARCH}")
+if(NOT EXISTS "${FFMPEG_CACHE_BIN}")
+  message(STATUS "Downloading bundled ffmpeg (~78MB, one-time, cached at linux/.ffmpeg-cache)")
+  file(DOWNLOAD
+    "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-${FFMPEG_STATIC_ARCH}"
+    "${FFMPEG_CACHE_BIN}.part"
+    SHOW_PROGRESS
+    TLS_VERIFY ON
+    STATUS FFMPEG_DL_STATUS)
+  list(GET FFMPEG_DL_STATUS 0 FFMPEG_DL_CODE)
+  if(NOT FFMPEG_DL_CODE EQUAL 0)
+    file(REMOVE "${FFMPEG_CACHE_BIN}.part")
+    message(FATAL_ERROR "bundled ffmpeg download failed (${FFMPEG_DL_STATUS}). "
+      "Retry the build, or manually download "
+      "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-${FFMPEG_STATIC_ARCH} "
+      "and save it as ${FFMPEG_CACHE_BIN}")
+  endif()
+  file(RENAME "${FFMPEG_CACHE_BIN}.part" "${FFMPEG_CACHE_BIN}")
+endif()
+install(PROGRAMS "${FFMPEG_CACHE_BIN}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  RENAME "ffmpeg" COMPONENT Runtime)

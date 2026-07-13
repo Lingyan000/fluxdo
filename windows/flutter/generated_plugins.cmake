@@ -16,6 +16,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   gal
   irondash_engine_context
   quickjs_engine
+  record_windows
   screen_retriever_windows
   share_plus
   super_native_extensions

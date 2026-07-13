@@ -515,7 +515,9 @@ class FluxdoRenderCallbacks {
       ),
     );
     Widget compatPlayerFor(String src) => _withPlayableUrl(
-        src, (url) => DiscourseAudioPlayer(url: url), probing);
+        src,
+        (url) => DiscourseAudioPlayer(url: url, voice: node.voice),
+        probing);
     if (!DiscourseImageUtils.isUploadUrl(rawSrc)) {
       return compatPlayerFor(UrlHelper.resolveUrlWithCdn(rawSrc));
     }

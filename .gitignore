@@ -102,3 +102,7 @@ lib/l10n/generated/app_localizations_compat.g.dart
 extension/devtools/build/
 devtools_extension/.flutter-plugins
 devtools_extension/pubspec.lock
+
+# 桌面端随包 ffmpeg 的构建期下载缓存
+windows/.ffmpeg-cache/
+linux/.ffmpeg-cache/

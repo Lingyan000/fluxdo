@@ -250,18 +250,28 @@ mixin _UploadsMixin on _DiscourseServiceBase {
     return false;
   }
 
-  /// 上传文件（内置速率限制重试，支持图片和附件）
-  Future<UploadResult> uploadFile(String filePath) async {
+  /// 上传文件（内置速率限制重试，支持图片和附件）。
+  /// [filenameOverride]/[contentTypeOverride]:媒体改名上传用(见
+  /// [uploadMediaAsXz]),不影响常规路径。
+  Future<UploadResult> uploadFile(
+    String filePath, {
+    String? filenameOverride,
+    DioMediaType? contentTypeOverride,
+  }) async {
     const maxRetries = 3;
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        final fileName = filePath.split('/').last;
+        final fileName = filenameOverride ?? filePath.split('/').last;
 
         final formData = FormData.fromMap({
           'upload_type': 'composer',
           'synchronous': true,
-          'file': await MultipartFile.fromFile(filePath, filename: fileName),
+          'file': await MultipartFile.fromFile(
+            filePath,
+            filename: fileName,
+            contentType: contentTypeOverride,
+          ),
         });
 
         final response = await _dio.post(
@@ -354,6 +364,32 @@ mixin _UploadsMixin on _DiscourseServiceBase {
 
   /// 上传图片（uploadFile 的别名，保持向后兼容）
   Future<UploadResult> uploadImage(String filePath) => uploadFile(filePath);
+
+  /// 媒体上传的站点体积上限(linux.do 4MB;超限服务端 413)。
+  static const int maxMediaUploadBytes = 4 * 1024 * 1024;
+
+  /// 音视频改名上传(与社区「媒体上传」脚本同 hack):站点扩展名白名单
+  /// 不含音视频,把文件名换 `.xz`(application/x-xz)绕过 —— 播放端
+  /// (本 app MediaCompatService 嗅探 / 网页原生 audio·video 标签)不受
+  /// 扩展名影响。4MB 前置检查,超限直接抛(不做压缩,调用方提示)。
+  Future<UploadResult> uploadMediaAsXz(String filePath) async {
+    final size = await File(filePath).length();
+    if (size >= maxMediaUploadBytes) {
+      throw Exception(
+        '媒体文件须小于 4MB,当前 ${UploadResult.formatFileSize(size)};'
+        '请先压缩后再上传',
+      );
+    }
+    final base = filePath.split('/').last;
+    final dot = base.lastIndexOf('.');
+    final stem = dot > 0 ? base.substring(0, dot) : base;
+    final xzName = '$stem.xz';
+    return uploadFile(
+      filePath,
+      filenameOverride: xzName,
+      contentTypeOverride: DioMediaType('application', 'x-xz'),
+    );
+  }
 
   /// 批量解析 short_url（内置速率限制重试，对齐 uploadFile）
   Future<List<Map<String, dynamic>>> lookupUrls(List<String> shortUrls) async {

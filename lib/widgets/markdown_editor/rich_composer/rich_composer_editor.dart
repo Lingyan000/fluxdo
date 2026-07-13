@@ -10,10 +10,11 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show Uint8List, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -28,7 +29,11 @@ import 'package:fluxdo_render/fluxdo_render.dart'
         MentionRun,
         NodeFactory;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 
 import '../../../constants.dart';
 import '../../../models/mention_user.dart';
@@ -47,8 +52,12 @@ import '../../mention/mention_autocomplete.dart';
 import '../emoji_sticker_panel.dart';
 import '../image_upload_dialog.dart';
 import '../link_insert_dialog.dart';
+import '../markdown_toolbar.dart' show MarkdownToolbarState;
 import 'composer_doc_codec.dart';
+import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
+import '../media_upload_helper.dart';
+import '../voice_recorder_sheet.dart';
 
 /// 孤岛渲染工厂:复用 generic callbacks 的全部 builder(emoji 缓存池/
 /// 图片管线/代码高亮…),编辑器里的岛与阅读端视觉一致。
@@ -834,6 +843,50 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   int _uploadingCount = 0;
 
+  /// 音视频上传插入(插入菜单):file_picker 选 → .xz 改名上传 →
+  /// <audio>/<video> 标签经 cook 岛化插入。
+  Future<void> _pickAndInsertMedia({required bool isAudio}) async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: isAudio ? FileType.audio : FileType.video,
+    );
+    final file = picked?.files.single;
+    final path = file?.path;
+    if (file == null || path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: file.name,
+        isAudio: isAudio,
+      );
+      if (tag == null || !mounted) return;
+      await insertMarkdownSnippet(tag);
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
+  /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
+  Future<void> _recordAndInsertVoice() async {
+    final path = await showVoiceRecorderSheet(context);
+    if (path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: path.split('/').last,
+        isAudio: true,
+        voice: true,
+      );
+      if (tag == null || !mounted) return;
+      await insertMarkdownSnippet(tag);
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
   /// 插入/施加链接:选区非空 → 对选中文字加 link mark(文字保留);
   /// 折叠 → 对话框输入文字+URL 后插入(经 cook)。
   Future<void> _insertLink() async {
@@ -921,6 +974,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         for (final (label, md, icon) in entries) item(md, icon, label),
         // 日期时间:弹属性对话框选时间再插原子(不再是死模板)
         item('__date__', Icons.event_rounded, '日期时间'),
+        // 音视频:选文件改名 .xz 上传后插 <audio>/<video> 标签
+        item('__audio__', Icons.audiotrack_rounded, '上传音频'),
+        item('__video__', Icons.videocam_outlined, '上传视频'),
+        item('__voice__', Icons.mic_rounded, '语音消息'),
         const PopupMenuDivider(height: 8),
         item('__custom__', Icons.data_object_rounded, 'Markdown 片段…'),
       ],
@@ -930,6 +987,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _insertCustomMarkdown();
     } else if (selected == '__date__') {
       await _insertLocalDate();
+    } else if (selected == '__audio__' || selected == '__video__') {
+      await _pickAndInsertMedia(isAudio: selected == '__audio__');
+    } else if (selected == '__voice__') {
+      await _recordAndInsertVoice();
     } else {
       await insertMarkdownSnippet(selected);
     }
@@ -1008,6 +1069,78 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       island.id,
       CodeBlockNode(id: island.node.id, code: code, language: language),
     );
+  }
+
+  /// 剪贴板富格式粘贴,优先级:text/html → 纯位图 → (回落)纯文本。
+  ///
+  /// - html(网页/Word 复制):→ markdown 清洗 → cook 导入链。结构
+  ///   保留,网页图走外链不吃上传流量(官方 composer 同取舍);
+  /// - 纯位图(截图 Cmd+V,无 html 无文本):上传站内 → 图原子。
+  ///   确认框+上传是长流程,fire-and-forget 不占粘贴调用 —— 插入由
+  ///   [insertUploadedImage] 在上传完成时按彼时光标位执行;
+  /// - 位图 + 文本并存(Excel 单元格等):文本优先(返回 null 回落),
+  ///   避免双插。
+  ///
+  /// 任一步落空返回 null,FluxdoEditor 回落纯文本路径 —— 内容不丢。
+  Future<List<EditorBlock>?> _importRichPaste() async {
+    final clipboard = SystemClipboard.instance;
+    if (clipboard == null) return null; // 平台无系统剪贴板访问
+    final reader = await clipboard.read();
+    if (reader.canProvide(Formats.htmlText)) {
+      final html = await reader.readValue(Formats.htmlText);
+      if (html != null && html.trim().isNotEmpty) {
+        final md = clipboardHtmlToMarkdown(html);
+        if (md != null) return markdownToDoc(md);
+      }
+      // html 存在但转换落空 → 文本回落。不碰位图:带 html 的位图多是
+      // 网页复制附带的渲染快照,上传它反而错。
+      return null;
+    }
+    if (!reader.canProvide(Formats.plainText)) {
+      final img = await MarkdownToolbarState.readImageFromReader(reader);
+      if (img != null) {
+        unawaited(_uploadPastedImage(img.$1, img.$2));
+      }
+    }
+    return null;
+  }
+
+  /// 粘贴位图上传:临时文件 → 确认框(与选图插入同 UX,可改名/取消误粘)
+  /// → 上传 → 图原子插入。与 [_pickAndUploadImages] 单图流程同构。
+  Future<void> _uploadPastedImage(Uint8List bytes, String ext) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final tempFile = File(p.join(tempDir.path, fileName));
+      await tempFile.writeAsBytes(bytes);
+      if (!mounted) return;
+      final confirmed = await showImageUploadDialog(
+        context,
+        imagePath: tempFile.path,
+        imageName: fileName,
+      );
+      if (confirmed == null) return;
+      setState(() => _uploadingCount++);
+      try {
+        final uploadResult =
+            await DiscourseService().uploadImage(confirmed.path);
+        final url = uploadResult.url;
+        if (url != null) {
+          DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
+        }
+        if (!mounted) return;
+        insertUploadedImage(
+          shortUrl: uploadResult.shortUrl,
+          alt: confirmed.originalName,
+          width: uploadResult.width,
+          height: uploadResult.height,
+        );
+      } finally {
+        if (mounted) setState(() => _uploadingCount--);
+      }
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    }
   }
 
   // -----------------------------------------------------------------
@@ -1512,6 +1645,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // 编辑块(失败/不可用时 FluxdoEditor 内部
                                   // 降级纯文本粘贴)
                                   markdownImporter: markdownToDoc,
+                                  // 富粘贴:剪贴板 text/html(网页/Word)
+                                  // → markdown 清洗 → 同一条 cook 导入链;
+                                  // 无 html/转换落空回落上面纯文本路径
+                                  richPasteImporter: _importRichPaste,
                                   // 双击岛 → 源码编辑对话框
                                   onIslandEditRequest: _editIsland,
                                   // 点 details/callout 壳标题 → 原位改标题

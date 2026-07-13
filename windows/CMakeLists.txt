@@ -111,3 +111,28 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# === 媒体压缩:随包分发 ffmpeg(构建期下载,开发机缓存一次)===
+# 运行时零下载(终端用户网络不可控);缓存已 gitignore。下载失败时
+# 按报错提示手动下载放置后重新构建即可。
+set(FFMPEG_CACHE_EXE "${CMAKE_CURRENT_SOURCE_DIR}/.ffmpeg-cache/ffmpeg.exe")
+if(NOT EXISTS "${FFMPEG_CACHE_EXE}")
+  message(STATUS "Downloading bundled ffmpeg (~81MB, one-time, cached at windows/.ffmpeg-cache)")
+  file(DOWNLOAD
+    "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-win32-x64"
+    "${FFMPEG_CACHE_EXE}.part"
+    SHOW_PROGRESS
+    TLS_VERIFY ON
+    STATUS FFMPEG_DL_STATUS)
+  list(GET FFMPEG_DL_STATUS 0 FFMPEG_DL_CODE)
+  if(NOT FFMPEG_DL_CODE EQUAL 0)
+    file(REMOVE "${FFMPEG_CACHE_EXE}.part")
+    message(FATAL_ERROR "bundled ffmpeg download failed (${FFMPEG_DL_STATUS}). "
+      "Retry the build, or manually download "
+      "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-win32-x64 "
+      "and save it as ${FFMPEG_CACHE_EXE}")
+  endif()
+  file(RENAME "${FFMPEG_CACHE_EXE}.part" "${FFMPEG_CACHE_EXE}")
+endif()
+install(PROGRAMS "${FFMPEG_CACHE_EXE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
