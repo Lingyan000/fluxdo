@@ -232,6 +232,15 @@ class SearchPostCard extends ConsumerWidget {
       );
     }
 
+    if (!topic.closed && !topic.archived) {
+      return Text(
+        topic.title,
+        style: titleStyle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
     return Text.rich(
       TextSpan(
         style: titleStyle,

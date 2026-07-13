@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/category.dart';
 import '../../models/topic.dart';
 import '../../utils/responsive.dart';
 import 'topic_card.dart';
@@ -18,6 +19,8 @@ Widget buildTopicItem({
   Widget? topWidget,
   Widget? middleWidget,
   bool messageStyle = false,
+  Map<int, Category>? categoryMap,
+  double? statsAvailableWidth,
   List<PreviewAction>? previewActions,
   WidgetBuilder? previewCustomActionPanelBuilder,
 }) {
@@ -39,6 +42,7 @@ Widget buildTopicItem({
           : null,
       isSelected: isSelected,
       highlightColor: highlightColor,
+      categoryMap: categoryMap,
     );
   } else {
     child = TopicCard(
@@ -59,6 +63,8 @@ Widget buildTopicItem({
       topWidget: topWidget,
       middleWidget: middleWidget,
       messageStyle: messageStyle,
+      categoryMap: categoryMap,
+      statsAvailableWidth: statsAvailableWidth,
     );
   }
 

@@ -4,7 +4,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../utils/emoji_shortcodes.dart';
 
 /// 轻量级 Emoji 文本组件
-/// 
+///
 /// 将文本中的 :emoji_name: 替换为图片显示，
 /// 使用 Text.rich + WidgetSpan 实现，无需完整 HTML 渲染库。
 class EmojiText extends StatelessWidget {
@@ -31,7 +31,7 @@ class EmojiText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spans = _buildSpans(context);
-    
+
     // 如果没有 emoji，直接返回普通 Text
     if (spans.length == 1 && spans.first is TextSpan) {
       return Text(
@@ -66,8 +66,11 @@ class EmojiText extends StatelessWidget {
     TextStyle? style, {
     bool preserveSourceLength = false,
   }) {
+    if (!text.contains(':')) {
+      return [TextSpan(text: text)];
+    }
     final matches = emojiRegex.allMatches(text);
-    
+
     if (matches.isEmpty) {
       return [TextSpan(text: text)];
     }
@@ -81,8 +84,8 @@ class EmojiText extends StatelessWidget {
         spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
 
-      // 添加 emoji 图片
       final emojiName = match.group(1)!;
+      // 添加 emoji 图片
       spans.add(_buildEmojiWidgetSpan(context, emojiName, style));
       if (preserveSourceLength && match.end - match.start > 1) {
         spans.add(
@@ -104,11 +107,14 @@ class EmojiText extends StatelessWidget {
     return spans;
   }
 
-  static WidgetSpan _buildEmojiWidgetSpan(BuildContext context, String emojiName, TextStyle? style) {
+  static WidgetSpan _buildEmojiWidgetSpan(
+    BuildContext context,
+    String emojiName,
+    TextStyle? style,
+  ) {
     // 获取当前文字大小，emoji 稍大于文字
-    final fontSize = style?.fontSize ?? 
-        DefaultTextStyle.of(context).style.fontSize ?? 
-        14.0;
+    final fontSize =
+        style?.fontSize ?? DefaultTextStyle.of(context).style.fontSize ?? 14.0;
     final emojiSize = fontSize * 1.2;
 
     // 获取 emoji URL
@@ -127,7 +133,8 @@ class EmojiText extends StatelessWidget {
             // 加载失败时显示原文本
             return Text(
               ':$emojiName:',
-              style: style?.copyWith(fontSize: fontSize) ?? 
+              style:
+                  style?.copyWith(fontSize: fontSize) ??
                   TextStyle(fontSize: fontSize),
             );
           },
@@ -138,31 +145,22 @@ class EmojiText extends StatelessWidget {
 }
 
 /// 可选择的 Emoji 文本组件
-/// 
+///
 /// 用于需要支持文本选择的场景（如话题详情页标题）
 class SelectableEmojiText extends StatelessWidget {
   final String text;
   final TextStyle? style;
   final GlobalKey? textKey;
 
-  const SelectableEmojiText(
-    this.text, {
-    super.key,
-    this.style,
-    this.textKey,
-  });
+  const SelectableEmojiText(this.text, {super.key, this.style, this.textKey});
 
   @override
   Widget build(BuildContext context) {
     final spans = EmojiText.buildEmojiSpans(context, text, style);
-    
+
     // 如果没有 emoji，直接返回普通 SelectableText
     if (spans.length == 1 && spans.first is TextSpan) {
-      return SelectableText(
-        text,
-        key: textKey,
-        style: style,
-      );
+      return SelectableText(text, key: textKey, style: style);
     }
 
     return SelectableText.rich(
@@ -172,4 +170,3 @@ class SelectableEmojiText extends StatelessWidget {
     );
   }
 }
-

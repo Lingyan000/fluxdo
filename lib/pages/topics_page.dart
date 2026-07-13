@@ -1057,6 +1057,9 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     final allPinnedIds = ref.watch(pinnedCategoriesProvider);
     final categoryMapAsync = ref.watch(categoryMapProvider);
     final categoryMap = categoryMapAsync.value;
+    // 首页卡片统一复用页面层的分类快照，避免每张 TopicCard 单独订阅
+    // categoryMapProvider。加载期也传空 Map，防止卡片回退为逐卡 watch。
+    final topicCategoryMap = categoryMap ?? const <int, Category>{};
     // 过滤掉当前用户无权限访问的分类（不在可见分类集合中的）
     final visibleIds = ref.watch(visibleCategoryIdsProvider);
     final pinnedIds = visibleIds != null
@@ -1166,8 +1169,9 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
                   // 冻结，回滑不切 tab）;其余走 clamping 默认
                   physics: _pagerPhysics,
                   children: [
-                    _buildTabPage(null),
-                    for (final id in pinnedIds) _buildTabPage(id),
+                    _buildTabPage(null, topicCategoryMap),
+                    for (final id in pinnedIds)
+                      _buildTabPage(id, topicCategoryMap),
                   ],
                 ),
               ),
@@ -1697,7 +1701,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
   }
 
   /// 构建单个 tab 页面（带水平间距，圆角裁剪在列表内部处理）
-  Widget _buildTabPage(int? categoryId) {
+  Widget _buildTabPage(int? categoryId, Map<int, Category> categoryMap) {
     // 每个 tab 的顶部 inset 跟随各自的标签行有无（与头部可折叠量的
     // 计算同源，该 tab 激活时两者必然一致）
     final tags = ref.watch(tabTagsProvider(categoryId));
@@ -1706,6 +1710,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
       child: _TopicList(
         key: ValueKey(categoryId),
         categoryId: categoryId,
+        categoryMap: categoryMap,
         scrollController: _listControllerFor(categoryId),
         topInset: _collapsibleExtentFor(_visiblePinnedIds, tags),
         headerController: _headerController,
@@ -2419,6 +2424,7 @@ class _CategoryChip extends StatelessWidget {
 class _TopicList extends ConsumerStatefulWidget {
   final VoidCallback onLoginRequired;
   final int? categoryId;
+  final Map<int, Category> categoryMap;
 
   /// 页面持有的滚动控制器（snap 需要从页面驱动当前列表）
   final ScrollController scrollController;
@@ -2436,6 +2442,7 @@ class _TopicList extends ConsumerStatefulWidget {
     required this.scrollController,
     required this.topInset,
     required this.headerController,
+    required this.categoryMap,
     this.categoryId,
   });
 
@@ -2466,6 +2473,7 @@ class _TopicListState extends ConsumerState<_TopicList>
   /// 数据,引用同即内容同;卡片外观偏好由 TopicCard 内部 Consumer
   /// 自行订阅,复用实例不影响其响应。theme/断点变化时整体失效。
   final Map<int, ({Object signature, Widget widget})> _topicItemCache = {};
+  static const _topicItemCacheCapacity = 64;
 
   /// keyed reconcile 的行 key 常量(pill/提示条/footer 三个固定行)
   static const _pillKeyValue = 'topics-pill';
@@ -2490,6 +2498,12 @@ class _TopicListState extends ConsumerState<_TopicList>
       _topicIdToVisibleIndex = <int, int>{
         for (var i = 0; i < topics.length; i++) topics[i].id: i,
       };
+      // 只保留仍存在的数据，并限制缓存规模。缓存的是 Widget 配置而非
+      // RenderObject；64 条足够覆盖数屏父层 rebuild，同时避免数据越多
+      // TopicCard 配置和闭包永久累积、放大 GC 压力。
+      _topicItemCache.removeWhere(
+        (topicId, _) => !_topicIdToVisibleIndex.containsKey(topicId),
+      );
       // 列表数据换代(顶部插入/全量替换/单行刷新):静默结构变化落地帧,
       // 武装锚定哨兵补偿 keyed 迁移产生的位移。首建不武装。
       if (hadPrevious) {
@@ -2634,6 +2648,28 @@ class _TopicListState extends ConsumerState<_TopicList>
     setState(() => _keyboardFocusIndex = index);
   }
 
+  void _syncKeyboardFocusToTopicId(int topicId) {
+    final index = _topicIdToVisibleIndex[topicId];
+    if (index != null) _syncKeyboardFocusToIndex(index);
+  }
+
+  Object? _categorySignatureFor(Topic topic) {
+    final categoryId = int.tryParse(topic.categoryId);
+    final category = widget.categoryMap[categoryId];
+    if (category == null) return null;
+    if (!topic.pinned) {
+      return (name: category.name, color: category.color);
+    }
+    final parent = widget.categoryMap[category.parentCategoryId];
+    return (
+      color: category.color,
+      icon: category.icon,
+      logo: category.uploadedLogo,
+      parentIcon: parent?.icon,
+      parentLogo: parent?.uploadedLogo,
+    );
+  }
+
   /// 触发 loadMore，并在关键词命中率高、可见增量不足时自动续加载，
   /// 避免用户在话题列表里看到「滑到底但只多了 1-2 条」。
   Future<void> _triggerLoadMore(int? providerKey) async {
@@ -2725,6 +2761,18 @@ class _TopicListState extends ConsumerState<_TopicList>
     super.build(context); // AutomaticKeepAliveClientMixin 需要
 
     final providerKey = widget.categoryId;
+    // 本页外层固定有 12px 左右留白；TopicCard 内部再扣 24px padding、
+    // 32px 头像和 8px 间距，因此移动端元信息区宽度 = 屏宽 - 88。
+    // 由列表层一次计算并传入，避开 Sliver 布局阶段的逐卡 LayoutBuilder。
+    final double? statsAvailableWidth = Responsive.isMobile(context)
+        ? MediaQuery.sizeOf(context).width - 88
+        : null;
+    final statsWidthTier = statsAvailableWidth == null
+        ? null
+        : (
+            showLikes: statsAvailableWidth >= 300,
+            showViews: statsAvailableWidth >= 460,
+          );
     final isCurrentTab =
         ref.watch(currentTabCategoryIdProvider) == widget.categoryId;
 
@@ -2786,6 +2834,10 @@ class _TopicListState extends ConsumerState<_TopicList>
       return visible;
     });
     final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
+    // 列表层读取一次；itemBuilder 冷挂载每张卡时直接复用结果。
+    final enableLongPress = ref.watch(
+      preferencesProvider.select((p) => p.longPressPreview),
+    );
 
     // 桌面端：注册 J/K/Enter 导航到主面板快捷键
     if (PlatformUtils.isDesktop && isCurrentTab) {
@@ -2990,13 +3042,6 @@ class _TopicListState extends ConsumerState<_TopicList>
 
                             final topic = topics[topicIndex];
                             final rowKey = ValueKey('topic-${topic.id}');
-                            // 用 select:此前每张卡 watch 整个 preferences,
-                            // 任一偏好变化整列表重建,且每卡付依赖注册成本
-                            final enableLongPress = ref.watch(
-                              preferencesProvider.select(
-                                (p) => p.longPressPreview,
-                              ),
-                            );
                             final shouldHighlight = _highlightedTopicIds
                                 .contains(topic.id);
 
@@ -3035,11 +3080,13 @@ class _TopicListState extends ConsumerState<_TopicList>
                                       topic: topic,
                                       isSelected: topic.id == selectedTopicId,
                                       onTap: () {
-                                        _syncKeyboardFocusToIndex(topicIndex);
+                                        _syncKeyboardFocusToTopicId(topic.id);
                                         _openTopic(topic);
                                       },
                                       enableLongPress: enableLongPress,
                                       highlightColor: color,
+                                      categoryMap: widget.categoryMap,
+                                      statsAvailableWidth: statsAvailableWidth,
                                     );
                                   },
                                 ),
@@ -3050,11 +3097,15 @@ class _TopicListState extends ConsumerState<_TopicList>
                               topic: topic,
                               isSelected: topic.id == selectedTopicId,
                               enableLongPress: enableLongPress,
-                              index: topicIndex,
+                              category: _categorySignatureFor(topic),
+                              statsWidthTier: statsWidthTier,
                             );
                             final cached = _topicItemCache[topic.id];
                             if (cached != null &&
                                 cached.signature == signature) {
+                              // Map 保持插入顺序，命中后移到尾部作为轻量 LRU。
+                              _topicItemCache.remove(topic.id);
+                              _topicItemCache[topic.id] = cached;
                               return KeyedSubtree(
                                 key: rowKey,
                                 child: cached.widget,
@@ -3065,15 +3116,23 @@ class _TopicListState extends ConsumerState<_TopicList>
                               topic: topic,
                               isSelected: topic.id == selectedTopicId,
                               onTap: () {
-                                _syncKeyboardFocusToIndex(topicIndex);
+                                _syncKeyboardFocusToTopicId(topic.id);
                                 _openTopic(topic);
                               },
                               enableLongPress: enableLongPress,
+                              categoryMap: widget.categoryMap,
+                              statsAvailableWidth: statsAvailableWidth,
                             );
                             _topicItemCache[topic.id] = (
                               signature: signature,
                               widget: item,
                             );
+                            while (_topicItemCache.length >
+                                _topicItemCacheCapacity) {
+                              _topicItemCache.remove(
+                                _topicItemCache.keys.first,
+                              );
+                            }
                             return KeyedSubtree(key: rowKey, child: item);
                           },
                         ),
