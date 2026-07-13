@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import '../../models/category.dart';
 import '../../providers/topic_list/filter_provider.dart';
 import '../../providers/topic_list/sort_provider.dart';
 import '../common/topic_badges.dart';
 import 'filter_dropdown.dart';
+import 'category_level_dropdown.dart';
 import '../../l10n/s.dart';
 
 /// 筛选选项定义
@@ -40,6 +42,8 @@ class SortAndTagsBar extends StatelessWidget {
   final List<String> selectedTags;
   final ValueChanged<String> onTagRemoved;
   final VoidCallback? onAddTag;
+  final Category? currentCategory;
+  final ValueChanged<Category>? onCategoryChanged;
   final Widget? trailing;
 
   const SortAndTagsBar({
@@ -56,6 +60,8 @@ class SortAndTagsBar extends StatelessWidget {
     required this.selectedTags,
     required this.onTagRemoved,
     this.onAddTag,
+    this.currentCategory,
+    this.onCategoryChanged,
     this.trailing,
   });
 
@@ -90,6 +96,12 @@ class SortAndTagsBar extends StatelessWidget {
             onOrderChanged: onOrderChanged,
             onToggleAscending: onToggleAscending,
           ),
+          // 板块等级切换（内部无同级时自隐藏）
+          if (currentCategory != null && onCategoryChanged != null)
+            CategoryLevelDropdown(
+              currentCategory: currentCategory!,
+              onCategoryChanged: onCategoryChanged!,
+            ),
           const SizedBox(width: 8),
           // 标签区域
           Expanded(

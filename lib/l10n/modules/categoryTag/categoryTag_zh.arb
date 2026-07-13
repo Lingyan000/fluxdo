@@ -38,6 +38,7 @@
       }
     }
   },
+  "category_levelAll": "全部LV",
   "category_searchHint": "搜索分类...",
   "tagTopics_empty": "该标签下暂无话题",
   "tag_maxTagsReached": "最多只能选择 {max} 个标签",

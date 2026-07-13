@@ -27,6 +27,25 @@ class PinnedCategoriesNotifier extends StateNotifier<List<int>> {
     _save();
   }
 
+  /// 用新分类替换已固定的分类（保持原位置）
+  void replace(int fromId, int toId) {
+    if (fromId == toId) return;
+    final index = state.indexOf(fromId);
+    if (index < 0) {
+      add(toId);
+      return;
+    }
+    if (state.contains(toId)) {
+      // 目标已固定：移除来源即可
+      state = state.where((id) => id != fromId).toList();
+    } else {
+      final list = [...state];
+      list[index] = toId;
+      state = list;
+    }
+    _save();
+  }
+
   void reorder(int oldIndex, int newIndex) {
     final list = [...state];
     final item = list.removeAt(oldIndex);

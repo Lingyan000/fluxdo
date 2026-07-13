@@ -24,6 +24,7 @@
   "category_noCategories": "No categories",
   "category_noCategoriesFound": "No categories found",
   "category_parentAll": "{name} (All)",
+  "category_levelAll": "All LV",
   "category_searchHint": "Search categories...",
   "tagTopics_empty": "No topics with this tag",
   "tag_maxTagsReached": "Maximum {max} tags allowed",
