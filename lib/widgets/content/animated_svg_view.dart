@@ -782,8 +782,29 @@ String _contentDigestTask(String s) {
   if (anims.isNotEmpty) {
     // seek(0) 把 CSS/SMIL 首帧值写进 DOM 属性,painter 直接照画
     SvgTimeline(animations: anims, rootNode: doc.root).seek(Duration.zero);
+    _pruneInvisible(doc.root);
   }
   return (doc, anims.isNotEmpty);
+}
+
+/// 剪除 seek(0) 后有效 opacity≈0 的节点。
+///
+/// 上游 painter 缺陷:`<text>` 的元素级 opacity 不作用于其 tspan 子树
+/// (opacity 是非继承属性,规范要求按组合成处理;包对 `<g>` 有 saveLayer
+/// 组合成,text 漏了)。轮播歌词类 SVG 用上百个互斥 opacity 层做逐句
+/// 切换,首帧会全层实心叠加糊成一团。时间轴求值本身正确(已实测
+/// dump:opacity 值全部正确写回 DOM),所以按值物理剪除与浏览器 t=0
+/// 画面等价(探针对照验证)。只影响首帧快照;点击播放走全量活体解析,
+/// 层结构完整。
+void _pruneInvisible(SvgNode node) {
+  node.children.removeWhere((c) {
+    final v = c.getAttributeValue('opacity');
+    final d = v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+    return d != null && d <= 0.01;
+  });
+  for (final c in node.children) {
+    _pruneInvisible(c);
+  }
 }
 
 /// 顶层派发器:闭包只捕获 String(async 上下文里创建的闭包会连带
