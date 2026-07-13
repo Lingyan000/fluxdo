@@ -210,6 +210,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _isParentActive = true;
   bool _isScreenTrackRunning = false;
 
+  /// 进度条水平 scrub：拖动中锁底栏、禁止自动分页，并串行跳楼
+  bool _isProgressScrubbing = false;
+  bool _scrubJumpInFlight = false;
+  int? _scrubPendingPostNumber;
+  /// 队列中是否有「松手 finalize」语义（只对最后一次目标生效）
+  bool _scrubPendingFinalize = false;
+
   bool get _usesEmbeddedMobileWorkspaceChrome {
     return widget.embeddedMode &&
         PlatformUtils.isMobile &&
@@ -1830,20 +1837,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       );
     }
 
-    // 跳转中：等待包含目标帖子的新数据 - 显示骨架屏
-    final jumpTarget = _controller.jumpTargetPostNumber;
-    if (jumpTarget != null && detail != null) {
-      final posts = detail.postStream.posts;
-      // 检查目标帖子是否在当前加载的范围内
-      final hasTarget =
-          posts.isNotEmpty &&
-          posts.first.postNumber <= jumpTarget &&
-          posts.last.postNumber >= jumpTarget;
-      if (!hasTarget) {
-        return _wrapWithConstraint(const PostListSkeleton(withHeader: false));
-      }
-    }
-
     Widget content = const SizedBox();
 
     if (detailAsync.hasError && detail == null) {
@@ -1857,8 +1850,19 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         ],
       );
     } else if (detail != null) {
-      // 正常内容构建 (保持原有逻辑，但简化提取)
-      content = _buildPostListContent(context, detail, notifier, isLoggedIn);
+      // 跳转中目标尚未加载：骨架只替换列表区域，绝不 early-return 整页，
+      // 否则 Overlay（进度条/底栏）会一起消失，scrub 快速拖时像「整屏空白」。
+      final jumpTarget = _controller.jumpTargetPostNumber;
+      final posts = detail.postStream.posts;
+      final hasJumpTarget = jumpTarget == null ||
+          (posts.isNotEmpty &&
+              posts.first.postNumber <= jumpTarget &&
+              posts.last.postNumber >= jumpTarget);
+      if (!hasJumpTarget) {
+        content = const PostListSkeleton(withHeader: false);
+      } else {
+        content = _buildPostListContent(context, detail, notifier, isLoggedIn);
+      }
     }
 
     // Stack 组装
@@ -1910,6 +1914,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     onProgressScrubEnd: (postNumber) => unawaited(
                       _scrubToPostNumber(postNumber, finalize: true),
                     ),
+                    onProgressScrubCancel: _endProgressScrub,
                     currentPostNumber: _controller.viewportPostNumber ??
                         _controller.keyboardSelectedPostNumber ??
                         _resolvePostNumberFromStreamIndex(

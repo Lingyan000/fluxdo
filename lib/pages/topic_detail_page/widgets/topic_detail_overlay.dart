@@ -26,6 +26,8 @@ class TopicDetailOverlay extends StatelessWidget {
   final ValueChanged<int>? onProgressScrubToPostNumber;
   /// scrub 松手时的最终楼层（可做完整跳转）
   final ValueChanged<int>? onProgressScrubEnd;
+  /// scrub 取消（pan cancel 等）时解锁底栏 / 分页
+  final VoidCallback? onProgressScrubCancel;
   /// 当前可见帖的 post_number，供 scrub 起点
   final int currentPostNumber;
   /// 话题最大楼层号（posts_count）
@@ -58,6 +60,7 @@ class TopicDetailOverlay extends StatelessWidget {
     this.onProgressGesture,
     this.onProgressScrubToPostNumber,
     this.onProgressScrubEnd,
+    this.onProgressScrubCancel,
     this.currentPostNumber = 1,
     this.maxPostNumber = 1,
     this.isSummaryMode = false,
@@ -97,6 +100,7 @@ class TopicDetailOverlay extends StatelessWidget {
                 totalCount: maxPostNumber > 0 ? maxPostNumber : totalCount,
                 onScrubToIndex: onProgressScrubToPostNumber ?? (_) {},
                 onScrubEnd: onProgressScrubEnd,
+                onScrubCancel: onProgressScrubCancel,
                 child: TopicProgress(
                   currentIndex: currentStreamIndex,
                   totalCount: totalCount,

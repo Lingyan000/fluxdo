@@ -260,12 +260,17 @@ extension LoadingMethods on TopicDetailNotifier {
   }
 
   /// 使用新的起始帖子号重新加载数据
+  ///
+  /// 使用 copyWithPrevious 保留旧 detail，避免 loading 期间 detail==null
+  /// 把整页（含底栏 Overlay）换成纯骨架。
   Future<void> reloadWithPostNumber(int postNumber) async {
-    state = const AsyncValue.loading();
     _hasMoreAfter = true;
     _hasMoreBefore = true;
     _isLoadMoreFailed = false;
     _isLoadPreviousFailed = false;
+
+    // ignore: invalid_use_of_internal_member
+    state = const AsyncLoading<TopicDetail>().copyWithPrevious(state);
 
     await Future.delayed(Duration.zero);
 

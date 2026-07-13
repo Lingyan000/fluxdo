@@ -21,7 +21,7 @@ const double _kSwipeDeadZone = 6.0;
 const double _kScrubPixelsPerFloor = 14.0;
 
 /// 单次左右 scrub 最大跨度（相对按下时楼层），减轻压力并提高细腻度
-const int _kScrubMaxDeltaFloors = 20;
+const int _kScrubMaxDeltaFloors = 10;
 
 /// 拖动中实时跳楼的最小间隔，避免每楼都触发重渲染 / 无障碍树报错
 const Duration _kScrubJumpThrottle = Duration(milliseconds: 100);
@@ -44,6 +44,7 @@ class TopicProgressGestures extends ConsumerStatefulWidget {
     required this.totalCount,
     required this.onScrubToIndex,
     this.onScrubEnd,
+    this.onScrubCancel,
   });
 
   final Widget child;
@@ -60,6 +61,9 @@ class TopicProgressGestures extends ConsumerStatefulWidget {
 
   /// scrub 松手时的最终楼层（可做完整跳转 / 补齐未加载楼）
   final ValueChanged<int>? onScrubEnd;
+
+  /// scrub 被取消且未 finalize 时解锁页面状态
+  final VoidCallback? onScrubCancel;
 
   @override
   ConsumerState<TopicProgressGestures> createState() =>
@@ -308,7 +312,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     final total = widget.totalCount;
     if (total <= 1) return widget.currentIndex.clamp(1, math.max(1, total));
 
-    // 固定灵敏度：小范围（±30 楼）内更细腻，不再按话题总长放大跨度
+    // 固定灵敏度：小范围（±10 楼）内更细腻，不再按话题总长放大跨度
     final deltaFloors = (dx / _kScrubPixelsPerFloor)
         .round()
         .clamp(-_kScrubMaxDeltaFloors, _kScrubMaxDeltaFloors);
@@ -348,15 +352,23 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
   }
 
   /// 松手时冲刷节流队列，保证落到最终预览楼层
+  ///
+  /// 即使楼层未变也要回调 finalize，以便页面解锁 scrub 态（底栏/分页锁）
   void _flushScrubJump() {
     _scrubThrottleTimer?.cancel();
     _scrubThrottleTimer = null;
-    final next = _pendingScrubIndex ?? _scrubTargetIndex;
+    final next = _pendingScrubIndex ??
+        _scrubTargetIndex ??
+        _scrubAppliedIndex ??
+        _scrubStartIndex;
     _pendingScrubIndex = null;
-    if (next == null) return;
-    if (widget.totalCount <= 1) return;
+    if (widget.totalCount <= 1) {
+      // 单楼话题也走 end，避免锁死
+      widget.onScrubEnd?.call(next);
+      return;
+    }
     _scrubAppliedIndex = next;
-    // 优先走 finalize 回调，让页面可做完整跳转
+    // 优先走 finalize 回调，让页面可做完整跳转并解锁
     final end = widget.onScrubEnd;
     if (end != null) {
       end(next);
@@ -437,7 +449,12 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     final triggerChanged = triggerable != _swipeTriggerable;
     final scrubChanged = scrubTarget != _scrubTargetIndex;
     if (scrubChanged && scrubTarget != null) {
-      HapticFeedback.selectionClick();
+      // 触觉降频：每 3 楼一次，减轻快速拖时的系统开销
+      if ((scrubTarget - _scrubStartIndex).abs() % 3 == 0 ||
+          scrubTarget == 1 ||
+          scrubTarget == widget.totalCount) {
+        HapticFeedback.selectionClick();
+      }
       // 预览立刻变；实际列表跳转走节流，避免拖太快卡死
       _scheduleScrubJump(scrubTarget);
     } else if (triggerChanged && triggerable) {
@@ -474,6 +491,14 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
   }
 
   void _handlePanCancel() {
+    // 与松手一致冲刷最终楼层；若未发生水平 scrub 也通知取消以解锁
+    final isHorizontal = _swipeDirection == _SwipeDirection.left ||
+        _swipeDirection == _SwipeDirection.right;
+    if (isHorizontal) {
+      _flushScrubJump();
+    } else {
+      widget.onScrubCancel?.call();
+    }
     _disposeSwipeOverlay();
   }
 
