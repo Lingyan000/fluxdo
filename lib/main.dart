@@ -75,6 +75,7 @@ import 'constants.dart';
 import 'providers/connectivity_provider.dart';
 import 'utils/dialog_utils.dart';
 import 'utils/frame_jank_monitor.dart';
+import 'utils/glyph_warmer.dart';
 import 'utils/image_decode_gate.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'utils/time_utils.dart';
@@ -243,6 +244,9 @@ Future<void> main() async {
   if (kReleaseMode && (prefs.getBool(FrameJankMonitor.prefKey) ?? false)) {
     FrameJankMonitor.start();
   }
+
+  // 字形图集预热(默认开;性能诊断页可关,便于 A/B 验证)
+  GlyphWarmer.enabled = prefs.getBool(GlyphWarmer.prefKey) ?? true;
 
   // v0.4.0: 注册 Cookie 引擎 DevTools service extensions (仅 debug/profile 模式)
   // 设计依据: docs/cookie-sync-design-v0.4.0.md §11.4

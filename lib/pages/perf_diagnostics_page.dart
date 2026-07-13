@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/toast_service.dart';
 import '../utils/frame_jank_monitor.dart';
+import '../utils/glyph_warmer.dart';
 import '../utils/jank_profiler.dart';
 import '../widgets/common/perf_overlay.dart';
 
@@ -153,6 +154,21 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
               value: PerfOverlay.isShowing,
               onChanged: (v) async {
                 await PerfOverlay.setEnabled(v);
+                if (mounted) setState(() {});
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('字形图集预热'),
+              subtitle: const Text(
+                '空闲帧把帖子中文字形提前画进 GPU 图集,'
+                '消除滚动中的图集扩容大帧(时间轴 warm 标记;重启后保持)',
+              ),
+              value: GlyphWarmer.enabled,
+              onChanged: (v) async {
+                GlyphWarmer.enabled = v;
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool(GlyphWarmer.prefKey, v);
                 if (mounted) setState(() {});
               },
             ),
