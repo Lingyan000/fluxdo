@@ -275,6 +275,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
       _controller ??= AnimatedSvgController();
       _playing?._pause();
       _playing = this;
+      _startPlaybackClock();
       return;
     }
     final master = _SvgFirstFrameCache.peek(_cacheKey);
@@ -369,6 +370,8 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     _waitNotifier = null;
     _armTimer?.cancel();
     _armTimer = null;
+    _stopPlaybackClock();
+    _playClock.reset();
     _snapshot?.dispose();
     _snapshot = null;
     _strippedSource = null;
@@ -513,6 +516,39 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   }
 
   // ---- 播放控制 ----
+  //
+  // 不用包的 autoPlay(其内部 AnimationController 以 vsync 满帧率每帧
+  // setState+全量重录制,极端图单帧录制几十 ms,直接把滚动手势帧挤掉
+  // ——"动起来滚动不跟手"的元凶)。改为自驱低频时钟:Timer 以
+  // _playbackFps 调 controller.seek(elapsed),包收到 seek 应用时间轴
+  // 并只重绘一次;滚动进行中(recommendDeferredLoading)直接跳过 tick,
+  // 动画冻结零成本,松手自然续播。CSS 轮播类动画本身是低频切换,
+  // 15fps 视觉无损,UI 线程成本 ≈ 满帧的 1/8,且让位于手势。
+
+  static const int _playbackFps = 15;
+
+  Timer? _playTimer;
+  final Stopwatch _playClock = Stopwatch();
+
+  void _startPlaybackClock() {
+    _playTimer?.cancel();
+    _playTimer = Timer.periodic(
+      Duration(milliseconds: (1000 / _playbackFps).round()),
+      (_) {
+        if (!mounted || !_isPlaying) return;
+        // 滚动中让路:不 seek 不重绘,手势帧零竞争
+        if (Scrollable.recommendDeferredLoadingForContext(context)) return;
+        _controller?.seek(_playClock.elapsed);
+      },
+    );
+    _playClock.start();
+  }
+
+  void _stopPlaybackClock() {
+    _playTimer?.cancel();
+    _playTimer = null;
+    _playClock.stop();
+  }
 
   Future<void> _togglePlay() async {
     if (_pendingPlay) return;
@@ -528,8 +564,8 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
 
     if (_liveMounted) {
       // 活体还在(此前暂停过):秒回,零解析
-      _controller?.resume();
       setState(() => _isPlaying = true);
+      _startPlaybackClock();
       return;
     }
 
@@ -543,11 +579,12 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
       _isPlaying = true;
       _controller ??= AnimatedSvgController();
     });
+    _startPlaybackClock();
   }
 
   void _pause() {
     if (!_isPlaying) return;
-    _controller?.pause();
+    _stopPlaybackClock();
     if (_playing == this) _playing = null;
     if (mounted) {
       setState(() => _isPlaying = false);
@@ -559,7 +596,11 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   // ---- build ----
 
   /// 活体(full_svg_flutter)子树:冻结选举 / 播放 / 暂停共用同一形状,
-  /// 切换只改 autoPlay(包内部 didUpdateWidget 处理,不会重解析)。
+  /// 活体(full_svg_flutter)子树:冻结选举 / 播放 / 暂停共用同一形状。
+  ///
+  /// autoPlay 恒 false:播放由外部低频时钟经 controller.seek 驱动
+  /// (见"播放控制"),包内部不建 vsync AnimationController——满帧率
+  /// 每帧全量重录制是滚动不跟手的元凶。seek 应用时间轴后只重绘一次。
   ///
   /// fit: contain + alignment: center 是包内**跳过 FittedBox** 的唯一
   /// 组合:CustomPaint 直接吃盒子尺寸,painter 按文档自己的
@@ -580,7 +621,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
           _safeSource,
           fit: BoxFit.contain,
           alignment: Alignment.center,
-          autoPlay: _isPlaying,
+          autoPlay: false,
           controller: _controller,
           clipToViewBox: true,
         ),
