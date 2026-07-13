@@ -71,6 +71,9 @@ class TopicDetailController extends ChangeNotifier {
   TopicScrollState _scrollState;
   double _accumulatedScrollDelta = 0;
 
+  /// scrub 拖动中：禁止程序滚动把底栏藏起来，并保持底栏可见
+  bool _scrubbing = false;
+
   /// 底部栏显示状态
   final ValueNotifier<bool> showBottomBarNotifier = ValueNotifier<bool>(false);
 
@@ -230,8 +233,23 @@ class TopicDetailController extends ChangeNotifier {
     _handleBottomBarScrollDelta(delta);
   }
 
+  /// 进入/退出进度条 scrub：拖动中保持底栏，忽略程序滚动触发的显隐
+  void setScrubbing(bool value) {
+    if (_scrubbing == value) return;
+    _scrubbing = value;
+    _accumulatedScrollDelta = 0;
+    if (value && !_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
+  }
+
+  bool get isScrubbing => _scrubbing;
+
   void _handleBottomBarScrollDelta(double delta) {
     if (delta == 0) return;
+    // scrub 程序滚动方向杂乱，勿据此藏底栏
+    if (_scrubbing) return;
 
     if ((_accumulatedScrollDelta > 0 && delta < 0) ||
         (_accumulatedScrollDelta < 0 && delta > 0)) {
@@ -308,13 +326,20 @@ class TopicDetailController extends ChangeNotifier {
   }
 
   /// 准备跳转到帖子（重新加载数据）
-  void prepareJumpToPost(int postNumber) {
+  ///
+  /// [hideUntilPositioned] 为 true 时列表 Opacity 置 0，适合一次定位跳转。
+  /// scrub 等连续看贴场景应传 false，并配合 preserve 内容的 reload。
+  void prepareJumpToPost(
+    int postNumber, {
+    bool hideUntilPositioned = true,
+  }) {
     _updateScrollState(
       TopicScrollState(
         showBackToTop: _scrollState.showBackToTop,
         showBottomBar: _scrollState.showBottomBar,
         hasInitialScrolled: false,
-        isPositioned: false,
+        isPositioned:
+            hideUntilPositioned ? false : _scrollState.isPositioned,
         jumpTargetPostNumber: postNumber,
         initialCenterPostNumber: null,
         viewportPostNumber: _scrollState.viewportPostNumber,
@@ -381,14 +406,23 @@ class TopicDetailController extends ChangeNotifier {
   }
 
   /// 本地跳转到帖子（不重新请求，仅重置视图中心）
-  void jumpToPostLocally(int postNumber, {int? anchorPostNumber}) {
+  ///
+  /// [hideUntilPositioned] 为 true（默认）时会将列表 Opacity 置 0，
+  /// 等定位完成后再显示，避免大跨度重排时闪到错误位置。
+  /// scrub 拖动等连续交互应传 false，否则会出现「中间没内容」。
+  void jumpToPostLocally(
+    int postNumber, {
+    int? anchorPostNumber,
+    bool hideUntilPositioned = true,
+  }) {
     // 重置可见性数据
     resetVisibility();
 
     _updateScrollState(
       _scrollState.copyWith(
         hasInitialScrolled: false,
-        isPositioned: false,
+        // hideUntilPositioned=false 时保持当前 isPositioned，不隐列表
+        isPositioned: hideUntilPositioned ? false : _scrollState.isPositioned,
         jumpTargetPostNumber: postNumber,
         initialCenterPostNumber: anchorPostNumber ?? postNumber,
         keyboardSelectedPostNumber: postNumber,

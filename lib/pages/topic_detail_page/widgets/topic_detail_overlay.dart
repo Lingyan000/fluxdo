@@ -22,6 +22,16 @@ class TopicDetailOverlay extends StatelessWidget {
   final VoidCallback onReply;
   final VoidCallback onProgressTap;
   final ValueChanged<ProgressGestureAction>? onProgressGesture;
+  /// scrub 目标为真实楼层号 post_number（不是 stream 序号）
+  final ValueChanged<int>? onProgressScrubToPostNumber;
+  /// scrub 松手时的最终楼层（可做完整跳转）
+  final ValueChanged<int>? onProgressScrubEnd;
+  /// scrub 取消（pan cancel 等）时解锁底栏 / 分页
+  final VoidCallback? onProgressScrubCancel;
+  /// 当前可见帖的 post_number，供 scrub 起点
+  final int currentPostNumber;
+  /// 话题最大楼层号（posts_count）
+  final int maxPostNumber;
   final bool isSummaryMode;
   final bool isAuthorOnlyMode;
   final bool isTopLevelMode;
@@ -48,6 +58,11 @@ class TopicDetailOverlay extends StatelessWidget {
     required this.onReply,
     required this.onProgressTap,
     this.onProgressGesture,
+    this.onProgressScrubToPostNumber,
+    this.onProgressScrubEnd,
+    this.onProgressScrubCancel,
+    this.currentPostNumber = 1,
+    this.maxPostNumber = 1,
     this.isSummaryMode = false,
     this.isAuthorOnlyMode = false,
     this.isTopLevelMode = false,
@@ -80,6 +95,12 @@ class TopicDetailOverlay extends StatelessWidget {
             child: Center(
               child: TopicProgressGestures(
                 onAction: onProgressGesture ?? (_) {},
+                // scrub 用真实楼层号，避免隐藏楼导致序号错位
+                currentIndex: currentPostNumber,
+                totalCount: maxPostNumber > 0 ? maxPostNumber : totalCount,
+                onScrubToIndex: onProgressScrubToPostNumber ?? (_) {},
+                onScrubEnd: onProgressScrubEnd,
+                onScrubCancel: onProgressScrubCancel,
                 child: TopicProgress(
                   currentIndex: currentStreamIndex,
                   totalCount: totalCount,

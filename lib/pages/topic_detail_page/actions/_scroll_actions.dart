@@ -10,6 +10,9 @@ extension _ScrollActions on _TopicDetailPageState {
     _scheduleCheckTitleVisibility();
     _controller.handleScroll();
 
+    // scrub 拖动中禁止自动 loadPrevious/loadMore，避免列表结构突变导致空白
+    if (_isProgressScrubbing) return;
+
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));
 
@@ -364,6 +367,182 @@ extension _ScrollActions on _TopicDetailPageState {
       if (mounted) setState(() {});
     }
     _controller.triggerHighlight(postNumber);
+  }
+
+  /// scrub 取消 / 异常结束：解锁底栏与自动分页
+  void _endProgressScrub() {
+    _scrubPendingPostNumber = null;
+    _scrubPendingFinalize = false;
+    _isProgressScrubbing = false;
+    _controller.setScrubbing(false);
+  }
+
+  /// 进度条水平 scrub：边拖边看贴（必须立刻看到目标楼正文）
+  ///
+  /// 约束（修「快速左拉整屏空白 + 底栏消失」）：
+  /// 1. **绝不**在拖动中 [prepareJumpToPost] 后整页骨架 / 清空 detail 的 reload
+  /// 2. 本地重定位 [jumpToPostLocally] 一律 hideUntilPositioned: false
+  /// 3. 拖动期间锁底栏、禁止 scroll 触发 loadPrevious/loadMore
+  /// 4. 串行只保留最新目标，避免快速拖动 async 堆叠
+  Future<void> _scrubToPostNumber(
+    int postNumber, {
+    bool finalize = false,
+  }) async {
+    if (!finalize && !_isProgressScrubbing) {
+      _isProgressScrubbing = true;
+      _controller.setScrubbing(true);
+    }
+
+    _scrubPendingPostNumber = postNumber;
+    if (finalize) {
+      _scrubPendingFinalize = true;
+    }
+
+    // 串行：上一次 jump 未完成则只更新 pending，结束后再冲最新目标
+    if (_scrubJumpInFlight) return;
+    _scrubJumpInFlight = true;
+    var sawFinalize = false;
+    try {
+      while (mounted) {
+        final targetRaw = _scrubPendingPostNumber;
+        if (targetRaw == null) break;
+        _scrubPendingPostNumber = null;
+
+        // finalize 只作用在「当前取出的目标」上；若 await 期间又有新目标，
+        // 把 finalize 语义留给队列里的最终目标
+        var doFinalize = _scrubPendingFinalize;
+        _scrubPendingFinalize = false;
+        if (doFinalize) sawFinalize = true;
+
+        await _scrubToPostNumberOnce(targetRaw, finalize: doFinalize);
+        if (!mounted) break;
+
+        if (_scrubPendingPostNumber != null) {
+          if (doFinalize) {
+            _scrubPendingFinalize = true;
+          }
+          continue;
+        }
+        break;
+      }
+    } finally {
+      _scrubJumpInFlight = false;
+      // 仅松手 finalize 后解锁；拖动中即使单次 jump 结束也保持锁定，
+      // 避免中途 loadPrevious/loadMore 或藏底栏
+      if (sawFinalize && _scrubPendingPostNumber == null) {
+        _isProgressScrubbing = false;
+        _controller.setScrubbing(false);
+      }
+    }
+  }
+
+  Future<void> _scrubToPostNumberOnce(
+    int postNumber, {
+    required bool finalize,
+  }) async {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null) return;
+
+    final maxPost = detail.postsCount > 0
+        ? detail.postsCount
+        : detail.postStream.stream.length;
+    final target = postNumber.clamp(1, maxPost < 1 ? 1 : maxPost);
+
+    final posts = detail.postStream.posts;
+    final postIndex = posts.indexWhere((p) => p.postNumber == target);
+
+    // —— 目标已在已加载列表 ——
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      _controller.updateViewportPostNumber(post.postNumber);
+
+      final streamIndex = detail.postStream.stream.indexOf(post.id);
+      if (streamIndex != -1) {
+        _controller.updateStreamIndex(streamIndex + 1);
+      }
+
+      // 已渲染：直接 scroll，立刻看到该楼
+      if (_controller.isPostRendered(postIndex)) {
+        await _controller.scrollToPost(post.postNumber, posts);
+        return;
+      }
+
+      // 已加载未渲染：本地重定位到该楼（不隐列表、不整页骨架）
+      int? anchorPostNumber;
+      if (posts.length - 1 - postIndex < 20) {
+        final safeIndex = (posts.length - 20).clamp(0, posts.length - 1);
+        anchorPostNumber = posts[safeIndex].postNumber;
+      }
+      _controller.jumpToPostLocally(
+        post.postNumber,
+        anchorPostNumber: anchorPostNumber,
+        hideUntilPositioned: false,
+      );
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // —— 目标未加载 ——
+    // 拖动中：落到最近已加载楼并滚过去（继续能看贴），绝不 reload
+    if (!finalize && posts.isNotEmpty) {
+      Post nearest = posts.first;
+      var best = (posts.first.postNumber - target).abs();
+      for (final p in posts) {
+        final d = (p.postNumber - target).abs();
+        if (d < best) {
+          best = d;
+          nearest = p;
+        }
+      }
+      _controller.updateViewportPostNumber(nearest.postNumber);
+      final streamIndex = detail.postStream.stream.indexOf(nearest.id);
+      if (streamIndex != -1) {
+        _controller.updateStreamIndex(streamIndex + 1);
+      }
+      final nearestIndex = posts.indexWhere(
+        (p) => p.postNumber == nearest.postNumber,
+      );
+      if (nearestIndex != -1 && _controller.isPostRendered(nearestIndex)) {
+        await _controller.scrollToPost(nearest.postNumber, posts);
+      } else if (nearestIndex != -1) {
+        _controller.jumpToPostLocally(
+          nearest.postNumber,
+          hideUntilPositioned: false,
+        );
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
+    // 松手且目标未加载：完整跳转（可能 reload）。
+    // reload 已用 copyWithPrevious；整页骨架改为只替换列表区，Overlay 保留。
+    // 仍避免 prepareJump 把 isPositioned 打 false 造成 Opacity(0)。
+    final params = _params;
+    final notifier = ref.read(topicDetailProvider(params).notifier);
+    _controller.prepareJumpToPost(target, hideUntilPositioned: false);
+    _controller.skipNextJumpHighlight = true;
+    if (notifier.isSummaryMode ||
+        notifier.isAuthorOnlyMode ||
+        notifier.isTopLevelMode) {
+      await _reloadWithFilterFallback(postNumber: target);
+    } else {
+      await notifier.reloadWithPostNumber(target);
+    }
+  }
+
+  /// stream 1-based 索引 → 真实 post_number（隐藏楼时二者不等）
+  int _resolvePostNumberFromStreamIndex(
+    TopicDetail detail,
+    int streamIndex1Based,
+  ) {
+    final stream = detail.postStream.stream;
+    if (stream.isEmpty) return 1;
+    final index = streamIndex1Based.clamp(1, stream.length) - 1;
+    final postId = stream[index];
+    final posts = detail.postStream.posts;
+    final loaded = posts.where((p) => p.id == postId).firstOrNull;
+    if (loaded != null) return loaded.postNumber;
+    return streamIndex1Based;
   }
 
   Future<void> _scrollToPostById(int postId) async {
