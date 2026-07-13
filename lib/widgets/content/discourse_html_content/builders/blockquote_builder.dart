@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../callout/callout_builder.dart';
 import '../callout/callout_config.dart';
+import 'eye_care_quote_style.dart';
 
 /// 构建普通引用块 (支持 Obsidian Callout)
 Widget buildBlockquote({
@@ -75,15 +76,15 @@ Widget buildBlockquote({
     );
   }
 
-  // 普通引用块 - 使用灰色
+  // 普通引用块；护眼气泡开启时用半透明叠色，避免盖住楼主绿/回帖黄
   return Container(
     margin: const EdgeInsets.symmetric(vertical: 8),
     padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
     decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      color: eyeCareAwareQuoteBackground(context, theme),
       border: Border(
         left: BorderSide(
-          color: theme.colorScheme.outline,
+          color: eyeCareAwareQuoteBorder(context, theme),
           width: 4,
         ),
       ),

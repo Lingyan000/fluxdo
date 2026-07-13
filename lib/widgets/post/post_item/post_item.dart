@@ -138,6 +138,8 @@ class _PostItemState extends ConsumerState<PostItem> {
       post: post,
       selected: widget.selected,
       highlight: widget.highlight,
+      isTopicOwner: widget.isTopicOwner,
+      eyeCareBubblePart: EyeCareBubblePart.full,
       constraints: const BoxConstraints(minHeight: 80),
       showTopDateSeparator: widget.dateSeparatorLabel != null,
       topDateSeparatorLabel: widget.dateSeparatorLabel,

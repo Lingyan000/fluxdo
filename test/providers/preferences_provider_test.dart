@@ -55,4 +55,31 @@ void main() {
       BookmarksOpenMode.defaultRoute,
     );
   });
+
+  group('eye care bubbles', () {
+    test('defaults to false', () async {
+      final container = await _createContainer();
+      addTearDown(container.dispose);
+
+      expect(container.read(preferencesProvider).eyeCareBubbles, isFalse);
+    });
+
+    test('setter persists and reloads', () async {
+      final container = await _createContainer();
+      addTearDown(container.dispose);
+
+      await container
+          .read(preferencesProvider.notifier)
+          .setEyeCareBubbles(true);
+
+      final prefs = container.read(sharedPreferencesProvider);
+      final reloaded = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+      addTearDown(reloaded.dispose);
+
+      expect(reloaded.read(preferencesProvider).eyeCareBubbles, isTrue);
+      expect(prefs.getBool('pref_eye_care_bubbles'), isTrue);
+    });
+  });
 }

@@ -156,6 +156,9 @@ class AppPreferences {
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
 
+  /// 护眼气泡：楼层卡片式底色（楼主绿 / 回帖暖黄）
+  final bool eyeCareBubbles;
+
   /// 默认使用树形视图
   final bool defaultNestedView;
 
@@ -232,6 +235,7 @@ class AppPreferences {
     required this.dialogBlur,
     this.showSignatures = true,
     this.boostDanmaku = false,
+    this.eyeCareBubbles = false,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
     this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
@@ -276,6 +280,7 @@ class AppPreferences {
     bool? dialogBlur,
     bool? showSignatures,
     bool? boostDanmaku,
+    bool? eyeCareBubbles,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
     BookmarksOpenMode? bookmarksOpenMode,
@@ -325,6 +330,7 @@ class AppPreferences {
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
+      eyeCareBubbles: eyeCareBubbles ?? this.eyeCareBubbles,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
       bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
@@ -384,6 +390,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
+  static const String _eyeCareBubblesKey = 'pref_eye_care_bubbles';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
   static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
@@ -446,6 +453,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
+          eyeCareBubbles: _prefs.getBool(_eyeCareBubblesKey) ?? false,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
@@ -645,6 +653,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.boostDanmaku == enabled) return;
     state = state.copyWith(boostDanmaku: enabled);
     await _prefs.setBool(_boostDanmakuKey, enabled);
+  }
+
+  Future<void> setEyeCareBubbles(bool enabled) async {
+    if (state.eyeCareBubbles == enabled) return;
+    state = state.copyWith(eyeCareBubbles: enabled);
+    await _prefs.setBool(_eyeCareBubblesKey, enabled);
   }
 
   Future<void> setDefaultNestedView(bool enabled) async {

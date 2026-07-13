@@ -84,6 +84,8 @@
   "reading_aiSwipeEntryDesc": "在話題詳情頁向左滑動打開 AI 助手",
   "reading_boostDanmaku": "Boost 彈幕化",
   "reading_boostDanmakuDesc": "把 Boost 以彈幕形式疊加喺帖子內容上方滾動，觸碰暫停",
+  "reading_eyeCareBubbles": "護眼氣泡",
+  "reading_eyeCareBubblesDesc": "為每樓帖子使用卡片式護眼底色，樓主綠色、回帖淡黃色",
   "reading_expandRelatedLinks": "預設展開相關鏈接",
   "reading_expandRelatedLinksDesc": "帖子中的相關鏈接區域預設展開顯示",
   "reading_showSignatures": "顯示用户簽名",
