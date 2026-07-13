@@ -934,6 +934,19 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     insertText('$prefix$tag\n');
   }
 
+  /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
+  /// 非行首先补换行(与媒体标签插入同款;模板文本与富 composer 的
+  /// 「+」插入菜单一致)。
+  void insertBlockSnippet(String snippet) {
+    final selection = widget.controller.selection;
+    final text = widget.controller.text;
+    final needsLeadingNewline = selection.isValid &&
+        selection.start > 0 &&
+        text[selection.start - 1] != '\n';
+    final prefix = needsLeadingNewline ? '\n' : '';
+    insertText('$prefix$snippet\n');
+  }
+
   /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
   Future<void> recordAndInsertVoice() async {
     final path = await showVoiceRecorderSheet(context);

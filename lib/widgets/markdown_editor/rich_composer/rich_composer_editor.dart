@@ -972,6 +972,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       constraints: const BoxConstraints(maxWidth: 230),
       items: [
         for (final (label, md, icon) in entries) item(md, icon, label),
+        // 链接:与工具栏链接按钮同一流程(选区加 mark/对话框插入)
+        item('__link__', Icons.link_rounded, '插入链接'),
         // 日期时间:弹属性对话框选时间再插原子(不再是死模板)
         item('__date__', Icons.event_rounded, '日期时间'),
         // 音视频:选文件改名 .xz 上传后插 <audio>/<video> 标签
@@ -991,6 +993,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _pickAndInsertMedia(isAudio: selected == '__audio__');
     } else if (selected == '__voice__') {
       await _recordAndInsertVoice();
+    } else if (selected == '__link__') {
+      await _insertLink();
     } else {
       await insertMarkdownSnippet(selected);
     }
