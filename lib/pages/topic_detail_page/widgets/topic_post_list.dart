@@ -15,6 +15,7 @@ import '../../../widgets/content/discourse_html_content/chunked/html_chunk.dart'
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/quote_selection_helper.dart';
 import '../../../widgets/post/post_item/segmented_long_post.dart';
+import '../../../widgets/post/post_item/widgets/post_segment_frame.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'typing_indicator.dart';
@@ -721,6 +722,11 @@ class _TopicPostListState extends State<TopicPostList> {
     final Widget? opSlot = (post.postNumber == 1 && detail.sharedIssueVisible)
         ? SharedIssueButton(topic: detail, onChanged: onSharedIssueChanged)
         : null;
+    final isTopicOwner = isEyeCareTopicOwner(
+      postUsername: post.username,
+      postNumber: post.postNumber,
+      createdByUsername: detail.createdBy?.username,
+    );
     final Widget child;
 
     switch (segment.type) {
@@ -731,7 +737,7 @@ class _TopicPostListState extends State<TopicPostList> {
           selected: isSelectedPost,
           highlight: highlight,
           highlightBoostUsername: boostUsername,
-          isTopicOwner: detail.createdBy?.username == post.username,
+          isTopicOwner: isTopicOwner,
           topicHasAcceptedAnswer: detail.hasAcceptedAnswer,
           acceptedAnswers: detail.acceptedAnswers,
           dateSeparatorLabel: dateSeparatorLabel,
@@ -767,7 +773,7 @@ class _TopicPostListState extends State<TopicPostList> {
           topicId: detail.id,
           selected: isSelectedPost,
           highlight: highlight,
-          isTopicOwner: detail.createdBy?.username == post.username,
+          isTopicOwner: isTopicOwner,
           dateSeparatorLabel: dateSeparatorLabel,
           showDivider: showDivider,
           onJumpToPost: onJumpToPost,
@@ -779,7 +785,7 @@ class _TopicPostListState extends State<TopicPostList> {
           topicId: detail.id,
           selected: isSelectedPost,
           highlight: highlight,
-          isTopicOwner: detail.createdBy?.username == post.username,
+          isTopicOwner: isTopicOwner,
           chunk: segment.chunkData!,
           renderData: segment.renderData!,
           onQuoteImage: onQuoteImage,
@@ -791,7 +797,7 @@ class _TopicPostListState extends State<TopicPostList> {
           topicId: detail.id,
           selected: isSelectedPost,
           highlight: highlight,
-          isTopicOwner: detail.createdBy?.username == post.username,
+          isTopicOwner: isTopicOwner,
           highlightBoostUsername: boostUsername,
           topicHasAcceptedAnswer: detail.hasAcceptedAnswer,
           acceptedAnswers: detail.acceptedAnswers,

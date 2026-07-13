@@ -482,7 +482,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       final eyeCareBubbles = ref.watch(
         preferencesProvider.select((p) => p.eyeCareBubbles),
       );
-      final isOp = widget.detail.createdBy?.username == post.username;
+      final isOp = isEyeCareTopicOwner(
+        postUsername: post.username,
+        postNumber: post.postNumber,
+        createdByUsername: widget.detail.createdBy?.username,
+      );
       if (eyeCareBubbles) {
         final palette = eyeCareBubblePalette(theme, isTopicOwner: isOp);
         card = Padding(
@@ -524,7 +528,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         preferencesProvider.select((p) => p.eyeCareBubbles),
       );
       if (eyeCareBubbles && !isDeletedPlaceholder && !_collapsed) {
-        final isOp = widget.detail.createdBy?.username == post.username;
+        final isOp = isEyeCareTopicOwner(
+          postUsername: post.username,
+          postNumber: post.postNumber,
+          createdByUsername: widget.detail.createdBy?.username,
+        );
         final palette = eyeCareBubblePalette(theme, isTopicOwner: isOp);
         card = Container(
           decoration: BoxDecoration(
@@ -545,7 +553,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
 
   /// 帖子文章区
   Widget _buildArticle(ThemeData theme, Post post, {bool isMobile = false}) {
-    final isOp = widget.detail.createdBy?.username == post.username;
+    final isOp = isEyeCareTopicOwner(
+      postUsername: post.username,
+      postNumber: post.postNumber,
+      createdByUsername: widget.detail.createdBy?.username,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

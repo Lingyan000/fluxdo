@@ -116,11 +116,21 @@ class PostSegmentFrame extends ConsumerWidget {
     // 长帖拆成 start/middle/end 后若每段各自画完整渐变，
     // 段与段交界会从浅色跳回深色，形成绿色断层。
     // 渐变只留给完整短帖；分段统一用纯色，视觉上拼成一张卡。
+    // 跳转高亮时也禁用渐变，避免高亮叠色与渐变同时出现脏色。
     final useGradient =
         eyeCareBubblePart == EyeCareBubblePart.full &&
         !highlight &&
         !post.isDeleted &&
         !post.hidden;
+    // 高亮用更深边框提示，不再叠 primaryContainer（肤色）到绿/黄卡上
+    final borderColor = highlight
+        ? Color.alphaBlend(
+            theme.brightness == Brightness.dark
+                ? Colors.white.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.12),
+            palette.border,
+          )
+        : palette.border;
 
     return Padding(
       padding: margin,
@@ -130,12 +140,12 @@ class PostSegmentFrame extends ConsumerWidget {
           color: targetColor,
           gradient: useGradient ? palette.gradient : null,
           borderRadius: radius,
-          border: eyeCareBubbleBorder(palette.border, eyeCareBubblePart),
+          border: eyeCareBubbleBorder(borderColor, eyeCareBubblePart),
           boxShadow: showShadow
               ? [
                   BoxShadow(
                     color: palette.shadow,
-                    blurRadius: 18,
+                    blurRadius: highlight ? 22 : 18,
                     offset: const Offset(0, 8),
                   ),
                 ]
@@ -395,6 +405,22 @@ Border eyeCareBubbleBorder(Color color, EyeCareBubblePart part) {
   };
 }
 
+/// 判断帖子是否为楼主（护眼气泡绿卡）。
+///
+/// [createdByUsername] 来自话题 details.created_by；若尚未解析到，
+/// 用 [postNumber] == 1 兜底，避免主楼先被画成回帖暖黄再闪成绿。
+bool isEyeCareTopicOwner({
+  required String postUsername,
+  required int postNumber,
+  String? createdByUsername,
+}) {
+  final owner = createdByUsername;
+  if (owner != null && owner.isNotEmpty) {
+    return owner == postUsername;
+  }
+  return postNumber == 1;
+}
+
 Color buildPostTargetColor(
   ThemeData theme,
   Post post,
@@ -405,12 +431,19 @@ Color buildPostTargetColor(
   final backgroundColor = eyeCareBubbles
       ? eyeCareBubblePalette(theme, isTopicOwner: isTopicOwner).card
       : theme.colorScheme.surface;
-  final highlightColor = theme.colorScheme.primaryContainer.withValues(
-    alpha: 0.3,
-  );
-  return highlight
-      ? Color.alphaBlend(highlightColor, backgroundColor)
-      : post.isDeleted
+  if (highlight) {
+    // 护眼气泡开启时：勿用 primaryContainer（主题肤色/桃色）叠在绿/黄卡上，
+    // 否则进帖跳转高亮约 2 秒会出现「肤色+绿色」脏色。
+    // 底色保持纯卡色，高亮只靠边框加深（见 _buildEyeCareBubble）。
+    if (eyeCareBubbles) {
+      return backgroundColor;
+    }
+    return Color.alphaBlend(
+      theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+      backgroundColor,
+    );
+  }
+  return post.isDeleted
       ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
       : post.hidden
       ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
