@@ -177,12 +177,19 @@ if(NOT EXISTS "${FFMPEG_CACHE_BIN}")
   list(GET FFMPEG_DL_STATUS 0 FFMPEG_DL_CODE)
   if(NOT FFMPEG_DL_CODE EQUAL 0)
     file(REMOVE "${FFMPEG_CACHE_BIN}.part")
-    message(FATAL_ERROR "bundled ffmpeg download failed (${FFMPEG_DL_STATUS}). "
-      "Retry the build, or manually download "
-      "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-${FFMPEG_STATIC_ARCH} "
-      "and save it as ${FFMPEG_CACHE_BIN}")
+    # 可选组件,不挡构建(离线打包环境如 Flatpak 沙箱禁网):产物不含
+    # 随包 ffmpeg,运行时回落系统 PATH(发行版 ffmpeg / Flatpak 的
+    # org.freedesktop.Platform.ffmpeg-full 扩展);离线构建要带上的话,
+    # 在源准备阶段把文件放到下面的缓存路径即可(存在即跳过下载)。
+    message(WARNING "bundled ffmpeg download failed (${FFMPEG_DL_STATUS}). "
+      "Build continues WITHOUT bundled ffmpeg (runtime falls back to system "
+      "PATH). To include it, pre-place the file at ${FFMPEG_CACHE_BIN} "
+      "(e.g. as a source in your packaging manifest), then rebuild.")
+  else()
+    file(RENAME "${FFMPEG_CACHE_BIN}.part" "${FFMPEG_CACHE_BIN}")
   endif()
-  file(RENAME "${FFMPEG_CACHE_BIN}.part" "${FFMPEG_CACHE_BIN}")
 endif()
-install(PROGRAMS "${FFMPEG_CACHE_BIN}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
-  RENAME "ffmpeg" COMPONENT Runtime)
+if(EXISTS "${FFMPEG_CACHE_BIN}")
+  install(PROGRAMS "${FFMPEG_CACHE_BIN}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    RENAME "ffmpeg" COMPONENT Runtime)
+endif()
