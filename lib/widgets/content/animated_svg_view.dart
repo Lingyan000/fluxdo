@@ -16,6 +16,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:full_svg_flutter/full_svg_flutter.dart';
 import 'package:full_svg_flutter/src/animation/animated_svg_painter.dart';
+import 'package:full_svg_flutter/src/animation/smil/smil_animation.dart';
 import 'package:full_svg_flutter/src/animation/smil/smil_parser.dart';
 import 'package:full_svg_flutter/src/animation/smil/smil_timeline.dart';
 import 'package:full_svg_flutter/src/animation/svg_dom.dart';
@@ -233,7 +234,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   String? _digest; // 内容摘要(磁盘寻址),懒计算
 
   ui.Image? _snapshot; // master 的 clone,本 State 所有
-  bool _liveMounted = false; // 活体已挂载;暂停不卸载,避免再播重付 parse
+  bool _liveMounted = false; // 包活体已挂载(仅回退路径使用)
   bool _isPlaying = false;
   bool _pendingPlay = false; // 点击后等待挂活体的过渡帧(角标转圈)
   bool _electArmed = false; // 允许参与选举(驻留 300ms + 非快滚)
@@ -244,6 +245,13 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   int _captureRetries = 0;
   AnimatedSvgController? _controller;
   _BumpNotifier? _waitNotifier;
+
+  // ---- 自持播放器(见"播放控制"注释) ----
+  SvgDocument? _playerDoc;
+  SvgTimeline? _playerTimeline;
+  final _BumpNotifier _frameBump = _BumpNotifier();
+  final Set<SvgNode> _hiddenByUs = <SvgNode>{};
+  bool get _playerMounted => _playerDoc != null;
 
   /// 防注入后的源码;memoize,同一实例只剥一次。
   String get _safeSource =>
@@ -269,13 +277,11 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
         (geo.naturalW != null ? geo.naturalW! / geo.aspect : null);
     _stretchContent = geo.stretch;
     if (widget.autoPlay) {
-      // 查看器场景:直接挂活体起播,不走快照/选举
-      _liveMounted = true;
-      _isPlaying = true;
-      _controller ??= AnimatedSvgController();
+      // 查看器场景:直接起自持播放器,不走快照/选举
       _playing?._pause();
       _playing = this;
-      _startPlaybackClock();
+      _pendingPlay = true;
+      unawaited(_mountPlayer());
       return;
     }
     final master = _SvgFirstFrameCache.peek(_cacheKey);
@@ -372,6 +378,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     _armTimer = null;
     _stopPlaybackClock();
     _playClock.reset();
+    _playerDoc = null;
+    _playerTimeline = null;
+    _hiddenByUs.clear();
     _snapshot?.dispose();
     _snapshot = null;
     _strippedSource = null;
@@ -517,13 +526,21 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
 
   // ---- 播放控制 ----
   //
-  // 不用包的 autoPlay(其内部 AnimationController 以 vsync 满帧率每帧
-  // setState+全量重录制,极端图单帧录制几十 ms,直接把滚动手势帧挤掉
-  // ——"动起来滚动不跟手"的元凶)。改为自驱低频时钟:Timer 以
-  // _playbackFps 调 controller.seek(elapsed),包收到 seek 应用时间轴
-  // 并只重绘一次;滚动进行中(recommendDeferredLoading)直接跳过 tick,
-  // 动画冻结零成本,松手自然续播。CSS 轮播类动画本身是低频切换,
-  // 15fps 视觉无损,UI 线程成本 ≈ 满帧的 1/8,且让位于手势。
+  // 完全绕开包的播放 widget。两个理由(都实测踩过):
+  // ① 包 autoPlay 用 vsync 满帧率每帧 setState+全量重录制;即便改成外部
+  //   低频 seek,一次重绘仍要重录整棵树 —— 极端图(上百 text 层)单次
+  //   录制几十 ms,15fps 也是每 66ms 一记大 build,滚动照样不跟手。
+  // ② 上游 text 级 opacity 缺陷:轮播层在活体里全叠着画,录制成本被
+  //   隐藏层放大 N 倍(126 层全录,实际只该录 1~2 层)。
+  //
+  // 自持播放器:直接持有后台 isolate 传回的 SvgDocument + SvgTimeline,
+  // 低频 Timer tick 里 seek(elapsed) 后**按有效 opacity 把隐藏层标
+  // display:none**(painter 树遍历对 display:none 短路,压根不进录制)
+  // —— 单帧录制成本从"全部层"降到"可见层"(轮播图 = 1~2 层),
+  // 且修掉了播放中的串层。重绘经 repaint listenable 直达 CustomPaint,
+  // 不走 setState/build。滚动中跳过 tick,动画冻结零成本。
+  //
+  // 包活体(_buildLive)仅保留给离屏管线失败的回退路径。
 
   static const int _playbackFps = 15;
 
@@ -538,7 +555,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
         if (!mounted || !_isPlaying) return;
         // 滚动中让路:不 seek 不重绘,手势帧零竞争
         if (Scrollable.recommendDeferredLoadingForContext(context)) return;
-        _controller?.seek(_playClock.elapsed);
+        _tickPlayer();
       },
     );
     _playClock.start();
@@ -548,6 +565,66 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     _playTimer?.cancel();
     _playTimer = null;
     _playClock.stop();
+  }
+
+  void _tickPlayer() {
+    final timeline = _playerTimeline;
+    final doc = _playerDoc;
+    if (timeline == null || doc == null) {
+      // 回退路径(包活体):经 controller.seek 驱动
+      _controller?.seek(_playClock.elapsed);
+      return;
+    }
+    timeline.seek(_playClock.elapsed);
+    _syncHiddenLayers(doc.root);
+    _frameBump.bump(); // 直达 CustomPaint.repaint,不走 build
+  }
+
+  /// 按 seek 后的有效 opacity 同步 display:none 标记:
+  /// painter 对 display:none 整棵短路,隐藏层零录制成本;
+  /// 只动我们自己标过的节点,不碰文档原生 display。
+  void _syncHiddenLayers(SvgNode node) {
+    for (final c in node.children) {
+      final v = c.getAttributeValue('opacity');
+      final d = v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+      final shouldHide = d != null && d <= 0.01;
+      final hiddenNow = _hiddenByUs.contains(c);
+      if (shouldHide && !hiddenNow) {
+        c.setAttribute('display', 'none', rawValue: 'none');
+        _hiddenByUs.add(c);
+      } else if (!shouldHide && hiddenNow) {
+        c.setAttribute('display', 'inline', rawValue: 'inline');
+        _hiddenByUs.remove(c);
+      }
+      _syncHiddenLayers(c);
+    }
+  }
+
+  /// 启动自持播放器:复用离屏管线同款后台 parse(不剪层,播放需要全部
+  /// 层随时间轴显隐),UI isolate 只挂一个 CustomPaint。
+  Future<void> _mountPlayer() async {
+    final key = _cacheKey;
+    final (doc, anims) = await _parseFirstFrameInBgForPlayback(
+      widget.svgSource,
+    );
+    if (!mounted || key != _cacheKey) return;
+    if (anims.isEmpty) {
+      // 无可播放时间轴:保持快照态
+      setState(() {
+        _pendingPlay = false;
+        _isPlaying = false;
+      });
+      return;
+    }
+    _playerDoc = doc;
+    _playerTimeline = SvgTimeline(animations: anims, rootNode: doc.root);
+    _playerTimeline!.seek(Duration.zero);
+    _syncHiddenLayers(doc.root);
+    setState(() {
+      _pendingPlay = false;
+      _isPlaying = true;
+    });
+    _startPlaybackClock();
   }
 
   Future<void> _togglePlay() async {
@@ -562,24 +639,16 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     }
     _playing = this;
 
-    if (_liveMounted) {
-      // 活体还在(此前暂停过):秒回,零解析
+    if (_playerMounted || _liveMounted) {
+      // 播放器/回退活体还在(此前暂停过):秒回,零解析
       setState(() => _isPlaying = true);
       _startPlaybackClock();
       return;
     }
 
-    // 首次播放:先出反馈帧(角标转圈),下一帧再挂活体付一次性 parse。
+    // 首次播放:先出反馈帧(角标转圈),后台 parse 完成后起播
     setState(() => _pendingPlay = true);
-    await Future<void>.delayed(const Duration(milliseconds: 32));
-    if (!mounted) return;
-    setState(() {
-      _pendingPlay = false;
-      _liveMounted = true;
-      _isPlaying = true;
-      _controller ??= AnimatedSvgController();
-    });
-    _startPlaybackClock();
+    unawaited(_mountPlayer());
   }
 
   void _pause() {
@@ -629,6 +698,22 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     );
   }
 
+  /// 自持播放器子树:直接用包 painter 画自己驱动的 SvgDocument,
+  /// 重绘由 repaint listenable 触发(不 setState、不重建 widget 树)。
+  Widget _buildPlayer() {
+    return RepaintBoundary(
+      child: ClipRect(
+        child: CustomPaint(
+          painter: _SelfDrivenSvgPainter(
+            document: _playerDoc!,
+            repaint: _frameBump,
+          ),
+          size: Size.infinite,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -636,8 +721,11 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     Widget body;
     var showBadge = true;
 
-    if (_liveMounted) {
-      // 播放中 / 暂停:活体常驻(RepaintBoundary 隔离,暂停时 ticker 停)
+    if (_playerMounted) {
+      // 自持播放器(播放/暂停均常驻,重绘不走 build)
+      body = _buildPlayer();
+    } else if (_liveMounted) {
+      // 回退路径的包活体
       body = _buildLive();
     } else if (_snapshot != null) {
       // 快照冻结态:纯位图,零解析零重绘成本。映射对齐活体 painter:
@@ -852,3 +940,44 @@ void _pruneInvisible(SvgNode node) {
 /// _AsyncCompleter 被拒收,已实测踩坑)。
 Future<(SvgDocument, bool)> _parseFirstFrameInBg(String source) =>
     Isolate.run<(SvgDocument, bool)>(() => _parseFirstFrameTask(source));
+
+/// 播放用后台 parse:与首帧任务同构但**不剪层**(播放需要全部层随
+/// 时间轴显隐,隐藏交给 _syncHiddenLayers 的 display:none 标记)。
+/// animations 随文档一起传回(isolate 拷贝保持对象图,动画里的
+/// targetNode 引用与文档节点是同一批拷贝),UI isolate 零重解析。
+(SvgDocument, List<SmilAnimation>) _parsePlaybackTask(String rawSource) {
+  final safe = SvgUtils.stripActiveContent(rawSource);
+  final doc = SvgParser.parse(safe);
+  applySvgTheme(doc);
+  final anims = SmilParser.parseAnimations(doc);
+  return (doc, anims);
+}
+
+Future<(SvgDocument, List<SmilAnimation>)> _parseFirstFrameInBgForPlayback(
+        String source) =>
+    Isolate.run<(SvgDocument, List<SmilAnimation>)>(
+        () => _parsePlaybackTask(source));
+
+/// 自持播放器的 painter:包装包的 AnimatedSvgPainter,重绘由外部
+/// repaint listenable(每 tick bump)驱动 —— 播放帧不经过 setState/
+/// build/element 更新,只走 paint。
+class _SelfDrivenSvgPainter extends CustomPainter {
+  _SelfDrivenSvgPainter({required this.document, required Listenable repaint})
+      : super(repaint: repaint);
+
+  final SvgDocument document;
+
+  @override
+  void paint(ui.Canvas canvas, ui.Size size) {
+    AnimatedSvgPainter(
+      document: document,
+      hasAnimations: true,
+      animationTime: 0.0,
+      clipToViewBox: true,
+    ).paint(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(_SelfDrivenSvgPainter oldDelegate) =>
+      !identical(oldDelegate.document, document);
+}
