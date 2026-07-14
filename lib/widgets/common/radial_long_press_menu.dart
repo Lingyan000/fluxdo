@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 
+import 'radial_menu_fixed_slots.dart';
+
 /// 径向菜单项（图标 + 标签 + 选中回调）
 class RadialMenuItem {
   const RadialMenuItem({
@@ -54,6 +56,8 @@ class RadialMenuSession {
   double _radius = 92;
   double _sweepStart = -math.pi / 2;
   double _sweepEnd = math.pi / 2;
+  bool _fixedSlots = false;
+  int _slotCount = RadialMenuFixedSlots.maxSlots;
   Widget Function(BuildContext context, Rect rect, double opacity)?
   _pressAreaIndicatorBuilder;
   // true 表示已请求菜单收起：overlay 内部反向播放衍生动画，结束后才真正清理
@@ -62,6 +66,9 @@ class RadialMenuSession {
   bool get isActive => _menuEntry != null;
 
   /// 根据菜单项数取半径（项越多半圆越大，避免图标拥挤）
+  ///
+  /// 仅用于动态布局（如头像菜单）。进度条长按菜单走固定 8 槽布局，
+  /// 半径始终为 [RadialMenuFixedSlots.radius]。
   static double radiusForCount(int count) {
     if (count <= 4) return 92;
     if (count <= 6) return 108;
@@ -71,9 +78,14 @@ class RadialMenuSession {
   /// 插入菜单 overlay 并触发中等触觉反馈。
   ///
   /// [center] 扇形圆心（全局坐标）；[pressArea] 按压区域的全局矩形，
-  /// 菜单弹出后在此位置画替代显示；[radius] 缺省按项数取 [radiusForCount]。
+  /// 菜单弹出后在此位置画替代显示；[radius] 缺省：
+  /// - [fixedSlots]=true 时取 [RadialMenuFixedSlots.radius]
+  /// - 否则按项数取 [radiusForCount]
   /// [sweepStart]/[sweepEnd] 为扇形角度窗口（极轴偏角 φ，φ=0 指向展开
   /// 方向正前方、左负右正），默认 [-π/2, π/2] 完整半圆。
+  ///
+  /// [fixedSlots] 为 true 时，项 i 始终落在固定 8 槽中的第 i 槽，
+  /// 不因当前启用项数重新均分半圆。
   void open({
     required BuildContext context,
     required Offset center,
@@ -83,6 +95,8 @@ class RadialMenuSession {
     double? radius,
     double sweepStart = -math.pi / 2,
     double sweepEnd = math.pi / 2,
+    bool fixedSlots = false,
+    int slotCount = RadialMenuFixedSlots.maxSlots,
     Widget Function(BuildContext context, Rect rect, double opacity)?
     pressAreaIndicatorBuilder,
   }) {
@@ -96,7 +110,12 @@ class RadialMenuSession {
     _pressArea = pressArea;
     _items = items;
     _direction = direction;
-    _radius = radius ?? radiusForCount(items.length);
+    _fixedSlots = fixedSlots;
+    _slotCount = math.max(1, slotCount);
+    _radius = radius ??
+        (fixedSlots
+            ? RadialMenuFixedSlots.radius
+            : radiusForCount(items.length));
     _sweepStart = sweepStart;
     _sweepEnd = sweepEnd;
     _pressAreaIndicatorBuilder = pressAreaIndicatorBuilder;
@@ -112,38 +131,53 @@ class RadialMenuSession {
   void updatePointer(Offset pointer) {
     final center = _menuCenter;
     if (center == null || _menuEntry == null) return;
-    final dx = pointer.dx - center.dx;
-    final dy = pointer.dy - center.dy;
-    final distance = math.sqrt(dx * dx + dy * dy);
     int? newIndex;
-    // 极轴偏角 φ：0 = 展开方向正前方（up 为正上、down 为正下），左负右正。
-    // up: 正上为屏幕角 -π/2 → φ = angle + π/2
-    // down: 正下为屏幕角 π/2，且屏幕左侧同样映射为 φ 负 → φ = π/2 - angle
-    final up = _direction == RadialMenuDirection.up;
-    final angle = math.atan2(dy, dx);
-    final phi = up
-        ? _wrapAngle(angle + math.pi / 2)
-        : _wrapAngle(math.pi / 2 - angle);
-    // 死区三条：紧贴圆心；手指还停在按压区域上（长按起手位置，避免
-    // 倾斜窗口下菜单一弹出就误高亮端项）；落在窗口背面（偏离窗口中线
-    // 超过 π/2 或窗口半宽+余量，即明显拖回按压侧）。
-    // 窗口内及边缘附近可命中，超窗 clamp 到端项。
-    final mid = (_sweepStart + _sweepEnd) / 2;
-    final offMid = (phi - mid).abs();
-    final halfSweep = (_sweepEnd - _sweepStart) / 2;
-    final deadBeyond = math.max(halfSweep + 0.35, math.pi / 2);
-    final onPressArea =
-        _pressArea != null && _pressArea!.inflate(6).contains(pointer);
-    if (distance < 18 || onPressArea || offMid > deadBeyond) {
-      newIndex = null;
+    if (_fixedSlots) {
+      // 固定 8 槽：命中网格始终按 maxSlots 划分，空槽不触发。
+      newIndex = RadialMenuFixedSlots.hitIndex(
+        pointer: pointer,
+        center: center,
+        itemCount: _items.length,
+        pressArea: _pressArea,
+        direction: _direction,
+        radius: _radius,
+        sweepStart: _sweepStart,
+        sweepEnd: _sweepEnd,
+        slotCount: _slotCount,
+      );
     } else {
-      final n = _items.length;
-      final step = n > 1 ? (_sweepEnd - _sweepStart) / (n - 1) : 0.0;
-      if (n == 1 || step <= 1e-6) {
-        newIndex = 0;
+      final dx = pointer.dx - center.dx;
+      final dy = pointer.dy - center.dy;
+      final distance = math.sqrt(dx * dx + dy * dy);
+      // 极轴偏角 φ：0 = 展开方向正前方（up 为正上、down 为正下），左负右正。
+      // up: 正上为屏幕角 -π/2 → φ = angle + π/2
+      // down: 正下为屏幕角 π/2，且屏幕左侧同样映射为 φ 负 → φ = π/2 - angle
+      final up = _direction == RadialMenuDirection.up;
+      final angle = math.atan2(dy, dx);
+      final phi = up
+          ? _wrapAngle(angle + math.pi / 2)
+          : _wrapAngle(math.pi / 2 - angle);
+      // 死区三条：紧贴圆心；手指还停在按压区域上（长按起手位置，避免
+      // 倾斜窗口下菜单一弹出就误高亮端项）；落在窗口背面（偏离窗口中线
+      // 超过 π/2 或窗口半宽+余量，即明显拖回按压侧）。
+      // 窗口内及边缘附近可命中，超窗 clamp 到端项。
+      final mid = (_sweepStart + _sweepEnd) / 2;
+      final offMid = (phi - mid).abs();
+      final halfSweep = (_sweepEnd - _sweepStart) / 2;
+      final deadBeyond = math.max(halfSweep + 0.35, math.pi / 2);
+      final onPressArea =
+          _pressArea != null && _pressArea!.inflate(6).contains(pointer);
+      if (distance < 18 || onPressArea || offMid > deadBeyond) {
+        newIndex = null;
       } else {
-        final normalized = (phi - _sweepStart) / step;
-        newIndex = normalized.round().clamp(0, n - 1);
+        final n = _items.length;
+        final step = n > 1 ? (_sweepEnd - _sweepStart) / (n - 1) : 0.0;
+        if (n == 1 || step <= 1e-6) {
+          newIndex = 0;
+        } else {
+          final normalized = (phi - _sweepStart) / step;
+          newIndex = normalized.round().clamp(0, n - 1);
+        }
       }
     }
     final changed = newIndex != _highlightedIndex;
@@ -184,6 +218,8 @@ class RadialMenuSession {
     _pressArea = null;
     _highlightedIndex = null;
     _items = const [];
+    _fixedSlots = false;
+    _slotCount = RadialMenuFixedSlots.maxSlots;
     _pressAreaIndicatorBuilder = null;
     _menuClosing = false;
   }
@@ -208,6 +244,8 @@ class RadialMenuSession {
       direction: _direction,
       sweepStart: _sweepStart,
       sweepEnd: _sweepEnd,
+      fixedSlots: _fixedSlots,
+      slotCount: _slotCount,
       closing: _menuClosing,
       pressAreaIndicatorBuilder: _pressAreaIndicatorBuilder,
       onClosed: dispose,
@@ -229,6 +267,8 @@ class RadialMenuOverlay extends StatefulWidget {
     this.direction = RadialMenuDirection.up,
     this.sweepStart = -math.pi / 2,
     this.sweepEnd = math.pi / 2,
+    this.fixedSlots = false,
+    this.slotCount = RadialMenuFixedSlots.maxSlots,
     this.pressAreaIndicatorBuilder,
   });
 
@@ -245,6 +285,10 @@ class RadialMenuOverlay extends StatefulWidget {
   /// 屏幕边缘时旋转/收窄窗口可让弧始终锚定圆心，而不是把圆心挪走。
   final double sweepStart;
   final double sweepEnd;
+
+  /// 固定槽位布局：项 i 落在 8 槽网格的第 i 槽，不按当前项数均分。
+  final bool fixedSlots;
+  final int slotCount;
 
   /// 父层请求收起菜单：动画从当前进度反向跑回 0，结束后调用 [onClosed]
   final bool closing;
@@ -357,6 +401,17 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
 
   /// 扇形目标位置：第 index 项最终落点
   Offset _itemTargetPosition(int index) {
+    if (widget.fixedSlots) {
+      return RadialMenuFixedSlots.positionForSlot(
+        slot: index,
+        center: widget.center,
+        direction: widget.direction,
+        radius: widget.radius,
+        sweepStart: widget.sweepStart,
+        sweepEnd: widget.sweepEnd,
+        slotCount: widget.slotCount,
+      );
+    }
     final n = widget.items.length;
     final up = widget.direction == RadialMenuDirection.up;
     // 极轴偏角 φ：单项放窗口中点，多项沿窗口均匀分布

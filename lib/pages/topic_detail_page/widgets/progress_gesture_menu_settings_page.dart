@@ -1,11 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
 import '../../../providers/preferences_provider.dart';
+import '../../../widgets/common/radial_menu_fixed_slots.dart';
 import 'progress_gesture_action_meta.dart';
 
 /// 长按菜单功能设置页：在半圆预览区里直接完成全部操作（拖动排序、拖到中央
@@ -209,23 +208,14 @@ class _PreviewAreaState extends State<_PreviewArea> {
   int? _hoverSlot; // 当前手指悬停的目标 slot；null 表示无有效悬停
   bool _hoverDelete = false; // 手指悬停在中央删除区
 
-  double _radiusForCount(int count) {
-    if (count <= 4) return 92;
-    if (count <= 6) return 108;
-    return 128;
-  }
+  // 预览与运行时菜单共用固定 8 槽几何，避免左右位置随启用项数漂移。
+  double get _previewRadius => RadialMenuFixedSlots.radius;
 
-  Offset _itemPosition(int index, int n, Offset center, double radius) {
-    final double angle;
-    if (n == 1) {
-      angle = -math.pi / 2;
-    } else {
-      final step = math.pi / (n - 1);
-      angle = -math.pi + index * step;
-    }
-    return Offset(
-      center.dx + radius * math.cos(angle),
-      center.dy + radius * math.sin(angle),
+  Offset _itemPosition(int index, Offset center) {
+    return RadialMenuFixedSlots.positionForSlot(
+      slot: index,
+      center: center,
+      radius: _previewRadius,
     );
   }
 
@@ -276,19 +266,15 @@ class _PreviewAreaState extends State<_PreviewArea> {
       return;
     }
 
-    // slot 命中：上半圆按角度映射
-    final dx = localPos.dx - pillCenter.dx;
-    final dy = localPos.dy - pillCenter.dy;
-    int? slot;
-    if (dy < -8) {
-      final angle = math.atan2(dy, dx);
-      if (n <= 1) {
-        slot = 0;
-      } else {
-        final step = math.pi / (n - 1);
-        slot = ((angle + math.pi) / step).round().clamp(0, n - 1);
-      }
-    }
+    // slot 命中：固定 8 槽网格（与运行时菜单一致）
+    final hit = RadialMenuFixedSlots.hitIndex(
+      pointer: localPos,
+      center: pillCenter,
+      itemCount: n,
+      pressArea: pillRect,
+    );
+    // 预览重排允许落到当前已有项范围内；空槽不参与排序。
+    final int? slot = hit;
 
     if (_hoverSlot != slot || _hoverDelete) {
       setState(() {
@@ -302,7 +288,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final n = widget.items.length;
-    final radius = n == 0 ? 92.0 : _radiusForCount(n);
+    final radius = _previewRadius;
     final height = radius + 32 + 40 + 16; // radius + item 半径 + pill + 下边距
 
     if (n == 0) {
@@ -356,7 +342,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
                 children: [
                   // 半圆 items（每个用 AnimatedPositioned 让 preview 重排平滑）
                   for (int i = 0; i < n; i++)
-                    _buildSlotItem(i, n, pillCenter, radius, theme),
+                    _buildSlotItem(i, n, pillCenter, theme),
                   // 中间：拖动时是删除区，闲置时是 pill 占位
                   Positioned.fromRect(
                     rect: pillRect,
@@ -381,11 +367,10 @@ class _PreviewAreaState extends State<_PreviewArea> {
     int actualIndex,
     int n,
     Offset pillCenter,
-    double radius,
     ThemeData theme,
   ) {
     final slot = _previewSlotFor(actualIndex, n);
-    final pos = _itemPosition(slot, n, pillCenter, radius);
+    final pos = _itemPosition(slot, pillCenter);
     const itemSize = 48.0;
     final action = widget.items[actualIndex];
     return AnimatedPositioned(
