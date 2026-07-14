@@ -11,6 +11,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:app_icons/app_icons.dart';
 
 class CursorSwipeControl extends StatefulWidget {
   const CursorSwipeControl({
@@ -97,7 +98,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
         onHorizontalDragEnd: _pointerMode ? null : (_) => _onDragEnd(),
         onHorizontalDragCancel: _pointerMode ? null : _onDragEnd,
         child: Tooltip(
-          message: '按住左右滑动移动光标',
+          message: '按住滑动移动光标',
           child: Container(
             key: const ValueKey('cursor-swipe-knob'),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -108,7 +109,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: FaIcon(
-              FontAwesomeIcons.leftRight,
+              FontAwesomeIcons.iCursor,
               size: 18,
               color:
                   _dragging ? scheme.primary : scheme.onSurfaceVariant,
@@ -120,10 +121,10 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
       IconButton(
         key: const ValueKey('cursor-select-toggle'),
         visualDensity: VisualDensity.compact,
-        tooltip: _selecting ? '滑动扩选中(点击关闭)' : '开启滑动选择',
-        icon: FaIcon(
-          FontAwesomeIcons.iCursor,
-          size: 16,
+        tooltip: _selecting ? '滑动选择已开启,点击关闭' : '开启后滑动即选择文本',
+        icon: Icon(
+          Symbols.text_select_start_rounded,
+          size: 18,
           color: _selecting ? scheme.primary : scheme.onSurfaceVariant,
         ),
         isSelected: _selecting,
