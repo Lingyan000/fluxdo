@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../l10n/s.dart';
@@ -145,8 +146,11 @@ class PostSegmentFrame extends ConsumerWidget {
               ? [
                   BoxShadow(
                     color: palette.shadow,
-                    blurRadius: highlight ? 22 : 18,
-                    offset: const Offset(0, 8),
+                    // Windows 软件合成大 blur 很贵；护眼气泡只保留轻阴影。
+                    blurRadius: Platform.isWindows
+                        ? (highlight ? 8 : 6)
+                        : (highlight ? 22 : 18),
+                    offset: Offset(0, Platform.isWindows ? 3 : 8),
                   ),
                 ]
               : null,
