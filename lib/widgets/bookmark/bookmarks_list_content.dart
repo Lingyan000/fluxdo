@@ -63,6 +63,62 @@ class BookmarksListContent extends ConsumerWidget {
   final Future<void> Function(Topic topic) onClearReminder;
   final Future<void> Function(Topic topic) onDeleteBookmark;
 
+  // ── 长列表线性税的记忆化(本页单实例,static 安全)──────────────
+  //
+  // 此前每次 rebuild 都全量重跑三趟 O(N):屏蔽过滤 → 名称汇总 → 名称
+  // 筛选;滚动中分页落地一次就是一次页面重建,列表越长线性税越重。
+  // 全部以"输入 identity + 键值"判缓存,数据换代(新 list 实例)自动
+  // 重算,零语义变化。
+  static List<Topic>? _visibleSrc;
+  static Set<String>? _visibleBlockedRef;
+  static List<Topic>? _visibleResult;
+
+  static List<Topic> _memoVisible(List<Topic> topics, Set<String> blocked) {
+    if (identical(_visibleSrc, topics) &&
+        identical(_visibleBlockedRef, blocked) &&
+        _visibleResult != null) {
+      return _visibleResult!;
+    }
+    _visibleSrc = topics;
+    _visibleBlockedRef = blocked;
+    return _visibleResult = BlockedUserFilter.visibleTopics(topics, blocked);
+  }
+
+  static List<Topic>? _summariesSrc;
+  static List<BookmarkNameSummary>? _summariesResult;
+
+  static List<BookmarkNameSummary> _memoSummaries(List<Topic> topics) {
+    if (identical(_summariesSrc, topics) && _summariesResult != null) {
+      return _summariesResult!;
+    }
+    _summariesSrc = topics;
+    return _summariesResult = buildBookmarkNameSummaries(topics);
+  }
+
+  static List<Topic>? _filterSrc;
+  static String? _filterKey;
+  static List<Topic>? _filterResult;
+
+  static List<Topic> _memoFiltered(List<Topic> topics, String? name) {
+    if (identical(_filterSrc, topics) &&
+        _filterKey == name &&
+        _filterResult != null) {
+      return _filterResult!;
+    }
+    _filterSrc = topics;
+    _filterKey = name;
+    return _filterResult = filterBookmarksByName(topics, name);
+  }
+
+  /// 卡片 widget 实例签名缓存(首页 _topicItemCache 同款机制):分页
+  /// 落地/页面 setState 引发的 delegate 重建里,签名未变的卡返回同一
+  /// widget 实例 → Element.updateChild 短路,零重建。签名涵盖构建
+  /// 入参:topic(恒等)、长按开关、元信息宽、名称建议(identity)、
+  /// 提醒过期态(色带颜色依赖 now,过期翻转须重建)。缓存的 item 持有
+  /// 构建时的回调闭包 —— 闭包捕获的是稳定的页面 State,行为等价
+  /// (首页同款先例)。
+  static final Map<String, ({Object sig, Widget item})> _itemCache = {};
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DesktopRefreshIndicator(
@@ -70,7 +126,7 @@ class BookmarksListContent extends ConsumerWidget {
       child: bookmarksAsync.when(
         data: (topics) => _buildDataContent(
           context,
-          BlockedUserFilter.visibleTopics(
+          _memoVisible(
             topics,
             ref.watch(
               preferencesProvider.select((p) => p.normalizedBlockedUsernames),
@@ -101,8 +157,13 @@ class BookmarksListContent extends ConsumerWidget {
       );
     }
 
-    final summaries = buildBookmarkNameSummaries(topics);
-    final filteredTopics = filterBookmarksByName(topics, selectedBookmarkName);
+    final summaries = _memoSummaries(topics);
+    final filteredTopics = _memoFiltered(topics, selectedBookmarkName);
+    // 每卡入参一次性算好(此前在 itemBuilder 里逐卡算 + 逐卡注册
+    // MediaQuery 依赖)
+    final double? statsAvailableWidth = Responsive.isMobile(context)
+        ? MediaQuery.sizeOf(context).width - 88
+        : null;
     final listView = ListView.builder(
       controller: scrollController,
       // 书签卡无 keepalive 使用者,默认的 AutomaticKeepAlive 两层 State
@@ -136,13 +197,26 @@ class BookmarksListContent extends ConsumerWidget {
         }
 
         final topic = filteredTopics[index];
-        // 与首页同款:本页外层 12px 左右留白 + 卡内 24px padding、32px
-        // 头像和 8px 间距 → 移动端元信息区宽度 = 屏宽 - 88。列表层一次
-        // 计算传入,避开 Sliver 布局阶段的逐卡 LayoutBuilder 回退
-        final double? statsAvailableWidth = Responsive.isMobile(context)
-            ? MediaQuery.sizeOf(context).width - 88
-            : null;
-        return buildTopicItem(
+        // 提醒过期态进签名:色带颜色依赖 now,跨过提醒时刻要重建。
+        // 主题恒等也进签名:色带/摘要的颜色在构造参数里烤死(不同于
+        // 卡内 build 时现读),深浅色切换必须换代。
+        final reminderAt = topic.bookmarkReminderAt;
+        final reminderExpired =
+            reminderAt != null && reminderAt.isBefore(DateTime.now());
+        final sig = (
+          topic: topic,
+          enableLongPress: enableLongPress,
+          statsAvailableWidth: statsAvailableWidth,
+          suggestions: bookmarkNameSuggestions,
+          reminderExpired: reminderExpired,
+          themeId: identityHashCode(Theme.of(context)),
+        );
+        final cacheKey = bookmarkTopicIdentity(topic);
+        final hit = _itemCache[cacheKey];
+        if (hit != null && hit.sig == sig) {
+          return hit.item;
+        }
+        final item = buildTopicItem(
           context: context,
           topic: topic,
           isSelected: false,
@@ -164,6 +238,9 @@ class BookmarksListContent extends ConsumerWidget {
               ? _buildPreviewActions(context, topic)
               : null,
         );
+        if (_itemCache.length > 600) _itemCache.clear();
+        _itemCache[cacheKey] = (sig: sig, item: item);
+        return item;
       },
     );
 
