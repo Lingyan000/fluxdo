@@ -9,10 +9,8 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../providers/message_bus_providers.dart';
-import '../../../providers/preferences_provider.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/frame_jank_monitor.dart';
-import '../../../utils/glyph_warmer.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/anchor_guard_sliver.dart';
@@ -572,12 +570,6 @@ class _TopicPostListState extends State<TopicPostList> {
         identical(_segmentsSourceGaps, gaps)) {
       return;
     }
-    // 首批帖子的字形预热喂料:分页增量由 _schedulePostParseWarmUp 喂,
-    // 首批数据不经过那条 delta 路径,在此补上(只喂一次)
-    if (!_glyphWarmFedInitial && posts.isNotEmpty) {
-      _glyphWarmFedInitial = true;
-      _scheduleGlyphWarm(posts);
-    }
     final oldPosts = _segmentsSourcePosts;
     final oldSegmentsLength = _renderSegments.length;
     final oldIndexMap = _postIndexToScrollIndex;
@@ -802,39 +794,8 @@ class _TopicPostListState extends State<TopicPostList> {
   /// 自动作废;LRU 命中即免费,与物化竞争不会重复付费。
   int _parseWarmUpGeneration = 0;
 
-  /// 首批帖子是否已喂给字形预热(只喂一次,增量走 delta 路径)
-  bool _glyphWarmFedInitial = false;
-
-  /// 字形图集预热喂料:把新落地帖子的 CJK 字符交给 [GlyphWarmer]
-  /// (会话级去重,空闲分块入册)。样式必须与正文实际渲染完全一致
-  /// (bodyMedium × contentFontScale,同 post_item 的 baseTextStyle
-  /// 构造),字号差一档就热错刻度全部落空。
-  void _scheduleGlyphWarm(List<Post> posts) {
-    if (!GlyphWarmer.enabled || posts.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final base = Theme.of(context).textTheme.bodyMedium;
-      final scale = ProviderScope.containerOf(context, listen: false)
-          .read(preferencesProvider)
-          .contentFontScale;
-      final style = (base ?? const TextStyle(fontSize: 14)).copyWith(
-        height: 1.5,
-        fontSize: (base?.fontSize ?? 14) * scale,
-      );
-      final dpr = MediaQuery.devicePixelRatioOf(context);
-      for (final post in posts) {
-        GlyphWarmer.feed(
-          text: post.cooked,
-          style: style,
-          devicePixelRatio: dpr,
-        );
-      }
-    });
-  }
-
   void _schedulePostParseWarmUp(List<Post> posts) {
     if (posts.isEmpty) return;
-    _scheduleGlyphWarm(posts);
     final generation = ++_parseWarmUpGeneration;
     var index = 0;
     void step() {
