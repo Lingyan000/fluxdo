@@ -74,7 +74,7 @@ class CfClearanceRefreshService {
   Timer? _delayedRestartTimer;
   Timer? _delayedStopTimer;
 
-  /// 滚动挂起状态机(仅 Android):500ms 检查一次滚动繁忙信号,
+  /// 滚动挂起状态机(Android/Windows):500ms 检查一次滚动繁忙信号,
   /// 见 [_updateScrollPause]
   Timer? _scrollPauseTicker;
   bool _webViewPausedForScroll = false;
@@ -592,13 +592,14 @@ document.close();
       }
     });
 
-    // 滚动窗口内把 headless WebView 挂起(Android onPause:暂停 JS 定时
-    // 器与渲染,不销毁实例):Turnstile 是活网页,常驻 JS 把平台主线程
-    // 烧到 60%+ 单核(生产 CPU 采样),而 vsync 分发/触摸事件与其同
-    // 线程。滚动繁忙即挂起、静默 ~1s 后恢复,JS 信号与刷新逻辑 resume
-    // 后自然补上。初始 Turnstile 运行期(_initialTimer 未清)只恢复不
-    // 挂起,避免把首次验证拖到超时误判重建。
-    if (io.Platform.isAndroid) {
+    // 滚动窗口内把 headless WebView 挂起(Android onPause / WebView2 pause:
+    // 暂停 JS 定时器与渲染,不销毁实例):Turnstile 是活网页,常驻 JS 把
+    // 平台主线程烧到 60%+ 单核(生产 CPU 采样),而 vsync 分发/触摸事件
+    // 与其同线程。Windows 同样会常驻一个 headless WebView2,滚动中也
+    // 需要让路。滚动繁忙即挂起、静默 ~1s 后恢复,JS 信号与刷新逻辑
+    // resume 后自然补上。初始 Turnstile 运行期(_initialTimer 未清)只
+    // 恢复不挂起,避免把首次验证拖到超时误判重建。
+    if (io.Platform.isAndroid || io.Platform.isWindows) {
       _scrollPauseTicker = Timer.periodic(
         const Duration(milliseconds: 500),
         (_) {
@@ -612,7 +613,7 @@ document.close();
     }
   }
 
-  /// 滚动繁忙 ↔ 静默的 WebView 挂起切换(仅 Android,由
+  /// 滚动繁忙 ↔ 静默的 WebView 挂起切换(Android/Windows,由
   /// [_scrollPauseTicker] 驱动)。pause/resume 是单实例 onPause/onResume,
   /// 一次轻量平台调用;失败时复位标记,避免卡死在挂起态。
   Future<void> _updateScrollPause() async {

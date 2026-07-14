@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ScreenshotMode;
+import 'package:visibility_detector/visibility_detector.dart';
 import '../../../../constants.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/url_helper.dart';
@@ -13,6 +15,7 @@ import '../../../../l10n/s.dart';
 import '../../../../services/navigation/app_route_observer.dart';
 import '../../../../services/webview_settings.dart';
 import '../../../../services/windows_webview_environment_service.dart';
+import '../../../content/lazy_load_scope.dart';
 
 /// 是否需要交互遮罩（macOS 上 WebView 会捕获滚动事件）
 bool get _needsInteractionMask => !kIsWeb && Platform.isMacOS;
@@ -149,6 +152,12 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   bool _hasError = false;
   bool _didLockLayout = false;
 
+  /// 是否真正创建 InAppWebView。
+  /// 默认 false：先放占位，进入视口或用户点按后再挂载，避免一帖多个
+  /// iframe 在 cacheExtent 内同时拉起 WebView2 进程（Windows 上尤其贵）。
+  bool _webViewMounted = false;
+  bool _initialized = false;
+
   /// 桌面平台：是否进入交互模式
   bool _interacting = false;
   OverlayEntry? _overlayEntry;
@@ -156,6 +165,9 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   /// 上层路由（对话框/BottomSheet）出现时隐藏 WebView，
   /// 避免 hybrid composition 持续脏帧触发 BackdropFilter 全屏重算。
   bool _routeOverlayed = false;
+
+  String get _cacheKey =>
+      'iframe_${widget.attributes.fullUrl.hashCode}_${widget.attributes.width}_${widget.attributes.height}';
 
   @override
   void initState() {
@@ -165,10 +177,28 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      // 同页已加载过、或截图离屏渲染：直接挂 WebView，避免占位漏出。
+      if (LazyLoadScope.isLoaded(context, _cacheKey) ||
+          ScreenshotMode.of(context)) {
+        _webViewMounted = true;
+      }
+    }
     final route = ModalRoute.of(context);
     if (route != null) {
       appRouteObserver.subscribe(this, route);
     }
+  }
+
+  void _mountWebView() {
+    if (_webViewMounted) return;
+    LazyLoadScope.markLoaded(context, _cacheKey);
+    setState(() {
+      _webViewMounted = true;
+      _isLoaded = false;
+      _hasError = false;
+    });
   }
 
   @override
@@ -247,58 +277,138 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   Widget build(BuildContext context) {
     final attrs = widget.attributes;
     final theme = Theme.of(context);
+    final Widget content = _webViewMounted
+        ? _buildWebViewContent(theme, attrs)
+        : _buildPlaceholder(theme);
+
+    // 始终使用响应式宽高比布局，忽略固定像素尺寸
+    // 这样可以适配不同屏幕尺寸，避免在小屏幕上溢出或在大屏幕上显得太小
+    Widget sizedContent;
+
+    // 特殊情况：如果只有固定高度（没有宽度或宽度是百分比），使用固定高度
+    // 例如：width="100%" height="111"
+    if (attrs.height != null && attrs.height! > 0 && attrs.width == null) {
+      sizedContent = SizedBox(
+        width: double.infinity,
+        height: attrs.height,
+        child: content,
+      );
+    } else {
+      // 其他情况使用宽高比
+      sizedContent = AspectRatio(
+        aspectRatio: attrs.aspectRatio,
+        child: content,
+      );
+    }
+
+    final padded = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: sizedContent,
+    );
+
+    // 未挂载时用 VisibilityDetector：刚进视口就创建 WebView。
+    // 已挂载后不再包一层，避免无意义的可见性回调。
+    if (_webViewMounted) return padded;
+
+    return VisibilityDetector(
+      key: Key(_cacheKey),
+      onVisibilityChanged: (info) {
+        if (!_webViewMounted && info.visibleFraction > 0.01) {
+          _mountWebView();
+        }
+      },
+      child: padded,
+    );
+  }
+
+  Widget _buildPlaceholder(ThemeData theme) {
+    final surface = theme.colorScheme.surfaceContainerHighest;
+    final onSurface = theme.colorScheme.onSurfaceVariant;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Material(
+        color: surface,
+        child: InkWell(
+          onTap: _mountWebView,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Symbols.play_circle_rounded,
+                  size: 44,
+                  color: onSurface.withValues(alpha: 0.75),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '点击加载嵌入内容',
+                  style: TextStyle(
+                    color: onSurface,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebViewContent(ThemeData theme, IframeAttributes attrs) {
     final windowsWebViewEnvironment =
         WindowsWebViewEnvironmentService.instance.environment;
 
-    // 构建内容 Widget
-    Widget content = ClipRRect(
+    return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         children: [
-          // WebView - 始终渲染
-          // 直接加载 URL，通过设置 Referer 头解决 origin 验证问题
+          // 真正的 WebView：仅在 _webViewMounted 后进入树。
+          // 直接加载 URL，通过设置 Referer 头解决 origin 验证问题。
           Offstage(
             offstage: _routeOverlayed,
             child: InAppWebView(
-            webViewEnvironment: windowsWebViewEnvironment,
-            initialUrlRequest: URLRequest(
-              url: WebUri(attrs.fullUrl),
-              headers: {'Referer': AppConstants.baseUrl},
-            ),
-            initialSettings: _buildSettings(attrs),
-            initialUserScripts: WebViewSettings.compatPolyfillScripts,
-            onWebViewCreated: (controller) {
-              WebViewSettings.registerJsErrorReporter(controller);
-            },
-            onReceivedServerTrustAuthRequest: (_, challenge) =>
-                WebViewSettings.handleServerTrustAuthRequest(challenge),
-            // 允许 WebView 接收水平滑动手势
-            gestureRecognizers: {
-              Factory<HorizontalDragGestureRecognizer>(
-                () => HorizontalDragGestureRecognizer(),
+              webViewEnvironment: windowsWebViewEnvironment,
+              initialUrlRequest: URLRequest(
+                url: WebUri(attrs.fullUrl),
+                headers: {'Referer': AppConstants.baseUrl},
               ),
-            },
-            onEnterFullscreen: (controller) {
-              _lockLayout();
-            },
-            onExitFullscreen: (controller) {
-              _unlockLayoutIfNeeded();
-            },
-            onLoadStart: (controller, url) {
-              if (mounted) {
-                setState(() {
-                  _isLoaded = false;
-                  _hasError = false;
-                });
-              }
-            },
-            onLoadStop: (controller, url) async {
-              if (mounted) {
-                setState(() => _isLoaded = true);
-              }
-              // 注入 viewport meta 标签，确保内容正确缩放
-              await controller.evaluateJavascript(
-                source: '''
+              initialSettings: _buildSettings(attrs),
+              initialUserScripts: WebViewSettings.compatPolyfillScripts,
+              onWebViewCreated: (controller) {
+                WebViewSettings.registerJsErrorReporter(controller);
+                // 嵌入实例同样压低 WebView2 内存目标，减轻后台占用。
+                WebViewSettings.applyWindowsHeadlessMemoryTarget(controller);
+              },
+              onReceivedServerTrustAuthRequest: (_, challenge) =>
+                  WebViewSettings.handleServerTrustAuthRequest(challenge),
+              // 允许 WebView 接收水平滑动手势
+              gestureRecognizers: {
+                Factory<HorizontalDragGestureRecognizer>(
+                  () => HorizontalDragGestureRecognizer(),
+                ),
+              },
+              onEnterFullscreen: (controller) {
+                _lockLayout();
+              },
+              onExitFullscreen: (controller) {
+                _unlockLayoutIfNeeded();
+              },
+              onLoadStart: (controller, url) {
+                if (mounted) {
+                  setState(() {
+                    _isLoaded = false;
+                    _hasError = false;
+                  });
+                }
+              },
+              onLoadStop: (controller, url) async {
+                if (mounted) {
+                  setState(() => _isLoaded = true);
+                }
+                // 注入 viewport meta 标签，确保内容正确缩放
+                await controller.evaluateJavascript(
+                  source: '''
                     (function() {
                       var meta = document.querySelector('meta[name="viewport"]');
                       if (!meta) {
@@ -309,35 +419,35 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
                       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
                     })();
                   ''',
-              );
-            },
-            onReceivedError: (controller, request, error) {
-              // 只有主框架加载失败才显示错误
-              // 忽略子资源（JS、图片、视频海报等）的加载错误
-              if (mounted && request.isForMainFrame == true) {
-                setState(() => _hasError = true);
-              }
-            },
-            // 拦截用户点击的链接，使用 WebViewPage 打开
-            shouldOverrideUrlLoading: (controller, navigationAction) async {
-              // 只拦截用户主动点击的链接
-              if (navigationAction.navigationType !=
-                  NavigationType.LINK_ACTIVATED) {
-                return NavigationActionPolicy.ALLOW;
-              }
+                );
+              },
+              onReceivedError: (controller, request, error) {
+                // 只有主框架加载失败才显示错误
+                // 忽略子资源（JS、图片、视频海报等）的加载错误
+                if (mounted && request.isForMainFrame == true) {
+                  setState(() => _hasError = true);
+                }
+              },
+              // 拦截用户点击的链接，使用 WebViewPage 打开
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                // 只拦截用户主动点击的链接
+                if (navigationAction.navigationType !=
+                    NavigationType.LINK_ACTIVATED) {
+                  return NavigationActionPolicy.ALLOW;
+                }
 
-              final url = navigationAction.request.url?.toString();
-              if (url == null) {
-                return NavigationActionPolicy.ALLOW;
-              }
+                final url = navigationAction.request.url?.toString();
+                if (url == null) {
+                  return NavigationActionPolicy.ALLOW;
+                }
 
-              // 使用 WebViewPage 打开
-              if (mounted) {
-                WebViewPage.open(context, url);
-              }
-              return NavigationActionPolicy.CANCEL;
-            },
-          ),
+                // 使用 WebViewPage 打开
+                if (mounted) {
+                  WebViewPage.open(context, url);
+                }
+                return NavigationActionPolicy.CANCEL;
+              },
+            ),
           ),
           // 加载指示器
           if (!_isLoaded && !_hasError)
@@ -388,31 +498,6 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
             ),
         ],
       ),
-    );
-
-    // 始终使用响应式宽高比布局，忽略固定像素尺寸
-    // 这样可以适配不同屏幕尺寸，避免在小屏幕上溢出或在大屏幕上显得太小
-    Widget sizedContent;
-
-    // 特殊情况：如果只有固定高度（没有宽度或宽度是百分比），使用固定高度
-    // 例如：width="100%" height="111"
-    if (attrs.height != null && attrs.height! > 0 && attrs.width == null) {
-      sizedContent = SizedBox(
-        width: double.infinity,
-        height: attrs.height,
-        child: content,
-      );
-    } else {
-      // 其他情况使用宽高比
-      sizedContent = AspectRatio(
-        aspectRatio: attrs.aspectRatio,
-        child: content,
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: sizedContent,
     );
   }
 
