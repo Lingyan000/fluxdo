@@ -416,7 +416,12 @@ class TopicCard extends ConsumerWidget {
     required double availableWidth,
   }) {
     final theme = Theme.of(context);
-    final stats = _buildStatsCluster(context, availableWidth);
+    // stats 的已读退灰走色值预乘(见 _buildStat.dim),不再外包 Opacity 层
+    final stats = _buildStatsCluster(
+      context,
+      availableWidth,
+      dim: isFullyRead,
+    );
     final catTags = _buildCategoryTagsLine(context, category, metaColor);
     final timeText = RelativeTimeText(
       dateTime: topic.lastPostedAt,
@@ -437,7 +442,7 @@ class TopicCard extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           if (stats != null) ...[
-            _fadeWhenRead(stats, isFullyRead: isFullyRead),
+            stats,
             const SizedBox(width: 10),
           ],
           timeText,
@@ -467,7 +472,7 @@ class TopicCard extends ConsumerWidget {
             Expanded(child: _fadeWhenRead(catTags, isFullyRead: isFullyRead)),
             if (stats != null) ...[
               const SizedBox(width: 8),
-              _fadeWhenRead(stats, isFullyRead: isFullyRead),
+              stats,
             ],
           ],
         ),
@@ -759,7 +764,11 @@ class TopicCard extends ConsumerWidget {
 
   /// 第3行右侧统计簇:💬回复(热度色)为主,宽度富余时加 ❤/👁。
   /// 与分类/标签同行(时间在第2行),无内容返回 null 不占位
-  Widget? _buildStatsCluster(BuildContext context, double availableWidth) {
+  Widget? _buildStatsCluster(
+    BuildContext context,
+    double availableWidth, {
+    bool dim = false,
+  }) {
     final theme = Theme.of(context);
     final showLikes = availableWidth >= 300 && topic.likeCount > 0;
     final showViews = availableWidth >= 460 && topic.views > 0;
@@ -768,9 +777,14 @@ class TopicCard extends ConsumerWidget {
 
     final children = <Widget>[
       if (showViews)
-        _buildStat(context, Symbols.visibility_rounded, topic.views),
+        _buildStat(context, Symbols.visibility_rounded, topic.views, dim: dim),
       if (showLikes)
-        _buildStat(context, Symbols.favorite_border_rounded, topic.likeCount),
+        _buildStat(
+          context,
+          Symbols.favorite_border_rounded,
+          topic.likeCount,
+          dim: dim,
+        ),
       if (replies > 0)
         _buildStat(
           context,
@@ -778,6 +792,7 @@ class TopicCard extends ConsumerWidget {
           replies,
           color: heatColor,
           bold: heatColor != null,
+          dim: dim,
         ),
     ];
     if (children.isEmpty) return null;
@@ -814,24 +829,41 @@ class TopicCard extends ConsumerWidget {
     int count, {
     Color? color,
     bool bold = false,
+    bool dim = false,
   }) {
     final theme = Theme.of(context);
     // 默认灰度调柔,让热度色计数在对比中突出
-    final effectiveColor =
+    var effectiveColor =
         color ?? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: effectiveColor),
-        const SizedBox(width: 3),
-        Text(
-          NumberUtils.formatCount(count),
-          style: theme.textTheme.labelSmall?.copyWith(
+    // 已读退灰:原为外层 Opacity(0.55) 包装 —— 图标/文字字形互不重叠,
+    // 色值 alpha 预乘与整层透明像素恒等,省掉每张已读卡的合成层
+    if (dim) {
+      effectiveColor = effectiveColor.withValues(
+        alpha: effectiveColor.a * 0.55,
+      );
+    }
+    // 单段落合并:原 Row[Icon, SizedBox(3), Text] = 2 个段落 + 1 个 Row
+    // 布局;Icon 本质是单字形 RichText,字形 span + letterSpacing:3
+    // 像素级复刻间距后,每个统计项只剩 1 个段落
+    return Text.rich(
+      TextSpan(
+        children: [
+          _titleIconSpan(
+            context,
+            icon,
+            size: 13,
             color: effectiveColor,
-            fontWeight: bold ? FontWeight.w600 : null,
+            gap: 3,
           ),
-        ),
-      ],
+          TextSpan(
+            text: NumberUtils.formatCount(count),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: effectiveColor,
+              fontWeight: bold ? FontWeight.w600 : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1033,26 +1065,30 @@ class CompactTopicCard extends ConsumerWidget {
                       ),
                     )
                   else if (topic.postsCount > 1)
-                    Row(
-                      children: [
-                        Icon(
-                          Symbols.chat_bubble_rounded,
-                          size: 12,
-                          color: theme.colorScheme.outline.withValues(
-                            alpha: 0.7,
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${topic.postsCount - 1}',
-                          style: theme.textTheme.labelSmall?.copyWith(
+                    // 单段落:字形 span 复刻 Icon(12)+SizedBox(2)+Text
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          _titleIconSpan(
+                            context,
+                            Symbols.chat_bubble_rounded,
+                            size: 12,
                             color: theme.colorScheme.outline.withValues(
                               alpha: 0.7,
                             ),
-                            fontSize: 10,
+                            gap: 2,
                           ),
-                        ),
-                      ],
+                          TextSpan(
+                            text: '${topic.postsCount - 1}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline.withValues(
+                                alpha: 0.7,
+                              ),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),
