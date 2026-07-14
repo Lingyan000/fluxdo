@@ -154,6 +154,42 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
   }
 }
 
+/// 标题前缀状态图标的字形 span:消灭标题段落上的 WidgetSpan 占位布局
+/// (占位符逼 RenderParagraph 走占位子树布局,是段落 LAYOUT 的同种税,
+/// 标签行清 WidgetSpan 已验证收益)。Icon(size:s) 本质就是画一个 s px
+/// 的图标字体字形 —— 同字形同字号像素一致;原 Padding(right:gap) 用
+/// 单字形 span 的 letterSpacing 精确复刻(尾部 +gap)。fontVariations
+/// 按 IconTheme 原样复刻(可变字体的粗细/填充,漏了笔画粗细会变)。
+/// 与 WidgetSpan(middle 对齐)的残余差异 = 基线 vs 行中线的 ≤1px
+/// 垂直微差。
+TextSpan _titleIconSpan(
+  BuildContext context,
+  IconData icon, {
+  required double size,
+  required Color color,
+  required double gap,
+}) {
+  final iconTheme = IconTheme.of(context);
+  return TextSpan(
+    text: String.fromCharCode(icon.codePoint),
+    style: TextStyle(
+      fontFamily: icon.fontFamily,
+      package: icon.fontPackage,
+      fontSize: size,
+      color: color,
+      letterSpacing: gap,
+      height: 1.0,
+      fontVariations: <FontVariation>[
+        if (iconTheme.fill != null) FontVariation('FILL', iconTheme.fill!),
+        if (iconTheme.weight != null) FontVariation('wght', iconTheme.weight!),
+        if (iconTheme.grade != null) FontVariation('GRAD', iconTheme.grade!),
+        if (iconTheme.opticalSize != null)
+          FontVariation('opsz', iconTheme.opticalSize!),
+      ],
+    ),
+  );
+}
+
 /// 话题卡片组件 — 标题置顶布局:
 /// 1. 标题(满宽,最多两行,未读加粗)+ 右侧未读槽位
 ///    (可选)详情摘要(middleWidget,Gmail snippet 位)
@@ -530,39 +566,31 @@ class TopicCard extends ConsumerWidget {
     final theme = Theme.of(context);
     return [
       if (topic.closed)
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Icon(Symbols.lock_rounded, size: 15, color: titleColor),
-          ),
+        _titleIconSpan(
+          context,
+          Symbols.lock_rounded,
+          size: 15,
+          color: titleColor,
+          gap: 4,
         ),
       if (topic.hasAcceptedAnswer)
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Icon(
-              Symbols.check_box_rounded,
-              size: 15,
-              // 全读完时随文字一起降饱和
-              color: isFullyRead
-                  ? Colors.green.withValues(alpha: 0.5)
-                  : Colors.green,
-            ),
-          ),
+        _titleIconSpan(
+          context,
+          Symbols.check_box_rounded,
+          size: 15,
+          // 全读完时随文字一起降饱和
+          color: isFullyRead
+              ? Colors.green.withValues(alpha: 0.5)
+              : Colors.green,
+          gap: 4,
         )
       else if (topic.canHaveAnswer)
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Icon(
-              Symbols.check_box_outline_blank_rounded,
-              size: 15,
-              color: theme.colorScheme.outline,
-            ),
-          ),
+        _titleIconSpan(
+          context,
+          Symbols.check_box_outline_blank_rounded,
+          size: 15,
+          color: theme.colorScheme.outline,
+          gap: 4,
         ),
       ...EmojiText.buildEmojiSpans(context, topic.title, style),
     ];
@@ -937,44 +965,30 @@ class CompactTopicCard extends ConsumerWidget {
                               style: compactTitleStyle,
                               children: [
                                 if (topic.closed)
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 3),
-                                      child: Icon(
-                                        Symbols.lock_rounded,
-                                        size: 12,
-                                        color: isUnread
-                                            ? theme.colorScheme.onSurface
-                                            : theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                      ),
-                                    ),
+                                  _titleIconSpan(
+                                    context,
+                                    Symbols.lock_rounded,
+                                    size: 12,
+                                    color: isUnread
+                                        ? theme.colorScheme.onSurface
+                                        : theme.colorScheme.onSurfaceVariant,
+                                    gap: 3,
                                   ),
                                 if (topic.hasAcceptedAnswer)
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 3),
-                                      child: Icon(
-                                        Symbols.check_box_rounded,
-                                        size: 12,
-                                        color: Colors.green,
-                                      ),
-                                    ),
+                                  _titleIconSpan(
+                                    context,
+                                    Symbols.check_box_rounded,
+                                    size: 12,
+                                    color: Colors.green,
+                                    gap: 3,
                                   )
                                 else if (topic.canHaveAnswer)
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 3),
-                                      child: Icon(
-                                        Symbols.check_box_outline_blank_rounded,
-                                        size: 12,
-                                        color: theme.colorScheme.outline,
-                                      ),
-                                    ),
+                                  _titleIconSpan(
+                                    context,
+                                    Symbols.check_box_outline_blank_rounded,
+                                    size: 12,
+                                    color: theme.colorScheme.outline,
+                                    gap: 3,
                                   ),
                                 ...EmojiText.buildEmojiSpans(
                                   context,
