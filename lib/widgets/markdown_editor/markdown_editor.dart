@@ -373,6 +373,18 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     }
   }
 
+  /// 手势光标步进前的"确保可编辑"仪式:表情面板态 readOnly 的
+  /// TextField 不渲染光标 —— 解除 readOnly 切回键盘态并聚焦(幂等;
+  /// 不动 selection,落点归步进逻辑)。
+  void _ensureEditableForCursor() {
+    if (_readOnly) {
+      _intendedPanel = EditorPanelType.none;
+      _updateReadOnly(false);
+      _panelController.updatePanelType(ChatBottomPanelType.keyboard);
+    }
+    if (!_focusNode.hasFocus) _focusNode.requestFocus();
+  }
+
   /// 编辑列下方空白区点击:等价"点在正文末尾"(聚焦 + 光标置末)。
   /// 外滚结构下 TextField 只占内容高,旧 expands 的整区可点由此兜底;
   /// readOnly(表情面板开)时与 TextField 的 Listener 同款切回键盘。
@@ -810,7 +822,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         // 工具栏（纯按钮行，TextFieldTapRegion 防止点击时 TextField 失焦）
         TextFieldTapRegion(
           child: MarkdownToolbar(
-          // 手势光标步进后滚动跟随(越界才滚,jumpTo 无感)
+          // 手势光标:步进前确保可编辑(readOnly 光标不渲染),
+          // 步进后滚动跟随(越界才滚,jumpTo 无感)
+          onBeforeCursorMove: _ensureEditableForCursor,
           onCursorMoved: _scrollToCursor,
           key: _toolbarKey,
           controller: widget.controller,

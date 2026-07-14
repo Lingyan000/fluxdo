@@ -40,6 +40,11 @@ class MarkdownToolbar extends StatefulWidget {
   /// EditableText 的 showCaretOnScreen,光标会在视野外移动)。
   final VoidCallback? onCursorMoved;
 
+  /// 手势光标步进**前**回调(宿主"确保可编辑"仪式:表情面板态
+  /// readOnly 的 TextField 不渲染光标,须先解除并聚焦,否则光标
+  /// 全程不可见)。幂等,每步都调。
+  final VoidCallback? onBeforeCursorMove;
+
   /// 是否显示预览按钮
   final bool showPreviewButton;
 
@@ -80,6 +85,7 @@ class MarkdownToolbar extends StatefulWidget {
     required this.controller,
     this.focusNode,
     this.onCursorMoved,
+    this.onBeforeCursorMove,
     this.showPreviewButton = true,
     this.isPreview = false,
     this.onTogglePreview,
@@ -942,6 +948,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   /// 光标滑钮:按 grapheme 移动光标/扩选(emoji/代理对不劈半)。
   void moveCursorByCharacter(int dir, {required bool extend}) {
+    widget.onBeforeCursorMove?.call();
     // 未聚焦(选区无效)时落到文末起步并聚焦 —— 滑钮应随时可用
     if (!widget.controller.selection.isValid) {
       widget.controller.selection = TextSelection.collapsed(
