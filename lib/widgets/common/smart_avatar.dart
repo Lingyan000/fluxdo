@@ -120,11 +120,20 @@ class _SmartAvatarState extends State<SmartAvatar> {
     double innerRadius,
     double innerSize,
   ) {
+    // 解码尺寸约束:头像显示直径 innerSize(常见 32~72dp),但服务端
+    // 返回的头像位图可能远大于显示尺寸,不约束就按原图解码上传 —— 快滚
+    // 多头像同帧首绘时纹理上传叠加成 raster 尖峰(书签/话题列表 raster
+    // 大帧的头像份额)。按显示直径 × dpr 解码,单张纹理量降一到两个
+    // 数量级;× 2 留一档清晰度余量,cover 裁切不糊。
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
     return CachedNetworkImage(
       imageUrl: widget.imageUrl!,
       cacheManager: _cacheManager,
       width: innerSize,
       height: innerSize,
+      memCacheWidth: decodeSide,
+      memCacheHeight: decodeSide,
       fit: BoxFit.cover,
       fadeInDuration: const Duration(milliseconds: 150),
       fadeOutDuration: const Duration(milliseconds: 150),
