@@ -52,6 +52,7 @@ import '../../mention/mention_autocomplete.dart';
 import '../emoji_sticker_panel.dart';
 import '../image_upload_dialog.dart';
 import '../link_insert_dialog.dart';
+import '../template_insert_dialog.dart';
 import '../markdown_toolbar.dart' show MarkdownToolbarState;
 import 'composer_doc_codec.dart';
 import 'html_to_markdown.dart';
@@ -887,6 +888,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
+  /// 用户自定义模板(MD 模式「模板」同一选择器):内容为 markdown,
+  /// 经 cook 导入链富内容化插入。
+  Future<void> _insertTemplate() async {
+    final template = await showTemplateInsertDialog(context);
+    if (template == null || !mounted) return;
+    await insertMarkdownSnippet(template.content);
+  }
+
   /// 插入/施加链接:选区非空 → 对选中文字加 link mark(文字保留);
   /// 折叠 → 对话框输入文字+URL 后插入(经 cook)。
   Future<void> _insertLink() async {
@@ -981,6 +990,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         item('__video__', Icons.videocam_outlined, '上传视频'),
         item('__voice__', Icons.mic_rounded, '语音消息'),
         const PopupMenuDivider(height: 8),
+        // 用户自定义模板(与 MD 模式「模板」同一选择器,内容经 cook)
+        item('__template__', Icons.assignment_outlined, '我的模板…'),
         item('__custom__', Icons.data_object_rounded, 'Markdown 片段…'),
       ],
     );
@@ -995,6 +1006,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _recordAndInsertVoice();
     } else if (selected == '__link__') {
       await _insertLink();
+    } else if (selected == '__template__') {
+      await _insertTemplate();
     } else {
       await insertMarkdownSnippet(selected);
     }
