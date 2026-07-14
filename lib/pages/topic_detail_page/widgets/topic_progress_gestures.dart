@@ -155,8 +155,12 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
   ) {
     if (!prefs.progressGesturesEnabled) return;
     if (!prefs.progressGestureLongPressEnabled) return;
-    final actions = prefs.progressGestureMenuActions;
-    if (actions.isEmpty) return;
+    final slots = prefs.progressGestureMenuActions;
+    final occupied = <({int slot, ProgressGestureAction action})>[
+      for (var i = 0; i < slots.length; i++)
+        if (slots[i] != null) (slot: i, action: slots[i]!),
+    ];
+    if (occupied.isEmpty) return;
 
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
@@ -164,16 +168,17 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     final widgetTopCenter = widgetTopLeft + Offset(box.size.width / 2, 0);
 
     final items = [
-      for (final action in actions)
+      for (final entry in occupied)
         () {
-          final meta = progressGestureActionMeta(context, action);
+          final meta = progressGestureActionMeta(context, entry.action);
           return RadialMenuItem(
             icon: meta.icon,
             label: meta.label,
-            onSelected: () => widget.onAction(action),
+            onSelected: () => widget.onAction(entry.action),
           );
         }(),
     ];
+    final itemSlots = [for (final entry in occupied) entry.slot];
 
     _menuSession.open(
       context: context,
@@ -185,8 +190,9 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
         box.size.height,
       ),
       items: items,
-      // 固定 8 槽：与设置页预览一致，不因当前启用项数重排左右位置。
+      // 固定 8 坑 + 用户指定坑位：空坑不挤齐、不自动对齐。
       fixedSlots: true,
+      itemSlots: itemSlots,
       radius: RadialMenuFixedSlots.radius,
     );
 

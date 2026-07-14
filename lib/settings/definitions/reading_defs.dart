@@ -278,6 +278,7 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             final items = ref.watch(
               preferencesProvider.select((p) => p.progressGestureMenuActions),
             );
+            final filled = progressGestureMenuOccupiedActions(items);
             return ListTile(
               enabled: enabled,
               leading: Icon(
@@ -288,8 +289,8 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
               ),
               title: Text(context.l10n.progressGesture_longPressMenu),
               subtitle: Text(
-                '${items.length}/$kProgressGestureMenuMax · '
-                '${items.map((a) => progressGestureActionMeta(context, a).label).join(' · ')}',
+                '${filled.length}/$kProgressGestureMenuMax · '
+                '${filled.map((a) => progressGestureActionMeta(context, a).label).join(' · ')}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

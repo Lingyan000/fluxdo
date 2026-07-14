@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/widgets/common/radial_long_press_menu.dart';
 import 'package:fluxdo/widgets/common/radial_menu_fixed_slots.dart';
 
@@ -17,59 +18,55 @@ void main() {
       expect(right.dx, greaterThan(center.dx));
       expect(left.dy, closeTo(center.dy, 0.001));
       expect(right.dy, closeTo(center.dy, 0.001));
-      // mid-leftish slot sits above center
       expect(mid.dy, lessThan(center.dy));
     });
 
-    test('item positions stay fixed when item count changes', () {
+    test('slot positions stay fixed regardless of occupancy', () {
       const center = Offset(160, 320);
-      final threeItemFirst = RadialMenuFixedSlots.positionForSlot(
-        slot: 0,
-        center: center,
-      );
-      final eightItemFirst = RadialMenuFixedSlots.positionForSlot(
-        slot: 0,
-        center: center,
-      );
-      final threeItemSecond = RadialMenuFixedSlots.positionForSlot(
-        slot: 1,
-        center: center,
-      );
-      final eightItemSecond = RadialMenuFixedSlots.positionForSlot(
-        slot: 1,
-        center: center,
-      );
+      final slot0 = RadialMenuFixedSlots.positionForSlot(slot: 0, center: center);
+      final slot7 = RadialMenuFixedSlots.positionForSlot(slot: 7, center: center);
 
-      expect(threeItemFirst, eightItemFirst);
-      expect(threeItemSecond, eightItemSecond);
+      expect(slot0.dx, lessThan(center.dx));
+      expect(slot7.dx, greaterThan(center.dx));
+      // same geometry whether 1 or 8 items would be occupied
+      expect(
+        RadialMenuFixedSlots.positionForSlot(slot: 0, center: center),
+        slot0,
+      );
     });
 
-    test('hit testing uses fixed grid and ignores empty trailing slots', () {
+    test('hit testing uses fixed grid and ignores empty pits', () {
       const center = Offset(200, 400);
-      // Slot 0 target (left end)
       final slot0 = RadialMenuFixedSlots.positionForSlot(slot: 0, center: center);
-      // Slot 7 target would be right end; with only 3 items it must miss.
       final slot7 = RadialMenuFixedSlots.positionForSlot(slot: 7, center: center);
+
+      // Sparse occupancy: only pits 0 and 3 filled.
+      final occupied = {0, 3};
 
       final hit0 = RadialMenuFixedSlots.hitIndex(
         pointer: slot0,
         center: center,
-        itemCount: 3,
+        occupiedSlots: occupied,
       );
       final hitEmpty = RadialMenuFixedSlots.hitIndex(
         pointer: slot7,
         center: center,
-        itemCount: 3,
+        occupiedSlots: occupied,
       );
       final dead = RadialMenuFixedSlots.hitIndex(
         pointer: center,
         center: center,
-        itemCount: 3,
+        occupiedSlots: occupied,
+      );
+      final nearestEmpty = RadialMenuFixedSlots.nearestSlot(
+        pointer: slot7,
+        center: center,
       );
 
       expect(hit0, 0);
       expect(hitEmpty, isNull);
       expect(dead, isNull);
+      expect(nearestEmpty, 7);
     });
 
     test('radius is stable for fixed slots', () {
@@ -77,6 +74,40 @@ void main() {
       expect(RadialMenuFixedSlots.maxSlots, 8);
       expect(RadialMenuFixedSlots.defaultSweepStart, closeTo(-math.pi / 2, 1e-9));
       expect(RadialMenuFixedSlots.defaultSweepEnd, closeTo(math.pi / 2, 1e-9));
+    });
+  });
+
+  group('normalizeProgressGestureMenuSlots', () {
+    test('keeps empty pits and does not pack left', () {
+      final sparse = normalizeProgressGestureMenuSlots([
+        ProgressGestureAction.openTimeline,
+        null,
+        null,
+        ProgressGestureAction.reply,
+        null,
+        null,
+        null,
+        ProgressGestureAction.share,
+      ]);
+
+      expect(sparse.length, 8);
+      expect(sparse[0], ProgressGestureAction.openTimeline);
+      expect(sparse[1], isNull);
+      expect(sparse[3], ProgressGestureAction.reply);
+      expect(sparse[7], ProgressGestureAction.share);
+      expect(progressGestureMenuFilledCount(sparse), 3);
+    });
+
+    test('dedupes and pads to 8', () {
+      final n = normalizeProgressGestureMenuSlots([
+        ProgressGestureAction.reply,
+        ProgressGestureAction.reply,
+        ProgressGestureAction.share,
+      ]);
+      expect(n.length, 8);
+      expect(n[0], ProgressGestureAction.reply);
+      expect(n[1], isNull); // duplicate becomes empty pit, not re-packed
+      expect(n[2], ProgressGestureAction.share);
     });
   });
 

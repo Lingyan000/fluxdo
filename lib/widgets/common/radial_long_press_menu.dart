@@ -58,6 +58,8 @@ class RadialMenuSession {
   double _sweepEnd = math.pi / 2;
   bool _fixedSlots = false;
   int _slotCount = RadialMenuFixedSlots.maxSlots;
+  /// Parallel to [_items]: fixed-slot index for each rendered item.
+  List<int> _itemSlots = const [];
   Widget Function(BuildContext context, Rect rect, double opacity)?
   _pressAreaIndicatorBuilder;
   // true 表示已请求菜单收起：overlay 内部反向播放衍生动画，结束后才真正清理
@@ -84,8 +86,9 @@ class RadialMenuSession {
   /// [sweepStart]/[sweepEnd] 为扇形角度窗口（极轴偏角 φ，φ=0 指向展开
   /// 方向正前方、左负右正），默认 [-π/2, π/2] 完整半圆。
   ///
-  /// [fixedSlots] 为 true 时，项 i 始终落在固定 8 槽中的第 i 槽，
-  /// 不因当前启用项数重新均分半圆。
+  /// [fixedSlots] 为 true 时，半圆按固定 [slotCount] 坑均分；
+  /// 每个 item 落在 [itemSlots] 指定坑（缺省 item i → slot i），
+  /// 空坑不渲染、不命中，也不自动把后面的项挤到前面。
   void open({
     required BuildContext context,
     required Offset center,
@@ -97,6 +100,9 @@ class RadialMenuSession {
     double sweepEnd = math.pi / 2,
     bool fixedSlots = false,
     int slotCount = RadialMenuFixedSlots.maxSlots,
+    /// 当 [fixedSlots] 为 true 时，指定每个 item 落在哪个固定坑（0-based）。
+    /// 缺省为稠密映射 item i → slot i。稀疏布局请显式传入，长度须与 [items] 一致。
+    List<int>? itemSlots,
     Widget Function(BuildContext context, Rect rect, double opacity)?
     pressAreaIndicatorBuilder,
   }) {
@@ -112,6 +118,17 @@ class RadialMenuSession {
     _direction = direction;
     _fixedSlots = fixedSlots;
     _slotCount = math.max(1, slotCount);
+    if (fixedSlots) {
+      if (itemSlots != null && itemSlots.length == items.length) {
+        _itemSlots = [
+          for (final s in itemSlots) s.clamp(0, _slotCount - 1),
+        ];
+      } else {
+        _itemSlots = [for (var i = 0; i < items.length; i++) i];
+      }
+    } else {
+      _itemSlots = const [];
+    }
     _radius = radius ??
         (fixedSlots
             ? RadialMenuFixedSlots.radius
@@ -133,11 +150,12 @@ class RadialMenuSession {
     if (center == null || _menuEntry == null) return;
     int? newIndex;
     if (_fixedSlots) {
-      // 固定 8 槽：命中网格始终按 maxSlots 划分，空槽不触发。
-      newIndex = RadialMenuFixedSlots.hitIndex(
+      // 固定坑：命中返回 slot，再映射回 items 下标；空坑不触发。
+      final occupied = _itemSlots.toSet();
+      final slot = RadialMenuFixedSlots.hitIndex(
         pointer: pointer,
         center: center,
-        itemCount: _items.length,
+        occupiedSlots: occupied,
         pressArea: _pressArea,
         direction: _direction,
         radius: _radius,
@@ -145,6 +163,12 @@ class RadialMenuSession {
         sweepEnd: _sweepEnd,
         slotCount: _slotCount,
       );
+      if (slot == null) {
+        newIndex = null;
+      } else {
+        final idx = _itemSlots.indexOf(slot);
+        newIndex = idx >= 0 ? idx : null;
+      }
     } else {
       final dx = pointer.dx - center.dx;
       final dy = pointer.dy - center.dy;
@@ -218,6 +242,7 @@ class RadialMenuSession {
     _pressArea = null;
     _highlightedIndex = null;
     _items = const [];
+    _itemSlots = const [];
     _fixedSlots = false;
     _slotCount = RadialMenuFixedSlots.maxSlots;
     _pressAreaIndicatorBuilder = null;
@@ -239,6 +264,7 @@ class RadialMenuSession {
       center: _menuCenter ?? Offset.zero,
       pressArea: _pressArea,
       items: _items,
+      itemSlots: _itemSlots,
       highlightedIndex: _highlightedIndex,
       radius: _radius,
       direction: _direction,
@@ -260,6 +286,7 @@ class RadialMenuOverlay extends StatefulWidget {
     required this.center,
     required this.pressArea,
     required this.items,
+    this.itemSlots = const [],
     required this.highlightedIndex,
     required this.radius,
     required this.closing,
@@ -277,6 +304,8 @@ class RadialMenuOverlay extends StatefulWidget {
   /// 按压区域的全局矩形，作为替代显示的锚点
   final Rect? pressArea;
   final List<RadialMenuItem> items;
+  /// 与 [items] 平行：固定坑位下每个 item 的 slot 索引。
+  final List<int> itemSlots;
   final int? highlightedIndex;
   final double radius;
   final RadialMenuDirection direction;
@@ -286,7 +315,7 @@ class RadialMenuOverlay extends StatefulWidget {
   final double sweepStart;
   final double sweepEnd;
 
-  /// 固定槽位布局：项 i 落在 8 槽网格的第 i 槽，不按当前项数均分。
+  /// 固定槽位布局：半圆按 [slotCount] 坑均分，位置由 [itemSlots] 指定。
   final bool fixedSlots;
   final int slotCount;
 
@@ -402,8 +431,11 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
   /// 扇形目标位置：第 index 项最终落点
   Offset _itemTargetPosition(int index) {
     if (widget.fixedSlots) {
+      final slot = (index < widget.itemSlots.length)
+          ? widget.itemSlots[index]
+          : index;
       return RadialMenuFixedSlots.positionForSlot(
-        slot: index,
+        slot: slot,
         center: widget.center,
         direction: widget.direction,
         radius: widget.radius,

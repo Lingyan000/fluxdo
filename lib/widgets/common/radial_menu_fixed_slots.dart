@@ -7,10 +7,11 @@ import 'radial_long_press_menu.dart';
 /// Fixed-slot semicircle geometry for the progress-pill long-press menu.
 ///
 /// Why fixed slots:
-/// - The menu always has up to [maxSlots] positions.
-/// - Item *i* always lands on slot *i*, even when fewer than 8 actions are
-///   selected. This keeps muscle memory stable and makes the settings preview
-///   match the runtime menu left-to-right.
+/// - The menu always has [maxSlots] pits.
+/// - Slot *i* is a stable physical position. Whether it is empty or filled is
+///   decided by the user — items never auto-pack / auto-center.
+/// - Settings preview and runtime share this geometry so left/right stay in
+///   sync.
 ///
 /// Coordinate system matches [RadialMenuSession]:
 /// - polar offset φ = 0 points straight into the open direction
@@ -49,11 +50,13 @@ class RadialMenuFixedSlots {
   }) {
     if (slotCount <= 1) return (sweepStart + sweepEnd) / 2;
     final clamped = slot.clamp(0, slotCount - 1);
-    return sweepStart + clamped * slotStep(
-      sweepStart: sweepStart,
-      sweepEnd: sweepEnd,
-      slotCount: slotCount,
-    );
+    return sweepStart +
+        clamped *
+            slotStep(
+              sweepStart: sweepStart,
+              sweepEnd: sweepEnd,
+              slotCount: slotCount,
+            );
   }
 
   /// Screen-space target for [slot] around [center].
@@ -82,14 +85,13 @@ class RadialMenuFixedSlots {
     );
   }
 
-  /// Map a global pointer to an occupied item index using the fixed slot grid.
+  /// Nearest fixed-slot index under [pointer], or null in dead zones.
   ///
-  /// Returns `null` when the pointer is in a dead zone, lands on an empty
-  /// trailing slot, or is clearly behind the fan.
-  static int? hitIndex({
+  /// Does **not** care whether the slot is occupied — use [isOccupied] /
+  /// [occupiedSlots] when empty pits must miss.
+  static int? nearestSlot({
     required Offset pointer,
     required Offset center,
-    required int itemCount,
     Rect? pressArea,
     RadialMenuDirection direction = RadialMenuDirection.up,
     double radius = RadialMenuFixedSlots.radius,
@@ -97,8 +99,6 @@ class RadialMenuFixedSlots {
     double sweepEnd = defaultSweepEnd,
     int slotCount = maxSlots,
   }) {
-    if (itemCount <= 0) return null;
-
     final dx = pointer.dx - center.dx;
     final dy = pointer.dy - center.dy;
     final distance = math.sqrt(dx * dx + dy * dy);
@@ -135,7 +135,47 @@ class RadialMenuFixedSlots {
     );
     if (step <= 1e-6) return 0;
 
-    final slot = ((phi - sweepStart) / step).round().clamp(0, slotCount - 1);
+    return ((phi - sweepStart) / step).round().clamp(0, slotCount - 1);
+  }
+
+  /// Map a global pointer to an **occupied** slot index using the fixed grid.
+  ///
+  /// Returns `null` when the pointer is in a dead zone, lands on an empty
+  /// pit, or is clearly behind the fan.
+  ///
+  /// Occupancy:
+  /// - [occupiedSlots] if provided (sparse user layout)
+  /// - else dense prefix `0 .. itemCount-1` (legacy packed items)
+  static int? hitIndex({
+    required Offset pointer,
+    required Offset center,
+    int itemCount = maxSlots,
+    Set<int>? occupiedSlots,
+    Rect? pressArea,
+    RadialMenuDirection direction = RadialMenuDirection.up,
+    double radius = RadialMenuFixedSlots.radius,
+    double sweepStart = defaultSweepStart,
+    double sweepEnd = defaultSweepEnd,
+    int slotCount = maxSlots,
+  }) {
+    final slot = nearestSlot(
+      pointer: pointer,
+      center: center,
+      pressArea: pressArea,
+      direction: direction,
+      radius: radius,
+      sweepStart: sweepStart,
+      sweepEnd: sweepEnd,
+      slotCount: slotCount,
+    );
+    if (slot == null) return null;
+
+    if (occupiedSlots != null) {
+      if (!occupiedSlots.contains(slot)) return null;
+      return slot;
+    }
+
+    if (itemCount <= 0) return null;
     if (slot >= itemCount) return null;
     return slot;
   }
