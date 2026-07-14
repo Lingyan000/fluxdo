@@ -165,7 +165,15 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final widgetTopLeft = box.localToGlobal(Offset.zero);
-    final widgetTopCenter = widgetTopLeft + Offset(box.size.width / 2, 0);
+    // 扇形圆心必须落在棕色胶囊的视觉中心，而不是控件顶边中点。
+    // 否则 slot 0/7 的“水平端点”会对齐顶边，看起来比中间按钮偏高。
+    final pressArea = Rect.fromLTWH(
+      widgetTopLeft.dx,
+      widgetTopLeft.dy,
+      box.size.width,
+      box.size.height,
+    );
+    final fanCenter = pressArea.center;
 
     final items = [
       for (final entry in occupied)
@@ -182,13 +190,8 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
 
     _menuSession.open(
       context: context,
-      center: widgetTopCenter,
-      pressArea: Rect.fromLTWH(
-        widgetTopLeft.dx,
-        widgetTopLeft.dy,
-        box.size.width,
-        box.size.height,
-      ),
+      center: fanCenter,
+      pressArea: pressArea,
       items: items,
       // 固定 8 坑 + 用户指定坑位：空坑不挤齐、不自动对齐。
       fixedSlots: true,

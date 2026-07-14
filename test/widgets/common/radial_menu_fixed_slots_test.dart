@@ -21,6 +21,26 @@ void main() {
       expect(mid.dy, lessThan(center.dy));
     });
 
+    test('end pits sit on true left/right of pill center (fan origin)', () {
+      // Runtime and settings both pass the stadium visual center as fan origin.
+      // End pits must share that Y so they read as 正左 / 正右 of the middle pill.
+      const pillCenter = Offset(160, 520);
+      final endLeft = RadialMenuFixedSlots.positionForSlot(slot: 0, center: pillCenter);
+      final endRight = RadialMenuFixedSlots.positionForSlot(slot: 7, center: pillCenter);
+      final topish = RadialMenuFixedSlots.positionForSlot(slot: 3, center: pillCenter);
+      final nearTopLeft = RadialMenuFixedSlots.positionForSlot(slot: 1, center: pillCenter);
+
+      expect(endLeft.dx, closeTo(pillCenter.dx - RadialMenuFixedSlots.radius, 0.001));
+      expect(endRight.dx, closeTo(pillCenter.dx + RadialMenuFixedSlots.radius, 0.001));
+      expect(endLeft.dy, closeTo(pillCenter.dy, 0.001));
+      expect(endRight.dy, closeTo(pillCenter.dy, 0.001));
+      expect(topish.dy, lessThan(pillCenter.dy));
+      expect(nearTopLeft.dy, lessThan(pillCenter.dy));
+      // Intermediate pits stay strictly inside the end span.
+      expect(nearTopLeft.dx, greaterThan(endLeft.dx));
+      expect(nearTopLeft.dx, lessThan(pillCenter.dx));
+    });
+
     test('slot positions stay fixed regardless of occupancy', () {
       const center = Offset(160, 320);
       final slot0 = RadialMenuFixedSlots.positionForSlot(slot: 0, center: center);

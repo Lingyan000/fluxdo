@@ -17,6 +17,11 @@ import 'radial_long_press_menu.dart';
 /// - polar offset φ = 0 points straight into the open direction
 /// - left is negative, right is positive
 /// - default window is the full upper/lower semicircle [-π/2, π/2]
+///
+/// Fan origin contract for the progress pill:
+/// callers must pass the stadium **visual center** (not the top-edge
+/// mid-point). With that origin, slots 0 and [maxSlots]-1 land on the true
+/// left / right of the middle button (same Y as the pill center).
 class RadialMenuFixedSlots {
   RadialMenuFixedSlots._();
 
