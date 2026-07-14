@@ -21,6 +21,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
+        CalloutKind,
         CodeBlockNode,
         EmojiRun,
         ImageRun,
@@ -54,6 +55,7 @@ import '../image_upload_dialog.dart';
 import '../link_insert_dialog.dart';
 import '../template_insert_dialog.dart';
 import '../markdown_toolbar.dart' show MarkdownToolbarState;
+import 'callout_edit_dialog.dart';
 import 'composer_doc_codec.dart';
 import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
@@ -377,6 +379,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         () async => _insertLocalDate()),
     (['image', '图片', 'tp'], '上传图片', Icons.image_outlined,
         () async => _pickAndUploadImages()),
+    (['callout', '标注', 'bz', 'note'], '标注 Callout',
+        Icons.sticky_note_2_outlined, () async => _insertCallout()),
+    (['link', '链接', 'lj'], '插入链接', Icons.link_rounded,
+        () async => _insertLink()),
+    (['audio', '音频', 'yp'], '上传音频', Icons.audiotrack_rounded,
+        () async => _pickAndInsertMedia(isAudio: true)),
+    (['video', '视频', 'sp'], '上传视频', Icons.videocam_outlined,
+        () async => _pickAndInsertMedia(isAudio: false)),
+    (['voice', '语音', 'luyin'], '语音消息', Icons.mic_rounded,
+        () async => _recordAndInsertVoice()),
+    (['template', '模板', 'mb'], '我的模板', Icons.assignment_outlined,
+        () async => _insertTemplate()),
   ];
 
   List<(List<String>, String, IconData, Future<void> Function())>
@@ -986,6 +1000,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       items: [
         for (final (label, md, icon) in entries) item(md, icon, label),
         // 链接:与工具栏链接按钮同一流程(选区加 mark/对话框插入)
+        item('__callout__', Icons.sticky_note_2_outlined, '标注 Callout'),
         item('__link__', Icons.link_rounded, '插入链接'),
         // 日期时间:弹属性对话框选时间再插原子(不再是死模板)
         item('__date__', Icons.event_rounded, '日期时间'),
@@ -1008,6 +1023,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _pickAndInsertMedia(isAudio: selected == '__audio__');
     } else if (selected == '__voice__') {
       await _recordAndInsertVoice();
+    } else if (selected == '__callout__') {
+      await _insertCallout();
     } else if (selected == '__link__') {
       await _insertLink();
     } else if (selected == '__template__') {
@@ -1494,43 +1511,50 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   Future<void> _editContainerTitle(ContainerFrame frame) async {
     final editor = _editor;
     if (editor == null) return;
-    final current = switch (frame) {
-      DetailsFrame(:final summary) => summary,
-      CalloutFrame(:final title) => title ?? '',
-      _ => null,
-    };
-    if (current == null) return;
 
+    // Callout:全属性原位编辑(类型/标题/折叠三态),与插入同一对话框
+    if (frame is CalloutFrame) {
+      final spec = await showCalloutEditDialog(
+        context,
+        type: frame.typeRaw,
+        title: frame.title ?? '',
+        foldable: frame.foldable,
+      );
+      if (spec == null || !mounted) return;
+      final title = spec.title.trim();
+      final next = CalloutFrame(
+        groupId: frame.groupId,
+        kind: CalloutKind.fromType(spec.type),
+        typeRaw: spec.type,
+        title: title.isEmpty ? null : title,
+        foldable: spec.foldable,
+      );
+      if (next != frame) {
+        editor.updateContainerFrame(frame.groupId, next);
+      }
+      return;
+    }
+
+    if (frame is! DetailsFrame) return;
     final text = await showAppDialog<String>(
       context: context,
       builder: (ctx) => _SingleLineInputDialog(
-        title: frame is DetailsFrame ? '折叠标题' : '标注标题',
-        initialText: current,
+        title: '折叠标题',
+        initialText: frame.summary,
       ),
     );
-    if (text == null || text == current || !mounted) return;
+    if (text == null || text == frame.summary || !mounted) return;
+    editor.updateContainerFrame(
+      frame.groupId,
+      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open),
+    );
+  }
 
-    final newFrame = switch (frame) {
-      DetailsFrame(:final groupId, :final open) =>
-        DetailsFrame(groupId: groupId, summary: text, open: open),
-      CalloutFrame(
-        :final groupId,
-        :final kind,
-        :final typeRaw,
-        :final foldable,
-      ) =>
-        CalloutFrame(
-          groupId: groupId,
-          kind: kind,
-          typeRaw: typeRaw,
-          title: text.isEmpty ? null : text,
-          foldable: foldable,
-        ),
-      _ => null,
-    };
-    if (newFrame != null) {
-      editor.updateContainerFrame(frame.groupId, newFrame);
-    }
+  /// 插入 Callout:属性对话框 → Obsidian 语法经 cook 容器化。
+  Future<void> _insertCallout() async {
+    final spec = await showCalloutEditDialog(context);
+    if (spec == null || !mounted) return;
+    await insertMarkdownSnippet('> ${spec.headerMarkdown}\n> 内容');
   }
 
   /// markdown 多行输入对话框(插入片段/岛编辑共用;showAppDialog 统一
