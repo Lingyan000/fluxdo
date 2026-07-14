@@ -14,6 +14,7 @@ import 'bookmark_preview_quick_editor.dart';
 import '../common/error_view.dart';
 import '../common/paged_list_footer.dart';
 import '../desktop_refresh_indicator.dart';
+import '../../utils/responsive.dart';
 import '../topic/topic_list_skeleton.dart';
 import '../topic/topic_item_builder.dart';
 import '../topic/topic_preview_dialog.dart';
@@ -104,6 +105,9 @@ class BookmarksListContent extends ConsumerWidget {
     final filteredTopics = filterBookmarksByName(topics, selectedBookmarkName);
     final listView = ListView.builder(
       controller: scrollController,
+      // 书签卡无 keepalive 使用者,默认的 AutomaticKeepAlive 两层 State
+      // 对滚动单卡首建是纯税(与首页话题列表同款处理)
+      addAutomaticKeepAlives: false,
       // 顶部 padding 由上方 summary bar（如有）接管，避免双重间距；非工作区模式
       // 下若不显示 summary bar，下方 swipeRegion 直接返回 listView，仍走全 12。
       // 底部让出 extendBody 注入的底栏高度。
@@ -132,6 +136,12 @@ class BookmarksListContent extends ConsumerWidget {
         }
 
         final topic = filteredTopics[index];
+        // 与首页同款:本页外层 12px 左右留白 + 卡内 24px padding、32px
+        // 头像和 8px 间距 → 移动端元信息区宽度 = 屏宽 - 88。列表层一次
+        // 计算传入,避开 Sliver 布局阶段的逐卡 LayoutBuilder 回退
+        final double? statsAvailableWidth = Responsive.isMobile(context)
+            ? MediaQuery.sizeOf(context).width - 88
+            : null;
         return buildTopicItem(
           context: context,
           topic: topic,
@@ -139,6 +149,7 @@ class BookmarksListContent extends ConsumerWidget {
           onTap: () => onTap(topic),
           onMiddleClick: () => onMiddleClick(topic),
           enableLongPress: enableLongPress,
+          statsAvailableWidth: statsAvailableWidth,
           topWidget: _buildBookmarkTopBar(context, topic),
           middleWidget: _buildBookmarkExcerpt(context, topic),
           previewCustomActionPanelBuilder: topic.bookmarkId != null
@@ -284,11 +295,25 @@ class BookmarksListContent extends ConsumerWidget {
     );
   }
 
+  /// 摘要清洗结果缓存(topic.id → (源串, 清洗结果)):正则+多趟 replaceAll
+  /// 不便宜,itemBuilder 每次重建都重跑是纯税。以源串 identical 判失效
+  /// (刷新拉到新数据 = 新字符串实例,自动重算)。
+  static final Map<int, (String, String)> _excerptCleanCache = {};
+
   Widget? _buildBookmarkExcerpt(BuildContext context, Topic topic) {
     if (topic.excerpt == null) {
       return null;
     }
-    final cleaned = _cleanExcerpt(topic.excerpt!);
+    final raw = topic.excerpt!;
+    final hit = _excerptCleanCache[topic.id];
+    final String cleaned;
+    if (hit != null && identical(hit.$1, raw)) {
+      cleaned = hit.$2;
+    } else {
+      cleaned = _cleanExcerpt(raw);
+      if (_excerptCleanCache.length > 500) _excerptCleanCache.clear();
+      _excerptCleanCache[topic.id] = (raw, cleaned);
+    }
     if (cleaned.isEmpty) {
       return null;
     }

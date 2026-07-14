@@ -105,6 +105,11 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
 
   void _handleLongPress() {
     Feedback.forLongPress(context);
+    // 菜单/预览即将接管交互反馈,高亮就地熄灭 —— 不等 onLongPressEnd:
+    // 长按被接受后若后续是 PointerCancel(预览模态弹出、滚动仲裁抢走),
+    // LongPressGestureRecognizer 不会回调 end(框架无 onLongPressCancel),
+    // 灰底会永久残留
+    _setPressed(false);
     widget.onLongPress?.call();
   }
 
@@ -116,7 +121,13 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
     return Semantics(
       onTap: widget.onTap == null ? null : _handleTap,
       onLongPress: widget.onLongPress == null ? null : _handleLongPress,
-      child: GestureDetector(
+      // 裸指针兜底:up/cancel 按**落指时**的命中路径派发,无视手势仲裁
+      // 结果与模态遮挡,保证任何路径下按压高亮都会熄灭(GestureDetector
+      // 的 tapCancel/longPressEnd 覆盖不了"接受后被 cancel"的组合)
+      child: Listener(
+        onPointerUp: (_) => _setPressed(false),
+        onPointerCancel: (_) => _setPressed(false),
+        child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         excludeFromSemantics: true,
         onTapDown: (_) => _setPressed(true),
@@ -136,6 +147,7 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
             borderRadius: widget.borderRadius,
           ),
           child: widget.child,
+        ),
         ),
       ),
     );
