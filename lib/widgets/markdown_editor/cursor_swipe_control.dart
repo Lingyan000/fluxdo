@@ -6,14 +6,19 @@
 /// - **按下即独占手势**(eager claim):外层同向手势(左滑预览/返回
 ///   手势/工具栏横滚)一概抢不走 —— 按住滑钮 = 控制权归光标;
 /// - **单击滑钮 = 切换选择模式**(常亮高亮示意):开启后滑动 = 扩选。
-///   点按语义并入同一识别器(位移 < 阈值 = 单击),单控件全包。
+///   点按语义并入同一识别器(位移 < 阈值 = 单击),单控件全包;
+/// - 可发现性:**首次按下**在钮上方浮内联提示(前几次,持久计数后
+///   永久收声)—— Tooltip 的长按触发与按住拖动冲突,已弃用。
 library;
+
+import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CursorSwipeControl extends StatefulWidget {
   const CursorSwipeControl({
@@ -71,11 +76,94 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
 
   bool get _pointerMode => widget.onPointerStart != null;
 
+  // ---- 首次使用内联提示(教学发生在按下瞬间,不参与命中) ----
+  static const _kMoveHintKey = 'cursor_swipe_hint_move_left';
+  static const _kSelectHintKey = 'cursor_swipe_hint_select_left';
+  SharedPreferences? _prefs;
+  int _moveHintLeft = 0;
+  int _selectHintLeft = 0;
+  OverlayEntry? _hint;
+  Timer? _hintTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((p) {
+      if (!mounted) return;
+      _prefs = p;
+      _moveHintLeft = p.getInt(_kMoveHintKey) ?? 3;
+      _selectHintLeft = p.getInt(_kSelectHintKey) ?? 2;
+    });
+  }
+
+  @override
+  void dispose() {
+    _hintTimer?.cancel();
+    _removeHint();
+    super.dispose();
+  }
+
+  void _showHint(String text, {Duration? autoHide}) {
+    _removeHint();
+    final overlay = Overlay.maybeOf(context);
+    final box = context.findRenderObject() as RenderBox?;
+    if (overlay == null || box == null || !box.attached) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    _hint = OverlayEntry(
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return Positioned(
+          // 滑钮在工具栏右侧:右对齐屏缘,永不溢出
+          right: 12,
+          top: top - 42,
+          child: IgnorePointer(
+            child: Material(
+              color: scheme.inverseSurface,
+              borderRadius: BorderRadius.circular(8),
+              elevation: 2,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.0,
+                    color: scheme.onInverseSurface,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(_hint!);
+    if (autoHide != null) {
+      _hintTimer?.cancel();
+      _hintTimer = Timer(autoHide, _removeHint);
+    }
+  }
+
+  void _removeHint() {
+    _hint?.remove();
+    _hint = null;
+  }
+
+  void _consume(String key, int left) {
+    _prefs?.setInt(key, left);
+  }
+
   void _onDown() {
     _acc = 0;
     _total = Offset.zero;
     _moved = false;
     _pointerLive = false;
+    if (_moveHintLeft > 0) {
+      _showHint('滑动移动光标 · 单击切换选择');
+      _moveHintLeft--;
+      _consume(_kMoveHintKey, _moveHintLeft);
+    }
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
@@ -83,6 +171,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
     if (!_moved) {
       if (_total.distance < _tapSlop) return;
       _moved = true;
+      _removeHint(); // 已经会用了,教学即收
       if (_pointerMode) {
         _pointerLive = widget.onPointerStart!(extend: _selecting);
         if (!_pointerLive) return;
@@ -113,10 +202,18 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
   void _onDragEnd() {
     if (!_moved) {
       // 未越过 tapSlop = 单击:切换选择模式
+      _removeHint();
       setState(() => _selecting = !_selecting);
       HapticFeedback.selectionClick();
+      if (_selecting && _selectHintLeft > 0) {
+        _showHint('选择模式:滑动即选择文本',
+            autoHide: const Duration(milliseconds: 1800));
+        _selectHintLeft--;
+        _consume(_kSelectHintKey, _selectHintLeft);
+      }
       return;
     }
+    _removeHint();
     if (_pointerMode && _pointerLive) {
       _pointerLive = false;
       widget.onPointerEnd?.call();

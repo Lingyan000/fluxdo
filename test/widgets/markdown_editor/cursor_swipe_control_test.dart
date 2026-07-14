@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/cursor_swipe_control.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('moveTextSelectionByGrapheme', () {
@@ -176,5 +177,75 @@ void main() {
     expect(outerDrags, 0, reason: '外层水平手势颗粒无收');
     expect(calls, isNotEmpty, reason: '滑钮步进正常');
     expect(calls.every((c) => c.$1 == -1), isTrue);
+  });
+
+  testWidgets('首次按下出内联提示,拖动即收,额度耗尽不再出', (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final calls = <(int, bool)>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: CursorSwipeControl(
+            onMove: (dir, {required extend}) => calls.add((dir, extend)),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump(); // prefs 异步加载
+    final knob =
+        tester.getCenter(find.byKey(const ValueKey('cursor-swipe-knob')));
+    const moveHint = '滑动移动光标 · 单击切换选择';
+
+    // 第 1 次按下:提示出现;越过阈值拖动即收
+    final g = await tester.startGesture(knob);
+    await tester.pump();
+    expect(find.text(moveHint), findsOneWidget);
+    await g.moveBy(const Offset(20, 0));
+    await tester.pump();
+    expect(find.text(moveHint), findsNothing, reason: '开始拖动教学即收');
+    await g.up();
+    await tester.pump();
+
+    // 第 2、3 次按放(耗尽额度 3 次)
+    for (var i = 0; i < 2; i++) {
+      final gi = await tester.startGesture(knob);
+      await tester.pump();
+      expect(find.text(moveHint), findsOneWidget);
+      await gi.up();
+      await tester.pump();
+      // 单击切换了选择模式:切回,顺带收选择提示
+      await tester.pump(const Duration(seconds: 2));
+    }
+
+    // 第 4 次:额度耗尽,不再出
+    final g4 = await tester.startGesture(knob);
+    await tester.pump();
+    expect(find.text(moveHint), findsNothing, reason: '3 次后永久收声');
+    await g4.up();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('单击切入选择模式时出选择提示并自动淡出', (tester) async {
+    SharedPreferences.setMockInitialValues(const {
+      'cursor_swipe_hint_move_left': 0, // 移动提示已耗尽,只验选择提示
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: CursorSwipeControl(
+            onMove: (dir, {required extend}) {},
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    const selectHint = '选择模式:滑动即选择文本';
+
+    await tester.tap(find.byKey(const ValueKey('cursor-swipe-knob')));
+    await tester.pump();
+    expect(find.text(selectHint), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text(selectHint), findsNothing, reason: '1.8s 自动淡出');
   });
 }
