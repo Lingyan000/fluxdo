@@ -58,6 +58,7 @@ import 'composer_doc_codec.dart';
 import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
 import '../media_upload_helper.dart';
+import '../cursor_swipe_control.dart';
 import '../voice_recorder_sheet.dart';
 
 /// 孤岛渲染工厂:复用 generic callbacks 的全部 builder(emoji 缓存池/
@@ -886,6 +887,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     } finally {
       if (mounted) setState(() => _uploadingCount--);
     }
+  }
+
+  /// 手势光标一步:EditorState 字符级移动(原子/emoji 感知,与
+  /// 方向键同路径;IME 重喂由编辑器状态监听自动完成)。
+  void _moveCaretByGesture(int dir, {required bool extend}) {
+    _editor?.moveCaretHorizontal(dir, extend: extend);
   }
 
   /// 用户自定义模板(MD 模式「模板」同一选择器):内容为 markdown,
@@ -1751,6 +1758,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           onPickImage: _pickAndUploadImages,
           onInsertLink: _insertLink,
           onInsertMenu: _showInsertMenu,
+          // 手势光标(移动端):与键盘方向键同一条状态层移动路径
+          onCursorMove: _isDesktop ? null : _moveCaretByGesture,
           onSwitchToSource: widget.onSwitchToSource == null
               ? null
               : () {
@@ -1884,6 +1893,7 @@ class _RichToolbar extends StatefulWidget {
     required this.onPickImage,
     required this.onInsertLink,
     required this.onInsertMenu,
+    this.onCursorMove,
     this.onSwitchToSource,
   });
 
@@ -1894,6 +1904,10 @@ class _RichToolbar extends StatefulWidget {
   final VoidCallback onPickImage;
   final VoidCallback onInsertLink;
   final void Function(BuildContext anchorContext) onInsertMenu;
+
+  /// 手势光标:滑动驱动光标移动/扩选(移动端;null 不显示)。
+  final void Function(int dir, {required bool extend})? onCursorMove;
+
   final VoidCallback? onSwitchToSource;
 
   @override
@@ -2075,6 +2089,14 @@ class _RichToolbarState extends State<_RichToolbar> {
                   ),
                 ),
               ),
+              // 手势光标:滑动驱动光标(移动端)
+              if (widget.onCursorMove != null) ...[
+                _Pill(
+                  color: pillColor,
+                  child: CursorSwipeControl(onMove: widget.onCursorMove!),
+                ),
+                const SizedBox(width: 6),
+              ],
               // 右:源码模式切换(胶囊背景;含当前模式徽标 —— 用户能
               // 看出自己在富文本态、点击去向是源码)
               if (widget.onSwitchToSource != null)

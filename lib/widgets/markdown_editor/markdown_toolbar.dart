@@ -18,6 +18,7 @@ import '../../services/toast_service.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'editor_tools.dart';
+import 'cursor_swipe_control.dart';
 import 'media_upload_helper.dart';
 import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
@@ -934,6 +935,16 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     insertText('$prefix$tag\n');
   }
 
+  /// 光标滑钮:按 grapheme 移动光标/扩选(emoji/代理对不劈半)。
+  void moveCursorByCharacter(int dir, {required bool extend}) {
+    final next = moveTextSelectionByGrapheme(
+      widget.controller.value,
+      dir,
+      extend: extend,
+    );
+    if (next != null) widget.controller.selection = next;
+  }
+
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
   /// 非行首先补换行(与媒体标签插入同款;模板文本与富 composer 的
   /// 「+」插入菜单一致)。
@@ -1075,6 +1086,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // 手势光标:滑动驱动光标,移动端才有意义
+                    if (isMobile)
+                      CursorSwipeControl(onMove: moveCursorByCharacter),
                     if (!isMobile && widget.showPanguButton)
                       IconButton(
                         visualDensity: VisualDensity.compact,
