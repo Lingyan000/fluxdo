@@ -84,6 +84,41 @@
   "reading_aiSwipeEntryDesc": "在话题详情页向左滑动打开 AI 助手",
   "reading_boostDanmaku": "Boost 弹幕化",
   "reading_boostDanmakuDesc": "把 Boost 以弹幕形式叠加在帖子内容上方滚动，触摸暂停",
+  "ccswitch_fill": "填入 CC Switch",
+  "ccswitch_rescan": "重识别",
+  "ccswitch_copy": "复制",
+  "ccswitch_open": "打开 CC Switch",
+  "ccswitch_app": "应用",
+  "ccswitch_name": "名称",
+  "ccswitch_nameHint": "可选，默认时间+URL",
+  "ccswitch_importEnabled": "CC Switch 导入",
+  "ccswitch_importEnabledDesc": "在主帖显示填入 CC Switch 按钮，识别 BASE URL 与 API Key",
+  "ccswitch_importApp": "CC Switch 导入应用",
+  "ccswitch_importAppDesc": "识别主帖凭据后默认填入的目标应用",
+  "ccswitch_appClaude": "Claude",
+  "ccswitch_appCodex": "Codex",
+  "ccswitch_appGemini": "Gemini",
+  "ccswitch_appAll": "三个都导",
+  "ccswitch_statusReady": "已识别",
+  "ccswitch_statusPartial": "部分识别",
+  "ccswitch_notFound": "主帖内未识别到 URL 或 API Key",
+  "ccswitch_partial": "已识别部分字段，请补齐 URL 和 KEY",
+  "ccswitch_needUrlAndKey": "请先补齐 URL 和 KEY",
+  "ccswitch_detected": "已识别：{url} / {key}",
+  "@ccswitch_detected": {
+    "placeholders": {
+      "url": { "type": "String" },
+      "key": { "type": "String" }
+    }
+  },
+  "ccswitch_opened": "已打开 CC Switch（{count}）",
+  "@ccswitch_opened": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ccswitch_openFailed": "无法打开 CC Switch，请确认已安装",
+  "ccswitch_linkCopied": "深链接已复制",
   "reading_expandRelatedLinks": "默认展开相关链接",
   "reading_expandRelatedLinksDesc": "帖子中的相关链接区域默认展开显示",
   "reading_showSignatures": "显示用户签名",

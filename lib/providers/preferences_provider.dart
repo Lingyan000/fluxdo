@@ -10,6 +10,8 @@ import '../services/network/request_scheduler_config.dart';
 import '../services/cf_challenge_service.dart';
 import '../utils/blocked_user_filter.dart';
 import 'theme_provider.dart';
+import '../utils/ccswitch/ccswitch_credentials.dart';
+export '../utils/ccswitch/ccswitch_credentials.dart' show CcswitchImportApp;
 
 /// 嵌套视图连接线样式
 enum NestedLineStyle {
@@ -167,6 +169,12 @@ class AppPreferences {
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
 
+  /// 主帖 CC Switch 导入条开关
+  final bool ccswitchImportEnabled;
+
+  /// CC Switch 默认导入应用（claude/codex/gemini/all）
+  final CcswitchImportApp ccswitchImportApp;
+
   /// 默认使用树形视图
   final bool defaultNestedView;
 
@@ -245,6 +253,8 @@ class AppPreferences {
     required this.dialogBlur,
     this.showSignatures = true,
     this.boostDanmaku = false,
+    this.ccswitchImportEnabled = true,
+    this.ccswitchImportApp = CcswitchImportApp.codex,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
     this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
@@ -291,6 +301,8 @@ class AppPreferences {
     bool? dialogBlur,
     bool? showSignatures,
     bool? boostDanmaku,
+    bool? ccswitchImportEnabled,
+    CcswitchImportApp? ccswitchImportApp,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
     BookmarksOpenMode? bookmarksOpenMode,
@@ -342,6 +354,9 @@ class AppPreferences {
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
+      ccswitchImportEnabled:
+          ccswitchImportEnabled ?? this.ccswitchImportEnabled,
+      ccswitchImportApp: ccswitchImportApp ?? this.ccswitchImportApp,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
       bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
@@ -403,6 +418,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
+  static const String _ccswitchImportEnabledKey =
+      'pref_ccswitch_import_enabled';
+  static const String _ccswitchImportAppKey = 'pref_ccswitch_import_app';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
   static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
@@ -468,6 +486,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
+          ccswitchImportEnabled:
+              _prefs.getBool(_ccswitchImportEnabledKey) ?? true,
+          ccswitchImportApp: CcswitchImportApp.fromString(
+            _prefs.getString(_ccswitchImportAppKey),
+          ),
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
@@ -683,6 +706,18 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.boostDanmaku == enabled) return;
     state = state.copyWith(boostDanmaku: enabled);
     await _prefs.setBool(_boostDanmakuKey, enabled);
+  }
+
+  Future<void> setCcswitchImportEnabled(bool enabled) async {
+    if (state.ccswitchImportEnabled == enabled) return;
+    state = state.copyWith(ccswitchImportEnabled: enabled);
+    await _prefs.setBool(_ccswitchImportEnabledKey, enabled);
+  }
+
+  Future<void> setCcswitchImportApp(CcswitchImportApp app) async {
+    if (state.ccswitchImportApp == app) return;
+    state = state.copyWith(ccswitchImportApp: app);
+    await _prefs.setString(_ccswitchImportAppKey, app.name);
   }
 
   Future<void> setDefaultNestedView(bool enabled) async {
