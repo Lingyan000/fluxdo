@@ -1780,12 +1780,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           onPickImage: _pickAndUploadImages,
           onInsertLink: _insertLink,
           onInsertMenu: _showInsertMenu,
-          // 手势光标(虚拟指针):幽灵光标跟手+实光标吸附+贴边自动滚
-          // (验收期桌面暂开,定稿后按平台收敛)
-          onPointerStart: ({required extend}) =>
-              _virtualPointer.start(extend: extend),
-          onPointerMove: _virtualPointer.moveBy,
-          onPointerEnd: _virtualPointer.end,
+          // 手势光标(虚拟指针):幽灵光标跟手+实光标吸附+贴边自动滚;
+          // 桌面有物理键盘,不占工具栏
+          onPointerStart: _isDesktop
+              ? null
+              : ({required extend}) => _virtualPointer.start(extend: extend),
+          onPointerMove: _isDesktop ? null : _virtualPointer.moveBy,
+          onPointerEnd: _isDesktop ? null : _virtualPointer.end,
           onSwitchToSource: widget.onSwitchToSource == null
               ? null
               : () {
