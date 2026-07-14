@@ -14,17 +14,28 @@ class CategoryTagsLine extends StatelessWidget {
   final List<Tag> tags;
   final Color metaColor;
 
+  /// 整行退灰系数(已读态用)。原为调用方外包 Opacity(factor) ——
+  /// 文本字形与 8px 色块互不重叠,逐色 alpha 预乘与整层透明像素恒等,
+  /// 省掉每张已读卡一个合成层。不能由调用方预乘 metaColor 代替:
+  /// 内部 '#' 用 withValues(alpha:0.6) 会把预乘过的 alpha 覆盖掉。
+  final double opacityFactor;
+
   const CategoryTagsLine({
     super.key,
     this.category,
     this.tags = const [],
     required this.metaColor,
+    this.opacityFactor = 1.0,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final style = theme.textTheme.labelSmall?.copyWith(color: metaColor);
+    final f = opacityFactor;
+    final baseColor = f == 1.0
+        ? metaColor
+        : metaColor.withValues(alpha: metaColor.a * f);
+    final style = theme.textTheme.labelSmall?.copyWith(color: baseColor);
 
     // WidgetSpan 会为色块和 FA 图标创建额外子树，并让 RenderParagraph
     // 进入占位子节点布局。统一改为独立色块 + 纯 TextSpan 标签。
@@ -43,7 +54,7 @@ class CategoryTagsLine extends StatelessWidget {
       spans.add(
         TextSpan(
           text: '#',
-          style: TextStyle(color: metaColor.withValues(alpha: 0.6)),
+          style: TextStyle(color: metaColor.withValues(alpha: 0.6 * f)),
         ),
       );
       spans.add(TextSpan(text: tag.name));
@@ -60,13 +71,16 @@ class CategoryTagsLine extends StatelessWidget {
       _parseCategoryColor(category.color),
       theme.brightness,
     );
+    final chipColor = f == 1.0
+        ? categoryColor
+        : categoryColor.withValues(alpha: categoryColor.a * f);
     return Row(
       children: [
         Container(
           width: 8,
           height: 8,
           decoration: BoxDecoration(
-            color: categoryColor,
+            color: chipColor,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

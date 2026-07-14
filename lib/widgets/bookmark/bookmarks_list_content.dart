@@ -12,6 +12,7 @@ import '../../utils/platform_utils.dart';
 import '../../utils/time_utils.dart';
 import 'bookmark_preview_quick_editor.dart';
 import '../common/error_view.dart';
+import '../common/icon_glyph_span.dart';
 import '../common/paged_list_footer.dart';
 import '../desktop_refresh_indicator.dart';
 import '../../utils/responsive.dart';
@@ -337,13 +338,12 @@ class BookmarksListContent extends ConsumerWidget {
         TextSpan(
           children: [
             if (hasName) ...[
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(
-                  Symbols.bookmark_rounded,
-                  size: 13,
-                  color: foregroundColor,
-                ),
+              // 字形 span 替代 WidgetSpan(Icon):见 iconGlyphSpan 注释
+              iconGlyphSpan(
+                context,
+                Symbols.bookmark_rounded,
+                size: 13,
+                color: foregroundColor,
               ),
               TextSpan(text: ' $bookmarkName'),
             ],
@@ -355,9 +355,11 @@ class BookmarksListContent extends ConsumerWidget {
                     color: foregroundColor.withValues(alpha: 0.4),
                   ),
                 ),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(Symbols.alarm_rounded, size: 13, color: foregroundColor),
+              iconGlyphSpan(
+                context,
+                Symbols.alarm_rounded,
+                size: 13,
+                color: foregroundColor,
               ),
               TextSpan(
                 text: isExpired

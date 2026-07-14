@@ -12,6 +12,7 @@ import '../../utils/url_helper.dart';
 import '../common/smart_avatar.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../common/category_tags_line.dart';
+import '../common/icon_glyph_span.dart';
 import '../common/relative_time_text.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
@@ -152,42 +153,6 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
       ),
     );
   }
-}
-
-/// 标题前缀状态图标的字形 span:消灭标题段落上的 WidgetSpan 占位布局
-/// (占位符逼 RenderParagraph 走占位子树布局,是段落 LAYOUT 的同种税,
-/// 标签行清 WidgetSpan 已验证收益)。Icon(size:s) 本质就是画一个 s px
-/// 的图标字体字形 —— 同字形同字号像素一致;原 Padding(right:gap) 用
-/// 单字形 span 的 letterSpacing 精确复刻(尾部 +gap)。fontVariations
-/// 按 IconTheme 原样复刻(可变字体的粗细/填充,漏了笔画粗细会变)。
-/// 与 WidgetSpan(middle 对齐)的残余差异 = 基线 vs 行中线的 ≤1px
-/// 垂直微差。
-TextSpan _titleIconSpan(
-  BuildContext context,
-  IconData icon, {
-  required double size,
-  required Color color,
-  required double gap,
-}) {
-  final iconTheme = IconTheme.of(context);
-  return TextSpan(
-    text: String.fromCharCode(icon.codePoint),
-    style: TextStyle(
-      fontFamily: icon.fontFamily,
-      package: icon.fontPackage,
-      fontSize: size,
-      color: color,
-      letterSpacing: gap,
-      height: 1.0,
-      fontVariations: <FontVariation>[
-        if (iconTheme.fill != null) FontVariation('FILL', iconTheme.fill!),
-        if (iconTheme.weight != null) FontVariation('wght', iconTheme.weight!),
-        if (iconTheme.grade != null) FontVariation('GRAD', iconTheme.grade!),
-        if (iconTheme.opticalSize != null)
-          FontVariation('opsz', iconTheme.opticalSize!),
-      ],
-    ),
-  );
 }
 
 /// 话题卡片组件 — 标题置顶布局:
@@ -422,7 +387,12 @@ class TopicCard extends ConsumerWidget {
       availableWidth,
       dim: isFullyRead,
     );
-    final catTags = _buildCategoryTagsLine(context, category, metaColor);
+    final catTags = _buildCategoryTagsLine(
+      context,
+      category,
+      metaColor,
+      dim: isFullyRead,
+    );
     final timeText = RelativeTimeText(
       dateTime: topic.lastPostedAt,
       style: theme.textTheme.labelSmall?.copyWith(
@@ -469,7 +439,7 @@ class TopicCard extends ConsumerWidget {
         const SizedBox(height: 2),
         Row(
           children: [
-            Expanded(child: _fadeWhenRead(catTags, isFullyRead: isFullyRead)),
+            Expanded(child: catTags),
             if (stats != null) ...[
               const SizedBox(width: 8),
               stats,
@@ -571,7 +541,7 @@ class TopicCard extends ConsumerWidget {
     final theme = Theme.of(context);
     return [
       if (topic.closed)
-        _titleIconSpan(
+        iconGlyphSpan(
           context,
           Symbols.lock_rounded,
           size: 15,
@@ -579,7 +549,7 @@ class TopicCard extends ConsumerWidget {
           gap: 4,
         ),
       if (topic.hasAcceptedAnswer)
-        _titleIconSpan(
+        iconGlyphSpan(
           context,
           Symbols.check_box_rounded,
           size: 15,
@@ -590,7 +560,7 @@ class TopicCard extends ConsumerWidget {
           gap: 4,
         )
       else if (topic.canHaveAnswer)
-        _titleIconSpan(
+        iconGlyphSpan(
           context,
           Symbols.check_box_outline_blank_rounded,
           size: 15,
@@ -714,17 +684,20 @@ class TopicCard extends ConsumerWidget {
   }
 
   /// 第3行:▪分类色标+名 + 标签轻文本,单行 ellipsis(共享组件)。
-  /// 全读退灰由外层 Opacity 统一处理;分类和标签都无时返回 null
+  /// 已读退灰经 opacityFactor 逐色预乘(像素恒等,免外层 Opacity 层);
+  /// 分类和标签都无时返回 null
   Widget? _buildCategoryTagsLine(
     BuildContext context,
     Category? category,
-    Color metaColor,
-  ) {
+    Color metaColor, {
+    bool dim = false,
+  }) {
     if (category == null && topic.tags.isEmpty) return null;
     return CategoryTagsLine(
       category: category,
       tags: topic.tags,
       metaColor: metaColor,
+      opacityFactor: dim ? 0.55 : 1.0,
     );
   }
 
@@ -848,7 +821,7 @@ class TopicCard extends ConsumerWidget {
     return Text.rich(
       TextSpan(
         children: [
-          _titleIconSpan(
+          iconGlyphSpan(
             context,
             icon,
             size: 13,
@@ -997,7 +970,7 @@ class CompactTopicCard extends ConsumerWidget {
                               style: compactTitleStyle,
                               children: [
                                 if (topic.closed)
-                                  _titleIconSpan(
+                                  iconGlyphSpan(
                                     context,
                                     Symbols.lock_rounded,
                                     size: 12,
@@ -1007,7 +980,7 @@ class CompactTopicCard extends ConsumerWidget {
                                     gap: 3,
                                   ),
                                 if (topic.hasAcceptedAnswer)
-                                  _titleIconSpan(
+                                  iconGlyphSpan(
                                     context,
                                     Symbols.check_box_rounded,
                                     size: 12,
@@ -1015,7 +988,7 @@ class CompactTopicCard extends ConsumerWidget {
                                     gap: 3,
                                   )
                                 else if (topic.canHaveAnswer)
-                                  _titleIconSpan(
+                                  iconGlyphSpan(
                                     context,
                                     Symbols.check_box_outline_blank_rounded,
                                     size: 12,
@@ -1069,7 +1042,7 @@ class CompactTopicCard extends ConsumerWidget {
                     Text.rich(
                       TextSpan(
                         children: [
-                          _titleIconSpan(
+                          iconGlyphSpan(
                             context,
                             Symbols.chat_bubble_rounded,
                             size: 12,
