@@ -36,6 +36,10 @@ class MarkdownToolbar extends StatefulWidget {
   /// 内容焦点节点（可选，用于恢复焦点）
   final FocusNode? focusNode;
 
+  /// 手势光标步进后回调(宿主滚动跟随:程序化改 selection 不触发
+  /// EditableText 的 showCaretOnScreen,光标会在视野外移动)。
+  final VoidCallback? onCursorMoved;
+
   /// 是否显示预览按钮
   final bool showPreviewButton;
 
@@ -75,6 +79,7 @@ class MarkdownToolbar extends StatefulWidget {
     super.key,
     required this.controller,
     this.focusNode,
+    this.onCursorMoved,
     this.showPreviewButton = true,
     this.isPreview = false,
     this.onTogglePreview,
@@ -949,7 +954,10 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       dir,
       extend: extend,
     );
-    if (next != null) widget.controller.selection = next;
+    if (next != null) {
+      widget.controller.selection = next;
+      widget.onCursorMoved?.call();
+    }
   }
 
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前

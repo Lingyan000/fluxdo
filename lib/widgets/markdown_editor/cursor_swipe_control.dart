@@ -101,28 +101,30 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
       onHorizontalDragUpdate: _pointerMode ? null : _onDragUpdate,
       onHorizontalDragEnd: _pointerMode ? null : (_) => _onDragEnd(),
       onHorizontalDragCancel: _pointerMode ? null : _onDragEnd,
-      child: Tooltip(
-        message: _selecting
-            ? '选择模式:滑动即选择文本,单击退出'
-            : '按住滑动移动光标;单击进入选择模式',
+      // 不用 Tooltip:其长按触发与「按住拖动」手势冲突(按住先弹提示,
+      // 拖不起来)。说明留给 Semantics(无障碍)。
+      child: Semantics(
+        label: _selecting ? '选择模式:滑动选择文本,单击退出' : '按住滑动移动光标,单击进入选择模式',
         child: Container(
           key: const ValueKey('cursor-swipe-knob'),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          width: 44,
+          height: 36,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: active
                 ? scheme.primary.withValues(alpha: _dragging ? 0.18 : 0.12)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: _selecting
               ? Icon(
                   Symbols.text_select_start_rounded,
-                  size: 18,
+                  size: 20,
                   color: scheme.primary,
                 )
               : FaIcon(
                   FontAwesomeIcons.iCursor,
-                  size: 18,
+                  size: 19,
                   color:
                       active ? scheme.primary : scheme.onSurfaceVariant,
                 ),

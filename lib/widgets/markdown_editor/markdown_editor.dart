@@ -810,6 +810,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         // 工具栏（纯按钮行，TextFieldTapRegion 防止点击时 TextField 失焦）
         TextFieldTapRegion(
           child: MarkdownToolbar(
+          // 手势光标步进后滚动跟随(越界才滚,jumpTo 无感)
+          onCursorMoved: _scrollToCursor,
           key: _toolbarKey,
           controller: widget.controller,
           focusNode: _focusNode,
