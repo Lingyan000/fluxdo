@@ -49,9 +49,13 @@ double _wrapAngle(double a) {
 /// - State.dispose → [dispose]
 class RadialMenuSession {
   OverlayEntry? _menuEntry;
+  /// Highlight only — items listen to this so unchanged pointer moves never
+  /// rebuild the full OverlayEntry tree.
+  final ValueNotifier<int?> _highlightedIndexNotifier = ValueNotifier<int?>(
+    null,
+  );
   Offset? _menuCenter;
   Rect? _pressArea;
-  int? _highlightedIndex;
   List<RadialMenuItem> _items = const [];
   RadialMenuDirection _direction = RadialMenuDirection.up;
   double _radius = 92;
@@ -137,7 +141,7 @@ class RadialMenuSession {
     _sweepStart = sweepStart;
     _sweepEnd = sweepEnd;
     _pressAreaIndicatorBuilder = pressAreaIndicatorBuilder;
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
 
     final overlay = Overlay.of(context, rootOverlay: true);
     _menuEntry = OverlayEntry(builder: (_) => _buildOverlay());
@@ -205,25 +209,24 @@ class RadialMenuSession {
         }
       }
     }
-    final changed = newIndex != _highlightedIndex;
+    final changed = newIndex != _highlightedIndexNotifier.value;
     if (!changed) return;
-    _highlightedIndex = newIndex;
+    _highlightedIndexNotifier.value = newIndex;
     if (newIndex != null) {
       HapticFeedback.selectionClick();
     }
-    // 高亮未变时绝不全屏 markNeedsBuild：BackdropFilter 重绘在 Windows 上极贵。
-    _menuEntry?.markNeedsBuild();
+    // Highlight is driven by ValueNotifier; avoid whole OverlayEntry rebuild.
   }
 
   /// 松手：触发当前高亮项（若有）并开始收回动画
   void selectAndClose() {
-    final idx = _highlightedIndex;
+    final idx = _highlightedIndexNotifier.value;
     final items = _items;
     final hit = (idx != null && idx >= 0 && idx < items.length)
         ? items[idx]
         : null;
     // 清空高亮，让收回动画里所有项一起向中心回流（避免某一项保留放大态）
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _beginClose();
     if (hit != null) {
       HapticFeedback.mediumImpact();
@@ -233,7 +236,7 @@ class RadialMenuSession {
 
   /// 手势取消：直接开始收回动画
   void cancel() {
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _beginClose();
   }
 
@@ -243,7 +246,7 @@ class RadialMenuSession {
     _menuEntry = null;
     _menuCenter = null;
     _pressArea = null;
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _items = const [];
     _itemSlots = const [];
     _fixedSlots = false;
@@ -268,7 +271,7 @@ class RadialMenuSession {
       pressArea: _pressArea,
       items: _items,
       itemSlots: _itemSlots,
-      highlightedIndex: _highlightedIndex,
+      highlightedIndexListenable: _highlightedIndexNotifier,
       radius: _radius,
       direction: _direction,
       sweepStart: _sweepStart,
@@ -290,7 +293,7 @@ class RadialMenuOverlay extends StatefulWidget {
     required this.pressArea,
     required this.items,
     this.itemSlots = const [],
-    required this.highlightedIndex,
+    required this.highlightedIndexListenable,
     required this.radius,
     required this.closing,
     required this.onClosed,
@@ -309,7 +312,8 @@ class RadialMenuOverlay extends StatefulWidget {
   final List<RadialMenuItem> items;
   /// 与 [items] 平行：固定坑位下每个 item 的 slot 索引。
   final List<int> itemSlots;
-  final int? highlightedIndex;
+  /// 当前高亮 item 下标；由 session 的 ValueNotifier 驱动，避免整 overlay 重建。
+  final ValueListenable<int?> highlightedIndexListenable;
   final double radius;
   final RadialMenuDirection direction;
 
@@ -385,17 +389,8 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final items = widget.items;
-    final highlightedIndex = widget.highlightedIndex;
-    final highlightedItem =
-        (highlightedIndex != null &&
-            highlightedIndex >= 0 &&
-            highlightedIndex < items.length)
-        ? items[highlightedIndex]
-        : null;
-
     // 背景模糊单独订阅动画，避免高亮变化时连带全屏 BackdropFilter 重绘。
-    // 菜单项层再订阅同一 controller + 响应 highlightedIndex。
+    // 菜单项层订阅同一 controller；高亮只经 ValueListenable 细粒度刷新。
     return IgnorePointer(
       child: Stack(
         children: [
@@ -414,14 +409,14 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
                   : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
               // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
               final fadeT = raw;
+              final items = widget.items;
               return Stack(
                 children: [
                   for (int i = 0; i < items.length; i++)
                     _buildItem(context, i, items[i], t, fadeT),
                   if (widget.pressArea != null)
                     _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
-                  if (highlightedItem != null && !widget.closing)
-                    _buildHeaderTooltip(context, highlightedItem, fadeT),
+                  if (!widget.closing) _buildHeaderTooltipLayer(context, fadeT),
                 ],
               );
             },
@@ -474,56 +469,75 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     double fadeT,
   ) {
     final theme = Theme.of(context);
-    final isHighlighted = widget.highlightedIndex == index;
     final emitter = _emitterCenter;
     final target = _itemTargetPosition(index);
     // 衍生：项的中心从按压区域 emitter 沿直线 lerp 到目标半圆位置
     final pos = Offset.lerp(emitter, target, t)!;
-    // 衍生过程中，项尺寸从 0 长到正常；高亮再额外乘 1.2
+    // Base size follows emerge animation only. Highlight scale is applied
+    // inside a tiny ValueListenableBuilder so slot hops do not re-layout peers.
     final emergeScale = t.clamp(0.0, 1.0);
-    final highlightScale = isHighlighted ? 1.2 : 1.0;
-    final scale = emergeScale * highlightScale;
-    final renderSize = _itemSize * scale;
-    if (renderSize < 0.5) {
-      // 尺寸接近 0 时直接不渲染，避免一帧闪烁
+    if (emergeScale < 0.01) {
       return const SizedBox.shrink();
     }
+    final baseSize = _itemSize * emergeScale;
+    final opacity = fadeT.clamp(0.0, 1.0);
+    // Reserve highlight max size so Positioned geometry stays stable.
+    final hostSize = baseSize * 1.2;
 
     return Positioned(
       key: ValueKey('radial_menu_item_$index'),
-      left: pos.dx - renderSize / 2,
-      top: pos.dy - renderSize / 2,
-      width: renderSize,
-      height: renderSize,
-      child: Opacity(
-        // fadeT 让收回时图标也淡出，避免到最后才"啪"一下消失
-        opacity: fadeT.clamp(0.0, 1.0),
-        child: Material(
-          color: isHighlighted
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          shape: const CircleBorder(),
-          elevation: isHighlighted ? 6 : 2,
-          shadowColor: isHighlighted
-              ? theme.colorScheme.primary.withValues(alpha: 0.4)
-              : Colors.black26,
-          child: Center(
-            child: Icon(
-              item.icon,
-              size: 24 * highlightScale,
-              color: isHighlighted
-                  ? theme.colorScheme.onPrimary
-                  : theme.colorScheme.onSurface,
-            ),
-          ),
+      left: pos.dx - hostSize / 2,
+      top: pos.dy - hostSize / 2,
+      width: hostSize,
+      height: hostSize,
+      child: Center(
+        child: ValueListenableBuilder<int?>(
+          valueListenable: widget.highlightedIndexListenable,
+          builder: (context, highlightedIndex, _) {
+            final highlighted = highlightedIndex == index;
+            final scale = highlighted ? 1.2 : 1.0;
+            final renderSize = baseSize * scale;
+            return Opacity(
+              opacity: opacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: highlighted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.surfaceContainerHighest,
+                  boxShadow: [
+                    BoxShadow(
+                      color: highlighted
+                          ? theme.colorScheme.primary.withValues(alpha: 0.28)
+                          : Colors.black.withValues(alpha: 0.16),
+                      blurRadius: highlighted ? 8 : 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: renderSize,
+                  height: renderSize,
+                  child: Center(
+                    child: Icon(
+                      item.icon,
+                      size: 24 * scale,
+                      color: highlighted
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildHeaderTooltip(
+  Widget _buildHeaderTooltipLayer(
     BuildContext context,
-    RadialMenuItem item,
     double opacity,
   ) {
     final theme = Theme.of(context);
@@ -540,51 +554,70 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
         : widget.center.dy + widget.radius + _tooltipGap;
 
     return Positioned.fill(
-      child: CustomSingleChildLayout(
-        delegate: _TooltipLayoutDelegate(
-          anchor: Offset(anchorX, anchorY),
-          growsDown: !up,
-          safeInsets: mq.padding,
-        ),
-        child: Opacity(
-          opacity: opacity,
-          child: Material(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(24),
-            elevation: 6,
-            shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 10,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    item.icon,
-                    size: 18,
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      item.label,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onPrimary,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+      child: ValueListenableBuilder<int?>(
+        valueListenable: widget.highlightedIndexListenable,
+        builder: (context, highlightedIndex, _) {
+          final items = widget.items;
+          if (highlightedIndex == null ||
+              highlightedIndex < 0 ||
+              highlightedIndex >= items.length) {
+            return const SizedBox.shrink();
+          }
+          final item = items[highlightedIndex];
+          return CustomSingleChildLayout(
+            delegate: _TooltipLayoutDelegate(
+              anchor: Offset(anchorX, anchorY),
+              growsDown: !up,
+              safeInsets: mq.padding,
+            ),
+            child: Opacity(
+              opacity: opacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        item.icon,
+                        size: 18,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          item.label,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.onPrimary,
+                            fontWeight: FontWeight.w600,
+                            height: 1.1,
+                            letterSpacing: 0.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -609,11 +642,18 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       child: IgnorePointer(
         child: Opacity(
           opacity: opacity,
-          child: Material(
-            color: theme.colorScheme.primary,
-            shape: const StadiumBorder(),
-            elevation: 6,
-            shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: theme.colorScheme.primary,
+              shape: const StadiumBorder(),
+              shadows: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Center(
               child: Icon(
                 Symbols.touch_app_rounded,
@@ -859,6 +899,9 @@ class _RadialMenuBackdrop extends StatefulWidget {
 }
 
 class _RadialMenuBackdropState extends State<_RadialMenuBackdrop> {
+  /// Quantized animation bucket so we do not setState every engine tick.
+  int _paintBucket = -1;
+
   @override
   void initState() {
     super.initState();
@@ -881,6 +924,11 @@ class _RadialMenuBackdropState extends State<_RadialMenuBackdrop> {
   }
 
   void _onTick() {
+    // 24 buckets over [0,1] ≈ every ~9ms at 220ms enter — plenty smooth for
+    // dim, and far cheaper than full rebuild at display refresh rate.
+    final bucket = (widget.animation.value * 24).round();
+    if (bucket == _paintBucket) return;
+    _paintBucket = bucket;
     if (mounted) setState(() {});
   }
 

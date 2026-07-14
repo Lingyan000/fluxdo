@@ -93,6 +93,8 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
 
   // 滑动预览状态
   OverlayEntry? _swipeEntry;
+  /// Last painted swipe-preview signature; used to skip redundant rebuilds.
+  Object? _lastSwipePaintSignature;
   Offset? _swipeOrigin; // 悬浮条本体中心（用于定位预览药丸）
   Offset? _swipeStart; // 手指按下的全局坐标
   Offset _swipeCurrent = Offset.zero;
@@ -224,6 +226,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     _pendingScrubIndex = null;
     _swipeEntry?.remove();
     _swipeEntry = null;
+    _lastSwipePaintSignature = null;
     _swipeOrigin = null;
     _swipeStart = null;
     _swipeCurrent = Offset.zero;
@@ -321,6 +324,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     _swipeDirection = null;
     _swipeAction = null;
     _swipeTriggerable = false;
+    _lastSwipePaintSignature = null;
     _scrubStartIndex = widget.currentIndexListenable.value.clamp(
       1,
       math.max(1, widget.totalCount),
@@ -394,7 +398,25 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
     _swipeAction = action;
     _swipeTriggerable = triggerable;
     _scrubTargetIndex = scrubTarget;
-    _swipeEntry?.markNeedsBuild();
+    // Rebuild only when the preview would actually look different.
+    // Pointer samples fire ~60-120Hz; full OverlayEntry rebuild each time
+    // is a major Windows jank source under the progress pill.
+    final delta = (_swipeStart == null)
+        ? Offset.zero
+        : _swipeCurrent - _swipeStart!;
+    final signature = (
+      direction,
+      action,
+      scrubTarget,
+      triggerable,
+      // Quantize delta so sub-pixel noise does not thrash rebuilds.
+      (delta.dx / 2).round(),
+      (delta.dy / 2).round(),
+    );
+    if (signature != _lastSwipePaintSignature) {
+      _lastSwipePaintSignature = signature;
+      _swipeEntry?.markNeedsBuild();
+    }
   }
 
   void _handlePanEnd(DragEndDetails details) {
@@ -690,11 +712,18 @@ class _SwipePreviewOverlay extends StatelessWidget {
                   duration: const Duration(milliseconds: 140),
                   curve: Curves.easeOutBack,
                   scale: triggerable ? 1.04 : 1.0,
-                  child: Material(
-                    color: bgColor,
-                    borderRadius: BorderRadius.circular(20),
-                    elevation: triggerable ? 6 : 3,
-                    shadowColor: shadow,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: shadow,
+                          blurRadius: triggerable ? 10 : 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
