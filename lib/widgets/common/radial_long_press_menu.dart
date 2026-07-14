@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -205,10 +206,12 @@ class RadialMenuSession {
       }
     }
     final changed = newIndex != _highlightedIndex;
+    if (!changed) return;
     _highlightedIndex = newIndex;
-    if (changed && newIndex != null) {
+    if (newIndex != null) {
       HapticFeedback.selectionClick();
     }
+    // 高亮未变时绝不全屏 markNeedsBuild：BackdropFilter 重绘在 Windows 上极贵。
     _menuEntry?.markNeedsBuild();
   }
 
@@ -391,39 +394,39 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
         ? items[highlightedIndex]
         : null;
 
+    // 背景模糊单独订阅动画，避免高亮变化时连带全屏 BackdropFilter 重绘。
+    // 菜单项层再订阅同一 controller + 响应 highlightedIndex。
     return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          // 入场用 easeOutBack 让项"弹"出来一点；出场用 easeInCubic 让回缩干脆
-          final raw = _controller.value;
-          final t = widget.closing
-              ? Curves.easeInCubic.transform(raw)
-              : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
-          // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
-          final fadeT = raw;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: _maxBlur * fadeT,
-                    sigmaY: _maxBlur * fadeT,
-                  ),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: _maxDim * fadeT),
-                  ),
-                ),
-              ),
-              for (int i = 0; i < items.length; i++)
-                _buildItem(context, i, items[i], t, fadeT),
-              if (widget.pressArea != null)
-                _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
-              if (highlightedItem != null && !widget.closing)
-                _buildHeaderTooltip(context, highlightedItem, fadeT),
-            ],
-          );
-        },
+      child: Stack(
+        children: [
+          _RadialMenuBackdrop(
+            animation: _controller,
+            maxBlur: _maxBlur,
+            maxDim: _maxDim,
+          ),
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              // 入场用 easeOutBack 让项"弹"出来一点；出场用 easeInCubic 让回缩干脆
+              final raw = _controller.value;
+              final t = widget.closing
+                  ? Curves.easeInCubic.transform(raw)
+                  : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
+              // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
+              final fadeT = raw;
+              return Stack(
+                children: [
+                  for (int i = 0; i < items.length; i++)
+                    _buildItem(context, i, items[i], t, fadeT),
+                  if (widget.pressArea != null)
+                    _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
+                  if (highlightedItem != null && !widget.closing)
+                    _buildHeaderTooltip(context, highlightedItem, fadeT),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -829,6 +832,77 @@ class _RadialLongPressMenuState extends State<RadialLongPressMenu> {
             ),
       },
       child: widget.child,
+    );
+  }
+}
+
+
+/// 径向菜单全屏背景：只跟随入场/退场动画，不响应高亮变化。
+///
+/// Windows 上 [BackdropFilter] 全屏模糊非常贵；再叠加指针移动时的
+/// 高频 rebuild 会把话题页拖成严重掉帧。背景拆成独立 State 后：
+/// - 动画 tick 才重绘模糊层
+/// - 高亮切换只重建菜单项层
+class _RadialMenuBackdrop extends StatefulWidget {
+  const _RadialMenuBackdrop({
+    required this.animation,
+    required this.maxBlur,
+    required this.maxDim,
+  });
+
+  final Animation<double> animation;
+  final double maxBlur;
+  final double maxDim;
+
+  @override
+  State<_RadialMenuBackdrop> createState() => _RadialMenuBackdropState();
+}
+
+class _RadialMenuBackdropState extends State<_RadialMenuBackdrop> {
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addListener(_onTick);
+  }
+
+  @override
+  void didUpdateWidget(covariant _RadialMenuBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeListener(_onTick);
+      widget.animation.addListener(_onTick);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _onTick() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fadeT = widget.animation.value;
+    final sigma = widget.maxBlur * fadeT;
+    // 桌面端全屏高斯模糊成本远高于移动端：Windows/Linux 用纯遮罩即可。
+    final useBlur = !(defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux);
+    final dim = ColoredBox(
+      color: Colors.black.withValues(alpha: widget.maxDim * fadeT),
+    );
+    return Positioned.fill(
+      child: RepaintBoundary(
+        child: useBlur && sigma > 0.01
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                child: dim,
+              )
+            : dim,
+      ),
     );
   }
 }
