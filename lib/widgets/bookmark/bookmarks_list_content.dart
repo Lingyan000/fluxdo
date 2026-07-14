@@ -4,8 +4,10 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../models/category.dart';
 import '../../models/topic.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
+import '../../providers/category_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/platform_utils.dart';
@@ -133,6 +135,10 @@ class BookmarksListContent extends ConsumerWidget {
               preferencesProvider.select((p) => p.normalizedBlockedUsernames),
             ),
           ),
+          // 列表层订阅一次分类表传给每张卡,取代每张 TopicCard 各自
+          // ref.watch(categoryMapProvider)(快滚双卡同帧就是双份订阅+
+          // 依赖注册)。首页早有此优化,书签页此前漏了
+          ref.watch(categoryMapProvider).value,
         ),
         loading: () => const TopicListSkeleton(),
         error: (error, stack) =>
@@ -141,7 +147,11 @@ class BookmarksListContent extends ConsumerWidget {
     );
   }
 
-  Widget _buildDataContent(BuildContext context, List<Topic> topics) {
+  Widget _buildDataContent(
+    BuildContext context,
+    List<Topic> topics,
+    Map<int, Category>? categoryMap,
+  ) {
     if (topics.isEmpty) {
       return Center(
         child: Column(
@@ -211,6 +221,7 @@ class BookmarksListContent extends ConsumerWidget {
           suggestions: bookmarkNameSuggestions,
           reminderExpired: reminderExpired,
           themeId: identityHashCode(Theme.of(context)),
+          categoryMap: categoryMap,
         );
         final cacheKey = bookmarkTopicIdentity(topic);
         final hit = _itemCache[cacheKey];
@@ -225,6 +236,7 @@ class BookmarksListContent extends ConsumerWidget {
           onMiddleClick: () => onMiddleClick(topic),
           enableLongPress: enableLongPress,
           statsAvailableWidth: statsAvailableWidth,
+          categoryMap: categoryMap,
           topWidget: _buildBookmarkTopBar(context, topic),
           middleWidget: _buildBookmarkExcerpt(context, topic),
           previewCustomActionPanelBuilder: topic.bookmarkId != null
