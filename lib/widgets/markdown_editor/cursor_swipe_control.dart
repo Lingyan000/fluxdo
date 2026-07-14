@@ -2,12 +2,14 @@
 /// 移动 —— 把工具栏变成光标触控板,替代手指戳
 /// 屏定位(遮挡/点不准/微调痛苦)。
 ///
-/// - 每滑动 [stepPx] 触发一步 [onMove](方向 ±1),带触觉;滑出按钮
-///   范围手势继续有效(pan 已被本控件独占,不与工具栏滚动打架);
+/// - 每滑动 [stepPx] 触发一步 [onMove](方向 ±1),带触觉;
+/// - **按下即独占手势**(eager claim):外层同向手势(左滑预览/返回
+///   手势/工具栏横滚)一概抢不走 —— 按住滑钮 = 控制权归光标;
 /// - **单击滑钮 = 切换选择模式**(常亮高亮示意):开启后滑动 = 扩选。
-///   单控件承载移动+选择,不占第二个按钮位(底部工具栏寸土寸金)。
+///   点按语义并入同一识别器(位移 < 阈值 = 单击),单控件全包。
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -39,32 +41,67 @@ class CursorSwipeControl extends StatefulWidget {
   State<CursorSwipeControl> createState() => _CursorSwipeControlState();
 }
 
+/// 按下即宣称胜出的 pan:滑钮区域内手势独占,外层同向识别器
+/// (页面左滑预览/返回手势)按不进竞技场。
+class _EagerPanGestureRecognizer extends PanGestureRecognizer {
+  _EagerPanGestureRecognizer({super.debugOwner});
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+}
+
 class _CursorSwipeControlState extends State<CursorSwipeControl> {
   static const double _stepPx = 12;
+
+  /// 位移小于该值的按放 = 单击(切换选择模式)。
+  static const double _tapSlop = 8;
 
   bool _selecting = false;
   bool _dragging = false;
   double _acc = 0;
   bool _pointerLive = false;
 
+  /// 本次手势是否已越过 tapSlop 进入拖动(lazy start:按下不立刻
+  /// start,否则单击也会驱动一次空拖 —— 指针模式的 start 会落光标)。
+  bool _moved = false;
+  Offset _total = Offset.zero;
+
   bool get _pointerMode => widget.onPointerStart != null;
 
-  void _onDragStart(DragStartDetails d) {
+  void _onDown() {
     _acc = 0;
-    if (_pointerMode) {
-      _pointerLive = widget.onPointerStart!(extend: _selecting);
-      if (!_pointerLive) return;
-    }
-    setState(() => _dragging = true);
-    HapticFeedback.selectionClick();
+    _total = Offset.zero;
+    _moved = false;
+    _pointerLive = false;
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
-    if (_pointerMode) {
+    _total += d.delta;
+    if (!_moved) {
+      if (_total.distance < _tapSlop) return;
+      _moved = true;
+      if (_pointerMode) {
+        _pointerLive = widget.onPointerStart!(extend: _selecting);
+        if (!_pointerLive) return;
+      }
+      setState(() => _dragging = true);
+      HapticFeedback.selectionClick();
+      // 起步前累计的位移一并补上
+      if (_pointerMode && _pointerLive) {
+        widget.onPointerMove?.call(_total);
+        return;
+      }
+      _acc = _total.dx;
+    } else if (_pointerMode) {
       if (_pointerLive) widget.onPointerMove?.call(d.delta);
       return;
+    } else {
+      _acc += d.delta.dx;
     }
-    _acc += d.delta.dx;
+    if (_pointerMode) return;
     while (_acc.abs() >= _stepPx) {
       final dir = _acc > 0 ? 1 : -1;
       _acc -= dir * _stepPx;
@@ -74,6 +111,12 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
   }
 
   void _onDragEnd() {
+    if (!_moved) {
+      // 未越过 tapSlop = 单击:切换选择模式
+      setState(() => _selecting = !_selecting);
+      HapticFeedback.selectionClick();
+      return;
+    }
     if (_pointerMode && _pointerLive) {
       _pointerLive = false;
       widget.onPointerEnd?.call();
@@ -85,22 +128,23 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final active = _dragging || _selecting;
-    // 单控件:按住拖 = 移动/扩选;单击 = 切换选择模式(高亮常亮)
-    return GestureDetector(
+    // 单控件单识别器:按下即独占(外层左滑预览抢不走);位移 < 阈值
+    // 的按放 = 单击切换选择模式;越过阈值 = 拖动(移动/扩选)
+    return RawGestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        setState(() => _selecting = !_selecting);
-        HapticFeedback.selectionClick();
+      gestures: {
+        _EagerPanGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<_EagerPanGestureRecognizer>(
+          () => _EagerPanGestureRecognizer(debugOwner: this),
+          (r) {
+            r
+              ..onDown = ((_) => _onDown())
+              ..onUpdate = _onDragUpdate
+              ..onEnd = ((_) => _onDragEnd())
+              ..onCancel = _onDragEnd;
+          },
+        ),
       },
-      // 指针模式 = 二维 pan(可跨行漂移);步进模式只认水平
-      onPanStart: _pointerMode ? _onDragStart : null,
-      onPanUpdate: _pointerMode ? _onDragUpdate : null,
-      onPanEnd: _pointerMode ? (_) => _onDragEnd() : null,
-      onPanCancel: _pointerMode ? _onDragEnd : null,
-      onHorizontalDragStart: _pointerMode ? null : _onDragStart,
-      onHorizontalDragUpdate: _pointerMode ? null : _onDragUpdate,
-      onHorizontalDragEnd: _pointerMode ? null : (_) => _onDragEnd(),
-      onHorizontalDragCancel: _pointerMode ? null : _onDragEnd,
       // 不用 Tooltip:其长按触发与「按住拖动」手势冲突(按住先弹提示,
       // 拖不起来)。说明留给 Semantics(无障碍)。
       child: Semantics(

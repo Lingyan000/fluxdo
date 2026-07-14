@@ -146,4 +146,35 @@ void main() {
     expect(moves, isEmpty);
     expect(ends, 0);
   });
+
+  testWidgets('按下即独占:外层水平拖动(左滑预览类)抢不走滑钮手势',
+      (tester) async {
+    var outerDrags = 0;
+    final calls = <(int, bool)>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragUpdate: (_) => outerDrags++,
+          child: Center(
+            child: CursorSwipeControl(
+              onMove: (dir, {required extend}) => calls.add((dir, extend)),
+            ),
+          ),
+        ),
+      ),
+    ));
+    final knob =
+        tester.getCenter(find.byKey(const ValueKey('cursor-swipe-knob')));
+    final g = await tester.startGesture(knob);
+    for (var i = 0; i < 6; i++) {
+      await g.moveBy(const Offset(-12, 0));
+      await tester.pump();
+    }
+    await g.up();
+    await tester.pump();
+    expect(outerDrags, 0, reason: '外层水平手势颗粒无收');
+    expect(calls, isNotEmpty, reason: '滑钮步进正常');
+    expect(calls.every((c) => c.$1 == -1), isTrue);
+  });
 }
