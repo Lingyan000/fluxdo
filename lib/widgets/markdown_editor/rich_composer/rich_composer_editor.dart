@@ -177,6 +177,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 判定 factory 变化 → 代码块每次打字重新高亮)。
   NodeFactory? _nodeFactory;
 
+  /// 虚拟指针(手势光标二维形态):滑钮 pan 驱动编辑器浮动光标链。
+  final _virtualPointer = FluxdoEditorVirtualPointer();
+
   @override
   void initState() {
     super.initState();
@@ -887,12 +890,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     } finally {
       if (mounted) setState(() => _uploadingCount--);
     }
-  }
-
-  /// 手势光标一步:EditorState 字符级移动(原子/emoji 感知,与
-  /// 方向键同路径;IME 重喂由编辑器状态监听自动完成)。
-  void _moveCaretByGesture(int dir, {required bool extend}) {
-    _editor?.moveCaretHorizontal(dir, extend: extend);
   }
 
   /// 用户自定义模板(MD 模式「模板」同一选择器):内容为 markdown,
@@ -1669,6 +1666,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // 编辑块(失败/不可用时 FluxdoEditor 内部
                                   // 降级纯文本粘贴)
                                   markdownImporter: markdownToDoc,
+                                  virtualPointer: _virtualPointer,
                                   // 富粘贴:剪贴板 text/html(网页/Word)
                                   // → markdown 清洗 → 同一条 cook 导入链;
                                   // 无 html/转换落空回落上面纯文本路径
@@ -1758,8 +1756,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           onPickImage: _pickAndUploadImages,
           onInsertLink: _insertLink,
           onInsertMenu: _showInsertMenu,
-          // 手势光标(移动端):与键盘方向键同一条状态层移动路径
-          onCursorMove: _isDesktop ? null : _moveCaretByGesture,
+          // 手势光标(虚拟指针):幽灵光标跟手+实光标吸附+贴边自动滚
+          // (验收期桌面暂开,定稿后按平台收敛)
+          onPointerStart: ({required extend}) =>
+              _virtualPointer.start(extend: extend),
+          onPointerMove: _virtualPointer.moveBy,
+          onPointerEnd: _virtualPointer.end,
           onSwitchToSource: widget.onSwitchToSource == null
               ? null
               : () {
@@ -1893,7 +1895,9 @@ class _RichToolbar extends StatefulWidget {
     required this.onPickImage,
     required this.onInsertLink,
     required this.onInsertMenu,
-    this.onCursorMove,
+    this.onPointerStart,
+    this.onPointerMove,
+    this.onPointerEnd,
     this.onSwitchToSource,
   });
 
@@ -1905,8 +1909,11 @@ class _RichToolbar extends StatefulWidget {
   final VoidCallback onInsertLink;
   final void Function(BuildContext anchorContext) onInsertMenu;
 
-  /// 手势光标:滑动驱动光标移动/扩选(移动端;null 不显示)。
-  final void Function(int dir, {required bool extend})? onCursorMove;
+  /// 手势光标(虚拟指针):滑钮 pan 驱动浮动光标二维漂移;
+  /// [onPointerStart] null 不显示。
+  final bool Function({required bool extend})? onPointerStart;
+  final ValueChanged<Offset>? onPointerMove;
+  final VoidCallback? onPointerEnd;
 
   final VoidCallback? onSwitchToSource;
 
@@ -2089,11 +2096,15 @@ class _RichToolbarState extends State<_RichToolbar> {
                   ),
                 ),
               ),
-              // 手势光标:滑动驱动光标(移动端)
-              if (widget.onCursorMove != null) ...[
+              // 手势光标(虚拟指针):按住滑钮二维漂移驱动光标
+              if (widget.onPointerStart != null) ...[
                 _Pill(
                   color: pillColor,
-                  child: CursorSwipeControl(onMove: widget.onCursorMove!),
+                  child: CursorSwipeControl(
+                    onPointerStart: widget.onPointerStart,
+                    onPointerMove: widget.onPointerMove,
+                    onPointerEnd: widget.onPointerEnd,
+                  ),
                 ),
                 const SizedBox(width: 6),
               ],

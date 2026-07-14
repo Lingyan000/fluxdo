@@ -1086,9 +1086,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 手势光标:滑动驱动光标,移动端才有意义
-                    if (isMobile)
-                      CursorSwipeControl(onMove: moveCursorByCharacter),
+                    // 手势光标:滑动驱动光标(验收期桌面暂开,
+                    // 定稿后恢复 isMobile 条件)
+                    CursorSwipeControl(onMove: moveCursorByCharacter),
                     if (!isMobile && widget.showPanguButton)
                       IconButton(
                         visualDensity: VisualDensity.compact,

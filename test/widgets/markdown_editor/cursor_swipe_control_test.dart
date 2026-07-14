@@ -98,4 +98,52 @@ void main() {
     expect(calls.length, greaterThanOrEqualTo(2));
     expect(calls.every((c) => c.$1 == -1 && c.$2 == true), isTrue);
   });
+
+  testWidgets('指针模式:start 成功透传二维 delta;start 拒绝则忽略拖动',
+      (tester) async {
+    var startCalls = 0;
+    var allowStart = true;
+    final moves = <Offset>[];
+    var ends = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: CursorSwipeControl(
+            onPointerStart: ({required extend}) {
+              startCalls++;
+              return allowStart;
+            },
+            onPointerMove: moves.add,
+            onPointerEnd: () => ends++,
+          ),
+        ),
+      ),
+    ));
+    final knob =
+        tester.getCenter(find.byKey(const ValueKey('cursor-swipe-knob')));
+
+    final g = await tester.startGesture(knob);
+    await g.moveBy(const Offset(30, 20));
+    await tester.pump();
+    await g.moveBy(const Offset(-10, 15));
+    await tester.pump();
+    await g.up();
+    await tester.pump();
+    expect(startCalls, 1);
+    expect(moves, isNotEmpty, reason: '二维 delta 透传');
+    expect(moves.any((d) => d.dy != 0), isTrue, reason: '垂直分量保留');
+    expect(ends, 1);
+
+    // start 拒绝(编辑器无光标):move/end 不再回调
+    allowStart = false;
+    moves.clear();
+    ends = 0;
+    final g2 = await tester.startGesture(knob);
+    await g2.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await g2.up();
+    await tester.pump();
+    expect(moves, isEmpty);
+    expect(ends, 0);
+  });
 }

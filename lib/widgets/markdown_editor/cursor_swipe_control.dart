@@ -13,10 +13,26 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class CursorSwipeControl extends StatefulWidget {
-  const CursorSwipeControl({super.key, required this.onMove});
+  const CursorSwipeControl({
+    super.key,
+    this.onMove,
+    this.onPointerStart,
+    this.onPointerMove,
+    this.onPointerEnd,
+  }) : assert(onMove != null || onPointerStart != null,
+            '步进(onMove)与指针(onPointer*)模式二选一');
 
-  /// 移动一步:[dir] = ±1,[extend] = 选择模式(扩选)。
-  final void Function(int dir, {required bool extend}) onMove;
+  /// 步进模式(水平):每步 [dir] = ±1,[extend] = 选择开关态。
+  final void Function(int dir, {required bool extend})? onMove;
+
+  /// 指针模式(二维虚拟指针):按下起步,返回 false = 编辑器无光标,
+  /// 本次拖动忽略。与 [onPointerMove]/[onPointerEnd] 成组。
+  final bool Function({required bool extend})? onPointerStart;
+
+  /// 指针模式:拖动增量(原始 delta,二维)。
+  final ValueChanged<Offset>? onPointerMove;
+
+  final VoidCallback? onPointerEnd;
 
   @override
   State<CursorSwipeControl> createState() => _CursorSwipeControlState();
@@ -28,24 +44,39 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
   bool _selecting = false;
   bool _dragging = false;
   double _acc = 0;
+  bool _pointerLive = false;
+
+  bool get _pointerMode => widget.onPointerStart != null;
 
   void _onDragStart(DragStartDetails d) {
-    setState(() => _dragging = true);
     _acc = 0;
+    if (_pointerMode) {
+      _pointerLive = widget.onPointerStart!(extend: _selecting);
+      if (!_pointerLive) return;
+    }
+    setState(() => _dragging = true);
     HapticFeedback.selectionClick();
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
+    if (_pointerMode) {
+      if (_pointerLive) widget.onPointerMove?.call(d.delta);
+      return;
+    }
     _acc += d.delta.dx;
     while (_acc.abs() >= _stepPx) {
       final dir = _acc > 0 ? 1 : -1;
       _acc -= dir * _stepPx;
-      widget.onMove(dir, extend: _selecting);
+      widget.onMove!(dir, extend: _selecting);
       HapticFeedback.selectionClick();
     }
   }
 
   void _onDragEnd() {
+    if (_pointerMode && _pointerLive) {
+      _pointerLive = false;
+      widget.onPointerEnd?.call();
+    }
     if (mounted) setState(() => _dragging = false);
   }
 
@@ -56,10 +87,15 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
       // 光标滑钮:按住水平拖动驱动光标
       GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: _onDragStart,
-        onHorizontalDragUpdate: _onDragUpdate,
-        onHorizontalDragEnd: (_) => _onDragEnd(),
-        onHorizontalDragCancel: _onDragEnd,
+        // 指针模式 = 二维 pan(可跨行漂移);步进模式只认水平
+        onPanStart: _pointerMode ? _onDragStart : null,
+        onPanUpdate: _pointerMode ? _onDragUpdate : null,
+        onPanEnd: _pointerMode ? (_) => _onDragEnd() : null,
+        onPanCancel: _pointerMode ? _onDragEnd : null,
+        onHorizontalDragStart: _pointerMode ? null : _onDragStart,
+        onHorizontalDragUpdate: _pointerMode ? null : _onDragUpdate,
+        onHorizontalDragEnd: _pointerMode ? null : (_) => _onDragEnd(),
+        onHorizontalDragCancel: _pointerMode ? null : _onDragEnd,
         child: Tooltip(
           message: '按住左右滑动移动光标',
           child: Container(
