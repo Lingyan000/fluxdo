@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../constants.dart';
 import '../utils/client_id_generator.dart';
+import '../utils/scroll_busy_signal.dart';
 import 'network/discourse_dio.dart';
 import 'preloaded_data_service.dart';
 
@@ -652,12 +653,56 @@ class MessageBusService {
       return;
     }
 
-    if (_subscriptions.containsKey(message.channel)) {
-      final sub = _subscriptions[message.channel]!;
-      if (message.messageId > sub.lastMessageId) {
-        sub.lastMessageId = message.messageId;
-      }
+    // 协议层立即推进:轮询序号不受投递延迟影响,不会重拉已收消息
+    final sub = _subscriptions[message.channel];
+    if (sub != null && message.messageId > sub.lastMessageId) {
+      sub.lastMessageId = message.messageId;
+    }
 
+    // 滚动期延迟投递:订阅回调的下游是解析 + 状态更新 + 页面级 rebuild
+    // 链,全是"晚一秒无感"的工作,却与滚动帧抢 UI 事件循环 —— 生产
+    // 日志 ov 型掉帧(build/raster≈0、帧开工晚 10ms+)的税源。滚动
+    // 静默后按序排空,顺序语义不变;队列非空时即使已静默也入队,防
+    // 新消息插队。上限兜底:病态积压(持续长滚 + 消息风暴)超限直接
+    // 投递,宁可付一帧不无限攒。
+    if ((ScrollBusySignal.isBusy || _deferredMessages.isNotEmpty) &&
+        _deferredMessages.length < 300) {
+      _deferredMessages.add(message);
+      _scheduleDeferredDrain();
+      return;
+    }
+
+    _deliverMessage(message);
+  }
+
+  final List<MessageBusMessage> _deferredMessages = [];
+  Timer? _deferredDrainTimer;
+
+  void _scheduleDeferredDrain() {
+    _deferredDrainTimer?.cancel();
+    _deferredDrainTimer = Timer(
+      const Duration(milliseconds: 400),
+      _drainDeferredMessages,
+    );
+  }
+
+  void _drainDeferredMessages() {
+    if (_deferredMessages.isEmpty) return;
+    if (ScrollBusySignal.isBusy) {
+      _scheduleDeferredDrain();
+      return;
+    }
+    final batch = List<MessageBusMessage>.from(_deferredMessages);
+    _deferredMessages.clear();
+    for (final message in batch) {
+      _deliverMessage(message);
+    }
+  }
+
+  /// 投递给订阅回调与消息流(与协议推进分离,可被滚动期延迟)
+  void _deliverMessage(MessageBusMessage message) {
+    final sub = _subscriptions[message.channel];
+    if (sub != null) {
       for (final callback in sub.callbacks) {
         try {
           callback(message);
@@ -707,6 +752,8 @@ class MessageBusService {
   void dispose() {
     _stopPolling();
     _restartPollTimer?.cancel();
+    _deferredDrainTimer?.cancel();
+    _deferredMessages.clear();
     _messageController.close();
   }
 }
