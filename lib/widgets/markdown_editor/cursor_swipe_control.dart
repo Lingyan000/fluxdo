@@ -304,3 +304,32 @@ TextSelection? moveTextSelectionByGrapheme(
       ? sel.copyWith(extentOffset: to)
       : TextSelection.collapsed(offset: to);
 }
+
+/// 悬浮幽灵光标条(虚拟指针视觉,MD/富文本共用):主题色圆角竖条 +
+/// 轻阴影;放进 OverlayEntry,不参与命中。
+class VirtualCaretGhost extends StatelessWidget {
+  const VirtualCaretGhost({super.key, required this.lineHeight});
+
+  final double lineHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: 2.5,
+        height: lineHeight,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary,
+          borderRadius: BorderRadius.circular(1.25),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 3,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

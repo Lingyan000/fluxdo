@@ -36,14 +36,11 @@ class MarkdownToolbar extends StatefulWidget {
   /// 内容焦点节点（可选，用于恢复焦点）
   final FocusNode? focusNode;
 
-  /// 手势光标步进后回调(宿主滚动跟随:程序化改 selection 不触发
-  /// EditableText 的 showCaretOnScreen,光标会在视野外移动)。
-  final VoidCallback? onCursorMoved;
-
-  /// 手势光标步进**前**回调(宿主"确保可编辑"仪式:表情面板态
-  /// readOnly 的 TextField 不渲染光标,须先解除并聚焦,否则光标
-  /// 全程不可见)。幂等,每步都调。
-  final VoidCallback? onBeforeCursorMove;
+  /// 手势光标(虚拟指针)三回调:宿主实现悬浮幽灵 + 命中吸附 +
+  /// 增量边缘滚动;[onPointerStart] null 时不显示滑钮。
+  final bool Function({required bool extend})? onPointerStart;
+  final ValueChanged<Offset>? onPointerMove;
+  final VoidCallback? onPointerEnd;
 
   /// 是否显示预览按钮
   final bool showPreviewButton;
@@ -84,8 +81,9 @@ class MarkdownToolbar extends StatefulWidget {
     super.key,
     required this.controller,
     this.focusNode,
-    this.onCursorMoved,
-    this.onBeforeCursorMove,
+    this.onPointerStart,
+    this.onPointerMove,
+    this.onPointerEnd,
     this.showPreviewButton = true,
     this.isPreview = false,
     this.onTogglePreview,
@@ -946,27 +944,6 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     insertText('$prefix$tag\n');
   }
 
-  /// 光标滑钮:按 grapheme 移动光标/扩选(emoji/代理对不劈半)。
-  void moveCursorByCharacter(int dir, {required bool extend}) {
-    widget.onBeforeCursorMove?.call();
-    // 未聚焦(选区无效)时落到文末起步并聚焦 —— 滑钮应随时可用
-    if (!widget.controller.selection.isValid) {
-      widget.controller.selection = TextSelection.collapsed(
-        offset: widget.controller.text.length,
-      );
-      widget.focusNode?.requestFocus();
-    }
-    final next = moveTextSelectionByGrapheme(
-      widget.controller.value,
-      dir,
-      extend: extend,
-    );
-    if (next != null) {
-      widget.controller.selection = next;
-      widget.onCursorMoved?.call();
-    }
-  }
-
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
   /// 非行首先补换行(与媒体标签插入同款;模板文本与富 composer 的
   /// 「+」插入菜单一致)。
@@ -1108,9 +1085,14 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 手势光标:滑动驱动光标,移动端才有意义
-                    if (isMobile)
-                      CursorSwipeControl(onMove: moveCursorByCharacter),
+                    // 手势光标(虚拟指针):滑动驱动悬浮光标,
+                    // 移动端才有意义
+                    if (isMobile && widget.onPointerStart != null)
+                      CursorSwipeControl(
+                        onPointerStart: widget.onPointerStart,
+                        onPointerMove: widget.onPointerMove,
+                        onPointerEnd: widget.onPointerEnd,
+                      ),
                     if (!isMobile && widget.showPanguButton)
                       IconButton(
                         visualDensity: VisualDensity.compact,

@@ -18,6 +18,7 @@ import '../mention/mention_autocomplete.dart';
 import 'emoji_sticker_panel.dart';
 import 'markdown_renderer.dart';
 import 'markdown_tool_panel.dart';
+import 'cursor_swipe_control.dart';
 import 'markdown_toolbar.dart';
 import 'package:pangutext/pangutext.dart';
 import '../../../../../l10n/s.dart';
@@ -150,6 +151,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   @override
   void dispose() {
+    _vpGhost?.remove();
     _panguTimer?.cancel();
     widget.controller.removeListener(_handleTextChange);
     _scrollController.dispose();
@@ -373,9 +375,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     }
   }
 
-  /// 手势光标步进前的"确保可编辑"仪式:表情面板态 readOnly 的
-  /// TextField 不渲染光标 —— 解除 readOnly 切回键盘态并聚焦(幂等;
-  /// 不动 selection,落点归步进逻辑)。
+  /// 手势光标前的"确保可编辑"仪式:表情面板态 readOnly 的 TextField
+  /// 不渲染光标 —— 解除 readOnly 切回键盘态并聚焦(幂等)。
   void _ensureEditableForCursor() {
     if (_readOnly) {
       _intendedPanel = EditorPanelType.none;
@@ -383,6 +384,149 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       _panelController.updatePanelType(ChatBottomPanelType.keyboard);
     }
     if (!_focusNode.hasFocus) _focusNode.requestFocus();
+  }
+
+  /// 找到正文 TextField 的 RenderEditable(_scrollToCursor 同款遍历)。
+  RenderEditable? _findRenderEditable() {
+    final root = context.findRenderObject();
+    if (root == null) return null;
+    RenderEditable? editable;
+    void find(RenderObject obj) {
+      if (editable != null) return;
+      if (obj is RenderEditable) {
+        editable = obj;
+      } else {
+        obj.visitChildren(find);
+      }
+    }
+
+    root.visitChildren(find);
+    return editable;
+  }
+
+  /// 滚动视口的全局矩形(虚拟指针钳制/增量滚动用)。
+  Rect? _viewportGlobalRect() {
+    if (!_scrollController.hasClients) return null;
+    final box = _scrollController.position.context.storageContext
+        .findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  // ---- 虚拟指针(悬浮幽灵光标,与富文本同交互;源码模式版) ----
+  //
+  // 命中吸附走 RenderEditable.getPositionForPoint;边缘为**增量式**
+  // 滚动(幽灵钳在视口内,超出量直接喂 scrollController —— 拖多少滚
+  // 多少,手停滚停,无需 ticker)。
+
+  OverlayEntry? _vpGhost;
+  Offset _vpPos = Offset.zero;
+  double _vpLineHeight = 20;
+  int? _vpExtendBase;
+
+  bool _virtualPointerStart({required bool extend}) {
+    _ensureEditableForCursor();
+    final editable = _findRenderEditable();
+    if (editable == null) return false;
+    final vp = _viewportGlobalRect();
+
+    Offset? anchor;
+    var sel = widget.controller.selection;
+    if (sel.isValid) {
+      final r = editable.getLocalRectForCaret(
+        TextPosition(offset: sel.extentOffset),
+      );
+      final global = editable.localToGlobal(r.topLeft) & r.size;
+      _vpLineHeight = r.height;
+      if (vp == null || vp.contains(global.center)) {
+        anchor = global.center;
+      }
+    }
+    // 无光标/光标在屏外:从视口中心命中起步(幽灵必须生成在看得见
+    // 的地方,否则钳边+滚动=体感"没光标只有滚")
+    if (anchor == null) {
+      if (vp == null) return false;
+      final tp = editable.getPositionForPoint(vp.center);
+      widget.controller.selection =
+          TextSelection.collapsed(offset: tp.offset);
+      sel = widget.controller.selection;
+      final r = editable.getLocalRectForCaret(tp);
+      _vpLineHeight = r.height;
+      anchor = (editable.localToGlobal(r.topLeft) & r.size).center;
+    }
+    _vpExtendBase = extend && sel.isValid ? sel.baseOffset : null;
+    _vpPos = anchor;
+    _showVpGhost();
+    return true;
+  }
+
+  void _virtualPointerMove(Offset delta) {
+    final editable = _findRenderEditable();
+    if (editable == null) return;
+    var pos = _vpPos + delta;
+    final vp = _viewportGlobalRect();
+    if (vp != null && !vp.isEmpty && _scrollController.hasClients) {
+      final position = _scrollController.position;
+      final half = _vpLineHeight / 2;
+      // 超出视口的分量转成滚动(增量式:拖多少滚多少)
+      double overflow = 0;
+      if (pos.dy > vp.bottom - half) {
+        overflow = pos.dy - (vp.bottom - half);
+      } else if (pos.dy < vp.top + half) {
+        overflow = pos.dy - (vp.top + half);
+      }
+      if (overflow != 0) {
+        final target = (position.pixels + overflow)
+            .clamp(0.0, position.maxScrollExtent);
+        if (target != position.pixels) {
+          position.jumpTo(target);
+        }
+      }
+      pos = Offset(
+        pos.dx.clamp(vp.left + 1.25, vp.right - 1.25),
+        pos.dy.clamp(vp.top + half, vp.bottom - half),
+      );
+    }
+    _vpPos = pos;
+    _vpGhost?.markNeedsBuild();
+
+    final tp = editable.getPositionForPoint(pos);
+    final base = _vpExtendBase;
+    final next = base == null
+        ? TextSelection.collapsed(offset: tp.offset)
+        : TextSelection(baseOffset: base, extentOffset: tp.offset);
+    if (next != widget.controller.selection) {
+      widget.controller.selection = next;
+      final r = editable.getLocalRectForCaret(tp);
+      if (r.height > 0) _vpLineHeight = r.height;
+    }
+  }
+
+  void _virtualPointerEnd() {
+    _vpGhost?.remove();
+    _vpGhost = null;
+    _vpExtendBase = null;
+  }
+
+  void _showVpGhost() {
+    _vpGhost?.remove();
+    _vpGhost = null;
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    _vpGhost = OverlayEntry(
+      builder: (ctx) {
+        final box = Overlay.of(context).context.findRenderObject();
+        final local = box is RenderBox
+            ? box.globalToLocal(_vpPos)
+            : _vpPos;
+        return Positioned(
+          left: local.dx - 1.25,
+          top: local.dy - _vpLineHeight / 2,
+          child: VirtualCaretGhost(lineHeight: _vpLineHeight),
+        );
+      },
+    );
+    overlay.insert(_vpGhost!);
   }
 
   /// 编辑列下方空白区点击:等价"点在正文末尾"(聚焦 + 光标置末)。
@@ -822,10 +966,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         // 工具栏（纯按钮行，TextFieldTapRegion 防止点击时 TextField 失焦）
         TextFieldTapRegion(
           child: MarkdownToolbar(
-          // 手势光标:步进前确保可编辑(readOnly 光标不渲染),
-          // 步进后滚动跟随(越界才滚,jumpTo 无感)
-          onBeforeCursorMove: _ensureEditableForCursor,
-          onCursorMoved: _scrollToCursor,
+          // 手势光标(虚拟指针):悬浮幽灵二维漂移 + 命中吸附 +
+          // 增量式边缘滚动(与富文本同交互)
+          onPointerStart: _virtualPointerStart,
+          onPointerMove: _virtualPointerMove,
+          onPointerEnd: _virtualPointerEnd,
           key: _toolbarKey,
           controller: widget.controller,
           focusNode: _focusNode,
