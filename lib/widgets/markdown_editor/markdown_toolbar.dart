@@ -937,6 +937,13 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   /// 光标滑钮:按 grapheme 移动光标/扩选(emoji/代理对不劈半)。
   void moveCursorByCharacter(int dir, {required bool extend}) {
+    // 未聚焦(选区无效)时落到文末起步并聚焦 —— 滑钮应随时可用
+    if (!widget.controller.selection.isValid) {
+      widget.controller.selection = TextSelection.collapsed(
+        offset: widget.controller.text.length,
+      );
+      widget.focusNode?.requestFocus();
+    }
     final next = moveTextSelectionByGrapheme(
       widget.controller.value,
       dir,

@@ -84,9 +84,9 @@ void main() {
     expect(calls.length, greaterThanOrEqualTo(3), reason: '72px越slop后≥3步');
     expect(calls.every((c) => c.$1 == 1 && c.$2 == false), isTrue);
 
-    // 开选择开关后左滑 → extend=true 且方向 -1
+    // 单击滑钮切换选择模式后左滑 → extend=true 且方向 -1
     calls.clear();
-    await tester.tap(find.byKey(const ValueKey('cursor-select-toggle')));
+    await tester.tap(find.byKey(const ValueKey('cursor-swipe-knob')));
     await tester.pump();
     final g2 = await tester.startGesture(knob);
     for (var i = 0; i < 5; i++) {
