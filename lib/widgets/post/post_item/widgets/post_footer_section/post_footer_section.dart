@@ -514,7 +514,10 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
         children: [
           PostLinks(
             linkCounts: widget.post.linkCounts,
-            defaultExpanded: ref.watch(preferencesProvider).expandRelatedLinks,
+            // select:整 provider watch 会让任何偏好变化都重建所有在屏帖脚
+            defaultExpanded: ref.watch(
+              preferencesProvider.select((p) => p.expandRelatedLinks),
+            ),
           ),
           if (widget.post.postNumber == 1 &&
               widget.topicHasAcceptedAnswer &&

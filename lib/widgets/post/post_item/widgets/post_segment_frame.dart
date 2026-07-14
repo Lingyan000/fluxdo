@@ -36,10 +36,10 @@ class PostSegmentFrame extends StatelessWidget {
     final targetColor = buildPostTargetColor(theme, post, highlight);
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
 
-    return RepaintBoundary(
-      child: Opacity(
-        opacity: post.isDeleted || post.hidden ? 0.6 : 1.0,
-        child: Stack(
+    // 删除/隐藏帖才降透明,常规帖不挂 Opacity 节点(1.0 也要占一个
+    // RenderObject 位)
+    final dimmed = post.isDeleted || post.hidden;
+    Widget body = Stack(
           clipBehavior: Clip.none,
           children: [
             Container(
@@ -146,8 +146,9 @@ class PostSegmentFrame extends StatelessWidget {
                 color: buildPostSelectionIndicatorColor(theme),
               ),
           ],
-        ),
-      ),
+        );
+    return RepaintBoundary(
+      child: dimmed ? Opacity(opacity: 0.6, child: body) : body,
     );
   }
 }
