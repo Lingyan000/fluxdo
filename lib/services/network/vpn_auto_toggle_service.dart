@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'doh/network_settings_service.dart';
 import 'proxy/proxy_settings_service.dart';
+import 'windows_vpn_adapter_detector.dart';
 
 /// VPN 自动切换服务
 ///
@@ -32,10 +36,23 @@ class VpnAutoToggleService {
   /// 防重入标记
   bool _isSuppressing = false;
 
+  /// Windows 网卡枚举是异步的。只允许最后一次网络变化的结果生效，避免较慢的
+  /// 旧枚举覆盖较新的连接状态。
+  int _windowsDetectionGeneration = 0;
+
   void _bumpSuppression() => suppressionNotifier.value++;
 
   bool get enabled => enabledNotifier.value;
   bool get vpnActive => vpnActiveNotifier.value;
+
+  @visibleForTesting
+  static bool resolveVpnActive({
+    required List<ConnectivityResult> connectivityResults,
+    required bool hasWindowsVpnAdapter,
+  }) {
+    return connectivityResults.contains(ConnectivityResult.vpn) ||
+        hasWindowsVpnAdapter;
+  }
 
   /// DOH 是否被 VPN 压制
   bool get isDohSuppressed => _prefs.getBool(_keySuppressedDoh) ?? false;
@@ -64,7 +81,29 @@ class VpnAutoToggleService {
 
   /// 由 ConnectivityService 调用
   void handleConnectivityChanged(List<ConnectivityResult> results) {
-    final hasVpn = results.contains(ConnectivityResult.vpn);
+    if (Platform.isWindows) {
+      final generation = ++_windowsDetectionGeneration;
+      unawaited(_detectWindowsVpnAndApply(results, generation));
+      return;
+    }
+    _applyVpnState(results.contains(ConnectivityResult.vpn));
+  }
+
+  Future<void> _detectWindowsVpnAndApply(
+    List<ConnectivityResult> results,
+    int generation,
+  ) async {
+    final adapterStatus = await WindowsVpnAdapterDetector.detect();
+    if (generation != _windowsDetectionGeneration) return;
+    _applyVpnState(
+      resolveVpnActive(
+        connectivityResults: results,
+        hasWindowsVpnAdapter: adapterStatus.active,
+      ),
+    );
+  }
+
+  void _applyVpnState(bool hasVpn) {
     vpnActiveNotifier.value = hasVpn;
 
     if (!enabled) return;
@@ -78,7 +117,13 @@ class VpnAutoToggleService {
 
   /// 启动时同步一次 VPN 状态，避免首个请求发出后再切换网络配置。
   Future<void> syncInitialState(List<ConnectivityResult> results) async {
-    final hasVpn = results.contains(ConnectivityResult.vpn);
+    final hasWindowsVpnAdapter = Platform.isWindows
+        ? (await WindowsVpnAdapterDetector.detect()).active
+        : false;
+    final hasVpn = resolveVpnActive(
+      connectivityResults: results,
+      hasWindowsVpnAdapter: hasWindowsVpnAdapter,
+    );
     vpnActiveNotifier.value = hasVpn;
 
     if (!enabled) return;
