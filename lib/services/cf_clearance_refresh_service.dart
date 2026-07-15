@@ -58,6 +58,9 @@ class CfClearanceRefreshService {
   bool _isForeground = true;
   bool _pausedByLifecycle = false;
   bool _isSyncingCookies = false;
+  /// Windows 冷启动：是否已安排延后；是否已允许立即拉起。
+  bool _windowsColdDeferred = false;
+  bool _windowsAllowImmediate = false;
 
   int _generation = 0;
   int _consecutiveFailures = 0;
@@ -125,6 +128,23 @@ class CfClearanceRefreshService {
     if (_isRunning && !_isDisposing) return;
     if (!_isForeground) {
       CfChallengeLogger.log('[CfRefresh] 当前处于后台，延后启动');
+      return;
+    }
+
+    // Windows:Turnstile 常驻 headless WebView 与冷启动 bootstrap 叠在一起
+    // 会抢平台主线程。首屏 40s 内只记账不拉起,到期后补 start。
+    if (io.Platform.isWindows && !_windowsAllowImmediate) {
+      if (!_windowsColdDeferred) {
+        _windowsColdDeferred = true;
+        _cancelDelayedTimers();
+        CfChallengeLogger.log('[CfRefresh] Windows 冷启动延后 40s 再拉起');
+        _delayedRestartTimer = Timer(const Duration(seconds: 40), () {
+          _windowsAllowImmediate = true;
+          if (_shouldBeRunning && _isForeground && !_isRunning && !_isDisposing) {
+            start();
+          }
+        });
+      }
       return;
     }
 

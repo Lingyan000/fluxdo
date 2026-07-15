@@ -79,7 +79,18 @@ class BrowserTrustCoordinator {
   }
 
   /// 启动期轻量准备：只做 cookie priming，不加载首页，不阻塞 runApp。
+  ///
+  /// Windows 上跳过：CookieManager IPC 会抢平台主线程(实测 priming ~4s)，
+  /// 真正创建 WebView 的路径会自己 await prime。
   void prepareStartup({String reason = 'startup'}) {
+    // Windows: 启动期 CookieManager priming 实测 ~4s 且走平台主线程,
+    // 是"进应用几秒后突然变钝"的主要来源之一。真正创建 WebView 的
+    // 路径(session bootstrap / login / iframe)都会自己 await prime,
+    // 这里不再抢跑。
+    if (io.Platform.isWindows) {
+      _log('skip startup priming on Windows reason=$reason');
+      return;
+    }
     unawaited(
       _primeWebViewCookies(reason: reason).catchError((Object e) {
         _log('startup priming failed: $e', level: 'warning');
@@ -277,6 +288,11 @@ class BrowserTrustCoordinator {
 
     unawaited(() async {
       try {
+        // Windows:与 session bootstrap 同窗口延后,避免首屏被 priming+headless
+        // WebView 创建销毁打断。Dio 侧 ensureInBackground 也会在 25s 后补跑。
+        if (io.Platform.isWindows) {
+          await Future<void>.delayed(const Duration(seconds: 25));
+        }
         final synced = await ensureBrowserTrust(
           reason: '$reason:native_preload_settle',
         );

@@ -7,6 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../constants.dart';
 import '../utils/frame_jank_monitor.dart';
+import '../utils/scroll_busy_signal.dart';
 import 'log/log_writer.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
@@ -95,6 +96,13 @@ class WebViewSessionCookieRefreshService {
   /// 绕过注入候选并以 no-cache 拉插件 JS,强制新鲜 discover;成功即复位。
   bool _forceFreshPlugin = false;
 
+  /// Windows:冷启动后立即 headless bootstrap 会抢平台主线程,表现为
+  /// "刚进很顺,几秒后整窗变钝"。把非 force 的 bootstrap 延后到首屏交互后。
+  static const Duration _windowsBootstrapDelay = Duration(seconds: 25);
+  DateTime? _firstEnsureAt;
+  bool _windowsDeferredScheduled = false;
+  Timer? _windowsDeferredTimer;
+
   /// 当前失败退避冷却:45s → 90s → 3m → 6m → 12m → 15m 封顶。
   Duration get _effectiveCooldown {
     if (_failureStreak <= 1) return _attemptCooldown;
@@ -141,6 +149,10 @@ class WebViewSessionCookieRefreshService {
     _lastAttemptAt = null;
     _failureStreak = 0;
     _forceFreshPlugin = false;
+    _firstEnsureAt = null;
+    _windowsDeferredScheduled = false;
+    _windowsDeferredTimer?.cancel();
+    _windowsDeferredTimer = null;
     _logEnsureEvent(
       event: 'webview_session_sync_reset',
       reason: reason,
@@ -173,6 +185,26 @@ class WebViewSessionCookieRefreshService {
         extra: {'skipReason': 'no_t'},
       );
       return const SessionBootstrapResult.failure(phase: 'no_t');
+    }
+
+    // Windows:首屏交互窗口内推迟 bootstrap(非 force)。force / CF recover
+    // 仍立即执行。延后只调度一次,到期后自动补跑。
+    if (!force && io.Platform.isWindows) {
+      _firstEnsureAt ??= DateTime.now();
+      final age = DateTime.now().difference(_firstEnsureAt!);
+      if (age < _windowsBootstrapDelay) {
+        _scheduleWindowsDeferredBootstrap(reason);
+        _logEnsureEvent(
+          event: 'webview_session_sync_skipped',
+          reason: reason,
+          level: 'info',
+          extra: {
+            'skipReason': 'windows_startup_defer',
+            'deferMs': (_windowsBootstrapDelay - age).inMilliseconds,
+          },
+        );
+        return const SessionBootstrapResult.failure(phase: 'windows_startup_defer');
+      }
     }
 
     // fingerprint 上报对齐浏览器语义:每次完整页面加载跑一次(SPA 内路由
@@ -259,6 +291,26 @@ class WebViewSessionCookieRefreshService {
         });
     _activeRefresh = future;
     return future;
+  }
+
+  void _scheduleWindowsDeferredBootstrap(String reason) {
+    if (_windowsDeferredScheduled) return;
+    _windowsDeferredScheduled = true;
+    final started = _firstEnsureAt ?? DateTime.now();
+    final wait = _windowsBootstrapDelay - DateTime.now().difference(started);
+    _windowsDeferredTimer?.cancel();
+    _windowsDeferredTimer = Timer(wait.isNegative ? Duration.zero : wait, () {
+      unawaited(_runWindowsDeferredBootstrap(reason));
+    });
+  }
+
+  /// 到期后若用户仍在滚动,再等最多 15s 空闲,避免 headless create 撞上首屏滑动。
+  Future<void> _runWindowsDeferredBootstrap(String reason) async {
+    final idleDeadline = DateTime.now().add(const Duration(seconds: 15));
+    while (ScrollBusySignal.isBusy && DateTime.now().isBefore(idleDeadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    ensureInBackground(reason: 'windows_deferred:$reason');
   }
 
   void ensureInBackground({String reason = 'unknown', bool force = false}) {
