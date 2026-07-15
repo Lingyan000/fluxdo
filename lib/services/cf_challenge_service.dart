@@ -1439,8 +1439,19 @@ class _CfChallengePageState extends State<CfChallengePage> {
       CfChallengeLogger.log('[VERIFY] Passed response headers: $headers');
     }
 
-    unawaited(_syncVerifiedCookiesBestEffort());
-    if (mounted && !_hasPopped) _finish(true);
+    // 404 表示 WebView 当前已被 Cloudflare 放行。必须先把这个有效会话的
+    // cf_clearance 同步回此前已清空的 Dio CookieJar，再允许销毁 WebView；
+    // 后台同步与 pop 并发会让 DevTools/Cookie 回调访问已 dispose controller。
+    await _syncVerifiedCookiesBestEffort();
+    if (!mounted || _hasPopped) return;
+
+    // 本方法可能运行在 shouldOverrideUrlLoading/onReceivedHttpError 等原生
+    // WebView 回调栈内。若在回调返回 Action 之前同步 pop，插件仍在使用对应
+    // InAppWebView/UserContentController，Windows 下会触发原生 UAF(退出码 139)。
+    // 推迟到下一帧，让当前平台回调先完整退栈后再释放原生对象。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_hasPopped) _finish(true);
+    });
   }
 
   Future<void> _syncVerifiedCookiesBestEffort() async {
