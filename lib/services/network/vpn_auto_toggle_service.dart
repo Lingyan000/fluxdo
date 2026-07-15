@@ -54,6 +54,17 @@ class VpnAutoToggleService {
         hasWindowsVpnAdapter;
   }
 
+  /// TUN 名称识别目前仅补充状态展示，不扩大自动压制的触发范围。
+  ///
+  /// Windows 上部分 TUN 被报告为以太网；若仅因名称命中就立即关闭 DoH/上游
+  /// 代理，会让正在使用的传输适配器在启动阶段切换，改变 Dio 的 TLS/CF 信任
+  /// 上下文。先保持上游原有语义：只有 connectivity_plus 明确报告 VPN 时才
+  /// 执行自动压制。
+  @visibleForTesting
+  static bool shouldAutoSuppress(List<ConnectivityResult> connectivityResults) {
+    return connectivityResults.contains(ConnectivityResult.vpn);
+  }
+
   /// DOH 是否被 VPN 压制
   bool get isDohSuppressed => _prefs.getBool(_keySuppressedDoh) ?? false;
 
@@ -86,7 +97,8 @@ class VpnAutoToggleService {
       unawaited(_detectWindowsVpnAndApply(results, generation));
       return;
     }
-    _applyVpnState(results.contains(ConnectivityResult.vpn));
+    final hasVpn = results.contains(ConnectivityResult.vpn);
+    _applyVpnState(hasVpn, shouldSuppress: hasVpn);
   }
 
   Future<void> _detectWindowsVpnAndApply(
@@ -100,15 +112,16 @@ class VpnAutoToggleService {
         connectivityResults: results,
         hasWindowsVpnAdapter: adapterStatus.active,
       ),
+      shouldSuppress: shouldAutoSuppress(results),
     );
   }
 
-  void _applyVpnState(bool hasVpn) {
+  void _applyVpnState(bool hasVpn, {required bool shouldSuppress}) {
     vpnActiveNotifier.value = hasVpn;
 
     if (!enabled) return;
 
-    if (hasVpn) {
+    if (shouldSuppress) {
       _suppress();
     } else {
       _restore();
@@ -128,7 +141,7 @@ class VpnAutoToggleService {
 
     if (!enabled) return;
 
-    if (hasVpn) {
+    if (shouldAutoSuppress(results)) {
       await _suppress();
     } else {
       await _restore();

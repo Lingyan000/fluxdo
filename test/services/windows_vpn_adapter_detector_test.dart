@@ -51,5 +51,18 @@ void main() {
         isFalse,
       );
     });
+
+    test('TUN 补充信号不扩大自动压制范围', () {
+      expect(
+        VpnAutoToggleService.shouldAutoSuppress(const [
+          ConnectivityResult.ethernet,
+        ]),
+        isFalse,
+      );
+      expect(
+        VpnAutoToggleService.shouldAutoSuppress(const [ConnectivityResult.vpn]),
+        isTrue,
+      );
+    });
   });
 }
