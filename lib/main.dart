@@ -28,6 +28,7 @@ import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'services/network/cookie/csrf_token_service.dart';
+import 'services/network/system_proxy_service.dart';
 import 'services/network/cookie/cookie_devtools_extension.dart';
 import 'services/network/cookie/cookie_jar_service.dart';
 import 'services/network/cookie/cookie_store_observer.dart';
@@ -321,6 +322,11 @@ Future<void> main() async {
   }
 
   await NetworkSettingsService.instance.initialize(prefs);
+  // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
+  // 同一出口,cf_clearance 才对两侧同时有效。
+  if (Platform.isWindows) {
+    SystemProxyService.instance.start();
+  }
   VpnAutoToggleService.instance.initialize(prefs);
   try {
     final initialConnectivity =
