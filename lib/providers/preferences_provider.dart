@@ -155,6 +155,15 @@ class AppPreferences {
   /// 发帖前 AI 审核使用的模型 key（providerId:modelId）
   final String? aiPostReviewModelKey;
 
+  /// AI 翻译功能开关。关闭时帖子菜单不显示翻译入口。
+  final bool aiTranslationEnabled;
+
+  /// AI 翻译目标语言。null 表示跟随应用语言。
+  final String? aiTranslationTargetLanguage;
+
+  /// AI 翻译使用的模型 key（providerId:modelId）。
+  final String? aiTranslationModelKey;
+
   /// hcaptcha 验证 POST endpoint 覆盖。null = 用内置 fallback 列表 (尝试
   /// `/captcha/hcaptcha/create.json` → `/hcaptcha/create.json`)。
   /// 站长改 mount path 时不发版即可改这里。
@@ -251,6 +260,9 @@ class AppPreferences {
     this.useRichComposer = false,
     this.aiPostReviewEnabled = false,
     this.aiPostReviewModelKey,
+    this.aiTranslationEnabled = false,
+    this.aiTranslationTargetLanguage,
+    this.aiTranslationModelKey,
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
     this.showSignatures = false,
@@ -299,6 +311,9 @@ class AppPreferences {
     bool? useRichComposer,
     bool? aiPostReviewEnabled,
     Object? aiPostReviewModelKey = _unset,
+    bool? aiTranslationEnabled,
+    Object? aiTranslationTargetLanguage = _unset,
+    Object? aiTranslationModelKey = _unset,
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
     bool? showSignatures,
@@ -350,6 +365,15 @@ class AppPreferences {
       aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
           ? this.aiPostReviewModelKey
           : aiPostReviewModelKey as String?,
+      aiTranslationEnabled:
+          aiTranslationEnabled ?? this.aiTranslationEnabled,
+      aiTranslationTargetLanguage:
+          identical(aiTranslationTargetLanguage, _unset)
+          ? this.aiTranslationTargetLanguage
+          : aiTranslationTargetLanguage as String?,
+      aiTranslationModelKey: identical(aiTranslationModelKey, _unset)
+          ? this.aiTranslationModelKey
+          : aiTranslationModelKey as String?,
       hcaptchaCreateEndpoint: identical(hcaptchaCreateEndpoint, _unset)
           ? this.hcaptchaCreateEndpoint
           : hcaptchaCreateEndpoint as String?,
@@ -415,6 +439,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _useRichComposerKey = 'pref_use_rich_composer';
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
   static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
+  static const String _aiTranslationEnabledKey = 'pref_ai_translation_enabled';
+  static const String _aiTranslationTargetLanguageKey =
+      'pref_ai_translation_target_language';
+  static const String _aiTranslationModelPrefKey = 'pref_ai_translation_model';
   static const String _hcaptchaCreateEndpointKey =
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
@@ -484,6 +512,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           useRichComposer: _prefs.getBool(_useRichComposerKey) ?? false,
           aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
           aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
+          aiTranslationEnabled:
+              _prefs.getBool(_aiTranslationEnabledKey) ?? false,
+          aiTranslationTargetLanguage: _prefs.getString(
+            _aiTranslationTargetLanguageKey,
+          ),
+          aiTranslationModelKey: _prefs.getString(_aiTranslationModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
@@ -692,6 +726,32 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       await _prefs.remove(_aiPostReviewModelPrefKey);
     } else {
       await _prefs.setString(_aiPostReviewModelPrefKey, key);
+    }
+  }
+
+  Future<void> setAiTranslationEnabled(bool enabled) async {
+    if (state.aiTranslationEnabled == enabled) return;
+    state = state.copyWith(aiTranslationEnabled: enabled);
+    await _prefs.setBool(_aiTranslationEnabledKey, enabled);
+  }
+
+  Future<void> setAiTranslationTargetLanguage(String? language) async {
+    if (state.aiTranslationTargetLanguage == language) return;
+    state = state.copyWith(aiTranslationTargetLanguage: language);
+    if (language == null || language.isEmpty) {
+      await _prefs.remove(_aiTranslationTargetLanguageKey);
+    } else {
+      await _prefs.setString(_aiTranslationTargetLanguageKey, language);
+    }
+  }
+
+  Future<void> setAiTranslationModelKey(String? key) async {
+    if (state.aiTranslationModelKey == key) return;
+    state = state.copyWith(aiTranslationModelKey: key);
+    if (key == null || key.isEmpty) {
+      await _prefs.remove(_aiTranslationModelPrefKey);
+    } else {
+      await _prefs.setString(_aiTranslationModelPrefKey, key);
     }
   }
 
