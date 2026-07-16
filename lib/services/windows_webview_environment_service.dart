@@ -81,14 +81,20 @@ class WindowsWebViewEnvironmentService {
         }
       }
 
-      final proxyArg = _currentProxyUrl != null
-          ? '--proxy-server=$_currentProxyUrl'
-          : null;
+      // 动态 SVG 等帖子内容会频繁创建/销毁 CompositionController。WebView2
+      // 默认会为这些 data 页面保留大量独立 renderer,实机曾累计到 20+
+      // 个存活进程并拖慢系统消息泵(表现为持续高 vsyncOverhead)。限制的
+      // 只是 renderer 数量,不影响浏览器、GPU、网络服务等基础子进程;
+      // 6 个也足够登录/CF 与帖子内容并行。
+      final browserArguments = <String>['--renderer-process-limit=6'];
+      if (_currentProxyUrl != null) {
+        browserArguments.add('--proxy-server=$_currentProxyUrl');
+      }
 
       _environment = await WebViewEnvironment.create(
         settings: WebViewEnvironmentSettings(
           userDataFolder: _userDataFolder,
-          additionalBrowserArguments: proxyArg,
+          additionalBrowserArguments: browserArguments.join(' '),
         ),
       );
       _cookieManager = CookieManager.instance(webViewEnvironment: _environment);
@@ -96,7 +102,7 @@ class WindowsWebViewEnvironmentService {
       debugPrint(
         '[WebViewEnv] Windows WebView2 environment initialized: '
         'userDataFolder=$_userDataFolder'
-        '${proxyArg != null ? ', proxy=$_currentProxyUrl' : ''}',
+        '${_currentProxyUrl != null ? ', proxy=$_currentProxyUrl' : ''}',
       );
     } catch (e, stackTrace) {
       debugPrint('[WebViewEnv] Windows environment init failed: $e');
