@@ -57,4 +57,51 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
   });
+
+  testWidgets('横屏二级平行视界隐藏全局侧栏', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(1400, 900)),
+            child: AdaptiveScaffold(
+              selectedIndex: 0,
+              onDestinationSelected: (_) {},
+              hideNavigationRail: true,
+              destinations: const [
+                AdaptiveDestination(
+                  id: 'home',
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: '首页',
+                ),
+                AdaptiveDestination(
+                  id: 'messages',
+                  icon: Icon(Icons.mail_outline),
+                  selectedIcon: Icon(Icons.mail),
+                  label: '私信',
+                ),
+              ],
+              body: const SizedBox.expand(child: Text('平行视界内容')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AdaptiveNavigationRail), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('平行视界内容'), findsOneWidget);
+  });
 }
