@@ -8,6 +8,7 @@ import '../../../l10n/s.dart';
 import '../../../services/network/doh/network_settings_service.dart';
 import '../../../services/network/doh_proxy/cert_preference_service.dart';
 import '../../../services/network/doh_proxy/per_device_cert_service.dart';
+import '../../../services/network/doh_proxy/windows_cert_trust_service.dart';
 import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/toast_service.dart';
 import 'package:common_ui/common_ui.dart';
@@ -102,6 +103,11 @@ class _DohSettingsCardInner extends StatelessWidget {
               ? (value) =>
                   VpnAutoToggleService.instance.setDohSuppressed(value)
               : (value) async {
+                  // Windows: 网关 MITM 依赖系统信任库,CA 未安装时 WebView2
+                  // 握手必然失败(后台反复重试拖垮 UI),开启前强制校验
+                  if (value && !await ensureWindowsCertTrusted(context)) {
+                    return;
+                  }
                   await service.setDohEnabled(value);
                 },
         ),
@@ -301,6 +307,43 @@ class _DohSettingsCardInner extends StatelessWidget {
   }
 }
 
+/// Windows: 确保网关 MITM 的 CA 已进入用户根信任库
+///
+/// 未安装时弹对话框引导安装(certutil 用户级,系统弹框二次确认)。
+/// 返回 false 表示仍未信任,调用方应放弃开启依赖网关的功能。
+Future<bool> ensureWindowsCertTrusted(BuildContext context) async {
+  if (!Platform.isWindows) return true;
+  final trustService = WindowsCertTrustService.instance;
+  if (await trustService.isInstalled()) return true;
+  if (!context.mounted) return false;
+
+  final l10n = context.l10n;
+  final shouldInstall = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(l10n.dohSettings_certDialogTitle),
+      content: Text(l10n.dohSettings_certDialogDesc),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(l10n.common_cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text(l10n.dohSettings_certInstall),
+        ),
+      ],
+    ),
+  );
+  if (shouldInstall != true) return false;
+
+  final installed = await trustService.install();
+  if (!installed && context.mounted) {
+    ToastService.show(context.l10n.dohSettings_certRequired);
+  }
+  return installed;
+}
+
 /// 证书引导 Widget
 ///
 /// iOS（强制 per-device）：显示安装引导
@@ -337,7 +380,25 @@ class _CertGuideState extends State<_CertGuide> {
       }
     } else {
       final usePerDevice = await CertPreferenceService.usePerDevice();
-      if (mounted) setState(() { _perDeviceEnabled = usePerDevice; _loading = false; });
+      // Windows: WebView2 按系统信任库校验网关 MITM 证书,必须检测安装状态
+      final installed = Platform.isWindows
+          ? await WindowsCertTrustService.instance.isInstalled()
+          : false;
+      if (mounted) {
+        setState(() {
+          _perDeviceEnabled = usePerDevice;
+          _installed = installed;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _installWindowsCert() async {
+    final ok = await WindowsCertTrustService.instance.install();
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _installed = true);
     }
   }
 
@@ -349,8 +410,36 @@ class _CertGuideState extends State<_CertGuide> {
   }
 
   Future<void> _togglePerDevice(bool value) async {
+    // Windows 开启设备证书时，先安装并信任新 CA，再重启网关；用户取消
+    // 安装则回滚偏好，避免把正在工作的旧证书链路切断。
+    if (Platform.isWindows && value) {
+      await CertPreferenceService.setUsePerDevice(true);
+      final trusted = mounted && await ensureWindowsCertTrusted(context);
+      if (!trusted) {
+        await CertPreferenceService.setUsePerDevice(false);
+        if (mounted) setState(() => _perDeviceEnabled = false);
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _perDeviceEnabled = true;
+          _installed = true;
+        });
+      }
+      await NetworkSettingsService.instance.restartProxy();
+      return;
+    }
+
     await CertPreferenceService.setUsePerDevice(value);
-    setState(() => _perDeviceEnabled = value);
+    if (mounted) setState(() => _perDeviceEnabled = value);
+
+    // Windows 关闭设备证书等同于退出本地 MITM 链路：关闭 DoH/网关，
+    // 不切换到另一张 CA 后继续运行，也不再弹出证书安装对话框。
+    if (Platform.isWindows && !value) {
+      await NetworkSettingsService.instance.setDohEnabled(false);
+      return;
+    }
+
     // 重启代理以应用新证书
     await NetworkSettingsService.instance.restartProxy();
   }
@@ -393,7 +482,7 @@ class _CertGuideState extends State<_CertGuide> {
     }
 
     // 其他平台: per-device 证书开关
-    return SwitchListTile(
+    final perDeviceSwitch = SwitchListTile(
       secondary: Icon(
         _perDeviceEnabled ? Symbols.verified_user_rounded : Symbols.security_rounded,
         color: _perDeviceEnabled ? Colors.green : null,
@@ -408,5 +497,49 @@ class _CertGuideState extends State<_CertGuide> {
       value: _perDeviceEnabled,
       onChanged: widget.isApplying ? null : _togglePerDevice,
     );
+
+    // Windows: 网关 MITM 依赖系统信任库,未安装 CA 时 WebView2 全部握手失败,
+    // 必须给出安装引导(certutil 用户级安装,系统弹框确认)
+    if (Platform.isWindows) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          perDeviceSwitch,
+          ListTile(
+            leading: Icon(
+              _installed
+                  ? Symbols.verified_user_rounded
+                  : Symbols.security_rounded,
+              color: _installed ? Colors.green : theme.colorScheme.error,
+            ),
+            title: Text(
+              _installed
+                  ? l10n.dohSettings_certInstalled
+                  : l10n.dohSettings_certRequired,
+            ),
+            subtitle: Text(
+              _installed
+                  ? l10n.dohSettings_certReinstallHint
+                  : l10n.dohSettings_certInstallHint,
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+            trailing: _installed
+                ? OutlinedButton(
+                    onPressed: _installWindowsCert,
+                    child: Text(l10n.dohSettings_certReinstall),
+                  )
+                : FilledButton(
+                    onPressed: _installWindowsCert,
+                    child: Text(l10n.dohSettings_certInstall),
+                  ),
+          ),
+        ],
+      );
+    }
+
+    return perDeviceSwitch;
   }
 }

@@ -14,6 +14,7 @@ import '../doh_proxy/doh_proxy_ffi.dart';
 import '../doh_proxy/doh_proxy_service.dart';
 import '../doh_proxy/per_device_cert_service.dart';
 import '../doh_proxy/proxy_certificate.dart';
+import '../doh_proxy/windows_cert_trust_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
@@ -264,7 +265,17 @@ class NetworkSettingsService {
   Future<void> initialize(SharedPreferences prefs) async {
     if (_prefs != null) return;
     _prefs = prefs;
-    final dohEnabled = prefs.getBool(_dohEnabledKey) ?? false;
+    var dohEnabled = prefs.getBool(_dohEnabledKey) ?? false;
+    // 兼容旧版本遗留的坏状态：关闭设备证书后偏好已切换到另一张 CA，
+    // 但 DoH 仍保持开启。Windows WebView2 不信任当前 CA 时若继续启动网关，
+    // 会进入 CertificateUnknown → bootstrap 超时 → 业务请求重试的卡顿循环。
+    if (Platform.isWindows &&
+        dohEnabled &&
+        !await WindowsCertTrustService.instance.isInstalled()) {
+      dohEnabled = false;
+      await prefs.setBool(_dohEnabledKey, false);
+      debugPrint('[DOH] 当前 CA 未受 Windows 信任，启动前自动关闭 DoH');
+    }
     final selected =
         prefs.getString(_dohSelectedKey) ?? _defaultServers.first.url;
     final customRaw = prefs.getString(_dohCustomKey);
