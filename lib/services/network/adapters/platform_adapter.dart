@@ -247,6 +247,10 @@ HttpClientAdapter _createNativeAdapter() {
       createHttpClient: () {
         final client = HttpClient();
         client.findProxy = (uri) {
+          // Gateway 模式会把 https URL 改写为明文 http 指向本地 DoH 网关
+          // (127.0.0.1:port)。这类回环请求绝不能再进系统代理,否则明文
+          // HTTP 会被代理直接送到 CF,触发 Always-Use-HTTPS 301 死循环。
+          if (_isLoopbackHost(uri.host)) return 'DIRECT';
           final proxy = SystemProxyService.instance.effectiveProxyUrl;
           if (proxy == null) return 'DIRECT';
           final u = Uri.tryParse(proxy);
@@ -279,6 +283,13 @@ HttpClientAdapter _createNativeAdapter() {
     return NativeAdapter(createCupertinoConfiguration: () => config);
   }
   return NativeAdapter();
+}
+
+/// 回环地址判定:本地网关/本地代理的请求必须直连,不跟随系统代理。
+bool _isLoopbackHost(String host) {
+  if (host == 'localhost') return true;
+  final address = InternetAddress.tryParse(host);
+  return address?.isLoopback ?? false;
 }
 
 /// macOS 版本 < 14 时需要降级为 IO 适配器。
