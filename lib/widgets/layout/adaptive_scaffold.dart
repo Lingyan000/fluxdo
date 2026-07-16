@@ -32,6 +32,7 @@ class AdaptiveScaffold extends ConsumerWidget {
     this.railLeading,
     this.railBottomLeading,
     this.extendedRail = false,
+    this.hideNavigationRail = false,
   });
 
   final int selectedIndex;
@@ -43,9 +44,14 @@ class AdaptiveScaffold extends ConsumerWidget {
   final Widget? railBottomLeading;
   final bool extendedRail;
 
+  /// 二级平行视界中两侧都属于内容页时隐藏最外层全局侧栏，释放横向空间。
+  /// 手机底栏不受影响。
+  final bool hideNavigationRail;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showRail = Responsive.showNavigationRail(context);
+    final showRail =
+        Responsive.showNavigationRail(context) && !hideNavigationRail;
     final sidebarCategoryController = ref.read(
       activeSidebarCategoryIdProvider.notifier,
     );
@@ -137,7 +143,7 @@ class AdaptiveScaffold extends ConsumerWidget {
             ],
           ),
           floatingActionButton: floatingActionButton,
-          bottomNavigationBar: showRail
+          bottomNavigationBar: showRail || hideNavigationRail
               ? null
               : _AnimatedBottomNav(
                   selectedIndex: selectedIndex,
@@ -163,8 +169,7 @@ class AdaptiveScaffold extends ConsumerWidget {
             if (selectedIndex != 0) {
               onDestinationSelected(0);
             }
-            ref.read(currentTabCategoryIdProvider.notifier).state =
-                category.id;
+            ref.read(currentTabCategoryIdProvider.notifier).state = category.id;
           },
         ),
       ],

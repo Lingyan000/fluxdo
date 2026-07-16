@@ -17,6 +17,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 import 'pages/topics_page.dart';
 import 'pages/data_management_page.dart';
 import 'providers/discourse_providers.dart';
+import 'providers/selected_topic_provider.dart';
 import 'providers/locale_provider.dart';
 import 'widgets/ai/builtin_presets_factory.dart';
 import 'providers/message_bus_providers.dart';
@@ -1321,6 +1322,14 @@ class _MainPageState extends ConsumerState<MainPage>
     final hasNotificationEntry = entries.any(
       (e) => e.id == NavEntryIds.notifications,
     );
+    final activeEntryId = pageEntries[safePageIndex].id;
+    final topicParallelStacked = ref.watch(selectedTopicProvider).isStacked;
+    final messageParallelStacked = ref.watch(selectedMessageProvider).isStacked;
+    final seekingParallelStacked = ref.watch(selectedSeekingProvider).isStacked;
+    final hideNavigationRail =
+        (activeEntryId == NavEntryIds.home && topicParallelStacked) ||
+        (activeEntryId == NavEntryIds.messages && messageParallelStacked) ||
+        (activeEntryId == NavEntryIds.seeking && seekingParallelStacked);
 
     // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁
     Widget page = PopScope(
@@ -1354,6 +1363,7 @@ class _MainPageState extends ConsumerState<MainPage>
         railBottomLeading: (user != null && !hasNotificationEntry)
             ? const NotificationIconButton()
             : null,
+        hideNavigationRail: hideNavigationRail,
         body: IndexedStack(
           index: safePageIndex,
           children: [
