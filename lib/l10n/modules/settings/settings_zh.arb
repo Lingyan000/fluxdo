@@ -118,6 +118,7 @@
   "settings_searchHint": "搜索设置项...",
   "settings_shortcuts": "快捷键",
   "settings_title": "应用设置",
+  "settings_selectHint": "选择左侧设置项，在此处进行配置",
   "shortcuts_closeOverlay": "关闭浮层",
   "shortcuts_conflict": "与「{action}」冲突",
   "@shortcuts_conflict": {

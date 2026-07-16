@@ -3,7 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:html/dom.dart' as dom;
 
 import '../../../../models/topic.dart';
-import '../../../../pages/user_profile_page.dart';
+import '../../../../providers/selected_topic_provider.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../services/toast_service.dart';
 import '../../../../widgets/common/smart_avatar.dart';
@@ -474,11 +474,7 @@ class _PolicyWidgetState extends State<_PolicyWidget> {
           if (index < users.length) {
             final u = users[index];
             return GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => UserProfilePage(username: u.username),
-                ));
-              },
+              onTap: () => EmbeddedStackScope.openProfile(context, u.username),
               child: SmartAvatar(
                 imageUrl: u.getAvatarUrl(size: 48),
                 radius: 12,

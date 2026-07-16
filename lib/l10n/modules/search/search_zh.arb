@@ -51,6 +51,7 @@
   "search_noLimit": "不限",
   "search_noPopularTags": "暂无热门标签",
   "search_noResults": "没有找到相关结果",
+  "search_selectResultHint": "选择一个搜索结果，在此处查看详情",
   "search_popularTags": "热门标签",
   "search_recentSearches": "最近搜索",
   "search_replyCount": "{count} 条回复",
