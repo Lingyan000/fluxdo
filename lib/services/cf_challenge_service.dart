@@ -14,6 +14,7 @@ import 'network/cookie/cookie_jar_service.dart';
 import 'local_notification_service.dart'; // 用于获取全局 navigatorKey
 import 'cf_challenge_logger.dart';
 import 'cf_clearance_refresh_service.dart';
+import 'embedded_browser_controller_pool.dart';
 import 'toast_service.dart';
 import 'webview_settings.dart';
 import 'windows_webview_environment_service.dart';
@@ -33,9 +34,24 @@ class CfChallengeService {
   CfChallengeService._internal();
 
   bool _isVerifying = false;
+  bool? _completedVerificationResult;
+  Completer<void>? _manualTeardownCompleter;
 
   /// CF 验证是否正在进行中（用于外部判断是否应忽略路由变化）
   bool get isVerifying => _isVerifying;
+
+  /// 等待当前手动验证 WebView 从 Widget 树移除并走完原生析构冷却。
+  ///
+  /// BrowserTrust 在拿到 clearance 后仍需要创建 Session Headless WebView；
+  /// 不能只等验证结果，因为结果会早于 Windows WebView2 Controller 完全析构。
+  Future<void> waitForManualTeardown() async {
+    while (true) {
+      final teardown = _manualTeardownCompleter;
+      if (teardown == null) return;
+      await teardown.future;
+      if (!_isVerifying) return;
+    }
+  }
 
   /// CF 验证状态变化通知（true=进行中, false=空闲）。
   /// 拦截器 / ScreenTrack 等订阅它来在 CF 期间冻结业务流量与数据采集。
@@ -51,8 +67,42 @@ class CfChallengeService {
   void _setVerifying(bool value) {
     if (_isVerifying == value) return;
     _isVerifying = value;
+    if (value) {
+      _completedVerificationResult = null;
+      final current = _manualTeardownCompleter;
+      if (current == null || current.isCompleted) {
+        _manualTeardownCompleter = Completer<void>();
+      }
+    }
+    if (io.Platform.isWindows) {
+      if (value) {
+        // 不等待的第一阶段：立即阻止新的帖子 WebView 获取槽位，并通知
+        // 已有 Controller 撤下；验证入口随后会 await 完整 drain。
+        unawaited(EmbeddedBrowserControllerPool.instance.suspendAndDrain());
+      } else {
+        EmbeddedBrowserControllerPool.instance.resume();
+      }
+    }
     inProgressNotifier.value = value;
+    if (!value) {
+      _completedVerificationResult = null;
+      final teardown = _manualTeardownCompleter;
+      if (teardown != null && !teardown.isCompleted) {
+        teardown.complete();
+      }
+      _manualTeardownCompleter = null;
+    }
   }
+
+  /// 验证 WebView 关闭后，原生 WebView2 控制器的销毁是异步的（发生在插件
+  /// 的后台线程），比 Flutter 侧 OverlayEntry.remove() 慢一截。如果上一个
+  /// 还没销毁干净就立刻起下一个 InAppWebView，在 Windows 上会撞上
+  /// flutter_inappwebview_windows_plugin 的一个原生崩溃（0xc0000005 访问越
+  /// 界），连续多次 CF 验证失败重试（如连续重新授权触发盾）时复现过。
+  /// 这里让 `_isVerifying` 多扛一小段时间，复用已有的 `_verifyCompleter`
+  /// 排队机制把这段时间内的新验证请求全部合流，不需要额外状态。
+  static const _postCleanupCooldown = Duration(milliseconds: 1200);
+  static const _refreshRestartCooldown = Duration(milliseconds: 300);
 
   /// 是否在拦截到 CF 盾时自动弹出验证 UI（默认 true）
   /// 关闭后 [CfChallengeInterceptor] 命中 CF 盾时会静默 reject，
@@ -70,6 +120,7 @@ class CfChallengeService {
   DateTime? _cooldownUntil;
   int _consecutiveFailures = 0;
   static const _cooldownDuration = Duration(seconds: 30);
+  static const _ineffectiveClearanceCooldown = Duration(seconds: 60);
   static const _maxFailuresBeforeCooldown = 3;
   static const _toastCooldown = Duration(seconds: 2);
 
@@ -104,6 +155,21 @@ class CfChallengeService {
         '[CfChallenge] 验证失败 $_consecutiveFailures/$_maxFailuresBeforeCooldown，允许重试',
       );
     }
+  }
+
+  /// 验证「成功」但铸出的 cf_clearance 对 Dio 无效(重试仍 403)时立即冷却。
+  ///
+  /// 这是确定性环境问题(典型:Dio 与 WebView2 出口 IP 不一致,clearance
+  /// 绑定了另一侧的 IP),重复验证不可能成功,不能走 3 次计数——否则每个
+  /// 403 都会拉起一轮完整验证,形成删 cookie → 验证 → 再 403 的无限循环。
+  void startIneffectiveClearanceCooldown() {
+    _consecutiveFailures = _maxFailuresBeforeCooldown;
+    _cooldownUntil = DateTime.now().add(_ineffectiveClearanceCooldown);
+    debugPrint(
+      '[CfChallenge] 验证完成但 clearance 对请求无效，'
+      '进入 ${_ineffectiveClearanceCooldown.inSeconds}s 冷却期',
+    );
+    CfChallengeLogger.logCooldown(entering: true, until: _cooldownUntil);
   }
 
   static void showGlobalMessage(String message, {bool isError = true}) {
@@ -250,6 +316,10 @@ class CfChallengeService {
 
     // 如果已经在验证中 (Overlay 存在)
     if (_isVerifying) {
+      // 验证结果已产生但原生 WebView 仍在冷却析构时，直接复用刚完成的
+      // 结果；不能再加入等待列表，否则旧流程已经清空列表后将无人完成它。
+      final completedResult = _completedVerificationResult;
+      if (completedResult != null) return completedResult;
       if (forceForeground) {
         final promote = _activePromoteToForeground;
         if (promote == null) {
@@ -281,8 +351,15 @@ class CfChallengeService {
       return null;
     }
 
-    // 停止自动续期服务，避免与手动验证冲突
-    CfClearanceRefreshService().stop();
+    if (io.Platform.isWindows) {
+      await EmbeddedBrowserControllerPool.instance.suspendAndDrain();
+    }
+
+    // 停止自动续期服务，避免与手动验证冲突。必须 await 到它的 headless
+    // WebView 真正销毁完毕再继续——之前这里不等待，紧接着往下建自己的验证
+    // WebView，两个 WebView 短暂共存，实测会撞上 flutter_inappwebview_windows
+    // 的一处原生崩溃（0xc0000005）。
+    await CfClearanceRefreshService().stop();
 
     // 备份旧 cf_clearance，验证失败时恢复（避免误删仍有效的值）
     final cookieJarService = CookieJarService();
@@ -327,11 +404,15 @@ class CfChallengeService {
       }
       _activePromoteToForeground = null;
       _pendingPromoteToForeground = false;
-      _setVerifying(false);
+      // 延迟释放 _isVerifying：给原生 WebView2 控制器留出真正销毁的时间，
+      // 这段时间内的新验证请求会走上面的排队合流分支，而不是立刻起新
+      // WebView 撞上销毁中的旧实例（见 _postCleanupCooldown 处注释）。
+      Future.delayed(_postCleanupCooldown, () => _setVerifying(false));
     }
 
     void finish(bool success) {
       if (!resultCompleter.isCompleted) {
+        _completedVerificationResult = success;
         resultCompleter.complete(success);
       }
       cleanup();
@@ -412,8 +493,13 @@ class CfChallengeService {
         success: true,
         reason: 'user completed',
       );
-      // 手动验证成功后重新启动自动续期
-      CfClearanceRefreshService().start();
+      // 验证页移除后，Windows WebView2 的原生 Controller 仍会异步析构。
+      // 等验证冷却完成、帖子 WebView 池恢复后再错峰启动续期 WebView。
+      Future.delayed(_postCleanupCooldown + _refreshRestartCooldown, () {
+        if (!_isVerifying) {
+          CfClearanceRefreshService().start();
+        }
+      });
     } else {
       // 验证失败，恢复备份的 cf_clearance（避免丢失可能仍有效的值）
       if (backupCfClearance != null) {
@@ -554,7 +640,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _noChallengeCheckTimer?.cancel();
     _loadStopFallbackTimer?.cancel();
     _pageReadyFallbackTimer?.cancel();
-    _controller?.dispose();
+    // InAppWebView 自身会随 Widget 销毁平台 Controller；这里再次手动
+    // dispose 会让 Windows 插件对同一个原生对象执行双重释放。
+    _controller = null;
     super.dispose();
   }
 
@@ -1384,19 +1472,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
       CfChallengeLogger.log('[VERIFY] Passed response headers: $headers');
     }
 
-    // 404 表示 WebView 当前已被 Cloudflare 放行。必须先把这个有效会话的
-    // cf_clearance 同步回此前已清空的 Dio CookieJar，再允许销毁 WebView；
-    // 后台同步与 pop 并发会让 DevTools/Cookie 回调访问已 dispose controller。
-    await _syncVerifiedCookiesBestEffort();
-    if (!mounted || _hasPopped) return;
-
-    // 本方法可能运行在 shouldOverrideUrlLoading/onReceivedHttpError 等原生
-    // WebView 回调栈内。若在回调返回 Action 之前同步 pop，插件仍在使用对应
-    // InAppWebView/UserContentController，Windows 下会触发原生 UAF(退出码 139)。
-    // 推迟到下一帧，让当前平台回调先完整退栈后再释放原生对象。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_hasPopped) _finish(true);
-    });
+    unawaited(_syncVerifiedCookiesBestEffort());
+    if (mounted && !_hasPopped) _finish(true);
   }
 
   Future<void> _syncVerifiedCookiesBestEffort() async {
