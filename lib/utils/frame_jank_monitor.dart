@@ -318,8 +318,12 @@ class FrameJankMonitor {
   /// 统一事件入口:打印到 Logcat 并汇入诊断时间轴。
   /// NAV 事件同时驱动掉帧行的导航归因。监控未启用时为空操作
   /// (release 关闭态零输出零开销)。
-  static void logEvent(String tag, String message) {
-    if (!_started) return;
+  static void logEvent(
+    String tag,
+    String message, {
+    bool persistWhenStopped = false,
+  }) {
+    if (!_started && !persistWhenStopped) return;
     if (tag == 'NAV') {
       _lastNav = DateTime.now();
       _lastNavDesc = message;
