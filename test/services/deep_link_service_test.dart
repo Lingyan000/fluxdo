@@ -33,6 +33,10 @@ void main() {
     );
     expect(service.canHandleUri(Uri.parse('fluxdo://topic/123')), isTrue);
     expect(
+      service.canHandleUri(Uri.parse('discourse://auth_redirect?payload=x')),
+      isTrue,
+    );
+    expect(
       service.canHandleUri(Uri.parse('https://example.com/t/123')),
       isFalse,
     );
