@@ -766,12 +766,11 @@ packages:
     source: hosted
     version: "1.2.0-beta.3"
   flutter_inappwebview_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_inappwebview_windows
-      sha256: "902edd6f6326952af822e21aa928f7426d723d45c94c15e6ce3c2d5640d28ad7"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/flutter_inappwebview_windows"
+      relative: true
+    source: path
     version: "0.7.0-beta.3"
   flutter_js:
     dependency: "direct main"

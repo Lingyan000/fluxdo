@@ -175,6 +175,10 @@ dependency_overrides:
   device_info_plus: 12.3.0
   flutter_inappwebview_linux:
     path: packages/flutter_inappwebview_linux
+  # Windows 插件析构存在悬垂 this 回调 UAF(CF 验证 WebView 销毁时闪退),
+  # vendored 版本带 aliveGuard 修复
+  flutter_inappwebview_windows:
+    path: packages/flutter_inappwebview_windows
   # 锁定 flutter_rust_bridge 版本，与 rhttp 插件的 codegen 版本保持一致。
   # rhttp_plus 已同步 upstream 0.18.0，生成代码基于 2.12.0。
   flutter_rust_bridge: 2.12.0
