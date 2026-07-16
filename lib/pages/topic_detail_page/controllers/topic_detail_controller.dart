@@ -269,15 +269,17 @@ class TopicDetailController extends ChangeNotifier {
   }
 
   /// 滚动到指定帖子
-  Future<void> scrollToPost(int postNumber, List<Post> posts) async {
+  Future<bool> scrollToPost(int postNumber, List<Post> posts) async {
     final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
-    if (postIndex == -1) return;
+    if (postIndex == -1) return false;
 
+    final scrollIndex = scrollIndexForPostIndex(postIndex);
     await scrollController.scrollToIndex(
-      scrollIndexForPostIndex(postIndex),
+      scrollIndex,
       preferPosition: AutoScrollPosition.begin,
       duration: const Duration(milliseconds: 1),
     );
+    return scrollController.isIndexStateInLayoutRange(scrollIndex);
   }
 
   /// 回到顶部
