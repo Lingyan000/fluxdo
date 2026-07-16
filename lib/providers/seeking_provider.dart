@@ -407,7 +407,9 @@ class SeekingNotifier extends StateNotifier<SeekingState>
 
   Future<void> _fetchUser(String username) async {
     // 第一段：只花 1 个请求看在线状态有没有变
-    final user = await _pacedRequest(() => _service.getUser(username));
+    final user = await _pacedRequest(
+      () => _service.getUser(username, isSilent: true),
+    );
     final old = state.profiles[username];
     final profile = SeekingUserProfile(
       lastSeenAt: user.lastSeenAt,
@@ -437,10 +439,14 @@ class SeekingNotifier extends StateNotifier<SeekingState>
     }
 
     final actions = await optional(
-      () => _service.getUserActions(username, filter: '1,4,5'),
+      () => _service.getUserActions(username, filter: '1,4,5', isSilent: true),
     );
-    final reactions = await optional(() => _service.getUserReactions(username));
-    final boosts = await optional(() => _service.getUserBoostsGiven(username));
+    final reactions = await optional(
+      () => _service.getUserReactions(username, isSilent: true),
+    );
+    final boosts = await optional(
+      () => _service.getUserBoostsGiven(username, isSilent: true),
+    );
 
     final merged = <SeekingActivity>[];
     if (actions is UserActionResponse) {
