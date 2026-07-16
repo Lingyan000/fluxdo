@@ -588,6 +588,17 @@ class NetworkSettingsService {
         return;
       }
 
+      // start 耗时较长(读证书/绑端口),期间设置可能已被改为无需本地代理
+      // (如 VPN 自动压制关闭了 DoH 与上游代理)。此时并发的 stop 分支先于
+      // start 完成,会留下"开关已关、代理仍在跑"的孤儿网关,这里必须复查。
+      if (!shouldRunLocalProxy) {
+        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,立即停止');
+        await _rustProxyService.stop();
+        await _clearWebViewProxy();
+        _setPendingStart(false);
+        return;
+      }
+
       if (_lastStartFailed) {
         _setStartFailed(false);
       }
