@@ -126,6 +126,15 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 底栏会保活所有已配置页面。追觅后台轮询更新 refreshing / profiles / data
+    // 时，隐藏页面若仍订阅 Provider，会在其他页面操作期间反复重建列表。
+    // 非激活状态只初始化后台监控，不订阅状态；切回本页时再恢复订阅
+    // 和完整界面。read 不会让隐藏页面随轮询结果反复重建。
+    if (!widget.isActive) {
+      ref.read(seekingProvider);
+      return const SizedBox.shrink();
+    }
+
     ref.listen<int>(seekingProvider.select((value) => value.totalUnread), (
       _,
       unread,
