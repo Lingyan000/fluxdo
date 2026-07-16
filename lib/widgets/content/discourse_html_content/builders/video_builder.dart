@@ -1,13 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:chewie/chewie.dart' as lib;
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, ValueListenable, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:video_player/video_player.dart' as lib;
 import 'package:window_manager/window_manager.dart';
 
 import '../../../../providers/preferences_provider.dart';
+import '../../../../services/embedded_browser_controller_pool.dart';
+import '../../../../services/dynamic_content_suspension_service.dart';
 import '../../../../services/navigation/app_route_observer.dart';
+import '../../../../services/webview_settings.dart';
+import '../../../../services/windows_webview_environment_service.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/platform_utils.dart';
 import '../../../common/anchor_guard_sliver.dart';
@@ -32,17 +39,24 @@ class DiscourseVideoPlayer extends StatefulWidget {
 
   /// 错误回调
   final Widget Function(BuildContext context, String url, dynamic error)?
-      errorBuilder;
+  errorBuilder;
 
   /// 加载中回调
   final Widget Function(BuildContext context, String url, Widget child)?
-      loadingBuilder;
+  loadingBuilder;
 
   /// 是否循环播放
   final bool loop;
 
   /// 封面
   final Widget? poster;
+
+  /// HTML `<video>` / `<source>` 声明的 MIME。URL 后缀不可信时
+  /// （例如实际是 MP4 却以 `.xz` 结尾）必须优先使用该值。
+  final String? mimeType;
+
+  /// 封面 URL，Windows 浏览器视频后端直接写入 poster 属性。
+  final String? posterUrl;
 
   const DiscourseVideoPlayer(
     this.url, {
@@ -54,7 +68,9 @@ class DiscourseVideoPlayer extends StatefulWidget {
     super.key,
     this.loadingBuilder,
     this.loop = false,
+    this.mimeType,
     this.poster,
+    this.posterUrl,
   });
 
   @override
@@ -91,6 +107,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   /// 避免 BackdropFilter 对视频纹理每帧重做高斯模糊造成卡顿。
   /// 只有在被我们主动暂停时才在路由返回后恢复播放。
   bool _pausedByRouteOverlay = false;
+  bool _pausedByDynamicSuspension = false;
 
   /// 退出全屏时，标记等待屏幕尺寸恢复后再释放 LayoutLock。
   /// 移动端：等 chewie 恢复屏幕方向后尺寸变化回调触发；
@@ -98,6 +115,8 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   bool _pendingLockRelease = false;
 
   static final bool _isDesktop = PlatformUtils.isDesktop;
+  static final bool _useWindowsBrowserBackend =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   /// 全屏期间(含退出全屏的恢复窗口)钉住列表项,防止 macOS 进/出系统
   /// 全屏引发的窗口尺寸连环变化把本项挤出 cacheExtent 而被回收——
@@ -129,9 +148,13 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   @override
   void initState() {
     super.initState();
+    DynamicContentSuspensionService.instance.addListener(
+      _handleDynamicContentSuspension,
+    );
     _displayAspectRatio = widget.autoResize
         ? (_knownAspectRatios[widget.url] ?? widget.aspectRatio)
         : widget.aspectRatio;
+    if (_useWindowsBrowserBackend) return;
     WidgetsBinding.instance.addObserver(this);
     if (_isDesktop) {
       windowManager.addListener(this);
@@ -142,6 +165,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_useWindowsBrowserBackend) return;
     final route = ModalRoute.of(context);
     if (route != null) {
       appRouteObserver.subscribe(this, route);
@@ -160,14 +184,35 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
 
   @override
   void didPopNext() {
-    if (_pausedByRouteOverlay) {
-      _pausedByRouteOverlay = false;
-      _vpc?.play();
+    if (!_pausedByRouteOverlay) return;
+    _pausedByRouteOverlay = false;
+    if (!_pausedByDynamicSuspension) _vpc?.play();
+  }
+
+  void _handleDynamicContentSuspension() {
+    if (_useWindowsBrowserBackend) return;
+    final suspended = DynamicContentSuspensionService.instance.suspended;
+    final vpc = _vpc;
+    if (suspended) {
+      if (vpc != null && vpc.value.isPlaying) {
+        _pausedByDynamicSuspension = true;
+        vpc.pause();
+      }
+    } else if (_pausedByDynamicSuspension) {
+      _pausedByDynamicSuspension = false;
+      if (!_pausedByRouteOverlay) vpc?.play();
     }
   }
 
   @override
   void dispose() {
+    DynamicContentSuspensionService.instance.removeListener(
+      _handleDynamicContentSuspension,
+    );
+    if (_useWindowsBrowserBackend) {
+      super.dispose();
+      return;
+    }
     appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (_scrollIdleListener != null) {
@@ -199,6 +244,19 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin 要求
+    if (_useWindowsBrowserBackend) {
+      return BrowserDiscourseVideoPlayer(
+        key: ValueKey('${widget.url}|${widget.mimeType ?? ''}'),
+        url: widget.url,
+        mimeType: widget.mimeType,
+        posterUrl: widget.posterUrl,
+        poster: widget.poster,
+        aspectRatio: _displayAspectRatio,
+        autoplay: widget.autoplay,
+        loop: widget.loop,
+        errorBuilder: widget.errorBuilder,
+      );
+    }
     // 展示比例由 [_displayAspectRatio] 统一供给:初始 = 记忆值/占位值,
     // 真实比例的展开时机由 [_maybeApplyRealAspectRatio] 治理(静止帧 +
     // 武装哨兵),不在 build 里直接追 controller 的实测值 —— 那会让
@@ -219,14 +277,15 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
 
       final loadingBuilder = widget.loadingBuilder;
       if (loadingBuilder != null) {
-        child = loadingBuilder(context, widget.url, child ?? const SizedBox.shrink());
+        child = loadingBuilder(
+          context,
+          widget.url,
+          child ?? const SizedBox.shrink(),
+        );
       }
     }
 
-    return AspectRatio(
-      aspectRatio: aspectRatio,
-      child: child,
-    );
+    return AspectRatio(aspectRatio: aspectRatio, child: child);
   }
 
   Future<void> _initControllers() async {
@@ -252,16 +311,21 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
       return;
     }
 
-    // ignore: deprecated_member_use
-    final vpc = _vpc = lib.VideoPlayerController.network(widget.url);
+    final vpc = _vpc = lib.VideoPlayerController.networkUrl(
+      Uri.parse(widget.url),
+      formatHint: videoFormatHintFromMime(widget.mimeType),
+    );
     Object? vpcError;
     try {
-      await vpc.initialize();
+      await vpc.initialize().timeout(const Duration(seconds: 15));
     } catch (error) {
       vpcError = error;
       // 平台差异排查的关键线索:AVFoundation(iOS/macOS)对签名 URL、
       // Content-Type、容器细节远比 ExoPlayer 挑剔,失败原因只在这里可见
-      debugPrint('[Video] 初始化失败 url=${widget.url} error=$error');
+      debugPrint(
+        '[Video] 初始化失败 url=${widget.url} '
+        'mime=${widget.mimeType} error=$error',
+      );
     }
 
     if (!mounted) {
@@ -400,4 +464,416 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
       }
     }
   }
+}
+
+/// 把 HTML 声明的 MIME 转为 video_player 可用的格式提示。
+///
+/// `video/mp4` / `video/webm` 等普通容器映射为 [lib.VideoFormat.other]，
+/// 这会在 Android 上强制走 progressive 媒体路径，不再信任 `.xz`
+/// 之类伪装后缀。
+@visibleForTesting
+lib.VideoFormat? videoFormatHintFromMime(String? mimeType) {
+  final mime = mimeType?.split(';').first.trim().toLowerCase();
+  if (mime == null || mime.isEmpty) return null;
+  if (mime == 'application/dash+xml') return lib.VideoFormat.dash;
+  if (mime == 'application/vnd.apple.mpegurl' ||
+      mime == 'application/x-mpegurl' ||
+      mime == 'audio/mpegurl' ||
+      mime == 'audio/x-mpegurl') {
+    return lib.VideoFormat.hls;
+  }
+  if (mime == 'application/vnd.ms-sstr+xml') return lib.VideoFormat.ss;
+  if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+    return lib.VideoFormat.other;
+  }
+  return null;
+}
+
+/// Windows 上的视频使用 WebView2 `<video>` 播放。
+///
+/// Flutter 官方 video_player 当前没有 Windows 后端；浏览器又能直接
+/// 使用 `<source type="...">` 强制 MIME。为避免浏览帖子时自动创建大量
+/// WebView2 Controller，只在用户点击播放后创建，并且全局同时只保留
+/// 一个视频 Controller。
+class BrowserDiscourseVideoPlayer extends StatefulWidget {
+  const BrowserDiscourseVideoPlayer({
+    super.key,
+    required this.url,
+    required this.aspectRatio,
+    this.mimeType,
+    this.posterUrl,
+    this.poster,
+    this.autoplay = false,
+    this.loop = false,
+    this.errorBuilder,
+  });
+
+  final String url;
+  final String? mimeType;
+  final String? posterUrl;
+  final Widget? poster;
+  final double aspectRatio;
+  final bool autoplay;
+  final bool loop;
+  final Widget Function(BuildContext context, String url, dynamic error)?
+  errorBuilder;
+
+  @override
+  State<BrowserDiscourseVideoPlayer> createState() =>
+      _BrowserDiscourseVideoPlayerState();
+}
+
+class _BrowserDiscourseVideoPlayerState
+    extends State<BrowserDiscourseVideoPlayer> {
+  late final int _sessionId;
+  InAppWebViewController? _webViewController;
+  Timer? _readyTimeout;
+  EmbeddedBrowserLease? _browserLease;
+  bool _active = false;
+  bool _ready = false;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    DynamicContentSuspensionService.instance.addListener(
+      _handleDynamicContentSuspension,
+    );
+    _sessionId = _BrowserVideoSessionCoordinator.instance.register(
+      _deactivateFromCoordinator,
+    );
+    if (widget.autoplay) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _activate());
+    }
+  }
+
+  void _handleDynamicContentSuspension() {
+    if (DynamicContentSuspensionService.instance.suspended) {
+      _deactivateFromCoordinator();
+    }
+  }
+
+  void _activate() {
+    if (!mounted ||
+        _active ||
+        DynamicContentSuspensionService.instance.suspended) {
+      return;
+    }
+    _BrowserVideoSessionCoordinator.instance.activate(_sessionId);
+    final lease = EmbeddedBrowserControllerPool.instance.tryAcquire(
+      priority: EmbeddedBrowserPriority.video,
+      onRevoked: _deactivateFromCoordinator,
+    );
+    if (lease == null) {
+      setState(() => _error = StateError('浏览器播放槽位暂时不可用'));
+      return;
+    }
+    _browserLease = lease;
+    setState(() {
+      _active = true;
+      _ready = false;
+      _error = null;
+    });
+    _readyTimeout?.cancel();
+    _readyTimeout = Timer(const Duration(seconds: 20), () {
+      if (!mounted || _ready) return;
+      setState(() {
+        _error = TimeoutException('视频加载超时');
+        _stopBrowserController();
+      });
+    });
+  }
+
+  void _deactivateFromCoordinator() {
+    if (!mounted || !_active) return;
+    _readyTimeout?.cancel();
+    _webViewController = null;
+    _browserLease?.release();
+    _browserLease = null;
+    setState(() {
+      _active = false;
+      _ready = false;
+      _error = null;
+    });
+  }
+
+  void _handleVideoState(List<dynamic> arguments) {
+    if (!mounted || arguments.isEmpty) return;
+    final state = arguments.first?.toString();
+    if (state == 'ready') {
+      _readyTimeout?.cancel();
+      if (!_ready) setState(() => _ready = true);
+      return;
+    }
+    if (state == 'error') {
+      _readyTimeout?.cancel();
+      final detail = arguments.length > 1 ? arguments[1] : '未知错误';
+      setState(() {
+        _error = StateError('浏览器视频错误: $detail');
+        _stopBrowserController();
+      });
+    }
+  }
+
+  void _stopBrowserController() {
+    _readyTimeout?.cancel();
+    _webViewController = null;
+    _browserLease?.release();
+    _browserLease = null;
+    _active = false;
+    _ready = false;
+  }
+
+  Future<void> _installVideoBridge(InAppWebViewController controller) async {
+    try {
+      await WebViewSettings.injectScrollFix(controller);
+      await controller
+          .evaluateJavascript(
+            source: r'''
+(() => {
+  const video = document.querySelector('video');
+  if (!video || video.__fluxdoBound) return;
+  video.__fluxdoBound = true;
+  const send = (state, detail = '') => {
+    window.flutter_inappwebview.callHandler('fluxdoVideoState', state, detail);
+  };
+  const ready = () => send('ready', `${video.videoWidth}x${video.videoHeight}`);
+  video.addEventListener('loadedmetadata', ready, {once: true});
+  video.addEventListener('canplay', ready, {once: true});
+  video.addEventListener('error', () => {
+    const error = video.error;
+    send('error', error ? `${error.code}:${error.message || ''}` : 'unknown');
+  });
+  if (video.readyState >= 1) ready();
+  video.play().catch(() => {});
+})()
+''',
+          )
+          .timeout(const Duration(seconds: 2));
+    } catch (error) {
+      debugPrint('[BrowserVideo] 安装状态桥失败: $error');
+    }
+  }
+
+  @override
+  void dispose() {
+    DynamicContentSuspensionService.instance.removeListener(
+      _handleDynamicContentSuspension,
+    );
+    _readyTimeout?.cancel();
+    _browserLease?.release();
+    _BrowserVideoSessionCoordinator.instance.unregister(_sessionId);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content;
+    if (_error != null) {
+      final errorContent =
+          widget.errorBuilder?.call(context, widget.url, _error) ??
+          _buildVideoError(context, _error!);
+      content = Semantics(
+        button: true,
+        label: '视频播放失败，点击重试',
+        child: InkWell(
+          onTap: () {
+            setState(() => _error = null);
+            _activate();
+          },
+          child: errorContent,
+        ),
+      );
+    } else if (!_active) {
+      content = _buildPlayPlaceholder(context);
+    } else {
+      final webView = InAppWebView(
+        webViewEnvironment:
+            WindowsWebViewEnvironmentService.instance.environment,
+        initialData: InAppWebViewInitialData(
+          data: _buildBrowserVideoHtml(
+            url: widget.url,
+            mimeType: widget.mimeType,
+            posterUrl: widget.posterUrl,
+            loop: widget.loop,
+          ),
+          baseUrl: WebUri(widget.url),
+          mimeType: 'text/html',
+          encoding: 'utf-8',
+        ),
+        initialSettings: InAppWebViewSettings(
+          javaScriptEnabled: true,
+          transparentBackground: false,
+          supportZoom: false,
+          disableContextMenu: true,
+          verticalScrollBarEnabled: false,
+          horizontalScrollBarEnabled: false,
+          disableVerticalScroll: true,
+          disableHorizontalScroll: true,
+          allowsInlineMediaPlayback: true,
+          mediaPlaybackRequiresUserGesture: false,
+          cacheEnabled: true,
+        ),
+        onWebViewCreated: (controller) {
+          _webViewController = controller;
+          controller.addJavaScriptHandler(
+            handlerName: 'fluxdoVideoState',
+            callback: _handleVideoState,
+          );
+        },
+        onLoadStop: (controller, _) => _installVideoBridge(controller),
+        onReceivedError: (_, request, error) {
+          if (request.isForMainFrame == true && mounted) {
+            setState(() {
+              _error = StateError('视频页面加载失败: ${error.description}');
+              _stopBrowserController();
+            });
+          }
+        },
+      );
+      content = Stack(
+        fit: StackFit.expand,
+        children: [
+          WebViewSettings.wrapWithScrollFix(
+            webView,
+            getController: () => _webViewController,
+          ),
+          if (!_ready) _buildLoadingOverlay(),
+        ],
+      );
+    }
+
+    return AspectRatio(aspectRatio: widget.aspectRatio, child: content);
+  }
+
+  Widget _buildPlayPlaceholder(BuildContext context) {
+    return Material(
+      color: Colors.black,
+      child: InkWell(
+        onTap: _activate,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (widget.poster != null) widget.poster!,
+            Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.68),
+                  shape: BoxShape.circle,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.35),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (widget.poster != null) widget.poster!,
+          const Center(
+            child: SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoError(BuildContext context, Object error) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '视频播放失败\n$error\n\n点击重试',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowserVideoSessionCoordinator {
+  _BrowserVideoSessionCoordinator._();
+
+  static final instance = _BrowserVideoSessionCoordinator._();
+
+  final Map<int, VoidCallback> _deactivateCallbacks = {};
+  int _nextId = 0;
+  int? _activeId;
+
+  int register(VoidCallback onDeactivate) {
+    final id = ++_nextId;
+    _deactivateCallbacks[id] = onDeactivate;
+    return id;
+  }
+
+  void activate(int id) {
+    final previous = _activeId;
+    if (previous == id) return;
+    _activeId = id;
+    if (previous != null) _deactivateCallbacks[previous]?.call();
+  }
+
+  void unregister(int id) {
+    _deactivateCallbacks.remove(id);
+    if (_activeId == id) _activeId = null;
+  }
+}
+
+String _buildBrowserVideoHtml({
+  required String url,
+  required String? mimeType,
+  required String? posterUrl,
+  required bool loop,
+}) {
+  const escape = HtmlEscape(HtmlEscapeMode.attribute);
+  final escapedUrl = escape.convert(url);
+  final escapedMime = mimeType == null
+      ? null
+      : escape.convert(mimeType.split(';').first.trim());
+  final escapedPoster = posterUrl == null ? null : escape.convert(posterUrl);
+  final sourceType = escapedMime == null || escapedMime.isEmpty
+      ? ''
+      : ' type="$escapedMime"';
+  final poster = escapedPoster == null || escapedPoster.isEmpty
+      ? ''
+      : ' poster="$escapedPoster"';
+  final loopAttribute = loop ? ' loop' : '';
+  return '<!doctype html><html><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
+      'media-src https: http: data: blob:; img-src https: http: data: blob:; '
+      'style-src \'unsafe-inline\'; script-src \'none\'; connect-src \'none\';">'
+      '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;'
+      'background:#000}video{display:block;width:100%;height:100%;'
+      'object-fit:contain;background:#000}</style></head><body>'
+      '<video controls autoplay playsinline$loopAttribute$poster>'
+      '<source src="$escapedUrl"$sourceType>'
+      '</video></body></html>';
 }
