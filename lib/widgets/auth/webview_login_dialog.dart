@@ -128,6 +128,14 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   String? _lastHcaptchaToken;
   String? _lastSecondFactorToken;
 
+  @override
+  void dispose() {
+    // 对话框关闭后立即释放 WebView2 原生控制器，避免不可见的平台视图
+    // 继续参与外部视图合成并长期占用资源。
+    _controller?.dispose();
+    super.dispose();
+  }
+
   /// data:url 内嵌页面: hcaptcha widget + 登录全流程 JS。
   /// baseUrl=linux.do 让文档 origin 为 linux.do, JS fetch 相对路径同源,
   /// `credentials:'include'` 自动带共享 store 里的 cf_clearance/_forum_session。
