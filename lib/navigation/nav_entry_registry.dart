@@ -9,6 +9,7 @@ import '../pages/browsing_history_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/private_messages_page.dart';
 import '../pages/profile_page.dart';
+import '../pages/seeking_page.dart';
 import '../pages/topics_screen.dart';
 import '../providers/discourse_providers.dart';
 import '../widgets/common/smart_avatar.dart';
@@ -87,6 +88,15 @@ class NavEntryRegistry {
         label: (ctx) => ctx.l10n.nav_messages,
         pageBuilder: (ctx, isActive) =>
             PrivateMessagesPage(isActive: isActive),
+        requiresLogin: true,
+      ),
+      NavEntry(
+        id: NavEntryIds.seeking,
+        kind: NavEntryKind.page,
+        iconData: Symbols.visibility_rounded,
+        selectedIconData: Symbols.visibility_rounded,
+        label: (ctx) => ctx.l10n.seeking_title,
+        pageBuilder: (ctx, isActive) => SeekingPage(isActive: isActive),
         requiresLogin: true,
       ),
       NavEntry(
