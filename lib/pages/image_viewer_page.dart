@@ -6,6 +6,7 @@ import 'package:jovial_svg/jovial_svg.dart';
 import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
+import '../services/dynamic_content_suspension_service.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/screenshot_utils.dart';
@@ -125,6 +126,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   bool _isSharing = false;
   bool _showUI = true;
   final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
+  late final DynamicContentSuspensionLease _dynamicContentLease;
 
   /// 滑动关闭状态入口:loadStateChanged 用它判断"滑动进行中",冻结
   /// loading→completed 的树切换(切换会销毁正在驱动滑动的手势载体,
@@ -155,8 +157,9 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   /// 的放大浏览下该上限内清晰度无感知差异。
   ImageProvider _clampedViewerProvider(String url) {
     final view = View.of(context);
-    final longestPx =
-        (view.physicalSize.longestSide * 3).clamp(2048.0, 8192.0).round();
+    final longestPx = (view.physicalSize.longestSide * 3)
+        .clamp(2048.0, 8192.0)
+        .round();
     return ResizeImage(
       discourseImageProvider(url),
       width: longestPx,
@@ -168,6 +171,12 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   @override
   void initState() {
     super.initState();
+    // 图片查看器使用透明路由，底层页面仍会保持可见和Ticker活跃。
+    // 查看大图期间暂停帖子动态内容，避免SVG动画与大图解码/缩放争抢
+    // UI、raster和GPU；关闭查看器后由租约自动恢复。
+    _dynamicContentLease = DynamicContentSuspensionService.instance.acquire(
+      reason: 'image-viewer',
+    );
     currentIndex = widget.initialIndex;
     _activeHeroPage = ValueNotifier(currentIndex);
     // 初始化双击缩放
@@ -182,6 +191,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   @override
   void dispose() {
+    _dynamicContentLease.release();
     HeroVisibilityController.instance.clear();
     _activeHeroPage.dispose();
     _restoreSystemUI();
@@ -914,9 +924,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                                       false) {
                                     if (thumbUrl != null && thumbUrl != url) {
                                       return Image(
-                                        image: discourseImageProvider(
-                                          thumbUrl,
-                                        ),
+                                        image: discourseImageProvider(thumbUrl),
                                         fit: BoxFit.contain,
                                       );
                                     }
@@ -1188,7 +1196,6 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
         final si = ScalableImage.fromSvgString(svgString, warnF: (_) {});
         if (mounted) {
           setState(() {
-            _svgSi = si;
             _isSvg = true;
             _checked = true;
           });
@@ -1284,7 +1291,11 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
 
     // 不是 SVG 也不是 AVIF，显示错误图标
     return const Center(
-      child: Icon(Symbols.broken_image_rounded, size: 64, color: Colors.white54),
+      child: Icon(
+        Symbols.broken_image_rounded,
+        size: 64,
+        color: Colors.white54,
+      ),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
+import '../services/dynamic_content_suspension_service.dart';
 import 'blur_config.dart';
 
 /// 根据用户偏好判断是否启用模糊
@@ -80,6 +81,26 @@ Future<T?> _pushShortcutManagedRoute<T>({
   });
 }
 
+Future<T?> _pushOverlayRoute<T>({
+  required BuildContext context,
+  required NavigatorState navigator,
+  required Route<T> route,
+  required bool suspendDynamicContent,
+  ShortcutSurfaceConfig? shortcutSurface,
+}) {
+  final lease = suspendDynamicContent
+      ? DynamicContentSuspensionService.instance.acquire(
+          reason: 'modal-overlay',
+        )
+      : null;
+  return _pushShortcutManagedRoute(
+    context: context,
+    navigator: navigator,
+    route: route,
+    shortcutSurface: shortcutSurface,
+  ).whenComplete(() => lease?.release());
+}
+
 Future<T?> pushAppRoute<T>({
   required BuildContext context,
   required Route<T> route,
@@ -110,6 +131,7 @@ Future<T?> showAppDialog<T>({
   bool blur = true,
   Duration transitionDuration = const Duration(milliseconds: 150),
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -136,10 +158,11 @@ Future<T?> showAppDialog<T>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }
@@ -157,6 +180,7 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
   RouteSettings? routeSettings,
   bool blur = true,
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -175,10 +199,11 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }
@@ -219,6 +244,7 @@ Future<T?> showAppBottomSheet<T>({
   AnimationStyle? sheetAnimationStyle,
   bool blur = true,
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final NavigatorState navigator = Navigator.of(
@@ -257,10 +283,11 @@ Future<T?> showAppBottomSheet<T>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }

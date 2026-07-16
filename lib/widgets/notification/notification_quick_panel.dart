@@ -7,6 +7,7 @@ import '../../providers/discourse_providers.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../pages/notifications_page.dart';
+import '../../services/dynamic_content_suspension_service.dart';
 import '../../utils/blur_config.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
@@ -55,6 +56,7 @@ class _SidebarNotificationPanelState
   late final ShortcutSurfaceBinding _shortcutSurfaceBinding;
   final ScrollController _scrollController = ScrollController();
   bool _wasVisible = false;
+  DynamicContentSuspensionLease? _dynamicContentLease;
 
   @override
   void initState() {
@@ -76,6 +78,7 @@ class _SidebarNotificationPanelState
     );
     _wasVisible = NotificationQuickPanel._visible.value;
     if (_wasVisible) {
+      _acquireDynamicContentSuspension();
       _animController.value = 1;
       _shortcutSurfaceBinding.registerDeferred(
         context,
@@ -91,20 +94,40 @@ class _SidebarNotificationPanelState
     NotificationQuickPanel._visible.removeListener(_onVisibilityChanged);
     _animController.removeStatusListener(_onAnimationStatusChanged);
     _shortcutSurfaceBinding.disposeDeferred();
+    _releaseDynamicContentSuspension();
     _animController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onAnimationStatusChanged(AnimationStatus status) {
-    if (status == AnimationStatus.dismissed && _dragOffset != 0) {
+    if (status != AnimationStatus.dismissed) return;
+
+    // 反向动画完全结束后再恢复底层动态内容，避免面板仍半透明可见时，
+    // SVG/WebView 等重新启动并让背景模糊层再次持续重算。
+    _releaseDynamicContentSuspension();
+    if (_dragOffset != 0) {
       setState(() => _dragOffset = 0);
     }
+  }
+
+  void _acquireDynamicContentSuspension() {
+    _dynamicContentLease ??= DynamicContentSuspensionService.instance.acquire(
+      reason: 'notification_quick_panel',
+    );
+  }
+
+  void _releaseDynamicContentSuspension() {
+    _dynamicContentLease?.release();
+    _dynamicContentLease = null;
   }
 
   void _onVisibilityChanged() {
     final isVisible = NotificationQuickPanel._visible.value;
     if (isVisible && !_wasVisible) {
+      // 在入场动画开始前先暂停底层动态内容，避免首个模糊帧就与帖子动画、
+      // WebView 纹理提交争抢 UI/raster 线程。
+      _acquireDynamicContentSuspension();
       _animController.forward();
       _shortcutSurfaceBinding.register(
         context,
