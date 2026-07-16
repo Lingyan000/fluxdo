@@ -305,8 +305,6 @@ Future<void> main() async {
   await WebViewAdapterSettingsService.instance.initialize(prefs);
   // Eruda 调试控制台开关 (默认关)
   await ErudaSettingsService.instance.initialize(prefs);
-  // 启动期浏览器信任准备由 BrowserTrustCoordinator 统一编排。
-  BrowserTrustCoordinator.instance.prepareStartup(reason: 'startup');
   try {
     final rhttp = await Future.any([
       _initRhttp(),
@@ -335,6 +333,11 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('[Main] 初始 VPN 状态同步失败: $e');
   }
+
+  // 必须等 DoH / 系统代理 / VPN 自动切换全部落定后再预热 Cookie。
+  // Windows 设置本地代理会销毁并重建 WebView2 Environment；若提前预热，
+  // 任务会继续操作已销毁的旧环境并反复重试，显著拉长开屏时间。
+  BrowserTrustCoordinator.instance.prepareStartup(reason: 'startup');
 
   // 初始化下载服务（依赖网络栈已就绪）
   DownloadService().initialize();
