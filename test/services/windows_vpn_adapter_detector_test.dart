@@ -64,5 +64,41 @@ void main() {
         isTrue,
       );
     });
+
+    test('VPN 判定模式可覆盖自动检测结果', () {
+      expect(
+        VpnAutoToggleService.resolveDetection(
+          automaticValue: false,
+          mode: VpnDetectionMode.automatic,
+        ),
+        isFalse,
+      );
+      expect(
+        VpnAutoToggleService.resolveDetection(
+          automaticValue: false,
+          mode: VpnDetectionMode.forceActive,
+        ),
+        isTrue,
+      );
+      expect(
+        VpnAutoToggleService.resolveDetection(
+          automaticValue: true,
+          mode: VpnDetectionMode.forceInactive,
+        ),
+        isFalse,
+      );
+    });
+
+    test('未知持久化值回退为自动判定', () {
+      expect(
+        VpnDetectionMode.fromString('forceActive'),
+        VpnDetectionMode.forceActive,
+      );
+      expect(
+        VpnDetectionMode.fromString('unknown'),
+        VpnDetectionMode.automatic,
+      );
+      expect(VpnDetectionMode.fromString(null), VpnDetectionMode.automatic);
+    });
   });
 }
