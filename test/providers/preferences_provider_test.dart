@@ -55,4 +55,25 @@ void main() {
       BookmarksOpenMode.defaultRoute,
     );
   });
+
+  test('AI 翻译偏好可以持久化并恢复', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+
+    final notifier = container.read(preferencesProvider.notifier);
+    await notifier.setAiTranslationEnabled(true);
+    await notifier.setAiTranslationTargetLanguage('ja');
+    await notifier.setAiTranslationModelKey('provider:model');
+
+    final prefs = container.read(sharedPreferencesProvider);
+    final reloaded = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(reloaded.dispose);
+
+    final state = reloaded.read(preferencesProvider);
+    expect(state.aiTranslationEnabled, isTrue);
+    expect(state.aiTranslationTargetLanguage, 'ja');
+    expect(state.aiTranslationModelKey, 'provider:model');
+  });
 }

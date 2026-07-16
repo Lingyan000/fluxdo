@@ -10,6 +10,7 @@ import '../../../../../constants.dart';
 import '../../../../../models/topic.dart';
 import '../../../../../modules/ldc_reward/ldc_reward.dart';
 import '../../../../../providers/discourse_providers.dart';
+import '../../../../../providers/ai_translation_provider.dart';
 import '../../../../../providers/preferences_provider.dart';
 import '../../../../../utils/blocked_user_filter.dart';
 import 'package:dio/dio.dart';
@@ -34,6 +35,7 @@ import '../../../../post/post_replies_sheet.dart';
 import '../../../../user/user_card.dart';
 import '../../../../../utils/dialog_utils.dart';
 import '../../../../common/app_bottom_sheet.dart';
+import '../../../../ai/ai_translation_sheet.dart';
 
 part 'actions/bookmark_actions.dart';
 part 'actions/manage_actions.dart';
