@@ -47,12 +47,17 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     // 优化：如果是 latest 列表且没有筛选条件且没有自定义排序，优先同步使用预加载数据
     // 这样可以避免显示 loading 状态
-    if (currentFilter == TopicListFilter.latest && filter.isEmpty && orderParam == null) {
+    if (currentFilter == TopicListFilter.latest &&
+        filter.isEmpty &&
+        orderParam == null) {
       final preloadedService = PreloadedDataService();
       final preloadedData = preloadedService.getInitialTopicListSync();
       if (preloadedData != null) {
         final result = _paginationHelper.processRefresh(
-          PaginationResult(items: preloadedData.topics, moreUrl: preloadedData.moreTopicsUrl),
+          PaginationResult(
+            items: preloadedData.topics,
+            moreUrl: preloadedData.moreTopicsUrl,
+          ),
         );
         return completePagedRefresh(PagedPage.fromPagination(result));
       }
@@ -60,7 +65,10 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         final asyncPreloaded = await preloadedService.getInitialTopicList();
         if (asyncPreloaded != null) {
           final result = _paginationHelper.processRefresh(
-            PaginationResult(items: asyncPreloaded.topics, moreUrl: asyncPreloaded.moreTopicsUrl),
+            PaginationResult(
+              items: asyncPreloaded.topics,
+              moreUrl: asyncPreloaded.moreTopicsUrl,
+            ),
           );
           return completePagedRefresh(PagedPage.fromPagination(result));
         }
@@ -69,7 +77,15 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     // 如果没有预加载数据，走正常的异步流程
     final service = ref.read(discourseServiceProvider);
-    final response = await _fetchTopics(service, currentFilter, 0, filter, order: orderParam, ascending: ascendingParam, subset: subset);
+    final response = await _fetchTopics(
+      service,
+      currentFilter,
+      0,
+      filter,
+      order: orderParam,
+      ascending: ascendingParam,
+      subset: subset,
+    );
 
     final result = _paginationHelper.processRefresh(
       PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
@@ -106,17 +122,38 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     // 无筛选条件，使用原有方法
     switch (filter) {
       case TopicListFilter.latest:
-        return service.getLatestTopics(page: page, order: order, ascending: ascending);
+        return service.getLatestTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.newTopics:
-        return service.getNewTopics(page: page, order: order, ascending: ascending, subset: subset);
+        return service.getNewTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+          subset: subset,
+        );
       case TopicListFilter.unread:
-        return service.getUnreadTopics(page: page, order: order, ascending: ascending);
+        return service.getUnreadTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.unseen:
-        return service.getUnseenTopics(page: page, order: order, ascending: ascending);
+        return service.getUnseenTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.top:
         return service.getTopTopics();
       case TopicListFilter.hot:
-        return service.getHotTopics(page: page, order: order, ascending: ascending);
+        return service.getHotTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
     }
   }
 
@@ -157,7 +194,9 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
   (String?, bool?) _currentSortParams() {
     final sortOrder = ref.read(topicSortOrderProvider);
     final orderParam = sortOrder.apiValue;
-    final ascendingParam = orderParam != null ? ref.read(topicSortAscendingProvider) : null;
+    final ascendingParam = orderParam != null
+        ? ref.read(topicSortAscendingProvider)
+        : null;
     return (orderParam, ascendingParam);
   }
 
@@ -170,10 +209,21 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       final subset = _currentFilter == TopicListFilter.newTopics
           ? ref.read(topicNewSubsetProvider).apiValue
           : null;
-      final response = await _fetchTopics(service, _currentFilter, 0, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        0,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
       return PagedPage.fromPagination(result);
     });
@@ -188,10 +238,21 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         ? ref.read(topicNewSubsetProvider).apiValue
         : null;
     try {
-      final response = await _fetchTopics(service, _currentFilter, 0, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        0,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
       state = AsyncValue.data(
         completePagedRefresh(PagedPage.fromPagination(result)),
@@ -221,7 +282,9 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
       // 移除列表中已存在的同 ID 话题（刷新重复项，与网页版 removeValuesFromArray 一致）
       final newTopicIds = newTopics.map((t) => t.id).toSet();
-      final remaining = currentTopics.where((t) => !newTopicIds.contains(t.id)).toList();
+      final remaining = currentTopics
+          .where((t) => !newTopicIds.contains(t.id))
+          .toList();
       // 将新话题全部插入列表顶部
       state = AsyncValue.data([...newTopics, ...remaining]);
       return newTopics.map((t) => t.id).toList();
@@ -240,12 +303,23 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       final subset = _currentFilter == TopicListFilter.newTopics
           ? ref.read(topicNewSubsetProvider).apiValue
           : null;
-      final response = await _fetchTopics(service, _currentFilter, nextPage, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        nextPage,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final currentState = PaginationState(items: currentTopics);
       final paginationResult = _paginationHelper.processLoadMore(
         currentState,
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       return PagedPage.fromPagination(
@@ -329,7 +403,8 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     } else if (filter == TopicListFilter.unread) {
       await service.dismissUnreadTopics(categoryId: _categoryId);
       // 同步更新追踪状态计数
-      ref.read(topicTrackingStateProvider.notifier)
+      ref
+          .read(topicTrackingStateProvider.notifier)
           .dismissUnreadTopics(categoryId: _categoryId);
     }
     state = AsyncValue.data(
@@ -339,7 +414,7 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     );
   }
 
-  void updateSeen(int topicId, int highestSeen) {
+  void updateSeen(int topicId, int highestSeen, {bool updateTracking = true}) {
     final topics = state.value;
     if (topics == null) return;
 
@@ -351,7 +426,10 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     if (highestSeen <= currentRead) return;
 
-    final newUnread = (topic.highestPostNumber - highestSeen).clamp(0, topic.highestPostNumber);
+    final newUnread = (topic.highestPostNumber - highestSeen).clamp(
+      0,
+      topic.highestPostNumber,
+    );
 
     final updated = Topic(
       id: topic.id,
@@ -383,15 +461,19 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     newList[index] = updated;
     state = AsyncValue.data(newList);
 
-    // 同步更新追踪状态计数（阅读后减少 new/unread 计数）
-    ref.read(topicTrackingStateProvider.notifier)
-        .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
+    if (updateTracking) {
+      // 同步更新追踪状态计数（阅读后减少 new/unread 计数）
+      ref
+          .read(topicTrackingStateProvider.notifier)
+          .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
+    }
   }
 }
 
-final topicListProvider = AsyncNotifierProvider.family<TopicListNotifier, List<Topic>, int?>(
-  TopicListNotifier.new,
-);
+final topicListProvider =
+    AsyncNotifierProvider.family<TopicListNotifier, List<Topic>, int?>(
+      TopicListNotifier.new,
+    );
 
 /// 热门话题 Provider
 final topTopicsProvider = FutureProvider<TopicListResponse>((ref) async {

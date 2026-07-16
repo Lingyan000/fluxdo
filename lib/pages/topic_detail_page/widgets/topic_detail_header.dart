@@ -12,6 +12,7 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/relative_time_text.dart';
 import '../../../utils/number_utils.dart';
 import '../../../widgets/topic/topic_notification_button.dart';
+import '../../../widgets/layout/home_workspace_scope.dart';
 import 'topic_vote_button.dart';
 import '../../../widgets/common/topic_badges.dart';
 import '../../category_topics_page.dart';
@@ -153,12 +154,20 @@ class TopicDetailHeader extends ConsumerWidget {
                     category: category,
                     faIcon: faIcon,
                     logoUrl: logoUrl,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CategoryTopicsPage(category: category),
-                      ),
-                    ),
+                    onTap: () {
+                      final workspace = HomeWorkspaceScope.maybeOf(context);
+                      if (workspace != null) {
+                        workspace.onShowCategory(category);
+                        return;
+                      }
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CategoryTopicsPage(category: category),
+                        ),
+                      );
+                    },
                   ),
 
                 // 标签 Badges
@@ -166,12 +175,19 @@ class TopicDetailHeader extends ConsumerWidget {
                   ...detail.tags!.map(
                     (tag) => TagBadge(
                       name: tag.name,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TagTopicsPage(tagName: tag.name),
-                        ),
-                      ),
+                      onTap: () {
+                        final workspace = HomeWorkspaceScope.maybeOf(context);
+                        if (workspace != null) {
+                          workspace.onShowTag(tag.name);
+                          return;
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TagTopicsPage(tagName: tag.name),
+                          ),
+                        );
+                      },
                     ),
                   ),
               ],

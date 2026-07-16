@@ -16,6 +16,22 @@ class MasterDetailLayout extends StatefulWidget {
   static const double minMasterWidth = 280;
   static const double maxMasterWidth = 520;
 
+  /// master 栏宽度占比下限——不管 master 里放的是列表还是"平行视界"
+  /// 上一层内容，都不能拖到比这更窄。
+  static const double defaultMinMasterRatio = 0.2;
+
+  /// master 栏宽度占比上限：默认 0.3，对应 master 是真正的列表（信息流/
+  /// 私信列表）场景——列表不需要太宽。平行视界压栈时 master 显示的是
+  /// "上一层"内容（不是列表），应该放宽到接近对半分（见
+  /// [PaneMasterDetailLayout] 或调用方传更大的 maxMasterRatio，比如 0.8），
+  /// 这样才是真正的"平行视界"而不是"列表+详情"。
+  static const double defaultMaxMasterRatio = 0.3;
+
+  /// master 栏绝对最小宽度（像素）。窗口整体较窄时按比例算出的宽度可能
+  /// 只有一百来像素，头像+徽章这类定宽内容根本塞不下，会撑出 RenderFlex
+  /// 溢出条纹——所以下限必须是"比例下限"和"绝对像素下限"取较大值。
+  static const double minPaneAbsoluteWidth = 240;
+
   const MasterDetailLayout({
     super.key,
     required this.master,
@@ -25,6 +41,9 @@ class MasterDetailLayout extends StatefulWidget {
     this.masterWidth = defaultMasterWidth,
     this.minDetailWidth = defaultMinDetailWidth,
     this.showDivider = true,
+    this.minMasterRatio = defaultMinMasterRatio,
+    this.maxMasterRatio = defaultMaxMasterRatio,
+    this.preferredMasterRatio,
   });
 
   /// 主列表（左侧）
@@ -47,6 +66,20 @@ class MasterDetailLayout extends StatefulWidget {
 
   /// 是否显示分隔线
   final bool showDivider;
+
+  /// master 栏宽度占比下限（默认 20%）
+  final double minMasterRatio;
+
+  /// master 栏宽度占比上限：master 是列表时默认 30%；平行视界压栈、
+  /// master 显示"上一层"内容时调用方应传更大的值（如 0.8），允许两栏
+  /// 接近对半分。
+  final double maxMasterRatio;
+
+  /// master 栏默认宽度占比：不传时退回 [minMasterRatio]（列表场景，20%）。
+  /// 平行视界压栈、两侧都不是"列表"时调用方应传 0.5，让两栏默认对半分
+  /// （而不是只把 [maxMasterRatio] 放宽到 0.8——那只是允许用户拖到多宽，
+  /// 不代表默认就该那么宽，两者是分开的语义）。
+  final double? preferredMasterRatio;
 
   /// 是否显示双栏布局
   static bool canShowBothPanesFor(
@@ -80,6 +113,18 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
   bool _hasUserResized = false;
 
   @override
+  void didUpdateWidget(covariant MasterDetailLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // master 复用同一个 State（见类注释），列表态<->压栈态切换时
+    // preferredMasterRatio 会变（0.25 <-> 0.5）。如果之前手动拖拽过一次，
+    // _hasUserResized 会一直锁定旧宽度，导致新模式的默认比例永远生效不了
+    // ——切模式时重置，让新默认值重新起作用；同一模式内的手动拖拽不受影响。
+    if (oldWidget.preferredMasterRatio != widget.preferredMasterRatio) {
+      _hasUserResized = false;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _currentMasterWidth = widget.masterWidth;
@@ -87,22 +132,20 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
 
   double _preferredMasterWidth(double totalWidth) {
     if (_hasUserResized) return _currentMasterWidth;
-
-    final proportionalWidth =
-        totalWidth * MasterDetailLayout.desktopMasterWidthRatio;
-    return proportionalWidth.clamp(
-      widget.masterWidth,
-      MasterDetailLayout.maxMasterWidth,
-    );
+    final ratio = widget.preferredMasterRatio ?? widget.minMasterRatio;
+    return totalWidth * ratio;
   }
 
   double _clampMasterWidth(double width, double totalWidth) {
-    final maxAllowed = totalWidth - widget.minDetailWidth;
-    final upperBound = maxAllowed.clamp(
-      MasterDetailLayout.minMasterWidth,
-      MasterDetailLayout.maxMasterWidth,
-    );
-    return width.clamp(MasterDetailLayout.minMasterWidth, upperBound);
+    final ratioLower = totalWidth * widget.minMasterRatio;
+    final lowerBound = ratioLower < MasterDetailLayout.minPaneAbsoluteWidth
+        ? MasterDetailLayout.minPaneAbsoluteWidth
+        : ratioLower;
+    final ratioUpper = totalWidth * widget.maxMasterRatio;
+    final spaceUpper = totalWidth - widget.minDetailWidth;
+    var upperBound = ratioUpper < spaceUpper ? ratioUpper : spaceUpper;
+    if (upperBound < lowerBound) upperBound = lowerBound;
+    return width.clamp(lowerBound, upperBound);
   }
 
   @override
@@ -164,12 +207,20 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
               child: DraggableDivider(
                 onResizeStart: () => _dragStartWidth = masterWidth,
                 onResizeUpdate: (globalX, startX) {
+                  final desired = _dragStartWidth! + (globalX - startX);
+                  final clamped = _clampMasterWidth(desired, totalWidth);
+                  // 拖拽事件频率很高（鼠标高轮询率下每秒上百次），每次都
+                  // setState 会让内容区（图片等按可用宽度算尺寸的东西）
+                  // 跟着抖动式反复重算——量化到 8px 网格，拖拽视觉上无感，
+                  // 但大幅减少宽度变化次数，避免图片频繁按新尺寸重新请求
+                  // （有 429 风险）。
+                  const snapGrid = 8.0;
+                  final snapped = (clamped / snapGrid).round() * snapGrid;
+                  if (snapped == _currentMasterWidth && _hasUserResized) {
+                    return;
+                  }
                   setState(() {
-                    final desired = _dragStartWidth! + (globalX - startX);
-                    _currentMasterWidth = _clampMasterWidth(
-                      desired,
-                      totalWidth,
-                    );
+                    _currentMasterWidth = snapped;
                     _hasUserResized = true;
                   });
                 },

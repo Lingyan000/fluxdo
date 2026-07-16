@@ -101,6 +101,7 @@
   "settings_searchHint": "搜尋設定項...",
   "settings_shortcuts": "快捷鍵",
   "settings_title": "應用設定",
+  "settings_selectHint": "選擇左側設定項，在此處進行設定",
   "shortcuts_closeOverlay": "關閉浮層",
   "shortcuts_composer": "撰寫",
   "shortcuts_composerSubmit": "提交（傳送/發佈）",

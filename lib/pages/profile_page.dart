@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
@@ -18,7 +19,6 @@ import 'my_topics_page.dart';
 import 'my_badges_page.dart';
 import 'user_profile_page.dart';
 import 'trust_level_requirements_page.dart';
-import 'settings_page.dart';
 import '../widgets/common/loading_spinner.dart';
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/notification_icon_button.dart';
@@ -859,7 +859,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.settings_rounded,
           iconColor: Colors.blueGrey,
           title: context.l10n.profile_settings,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage())),
+          onTap: () => EmbeddedStackScope.openSettings(context),
         ),
       ],
     );
