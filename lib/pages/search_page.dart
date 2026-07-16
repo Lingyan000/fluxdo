@@ -140,7 +140,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       _searchController.text = widget.initialQuery!;
       _currentQuery = widget.initialQuery!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _performSearch();
+        _performInitialSearchAfterTransition();
       });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -149,6 +149,29 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       });
     }
     _scrollController.addListener(_onScroll);
+  }
+
+  /// 个人资料页等入口会携带初始查询打开搜索页。等待路由转场结束后再启动
+  /// 普通搜索与站内 AI 搜索，避免两路结果状态更新和页面入场动画争抢帧预算。
+  void _performInitialSearchAfterTransition() {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.isCompleted) {
+      _performSearch();
+      return;
+    }
+
+    void listener(AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      animation.removeStatusListener(listener);
+      if (mounted && status == AnimationStatus.completed) {
+        _performSearch();
+      }
+    }
+
+    animation.addStatusListener(listener);
   }
 
   /// Hero 入场时等转场（含 Hero 飞行）结束再聚焦弹键盘；普通入场立即聚焦
