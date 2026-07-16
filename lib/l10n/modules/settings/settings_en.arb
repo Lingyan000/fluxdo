@@ -101,6 +101,7 @@
   "settings_searchHint": "Search settings...",
   "settings_shortcuts": "Keyboard Shortcuts",
   "settings_title": "App Settings",
+  "settings_selectHint": "Select a setting on the left to configure it here",
   "shortcuts_closeOverlay": "Close Overlay",
   "shortcuts_composer": "Composer",
   "shortcuts_composerSubmit": "Submit (send/publish)",

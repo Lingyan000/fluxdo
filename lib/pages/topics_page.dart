@@ -655,7 +655,16 @@ class _TabListScrollController extends ScrollController {
 
 /// 帖子列表页面 - 分类 Tab + 排序下拉 + 标签 Chips
 class TopicsPage extends ConsumerStatefulWidget {
-  const TopicsPage({super.key});
+  const TopicsPage({
+    super.key,
+    this.onSearchRequested,
+    this.externalCategoryId,
+    this.externalTag,
+  });
+
+  final ValueChanged<SearchFilter?>? onSearchRequested;
+  final int? externalCategoryId;
+  final String? externalTag;
 
   @override
   ConsumerState<TopicsPage> createState() => _TopicsPageState();
@@ -677,6 +686,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
   int _tabLength = 1; // 初始只有"全部"
   int _currentTabIndex = 0;
   List<int> _visiblePinnedIds = []; // 过滤后的可见分类 ID
+  (int?, String?)? _lastExternalSelection;
 
   late final _HeaderCollapseController _headerController;
   bool _invalidateScheduled = false;
@@ -1050,7 +1060,13 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
 
     final topPadding = MediaQuery.of(context).padding.top;
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
-    final allPinnedIds = ref.watch(pinnedCategoriesProvider);
+    final savedPinnedIds = ref.watch(pinnedCategoriesProvider);
+    final allPinnedIds = <int>[
+      ...savedPinnedIds,
+      if (widget.externalCategoryId case final id?
+          when !savedPinnedIds.contains(id))
+        id,
+    ];
     final categoryMapAsync = ref.watch(categoryMapProvider);
     final categoryMap = categoryMapAsync.value;
     // 首页卡片统一复用页面层的分类快照，避免每张 TopicCard 单独订阅
@@ -1063,6 +1079,23 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         : allPinnedIds;
     final currentFilter = ref.watch(topicFilterProvider);
     _syncTabsIfNeeded(pinnedIds);
+
+    final externalSelection = (widget.externalCategoryId, widget.externalTag);
+    if (_lastExternalSelection != externalSelection) {
+      _lastExternalSelection = externalSelection;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final categoryId = widget.externalCategoryId;
+        final index = categoryId == null
+            ? 0
+            : pinnedIds.indexOf(categoryId) + 1;
+        if (index >= 0 && index < _tabController.length) {
+          _tabController.animateTo(index);
+        }
+        ref.read(tabTagsProvider(categoryId).notifier).state =
+            widget.externalTag == null ? const [] : [widget.externalTag!];
+      });
+    }
 
     // 监听侧栏分类选中变化，同步切换 tab
     ref.listen(activeSidebarCategoryIdProvider, (prev, next) {

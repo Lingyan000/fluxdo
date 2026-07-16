@@ -23,6 +23,7 @@
   "search_noLimit": "No limit",
   "search_noPopularTags": "No popular tags",
   "search_noResults": "No results found",
+  "search_selectResultHint": "Select a search result to view its details here",
   "search_popularTags": "Popular tags",
   "search_recentSearches": "Recent searches",
   "search_replyCount": "{count} replies",

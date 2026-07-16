@@ -46,8 +46,13 @@ extension _ScrollActions on _TopicDetailPageState {
 
     // 记录当前浏览位置，用于布局切换时恢复
     _controller.updateViewportPostNumber(postNumber);
-    ref.read(detailScrollPositionProvider(widget.topicId).notifier).state =
-        postNumber;
+    final positionNotifier = ref.read(
+      detailScrollPositionProvider((
+        topicId: widget.topicId,
+        instanceId: _instanceId,
+      )).notifier,
+    );
+    positionNotifier.state = postNumber;
 
     final params = _params;
     final detail = ref.read(topicDetailProvider(params)).value;
@@ -124,8 +129,13 @@ extension _ScrollActions on _TopicDetailPageState {
     // 本方法在 build 期间调用，provider 写入需推迟到帧后
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(detailScrollPositionProvider(widget.topicId).notifier).state =
-          targetPostNumber;
+      final positionNotifier = ref.read(
+        detailScrollPositionProvider((
+          topicId: widget.topicId,
+          instanceId: _instanceId,
+        )).notifier,
+      );
+      positionNotifier.state = targetPostNumber;
     });
 
     final streamIndex = detail.postStream.stream.indexOf(targetPost.id);
@@ -383,8 +393,7 @@ extension _ScrollActions on _TopicDetailPageState {
         // center 坐标系下列表顶是 minScrollExtent 而非 0
         offsetDelta = math.max(
           offsetDelta,
-          scrollController.position.minScrollExtent -
-              scrollController.offset,
+          scrollController.position.minScrollExtent - scrollController.offset,
         );
       }
     } else if (delta > 0 && hasMoreBelowInPost) {
@@ -460,8 +469,17 @@ extension _ScrollActions on _TopicDetailPageState {
     }
 
     if (!forceLocalJump && _controller.isPostRendered(postIndex)) {
-      await _controller.scrollToPost(postNumber, posts);
-    } else {
+      final positioned = await _controller.scrollToPost(postNumber, posts);
+      forceLocalJump = !positioned;
+      if (!positioned) {
+        FrameJankMonitor.logEvent(
+          'SCROLL-FUSE',
+          'scrollToPost 未收敛，切换本地锚点：post=$postNumber index=$postIndex',
+          persistWhenStopped: true,
+        );
+      }
+    }
+    if (forceLocalJump || !_controller.isPostRendered(postIndex)) {
       // 换 center 锚点到目标帖，首帧即构造性定位（收尾贴底见
       // _finalizeInitialPosition，由 build 里的初始定位块统一触发）
       _controller.jumpToPostLocally(postNumber);
@@ -495,11 +513,24 @@ extension _ScrollActions on _TopicDetailPageState {
       }
 
       if (!forceLocalJump && _controller.isPostRendered(postIndex)) {
-        // 同 _scrollToPost：走 jumpTo 而非 animateTo，避免触底回弹
+        // 同 _scrollToPost：走 jumpTo 而非 animateTo，避免触底回弹；
+        // jumpTo 后仍复查是否收敛，未收敛降级本地锚点（SCROLL-FUSE）
+        final scrollIndex = _controller.scrollIndexForPostIndex(postIndex);
         await _controller.scrollController.jumpToRenderedScrollIndex(
-          _controller.scrollIndexForPostIndex(postIndex),
+          scrollIndex,
         );
-      } else {
+        forceLocalJump = !_controller.scrollController
+            .isIndexStateInLayoutRange(scrollIndex);
+        if (forceLocalJump) {
+          FrameJankMonitor.logEvent(
+            'SCROLL-FUSE',
+            'scrollToPostById 未收敛，切换本地锚点：'
+                'post=${post.postNumber} index=$scrollIndex',
+            persistWhenStopped: true,
+          );
+        }
+      }
+      if (forceLocalJump || !_controller.isPostRendered(postIndex)) {
         // 同 _scrollToPost：center 换锚构造性定位
         _controller.jumpToPostLocally(post.postNumber);
         if (mounted) setState(() {});
