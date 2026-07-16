@@ -1,0 +1,40 @@
+{
+  "seeking_title": "Seeking",
+  "seeking_addUser": "Add user",
+  "seeking_addUserHint": "Enter username",
+  "seeking_removeUser": "Stop watching",
+  "seeking_userExists": "This user is already being watched",
+  "seeking_userLimit": "Watch limit is {max} users",
+  "@seeking_userLimit": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollow": "Sync following",
+  "seeking_syncFollowDone": "Imported {count} followed users",
+  "@seeking_syncFollowDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollowFailed": "Failed to sync following. Please try again later",
+  "seeking_userNotFound": "User not found",
+  "seeking_addUserFailed": "Failed to add user. Please try again later",
+  "seeking_paceTitle": "Request rate",
+  "seeking_paceHigh": "High",
+  "seeking_paceMedium": "Medium",
+  "seeking_paceLow": "Low",
+  "seeking_emptyHint": "Add users whose activity you want to watch.\nOnce enabled, their posts / replies / likes / reactions / boosts are polled automatically",
+  "seeking_waitingData": "Waiting for the first round of data…",
+  "seeking_disabledHint": "Watching is off. Toggle the switch in the top right to start",
+  "seeking_rateLimited": "Rate limited. Paused until the next minute, then resumes automatically",
+  "seeking_typePost": "posted",
+  "seeking_typeReply": "replied to",
+  "seeking_typeLike": "liked",
+  "seeking_typeReaction": "reacted to",
+  "seeking_typeBoost": "boosted"
+}

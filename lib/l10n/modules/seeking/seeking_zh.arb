@@ -1,0 +1,40 @@
+{
+  "seeking_title": "追觅",
+  "seeking_addUser": "添加用户",
+  "seeking_addUserHint": "输入用户名",
+  "seeking_removeUser": "移除监控",
+  "seeking_userExists": "该用户已在监控列表中",
+  "seeking_userLimit": "监控上限 {max} 人",
+  "@seeking_userLimit": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollow": "同步关注",
+  "seeking_syncFollowDone": "已导入 {count} 位关注用户",
+  "@seeking_syncFollowDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollowFailed": "同步关注失败，请稍后重试",
+  "seeking_userNotFound": "未找到该用户",
+  "seeking_addUserFailed": "添加用户失败，请稍后重试",
+  "seeking_paceTitle": "请求频率",
+  "seeking_paceHigh": "高",
+  "seeking_paceMedium": "中",
+  "seeking_paceLow": "低",
+  "seeking_emptyHint": "添加想要关注动态的用户，\n开启开关后将自动轮询其发帖 / 回复 / 点赞 / 回应 / Boost",
+  "seeking_waitingData": "等待第一轮数据…",
+  "seeking_disabledHint": "监控已关闭，打开右上角开关开始追觅",
+  "seeking_rateLimited": "触发限流，已暂停到下一分钟自动恢复",
+  "seeking_typePost": "发布了话题",
+  "seeking_typeReply": "回复了",
+  "seeking_typeLike": "点赞了",
+  "seeking_typeReaction": "回应了",
+  "seeking_typeBoost": "Boost 了"
+}
