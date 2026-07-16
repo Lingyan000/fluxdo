@@ -164,6 +164,9 @@ class AppPreferences {
   /// 显示用户签名
   final bool showSignatures;
 
+  /// 小尾巴动画 SVG 自适应帧率
+  final bool adaptiveSignatureFrameRate;
+
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
 
@@ -244,6 +247,7 @@ class AppPreferences {
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
     this.showSignatures = true,
+    this.adaptiveSignatureFrameRate = true,
     this.boostDanmaku = false,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
@@ -290,6 +294,7 @@ class AppPreferences {
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
     bool? showSignatures,
+    bool? adaptiveSignatureFrameRate,
     bool? boostDanmaku,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
@@ -341,6 +346,8 @@ class AppPreferences {
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
+      adaptiveSignatureFrameRate:
+          adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
@@ -402,6 +409,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
+  static const String _adaptiveSignatureFrameRateKey =
+      'pref_adaptive_signature_frame_rate';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
@@ -467,6 +476,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
+          adaptiveSignatureFrameRate:
+              _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
@@ -677,6 +688,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setShowSignatures(bool enabled) async {
     state = state.copyWith(showSignatures: enabled);
     await _prefs.setBool(_showSignaturesKey, enabled);
+  }
+
+  Future<void> setAdaptiveSignatureFrameRate(bool enabled) async {
+    state = state.copyWith(adaptiveSignatureFrameRate: enabled);
+    await _prefs.setBool(_adaptiveSignatureFrameRateKey, enabled);
   }
 
   Future<void> setBoostDanmaku(bool enabled) async {

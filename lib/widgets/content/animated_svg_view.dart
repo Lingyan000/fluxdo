@@ -24,7 +24,9 @@ import 'package:full_svg_flutter/src/animation/svg_theme_apply.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../../services/signature_frame_scheduler.dart';
 import '../../utils/svg_utils.dart';
+import 'signature_animation_scope.dart';
 
 /// 动画 SVG 视图（CSS @keyframes / SMIL / filter 等 jovial_svg 不支持的特性）。
 ///
@@ -222,6 +224,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   static const int _bigSourceBytes = 256 << 10;
 
   final Object _token = Object();
+  final Object _adaptiveFrameOwner = Object();
   final GlobalKey _boundaryKey = GlobalKey();
 
   late int _cacheKey; // 原始源码会话内 hash(不等 strip)
@@ -244,6 +247,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   int _captureRetries = 0;
   AnimatedSvgController? _controller;
   _BumpNotifier? _waitNotifier;
+  bool _adaptiveFrameRate = false;
+  int _adaptiveElapsedMicros = 0;
+  int? _adaptiveLastTickMicros;
 
   /// 防注入后的源码;memoize,同一实例只剥一次。
   String get _safeSource =>
@@ -253,6 +259,27 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   void initState() {
     super.initState();
     _initSource();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final adaptive =
+        !widget.autoPlay &&
+        SignatureAnimationScope.adaptiveFrameRateOf(context);
+    if (_adaptiveFrameRate == adaptive) return;
+
+    if (adaptive) {
+      final currentTimeMs = _controller?.currentTimeMs;
+      if (currentTimeMs != null && currentTimeMs.isFinite) {
+        _adaptiveElapsedMicros = (currentTimeMs * 1000).round();
+      }
+      _controller?.pause();
+    } else {
+      _stopAdaptivePlayback();
+    }
+    _adaptiveFrameRate = adaptive;
+    if (_isPlaying) _schedulePlaybackSync();
   }
 
   void _initSource() {
@@ -364,6 +391,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   }
 
   void _teardownSource() {
+    _stopAdaptivePlayback();
     _SvgFirstFrameCache.resign(_cacheKey, _token);
     _waitNotifier?.removeListener(_onCacheBump);
     _waitNotifier = null;
@@ -380,6 +408,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     _electArmed = false;
     _captureScheduled = false;
     _captureRetries = 0;
+    _adaptiveElapsedMicros = 0;
   }
 
   @override
@@ -528,8 +557,8 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
 
     if (_liveMounted) {
       // 活体还在(此前暂停过):秒回,零解析
-      _controller?.resume();
       setState(() => _isPlaying = true);
+      _schedulePlaybackSync();
       return;
     }
 
@@ -543,10 +572,18 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
       _isPlaying = true;
       _controller ??= AnimatedSvgController();
     });
+    _schedulePlaybackSync();
   }
 
   void _pause() {
     if (!_isPlaying) return;
+    if (!_adaptiveFrameRate) {
+      final currentTimeMs = _controller?.currentTimeMs;
+      if (currentTimeMs != null && currentTimeMs.isFinite) {
+        _adaptiveElapsedMicros = (currentTimeMs * 1000).round();
+      }
+    }
+    _stopAdaptivePlayback();
     _controller?.pause();
     if (_playing == this) _playing = null;
     if (mounted) {
@@ -554,6 +591,48 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     } else {
       _isPlaying = false;
     }
+  }
+
+  void _schedulePlaybackSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isPlaying || !_liveMounted) return;
+      if (_adaptiveFrameRate) {
+        _startAdaptivePlayback();
+      } else {
+        _stopAdaptivePlayback();
+        if (_adaptiveElapsedMicros > 0) {
+          _controller?.seek(Duration(microseconds: _adaptiveElapsedMicros));
+        }
+        _controller?.resume();
+      }
+    });
+  }
+
+  void _startAdaptivePlayback() {
+    _controller?.pause();
+    _adaptiveLastTickMicros = null;
+    SignatureFrameScheduler.instance.subscribe(
+      owner: _adaptiveFrameOwner,
+      onFrame: _onAdaptiveFrame,
+    );
+  }
+
+  void _stopAdaptivePlayback() {
+    SignatureFrameScheduler.instance.unsubscribe(_adaptiveFrameOwner);
+    _adaptiveLastTickMicros = null;
+  }
+
+  void _onAdaptiveFrame(int nowMicros) {
+    if (!mounted || !_isPlaying || !_adaptiveFrameRate || !_liveMounted) {
+      _stopAdaptivePlayback();
+      return;
+    }
+    final previous = _adaptiveLastTickMicros;
+    _adaptiveLastTickMicros = nowMicros;
+    if (previous != null && nowMicros > previous) {
+      _adaptiveElapsedMicros += nowMicros - previous;
+    }
+    _controller?.seek(Duration(microseconds: _adaptiveElapsedMicros));
   }
 
   // ---- build ----
@@ -580,7 +659,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
           _safeSource,
           fit: BoxFit.contain,
           alignment: Alignment.center,
-          autoPlay: _isPlaying,
+          // 自适应模式由共享调度器按真实时间 seek；关闭开关时保持包原生
+          // Ticker 行为，便于用户随时恢复完整刷新率。
+          autoPlay: _isPlaying && !_adaptiveFrameRate,
           controller: _controller,
           clipToViewBox: true,
         ),
