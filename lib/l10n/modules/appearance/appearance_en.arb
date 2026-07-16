@@ -87,6 +87,8 @@
   "reading_boostDanmakuDesc": "Overlay Boosts on top of post content as scrolling danmaku. Pauses on touch.",
   "reading_expandRelatedLinks": "Expand related links by default",
   "reading_expandRelatedLinksDesc": "Show related links expanded in posts",
+  "reading_adaptiveSignatureFrameRate": "Adaptive signature frame rate",
+  "reading_adaptiveSignatureFrameRateDesc": "Dynamically reduce animated SVG frame rate while scrolling or under load to prevent stutter",
   "reading_showSignatures": "Show user signatures",
   "reading_showSignaturesDesc": "Display user signatures below post content",
   "reading_title": "Reading Settings",

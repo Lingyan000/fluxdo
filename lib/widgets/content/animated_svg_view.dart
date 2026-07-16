@@ -25,7 +25,9 @@ import 'package:full_svg_flutter/src/animation/svg_theme_apply.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../../services/signature_frame_scheduler.dart';
 import '../../utils/svg_utils.dart';
+import 'signature_animation_scope.dart';
 
 /// 动画 SVG 视图（CSS @keyframes / SMIL / filter 等 jovial_svg 不支持的特性）。
 ///
@@ -227,6 +229,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   static const int _bigSourceBytes = 256 << 10;
 
   final Object _token = Object();
+  final Object _adaptiveFrameOwner = Object();
   final GlobalKey _boundaryKey = GlobalKey();
 
   late int _cacheKey; // 原始源码会话内 hash(不等 strip)
@@ -249,6 +252,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   int _captureRetries = 0;
   AnimatedSvgController? _controller;
   _BumpNotifier? _waitNotifier;
+  bool _adaptiveFrameRate = false;
 
   // ---- 自持播放器(见"播放控制"注释) ----
   SvgDocument? _playerDoc;
@@ -265,6 +269,20 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   void initState() {
     super.initState();
     _initSource();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final adaptive =
+        !widget.autoPlay &&
+        SignatureAnimationScope.adaptiveFrameRateOf(context);
+    if (_adaptiveFrameRate == adaptive) return;
+    _adaptiveFrameRate = adaptive;
+    if (_isPlaying) {
+      _stopPlaybackClock();
+      _startPlaybackClock();
+    }
   }
 
   void _initSource() {
@@ -405,6 +423,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   }
 
   void _teardownSource() {
+    _stopAdaptivePlayback();
     _SvgFirstFrameCache.resign(_cacheKey, _token);
     _waitNotifier?.removeListener(_onCacheBump);
     _waitNotifier = null;
@@ -585,6 +604,12 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
 
   void _startPlaybackClock() {
     _playTimer?.cancel();
+    _stopAdaptivePlayback();
+    _playClock.start();
+    if (_adaptiveFrameRate) {
+      _startAdaptivePlayback();
+      return;
+    }
     _playTimer = Timer.periodic(
       Duration(milliseconds: (1000 / _playbackFps).round()),
       (_) {
@@ -594,12 +619,12 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
         _tickPlayer();
       },
     );
-    _playClock.start();
   }
 
   void _stopPlaybackClock() {
     _playTimer?.cancel();
     _playTimer = null;
+    _stopAdaptivePlayback();
     _playClock.stop();
   }
 
@@ -697,6 +722,27 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     } else {
       _isPlaying = false;
     }
+  }
+
+  void _startAdaptivePlayback() {
+    SignatureFrameScheduler.instance.subscribe(
+      owner: _adaptiveFrameOwner,
+      onFrame: _onAdaptiveFrame,
+    );
+  }
+
+  void _stopAdaptivePlayback() {
+    SignatureFrameScheduler.instance.unsubscribe(_adaptiveFrameOwner);
+  }
+
+  void _onAdaptiveFrame(int _) {
+    if (!mounted || !_isPlaying || !_adaptiveFrameRate) {
+      _stopAdaptivePlayback();
+      return;
+    }
+    // 调度器只控制采样频率，时间轴仍由共享的真实时间时钟推进。
+    if (Scrollable.recommendDeferredLoadingForContext(context)) return;
+    _tickPlayer();
   }
 
   // ---- build ----
