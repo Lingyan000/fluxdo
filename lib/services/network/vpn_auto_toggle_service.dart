@@ -9,6 +9,20 @@ import 'doh/network_settings_service.dart';
 import 'proxy/proxy_settings_service.dart';
 import 'windows_vpn_adapter_detector.dart';
 
+/// VPN 自动切换的判定方式。
+enum VpnDetectionMode {
+  automatic,
+  forceActive,
+  forceInactive;
+
+  static VpnDetectionMode fromString(String? value) {
+    return VpnDetectionMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => VpnDetectionMode.automatic,
+    );
+  }
+}
+
 /// VPN 自动切换服务
 ///
 /// 检测到 VPN 开启时自动关闭 DOH 和上游代理，VPN 关闭后自动恢复。
@@ -21,6 +35,7 @@ class VpnAutoToggleService {
   static const _keyEnabled = 'vpn_auto_toggle_enabled';
   static const _keySuppressedDoh = 'vpn_suppressed_doh';
   static const _keySuppressedProxy = 'vpn_suppressed_proxy';
+  static const _keyDetectionMode = 'vpn_detection_mode';
 
   late SharedPreferences _prefs;
 
@@ -29,6 +44,11 @@ class VpnAutoToggleService {
 
   /// 当前是否检测到 VPN
   final vpnActiveNotifier = ValueNotifier<bool>(false);
+
+  /// 自动判定 / 强制视为 VPN / 强制视为非 VPN。
+  final detectionModeNotifier = ValueNotifier<VpnDetectionMode>(
+    VpnDetectionMode.automatic,
+  );
 
   /// 压制标记变化通知（UI 据此刷新"VPN 断开后是否启用"的意图显示）
   final suppressionNotifier = ValueNotifier<int>(0);
@@ -39,11 +59,15 @@ class VpnAutoToggleService {
   /// Windows 网卡枚举是异步的。只允许最后一次网络变化的结果生效，避免较慢的
   /// 旧枚举覆盖较新的连接状态。
   int _windowsDetectionGeneration = 0;
+  List<ConnectivityResult> _lastConnectivityResults = const [];
+  bool _lastHasWindowsVpnAdapter = false;
+  bool _shouldSuppress = false;
 
   void _bumpSuppression() => suppressionNotifier.value++;
 
   bool get enabled => enabledNotifier.value;
   bool get vpnActive => vpnActiveNotifier.value;
+  VpnDetectionMode get detectionMode => detectionModeNotifier.value;
 
   @visibleForTesting
   static bool resolveVpnActive({
@@ -65,6 +89,18 @@ class VpnAutoToggleService {
     return connectivityResults.contains(ConnectivityResult.vpn);
   }
 
+  @visibleForTesting
+  static bool resolveDetection({
+    required bool automaticValue,
+    required VpnDetectionMode mode,
+  }) {
+    return switch (mode) {
+      VpnDetectionMode.automatic => automaticValue,
+      VpnDetectionMode.forceActive => true,
+      VpnDetectionMode.forceInactive => false,
+    };
+  }
+
   /// DOH 是否被 VPN 压制
   bool get isDohSuppressed => _prefs.getBool(_keySuppressedDoh) ?? false;
 
@@ -74,6 +110,9 @@ class VpnAutoToggleService {
   void initialize(SharedPreferences prefs) {
     _prefs = prefs;
     enabledNotifier.value = prefs.getBool(_keyEnabled) ?? false;
+    detectionModeNotifier.value = VpnDetectionMode.fromString(
+      prefs.getString(_keyDetectionMode),
+    );
   }
 
   /// 开关控制
@@ -84,14 +123,22 @@ class VpnAutoToggleService {
     if (!value) {
       // 关闭功能时，如果有活跃压制则立即恢复
       await _restore();
-    } else if (vpnActive) {
+    } else if (_shouldSuppress) {
       // 开启功能且当前 VPN 活跃，立即压制
       await _suppress();
     }
   }
 
+  Future<void> setDetectionMode(VpnDetectionMode mode) async {
+    if (detectionModeNotifier.value == mode) return;
+    detectionModeNotifier.value = mode;
+    await _prefs.setString(_keyDetectionMode, mode.name);
+    _applyLastKnownState();
+  }
+
   /// 由 ConnectivityService 调用
   void handleConnectivityChanged(List<ConnectivityResult> results) {
+    _lastConnectivityResults = results;
     if (Platform.isWindows) {
       final generation = ++_windowsDetectionGeneration;
       unawaited(_detectWindowsVpnAndApply(results, generation));
@@ -107,6 +154,7 @@ class VpnAutoToggleService {
   ) async {
     final adapterStatus = await WindowsVpnAdapterDetector.detect();
     if (generation != _windowsDetectionGeneration) return;
+    _lastHasWindowsVpnAdapter = adapterStatus.active;
     _applyVpnState(
       resolveVpnActive(
         connectivityResults: results,
@@ -117,31 +165,60 @@ class VpnAutoToggleService {
   }
 
   void _applyVpnState(bool hasVpn, {required bool shouldSuppress}) {
-    vpnActiveNotifier.value = hasVpn;
+    final mode = detectionMode;
+    final effectiveVpnActive = resolveDetection(
+      automaticValue: hasVpn,
+      mode: mode,
+    );
+    final effectiveShouldSuppress = resolveDetection(
+      automaticValue: shouldSuppress,
+      mode: mode,
+    );
+    vpnActiveNotifier.value = effectiveVpnActive;
+    _shouldSuppress = effectiveShouldSuppress;
 
     if (!enabled) return;
 
-    if (shouldSuppress) {
+    if (effectiveShouldSuppress) {
       _suppress();
     } else {
       _restore();
     }
   }
 
+  void _applyLastKnownState() {
+    _applyVpnState(
+      resolveVpnActive(
+        connectivityResults: _lastConnectivityResults,
+        hasWindowsVpnAdapter: _lastHasWindowsVpnAdapter,
+      ),
+      shouldSuppress: shouldAutoSuppress(_lastConnectivityResults),
+    );
+  }
+
   /// 启动时同步一次 VPN 状态，避免首个请求发出后再切换网络配置。
   Future<void> syncInitialState(List<ConnectivityResult> results) async {
+    _lastConnectivityResults = results;
     final hasWindowsVpnAdapter = Platform.isWindows
         ? (await WindowsVpnAdapterDetector.detect()).active
         : false;
+    _lastHasWindowsVpnAdapter = hasWindowsVpnAdapter;
     final hasVpn = resolveVpnActive(
       connectivityResults: results,
       hasWindowsVpnAdapter: hasWindowsVpnAdapter,
     );
-    vpnActiveNotifier.value = hasVpn;
+    final mode = detectionMode;
+    vpnActiveNotifier.value = resolveDetection(
+      automaticValue: hasVpn,
+      mode: mode,
+    );
+    _shouldSuppress = resolveDetection(
+      automaticValue: shouldAutoSuppress(results),
+      mode: mode,
+    );
 
     if (!enabled) return;
-
-    if (shouldAutoSuppress(results)) {
+    if (_shouldSuppress) {
       await _suppress();
     } else {
       await _restore();
