@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'doh/network_settings_service.dart';
 import 'proxy/proxy_settings_service.dart';
+import 'system_proxy_service.dart';
 import 'windows_vpn_adapter_detector.dart';
 
 /// VPN 自动切换的判定方式。
@@ -63,6 +64,30 @@ class VpnAutoToggleService {
   bool _lastHasWindowsVpnAdapter = false;
   bool _shouldSuppress = false;
 
+  /// Windows 开关 TUN 网卡 / 系统代理常常不产生 connectivity 事件,单靠事件
+  /// 驱动会漏检(用户开了网卡界面却一直显示"VPN 未连接")。补两条信号:
+  /// - 订阅 [SystemProxyService.version](其内部已有 10s 注册表节拍);
+  /// - 低频异步兜底重检网卡。检测本身是异步枚举,不落在 UI 帧上,
+  ///   与曾导致周期性卡顿的 3s 同步轮询不同。
+  Timer? _windowsFallbackTimer;
+  static const _windowsFallbackInterval = Duration(seconds: 15);
+  bool _windowsSignalWatchStarted = false;
+
+  void _ensureWindowsSignalWatch() {
+    if (_windowsSignalWatchStarted || !Platform.isWindows) return;
+    _windowsSignalWatchStarted = true;
+    SystemProxyService.instance.version.addListener(_redetectWindows);
+    _windowsFallbackTimer = Timer.periodic(
+      _windowsFallbackInterval,
+      (_) => _redetectWindows(),
+    );
+  }
+
+  void _redetectWindows() {
+    final generation = ++_windowsDetectionGeneration;
+    unawaited(_detectWindowsVpnAndApply(_lastConnectivityResults, generation));
+  }
+
   void _bumpSuppression() => suppressionNotifier.value++;
 
   bool get enabled => enabledNotifier.value;
@@ -73,9 +98,11 @@ class VpnAutoToggleService {
   static bool resolveVpnActive({
     required List<ConnectivityResult> connectivityResults,
     required bool hasWindowsVpnAdapter,
+    bool systemProxyEnabled = false,
   }) {
     return connectivityResults.contains(ConnectivityResult.vpn) ||
-        hasWindowsVpnAdapter;
+        hasWindowsVpnAdapter ||
+        systemProxyEnabled;
   }
 
   /// TUN 名称识别目前仅补充状态展示，不扩大自动压制的触发范围。
@@ -120,6 +147,12 @@ class VpnAutoToggleService {
     enabledNotifier.value = value;
     await _prefs.setBool(_keyEnabled, value);
 
+    // 开关功能时立即重检一次,不等兜底周期
+    if (value && Platform.isWindows) {
+      SystemProxyService.instance.refresh();
+      _redetectWindows();
+    }
+
     if (!value) {
       // 关闭功能时，如果有活跃压制则立即恢复
       await _restore();
@@ -133,7 +166,13 @@ class VpnAutoToggleService {
     if (detectionModeNotifier.value == mode) return;
     detectionModeNotifier.value = mode;
     await _prefs.setString(_keyDetectionMode, mode.name);
+    // 先按缓存信号立即刷新 UI,再发起一次真实重检(异步),
+    // 避免用户切回"自动"后要等下一个兜底周期才看到真实状态。
     _applyLastKnownState();
+    if (Platform.isWindows) {
+      SystemProxyService.instance.refresh();
+      _redetectWindows();
+    }
   }
 
   /// 由 ConnectivityService 调用
@@ -159,6 +198,8 @@ class VpnAutoToggleService {
       resolveVpnActive(
         connectivityResults: results,
         hasWindowsVpnAdapter: adapterStatus.active,
+        systemProxyEnabled:
+            SystemProxyService.instance.effectiveProxyUrl != null,
       ),
       shouldSuppress: shouldAutoSuppress(results),
     );
@@ -191,6 +232,8 @@ class VpnAutoToggleService {
       resolveVpnActive(
         connectivityResults: _lastConnectivityResults,
         hasWindowsVpnAdapter: _lastHasWindowsVpnAdapter,
+        systemProxyEnabled: Platform.isWindows &&
+            SystemProxyService.instance.effectiveProxyUrl != null,
       ),
       shouldSuppress: shouldAutoSuppress(_lastConnectivityResults),
     );
@@ -199,6 +242,7 @@ class VpnAutoToggleService {
   /// 启动时同步一次 VPN 状态，避免首个请求发出后再切换网络配置。
   Future<void> syncInitialState(List<ConnectivityResult> results) async {
     _lastConnectivityResults = results;
+    _ensureWindowsSignalWatch();
     final hasWindowsVpnAdapter = Platform.isWindows
         ? (await WindowsVpnAdapterDetector.detect()).active
         : false;
@@ -206,6 +250,8 @@ class VpnAutoToggleService {
     final hasVpn = resolveVpnActive(
       connectivityResults: results,
       hasWindowsVpnAdapter: hasWindowsVpnAdapter,
+      systemProxyEnabled: Platform.isWindows &&
+          SystemProxyService.instance.effectiveProxyUrl != null,
     );
     final mode = detectionMode;
     vpnActiveNotifier.value = resolveDetection(

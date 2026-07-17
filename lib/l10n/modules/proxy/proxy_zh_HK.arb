@@ -188,7 +188,7 @@
   "vpnToggle_connected": "VPN 已連接",
   "vpnToggle_detectionMode": "VPN 判定方式",
   "vpnToggle_detectionAutomatic": "自動",
-  "vpnToggle_detectionAutomaticDesc": "按系統 VPN 狀態自動判斷，Windows VPN/TUN 網卡也會參與狀態識別",
+  "vpnToggle_detectionAutomaticDesc": "按系統網絡狀態自動判斷，虛擬網卡與系統代理也會參與識別",
   "vpnToggle_detectionForceActive": "強制為 VPN",
   "vpnToggle_detectionForceActiveDesc": "忽略自動檢測，始終按 VPN 已連接處理",
   "vpnToggle_detectionForceInactive": "強制非 VPN",
