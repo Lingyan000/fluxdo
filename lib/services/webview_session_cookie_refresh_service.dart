@@ -468,7 +468,12 @@ class WebViewSessionCookieRefreshService {
     String reason = 'unknown',
     List<String>? pluginCandidates,
     Duration timeout = _bootstrapTimeout,
+    bool Function()? isCancelled,
+    Future<void>? cancellationSignal,
   }) async {
+    if (isCancelled?.call() == true) {
+      return const SessionBootstrapResult.failure(phase: 'cancelled');
+    }
     final handlerName =
         'fluxdo_session_bootstrap_${DateTime.now().microsecondsSinceEpoch}';
     final completer = Completer<Map<String, dynamic>>();
@@ -481,7 +486,7 @@ class WebViewSessionCookieRefreshService {
     controller.addJavaScriptHandler(
       handlerName: handlerName,
       callback: (args) {
-        if (completer.isCompleted) return null;
+        if (completer.isCompleted || isCancelled?.call() == true) return null;
         final raw = args.isNotEmpty ? args.first?.toString() : null;
         try {
           final decoded = raw == null || raw.isEmpty
@@ -500,16 +505,37 @@ class WebViewSessionCookieRefreshService {
     );
 
     try {
+      if (isCancelled?.call() == true) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       await _injectPluginCandidates(
         controller,
         freshPlugin ? null : pluginCandidates,
       );
+      if (isCancelled?.call() == true) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       await controller.evaluateJavascript(
-        source: 'window.__fluxdoFreshPlugin = ${freshPlugin ? 'true' : 'false'};',
+        source:
+            'window.__fluxdoFreshPlugin = ${freshPlugin ? 'true' : 'false'};',
       );
+      if (isCancelled?.call() == true) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       final script = _bootstrapScript(handlerName);
       await controller.evaluateJavascript(source: script);
-      final result = await completer.future.timeout(timeout);
+      if (isCancelled?.call() == true) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
+      final resultFuture = completer.future.timeout(timeout);
+      final result = cancellationSignal == null
+          ? await resultFuture
+          : await Future.any<Map<String, dynamic>>([
+              resultFuture,
+              cancellationSignal.then(
+                (_) => <String, dynamic>{'ok': false, 'phase': 'cancelled'},
+              ),
+            ]);
       final ok = result['ok'] == true;
       final cfBlocked = result['cfBlocked'] == true;
       final endpoint = result['endpoint']?.toString();

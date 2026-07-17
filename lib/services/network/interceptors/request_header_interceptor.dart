@@ -27,7 +27,7 @@ class RequestHeaderInterceptor extends Interceptor {
       options.headers.addAll(hints);
     }
 
-    // 3. 设置 CSRF Token
+    // 3. 设置 CSRF Token（未登录时无法获取，跳过）
     final skipCsrf = options.extra['skipCsrf'] == true;
     if (!skipCsrf) {
       // 非 GET 请求且 token 为空时，先从 /session/csrf 获取

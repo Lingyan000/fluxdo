@@ -110,6 +110,7 @@ abstract class _DiscourseServiceBase {
   Exception _handleDioError(DioException error);
   Never _throwApiError(DioException e);
   Future<void> _loadStoredCredentials();
+  Future<void> finalizeNativeLoginSuccess(String identifier);
 }
 
 /// Linux.do API 服务

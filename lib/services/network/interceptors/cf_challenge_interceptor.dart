@@ -9,6 +9,7 @@ import '../../app_logger.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
+import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
 import '../exceptions/api_exception.dart';
@@ -122,8 +123,10 @@ class CfChallengeInterceptor extends Interceptor {
       CfClearanceRefreshService().extractAndUpdateSitekey(
         err.response?.data?.toString() ?? '',
       );
-      // 403 说明 cf_clearance 已失效，停止自动续期（避免与手动验证冲突）
-      CfClearanceRefreshService().stop();
+      // 403 说明 cf_clearance 已失效，停止自动续期（避免与手动验证冲突）。
+      // 这里不需要 await——真正要建验证 WebView 前，showManualVerify 内部
+      // 会自己再 await 一次 stop()，确保销毁完成。
+      unawaited(CfClearanceRefreshService().stop());
 
       final requestUrl = err.requestOptions.uri.toString();
       final requestMethod = err.requestOptions.method.toUpperCase();
@@ -134,6 +137,9 @@ class CfChallengeInterceptor extends Interceptor {
           'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.extra['skipCsrf'] == true})';
       debugPrint('[Dio] $logMessage');
       AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
+      // 命中 CF 盾时立即重读系统代理状态:若用户刚开/关了系统代理,
+      // 下一个请求就能用一致的出口重试,而不是等 10s 周期刷新。
+      SystemProxyService.instance.refresh();
       CfChallengeLogger.logInterceptorDetected(
         url: requestUrl,
         statusCode: statusCode!,
@@ -179,8 +185,23 @@ class CfChallengeInterceptor extends Interceptor {
         );
       }
 
-      // 静默请求只在后台尝试验证；页面数据/操作请求在前台展示验证。
-      final result = await cfService.showManualVerify(null, !isSilent);
+      // 静默请求（isSilent）不再尝试后台自动验证：实测"后台/不可见模式"
+      // 起验证 WebView 会撞上 flutter_inappwebview_windows_plugin 的一处
+      // 原生崩溃（0xc0000005，多次复现于 User API Key 静默换 OTP/撤销/
+      // CSRF 刷新等场景），且用户完全无感知，出问题也无法排查。静默请求
+      // 直接快速失败，交给调用方已有的降级逻辑处理；真正需要过盾时，
+      // 走用户能看见、能手动操作的前台验证（页面数据/操作请求分支）。
+      if (isSilent) {
+        CfChallengeLogger.log(
+          '[INTERCEPTOR] Silent request skips background verify (crash-prone): '
+          '$requestMethod $requestUrl mode=$requestMode',
+        );
+        return handler.reject(
+          cfException(CfChallengeException(cause: '静默请求跳过后台验证')),
+        );
+      }
+
+      final result = await cfService.showManualVerify(null, true);
 
       if (result == true) {
         final syncOk = await _syncCookiesOnce();
@@ -303,6 +324,24 @@ class CfChallengeInterceptor extends Interceptor {
               debugPrint(
                 '[Dio] Retry got ${e.response?.statusCode} again — cf_clearance may not have been sent or already expired',
               );
+              // 验证刚「成功」、cookie 也带上了,重试却仍被 CF 拦——铸出的
+              // clearance 对 Dio 无效。这是确定性环境问题(典型:系统代理
+              // 只对 WebView2 生效,Dio 直连,两侧出口 IP 不一致),再验证
+              // 多少次都一样,立即熔断进入冷却,阻断验证无限循环。
+              if (CfChallengeService.isCfChallengeResponse(e.response)) {
+                cfService.startIneffectiveClearanceCooldown();
+                CfChallengeLogger.log(
+                  '[INTERCEPTOR] Verified clearance ineffective for Dio '
+                  '(retry ${e.response?.statusCode}), entering cooldown: '
+                  '$requestMethod $requestUrl',
+                  level: 'warning',
+                );
+                if (shouldShowActionPrompt) {
+                  CfChallengeService.showGlobalMessage(
+                    S.current.cf_challengeNotEffective,
+                  );
+                }
+              }
             }
           } else {
             debugPrint('[Dio] Retry failed (non-Dio): $e');

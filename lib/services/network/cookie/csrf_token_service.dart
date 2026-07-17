@@ -75,8 +75,16 @@ class CsrfTokenService {
         validateStatus: (status) =>
             status != null && status >= 200 && status < 400,
         // 跟 DiscourseService._dio 的 defaultHeaders 一致, 否则 CF 看 fingerprint
-        // 不一致 (缺 Accept/X-Requested-With) 直接当 bot 拦, GET /session/csrf
-        // 永远 403, CSRF 死循环。
+        // 不一致 (缺 Accept/X-Requested-With/User-Agent) 直接当 bot 拦, GET
+        // /session/csrf 永远 403, CSRF 死循环。
+        //
+        // User-Agent 单独在下面异步补上（不能放进这个 const map）：
+        // AppConstants.getUserAgent() 读的是本机 WebView 引擎真实的
+        // navigator.userAgent——cf_clearance 正是这个 UA 拿到手的。这里
+        // 之前一直没设，所以这个 Dio 发出去的请求用的是 Dio/HTTP 客户端的
+        // 默认 UA，跟签发 cf_clearance 时的 UA 对不上，Cloudflare 直接
+        // 判定成非浏览器客户端来源——这才是"主站浏览正常，偏偏 CSRF/
+        // User API Key 这几个走独立 Dio 的请求老过不了盾"的真正根因。
         headers: const {
           'Accept': 'application/json, text/javascript, */*; q=0.01',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
@@ -84,6 +92,7 @@ class CsrfTokenService {
         },
       ),
     );
+    dio.options.headers['User-Agent'] = await AppConstants.getUserAgent();
 
     configurePlatformAdapter(dio);
     dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
