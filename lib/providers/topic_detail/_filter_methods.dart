@@ -66,18 +66,21 @@ extension FilterMethods on TopicDetailNotifier {
         ? stream
         : [firstPost.id, ...stream];
 
-    state = AsyncValue.data(detail.copyWith(
-      postStream: PostStream(
-        posts: updatedPosts,
-        stream: updatedStream,
-        gaps: detail.postStream.gaps,
+    state = AsyncValue.data(
+      detail.copyWith(
+        postStream: PostStream(
+          posts: updatedPosts,
+          stream: updatedStream,
+          gaps: detail.postStream.gaps,
+        ),
       ),
-    ));
+    );
   }
 
   /// 取消过滤，显示全部回复
   Future<void> cancelFilter() async {
-    if (_filter == null && _usernameFilter == null && !_filterTopLevelReplies) return;
+    if (_filter == null && _usernameFilter == null && !_filterTopLevelReplies)
+      return;
     _filter = null;
     _usernameFilter = null;
     _filterTopLevelReplies = false;
@@ -124,7 +127,12 @@ extension FilterMethods on TopicDetailNotifier {
 
     final result = await AsyncValue.guard(() async {
       final service = ref.read(discourseServiceProvider);
-      final detail = await service.getTopicDetail(arg.topicId, filter: _filter, usernameFilters: _usernameFilter, filterTopLevelReplies: _filterTopLevelReplies);
+      final detail = await service.getTopicDetail(
+        arg.topicId,
+        filter: _filter,
+        usernameFilters: _usernameFilter,
+        filterTopLevelReplies: _filterTopLevelReplies,
+      );
 
       _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
 
@@ -173,16 +181,29 @@ extension FilterMethods on TopicDetailNotifier {
         final newPostStream = await service.getPosts(arg.topicId, nextIds);
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
-        final newPosts = newPostStream.posts.where((p) => !existingIds.contains(p.id)).toList();
+        final newPosts = newPostStream.posts
+            .where((p) => !existingIds.contains(p.id))
+            .toList();
         final mergedPosts = [...currentPosts, ...newPosts];
-        mergedPosts.sort((a, b) => stream.indexOf(a.id).compareTo(stream.indexOf(b.id)));
+        final streamPosition = <int, int>{
+          for (var i = 0; i < stream.length; i++) stream[i]: i,
+        };
+        mergedPosts.sort(
+          (a, b) => (streamPosition[a.id] ?? stream.length).compareTo(
+            streamPosition[b.id] ?? stream.length,
+          ),
+        );
 
         final newLastId = mergedPosts.last.id;
         final newLastIndex = stream.indexOf(newLastId);
         _hasMoreAfter = newLastIndex < stream.length - 1;
 
         return currentDetail.copyWith(
-          postStream: PostStream(posts: mergedPosts, stream: stream, gaps: currentDetail.postStream.gaps),
+          postStream: PostStream(
+            posts: mergedPosts,
+            stream: stream,
+            gaps: currentDetail.postStream.gaps,
+          ),
         );
       });
       if (!ref.mounted) return;
@@ -234,16 +255,29 @@ extension FilterMethods on TopicDetailNotifier {
         final newPostStream = await service.getPosts(arg.topicId, prevIds);
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
-        final newPosts = newPostStream.posts.where((p) => !existingIds.contains(p.id)).toList();
+        final newPosts = newPostStream.posts
+            .where((p) => !existingIds.contains(p.id))
+            .toList();
         final mergedPosts = [...currentPosts, ...newPosts];
-        mergedPosts.sort((a, b) => stream.indexOf(a.id).compareTo(stream.indexOf(b.id)));
+        final streamPosition = <int, int>{
+          for (var i = 0; i < stream.length; i++) stream[i]: i,
+        };
+        mergedPosts.sort(
+          (a, b) => (streamPosition[a.id] ?? stream.length).compareTo(
+            streamPosition[b.id] ?? stream.length,
+          ),
+        );
 
         final newFirstId = mergedPosts.first.id;
         final newFirstIndex = stream.indexOf(newFirstId);
         _hasMoreBefore = newFirstIndex > 0;
 
         return currentDetail.copyWith(
-          postStream: PostStream(posts: mergedPosts, stream: stream, gaps: currentDetail.postStream.gaps),
+          postStream: PostStream(
+            posts: mergedPosts,
+            stream: stream,
+            gaps: currentDetail.postStream.gaps,
+          ),
         );
       });
       if (!ref.mounted) return;
