@@ -101,6 +101,7 @@ import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
 import 'utils/platform_utils.dart';
+import 'utils/discourse_url_parser.dart';
 
 /// 初始化 rhttp Rust runtime
 Future<bool> _initRhttp() async {
@@ -1156,7 +1157,21 @@ class _MainPageState extends ConsumerState<MainPage>
           onOpen: () {
             markPromptedOnce();
             messenger.hideCurrentSnackBar();
-            DeepLinkService.instance.handleUri(candidate.uri);
+            final topic = DiscourseUrlParser.parseTopic(
+              candidate.uri.toString(),
+            );
+            if (topic != null) {
+              ref
+                  .read(selectedTopicProvider.notifier)
+                  .select(
+                    topicId: topic.topicId,
+                    initialTitle: topic.slug,
+                    scrollToPostNumber: topic.postNumber,
+                  );
+              ref.requestNavDestination(NavEntryIds.home);
+            } else {
+              DeepLinkService.instance.handleUri(candidate.uri);
+            }
           },
           onDismiss: () {
             markPromptedOnce();
@@ -1298,6 +1313,18 @@ class _MainPageState extends ConsumerState<MainPage>
         ref.read(barVisibilityProvider.notifier).state = 1.0;
         setState(() => _currentIndex = index);
       }
+    });
+
+    // 通知、深链等外部入口按稳定 id 切换工作区，避免用户重排底栏后
+    // 数字下标指向错误页面。
+    ref.listen(navDestinationRequestProvider, (_, request) {
+      if (request == null) return;
+      final index = pageEntries.indexWhere(
+        (entry) => entry.id == request.targetId,
+      );
+      if (index < 0 || index == _currentIndex) return;
+      ref.read(barVisibilityProvider.notifier).state = 1.0;
+      setState(() => _currentIndex = index);
     });
 
     final destinations = [
