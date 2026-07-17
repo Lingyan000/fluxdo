@@ -8,7 +8,7 @@ import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('手机端 barVisibility 为 0 时隐藏底部导航栏', (tester) async {
+  testWidgets('手机端 barVisibility 为 0 时将底部导航栏平移出屏', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
@@ -50,12 +50,27 @@ void main() {
       ),
     );
 
-    expect(find.byType(NavigationBar), findsNothing);
+    final bottomNavTranslation = find.byWidgetPredicate(
+      (widget) =>
+          widget is FractionalTranslation &&
+          widget.child is AdaptiveBottomNavigation,
+    );
+
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(bottomNavTranslation, findsOneWidget);
+    expect(
+      tester.widget<FractionalTranslation>(bottomNavTranslation).translation,
+      const Offset(0, 1),
+    );
 
     container.read(barVisibilityProvider.notifier).state = 1;
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(
+      tester.widget<FractionalTranslation>(bottomNavTranslation).translation,
+      Offset.zero,
+    );
   });
 
   testWidgets('横屏二级平行视界隐藏全局侧栏', (tester) async {
