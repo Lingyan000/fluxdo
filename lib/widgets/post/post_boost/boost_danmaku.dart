@@ -66,7 +66,7 @@ class BoostDanmaku extends StatefulWidget {
 }
 
 class _BoostDanmakuState extends State<BoostDanmaku>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
 
@@ -76,12 +76,9 @@ class _BoostDanmakuState extends State<BoostDanmaku>
   late List<double> _trackLastRightEdge;
   double _viewportWidth = 0;
   int _trackCount = 1;
-
-  /// 初值 false:等 VisibilityDetector 首报可见才启动 Ticker。
-  /// 此前 initState 即 start、dispose 才停,_visible 只让回调早退 ——
-  /// Ticker 常驻 = 只要弹幕帖挂载(含 cacheExtent 预取区)整个 app 就
-  /// 永不空闲;且全部放完后(发完即止)每帧 setState 空转永不停。
   bool _visible = false;
+  bool _appActive = true;
+  bool _tickerModeEnabled = true;
 
   final math.Random _rng = math.Random();
 
@@ -93,7 +90,15 @@ class _BoostDanmakuState extends State<BoostDanmaku>
     _groups = groupBoostsByContent(widget.boosts);
     _trackCount = widget.maxTrackCount.clamp(1, widget.maxTrackCount);
     _trackLastRightEdge = List.filled(_trackCount, -double.infinity);
-    _ticker = Ticker(_onTick);
+    _ticker = createTicker(_onTick);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _syncTicker();
   }
 
   @override
@@ -104,34 +109,55 @@ class _BoostDanmakuState extends State<BoostDanmaku>
       _groups = groupBoostsByContent(widget.boosts);
       // 如果新增了 group，继续从原指针往后发；不回放已发过的
       if (_groups.length < oldGroupCount) {
-        _nextGroupIndex = _groups.length;
+        _nextGroupIndex = _nextGroupIndex.clamp(0, _groups.length);
       }
-      _ensureTicker(); // 新 boost 到达:停表状态下重新起飞
-    }
-  }
-
-  /// Ticker 生命周期唯一裁决点:可见 且 还有活(飞行中/未发完)才跑。
-  void _ensureTicker() {
-    final hasWork = _flying.isNotEmpty || _nextGroupIndex < _groups.length;
-    final shouldRun = _visible && _groups.isNotEmpty && hasWork;
-    if (shouldRun && !_ticker.isActive) {
-      _lastElapsed = Duration.zero;
-      _ticker.start();
-    } else if (!shouldRun && _ticker.isActive) {
-      _ticker.stop();
+      _syncTicker();
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    _syncTicker();
+  }
+
+  bool get _hasAnimationWork =>
+      _nextGroupIndex < _groups.length || _flying.isNotEmpty;
+
+  void _syncTicker() {
+    final shouldRun =
+        mounted &&
+        _visible &&
+        _appActive &&
+        _tickerModeEnabled &&
+        _viewportWidth > 0 &&
+        _groups.isNotEmpty &&
+        _hasAnimationWork;
+    if (shouldRun) {
+      if (!_ticker.isActive) {
+        // Ticker 每次重新启动都会从零计时，必须同步重置差值基准，
+        // 否则从后台/离屏恢复时第一帧会把暂停时长当作动画位移。
+        _lastElapsed = Duration.zero;
+        _ticker.start();
+      }
+    } else if (_ticker.isActive) {
+      _ticker.stop();
+      _lastElapsed = Duration.zero;
+    }
   }
 
   void _onTick(Duration elapsed) {
     final delta = elapsed - _lastElapsed;
     _lastElapsed = elapsed;
-    if (!_visible || _groups.isEmpty || _viewportWidth <= 0) {
+    if (!_visible || !_appActive || !_tickerModeEnabled || !_hasAnimationWork) {
+      _syncTicker();
       return;
     }
     final dt = delta.inMicroseconds / Duration.microsecondsPerSecond;
@@ -168,12 +194,8 @@ class _BoostDanmakuState extends State<BoostDanmaku>
         }
       }
     });
-
-    // 全部放完且飞尽:停表。此前这里每帧 setState 空转到 dispose;
-    // 重新可见(重置一轮)或新 boost 到达时由 _ensureTicker 再启。
-    if (_flying.isEmpty && _nextGroupIndex >= _groups.length) {
-      _ticker.stop();
-    }
+    // 最后一条飞出屏幕后立即停表，不再让空弹幕层永久占用 VSync。
+    _syncTicker();
   }
 
   void _tryLaunchNext() {
@@ -223,7 +245,7 @@ class _BoostDanmakuState extends State<BoostDanmaku>
             _nextGroupIndex = 0;
             _secondsUntilNextLaunch = 0;
           }
-          _ensureTicker();
+          _syncTicker();
         }
       },
       child: LayoutBuilder(
@@ -240,6 +262,7 @@ class _BoostDanmakuState extends State<BoostDanmaku>
             _trackCount = newTrackCount;
             _trackLastRightEdge = List.filled(_trackCount, -double.infinity);
           }
+          _syncTicker();
           final height = widget.trackHeight * _trackCount;
           return Align(
             alignment: Alignment.topLeft,
@@ -322,8 +345,41 @@ class _DanmakuItem extends StatefulWidget {
 
 class _DanmakuItemState extends State<_DanmakuItem> {
   final GlobalKey _key = GlobalKey();
+  bool _reportScheduled = false;
 
-  void _report(_) {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleReport();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DanmakuItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.item, widget.item) ||
+        oldWidget.trackHeight != widget.trackHeight) {
+      _scheduleReport();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 字体缩放、主题或本地化变化可能改变弹幕固有宽度。
+    _scheduleReport();
+  }
+
+  void _scheduleReport() {
+    if (_reportScheduled) return;
+    _reportScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reportScheduled = false;
+      if (!mounted) return;
+      _report();
+    });
+  }
+
+  void _report() {
     final ctx = _key.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
@@ -338,7 +394,6 @@ class _DanmakuItemState extends State<_DanmakuItem> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback(_report);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final group = widget.item.group;
