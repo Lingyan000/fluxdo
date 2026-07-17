@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
 
+import '../doh/linux_do_dns_rewrite.dart';
 import '../doh/network_settings_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
@@ -51,6 +52,7 @@ class RhttpAdapter implements HttpClientAdapter {
         options,
         requestStream,
         cancelFuture,
+        frontingHost: config.frontingHost,
       );
       _markConfigSuccess(config, response.remoteIp);
       return response.responseBody;
@@ -78,6 +80,7 @@ class RhttpAdapter implements HttpClientAdapter {
         options,
         requestStream,
         cancelFuture,
+        frontingHost: retryConfig.frontingHost,
       );
       _markConfigSuccess(retryConfig, response.remoteIp);
       return response.responseBody;
@@ -160,7 +163,8 @@ class RhttpAdapter implements HttpClientAdapter {
       '[DIO] RhttpAdapter 重建完成 ${config.host} '
       '(DNS: ${config.dnsOverrides.isEmpty ? "system" : config.dnsOverrides.join(", ")}'
       '${config.stickyIp != null ? " [sticky]" : ""}, '
-      'ECH: ${config.echConfig == null ? "off" : "on"})',
+      'ECH: ${config.echConfig == null ? "off" : "on"}'
+      '${config.frontingHost != null ? ", Front: ${config.frontingHost}" : ""})',
     );
     return delegate;
   }
@@ -168,6 +172,9 @@ class RhttpAdapter implements HttpClientAdapter {
   Future<_PreparedClientConfig> _prepareClientConfig(String host) async {
     final normalizedHost = host.trim().toLowerCase();
     final ns = _networkSettings.current;
+    final frontingHost = _networkSettings.linuxDoFrontDomainForHost(
+      normalizedHost,
+    );
     final resolvedHost = await _networkSettings.resolveHostForRequest(
       normalizedHost,
     );
@@ -179,6 +186,7 @@ class RhttpAdapter implements HttpClientAdapter {
       stickyIp: resolvedHost.preferredIp,
       echConfig: resolvedHost.echConfig,
       dohEnabled: ns.dohEnabled,
+      frontingHost: frontingHost,
     );
   }
 
@@ -265,8 +273,11 @@ class RhttpAdapter implements HttpClientAdapter {
 
     return rhttp.RhttpClient.create(
       settings: rhttp.ClientSettings(
-        // 用 ALPN 协商 HTTP/2，避免 https 场景误用 prior knowledge 造成超时。
-        httpVersionPref: rhttp.HttpVersionPref.all,
+        // 域前置必须让 HTTP Host 与 TLS SNI 分离。HTTP/2 的 :authority
+        // 可能覆盖 Host，因此仅对域前置请求固定使用 HTTP/1.1。
+        httpVersionPref: config.frontingHost == null
+            ? rhttp.HttpVersionPref.all
+            : rhttp.HttpVersionPref.http1_1,
 
         // Dio 自己根据状态码处理，不让 rhttp 提前抛状态码异常。
         throwOnStatusCode: false,
@@ -375,16 +386,23 @@ class _RhttpDelegate {
   Future<_RhttpFetchResult> fetch(
     RequestOptions options,
     Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async {
+    Future<void>? cancelFuture, {
+    String? frontingHost,
+  }) async {
     final cancelToken = rhttp.CancelToken();
     cancelFuture?.whenComplete(cancelToken.cancel);
 
     try {
+      final requestUri = frontingHost == null
+          ? options.uri
+          : LinuxDoDomainFronting.rewriteUri(options.uri, frontingHost);
+      final hostOverride = frontingHost == null
+          ? null
+          : LinuxDoDomainFronting.originalHostHeader(options.uri);
       final response = await client.requestStream(
         method: rhttp.HttpMethod(options.method.toUpperCase()),
-        url: options.uri.toString(),
-        headers: _buildHeaders(options),
+        url: requestUri.toString(),
+        headers: _buildHeaders(options, hostOverride: hostOverride),
         body: _buildBody(options, requestStream),
         cancelToken: cancelToken,
       );
@@ -409,8 +427,11 @@ class _RhttpDelegate {
     }
   }
 
-  rhttp.HttpHeaders? _buildHeaders(RequestOptions options) {
-    if (options.headers.isEmpty) {
+  rhttp.HttpHeaders? _buildHeaders(
+    RequestOptions options, {
+    String? hostOverride,
+  }) {
+    if (options.headers.isEmpty && hostOverride == null) {
       return null;
     }
 
@@ -432,6 +453,10 @@ class _RhttpDelegate {
         headers[key] = headerValue;
       }
     });
+    if (hostOverride != null) {
+      headers.removeWhere((key, _) => key.toLowerCase() == 'host');
+      headers['Host'] = hostOverride;
+    }
     if (headers.isEmpty) {
       return null;
     }
@@ -531,6 +556,7 @@ class _PreparedClientConfig {
     required this.stickyIp,
     required this.echConfig,
     required this.dohEnabled,
+    required this.frontingHost,
   });
 
   final String host;
@@ -539,19 +565,22 @@ class _PreparedClientConfig {
   final String? stickyIp;
   final Uint8List? echConfig;
   final bool dohEnabled;
+  final String? frontingHost;
+
+  String get connectionHost => frontingHost ?? host;
 
   String get clientFingerprint {
     final dnsPart = dnsOverrides.isEmpty ? 'system' : dnsOverrides.join(',');
     final echPart = echConfig == null || echConfig!.isEmpty
         ? 'no-ech'
         : '${echConfig!.length}:${Object.hashAll(echConfig!)}';
-    return '$dohEnabled|$dnsPart|$echPart';
+    return '$dohEnabled|$dnsPart|$echPart|front=${frontingHost ?? "off"}';
   }
 
   rhttp.DnsSettings? toDnsSettings() {
-    if (host.isEmpty || dnsOverrides.isEmpty) {
+    if (connectionHost.isEmpty || dnsOverrides.isEmpty) {
       return null;
     }
-    return rhttp.DnsSettings.static(overrides: {host: dnsOverrides});
+    return rhttp.DnsSettings.static(overrides: {connectionHost: dnsOverrides});
   }
 }
