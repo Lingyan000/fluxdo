@@ -1195,12 +1195,18 @@ mixin _AuthMixin on _DiscourseServiceBase {
     );
     requestOptions.extra['_sessionCookieFingerprint'] = afterFingerprint;
 
+    // Discourse 的 CSRF token 派生自会话;会话 cookie 轮换后旧 CSRF 即失效,
+    // 但失效响应可能被 CF 罩成 "Just a moment" 页(非 ["BAD CSRF"] 明文),
+    // 走不到 BAD CSRF 自愈分支。这里主动作废,下一次 mutation 会在
+    // RequestHeaderInterceptor 中自动刷新。
+    _cookieSync.clearCsrfToken();
+
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': 'info',
       'type': 'auth',
       'event': 'session_cookie_rotated',
-      'message': '检测到会话 Cookie 变化，后续请求将使用新的 _t',
+      'message': '检测到会话 Cookie 变化，后续请求将使用新的 _t,并已作废旧 CSRF',
       'phase': phase,
       'method': requestOptions.method,
       'url': requestOptions.uri.toString(),

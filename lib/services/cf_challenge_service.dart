@@ -64,10 +64,6 @@ class CfChallengeService {
   static DateTime? _lastToastAt;
   Future<bool>? _activeSessionCompatPrompt;
   bool _sessionCompatPromptDeclined = false;
-  Completer<bool>? _silentRecoveryCompleter;
-  Completer<bool>? _foregroundFallbackActivationCompleter;
-  bool _nativeNetworkDegraded = false;
-  bool _pendingForegroundCompatibility = false;
   Completer<BuildContext>? _contextReadyCompleter;
   VoidCallback? _activePromoteToForeground;
   bool _pendingPromoteToForeground = false;
@@ -180,116 +176,6 @@ class CfChallengeService {
 
   void resetSessionCompatibilityDecision() {
     _sessionCompatPromptDeclined = false;
-    resetRecoveryState();
-  }
-
-  /// 是否已有一个静默请求正在负责恢复原生网络链路。
-  ///
-  /// 该状态与 [isVerifying] 分离：WebView 验证完成只代表浏览器身份可用，
-  /// 静默恢复还需要用一个真实原生请求确认 Dio 链路是否已经恢复。
-  bool get isSilentRecoveryInProgress => _silentRecoveryCompleter != null;
-
-  bool get isForegroundFallbackActivationInProgress =>
-      _foregroundFallbackActivationCompleter != null;
-
-  /// 当前原生网络身份是否已经被一次完整的静默恢复流程判定为不可用。
-  bool get isNativeNetworkDegraded => _nativeNetworkDegraded;
-
-  /// 下一次用户可见请求是否应在发送前询问会话级兼容模式。
-  bool get hasPendingForegroundCompatibility => _pendingForegroundCompatibility;
-
-  /// 尝试成为本轮静默恢复的唯一 owner。
-  ///
-  /// 返回 false 表示已有 owner，调用方应改为 [waitForSilentRecovery]；
-  /// 原生链路已判定 degraded 时也不会再次启动后台恢复，避免静默请求反复撞盾。
-  bool tryBeginSilentRecovery() {
-    if (_silentRecoveryCompleter != null || _nativeNetworkDegraded) {
-      return false;
-    }
-    _silentRecoveryCompleter = Completer<bool>();
-    return true;
-  }
-
-  /// 等待当前静默恢复结束，并返回原生链路是否恢复。
-  ///
-  /// owner 恰好在调用前结束时，会依据当前 degraded 状态返回最终结果，
-  /// 避免“检查到已有 owner，开始等待前 owner 已完成”的竞态。
-  Future<bool> waitForSilentRecovery() {
-    final active = _silentRecoveryCompleter;
-    if (active != null) return active.future;
-    return Future<bool>.value(!_nativeNetworkDegraded);
-  }
-
-  /// 结束当前静默恢复。
-  ///
-  /// 恢复失败后不再由后续静默请求重复尝试，而是将兼容模式提示挂起到
-  /// 下一次用户可见请求。返回 false 表示当前没有可结束的 owner。
-  bool finishSilentRecovery({required bool nativeRecovered}) {
-    final active = _silentRecoveryCompleter;
-    if (active == null) return false;
-
-    _silentRecoveryCompleter = null;
-    if (nativeRecovered) {
-      markNativeNetworkRecovered();
-    } else {
-      markNativeNetworkDegraded();
-    }
-    if (!active.isCompleted) active.complete(nativeRecovered);
-    return true;
-  }
-
-  /// 标记原生网络链路恢复，并清除待前台处理的兼容模式提示。
-  void markNativeNetworkRecovered() {
-    _nativeNetworkDegraded = false;
-    _pendingForegroundCompatibility = false;
-  }
-
-  /// 标记原生网络链路不可用，等待下一次用户可见请求处理兼容模式。
-  void markNativeNetworkDegraded() {
-    _nativeNetworkDegraded = true;
-    _pendingForegroundCompatibility = true;
-  }
-
-  /// 原子消费一次待前台兼容提示，防止并发前台请求重复弹框。
-  bool takePendingForegroundCompatibility() {
-    if (!_pendingForegroundCompatibility) return false;
-    _pendingForegroundCompatibility = false;
-    return true;
-  }
-
-  bool tryBeginForegroundFallbackActivation() {
-    if (_foregroundFallbackActivationCompleter != null) return false;
-    _foregroundFallbackActivationCompleter = Completer<bool>();
-    return true;
-  }
-
-  Future<bool> waitForForegroundFallbackActivation() {
-    return _foregroundFallbackActivationCompleter?.future ??
-        Future<bool>.value(false);
-  }
-
-  void finishForegroundFallbackActivation({required bool success}) {
-    final active = _foregroundFallbackActivationCompleter;
-    _foregroundFallbackActivationCompleter = null;
-    if (active != null && !active.isCompleted) {
-      active.complete(success);
-    }
-  }
-
-  /// 当前会话结束或网络身份已整体重建时，清空恢复协调状态。
-  void resetRecoveryState() {
-    final active = _silentRecoveryCompleter;
-    final foregroundActive = _foregroundFallbackActivationCompleter;
-    _silentRecoveryCompleter = null;
-    _foregroundFallbackActivationCompleter = null;
-    _nativeNetworkDegraded = false;
-    _pendingForegroundCompatibility = false;
-    if (active != null && !active.isCompleted) {
-      active.complete(false);
-    }
-    if (foregroundActive != null && !foregroundActive.isCompleted) {
-      foregroundActive.complete(false);
-    }
   }
 
   void setContext(BuildContext context) {
@@ -384,7 +270,6 @@ class CfChallengeService {
   Future<bool?> showManualVerify([
     BuildContext? context,
     bool forceForeground = true,
-    bool preserveExistingWebViewClearance = false,
   ]) async {
     // 检查冷却期
     if (isInCooldown) {
@@ -458,14 +343,10 @@ class CfChallengeService {
     final cookieJarService = CookieJarService();
     final backupCfClearance = await cookieJarService.getCfClearanceCookie();
 
-    // Dio 请求已经 403，说明原生侧的 cf_clearance 可能失效了，先从 jar 删除，
-    // 避免后续原生重试继续发送旧值。
+    // Dio 请求已经 403，说明当前 cf_clearance 可能失效了。
+    // 必须确保 WebView 中也没有旧的 cf_clearance，否则 CF 直接放行不显示盾。
     await cookieJarService.deleteCookie('cf_clearance');
-    // 常规验证需要明确拉起挑战，因此清掉 WebView 旧值；静默单例恢复可显式
-    // 保留当前浏览器身份，避免每轮 403 都破坏仍然可信的 WebView clearance。
-    if (!preserveExistingWebViewClearance) {
-      await cookieJarService.deleteWebViewCookie('cf_clearance');
-    }
+    await cookieJarService.deleteWebViewCookie('cf_clearance');
     if (!overlayState.mounted) {
       debugPrint('[CfChallenge] Overlay no longer mounted');
       CfChallengeLogger.log('[VERIFY] Overlay not mounted');

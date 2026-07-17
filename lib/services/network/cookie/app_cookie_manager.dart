@@ -121,6 +121,12 @@ class AppCookieManager extends Interceptor {
   /// 代表服务器最新轮换的值（如 _t 会话 token）。
   /// domain cookie 来自 syncFromWebView（WKWebView 自动添加 domain），
   /// 可能是旧值。优先 host-only 确保发送服务器最新认可的值。
+  /// 测试用:直接对给定 cookie 列表跑发请求选优,返回最终发送顺序。
+  /// 绕过真实 CookieJar 的落库去重,便于验证 cf_clearance 双变体选优。
+  @visibleForTesting
+  static List<Cookie> selectCookiesForTest(List<Cookie> cookies, Uri uri) =>
+      _selectCookies(cookies, uri);
+
   static List<Cookie> _selectCookies(List<Cookie> cookies, Uri uri) {
     final requestHost = uri.host.toLowerCase();
     final baseHost = CookieJarService.appBaseHost;
@@ -185,6 +191,20 @@ class AppCookieManager extends Interceptor {
       existingDomainLength,
     );
     if (domainLengthDiff != 0) return domainLengthDiff;
+
+    // 同分同域时先按过期时间取最新:与写侧 BoundarySync._selectBestWebViewCookie
+    // 的口径一致。cf_clearance 双变体(CF 双发)属性同构、值长度相同,
+    // 只有 expires 能区分新旧;读侧若不看 expires 会稳定选中旧份 → 盾频发。
+    final candidateExpires = candidate.expires;
+    final existingExpires = existing.expires;
+    if (candidateExpires != null && existingExpires != null) {
+      final expiresDiff = candidateExpires.compareTo(existingExpires);
+      if (expiresDiff != 0) return expiresDiff;
+    } else if (candidateExpires != null || existingExpires != null) {
+      // 持久 cookie(带 expires)视为比会话 cookie 更新——CF 签发的
+      // clearance 一定带过期时间。
+      return candidateExpires != null ? 1 : -1;
+    }
 
     final candidateValueLength = candidate.value.length;
     final existingValueLength = existing.value.length;

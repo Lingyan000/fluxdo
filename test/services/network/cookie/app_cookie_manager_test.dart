@@ -112,6 +112,37 @@ void main() {
       expect(cookieHeader, contains('theme=scoped'));
       expect(cookieHeader, contains('theme=root'));
     });
+
+    test('cf_clearance 双变体按过期时间选最新,与顺序无关', () {
+      final now = DateTime.now();
+      final stale = Cookie('cf_clearance', 'stale-value-000000000000')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..secure = true
+        ..httpOnly = true
+        ..expires = now.add(const Duration(hours: 1));
+      final fresh = Cookie('cf_clearance', 'fresh-value-111111111111')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..secure = true
+        ..httpOnly = true
+        ..expires = now.add(const Duration(days: 1));
+
+      // 两种顺序都必须选中 expires 更晚那枚(绕过 CookieJar 落库去重,
+      // 直接验证发请求选优逻辑)。
+      for (final cookies in [
+        [stale, fresh],
+        [fresh, stale],
+      ]) {
+        final selected = AppCookieManager.selectCookiesForTest(
+          cookies,
+          Uri.parse('https://linux.do/topics/timings'),
+        );
+        final clearance = selected.where((c) => c.name == 'cf_clearance');
+        expect(clearance, hasLength(1));
+        expect(clearance.first.value, 'fresh-value-111111111111');
+      }
+    });
   });
 
   group('CookieJarService.buildCookieHeaderForRequest', () {
@@ -131,6 +162,31 @@ void main() {
       expect(header, contains('cf_clearance=cf-token'));
       expect(header, contains('linux_do_cdk_session_id=cdk-token'));
       expect(header, isNot(contains('_t=')));
+    });
+
+    test('cf_clearance 双变体按过期时间选最新,与顺序无关', () {
+      final now = DateTime.now();
+      final stale = Cookie('cf_clearance', 'stale-value-000000000000')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..expires = now.add(const Duration(hours: 1));
+      final fresh = Cookie('cf_clearance', 'fresh-value-111111111111')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..expires = now.add(const Duration(days: 1));
+
+      for (final cookies in [
+        [stale, fresh],
+        [fresh, stale],
+      ]) {
+        final header = CookieJarService.buildCookieHeaderForRequest(
+          cookies,
+          Uri.parse('https://linux.do/topics/timings'),
+        );
+
+        expect(header, contains('fresh-value-111111111111'));
+        expect(header, isNot(contains('stale-value-000000000000')));
+      }
     });
   });
 }

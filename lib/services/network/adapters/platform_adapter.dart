@@ -146,22 +146,6 @@ void configureStableNativeAdapter(Dio dio) {
   dio.httpClientAdapter = adapter;
 }
 
-/// 软重建当前 Dio 的网络适配器。
-///
-/// 仅用于恢复主业务 Dio 在 CF/连接池异常后的网络状态；不会修改代理、
-/// rhttp 或 WebView 的持久化设置，也不会影响其它 Dio（例如 MessageBus）。
-/// 正在进行的请求允许自然结束，随后创建全新的底层连接池。
-void rebuildPlatformAdapter(Dio dio) {
-  final previous = dio.httpClientAdapter;
-  try {
-    previous.close(force: false);
-  } catch (e) {
-    debugPrint('[DIO] 软重建旧适配器失败: $e');
-  }
-  configurePlatformAdapter(dio);
-  debugPrint('[DIO] 已软重建主业务网络适配器');
-}
-
 /// 配置 WebView 适配器
 void _configureWebViewAdapter(Dio dio) {
   final adapter = WebViewHttpAdapter();

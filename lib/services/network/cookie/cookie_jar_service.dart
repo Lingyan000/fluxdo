@@ -736,6 +736,19 @@ class CookieJarService {
         _headerCookiePriorityScore(candidate, requestHost) -
         _headerCookiePriorityScore(existing, requestHost);
     if (scoreDiff != 0) return scoreDiff;
+
+    // 同分时先按过期时间取最新:与写侧 BoundarySync._selectBestWebViewCookie
+    // 口径一致。cf_clearance 双变体属性同构、值长度相同,只有 expires 能
+    // 区分新旧;不看 expires 会稳定选中旧份。
+    final candidateExpires = candidate.expires;
+    final existingExpires = existing.expires;
+    if (candidateExpires != null && existingExpires != null) {
+      final expiresDiff = candidateExpires.compareTo(existingExpires);
+      if (expiresDiff != 0) return expiresDiff;
+    } else if (candidateExpires != null || existingExpires != null) {
+      return candidateExpires != null ? 1 : -1;
+    }
+
     return candidate.value.length.compareTo(existing.value.length);
   }
 
