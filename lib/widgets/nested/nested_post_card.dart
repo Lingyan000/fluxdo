@@ -6,8 +6,8 @@ import '../../models/nested_topic.dart';
 import '../../models/topic.dart';
 import '../../providers/nested_topic_provider.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../providers/topic_session_provider.dart';
-import '../../pages/user_profile_page.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/responsive.dart';
@@ -616,12 +616,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         // 移动端内联头像（点击进主页，长按弹径向操作菜单）
         if (isMobile) ...[
           RadialLongPressMenu(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => UserProfilePage(username: post.username),
-              ),
-            ),
+            onTap: () => EmbeddedStackScope.openProfile(context, post.username),
             itemsBuilder: () => buildAvatarMenuItems(
               context,
               username: post.username,
@@ -658,12 +653,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         ],
         // 用户名（可点击）
         GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => UserProfilePage(username: post.username),
-            ),
-          ),
+          onTap: () => EmbeddedStackScope.openProfile(context, post.username),
           child: Text(
             post.username,
             style: theme.textTheme.labelMedium?.copyWith(

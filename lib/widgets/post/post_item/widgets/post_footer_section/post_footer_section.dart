@@ -19,7 +19,7 @@ import '../../../../../services/discourse/discourse_service.dart';
 import '../../../../../services/log/bookmark_edit_trace.dart';
 import '../../../../../services/notion/notion_bookmark_auto_sync.dart';
 import '../../../../../services/toast_service.dart';
-import '../../../../../pages/user_profile_page.dart';
+import '../../../../../providers/selected_topic_provider.dart';
 import '../../../post_links.dart';
 import '../post_action_bar.dart';
 import '../../../../bookmark/bookmark_edit_sheet_launcher.dart';
@@ -403,13 +403,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
       case BoostAuthorPopoverAction.authorCard:
         _showBoostAuthorCard(resolvedBoost, anchorRect);
       case BoostAuthorPopoverAction.profile:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                UserProfilePage(username: resolvedBoost.user.username),
-          ),
-        );
+        EmbeddedStackScope.openProfile(context, resolvedBoost.user.username);
       case BoostAuthorPopoverAction.flag:
         _showBoostFlagSheet(resolvedBoost);
       case BoostAuthorPopoverAction.delete:
