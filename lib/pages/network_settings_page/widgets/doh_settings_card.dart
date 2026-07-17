@@ -126,8 +126,7 @@ class _DohSettingsCardInner extends StatelessWidget {
         // 仅在开启 DOH 后显示以下内容
         if (settings.dohEnabled) ...[
           // 证书引导（iOS: 安装引导，其他平台: per-device 开关；macOS 钥匙串自动处理）
-          if (!Platform.isMacOS && (!Platform.isWindows || webViewEnabled))
-            _CertGuide(isApplying: isApplying),
+          if (!Platform.isMacOS) _CertGuide(isApplying: isApplying),
 
           // 状态区域（含启动失败提示）
           Column(
