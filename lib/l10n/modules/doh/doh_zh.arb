@@ -97,7 +97,7 @@
   "dohDetail_sameAsDns": "与 DNS 相同",
   "dohDetail_linuxDoRewrite": "*.linux.do 连接改写",
   "dohDetail_linuxDoRewriteDesc": "固定连接 IP，或用前置域名分离 TLS SNI 与 HTTP Host",
-  "dohDetail_linuxDoRewriteHelper": "仅用于 Windows 高性能 rhttp；A/AAAA 保持原域名，前置域名用于 TLS SNI 和证书校验，HTTP Host 仍为原 linux.do 域名",
+  "dohDetail_linuxDoRewriteHelper": "Windows 高性能 rhttp 与 WebView 共用；A/AAAA 保持原域名，前置域名用于 TLS SNI 和证书校验，HTTP Host 仍为原 linux.do 域名",
   "dohDetail_linuxDoRewriteTarget": "连接目标（A / AAAA / 前置域名）",
   "dohDetail_linuxDoRewriteTargetHint": "IPv4、IPv6 或前置域名，如 preferred.example.com",
   "dohDetail_linuxDoRewriteInvalid": "请输入有效的 IPv4、IPv6 或前置域名",

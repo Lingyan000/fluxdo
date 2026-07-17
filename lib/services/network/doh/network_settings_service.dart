@@ -499,6 +499,7 @@ class NetworkSettingsService {
       await prefs.remove(_linuxDoDnsRewriteTargetKey);
     }
     _clearResolvedHostCache();
+    _scheduleApplyProxyState();
     _touch();
     return true;
   }
@@ -609,6 +610,14 @@ class NetworkSettingsService {
       // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
       final shouldTryEch = effectiveEchServer != null;
       final useGateway = current.dohEnabled && current.gatewayEnabled;
+      final linuxDoRewriteTarget =
+          Platform.isWindows &&
+              current.dohEnabled &&
+              current.linuxDoDnsRewriteEnabled
+          ? LinuxDoDnsRewrite.parseTarget(
+              current.linuxDoDnsRewriteTarget,
+            )?.value
+          : null;
 
       if (!shouldTryEch) {
         _clearResolvedHostCache();
@@ -645,6 +654,7 @@ class NetworkSettingsService {
         dohServer: current.dohEnabled ? current.selectedServerUrl : null,
         dohServerEch: current.dohEnabled ? current.echServerUrl : null,
         serverIp: current.serverIp,
+        linuxDoRewriteTarget: linuxDoRewriteTarget,
         upstreamProtocol: upstream.isValid
             ? upstream.protocol.storageValue
             : null,
