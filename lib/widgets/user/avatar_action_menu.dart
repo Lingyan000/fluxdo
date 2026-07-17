@@ -4,9 +4,9 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
-import '../../pages/user_profile_page.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../services/toast_service.dart';
 import '../../utils/share_utils.dart';
 import '../common/radial_long_press_menu.dart';
@@ -88,11 +88,7 @@ List<RadialMenuItem> buildAvatarMenuItems(
     RadialMenuItem(
       icon: Symbols.account_circle_rounded,
       label: S.current.avatarMenu_viewProfile,
-      onSelected: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
-        );
-      },
+      onSelected: () => EmbeddedStackScope.openProfile(context, username),
     ),
     if (canMessage)
       RadialMenuItem(
