@@ -3,7 +3,7 @@ import 'dart:async' show Timer;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart' show SchedulerBinding, Priority;
+import '../../../utils/idle_task.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -542,11 +542,13 @@ class _TopicPostListState extends State<TopicPostList> {
         }
       }
       if (pending == null) return;
-      SchedulerBinding.instance.scheduleTask(() {
-        if (!mounted || generation != _warmUpGeneration) return;
-        pending!.warmUpOneChunk();
-        step();
-      }, Priority.idle);
+      scheduleIdleTask(
+        () {
+          pending!.warmUpOneChunk();
+          step();
+        },
+        isCanceled: () => !mounted || generation != _warmUpGeneration,
+      );
     }
 
     step();
@@ -822,7 +824,7 @@ class _TopicPostListState extends State<TopicPostList> {
     final generation = ++_parseWarmUpGeneration;
     var index = 0;
     void step() {
-      SchedulerBinding.instance.scheduleTask(() {
+      scheduleIdleTask(() {
         if (!mounted || generation != _parseWarmUpGeneration) return;
         if (ScrollBusySignal.isBusy) {
           _parseWarmUpRetry?.cancel();
@@ -841,7 +843,7 @@ class _TopicPostListState extends State<TopicPostList> {
           break;
         }
         if (index < posts.length) step();
-      }, Priority.idle);
+      });
     }
 
     step();
