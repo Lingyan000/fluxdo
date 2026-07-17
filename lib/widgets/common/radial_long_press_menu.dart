@@ -598,7 +598,9 @@ class RadialLongPressMenu extends StatefulWidget {
     required this.child,
     required this.itemsBuilder,
     this.onTap,
-    this.longPressDuration = const Duration(milliseconds: 200),
+    // 略低于 kLongPressTimeout(500ms)保持跟手,但远高于曾用的 200ms——
+    // 从容的单击(尤其触摸板)按压常超 200ms,会被误判为长按吞掉 onTap
+    this.longPressDuration = const Duration(milliseconds: 420),
     this.pressAreaIndicatorBuilder,
   });
 
