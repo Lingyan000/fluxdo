@@ -17,8 +17,10 @@ import '../doh_proxy/proxy_certificate.dart';
 import '../doh_proxy/windows_cert_trust_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
+import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
+import 'webview_mitm_policy.dart';
 
 class NetworkSettings {
   const NetworkSettings({
@@ -182,6 +184,9 @@ class NetworkSettingsService {
     RhttpSettingsService.instance.notifier.addListener(
       _handleRhttpSettingsChanged,
     );
+    WebViewAdapterSettingsService.instance.notifier.addListener(
+      _handleWebViewAdapterSettingsChanged,
+    );
   }
 
   static final NetworkSettingsService instance =
@@ -265,17 +270,7 @@ class NetworkSettingsService {
   Future<void> initialize(SharedPreferences prefs) async {
     if (_prefs != null) return;
     _prefs = prefs;
-    var dohEnabled = prefs.getBool(_dohEnabledKey) ?? false;
-    // 兼容旧版本遗留的坏状态：关闭设备证书后偏好已切换到另一张 CA，
-    // 但 DoH 仍保持开启。Windows WebView2 不信任当前 CA 时若继续启动网关，
-    // 会进入 CertificateUnknown → bootstrap 超时 → 业务请求重试的卡顿循环。
-    if (Platform.isWindows &&
-        dohEnabled &&
-        !await WindowsCertTrustService.instance.isInstalled()) {
-      dohEnabled = false;
-      await prefs.setBool(_dohEnabledKey, false);
-      debugPrint('[DOH] 当前 CA 未受 Windows 信任，启动前自动关闭 DoH');
-    }
+    final dohEnabled = prefs.getBool(_dohEnabledKey) ?? false;
     final selected =
         prefs.getString(_dohSelectedKey) ?? _defaultServers.first.url;
     final customRaw = prefs.getString(_dohCustomKey);
@@ -536,8 +531,30 @@ class NetworkSettingsService {
     }
 
     try {
+      final webViewAdapterEnabled =
+          WebViewAdapterSettingsService.instance.enabled;
+      final requiresWindowsCa = WebViewMitmPolicy.requiresTrustedCa(
+        isWindows: Platform.isWindows,
+        dohEnabled: current.dohEnabled,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
+      // 历史配置可能绕过 UI 留下「WebView + DoH 但 CA 未安装」状态。
+      // 不再静默篡改 DoH 偏好；只阻止 MITM 启动，避免证书失败重试风暴。
+      if (requiresWindowsCa &&
+          !await WindowsCertTrustService.instance.isInstalled()) {
+        debugPrint('[DOH] Windows WebView MITM 缺少受信任 CA，跳过代理启动');
+        _setStartFailed(true);
+        _setPendingStart(false);
+        await _clearWebViewProxy();
+        return;
+      }
+
       final upstream = _proxyService.current;
       final effectiveEchServer = _effectiveEchServerUrl;
+      final mitmConnect = WebViewMitmPolicy.useMitmConnect(
+        isWindows: Platform.isWindows,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
 
       // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
       final shouldTryEch = effectiveEchServer != null;
@@ -561,7 +578,7 @@ class NetworkSettingsService {
       // per-device CA: 读取证书传给代理（iOS/macOS 强制，其他平台可选）
       String? caCertPem;
       String? caKeyPem;
-      if (await CertPreferenceService.usePerDevice()) {
+      if (mitmConnect && await CertPreferenceService.usePerDevice()) {
         final certService = PerDeviceCertService.instance;
         if (certService.isLoaded || await certService.ensureCaCert()) {
           caCertPem = certService.certPem;
@@ -588,6 +605,7 @@ class NetworkSettingsService {
         upstreamCipher: upstream.isValid ? upstream.cipher : null,
         caCertPem: caCertPem,
         caKeyPem: caKeyPem,
+        mitmConnect: mitmConnect,
         h2Mitm: current.h2Mitm,
       );
 
@@ -797,6 +815,12 @@ class NetworkSettingsService {
   void _handleProxySettingsChanged() {
     if (_prefs == null) return;
     _clearResolvedHostCache();
+    _scheduleApplyProxyState();
+    _touch();
+  }
+
+  void _handleWebViewAdapterSettingsChanged() {
+    if (_prefs == null || !shouldRunLocalProxy) return;
     _scheduleApplyProxyState();
     _touch();
   }

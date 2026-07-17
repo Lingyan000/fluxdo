@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/doh/network_settings_service.dart';
+import '../../../services/network/doh/webview_mitm_policy.dart';
 import '../../../services/network/doh_proxy/cert_preference_service.dart';
 import '../../../services/network/doh_proxy/per_device_cert_service.dart';
 import '../../../services/network/doh_proxy/windows_cert_trust_service.dart';
 import '../../../services/network/vpn_auto_toggle_service.dart';
+import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import 'package:common_ui/common_ui.dart';
 import '../doh_detail_settings_page.dart';
@@ -31,6 +33,7 @@ class DohSettingsCard extends StatelessWidget {
         vpnService.enabledNotifier,
         vpnService.vpnActiveNotifier,
         vpnService.suppressionNotifier,
+        WebViewAdapterSettingsService.instance.notifier,
       ]),
       builder: (context, _) {
         final settings = service.notifier.value;
@@ -40,6 +43,7 @@ class DohSettingsCard extends StatelessWidget {
           settings: settings,
           isApplying: isApplying,
           isSuppressedByVpn: isSuppressedByVpn,
+          webViewEnabled: WebViewAdapterSettingsService.instance.enabled,
         );
       },
     );
@@ -50,11 +54,13 @@ class _DohSettingsCardInner extends StatelessWidget {
   const _DohSettingsCardInner({
     required this.settings,
     required this.isApplying,
+    required this.webViewEnabled,
     this.isSuppressedByVpn = false,
   });
 
   final NetworkSettings settings;
   final bool isApplying;
+  final bool webViewEnabled;
   final bool isSuppressedByVpn;
 
   @override
@@ -103,9 +109,14 @@ class _DohSettingsCardInner extends StatelessWidget {
               ? (value) =>
                   VpnAutoToggleService.instance.setDohSuppressed(value)
               : (value) async {
-                  // Windows: 网关 MITM 依赖系统信任库,CA 未安装时 WebView2
-                  // 握手必然失败(后台反复重试拖垮 UI),开启前强制校验
-                  if (value && !await ensureWindowsCertTrusted(context)) {
+                  final requiresCa = WebViewMitmPolicy.requiresTrustedCa(
+                    isWindows: Platform.isWindows,
+                    dohEnabled: value,
+                    webViewAdapterEnabled: webViewEnabled,
+                  );
+                  // Windows 仅 WebView 网络引擎经 DoH 时需要 MITM CA；
+                  // 高性能 rhttp 保持端到端 TLS，不弹证书安装窗口。
+                  if (requiresCa && !await ensureWindowsCertTrusted(context)) {
                     return;
                   }
                   await service.setDohEnabled(value);
@@ -115,7 +126,8 @@ class _DohSettingsCardInner extends StatelessWidget {
         // 仅在开启 DOH 后显示以下内容
         if (settings.dohEnabled) ...[
           // 证书引导（iOS: 安装引导，其他平台: per-device 开关；macOS 钥匙串自动处理）
-          if (!Platform.isMacOS) _CertGuide(isApplying: isApplying),
+          if (!Platform.isMacOS && (!Platform.isWindows || webViewEnabled))
+            _CertGuide(isApplying: isApplying),
 
           // 状态区域（含启动失败提示）
           Column(
@@ -373,10 +385,19 @@ class _CertGuideState extends State<_CertGuide> {
       // iOS: 需要安装引导; macOS: 钥匙串自动处理，无需引导
       if (Platform.isIOS) {
         final installed = await PerDeviceCertService.instance.isCertInstalled();
-        if (mounted) setState(() { _installed = installed; _loading = false; });
+        if (mounted) {
+          setState(() {
+            _installed = installed;
+            _loading = false;
+          });
+        }
       } else {
         // macOS: per-device 强制启用，钥匙串自动添加，不显示引导
-        if (mounted) setState(() { _loading = false; });
+        if (mounted) {
+          setState(() {
+            _loading = false;
+          });
+        }
       }
     } else {
       final usePerDevice = await CertPreferenceService.usePerDevice();
