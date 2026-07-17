@@ -7,11 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/s.dart';
 import '../models/seeking.dart';
 import '../providers/seeking_provider.dart';
+import '../providers/selected_topic_provider.dart';
 import '../services/toast_service.dart';
 import '../utils/time_utils.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/content/collapsed_html_content.dart';
+import '../widgets/layout/master_detail_layout.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 import 'user_profile_page.dart';
 
 /// 追觅：实时监控指定用户的发帖 / 回复 / 点赞 / 表情回应 / Boost 动态。
@@ -29,6 +32,9 @@ class SeekingPage extends ConsumerStatefulWidget {
 }
 
 class _SeekingPageState extends ConsumerState<SeekingPage> {
+  static const double _parallelMasterWidth = 440;
+  static const double _parallelMinDetailWidth = 480;
+
   /// 只看此人过滤（点用户头像切换）
   String? _focusUser;
 
@@ -106,6 +112,16 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   void _openActivity(SeekingActivity activity) {
     if (activity.topicId <= 0) return;
+    if (_canShowParallel(context)) {
+      ref
+          .read(selectedSeekingProvider.notifier)
+          .select(
+            topicId: activity.topicId,
+            initialTitle: activity.title,
+            scrollToPostNumber: activity.postNumber,
+          );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -118,11 +134,22 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
   }
 
   void _openProfile(String username) {
+    if (_canShowParallel(context)) {
+      ref.read(selectedSeekingProvider.notifier).selectProfile(username);
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
   }
+
+  bool _canShowParallel(BuildContext context) =>
+      MasterDetailLayout.canShowBothPanesFor(
+        context,
+        masterWidth: _parallelMasterWidth,
+        minDetailWidth: _parallelMinDetailWidth,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -218,29 +245,26 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
                         );
                       }
 
-                      return Row(
-                        children: [
-                          SizedBox(
-                            width: 300,
-                            child: Column(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: _PaceSelector(
-                                    paceSeconds: paceSeconds,
-                                    onChanged: (seconds) => ref
-                                        .read(seekingProvider.notifier)
-                                        .setPaceSeconds(seconds),
-                                  ),
-                                ),
-                                const Divider(height: 1),
-                                Expanded(child: _buildUserList(compact: false)),
-                              ],
+                      // 宽屏复用项目统一的平行视界布局，名单栏支持拖动调宽。
+                      return MasterDetailLayout(
+                        masterWidth: 300,
+                        minDetailWidth: 480,
+                        master: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: _PaceSelector(
+                                paceSeconds: paceSeconds,
+                                onChanged: (seconds) => ref
+                                    .read(seekingProvider.notifier)
+                                    .setPaceSeconds(seconds),
+                              ),
                             ),
-                          ),
-                          const VerticalDivider(width: 1),
-                          Expanded(child: activityPane),
-                        ],
+                            const Divider(height: 1),
+                            Expanded(child: _buildUserList(compact: false)),
+                          ],
+                        ),
+                        detail: activityPane,
                       );
                     },
                   ),
@@ -249,7 +273,32 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
             ),
     );
 
-    return page;
+    final selected = ref.watch(selectedSeekingProvider);
+    if (!_canShowParallel(context) || !selected.hasSelection) return page;
+
+    final notifier = ref.read(selectedSeekingProvider.notifier);
+    final master = selected.isStacked
+        ? PaneContentWidget(
+            entry: selected.stack[selected.stack.length - 2],
+            stackProvider: selectedSeekingProvider,
+            truncateOnPush: true,
+            parentActive: widget.isActive,
+          )
+        : page;
+    return MasterDetailLayout(
+      masterWidth: _parallelMasterWidth,
+      minDetailWidth: _parallelMinDetailWidth,
+      minMasterRatio: 0.32,
+      maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
+      preferredMasterRatio: selected.isStacked ? 0.5 : 0.4,
+      master: master,
+      detail: PaneContentWidget(
+        entry: selected.topEntry!,
+        stackProvider: selectedSeekingProvider,
+        parentActive: widget.isActive,
+        onBack: () => selected.isStacked ? notifier.pop() : notifier.clear(),
+      ),
+    );
   }
 
   Widget _buildUserList({required bool compact}) {
