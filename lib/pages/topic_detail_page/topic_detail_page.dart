@@ -5,7 +5,7 @@ import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
-import 'package:flutter/scheduler.dart' show SchedulerBinding, Priority;
+import '../../utils/idle_task.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
@@ -311,7 +311,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         // 先只更新一份全局追踪状态。之前在每个分类列表的 updateSeen 内
         // 重复写一次，还会因为 ref.read(notifier) 初始化从未打开过的
         // provider，导致一次阅读上报并发加载全部置顶分类。
-        SchedulerBinding.instance.scheduleTask(() {
+        scheduleIdleTask(() {
           if (!mounted) return;
           final tracked = ref.read(topicTrackingStateProvider)[topicId];
           if (tracked != null) {
@@ -335,7 +335,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 .read(provider.notifier)
                 .updateSeen(topicId, highestSeen, updateTracking: false);
           }
-        }, Priority.idle);
+        });
       },
     );
 
