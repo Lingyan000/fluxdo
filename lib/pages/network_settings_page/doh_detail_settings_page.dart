@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -8,7 +7,6 @@ import 'package:flutter/services.dart';
 
 import '../../l10n/s.dart';
 import '../../services/network/doh/doh_resolver.dart';
-import '../../services/network/doh/linux_do_dns_rewrite.dart';
 import '../../utils/dialog_utils.dart';
 import '../../services/network/doh/network_settings_service.dart';
 import '../../services/network/doh_proxy/doh_proxy_ffi.dart';
@@ -114,13 +112,6 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
               ),
               const SizedBox(height: 24),
 
-              if (Platform.isWindows) ...[
-                _buildSectionHeader(theme, 'DNS'),
-                const SizedBox(height: 12),
-                _buildLinuxDoDnsRewriteCard(theme, settings),
-                const SizedBox(height: 24),
-              ],
-
               // 服务器列表
               _buildSectionHeader(theme, context.l10n.dohDetail_servers),
               const SizedBox(height: 12),
@@ -154,119 +145,6 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
       title,
       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
     );
-  }
-
-  Widget _buildLinuxDoDnsRewriteCard(
-    ThemeData theme,
-    NetworkSettings settings,
-  ) {
-    final target = LinuxDoDnsRewrite.parseTarget(
-      settings.linuxDoDnsRewriteTarget,
-    );
-    final enabled = settings.linuxDoDnsRewriteEnabled && target != null;
-    final targetType = target?.isFrontDomain == true
-        ? context.l10n.dohDetail_linuxDoFrontDomain
-        : target?.type.name.toUpperCase();
-
-    return SegmentedCardGroup(
-      children: [
-        SwitchListTile(
-          title: Text(context.l10n.dohDetail_linuxDoRewrite),
-          subtitle: Text(
-            enabled
-                ? '$targetType · ${target.value}'
-                : context.l10n.dohDetail_linuxDoRewriteDesc,
-          ),
-          secondary: const Icon(Symbols.alt_route_rounded),
-          value: enabled,
-          onChanged: (value) async {
-            if (value && target == null) {
-              await _showLinuxDoDnsRewriteDialog(settings);
-              return;
-            }
-            await _service.configureLinuxDoDnsRewrite(
-              enabled: value,
-              target: target?.value,
-            );
-          },
-        ),
-        if (enabled)
-          ListTile(
-            leading: const Icon(Symbols.dns_rounded),
-            title: Text(context.l10n.dohDetail_linuxDoRewriteTarget),
-            subtitle: Text(
-              '${target.value}\n${context.l10n.dohDetail_linuxDoRewriteHelper}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            isThreeLine: true,
-            trailing: const Icon(Symbols.edit_rounded, size: 20),
-            onTap: () => _showLinuxDoDnsRewriteDialog(settings),
-          ),
-      ],
-    );
-  }
-
-  Future<void> _showLinuxDoDnsRewriteDialog(NetworkSettings settings) async {
-    final controller = TextEditingController(
-      text: settings.linuxDoDnsRewriteTarget ?? '',
-    );
-    String? errorText;
-    final target = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(context.l10n.dohDetail_linuxDoRewriteDialogTitle),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: context.l10n.dohDetail_linuxDoRewriteTarget,
-              hintText: context.l10n.dohDetail_linuxDoRewriteTargetHint,
-              helperText: context.l10n.dohDetail_linuxDoRewriteHelper,
-              errorText: errorText,
-            ),
-            keyboardType: TextInputType.url,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) {
-              final parsed = LinuxDoDnsRewrite.parseTarget(controller.text);
-              if (parsed == null) {
-                setDialogState(
-                  () =>
-                      errorText = context.l10n.dohDetail_linuxDoRewriteInvalid,
-                );
-                return;
-              }
-              Navigator.of(dialogContext).pop(parsed.value);
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(context.l10n.common_cancel),
-            ),
-            FilledButton(
-              onPressed: () {
-                final parsed = LinuxDoDnsRewrite.parseTarget(controller.text);
-                if (parsed == null) {
-                  setDialogState(
-                    () => errorText =
-                        context.l10n.dohDetail_linuxDoRewriteInvalid,
-                  );
-                  return;
-                }
-                Navigator.of(dialogContext).pop(parsed.value);
-              },
-              child: Text(context.l10n.common_save),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-    if (target == null || !mounted) return;
-    await _service.configureLinuxDoDnsRewrite(enabled: true, target: target);
   }
 
   Widget _buildServerList(ThemeData theme, NetworkSettings settings) {

@@ -34,7 +34,6 @@ class DohProxyService {
   bool? _currentPreferIPv6;
   int? _currentPreferredPort;
   String? _currentServerIp;
-  String? _currentLinuxDoRewriteTarget;
   bool? _currentMitmConnect;
   bool? _currentH2Mitm;
   String? _currentUpstreamSignature;
@@ -66,7 +65,6 @@ class DohProxyService {
     String? dohServer,
     String? dohServerEch,
     String? serverIp,
-    String? linuxDoRewriteTarget,
     String? upstreamProtocol,
     String? upstreamHost,
     int? upstreamPort,
@@ -95,7 +93,6 @@ class DohProxyService {
           _currentPreferIPv6 == preferIPv6 &&
           _currentPreferredPort == preferredPort &&
           _currentServerIp == serverIp &&
-          _currentLinuxDoRewriteTarget == linuxDoRewriteTarget &&
           _currentMitmConnect == mitmConnect &&
           _currentH2Mitm == h2Mitm &&
           _currentUpstreamSignature == upstreamSignature;
@@ -119,7 +116,6 @@ class DohProxyService {
         dohServer,
         dohServerEch,
         serverIp,
-        linuxDoRewriteTarget,
         upstreamProtocol,
         upstreamHost,
         upstreamPort,
@@ -143,7 +139,6 @@ class DohProxyService {
           dohServer,
           dohServerEch,
           serverIp,
-          linuxDoRewriteTarget,
           upstreamProtocol,
           upstreamHost,
           upstreamPort,
@@ -164,7 +159,6 @@ class DohProxyService {
         dohServer,
         dohServerEch,
         serverIp,
-        linuxDoRewriteTarget,
         upstreamProtocol,
         upstreamHost,
         upstreamPort,
@@ -186,7 +180,6 @@ class DohProxyService {
     String? dohServer,
     String? dohServerEch,
     String? serverIp,
-    String? linuxDoRewriteTarget,
     String? upstreamProtocol,
     String? upstreamHost,
     int? upstreamPort,
@@ -214,7 +207,6 @@ class DohProxyService {
           dohServer: dohServer,
           dohServerEch: dohServerEch,
           serverIp: serverIp,
-          linuxDoRewriteTarget: linuxDoRewriteTarget,
           upstreamProtocol: upstreamProtocol,
           upstreamHost: upstreamHost,
           upstreamPort: upstreamPort,
@@ -242,7 +234,6 @@ class DohProxyService {
         _currentPreferIPv6 = preferIPv6;
         _currentPreferredPort = port;
         _currentServerIp = serverIp;
-        _currentLinuxDoRewriteTarget = linuxDoRewriteTarget;
         _currentMitmConnect = mitmConnect;
         _currentH2Mitm = h2Mitm;
         _currentUpstreamSignature = _buildUpstreamSignature(
@@ -272,7 +263,6 @@ class DohProxyService {
     String? dohServer,
     String? dohServerEch,
     String? serverIp,
-    String? linuxDoRewriteTarget,
     String? upstreamProtocol,
     String? upstreamHost,
     int? upstreamPort,
@@ -310,11 +300,6 @@ class DohProxyService {
         if (serverIp != null && serverIp.isNotEmpty) ...[
           '--server-ip',
           serverIp,
-        ],
-        if (linuxDoRewriteTarget != null &&
-            linuxDoRewriteTarget.isNotEmpty) ...[
-          '--linux-do-rewrite-target',
-          linuxDoRewriteTarget,
         ],
         if (upstreamHost != null && upstreamHost.isNotEmpty) ...[
           '--upstream-protocol',
@@ -365,7 +350,6 @@ class DohProxyService {
           _currentPreferIPv6 = preferIPv6;
           _currentPreferredPort = preferredPort;
           _currentServerIp = serverIp;
-          _currentLinuxDoRewriteTarget = linuxDoRewriteTarget;
           _currentMitmConnect = mitmConnect;
           _currentH2Mitm = h2Mitm;
           _currentUpstreamSignature = _buildUpstreamSignature(
@@ -478,7 +462,6 @@ class DohProxyService {
     _currentPreferIPv6 = null;
     _currentPreferredPort = null;
     _currentServerIp = null;
-    _currentLinuxDoRewriteTarget = null;
     _currentMitmConnect = null;
     _currentH2Mitm = null;
     _currentUpstreamSignature = null;
@@ -800,7 +783,6 @@ class DohProxyService {
     required String? dohServer,
     required String? dohServerEch,
     required String? serverIp,
-    required String? linuxDoRewriteTarget,
     required String? upstreamProtocol,
     required String? upstreamHost,
     required int? upstreamPort,
@@ -824,7 +806,6 @@ class DohProxyService {
       'dohServer': dohServer,
       'dohServerEch': dohServerEch,
       'serverIp': serverIp,
-      'linuxDoRewriteTarget': linuxDoRewriteTarget,
       'upstreamProtocol': upstreamProtocol,
       'upstreamHost': upstreamHost,
       'upstreamPort': upstreamPort,
@@ -1113,8 +1094,6 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
           final dohServer = message['dohServer'] as String?;
           final dohServerEch = message['dohServerEch'] as String?;
           final serverIp = message['serverIp'] as String?;
-          final linuxDoRewriteTarget =
-              message['linuxDoRewriteTarget'] as String?;
           final upstreamProtocol = message['upstreamProtocol'] as String?;
           final upstreamHost = message['upstreamHost'] as String?;
           final upstreamPort = message['upstreamPort'] as int?;
@@ -1132,7 +1111,6 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
             dohServer: dohServer,
             dohServerEch: dohServerEch,
             serverIp: serverIp,
-            linuxDoRewriteTarget: linuxDoRewriteTarget,
             upstreamProtocol: upstreamProtocol,
             upstreamHost: upstreamHost,
             upstreamPort: upstreamPort,
@@ -1153,7 +1131,6 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
               dohServer: dohServer,
               dohServerEch: dohServerEch,
               serverIp: serverIp,
-              linuxDoRewriteTarget: linuxDoRewriteTarget,
               upstreamProtocol: upstreamProtocol,
               upstreamHost: upstreamHost,
               upstreamPort: upstreamPort,

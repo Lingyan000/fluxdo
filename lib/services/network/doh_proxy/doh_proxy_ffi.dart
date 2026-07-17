@@ -428,7 +428,6 @@ class DohProxyFfi {
     String? dohServer,
     String? dohServerEch,
     String? serverIp,
-    String? linuxDoRewriteTarget,
     String? upstreamProtocol,
     String? upstreamHost,
     int? upstreamPort,
@@ -457,8 +456,6 @@ class DohProxyFfi {
       if (dohServerEch != null && dohServerEch.isNotEmpty)
         'doh_server_ech': dohServerEch,
       if (serverIp != null && serverIp.isNotEmpty) 'server_ip': serverIp,
-      if (linuxDoRewriteTarget != null && linuxDoRewriteTarget.isNotEmpty)
-        'linux_do_rewrite_target': linuxDoRewriteTarget,
       if (upstreamHost != null &&
           upstreamHost.isNotEmpty &&
           upstreamPort != null &&

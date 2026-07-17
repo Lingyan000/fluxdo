@@ -20,7 +20,6 @@ import '../rhttp/rhttp_settings_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
-import 'linux_do_dns_rewrite.dart';
 import 'webview_mitm_policy.dart';
 
 class NetworkSettings {
@@ -32,8 +31,6 @@ class NetworkSettings {
     required this.proxyPort,
     this.preferIPv6 = false,
     this.serverIp,
-    this.linuxDoDnsRewriteEnabled = false,
-    this.linuxDoDnsRewriteTarget,
     this.gatewayEnabled = true,
     this.h2Mitm = false,
   });
@@ -56,10 +53,6 @@ class NetworkSettings {
   /// 全局 server IP（指定后跳过 DNS 解析直接连接）
   final String? serverIp;
 
-  /// 将 `linux.do` 及其子域名连接到指定 IP，或通过指定域名执行域前置。
-  final bool linuxDoDnsRewriteEnabled;
-  final String? linuxDoDnsRewriteTarget;
-
   /// Gateway（反向代理）模式开关，关闭时回退为 MITM
   final bool gatewayEnabled;
 
@@ -74,8 +67,6 @@ class NetworkSettings {
     int? proxyPort,
     bool? preferIPv6,
     String? Function()? serverIp,
-    bool? linuxDoDnsRewriteEnabled,
-    String? Function()? linuxDoDnsRewriteTarget,
     bool? gatewayEnabled,
     bool? h2Mitm,
   }) {
@@ -88,11 +79,6 @@ class NetworkSettings {
       preferIPv6: preferIPv6 ?? this.preferIPv6,
       gatewayEnabled: gatewayEnabled ?? this.gatewayEnabled,
       serverIp: serverIp != null ? serverIp() : this.serverIp,
-      linuxDoDnsRewriteEnabled:
-          linuxDoDnsRewriteEnabled ?? this.linuxDoDnsRewriteEnabled,
-      linuxDoDnsRewriteTarget: linuxDoDnsRewriteTarget != null
-          ? linuxDoDnsRewriteTarget()
-          : this.linuxDoDnsRewriteTarget,
       h2Mitm: h2Mitm ?? this.h2Mitm,
     );
   }
@@ -212,8 +198,6 @@ class NetworkSettingsService {
   static const _proxyPortKey = 'doh_proxy_port';
   static const _preferIPv6Key = 'doh_prefer_ipv6';
   static const _serverIpKey = 'doh_server_ip';
-  static const _linuxDoDnsRewriteEnabledKey = 'linux_do_dns_rewrite_enabled';
-  static const _linuxDoDnsRewriteTargetKey = 'linux_do_dns_rewrite_target';
   static const _echServerKey = 'doh_ech_server';
   static const _gatewayEnabledKey = 'doh_gateway_enabled';
   static const _h2MitmKey = 'doh_h2_mitm';
@@ -295,12 +279,6 @@ class NetworkSettingsService {
     await prefs.remove('doh_multi_ip');
     final preferIPv6 = prefs.getBool(_preferIPv6Key) ?? false;
     final serverIp = prefs.getString(_serverIpKey);
-    final rewriteTarget = LinuxDoDnsRewrite.parseTarget(
-      prefs.getString(_linuxDoDnsRewriteTargetKey),
-    );
-    final rewriteEnabled =
-        (prefs.getBool(_linuxDoDnsRewriteEnabledKey) ?? false) &&
-        rewriteTarget != null;
     final echServer = prefs.getString(_echServerKey);
     final gatewayEnabled = prefs.getBool(_gatewayEnabledKey) ?? true;
     final h2Mitm = prefs.getBool(_h2MitmKey) ?? false;
@@ -313,8 +291,6 @@ class NetworkSettingsService {
       proxyPort: proxyPort,
       preferIPv6: preferIPv6,
       serverIp: serverIp,
-      linuxDoDnsRewriteEnabled: rewriteEnabled,
-      linuxDoDnsRewriteTarget: rewriteTarget?.value,
       gatewayEnabled: gatewayEnabled,
       h2Mitm: h2Mitm,
     );
@@ -477,33 +453,6 @@ class NetworkSettingsService {
     _touch();
   }
 
-  Future<bool> configureLinuxDoDnsRewrite({
-    required bool enabled,
-    String? target,
-  }) async {
-    final prefs = _prefs;
-    if (prefs == null) return false;
-    final parsed = LinuxDoDnsRewrite.parseTarget(
-      target ?? current.linuxDoDnsRewriteTarget,
-    );
-    if (enabled && parsed == null) return false;
-
-    notifier.value = notifier.value.copyWith(
-      linuxDoDnsRewriteEnabled: enabled,
-      linuxDoDnsRewriteTarget: () => parsed?.value,
-    );
-    await prefs.setBool(_linuxDoDnsRewriteEnabledKey, enabled);
-    if (parsed != null) {
-      await prefs.setString(_linuxDoDnsRewriteTargetKey, parsed.value);
-    } else {
-      await prefs.remove(_linuxDoDnsRewriteTargetKey);
-    }
-    _clearResolvedHostCache();
-    _scheduleApplyProxyState();
-    _touch();
-    return true;
-  }
-
   Future<void> setEchServer(String? url) async {
     final prefs = _prefs;
     if (prefs == null) return;
@@ -610,14 +559,6 @@ class NetworkSettingsService {
       // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
       final shouldTryEch = effectiveEchServer != null;
       final useGateway = current.dohEnabled && current.gatewayEnabled;
-      final linuxDoRewriteTarget =
-          Platform.isWindows &&
-              current.dohEnabled &&
-              current.linuxDoDnsRewriteEnabled
-          ? LinuxDoDnsRewrite.parseTarget(
-              current.linuxDoDnsRewriteTarget,
-            )?.value
-          : null;
 
       if (!shouldTryEch) {
         _clearResolvedHostCache();
@@ -654,7 +595,6 @@ class NetworkSettingsService {
         dohServer: current.dohEnabled ? current.selectedServerUrl : null,
         dohServerEch: current.dohEnabled ? current.echServerUrl : null,
         serverIp: current.serverIp,
-        linuxDoRewriteTarget: linuxDoRewriteTarget,
         upstreamProtocol: upstream.isValid
             ? upstream.protocol.storageValue
             : null,
@@ -946,11 +886,9 @@ class NetworkSettingsService {
     if (current.dohEnabled) {
       final dohServer = current.selectedServerUrl;
       final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
-      final lookupHost =
-          linuxDoFrontDomainForHost(normalizedHost) ?? normalizedHost;
       unawaited(
         _rustProxyService.clearPreferredHostIp(
-          lookupHost,
+          normalizedHost,
           dohServer,
           dohServerEch: dohServerEch,
           preferIpv6: current.preferIPv6,
@@ -978,11 +916,9 @@ class NetworkSettingsService {
     if (current.dohEnabled) {
       final dohServer = current.selectedServerUrl;
       final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
-      final lookupHost =
-          linuxDoFrontDomainForHost(normalizedHost) ?? normalizedHost;
       unawaited(
         _rustProxyService.recordHostSuccess(
-          lookupHost,
+          normalizedHost,
           dohServer,
           dohServerEch: dohServerEch,
           preferIpv6: current.preferIPv6,
@@ -1143,34 +1079,9 @@ class NetworkSettingsService {
     final dohServer = current.selectedServerUrl;
     final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
     final resolvedAt = DateTime.now();
-    final rewriteTarget = _linuxDoDnsRewriteTargetForHost(host);
-
-    if (rewriteTarget != null && rewriteTarget.isAddress) {
-      final echConfig = await _rustProxyService.lookupEchConfig(
-        host,
-        dohServerEch,
-      );
-      final entry = _ResolvedHostEntry(
-        ips: <String>[rewriteTarget.value],
-        preferredIp: rewriteTarget.value,
-        echConfig: echConfig,
-        ttl: _defaultDnsCacheTtl,
-        resolvedAt: resolvedAt,
-      );
-      _resolvedHostCache[host] = entry;
-      _updateLocalDnsCacheStats();
-      unawaited(refreshDnsCacheStats());
-      debugPrint(
-        '[DNS Rewrite] $host -> ${rewriteTarget.value} '
-        '(${rewriteTarget.type.name.toUpperCase()})',
-      );
-      return entry;
-    }
-
-    final lookupHost = rewriteTarget?.value ?? host;
 
     final rustResult = await _rustProxyService.lookupHost(
-      lookupHost,
+      host,
       dohServer,
       dohServerEch: dohServerEch,
       preferIpv6: current.preferIPv6,
@@ -1187,11 +1098,8 @@ class NetworkSettingsService {
       _resolvedHostCache[host] = entry;
       _updateLocalDnsCacheStats();
       unawaited(refreshDnsCacheStats());
-      final logTarget = rewriteTarget == null
-          ? '[DOH] Host 已解析 $host'
-          : '[Domain Fronting] $host -> $lookupHost';
       debugPrint(
-        '$logTarget '
+        '[DOH] Host 已解析 $host '
         '(DNS: ${entry.preferredIp ?? (entry.ips.isEmpty ? "none" : entry.ips.join(", "))}, '
         'ECH: ${entry.echConfig == null ? "off" : "on"}, '
         'TTL: ${entry.ttl.inSeconds}s)',
@@ -1200,18 +1108,18 @@ class NetworkSettingsService {
     }
 
     final fallbackResults = await Future.wait<dynamic>([
-      _lookupIpViaRust(lookupHost, dohServer, current.preferIPv6),
-      _rustProxyService.lookupEchConfig(lookupHost, dohServerEch),
+      _lookupIpViaRust(host, dohServer, current.preferIPv6),
+      _rustProxyService.lookupEchConfig(host, dohServerEch),
     ]);
 
     var ips = fallbackResults[0] as List<String>;
     final echConfig = fallbackResults[1] as Uint8List?;
 
     if (ips.isEmpty) {
-      final fallback = await resolver.resolveAll(lookupHost);
+      final fallback = await resolver.resolveAll(host);
       ips = _normalizeIpList(fallback.map((address) => address.address));
       if (ips.isNotEmpty) {
-        debugPrint('[DOH] Dart IP 已解析 $lookupHost -> ${ips.join(', ')}');
+        debugPrint('[DOH] Dart IP 已解析 $host -> ${ips.join(', ')}');
       }
     }
 
@@ -1339,22 +1247,6 @@ class NetworkSettingsService {
     return normalizedHost;
   }
 
-  LinuxDoDnsRewriteTarget? _linuxDoDnsRewriteTargetForHost(String host) {
-    if (!Platform.isWindows ||
-        !current.dohEnabled ||
-        !current.linuxDoDnsRewriteEnabled ||
-        !LinuxDoDnsRewrite.matchesHost(host)) {
-      return null;
-    }
-    return LinuxDoDnsRewrite.parseTarget(current.linuxDoDnsRewriteTarget);
-  }
-
-  /// 返回 rhttp 请求应使用的 TLS 连接域名；null 表示不启用域前置。
-  String? linuxDoFrontDomainForHost(String host) {
-    final target = _linuxDoDnsRewriteTargetForHost(host);
-    return target != null && target.isFrontDomain ? target.value : null;
-  }
-
   String? _parseServerIpOverride() {
     final serverIp = current.serverIp?.trim();
     if (serverIp == null || serverIp.isEmpty) {
@@ -1376,14 +1268,9 @@ class NetworkSettingsService {
     return ttl;
   }
 
-  String? get _currentResolvedHostCacheSignature {
-    if (!current.dohEnabled) return null;
-    final rewrite = Platform.isWindows && current.linuxDoDnsRewriteEnabled
-        ? current.linuxDoDnsRewriteTarget ?? ''
-        : '';
-    return '${current.selectedServerUrl}|${_effectiveEchServerUrl ?? ""}|'
-        '${current.preferIPv6 ? "v6" : "v4"}|rewrite=$rewrite';
-  }
+  String? get _currentResolvedHostCacheSignature => current.dohEnabled
+      ? '${current.selectedServerUrl}|${_effectiveEchServerUrl ?? ""}|${current.preferIPv6 ? "v6" : "v4"}'
+      : null;
 
   List<String> _collectCommonHosts() {
     final preloaded = PreloadedDataService();
