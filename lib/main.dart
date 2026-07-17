@@ -1462,7 +1462,16 @@ class _MainPageState extends ConsumerState<MainPage>
             for (int i = 0; i < pageEntries.length; i++)
               KeyedSubtree(
                 key: ValueKey('nav-entry-${pageEntries[i].id}'),
-                child: pageEntries[i].pageBuilder!(context, safePageIndex == i),
+                child: TickerMode(
+                  enabled: safePageIndex == i,
+                  child: ExcludeFocus(
+                    excluding: safePageIndex != i,
+                    child: pageEntries[i].pageBuilder!(
+                      context,
+                      safePageIndex == i,
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
