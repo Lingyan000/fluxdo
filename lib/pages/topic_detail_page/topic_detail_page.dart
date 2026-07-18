@@ -5,6 +5,7 @@ import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
+import 'package:flutter/services.dart';
 import '../../utils/idle_task.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -214,7 +215,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _defaultNestedViewApplied = false; // 默认嵌套视图配置是否已应用（依赖 detail 加载后判定）
   // 搜索相关
   final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+  late final FocusNode _searchFocusNode;
   late final AnimationController _expandController;
   late final Animation<Offset> _animation;
   Set<int> _lastReadPostNumbers = {};
@@ -278,6 +279,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
+    _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
 
     _expandController = AnimationController(
       vsync: this,
@@ -525,23 +527,51 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         unawaited(_handleDeletePost(post));
       },
     };
-    final registeredShortcuts = switch (widget.embeddedMode) {
-      // 平行视界导航栈：栈深度 > 1 时 onEmbeddedBack 非空，Esc 退回上一层，
-      // 跟返回按钮的行为一致。栈深度 == 1（普通双栏选中态）没有"关闭"
-      // 概念，维持原来不注册 closeOverlay 的行为。
-      true when widget.onEmbeddedBack != null => {
-        ...shortcuts,
-        ShortcutAction.closeOverlay: widget.onEmbeddedBack!,
-      },
-      true => shortcuts,
-      false => {
-        ...shortcuts,
-        ShortcutAction.closeOverlay: () {
-          if (mounted) Navigator.of(context).maybePop();
-        },
-      },
+    // Esc 优先退出页内搜索/AI，再按当前布局执行嵌入返回或路由返回。
+    final registeredShortcuts = {
+      ...shortcuts,
+      ShortcutAction.closeOverlay: _handleCloseShortcut,
     };
     _shortcutScopeBinding.registerForRoute(_route, registeredShortcuts);
+  }
+
+  void _exitSearchMode() {
+    _searchController.clear();
+    ref.read(topicSearchProvider(widget.topicId).notifier).exitSearchMode();
+  }
+
+  void _returnFromAiPage() {
+    _pageController.animateToPage(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleCloseShortcut() {
+    if (!mounted) return;
+    if (ref.read(topicSearchProvider(widget.topicId)).isSearchMode) {
+      _exitSearchMode();
+      return;
+    }
+    if (_currentPageNotifier.value != 0) {
+      _returnFromAiPage();
+      return;
+    }
+    if (widget.embeddedMode) {
+      widget.onEmbeddedBack?.call();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return KeyEventResult.ignored;
+    }
+    _exitSearchMode();
+    return KeyEventResult.handled;
   }
 
   void _schedulePostShortcutRegistration() {
@@ -924,12 +954,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         actions: [
           IconButton(
             icon: const Icon(Symbols.close_rounded),
-            onPressed: () {
-              _searchController.clear();
-              ref
-                  .read(topicSearchProvider(widget.topicId).notifier)
-                  .exitSearchMode();
-            },
+            onPressed: _exitSearchMode,
           ),
         ],
       );
@@ -2017,10 +2042,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             canPop: !isSearchMode,
             onPopInvokedWithResult: (bool didPop, dynamic result) {
               if (!didPop) {
-                _searchController.clear();
-                ref
-                    .read(topicSearchProvider(widget.topicId).notifier)
-                    .exitSearchMode();
+                _exitSearchMode();
               }
             },
             child: topicScaffold,
@@ -2040,16 +2062,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             onPopInvokedWithResult: (bool didPop, dynamic result) {
               if (!didPop) {
                 if (isOnAiPage) {
-                  _pageController.animateToPage(
-                    0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                  );
+                  _returnFromAiPage();
                 } else {
-                  _searchController.clear();
-                  ref
-                      .read(topicSearchProvider(widget.topicId).notifier)
-                      .exitSearchMode();
+                  _exitSearchMode();
                 }
               }
             },
@@ -2076,6 +2091,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                         topicId: widget.topicId,
                         detail: detail,
                         embedded: true,
+                        onEscape: _returnFromAiPage,
                         onReplyToTopic: detail == null
                             ? null
                             : (imageMarkdown) {

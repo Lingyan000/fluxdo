@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../l10n/s.dart';
@@ -21,6 +22,7 @@ class AiChatInput extends StatefulWidget {
   final bool isGenerating;
   final AiChatInputSend onSend;
   final VoidCallback onStop;
+  final VoidCallback? onEscape;
 
   /// 是否启用图片附件功能（取决于当前模型是否支持多模态）
   ///
@@ -47,6 +49,7 @@ class AiChatInput extends StatefulWidget {
     required this.isGenerating,
     required this.onSend,
     required this.onStop,
+    this.onEscape,
     this.allowAttachments = true,
     this.isImageMode = false,
     this.canEnterImageMode = false,
@@ -61,7 +64,7 @@ class AiChatInput extends StatefulWidget {
 
 class _AiChatInputState extends State<AiChatInput> {
   final _controller = TextEditingController();
-  final _focusNode = FocusNode();
+  late final FocusNode _focusNode;
   final _picker = ImagePicker();
 
   final List<AiChatAttachment> _pendingAttachments = [];
@@ -71,6 +74,22 @@ class _AiChatInputState extends State<AiChatInput> {
 
   bool get _canSend =>
       _controller.text.trim().isNotEmpty || _pendingAttachments.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode _, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        widget.onEscape != null) {
+      widget.onEscape!();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   void dispose() {
