@@ -557,8 +557,16 @@ class NetworkSettingsService {
       );
 
       // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
+      // Windows 高性能模式不使用 CA，公开 doh_proxy 的非 gateway CONNECT
+      // 路径无法表达 mitm_connect=false；此时复用 gateway 的纯隧道分支，
+      // 保持端到端 TLS，同时不改变 WebView MITM 模式的既有开关语义。
       final shouldTryEch = effectiveEchServer != null;
-      final useGateway = current.dohEnabled && current.gatewayEnabled;
+      final useGateway = WebViewMitmPolicy.useGatewayMode(
+        isWindows: Platform.isWindows,
+        dohEnabled: current.dohEnabled,
+        gatewayEnabled: current.gatewayEnabled,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
 
       if (!shouldTryEch) {
         _clearResolvedHostCache();
@@ -725,11 +733,15 @@ class NetworkSettingsService {
 
     if (Platform.isWindows) {
       try {
-        await WindowsWebViewEnvironmentService.instance.setProxy(
-          'http://127.0.0.1:$port',
-        );
+        final applied = await WindowsWebViewEnvironmentService.instance
+            .setProxy('http://127.0.0.1:$port');
         _webViewProxySet = true;
-        debugPrint('[DOH] WebView2 代理已设置 -> 127.0.0.1:$port');
+        debugPrint(
+          applied
+              ? '[DOH] WebView2 代理已设置 -> 127.0.0.1:$port'
+              : '[DOH] WebView2 代理已登记，重启应用后生效 -> '
+                    '127.0.0.1:$port',
+        );
       } catch (e) {
         debugPrint('[DOH] WebView2 代理设置失败: $e');
       }
@@ -761,9 +773,12 @@ class NetworkSettingsService {
 
     if (Platform.isWindows) {
       try {
-        await WindowsWebViewEnvironmentService.instance.setProxy(null);
+        final applied = await WindowsWebViewEnvironmentService.instance
+            .setProxy(null);
         _webViewProxySet = false;
-        debugPrint('[DOH] WebView2 代理已清除');
+        debugPrint(
+          applied ? '[DOH] WebView2 代理已清除' : '[DOH] WebView2 代理清除已登记，重启应用后生效',
+        );
       } catch (e) {
         debugPrint('[DOH] WebView2 代理清除失败: $e');
       }
