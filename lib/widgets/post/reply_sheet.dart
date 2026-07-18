@@ -907,6 +907,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                           !_isInPrivateMessageContext, // 私信不允许提及群组
                                     ),
                               ),
+                        ),
                       ),
                     ],
                   ),
