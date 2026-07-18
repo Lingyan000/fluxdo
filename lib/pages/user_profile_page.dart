@@ -136,6 +136,23 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       return;
     }
 
+    final restoreScope = FullScreenPaneRestoreScope.maybeOf(context);
+    if (restoreScope != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TopicDetailPage(
+            topicId: topicId,
+            initialTitle: initialTitle,
+            scrollToPostNumber: scrollToPostNumber,
+            autoSwitchToMasterDetail: true,
+            stackProvider: restoreScope.stackProvider,
+            restoreParentPaneStack: restoreScope.restoreCurrentPane,
+          ),
+        ),
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(

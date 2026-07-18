@@ -91,6 +91,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
   final bool parentActive; // 父容器是否可见（IndexedStack/双栏切 tab 时用）
   final bool autoSwitchToMasterDetail; // 仅在从首页进入时允许自动切换
   final bool restoreExistingPaneStack; // 宽屏缩窄产生的临时路由，恢复时保留原栈
+  final VoidCallback? restoreParentPaneStack; // 恢复前先还原下层临时路由的平行视界栈
   final bool autoOpenReply; // 自动打开回复框（从草稿进入时使用）
   final int? autoReplyToPostNumber; // 自动回复的帖子编号（从草稿进入时使用）
   final String? instanceId; // 外部指定的 provider 实例 ID（布局切换时复用）
@@ -133,6 +134,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
     this.parentActive = true,
     this.autoSwitchToMasterDetail = false,
     this.restoreExistingPaneStack = false,
+    this.restoreParentPaneStack,
     this.autoOpenReply = false,
     this.autoReplyToPostNumber,
     this.instanceId,
@@ -159,6 +161,8 @@ class TopicDetailPage extends ConsumerStatefulWidget {
 
 class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin, RouteAware {
+  late ProviderContainer _providerContainer;
+
   /// 唯一实例 ID，确保每次打开页面都创建新的 provider 实例
   /// 支持外部传入以在布局切换时复用同一个 provider
   late final String _instanceId = widget.instanceId ?? const Uuid().v4();
@@ -306,18 +310,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         debugPrint(
           '[TopicDetail] onTimingsSent callback triggered: topicId=$topicId, highestSeen=$highestSeen',
         );
+        final container = _providerContainer;
         // 更新会话已读状态，触发 PostItem 消除未读圆点
-        ref
+        container
             .read(topicSessionProvider(topicId).notifier)
             .markAsRead(postNumbers);
         // 先只更新一份全局追踪状态。之前在每个分类列表的 updateSeen 内
         // 重复写一次，还会因为 ref.read(notifier) 初始化从未打开过的
         // provider，导致一次阅读上报并发加载全部置顶分类。
         scheduleIdleTask(() {
-          if (!mounted) return;
-          final tracked = ref.read(topicTrackingStateProvider)[topicId];
+          final tracked = container.read(topicTrackingStateProvider)[topicId];
           if (tracked != null) {
-            ref
+            container
                 .read(topicTrackingStateProvider.notifier)
                 .updateTopicRead(
                   topicId,
@@ -328,12 +332,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
           // 只更新已经存在的列表 provider；未打开的分类没有 UI 状态需要
           // 同步，绝不能为了一次本地字段更新触发网络初始化。
-          final pinnedIds = ref.read(pinnedCategoriesProvider);
+          final pinnedIds = container.read(pinnedCategoriesProvider);
           final categoryIds = [null, ...pinnedIds];
           for (final categoryId in categoryIds) {
             final provider = topicListProvider(categoryId);
-            if (!ref.exists(provider)) continue;
-            ref
+            if (!container.exists(provider)) continue;
+            container
                 .read(provider.notifier)
                 .updateSeen(topicId, highestSeen, updateTracking: false);
           }
@@ -537,7 +541,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         },
       },
     };
-    _shortcutScopeBinding.register(context, registeredShortcuts);
+    _shortcutScopeBinding.registerForRoute(_route, registeredShortcuts);
   }
 
   void _schedulePostShortcutRegistration() {
@@ -585,6 +589,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _providerContainer = ProviderScope.containerOf(context, listen: false);
     final route = ModalRoute.of(context);
     if (route == _route || route == null) return;
 
@@ -806,31 +811,59 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         return;
       }
 
-      final currentPostNumber = _resolvedViewportPostNumber;
       final stackProvider = widget.stackProvider ?? selectedTopicProvider;
       final stackNotifier = ref.read(stackProvider.notifier);
-      // 切换瞬间现读即可,不需要 build 期持有 detail(顶层已不再
-      // watch 完整 detail,见 build 内注释)
-      final title =
-          ref.read(topicDetailProvider(_params)).value?.title ??
-          widget.initialTitle;
-      if (widget.restoreExistingPaneStack) {
-        stackNotifier.updateTopTopic(
-          topicId: widget.topicId,
-          initialTitle: title,
-          scrollToPostNumber: currentPostNumber,
-          instanceId: _instanceId,
-        );
-      } else {
-        stackNotifier.select(
-          topicId: widget.topicId,
-          initialTitle: title,
-          scrollToPostNumber: currentPostNumber,
-          instanceId: _instanceId,
-        );
-      }
+      _syncTopicToPaneStack(stackNotifier);
       navigator.pop();
     });
+  }
+
+  void _syncTopicToPaneStack(SelectedTopicNotifier stackNotifier) {
+    final currentPostNumber = _resolvedViewportPostNumber;
+    // 切换瞬间现读即可,不需要 build 期持有 detail(顶层已不再
+    // watch 完整 detail,见 build 内注释)
+    final title =
+        ref.read(topicDetailProvider(_params)).value?.title ??
+        widget.initialTitle;
+    if (widget.restoreParentPaneStack != null) {
+      widget.restoreParentPaneStack!();
+      stackNotifier.push(
+        topicId: widget.topicId,
+        initialTitle: title,
+        scrollToPostNumber: currentPostNumber,
+        instanceId: _instanceId,
+      );
+      return;
+    }
+    if (widget.restoreExistingPaneStack) {
+      stackNotifier.updateTopTopic(
+        topicId: widget.topicId,
+        initialTitle: title,
+        scrollToPostNumber: currentPostNumber,
+        instanceId: _instanceId,
+      );
+    } else {
+      stackNotifier.select(
+        topicId: widget.topicId,
+        initialTitle: title,
+        scrollToPostNumber: currentPostNumber,
+        instanceId: _instanceId,
+      );
+    }
+  }
+
+  void _restoreCurrentPaneToMasterDetail() {
+    if (!mounted) return;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
+    final navigator = Navigator.of(context);
+
+    final stackProvider = widget.stackProvider ?? selectedTopicProvider;
+    final stackNotifier = ref.read(stackProvider.notifier);
+    _syncTopicToPaneStack(stackNotifier);
+
+    // 当前路由上方可能还有资料页，不能 pop；精确移除本话题路由。
+    if (route.isActive) navigator.removeRoute(route);
   }
 
   Future<void> _handleExternalScrollTargetUpdate(int postNumber) async {
@@ -2089,12 +2122,21 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 分栏本身没问题，但链接点击时 stackProvider 始终为 null——根因就是
   /// 这个分支漏包）。
   Widget _wrapEmbeddedStack(Widget child) {
-    if (!widget.embeddedMode) return child;
-    return EmbeddedStackScope(
-      stackProvider: widget.stackProvider ?? selectedTopicProvider,
-      truncateOnPush: widget.truncateOnPush,
-      child: child,
-    );
+    if (widget.embeddedMode) {
+      return EmbeddedStackScope(
+        stackProvider: widget.stackProvider ?? selectedTopicProvider,
+        truncateOnPush: widget.truncateOnPush,
+        child: child,
+      );
+    }
+    if (widget.autoSwitchToMasterDetail) {
+      return FullScreenPaneRestoreScope(
+        stackProvider: widget.stackProvider ?? selectedTopicProvider,
+        restoreCurrentPane: _restoreCurrentPaneToMasterDetail,
+        child: child,
+      );
+    }
+    return child;
   }
 
   void _showAiAssistantSheet(TopicDetail detail) {
@@ -2302,7 +2344,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// postIndex 数学，riverpod 状态实例与名单实例都未变时直接复用上次
   /// 结果，避免每次 read 都重新过滤。
   TopicDetail _filteredDetail(TopicDetail detail) {
-    final blocked = ref.read(preferencesProvider).normalizedBlockedUsernames;
+    final blocked = _providerContainer
+        .read(preferencesProvider)
+        .normalizedBlockedUsernames;
     if (identical(_blockedFilterInput, detail) &&
         identical(_blockedFilterBlocked, blocked)) {
       return _blockedFilterOutput!;
