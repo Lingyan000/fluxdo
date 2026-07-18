@@ -101,7 +101,7 @@ class PhaseSample {
 /// engine 的 [FrameTiming] 回调,记录进内存环形缓冲,配合"性能诊断"
 /// 页面即可在设备上直接查看与导出,无需连接电脑。
 ///
-/// - debug/profile:main() 里无条件 [start]
+/// - debug/profile:通过 FLUXDO_PERF_DIAGNOSTICS 显式开启
 /// - release:由设置开关(pref_perf_diagnostics)控制,诊断页可即时启停
 /// - 掉帧行带场景归因:导航([JankNavObserver])、message bus、typing、
 ///   滚动回跳等事件经 [logEvent] 汇入同一时间轴

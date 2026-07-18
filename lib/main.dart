@@ -164,11 +164,12 @@ Future<void> main() async {
   //   GestureBinding.instance.samplingOffset = const Duration(milliseconds: -15);
   // (offset 按实际刷新率换算,勿吃 -38 默认值。)
 
-  // 掉帧监控:debug/profile 无条件启用;release 由"性能诊断"设置开关
-  // 控制(见下方 prefs 读取处)。Logcat 过滤 "JANK",或在设置 → 性能诊断
-  // 页内直接查看与导出。不要用开着 DevTools Performance 页的体感判断
-  // 卡顿(观察者效应)。
-  if (!kReleaseMode) {
+  // 掉帧监控会在每个重组件 build 时记账，并在掉帧时维护诊断时间轴。
+  // 调试版日常使用不能默认常驻：触控板高频滚动下，诊断本身会放大 CPU、
+  // 内存和 GC 压力。需要采样时显式传 FLUXDO_PERF_DIAGNOSTICS=true，
+  // 或进入设置 → 性能诊断手动开启；release 仍由用户设置控制。
+  const perfDiagnostics = bool.fromEnvironment('FLUXDO_PERF_DIAGNOSTICS');
+  if (!kReleaseMode && perfDiagnostics) {
     FrameJankMonitor.start();
   }
 
