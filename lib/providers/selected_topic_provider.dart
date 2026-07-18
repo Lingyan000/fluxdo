@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
@@ -363,6 +364,30 @@ final selectedSeekingProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
+/// 窄屏临时路由携带的平行视界恢复上下文。
+class FullScreenPaneRestoreScope extends InheritedWidget {
+  const FullScreenPaneRestoreScope({
+    super.key,
+    required this.stackProvider,
+    required this.restoreCurrentPane,
+    required super.child,
+  });
+
+  final SelectedTopicProvider stackProvider;
+  final VoidCallback restoreCurrentPane;
+
+  static FullScreenPaneRestoreScope? maybeOf(BuildContext context) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<FullScreenPaneRestoreScope>();
+    return element?.widget as FullScreenPaneRestoreScope?;
+  }
+
+  @override
+  bool updateShouldNotify(FullScreenPaneRestoreScope oldWidget) =>
+      stackProvider != oldWidget.stackProvider ||
+      restoreCurrentPane != oldWidget.restoreCurrentPane;
+}
+
 /// 标记"当前 context 处在哪个平行视界嵌入面板里"，内部链接点击时靠它
 /// 判断该压到哪个栈（首页话题栈还是私信栈）。
 ///
@@ -447,6 +472,40 @@ class EmbeddedStackScope extends InheritedWidget {
   /// 平行视界，不在（比如设置页、独立弹窗）就照旧全屏 push。所有点头像
   /// /用户名跳资料页的地方都应该走这个，别再各自手写 Navigator.push。
   static void openProfile(BuildContext context, String username) {
+    final restoreScope = FullScreenPaneRestoreScope.maybeOf(context);
+    if (restoreScope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(restoreScope.stackProvider.notifier);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (routeContext) {
+            void restoreProfilePane() {
+              restoreScope.restoreCurrentPane();
+              notifier.pushProfile(username);
+            }
+
+            void restoreProfileRoute() {
+              final route = ModalRoute.of(routeContext);
+              final navigator = Navigator.of(routeContext);
+              restoreProfilePane();
+              if (route == null || !route.isActive) return;
+              navigator.removeRoute(route);
+            }
+
+            return AutoRestoreMasterDetailRoute(
+              onRestore: restoreProfilePane,
+              child: FullScreenPaneRestoreScope(
+                stackProvider: restoreScope.stackProvider,
+                restoreCurrentPane: restoreProfileRoute,
+                child: UserProfilePage(username: username),
+              ),
+            );
+          },
+        ),
+      );
+      return;
+    }
+
     final scope = _maybeScopeOf(context);
     if (scope != null) {
       final container = ProviderScope.containerOf(context, listen: false);

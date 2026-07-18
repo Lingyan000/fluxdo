@@ -52,10 +52,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
   /// 环还在累积，强化"按住越久越满"的感受
   static const Duration _pressProgressDuration = Duration(milliseconds: 520);
 
-  late final AnimationController _pressController = AnimationController(
-    vsync: this,
-    duration: _pressProgressDuration,
-  );
+  late final AnimationController _pressController;
 
   // 滑动预览状态
   OverlayEntry? _swipeEntry;
@@ -65,6 +62,15 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
   _SwipeDirection? _swipeDirection;
   ProgressGestureAction? _swipeAction;
   bool _swipeTriggerable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      vsync: this,
+      duration: _pressProgressDuration,
+    );
+  }
 
   @override
   void dispose() {
