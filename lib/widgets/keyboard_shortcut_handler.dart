@@ -56,13 +56,19 @@ class _KeyboardShortcutHandlerState
   bool _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
 
-    // 如果焦点在文本输入框中，不拦截（让用户正常打字）
-    if (_isFocusInTextInput()) return false;
-
+    final focusInTextInput = _isFocusInTextInput();
     final bindings = ref.read(shortcutProvider);
 
     for (final binding in bindings) {
       if (!matchKeyEvent(event, binding.activator)) continue;
+      // 文本输入期间仍允许单次 Esc 关闭当前页内状态；其余快捷键继续
+      // 让给输入法，避免 J/K 等可打印字符被全局动作抢走。
+      if (focusInTextInput &&
+          (event is! KeyDownEvent ||
+              event.logicalKey != LogicalKeyboardKey.escape ||
+              binding.action != ShortcutAction.closeOverlay)) {
+        continue;
+      }
 
       final surfaceDispatch = _handleSurfaceBeforeDispatch(binding.action);
       if (surfaceDispatch == _ShortcutSurfaceDispatch.handled ||
