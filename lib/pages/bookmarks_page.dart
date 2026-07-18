@@ -15,6 +15,8 @@ import '../providers/preferences_provider.dart';
 import '../providers/bookmarks_reconciler.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/user_content_search_provider.dart';
+import '../models/shortcut_binding.dart';
+import '../providers/shortcut_provider.dart';
 import '../services/app_error_handler.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
@@ -62,9 +64,26 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   String? _selectedBookmarkName;
   BookmarksWorkspaceState _workspaceState = const BookmarksWorkspaceState();
 
+  /// 桌面端 Esc 退出书签页(maybePop 会依次经过 PopScope:搜索模式先退
+  /// 搜索、手机工作区先回书签标签,最后才真正 pop 路由)。
+  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
+    ref: ref,
+    scope: ShortcutScope.context,
+  );
+
   @override
   void initState() {
     super.initState();
+    if (PlatformUtils.isDesktop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _shortcutScopeBinding.register(context, {
+          ShortcutAction.closeOverlay: () {
+            if (mounted) Navigator.of(context).maybePop();
+          },
+        });
+      });
+    }
     _scrollController.addListener(_onScroll);
     _searchNotifier = ref.read(
       userContentSearchProvider(SearchInType.bookmarks).notifier,
@@ -88,6 +107,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   @override
   void dispose() {
+    _shortcutScopeBinding.disposeDeferred();
     _setMobileBottomBarHidden(false);
     _scrollController.dispose();
     Future.microtask(_searchNotifier.exitSearchMode);
@@ -780,6 +800,9 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
             activeTabId: _workspaceState.activeTabId,
             topicTabs: _workspaceState.topicTabs,
             bookmarksLabel: context.l10n.bookmarks_title,
+            onBack: Navigator.of(context).canPop()
+                ? () => Navigator.of(context).maybePop()
+                : null,
             isSearchMode: searchState.isSearchMode,
             onSearchTap: () => _onSearchPressed(true),
             onBookmarksTap: () {

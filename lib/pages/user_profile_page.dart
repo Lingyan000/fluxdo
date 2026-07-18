@@ -23,6 +23,9 @@ import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
+import '../models/shortcut_binding.dart';
+import '../providers/shortcut_provider.dart';
+import '../utils/platform_utils.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/grain_gradient_background.dart';
 import '../widgets/common/error_view.dart';
@@ -95,6 +98,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }) {
     final stackProvider = EmbeddedStackScope.maybeOf(context);
     if (stackProvider != null) {
+      ref.read(activePaneProvider.notifier).state = ActivePane.detail;
       final container = ProviderScope.containerOf(context, listen: false);
       final notifier = container.read(stackProvider.notifier);
       if (EmbeddedStackScope.isTruncating(context)) {
@@ -198,9 +202,33 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     'solved',
   ];
 
+  /// 桌面端 Esc 关闭当前层:平行视界嵌入层走 onEmbeddedBack,普通路由
+  /// maybePop —— 与 TopicDetailPage 的 closeOverlay 语义对齐。
+  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
+    ref: ref,
+    scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
+  );
+
+  void _registerShortcuts() {
+    if (!PlatformUtils.isDesktop) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final back = widget.embeddedMode
+          ? widget.onEmbeddedBack
+          : () {
+              if (mounted) Navigator.of(context).maybePop();
+            };
+      if (back == null) return;
+      _shortcutScopeBinding.register(context, {
+        ShortcutAction.closeOverlay: back,
+      });
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _registerShortcuts();
     _tabController = TabController(length: _tabFilters.length, vsync: this);
     _tabController.addListener(_onTabChanged);
     // 预先为所有 tab 设置 loading 状态，避免切换时闪现空状态
@@ -224,6 +252,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   @override
   void dispose() {
+    _shortcutScopeBinding.disposeDeferred();
     _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
