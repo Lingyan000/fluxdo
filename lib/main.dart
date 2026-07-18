@@ -87,6 +87,7 @@ import 'services/network/adapters/platform_adapter.dart';
 import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
@@ -144,6 +145,10 @@ Future<void> main() async {
   // Impeller 纹理上传并发,图密话题快滚 raster 尖峰的对症闸门,
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
+
+  // just_audio 不自带 Windows/Linux 实现。必须在创建 AudioPlayer 前注册
+  // MediaKit 后端，否则会落回不存在的 MethodChannel 实现。
+  JustAudioMediaKit.ensureInitialized();
 
   // Rust 动图管线的首帧(挂载瞬态的裸 RGBA 上传,不经 binding)注入
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
