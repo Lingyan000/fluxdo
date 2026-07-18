@@ -506,8 +506,8 @@ namespace flutter_inappwebview_plugin
     else if (string_equals(methodName, "printCurrentPage")) {
       auto result_ = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
       auto settingsMap = get_optional_fl_map_value<flutter::EncodableMap>(arguments, "settings");
-      std::shared_ptr<PrintJobSettings> settings = settingsMap.has_value() 
-        ? std::make_shared<PrintJobSettings>(settingsMap.value()) 
+      std::shared_ptr<PrintJobSettings> settings = settingsMap.has_value()
+        ? std::make_shared<PrintJobSettings>(settingsMap.value())
         : nullptr;
       webView->printCurrentPage(settings, [result_ = std::move(result_)](const std::optional<std::string>& printJobId)
         {
@@ -516,7 +516,7 @@ namespace flutter_inappwebview_plugin
     }
     else if (string_equals(methodName, "createPdf")) {
       auto result_ = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
-      
+
       // Parse settings from pdfConfiguration if provided
       std::shared_ptr<PrintJobSettings> settings = nullptr;
       if (fl_map_contains_not_null(arguments, "pdfConfiguration")) {
@@ -526,7 +526,7 @@ namespace flutter_inappwebview_plugin
           settings = std::make_shared<PrintJobSettings>(settingsMap);
         }
       }
-      
+
       webView->createPdf(settings, [result_ = std::move(result_)](const std::optional<std::vector<uint8_t>>& pdfData)
         {
           if (pdfData.has_value()) {

@@ -140,4 +140,3 @@ class EmbeddedBrowserControllerPool {
   /// 池是否因登录/CF 等关键浏览器操作而暂停。
   bool get suspended => _suspended;
 }
-

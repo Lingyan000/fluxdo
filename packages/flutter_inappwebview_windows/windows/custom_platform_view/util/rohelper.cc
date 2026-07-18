@@ -1,7 +1,7 @@
 // Based on ANGLE's RoHelper (CompositorNativeWindow11.{cpp,h})
 // - https://github.com/google/angle/blob/main/src/libANGLE/renderer/d3d/d3d11/converged/CompositorNativeWindow11.h
 // - https://github.com/google/angle/blob/main/src/libANGLE/renderer/d3d/d3d11/converged/CompositorNativeWindow11.cpp
-// - https://gist.github.com/clarkezone/43e984fb9bdcd2cfcd9a4f41c208a02f 
+// - https://gist.github.com/clarkezone/43e984fb9bdcd2cfcd9a4f41c208a02f
 //
 // Copyright 2018 The ANGLE Project Authors.
 // All rights reserved.
