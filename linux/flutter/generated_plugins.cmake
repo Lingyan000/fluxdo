@@ -13,6 +13,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_timezone
   gtk
   irondash_engine_context
+  media_kit_libs_linux
   quickjs_engine
   record_linux
   screen_retriever_linux
