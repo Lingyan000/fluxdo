@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 
 import '../../l10n/s.dart';
+import '../../pages/topic_card_style_settings_page.dart';
 import '../../providers/app_icon_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/preferences_provider.dart';
@@ -285,6 +286,26 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                   : '${rate}Hz';
             },
             onTap: (context, ref) => _showDisplayModeSheet(context, ref),
+          ),
+        ),
+      ],
+    ),
+
+    // ── 卡片样式(容器分组:话题卡/未来其他卡片样式入口)──────────
+    SettingsGroup(
+      title: l10n.appearance_cardStyleGroup,
+      icon: Symbols.style_rounded,
+      items: [
+        ActionModel(
+          id: 'topicCardStyle',
+          title: l10n.topicCardStyle_title,
+          subtitle: l10n.topicCardStyle_desc,
+          icon: Symbols.view_agenda_rounded,
+          onTap: (context, ref) => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const TopicCardStyleSettingsPage(),
+            ),
           ),
         ),
       ],

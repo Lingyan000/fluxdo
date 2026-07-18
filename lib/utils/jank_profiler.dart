@@ -85,6 +85,10 @@ class JankProfiler {
 
   /// [FrameJankMonitor] 在掉帧时调用:异步抓取该帧时间窗的 timeline
   /// 并把归并结果写回 [record]。
+  ///
+  /// 节流不再"一窗只抓第一帧":转场/爆发是一串掉帧,首帧往往只是
+  /// 前菜。被节流抑制的帧里记住最差的一帧(totalSpan 最大),窗口结束
+  /// 时补抓它——VM timeline ring buffer 保留近期事件,延迟 ≤2s 可抓。
   static void captureForFrame(FrameTiming timing, JankRecord record) {
     final service = _service;
     if (service == null) {
@@ -93,8 +97,37 @@ class JankProfiler {
       return;
     }
     final now = DateTime.now();
-    if (now.difference(_lastCapture) < _throttle) return;
+    if (now.difference(_lastCapture) < _throttle) {
+      // 窗口内被抑制:竞选"最差帧",窗口尾统一补抓一次
+      if (_pendingWorst == null ||
+          timing.totalSpan > _pendingWorst!.$1.totalSpan) {
+        _pendingWorst = (timing, record);
+      }
+      _pendingTimer ??= Timer(
+        _throttle - now.difference(_lastCapture),
+        _capturePendingWorst,
+      );
+      return;
+    }
     _lastCapture = now;
+    _captureInto(timing, record);
+  }
+
+  static (FrameTiming, JankRecord)? _pendingWorst;
+  static Timer? _pendingTimer;
+
+  static void _capturePendingWorst() {
+    _pendingTimer = null;
+    final pending = _pendingWorst;
+    _pendingWorst = null;
+    if (pending == null) return;
+    _lastCapture = DateTime.now();
+    _captureInto(pending.$1, pending.$2);
+  }
+
+  static void _captureInto(FrameTiming timing, JankRecord record) {
+    final service = _service;
+    if (service == null) return;
 
     final startUs =
         timing.timestampInMicroseconds(FramePhase.vsyncStart);
@@ -110,11 +143,12 @@ class JankProfiler {
         );
         final summary = _summarize(timeline.traceEvents ?? []);
         if (summary.isNotEmpty) {
-          record.detail = summary;
+          // 追加而非覆盖:record.detail 里已有同步账单(相位/span/imageCache)
+          record.appendDetail('解剖: $summary');
           FrameJankMonitor.revision.value++;
           debugPrint('[JANK-PROF] #${record.frameNumber} $summary');
         } else {
-          record.detail = '(时间窗内无 timeline 事件)';
+          record.appendDetail('解剖: (时间窗内无 timeline 事件)');
           FrameJankMonitor.revision.value++;
         }
       } catch (e) {
@@ -162,118 +196,28 @@ class JankProfiler {
     }());
   }
 
-  /// 纯包装层事件:总是覆盖整帧、不携带定位信息,从摘要中剔除,
-  /// 把位置留给 BUILD/LAYOUT/业务 widget/纹理上传等有效条目
-  static const _wrapperNames = {
-    // engine/framework 帧结构
-    'VsyncProcessCallback',
-    'VsyncFireCallback',
-    'Animator::BeginFrame',
-    'Animator::Render',
-    'GPURasterizer::Draw',
-    'Rasterizer::DoDraw',
-    'Rasterizer::DrawToSurfaces',
-    'SurfaceFrame::Submit',
-    'SurfaceFrame::Encode',
-    'SurfaceFrame::BuildDisplayList',
-    'CompositorContext::ScopedFrame::Raster',
-    'LAYOUT (root)',
-    'PAINT (root)',
-    'SEMANTICS (root)',
-    'UPDATING COMPOSITING BITS (root)',
-    'UPDATING COMPOSITING BITS',
-    'FINALIZE TREE',
-    'POST_FRAME',
-    'Frame Request Pending',
-    'PipelineItem',
-    'PipelineProduce',
-    'Frame',
-    'Animate',
-    // 通用框架 widget:出现在几乎每条链上,不带业务定位信息
-    'Semantics',
-    'Listener',
-    'Builder',
-    'KeyedSubtree',
-    'IgnorePointer',
-    'DefaultTextStyle',
-    'AnimatedDefaultTextStyle',
-    'Material',
-    'RawGestureDetector',
-    '_GestureSemantics',
-    'GestureDetector',
-    'Actions',
-    '_ActionsScope',
-    'Focus',
-    '_FocusInheritedScope',
-    'FocusScope',
-    'Shortcuts',
-    'MediaQuery',
-    'Padding',
-    'Stack',
-    'Column',
-    'Row',
-    'Container',
-    'DecoratedBox',
-    'ConstrainedBox',
-    'ColoredBox',
-    'SizedBox',
-    'Center',
-    'Align',
-    'ClipRect',
-    'ClipRRect',
-    'RepaintBoundary',
-    '_InkFeatures',
-    'InkWell',
-    'FadeTransition',
-    'SlideTransition',
-    'FractionalTranslation',
-    'Transform',
-    'AnimatedBuilder',
-    'ListenableBuilder',
-    'ValueListenableBuilder<bool>',
-    'ValueListenableBuilder<int>',
-    'UnmanagedRestorationScope',
-    'Offstage',
-    'Opacity',
-    'Expanded',
-    'Flexible',
-    'Wrap',
-    'CustomPaint',
-    'PhysicalModel',
-    'PhysicalShape',
-    'Viewport',
-    'CustomScrollView',
-    'SliverPadding',
-    'Consumer',
-    'Theme',
-    '_InheritedTheme',
-    'IconTheme',
-    'DefaultSelectionStyle',
-    'MouseRegion',
-    'TickerMode',
-    '_EffectiveTickerMode',
-    'AbsorbPointer',
-    'SafeArea',
-  };
-
-  /// 名称级噪音前缀(泛型/组合名)
-  static bool _isNoise(String name) {
-    if (_wrapperNames.contains(name)) return true;
-    return name.startsWith('NotificationListener<') ||
-        name.startsWith('_MixinApplication') ||
-        name.startsWith('InheritedProvider<') ||
-        name.startsWith('UncontrolledProviderScope');
-  }
-
-  /// 把 Chrome trace 格式事件归并为"名称 → 累计耗时"的 top 列表。
+  /// 把 Chrome trace 格式事件归并为"名称 → 自击耗时(self-time)"top 列表。
   ///
-  /// 只统计 Duration 事件(B/E 配对与 X),按名称聚合 total(嵌套父子
-  /// 都计入,阅读时天然呈现层级:BUILD 其下的 widget 次之)。剔除
-  /// 纯包装层([_wrapperNames])与 <0.3ms 碎片。
+  /// 旧版按名称累计 total(嵌套父子重复计数),再靠 ~90 行硬编码包装层
+  /// 黑名单降噪——名单永远追不上代码演化,也违背"由数据派生"。改算
+  /// self = total − 直接子事件耗时:纯包装层(Semantics/Builder/各种壳)
+  /// 自击 ≈0 自然沉底,黑名单整个删除;榜上的名字就是真正花时间的代码。
+  ///
+  /// B/E 与 X 各自按 tid 独立配对(B/E 栈式;X 按 ts 排序 + 区间包含栈);
+  /// 两族之间不互相扣减(同线程同族嵌套是常态,跨族嵌套罕见,重复计入
+  /// 量级可忽略)。
   static String _summarize(List<vms.TimelineEvent> events) {
-    // B/E 配对:同 tid 栈式匹配
-    final stacks = <int, List<(String, int)>>{};
     final totals = <String, int>{};
+
+    void addSelf(String name, int self) {
+      if (self > 0) totals[name] = (totals[name] ?? 0) + self;
+    }
+
+    // ---- B/E 配对:per tid 栈式,pop 时 self = total − childUs ----
+    final beStacks = <int, List<_OpenSpan>>{};
+    // ---- X 事件:per tid 收集,稍后按 ts 排序做区间包含 ----
+    final xByTid = <int, List<(String, int, int)>>{}; // (name, ts, dur)
+
     for (final e in events) {
       final json = e.json;
       if (json == null) continue;
@@ -285,24 +229,70 @@ class JankProfiler {
       switch (ph) {
         case 'X':
           final dur = json['dur'] as int? ?? 0;
-          totals[name] = (totals[name] ?? 0) + dur;
+          if (dur > 0) (xByTid[tid] ??= []).add((name, ts, dur));
         case 'B':
-          stacks.putIfAbsent(tid, () => []).add((name, ts));
+          (beStacks[tid] ??= []).add(_OpenSpan(name, ts));
         case 'E':
-          final stack = stacks[tid];
+          final stack = beStacks[tid];
           if (stack != null && stack.isNotEmpty) {
-            final (n, startTs) = stack.removeLast();
-            totals[n] = (totals[n] ?? 0) + (ts - startTs);
+            final span = stack.removeLast();
+            final total = ts - span.startTs;
+            if (total > 0) {
+              addSelf(span.name, total - span.childUs);
+              // 父的 childUs 记子的 total(孙辈已含在内,不重复上溯)
+              if (stack.isNotEmpty) stack.last.childUs += total;
+            }
           }
       }
     }
-    final entries = totals.entries
-        .where((e) => e.value >= 300 && !_isNoise(e.key))
-        .toList()
+    // 窗口截断的未闭合 B:按窗口内已知子耗时估 self 意义不大,与旧版
+    // 一致直接丢弃(截断事件由相邻窗口的完整事件代表)。
+
+    for (final list in xByTid.values) {
+      list.sort((a, b) => a.$2.compareTo(b.$2));
+      final open = <_OpenX>[];
+      void closeTop() {
+        final x = open.removeLast();
+        addSelf(x.name, x.dur - x.childUs);
+      }
+
+      for (final (name, ts, dur) in list) {
+        while (open.isNotEmpty && open.last.endTs <= ts) {
+          closeTop();
+        }
+        // 收进最内层仍然打开的包含区间(只记直接父,孙辈不重复)
+        if (open.isNotEmpty && ts + dur <= open.last.endTs) {
+          open.last.childUs += dur;
+        }
+        open.add(_OpenX(name, ts + dur, dur));
+      }
+      while (open.isNotEmpty) {
+        closeTop();
+      }
+    }
+
+    final entries = totals.entries.where((e) => e.value >= 300).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return entries
         .take(10)
         .map((e) => '${e.key} ${(e.value / 1000).toStringAsFixed(1)}ms')
         .join(' | ');
   }
+}
+
+/// B/E 配对栈上的未闭合事件
+class _OpenSpan {
+  _OpenSpan(this.name, this.startTs);
+  final String name;
+  final int startTs;
+  int childUs = 0;
+}
+
+/// X 区间包含栈上的事件
+class _OpenX {
+  _OpenX(this.name, this.endTs, this.dur);
+  final String name;
+  final int endTs;
+  final int dur;
+  int childUs = 0;
 }

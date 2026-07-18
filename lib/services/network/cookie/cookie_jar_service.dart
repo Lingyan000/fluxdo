@@ -736,6 +736,19 @@ class CookieJarService {
         _headerCookiePriorityScore(candidate, requestHost) -
         _headerCookiePriorityScore(existing, requestHost);
     if (scoreDiff != 0) return scoreDiff;
+
+    // 同分时按过期时间取最新("取新"兜底,同 AppCookieManager):同名多枚时
+    // 后签发的过期更晚、即当前有效那枚。
+    final candidateExpires = candidate.expires;
+    final existingExpires = existing.expires;
+    if (candidateExpires != null &&
+        existingExpires != null &&
+        candidateExpires != existingExpires) {
+      return candidateExpires.compareTo(existingExpires);
+    }
+    if ((candidateExpires == null) != (existingExpires == null)) {
+      return candidateExpires != null ? 1 : -1;
+    }
     return candidate.value.length.compareTo(existing.value.length);
   }
 

@@ -17,11 +17,13 @@ import '../../utils/html_to_markdown.dart';
 import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show SelectionCoordinator;
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../../models/draft.dart';
 import '../../models/topic.dart';
+import '../../models/pending_post.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/responsive.dart';
 import '../../utils/share_utils.dart';
@@ -662,6 +664,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void didPushNext() {
     _setRouteVisible(false, 'did_push_next');
+    // 兜底清自研选区(工具栏/托柄是顶层 OverlayEntry,新 push 的页面路由
+    // 压不住它们)。常规弹层靠选区层失焦监听自清,这里防御非焦点路径。
+    SelectionCoordinator.instance.clearActive();
   }
 
   @override
@@ -2488,6 +2493,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 isPmWithNonHumanUser: detail.pmWithNonHumanUser,
                 onJumpToPost: _scrollToPost,
               ),
+              onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
+              onWithdrawAndEditPendingPost:
+                  isLoggedIn ? _handleWithdrawAndEditPending : null,
             );
           },
         );

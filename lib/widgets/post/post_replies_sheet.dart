@@ -393,28 +393,26 @@ class _PostRepliesSheetContentState
     final totalCount = _allReplyIds.isNotEmpty
         ? _allReplyIds.length
         : widget.post.replyCount;
-    return SelectionContainer.disabled(
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 3,
-              height: 14,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                borderRadius: BorderRadius.circular(1.5),
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(1.5),
             ),
-            const SizedBox(width: 8),
-            Text(
-              S.current.post_relatedRepliesCount(totalCount),
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            S.current.post_relatedRepliesCount(totalCount),
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -469,69 +467,66 @@ class _PostRepliesSheetContentState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SelectionContainer.disabled(
-          child: PostHeaderSection(
-            post: post,
-            topicId: widget.topicId,
-            isTopicOwner: false,
-            showStamp: false,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            onJumpToPost: _jumpToPost,
-            disableReplyHistory: true,
-            onReplyIndicatorTap: _scrollToAndHighlight,
-            hideReplyToPostNumber: widget.post.postNumber,
-            onMentionUser: _isLoggedIn ? _handleMention : null,
-          ),
+        PostHeaderSection(
+          post: post,
+          topicId: widget.topicId,
+          isTopicOwner: false,
+          showStamp: false,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          onJumpToPost: _jumpToPost,
+          disableReplyHistory: true,
+          onReplyIndicatorTap: _scrollToAndHighlight,
+          hideReplyToPostNumber: widget.post.postNumber,
+          onMentionUser: _isLoggedIn ? _handleMention : null,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: FluxdoRenderCallbacks.forPost(
-            post: post,
-            topicId: widget.topicId,
-          ).render(
-            cookedHtml: post.cooked,
-            baseTextStyle: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(fontSize: 14, height: 1.5),
-            compact: true,
-            selectionEnabled: _isLoggedIn,
-            onQuoteRequest: _isLoggedIn
-                ? (plainText) => _handleQuoteSelection(plainText, post)
-                : null,
-            onCopyQuoteRequest: (plainText) =>
-                QuoteSelectionHelper.copyQuoteToClipboard(
-              selectedText: plainText,
-              post: post,
-              topicId: widget.topicId,
-            ),
-            onCopyToast: () => ToastService.showSuccess(
-              S.current.common_copiedToClipboard,
-            ),
-          ),
+          child:
+              FluxdoRenderCallbacks.forPost(
+                post: post,
+                topicId: widget.topicId,
+              ).render(
+                cookedHtml: post.cooked,
+                baseTextStyle: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 14, height: 1.5),
+                compact: true,
+                selectionEnabled: _isLoggedIn,
+                onQuoteRequest: _isLoggedIn
+                    ? (plainText) => _handleQuoteSelection(plainText, post)
+                    : null,
+                onCopyQuoteRequest: (plainText) =>
+                    QuoteSelectionHelper.copyQuoteToClipboard(
+                      selectedText: plainText,
+                      post: post,
+                      topicId: widget.topicId,
+                    ),
+                onCopyToast: () => ToastService.showSuccess(
+                  S.current.common_copiedToClipboard,
+                ),
+              ),
         ),
-        SelectionContainer.disabled(
-          child: PostFooterSection(
-            post: post,
-            topicId: widget.topicId,
-            topicHasAcceptedAnswer: false,
-            acceptedAnswers: const [],
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-            onReply: _isLoggedIn
-                ? ({initialContent}) =>
-                      _handleReply(post, initialContent: initialContent)
-                : null,
-            onEdit: null,
-            onShareAsImage: null,
-            onRefreshPost: null,
-            onJumpToPost: _jumpToPost,
-            onSolutionChanged: null,
-            topicTitle: widget.topicTitle,
-            isPrivateMessageTopic: widget.isPrivateMessageTopic,
-            isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
-            hideRepliesButton: true,
-            onShowPostDetail: () => _jumpToPost(post.postNumber),
-            postDetailLabel: S.current.topic_jump,
-          ),
+        PostFooterSection(
+          post: post,
+          topicId: widget.topicId,
+          topicHasAcceptedAnswer: false,
+          acceptedAnswers: const [],
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+          onReply: _isLoggedIn
+              ? ({initialContent}) =>
+                    _handleReply(post, initialContent: initialContent)
+              : null,
+          onEdit: null,
+          onShareAsImage: null,
+          onRefreshPost: null,
+          onJumpToPost: _jumpToPost,
+          onSolutionChanged: null,
+          topicTitle: widget.topicTitle,
+          isPrivateMessageTopic: widget.isPrivateMessageTopic,
+          isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
+          hideRepliesButton: true,
+          onShowPostDetail: () => _jumpToPost(post.postNumber),
+          postDetailLabel: S.current.topic_jump,
         ),
       ],
     );

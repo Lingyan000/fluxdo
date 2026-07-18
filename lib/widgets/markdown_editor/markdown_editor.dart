@@ -15,6 +15,7 @@ import '../../services/discourse_cook_service.dart';
 import '../../services/emoji_handler.dart';
 import '../../utils/platform_utils.dart';
 import '../mention/mention_autocomplete.dart';
+import 'composer_shortcuts.dart';
 import 'emoji_sticker_panel.dart';
 import 'markdown_renderer.dart';
 import 'markdown_tool_panel.dart';
@@ -635,7 +636,22 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           _panelController.updatePanelType(ChatBottomPanelType.keyboard);
         }
       },
-      child: textField,
+      // 桌面端格式化快捷键(Cmd/Ctrl+B/I/E/K 等,对齐 Discourse
+      // composer;事实源 composer_shortcuts.dart):焦点在 TextField
+      // 内时沿焦点链先命中本层,复用工具栏既有格式化 API。
+      // 这些组合键均不在 DefaultTextEditingShortcuts 内,无冲突。
+      child: _isDesktop
+          ? CallbackShortcuts(
+              bindings: {
+                for (final spec in buildComposerShortcutSpecs())
+                  spec.activator: () {
+                    final toolbar = _toolbarKey.currentState;
+                    if (toolbar != null) spec.sourceAction(toolbar);
+                  },
+              },
+              child: textField,
+            )
+          : textField,
     );
 
     // 如果提供了 mentionDataSource，则包裹 MentionAutocomplete
@@ -737,7 +753,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                     children: [
                       if (widget.header != null) widget.header!,
                       Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding:
+                            const EdgeInsets.fromLTRB(20, 16, 20, 16),
                         child: widget.controller.text.isEmpty
                             ? Text(
                                 S.current.editor_noContent,
@@ -779,8 +796,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Padding(
+                            // 水平 20 = 与 header 标题对齐(富文本同值)
                             padding:
-                                const EdgeInsets.symmetric(horizontal: 16),
+                                const EdgeInsets.symmetric(horizontal: 20),
                             child: _buildTextEditor(),
                           ),
                           // 空白填充区:点击等价"点在正文末尾"。包

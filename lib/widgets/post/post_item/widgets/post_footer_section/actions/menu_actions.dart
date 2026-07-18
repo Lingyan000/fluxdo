@@ -153,12 +153,7 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                     final isOwnPost =
                         currentUser != null &&
                         currentUser.username == widget.post.username;
-                    final credentials = ref
-                        .read(ldcRewardCredentialsProvider)
-                        .value;
-                    if (isOwnPost ||
-                        widget.post.userId == null ||
-                        credentials == null) {
+                    if (isOwnPost || widget.post.userId == null) {
                       return const SizedBox.shrink();
                     }
                     return ListTile(
@@ -167,10 +162,29 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                         color: theme.colorScheme.onSurface,
                       ),
                       title: Text(context.l10n.post_tipLdc),
-                      onTap: () {
+                      onTap: () async {
                         Navigator.pop(ctx);
+                        try {
+                          final credentials = await ref.read(
+                            ldcRewardCredentialsProvider.future,
+                          );
+                          if (!mounted) return;
+                          if (credentials == null) {
+                            ToastService.showError(
+                              S.current.toast_rewardNotConfigured,
+                            );
+                            return;
+                          }
+                        } catch (error) {
+                          debugPrint('[LdcReward] 读取凭证失败: $error');
+                          ToastService.showError(
+                            S.current.common_operationFailed(error.toString()),
+                          );
+                          return;
+                        }
+                        if (!mounted) return;
                         showLdcRewardSheet(
-                          context,
+                          this.context,
                           RewardTargetInfo(
                             userId: widget.post.userId!,
                             username: widget.post.username,
@@ -215,7 +229,9 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                 ),
               if (!isGuest)
                 ListTile(
-                  leading: Icon(Symbols.bookmark_rounded, fill: _isBookmarked ? 1 : 0,
+                  leading: Icon(
+                    Symbols.bookmark_rounded,
+                    fill: _isBookmarked ? 1 : 0,
                     color: _isBookmarked
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurface,

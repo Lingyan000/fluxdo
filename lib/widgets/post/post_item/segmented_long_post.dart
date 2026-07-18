@@ -6,6 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../utils/frame_jank_monitor.dart';
+import '../../common/perf_span_box.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../post_signature_block.dart';
@@ -44,8 +45,9 @@ class NewEngineLongPostData {
     void Function(String quote, Post post)? onQuoteImage,
   }) {
     final parseData = RenderParseCache.longPost(post, () {
-      final preprocessed =
-          FluxdoRenderCallbacks.preprocessCookedForRender(post);
+      final preprocessed = FluxdoRenderCallbacks.preprocessCookedForRender(
+        post,
+      );
       if (preprocessed.length <= HtmlChunker.chunkThreshold) return null;
       // 先按顶层切,再把「大 blockquote」装饰下放拆成多片(让容器内部也跟随
       // sliver 虚拟化,见子包 BlockquoteChunkPos)。拆分后再判 chunk 数 → 单个
@@ -125,8 +127,9 @@ class NewEngineLongPostData {
     final attrs = _attrsString(root); // 保留原 class 等属性
 
     // callout 识别:首行 [!type]([+-] = 可折叠 → 不拆)。
-    final callout =
-        RegExp(r'^\[!([^\]]+)\]([+-])?').firstMatch(root.text.trimLeft());
+    final callout = RegExp(
+      r'^\[!([^\]]+)\]([+-])?',
+    ).firstMatch(root.text.trimLeft());
     if (callout != null) {
       if (callout.group(2) != null) return [whole()]; // 可折叠不拆
       final kind = callout.group(1)!.trim().toLowerCase();
@@ -137,10 +140,10 @@ class NewEngineLongPostData {
             // 中/尾片打属性 → 子包属性识别(只 kind + body,无头)。
             html: i == 0
                 ? '<blockquote$attrs data-fxd-pos="${_pos(i, sub.length)}">'
-                    '${sub[i].html}</blockquote>'
+                      '${sub[i].html}</blockquote>'
                 : '<blockquote$attrs data-fxd-callout="$kind" '
-                    'data-fxd-pos="${_pos(i, sub.length)}">'
-                    '${sub[i].html}</blockquote>',
+                      'data-fxd-pos="${_pos(i, sub.length)}">'
+                      '${sub[i].html}</blockquote>',
             type: HtmlChunkType.blockquote,
             index: i,
           ),
@@ -151,7 +154,8 @@ class NewEngineLongPostData {
     return [
       for (var i = 0; i < sub.length; i++)
         HtmlChunk(
-          html: '<blockquote$attrs data-fxd-pos="${_pos(i, sub.length)}">'
+          html:
+              '<blockquote$attrs data-fxd-pos="${_pos(i, sub.length)}">'
               '${sub[i].html}</blockquote>',
           type: HtmlChunkType.blockquote,
           index: i,
@@ -220,7 +224,10 @@ class NewEngineChunkSegment extends StatelessWidget {
       'chk#${post.postNumber}:$chunkIndex/'
       '${(chunk.html.length / 1000).toStringAsFixed(1)}k',
     );
-    return PostSegmentFrame(
+    // PerfSpanBox:单 chunk 子树的 layout/paint 账单(监控关闭零开销)
+    return PerfSpanBox(
+      label: 'chk#${post.postNumber}:$chunkIndex',
+      child: PostSegmentFrame(
       post: post,
       selected: selected,
       highlight: highlight,
@@ -269,13 +276,14 @@ class NewEngineChunkSegment extends StatelessWidget {
               : (plainText) => onQuoteSelection!(plainText, post),
           onCopyQuoteRequest: (plainText) =>
               QuoteSelectionHelper.copyQuoteToClipboard(
-            selectedText: plainText,
-            post: post,
-            topicId: topicId,
-          ),
+                selectedText: plainText,
+                post: post,
+                topicId: topicId,
+              ),
           onCopyToast: () =>
               ToastService.showSuccess(context.l10n.common_copiedToClipboard),
         ),
+      ),
       ),
     );
   }
@@ -318,16 +326,14 @@ class LongPostHeaderSegment extends StatelessWidget {
       topDateSeparatorLabel: dateSeparatorLabel,
       showDivider: showDivider,
       showBottomBorder: false,
-      child: SelectionContainer.disabled(
-        child: PostHeaderSection(
-          post: post,
-          topicId: topicId,
-          isTopicOwner: isTopicOwner,
-          showStamp: post.acceptedAnswer,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          onJumpToPost: onJumpToPost,
-          onMentionUser: onMentionUser,
-        ),
+      child: PostHeaderSection(
+        post: post,
+        topicId: topicId,
+        isTopicOwner: isTopicOwner,
+        showStamp: post.acceptedAnswer,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        onJumpToPost: onJumpToPost,
+        onMentionUser: onMentionUser,
       ),
     );
   }
@@ -406,27 +412,25 @@ class LongPostFooterSegment extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: PostSignatureBlock(post: post, categoryId: categoryId),
             ),
-          SelectionContainer.disabled(
-            child: PostFooterSection(
-              post: post,
-              topicId: topicId,
-              topicHasAcceptedAnswer: topicHasAcceptedAnswer,
-              acceptedAnswers: acceptedAnswers,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              highlightBoostUsername: highlightBoostUsername,
-              onReply: onReply,
-              onEdit: onEdit,
-              onShareAsImage: onShareAsImage,
-              onRefreshPost: onRefreshPost,
-              onJumpToPost: onJumpToPost,
-              onSolutionChanged: onSolutionChanged,
-              useReplyDialog: useReplyDialog,
-              topicTitle: topicTitle,
-              isPrivateMessageTopic: isPrivateMessageTopic,
-              isPmWithNonHumanUser: isPmWithNonHumanUser,
-              onShowPostDetail: onShowPostDetail,
-              opTopSlot: opTopSlot,
-            ),
+          PostFooterSection(
+            post: post,
+            topicId: topicId,
+            topicHasAcceptedAnswer: topicHasAcceptedAnswer,
+            acceptedAnswers: acceptedAnswers,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            highlightBoostUsername: highlightBoostUsername,
+            onReply: onReply,
+            onEdit: onEdit,
+            onShareAsImage: onShareAsImage,
+            onRefreshPost: onRefreshPost,
+            onJumpToPost: onJumpToPost,
+            onSolutionChanged: onSolutionChanged,
+            useReplyDialog: useReplyDialog,
+            topicTitle: topicTitle,
+            isPrivateMessageTopic: isPrivateMessageTopic,
+            isPmWithNonHumanUser: isPmWithNonHumanUser,
+            onShowPostDetail: onShowPostDetail,
+            opTopSlot: opTopSlot,
           ),
         ],
       ),

@@ -8,6 +8,7 @@ import '../../../../providers/preferences_provider.dart';
 import 'package:dio/dio.dart';
 import '../../../../services/app_error_handler.dart';
 import '../../../../services/discourse/discourse_service.dart';
+import '../../../../utils/frame_jank_monitor.dart';
 import '../../../common/relative_time_text.dart';
 import '../../post_revision/edits_indicator.dart';
 import '../../post_revision/revision_modal.dart';
@@ -66,6 +67,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   Widget? _cachedAvatarWidget;
   int? _cachedPostId;
   bool? _cachedHasMention;
+  ThemeData? _cachedAvatarTheme;
 
   @override
   void dispose() {
@@ -90,10 +92,13 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
 
   void _rebuildAvatarIfNeeded() {
     final hasMention = widget.onMentionUser != null;
+    final theme = Theme.of(context);
+    // theme 进失效条件(按实例恒等比较):此前只看 postId/hasMention,
+    // 深浅色切换后缓存的 PostAvatar 仍持旧 theme,边框/底色残留旧配色
     if (_cachedAvatarWidget == null ||
         _cachedPostId != widget.post.id ||
-        _cachedHasMention != hasMention) {
-      final theme = Theme.of(context);
+        _cachedHasMention != hasMention ||
+        !identical(_cachedAvatarTheme, theme)) {
       _cachedAvatarWidget = PostAvatar(
         key: ValueKey('avatar-${widget.post.id}'),
         post: widget.post,
@@ -103,6 +108,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
       );
       _cachedPostId = widget.post.id;
       _cachedHasMention = hasMention;
+      _cachedAvatarTheme = theme;
     }
   }
 
@@ -165,6 +171,9 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
 
   @override
   Widget build(BuildContext context) {
+    // 帖内构成归因:单帖首建 6~20ms 的大头在 header/footer/正文哪块,
+    // 由本帧清单直接点名(监控关闭零开销)
+    FrameJankMonitor.noteBuild('pHdr#${widget.post.postNumber}');
     final theme = Theme.of(context);
     final post = widget.post;
     final currentUser = ref.read(currentUserProvider).value;
@@ -272,12 +281,19 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                               top: -2,
                               child: Consumer(
                                 builder: (context, ref, _) {
-                                  final sessionState = ref.watch(topicSessionProvider(widget.topicId));
-                                  final isNew = !widget.post.read;
-                                  final isReadInSession = sessionState.readPostNumbers.contains(
-                                    widget.post.postNumber,
+                                  // 只订阅"本帖是否已在会话内读过"这一位
+                                  // 布尔:此前 watch 整个 session state,
+                                  // 滚动阅读时 readPostNumbers 每变一次,
+                                  // 所有在屏帖头的 Consumer 全部重建一次
+                                  final isReadInSession = ref.watch(
+                                    topicSessionProvider(widget.topicId).select(
+                                      (s) => s.readPostNumbers.contains(
+                                        widget.post.postNumber,
+                                      ),
+                                    ),
                                   );
-                                  final show = isNew && !isReadInSession;
+                                  final show =
+                                      !widget.post.read && !isReadInSession;
 
                                   return AnimatedOpacity(
                                     opacity: show ? 1.0 : 0.0,

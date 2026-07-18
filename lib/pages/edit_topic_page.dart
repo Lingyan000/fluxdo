@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:fluxdo/widgets/common/loading_spinner.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'package:fluxdo/models/category.dart';
@@ -348,7 +350,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         ? (ref.watch(minPmTitleLengthProvider).value ?? 2)
         : (ref.watch(minTopicTitleLengthProvider).value ?? 15);
 
-    return PopScope(
+    final page = PopScope(
       canPop: !_showEmojiPanel,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
@@ -431,6 +433,18 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
           ],
         ),
       ),
+    );
+
+    // Cmd/Ctrl+Enter 保存(对齐 Discourse composer):包整页,焦点在
+    // 标题/标签输入框时同样生效;守卫与保存按钮一致。
+    return CallbackShortcuts(
+      bindings: {
+        for (final activator in composerSubmitActivators())
+          activator: () {
+            if (!_isSubmitting && !_isLoadingContent) _submit();
+          },
+      },
+      child: page,
     );
   }
 
@@ -613,12 +627,12 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 },
                 children: [
                   // Page 0: 编辑模式 —— 标题/标签/字数打包为 header
-                  // 注入编辑器滚动流,与正文同滚(创建页同款);
-                  // Form 上提防双模切换过渡期 _formKey 双挂
+                  // 注入编辑器滚动流,与正文同滚(创建页同款)。
+                  // ComposerSwitchFade 无并存直切+淡入:防双模并存 IME
+                  // 交接竞态(说明见 create_topic_page 同位注释)
                   Form(
                     key: _formKey,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
+                    child: ComposerSwitchFade(
                       child:
                           (ref.watch(preferencesProvider).useRichComposer &&
                               !_richFallback)

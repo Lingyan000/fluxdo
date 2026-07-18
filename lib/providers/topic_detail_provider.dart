@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/s.dart';
 import '../models/topic.dart';
+import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/anchor_guard_sliver.dart';

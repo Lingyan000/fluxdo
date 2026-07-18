@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.22+2026070712
+version: 0.2.23+2026071419
 
 environment:
   sdk: ^3.10.4
@@ -54,7 +54,7 @@ dependencies:
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
-  native_animated_image: ^0.3.3
+  native_animated_image: ^0.3.4
   flutter_riverpod: ^3.3.2
   extended_image_lite:
     path: packages/extended_image_lite
@@ -66,6 +66,7 @@ dependencies:
   cross_file: ^0.3.4+2
   open_filex: ^4.7.0
   file_picker: ^10.3.10
+  record: ^7.1.1  # 语音消息录制(AAC-LC,五端)
   intl: ^0.20.2
   url_launcher: ^6.3.1
   font_awesome_flutter: ^11.0.0
@@ -83,6 +84,7 @@ dependencies:
   emoji_extension: ^1.3.0
   image_picker: ^1.2.1
   super_clipboard: ^0.9.1
+  html2md: ^1.3.2  # 剪贴板 HTML → markdown(富粘贴清洗层)
   gal: ^2.3.2
   pangutext:
     path: packages/pangutext

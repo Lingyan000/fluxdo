@@ -253,6 +253,30 @@ extension PostUpdateMethods on TopicDetailNotifier {
     }
   }
 
+  /// 挂入一条当前用户的待审核回复(发帖 enqueued 后即时展示在底部待审块)
+  void addPendingPost(PendingPost pending) {
+    final currentDetail = state.value;
+    if (currentDetail == null) return;
+    if (currentDetail.pendingPosts.any((p) => p.id == pending.id)) return;
+
+    state = AsyncValue.data(currentDetail.copyWith(
+      pendingPosts: [...currentDetail.pendingPosts, pending],
+    ));
+  }
+
+  /// 移除待审核回复(撤回成功后)
+  void removePendingPost(int reviewableId) {
+    final currentDetail = state.value;
+    if (currentDetail == null) return;
+    if (!currentDetail.pendingPosts.any((p) => p.id == reviewableId)) return;
+
+    state = AsyncValue.data(currentDetail.copyWith(
+      pendingPosts: currentDetail.pendingPosts
+          .where((p) => p.id != reviewableId)
+          .toList(),
+    ));
+  }
+
   /// 从 API 刷新被回复帖子，获取正确的 replyCount
   void _refreshReplyTarget(int replyToPostNumber) {
     final currentDetail = state.value;

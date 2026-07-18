@@ -31,6 +31,12 @@ class ErrorInterceptor extends Interceptor {
       return;
     }
 
+    // CF 恢复协调产生的本地取消应保持原始语义，不显示通用请求失败提示。
+    if (err.error is CfChallengeException) {
+      handler.next(err);
+      return;
+    }
+
     // 静默模式：不显示任何错误提示
     if (extra['isSilent'] == true) {
       handler.next(err);

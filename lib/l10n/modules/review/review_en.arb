@@ -1,0 +1,23 @@
+{
+  "@@locale": "en",
+  "review_myPending": "Pending Review",
+  "review_awaitingApproval": "Awaiting approval",
+  "review_withdraw": "Withdraw",
+  "review_withdrawConfirmTitle": "Withdraw pending item",
+  "review_withdrawConfirmContent": "Withdraw this pending item? It will be removed from the review queue and cannot be recovered.",
+  "review_withdrawn": "Withdrawn",
+  "review_withdrawFailed": "Failed to withdraw: {error}",
+  "@review_withdrawFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "review_withdrawAndEdit": "Withdraw & Edit",
+  "review_withdrawAndEditConfirmContent": "This will withdraw the item from the review queue and bring the original text back into the editor. Resubmitting requires approval again. If you abandon editing, the content will not be restored automatically.",
+  "review_typeNewTopic": "New Topic",
+  "review_typeReply": "Reply",
+  "review_empty": "No content awaiting review",
+  "review_viewAction": "View"
+}

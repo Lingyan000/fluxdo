@@ -160,6 +160,14 @@ class WebViewCookiePriming {
           skippedExpired++;
           continue;
         }
+        // cf_clearance 单向流(WV→jar):它只会在 WebView 中由 CF 签发/更新,
+        // Dio 侧永远不产新值。jar→WV 回灌会经 toSetCookieHeader 丢失
+        // Partitioned 属性,把 CF 原生的分区 cookie 复制成一枚非分区副本
+        // → WebView 存储出现双变体(browser 侧从不会有)。因此回灌一律
+        // 跳过 cf_clearance,WebView 里永远只有 CF 自己写的那份。
+        if (initialCookie.name == 'cf_clearance') {
+          continue;
+        }
 
         // Race-safe check: Priming 整体 unawaited 跑, 期间外部 (如
         // cf_challenge_service.showVerifyForChallenge) 可能并发删/改 jar

@@ -1,108 +1,57 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Falls back to SharedPreferences when the platform keyring is unavailable.
+import 'secret_store.dart';
+import 'system_secret_store.dart';
+
+/// 旧调用方兼容层。
+///
+/// 新代码应使用 [SecretStore] + 类型化 [SecretKey]。该兼容层不再降级到
+/// 明文 SharedPreferences；系统安全存储不可用时只保留当前进程内存值。
 class ResilientSecureStorage {
   ResilientSecureStorage({
     FlutterSecureStorage? secureStorage,
     String fallbackPrefix = '__secure_fallback__',
-  }) : _secureStorage =
-           secureStorage ??
-           const FlutterSecureStorage(
-             mOptions: MacOsOptions(usesDataProtectionKeychain: false),
-           ),
-       _fallbackPrefix = fallbackPrefix;
+  }) : _store = secureStorage == null
+           ? SystemSecretStore.instance
+           : SystemSecretStore(secureStorage: secureStorage),
+       _legacyFallbackPrefix = fallbackPrefix;
 
-  final FlutterSecureStorage _secureStorage;
-  final String _fallbackPrefix;
-
-  static Future<SharedPreferences>? _prefsFuture;
-  bool _secureStorageUnavailable = false;
+  final SecretStore _store;
+  final String _legacyFallbackPrefix;
+  static Future<SharedPreferences>? _legacyPreferences;
 
   Future<String?> read({required String key}) async {
-    if (!_secureStorageUnavailable) {
-      try {
-        final value = await _secureStorage.read(key: key);
-        if (value != null) {
-          await _removeFallback(key);
-          return value;
-        }
-        final fallbackValue = await _readFallback(key);
-        if (fallbackValue != null) {
-          await _tryPromoteFallback(key, fallbackValue);
-        }
-        return fallbackValue;
-      } catch (error) {
-        _markFallback('read', key, error);
-      }
+    final value = await _store.read(SecretKey.raw(key));
+    if (value != null) return value;
+
+    // 只迁移旧版本曾写入的明文 fallback；新代码永不再写该位置。
+    final preferences = await _preferences;
+    final legacyKey = '$_legacyFallbackPrefix$key';
+    final legacyValue = preferences.getString(legacyKey);
+    if (legacyValue == null) return null;
+    try {
+      await _store.write(
+        SecretKey.raw(key, fallbackPolicy: SecretFallbackPolicy.deny),
+        legacyValue,
+      );
+      await preferences.remove(legacyKey);
+    } catch (_) {
+      // 系统安全存储仍不可用时保留旧值，避免升级过程丢失凭证。
     }
-    return _readFallback(key);
+    return legacyValue;
   }
 
   Future<void> write({required String key, required String value}) async {
-    if (!_secureStorageUnavailable) {
-      try {
-        await _secureStorage.write(key: key, value: value);
-        await _removeFallback(key);
-        return;
-      } catch (error) {
-        _markFallback('write', key, error);
-      }
-    }
-    await _writeFallback(key, value);
+    await _store.write(SecretKey.raw(key), value);
+    await (await _preferences).remove('$_legacyFallbackPrefix$key');
   }
 
   Future<void> delete({required String key}) async {
-    if (!_secureStorageUnavailable) {
-      try {
-        await _secureStorage.delete(key: key);
-      } catch (error) {
-        _markFallback('delete', key, error);
-      }
-    }
-    await _removeFallback(key);
+    await _store.delete(SecretKey.raw(key));
+    await (await _preferences).remove('$_legacyFallbackPrefix$key');
   }
 
-  Future<void> _tryPromoteFallback(String key, String value) async {
-    if (_secureStorageUnavailable) {
-      return;
-    }
-    try {
-      await _secureStorage.write(key: key, value: value);
-      await _removeFallback(key);
-    } catch (error) {
-      _markFallback('promote', key, error);
-    }
-  }
-
-  void _markFallback(String operation, String key, Object error) {
-    if (!_secureStorageUnavailable) {
-      debugPrint(
-        '[ResilientSecureStorage] $operation($key) failed, fallback to SharedPreferences: $error',
-      );
-    }
-    _secureStorageUnavailable = true;
-  }
-
-  Future<SharedPreferences> get _prefs async {
-    return _prefsFuture ??= SharedPreferences.getInstance();
-  }
-
-  String _fallbackKey(String key) => '$_fallbackPrefix$key';
-
-  Future<String?> _readFallback(String key) async {
-    final prefs = await _prefs;
-    return prefs.getString(_fallbackKey(key));
-  }
-
-  Future<void> _writeFallback(String key, String value) async {
-    final prefs = await _prefs;
-    await prefs.setString(_fallbackKey(key), value);
-  }
-
-  Future<void> _removeFallback(String key) async {
-    final prefs = await _prefs;
-    await prefs.remove(_fallbackKey(key));
-  }
+  Future<SharedPreferences> get _preferences =>
+      _legacyPreferences ??= SharedPreferences.getInstance();
 }

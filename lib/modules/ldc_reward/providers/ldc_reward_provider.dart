@@ -1,63 +1,62 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../l10n/s.dart';
+import '../../../providers/secret_store_provider.dart';
+import '../../../providers/theme_provider.dart' show sharedPreferencesProvider;
+import '../models/ldc_reward_credentials.dart';
 import '../models/reward_request.dart';
 import '../models/reward_result.dart';
+import '../services/ldc_reward_credential_store.dart';
 import '../services/ldc_reward_service.dart';
-
-/// LDC 打赏凭证模型
-class LdcRewardCredentials {
-  final String clientId;
-  final String clientSecret;
-
-  const LdcRewardCredentials({
-    required this.clientId,
-    required this.clientSecret,
-  });
-
-  bool get isValid => clientId.isNotEmpty && clientSecret.isNotEmpty;
-}
 
 /// 凭证管理 Provider
 final ldcRewardCredentialsProvider =
     AsyncNotifierProvider<LdcRewardCredentialsNotifier, LdcRewardCredentials?>(
-        LdcRewardCredentialsNotifier.new);
+      LdcRewardCredentialsNotifier.new,
+    );
 
-class LdcRewardCredentialsNotifier extends AsyncNotifier<LdcRewardCredentials?> {
-  static const String _clientIdKey = 'ldc_reward_client_id';
-  static const String _clientSecretKey = 'ldc_reward_client_secret';
+final ldcRewardCredentialStoreProvider = Provider<LdcRewardCredentialStore>((
+  ref,
+) {
+  return LdcRewardCredentialStore(
+    secretStore: ref.watch(secretStoreProvider),
+    preferences: ref.watch(sharedPreferencesProvider),
+  );
+});
+
+class LdcRewardCredentialsNotifier
+    extends AsyncNotifier<LdcRewardCredentials?> {
+  Future<void> _mutationQueue = Future.value();
 
   @override
-  Future<LdcRewardCredentials?> build() async {
-    return _load();
-  }
-
-  Future<LdcRewardCredentials?> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final clientId = prefs.getString(_clientIdKey);
-    final clientSecret = prefs.getString(_clientSecretKey);
-    if (clientId != null && clientSecret != null && clientId.isNotEmpty && clientSecret.isNotEmpty) {
-      return LdcRewardCredentials(clientId: clientId, clientSecret: clientSecret);
-    }
-    return null;
-  }
+  Future<LdcRewardCredentials?> build() =>
+      ref.watch(ldcRewardCredentialStoreProvider).load();
 
   /// 保存凭证
-  Future<void> save(String clientId, String clientSecret) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_clientIdKey, clientId);
-    await prefs.setString(_clientSecretKey, clientSecret);
-    state = AsyncData(
-      LdcRewardCredentials(clientId: clientId, clientSecret: clientSecret),
+  Future<void> save(String clientId, String clientSecret) {
+    final credentials = LdcRewardCredentials(
+      clientId: clientId,
+      clientSecret: clientSecret,
     );
+    return _enqueueMutation(() async {
+      await ref.read(ldcRewardCredentialStoreProvider).save(credentials);
+      state = AsyncData(credentials);
+    });
   }
 
   /// 清除凭证
-  Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_clientIdKey);
-    await prefs.remove(_clientSecretKey);
-    state = const AsyncData(null);
+  Future<void> clear() {
+    return _enqueueMutation(() async {
+      await ref.read(ldcRewardCredentialStoreProvider).clear();
+      state = const AsyncData(null);
+    });
+  }
+
+  Future<void> _enqueueMutation(Future<void> Function() operation) {
+    final next = _mutationQueue
+        .catchError((Object _) {})
+        .then((_) => operation());
+    _mutationQueue = next;
+    return next;
   }
 }
 

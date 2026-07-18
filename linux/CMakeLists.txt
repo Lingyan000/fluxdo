@@ -84,6 +84,17 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# quickjs_engine 0.1.1 的 linux 头用了 FLUTTER_PLUGIN_EXPORT 却没带
+# 标准的 #ifdef FLUTTER_PLUGIN_IMPL 宏定义块(上游漏抄插件模板),
+# 其插件库自身(定义了 IMPL,预期 visibility 宏)与 runner 的
+# registrant(预期空宏)编译都会 unknown type name。为两个消费端
+# 分别补上与官方模板 else/if 分支等价的定义;上游修正后可删。
+if(TARGET quickjs_engine_plugin)
+  target_compile_definitions(quickjs_engine_plugin PRIVATE
+    "FLUTTER_PLUGIN_EXPORT=__attribute__((visibility(\"default\")))")
+endif()
+target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_PLUGIN_EXPORT=")
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -146,3 +157,39 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/fluxdo.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   COMPONENT Runtime)
+
+# === 媒体压缩:随包分发 ffmpeg(构建期下载,开发机缓存一次)===
+# 系统未装 ffmpeg 的用户开箱可用;Dart 侧随包版优先、系统 PATH 兜底。
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(FFMPEG_STATIC_ARCH "linux-arm64")
+else()
+  set(FFMPEG_STATIC_ARCH "linux-x64")
+endif()
+set(FFMPEG_CACHE_BIN "${CMAKE_CURRENT_SOURCE_DIR}/.ffmpeg-cache/ffmpeg-${FFMPEG_STATIC_ARCH}")
+if(NOT EXISTS "${FFMPEG_CACHE_BIN}")
+  message(STATUS "Downloading bundled ffmpeg (~78MB, one-time, cached at linux/.ffmpeg-cache)")
+  file(DOWNLOAD
+    "https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-${FFMPEG_STATIC_ARCH}"
+    "${FFMPEG_CACHE_BIN}.part"
+    SHOW_PROGRESS
+    TLS_VERIFY ON
+    STATUS FFMPEG_DL_STATUS)
+  list(GET FFMPEG_DL_STATUS 0 FFMPEG_DL_CODE)
+  if(NOT FFMPEG_DL_CODE EQUAL 0)
+    file(REMOVE "${FFMPEG_CACHE_BIN}.part")
+    # 可选组件,不挡构建(离线打包环境如 Flatpak 沙箱禁网):产物不含
+    # 随包 ffmpeg,运行时回落系统 PATH(发行版 ffmpeg / Flatpak 的
+    # org.freedesktop.Platform.ffmpeg-full 扩展);离线构建要带上的话,
+    # 在源准备阶段把文件放到下面的缓存路径即可(存在即跳过下载)。
+    message(WARNING "bundled ffmpeg download failed (${FFMPEG_DL_STATUS}). "
+      "Build continues WITHOUT bundled ffmpeg (runtime falls back to system "
+      "PATH). To include it, pre-place the file at ${FFMPEG_CACHE_BIN} "
+      "(e.g. as a source in your packaging manifest), then rebuild.")
+  else()
+    file(RENAME "${FFMPEG_CACHE_BIN}.part" "${FFMPEG_CACHE_BIN}")
+  endif()
+endif()
+if(EXISTS "${FFMPEG_CACHE_BIN}")
+  install(PROGRAMS "${FFMPEG_CACHE_BIN}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    RENAME "ffmpeg" COMPONENT Runtime)
+endif()

@@ -78,7 +78,11 @@ class DiscourseVideoPlayer extends StatefulWidget {
 }
 
 class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
-    with WidgetsBindingObserver, WindowListener, RouteAware {
+    with
+        WidgetsBindingObserver,
+        WindowListener,
+        RouteAware,
+        AutomaticKeepAliveClientMixin {
   lib.ChewieController? _controller;
   dynamic _error;
   lib.VideoPlayerController? _vpc;
@@ -114,13 +118,29 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   static final bool _useWindowsBrowserBackend =
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-  /// 全屏期间缓存控制器，防止窗口/屏幕尺寸变化导致 widget 重建时
-  /// 销毁 chewie 全屏路由正在使用的控制器。
+  /// 全屏期间(含退出全屏的恢复窗口)钉住列表项,防止 macOS 进/出系统
+  /// 全屏引发的窗口尺寸连环变化把本项挤出 cacheExtent 而被回收——
+  /// 宿主一死,embedded ChewieState 连带 PlayerNotifier 就地销毁,
+  /// 全屏路由的控制条还在引用它们,即"used after disposed"崩溃。
+  @override
+  bool get wantKeepAlive => _didLockLayout || _pendingLockRelease;
+
+  /// 全屏期间缓存控制器与 Chewie 子树的 GlobalKey，防止窗口/屏幕尺寸
+  /// 变化导致 widget 重建时销毁 chewie 全屏路由正在使用的控制器。
+  /// GlobalKey 让重建后的宿主同帧收养旧 Chewie 子树：ChewieState 及其
+  /// PlayerNotifier 不销毁 —— 全屏路由的控制条引用该 notifier，pop
+  /// 全屏路由的控制权也在该 ChewieState 手里，二者都死不得。
   static final Map<
-    String,
-    ({lib.VideoPlayerController vpc, lib.ChewieController cc})
-  >
-  _fullscreenCache = {};
+      String,
+      ({
+        lib.VideoPlayerController vpc,
+        lib.ChewieController cc,
+        GlobalKey chewieKey,
+      })> _fullscreenCache = {};
+
+  /// embedded Chewie 的身份键：全屏期间宿主被重建时，新 State 从
+  /// [_fullscreenCache] 继承此 key，同帧内原样收养旧 Chewie 子树。
+  GlobalKey _chewieKey = GlobalKey(debugLabel: 'DiscourseVideoPlayer.chewie');
 
   Widget? get placeholder =>
       widget.poster != null ? Center(child: widget.poster) : null;
@@ -223,6 +243,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 要求
     if (_useWindowsBrowserBackend) {
       return BrowserDiscourseVideoPlayer(
         key: ValueKey('${widget.url}|${widget.mimeType ?? ''}'),
@@ -245,7 +266,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     Widget? child;
     final controller = _controller;
     if (controller != null) {
-      child = lib.Chewie(controller: controller);
+      child = lib.Chewie(key: _chewieKey, controller: controller);
     } else if (_error != null) {
       final errorBuilder = widget.errorBuilder;
       if (errorBuilder != null) {
@@ -268,13 +289,21 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   }
 
   Future<void> _initControllers() async {
-    // 桌面全屏期间 widget 被重建时，复用缓存的控制器
-    final cached = _fullscreenCache.remove(widget.url);
+    // 桌面全屏期间 widget 被重建时，复用缓存的控制器。
+    // 只读不取走：macOS 进全屏动画会连续多次改窗口尺寸，widget 可能
+    // 重建不止一轮；若在此 remove，复用方又不会重新入缓存
+    // （_onControllerChanged 的入缓存分支被 _didLockLayout 挡住），
+    // 第二轮 dispose 查不到缓存就会把全屏路由正在使用的控制器销毁。
+    // 缓存条目由退出全屏时的 _onControllerChanged 统一移除。
+    final cached = _fullscreenCache[widget.url];
     if (cached != null) {
       _vpc = cached.vpc;
       final controller = cached.cc;
       controller.addListener(_onControllerChanged);
       _controller = controller;
+      // 继承 GlobalKey，同帧收养旧 Chewie 子树（ChewieState/PlayerNotifier
+      // 不销毁），全屏路由的控制条与 pop 控制权保持有效
+      _chewieKey = cached.chewieKey;
       _didLockLayout = true;
       LayoutLock.acquire();
       if (mounted) setState(() {});
@@ -378,6 +407,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     // 触发此回调，可以安全释放 LayoutLock
     if (_pendingLockRelease && !_isDesktop) {
       _pendingLockRelease = false;
+      updateKeepAlive();
       // 延迟一帧确保 chewie 的全屏路由 pop 动画完成
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_didLockLayout) {
@@ -395,6 +425,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     if (_pendingLockRelease) {
       _pendingLockRelease = false;
       LayoutLock.release();
+      updateKeepAlive();
     }
   }
 
@@ -405,9 +436,11 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     if (isFullScreen && !_didLockLayout) {
       _didLockLayout = true;
       LayoutLock.acquire();
+      updateKeepAlive();
       // 缓存控制器，防止屏幕尺寸变化导致 widget 重建时销毁它们
       if (_vpc != null && _controller != null) {
-        _fullscreenCache[widget.url] = (vpc: _vpc!, cc: _controller!);
+        _fullscreenCache[widget.url] =
+            (vpc: _vpc!, cc: _controller!, chewieKey: _chewieKey);
       }
       if (_isDesktop) {
         // 延迟到下一帧，确保 chewie 全屏路由已推入后再触发窗口变化

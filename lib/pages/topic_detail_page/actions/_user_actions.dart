@@ -62,6 +62,10 @@ extension _UserActions on _TopicDetailPageState {
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
       isPmWithNonHumanUser: detail?.pmWithNonHumanUser ?? false,
+      // 回复被送审:即时挂进帖子流底部的待审块(官方同款行为)
+      onEnqueued: (pending) => ref
+          .read(topicDetailProvider(params).notifier)
+          .addPendingPost(pending),
       shortcutSurface: const ShortcutSurfaceConfig(
         id: ShortcutSurfaceIds.replyComposer,
         triggerAction: ShortcutAction.replyTopic,
@@ -106,6 +110,96 @@ extension _UserActions on _TopicDetailPageState {
         _scrollToPost(postNumber);
       }
     });
+  }
+
+  /// 撤回待审核回复(带确认弹窗)。返回是否真正撤回成功。
+  Future<bool> _withdrawPendingPost(
+    PendingPost pending, {
+    required String confirmTitle,
+    required String confirmContent,
+    required String confirmLabel,
+  }) async {
+    final params = _params;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (dialogContext, setState) => AlertDialog(
+            title: Text(confirmTitle),
+            content: Text(confirmContent),
+            actions: [
+              TextButton(
+                onPressed: isDeleting
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
+                child: Text(dialogContext.l10n.common_cancel),
+              ),
+              FilledButton(
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setState(() => isDeleting = true);
+                        try {
+                          await DiscourseService()
+                              .deleteReviewable(pending.id);
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } catch (e) {
+                          if (dialogContext.mounted) {
+                            setState(() => isDeleting = false);
+                            ToastService.showError(
+                              S.current.review_withdrawFailed(e.toString()),
+                            );
+                          }
+                        }
+                      },
+                child: isDeleting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(confirmLabel),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return false;
+    ref
+        .read(topicDetailProvider(params).notifier)
+        .removePendingPost(pending.id);
+    return true;
+  }
+
+  Future<void> _handleWithdrawPending(PendingPost pending) async {
+    final withdrawn = await _withdrawPendingPost(
+      pending,
+      confirmTitle: S.current.review_withdrawConfirmTitle,
+      confirmContent: S.current.review_withdrawConfirmContent,
+      confirmLabel: S.current.review_withdraw,
+    );
+    if (withdrawn && mounted) {
+      ToastService.showSuccess(S.current.review_withdrawn);
+    }
+  }
+
+  Future<void> _handleWithdrawAndEditPending(PendingPost pending) async {
+    final withdrawn = await _withdrawPendingPost(
+      pending,
+      confirmTitle: S.current.review_withdrawAndEdit,
+      confirmContent: S.current.review_withdrawAndEditConfirmContent,
+      confirmLabel: S.current.review_withdrawAndEdit,
+    );
+    if (withdrawn && mounted) {
+      // 原文带回回复编辑器,重新提交后会再次进入审核队列
+      await _handleReply(null, initialContent: pending.raw);
+    }
   }
 
   Future<void> _handleEdit(Post post) async {

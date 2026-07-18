@@ -30,6 +30,9 @@ class CategoryDrawerHost {
   static final GlobalKey<ControlledCategoryDrawerState> drawerKey =
       GlobalKey<ControlledCategoryDrawerState>();
 
+  /// 抽屉是否可见（返回键拦截链用，见首页 PopScope）
+  static bool get isOpen => drawerKey.currentState?.isOpen ?? false;
+
   static void open() => drawerKey.currentState?.open();
 
   static void close() => drawerKey.currentState?.close();
@@ -47,8 +50,11 @@ class CategoryDrawerHost {
 /// 不用 DrawerController：它的拖拽驱动（_move/_settle）是私有 API，
 /// 外部只能 open/close —— 做不了"TabBarView 首缘 overscroll 逐帧
 /// 喂增量"的跟手拖出（用户点名：右滑慢慢打开，不是触发即弹）。
-/// 开着时面板/遮罩上水平拖拽关闭、点遮罩关闭、返回键（LocalHistory）
-/// 关闭，语义与系统抽屉一致。
+/// 开着时面板/遮罩上水平拖拽关闭、点遮罩关闭、返回键关闭，语义与系统
+/// 抽屉一致。返回键有两路：LocalHistoryEntry 覆盖普通路由;首页根路由
+/// 挂着 canPop:false 的 PopScope（双击退出），其 doNotPop 判定优先于
+/// LocalHistory 内部消费，故由首页 PopScope 回调查 [CategoryDrawerHost.isOpen]
+/// 兜底关闭。
 class ControlledCategoryDrawer extends StatefulWidget {
   const ControlledCategoryDrawer({super.key, required this.onPinnedSelected});
 
@@ -77,6 +83,9 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
 
   LocalHistoryEntry? _history;
   bool _removingHistory = false;
+
+  /// 抽屉是否可见（含拖拽/动画中间态）
+  bool get isOpen => _anim.value > 0;
 
   void open() => _springTo(1.0);
 

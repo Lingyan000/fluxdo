@@ -124,7 +124,7 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
     setState(() => _isSubmitting = true);
 
     try {
-      final credentials = ref.read(ldcRewardCredentialsProvider).value;
+      final credentials = await ref.read(ldcRewardCredentialsProvider.future);
       if (credentials == null) {
         ToastService.showError(S.current.toast_rewardNotConfigured);
         return;

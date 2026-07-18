@@ -55,14 +55,21 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
   final GlobalKey _highlightKey = GlobalKey();
 
   /// 文本宽度测量缓存:每个 chip 一次 TextPainter.layout 是 build 的
-  /// 大头(热帖上百个 boost 单次 build 实测 22ms)。theme / 文本缩放
-  /// 变化时在 [didChangeDependencies] 清空。
+  /// 大头(热帖上百个 boost 单次 build 实测 22ms)。缓存键已含
+  /// fontSize|fontWeight|text,主题/字号变化天然换键;唯一进入测量而
+  /// 不进键的环境量是文字方向 —— 只在它变化时清。此前任何 inherited
+  /// 变化(键盘弹出的 MediaQuery insets 等)都全清,清一次 = 重付一次。
   final Map<String, double> _textWidthCache = {};
+  TextDirection? _measureDirection;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _textWidthCache.clear();
+    final direction = Directionality.of(context);
+    if (direction != _measureDirection) {
+      _measureDirection = direction;
+      _textWidthCache.clear();
+    }
   }
 
   @override
@@ -399,6 +406,8 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
     final key = '${style?.fontSize}|${style?.fontWeight}|$text';
     final cached = _textWidthCache[key];
     if (cached != null) return cached;
+    // 容量兜底:换键积累的旧条目(字号调整等)不无限涨
+    if (_textWidthCache.length > 1024) _textWidthCache.clear();
 
     final painter = TextPainter(
       text: TextSpan(text: text.isEmpty ? 'Boost' : text, style: style),

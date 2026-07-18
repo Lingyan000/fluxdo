@@ -26,6 +26,9 @@ class User {
   final int seenNotificationId;
   final int notificationChannelPosition;
 
+  // 待审核内容数(仅本人可见,UserSerializer include_pending_posts_count?)
+  final int pendingPostsCount;
+
   // 用户状态
   final UserStatus? status;
 
@@ -93,6 +96,7 @@ class User {
     this.allUnreadNotificationsCount = 0,
     this.seenNotificationId = 0,
     this.notificationChannelPosition = -1,
+    this.pendingPostsCount = 0,
     this.status,
     this.lastPostedAt,
     this.lastSeenAt,
@@ -155,6 +159,7 @@ class User {
       seenNotificationId: seenNotificationId ?? this.seenNotificationId,
       notificationChannelPosition:
           notificationChannelPosition ?? this.notificationChannelPosition,
+      pendingPostsCount: pendingPostsCount,
       status: status,
       lastPostedAt: lastPostedAt,
       lastSeenAt: lastSeenAt,
@@ -219,6 +224,7 @@ class User {
       allUnreadNotificationsCount: json['all_unread_notifications_count'] as int? ?? 0,
       seenNotificationId: json['seen_notification_id'] as int? ?? 0,
       notificationChannelPosition: json['notification_channel_position'] as int? ?? -1,
+      pendingPostsCount: json['pending_posts_count'] as int? ?? 0,
       status: json['status'] != null ? UserStatus.fromJson(json['status']) : null,
       lastPostedAt: TimeUtils.parseUtcTime(json['last_posted_at'] as String?),
       lastSeenAt: TimeUtils.parseUtcTime(json['last_seen_at'] as String?),

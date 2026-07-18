@@ -4,6 +4,7 @@ import 'package:fluxdo_render/fluxdo_render.dart';
 
 import '../../../models/topic.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
+import '../../../utils/frame_jank_monitor.dart';
 
 /// 帖子 cooked 解析产物的全局 LRU 缓存(跨挂载、跨页面)。
 ///
@@ -71,7 +72,10 @@ class RenderParseCache {
       return (preprocessed: cached.preprocessed, nodes: cached.nodes);
     }
     // Timeline 标记:STALL/jank 现场抓取的摘要里能点名"这段是帖子
-    // 首次解析"(固定名,按名聚合;监控相关开销仅字符串一枚)
+    // 首次解析"(固定名,按名聚合;监控相关开销仅字符串一枚)。
+    // Stopwatch + noteSpan:release(无 VM Service)下解析成本也进 JANK
+    // 账单,条目名带帖号与正文大小(监控关闭时 noteSpan 空操作)。
+    final watch = Stopwatch()..start();
     final parsed = developer.Timeline.timeSync('ParseShortPost', () {
       final preprocessed =
           FluxdoRenderCallbacks.preprocessCookedForRender(post);
@@ -80,6 +84,12 @@ class RenderParseCache {
       );
       return (preprocessed: preprocessed, nodes: nodes);
     });
+    watch.stop();
+    FrameJankMonitor.noteSpan(
+      'parse:short#${post.postNumber}'
+      '(${(post.cooked.length / 1000).toStringAsFixed(1)}k)',
+      watch.elapsedMicroseconds,
+    );
     _short[post.id] = _ShortEntry(
       signature: signature,
       preprocessed: parsed.preprocessed,
@@ -175,6 +185,9 @@ class LongPostParseData {
       final prevOffset = i == 0 ? 0 : _offsets[i - 1]!;
       final prevCount = i == 0 ? 0 : countImageRuns(_parsed[i - 1]!);
       final offset = prevOffset + prevCount;
+      // Stopwatch + noteSpan:release 下单块解析成本进 JANK 账单
+      // (类无 post 引用,标签用 块序号+大小;监控关闭时空操作)
+      final watch = Stopwatch()..start();
       final nodes = developer.Timeline.timeSync(
         'ParseLongChunk',
         () => _parser.parse(
@@ -182,6 +195,11 @@ class LongPostParseData {
           imageIndexStart: offset,
           footnotesHtml: footnotesHtml,
         ),
+      );
+      watch.stop();
+      FrameJankMonitor.noteSpan(
+        'parse:chunk$i(${(chunks[i].html.length / 1000).toStringAsFixed(1)}k)',
+        watch.elapsedMicroseconds,
       );
       _parsed[i] = List.unmodifiable(nodes);
       _offsets[i] = offset;

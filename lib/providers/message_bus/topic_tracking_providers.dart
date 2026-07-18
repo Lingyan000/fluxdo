@@ -505,8 +505,10 @@ class LatestChannelNotifier extends Notifier<TopicListIncomingState> {
 
       debugPrint('[LatestChannel] incoming +1: type=$messageType, topicId=$topicId, category=$topicCategoryId');
 
-      // 同步转发给 TopicTrackingStateNotifier 更新 new/unread 计数
-      ref.read(topicTrackingStateProvider.notifier).processChannelPayload(message);
+      // 注意:不在此处转发给 TopicTrackingStateNotifier —— MessageBusInit
+      // 已订阅含 /latest 在内的全部追踪频道并统一转发,此前这里的二次
+      // 转发让每条 /latest 消息被同一状态机处理两遍(两次解析 + 两次
+      // 通知 + 下游两次重建;滚动中即"帧开工晚"型掉帧的税源之一)
 
       // 即时更新（与网页版一致，无防抖）
       state = TopicListIncomingState(

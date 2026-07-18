@@ -6,6 +6,8 @@ import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:fluxdo/widgets/common/loading_spinner.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'package:fluxdo/models/category.dart';
@@ -24,18 +26,28 @@ import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/providers/shortcut_provider.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import 'pending_posts_page.dart';
 
 class CreateTopicPage extends ConsumerStatefulWidget {
   final int? initialCategoryId;
   final List<String>? initialTags;
+
+  /// 预填标题/内容(待审内容撤回重编辑等场景);
+  /// 传入任一时跳过草稿恢复弹窗,避免覆盖预填
+  final String? initialTitle;
+  final String? initialContent;
   final String draftKey;
 
   const CreateTopicPage({
     super.key,
     this.initialCategoryId,
     this.initialTags,
+    this.initialTitle,
+    this.initialContent,
     this.draftKey = Draft.newTopicKey,
   });
 
@@ -92,8 +104,21 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _titleController.addListener(_onDraftContentChanged);
     _contentController.addListener(_onDraftContentChanged);
 
-    // 加载现有草稿
-    _loadExistingDraft();
+    // 预填标题/内容(待审内容撤回重编辑等场景):直接落 controller,
+    // 并跳过草稿恢复弹窗,避免旧草稿覆盖预填内容
+    final hasInitialPrefill = (widget.initialTitle?.isNotEmpty ?? false) ||
+        (widget.initialContent?.isNotEmpty ?? false);
+    if (hasInitialPrefill) {
+      if (widget.initialTitle != null) {
+        _titleController.text = widget.initialTitle!;
+      }
+      if (widget.initialContent != null) {
+        _contentController.text = widget.initialContent!;
+      }
+    } else {
+      // 加载现有草稿
+      _loadExistingDraft();
+    }
 
     // 从当前筛选条件自动填入分类和标签
     WidgetsBinding.instance.addPostFrameCallback((_) => _applyCurrentFilter());
@@ -441,11 +466,20 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       if (!mounted) return;
       Navigator.of(context).pop(topicId);
     } on PostEnqueuedException {
-      // 审核场景：删除草稿，提示用户，关闭编辑器
+      // 审核场景：删除草稿，提示用户（带「查看」入口），关闭编辑器
       await _draftController.deleteDraft();
       _submitted = true;
       if (!mounted) return;
-      ToastService.showInfo(S.current.createTopic_pendingReview);
+      ToastService.show(
+        S.current.createTopic_pendingReview,
+        type: ToastType.info,
+        actionLabel: S.current.review_viewAction,
+        onAction: () {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+          );
+        },
+      );
       Navigator.of(context).pop();
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
@@ -569,7 +603,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     // 获取站点配置的最小长度
     final minTitleLength = ref.watch(minTopicTitleLengthProvider).value ?? 15;
 
-    return PopScope(
+    final page = PopScope(
       canPop: !_showEmojiPanel,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
@@ -687,13 +721,17 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                               // Page 0: 编辑模式 —— 标题/标签/字数打包为
                               // header 注入编辑器滚动流,与正文同滚(手机
                               // 写正文时头部随内容滚出屏,编辑区满格;分类
-                              // 已上收 AppBar)。Form 上提包住 AnimatedSwitcher:
-                              // 双模切换过渡期两个编辑器短暂同挂 header,
-                              // Form 若在 header 里会 _formKey 双挂崩溃。
+                              // 已上收 AppBar)。
+                              // 双模切换 = 无并存直切 + 新编辑器淡入:
+                              // AnimatedSwitcher 会让富/源并存 150ms ——
+                              // 共享 focusNode + 输入模型异构(自管 IME
+                              // vs TextField),并存窗口里 TextInput 交接
+                              // 必然竞态(切后无法删除/快捷键失灵反复
+                              // 复发)。ComposerSwitchFade 旧编辑器同帧
+                              // dispose,新的从透明淡入(丝滑不并存)。
                               Form(
                                 key: _formKey,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 150),
+                                child: ComposerSwitchFade(
                                   child:
                                       (ref
                                               .watch(preferencesProvider)
@@ -927,6 +965,18 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
           ],
         ),
       ),
+    );
+
+    // Cmd/Ctrl+Enter 发布(对齐 Discourse composer):包整页,焦点在
+    // 标题/标签输入框时同样生效;守卫与发布按钮一致。
+    return CallbackShortcuts(
+      bindings: {
+        for (final activator in composerSubmitActivators())
+          activator: () {
+            if (!_isSubmitting) _submit();
+          },
+      },
+      child: page,
     );
   }
 }

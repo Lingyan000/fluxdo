@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import '../../../services/media_geometry_memo.dart';
+import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/image_paint_gate.dart';
 import '../../common/anchor_guard_sliver.dart';
 import '../../common/hero_image.dart';
@@ -101,6 +102,12 @@ class _LazyImageState extends State<LazyImage> {
   /// 非 null = 正在闸门队列中排队(防重复入队;dispose/换图时出队)
   VoidCallback? _gateWaiter;
 
+  /// raster 大帧归因:本 State 是否已记过"缓存命中上屏"(挂载期一次,
+  /// 防 rebuild 刷屏)。img+ = 新解码首绘(上传嫌疑);img≈ = 缓存图
+  /// 重新挂载上屏(60ms raster 帧清单里只见 ≈ 无 + 时,矛头指向纹理
+  /// 重驻留/大纹理采样绘制而非首绘上传)。
+  bool _syncPaintNoted = false;
+
   /// 与 Image 内部同款的滚动感知上下文:比例监听经 [ScrollAwareImageProvider]
   /// 包装后,快速滚动中不首发加载。此前挂载即裸 resolve,把框架给 Image
   /// 内建的快滚保护整个绕开了(cacheExtent 进入即发起下载+解码)。
@@ -199,6 +206,9 @@ class _LazyImageState extends State<LazyImage> {
   void _handleGateAdmitted() {
     _gateWaiter = null;
     if (!mounted) return;
+    FrameJankMonitor.noteBuild(
+      'img+${(widget.width ?? 0).round()}w',
+    );
     setState(() => _paintAdmitted = true);
   }
 
@@ -291,11 +301,19 @@ class _LazyImageState extends State<LazyImage> {
         // 首绘闸门:缓存同步命中(纹理早已上传)与已获准的直接显示;
         // 新解码完成的图申请本帧名额,拿不到先继续占位,获准回调里
         // setState 放行 —— 多图同帧集中上传由此摊成逐帧一张
-        if (wasSynchronouslyLoaded || _paintAdmitted) return child;
+        if (wasSynchronouslyLoaded) {
+          if (!_syncPaintNoted) {
+            _syncPaintNoted = true;
+            FrameJankMonitor.noteBuild('img≈${(width ?? 0).round()}w');
+          }
+          return child;
+        }
+        if (_paintAdmitted) return child;
         if (_gateWaiter == null) {
           final waiter = _handleGateAdmitted;
           if (ImagePaintGate.admit(waiter)) {
             _paintAdmitted = true;
+            FrameJankMonitor.noteBuild('img+${(width ?? 0).round()}w');
             return child;
           }
           _gateWaiter = waiter;

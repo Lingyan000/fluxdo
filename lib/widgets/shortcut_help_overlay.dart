@@ -5,6 +5,7 @@ import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../utils/dialog_utils.dart';
+import 'markdown_editor/composer_shortcuts.dart';
 import 'shortcut/shortcut_ui.dart';
 
 /// 显示快捷键帮助浮层，返回 Future 以便跟踪关闭时机
@@ -111,11 +112,8 @@ class _ShortcutHelpDialogState extends State<_ShortcutHelpDialog> {
                                     for (var j = 0; j < columns[i].length; j++) ...[
                                       if (j != 0) const SizedBox(height: 16),
                                       _ShortcutCategoryCard(
-                                        title: shortcutCategoryLabel(
-                                          columns[i][j].category,
-                                          l10n,
-                                        ),
-                                        bindings: columns[i][j].bindings,
+                                        title: columns[i][j].title,
+                                        entries: columns[i][j].entries,
                                       ),
                                     ],
                                   ],
@@ -288,9 +286,9 @@ class _ShortcutEmptyState extends StatelessWidget {
 
 class _ShortcutCategoryCard extends StatelessWidget {
   final String title;
-  final List<ShortcutBinding> bindings;
+  final List<_ShortcutEntry> entries;
 
-  const _ShortcutCategoryCard({required this.title, required this.bindings});
+  const _ShortcutCategoryCard({required this.title, required this.entries});
 
   @override
   Widget build(BuildContext context) {
@@ -323,9 +321,9 @@ class _ShortcutCategoryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          for (var i = 0; i < bindings.length; i++) ...[
-            _ShortcutRow(binding: bindings[i]),
-            if (i != bindings.length - 1) ...[
+          for (var i = 0; i < entries.length; i++) ...[
+            _ShortcutRow(entry: entries[i]),
+            if (i != entries.length - 1) ...[
               const SizedBox(height: 8),
               Divider(
                 height: 1,
@@ -341,14 +339,13 @@ class _ShortcutCategoryCard extends StatelessWidget {
 }
 
 class _ShortcutRow extends StatelessWidget {
-  final ShortcutBinding binding;
+  final _ShortcutEntry entry;
 
-  const _ShortcutRow({required this.binding});
+  const _ShortcutRow({required this.entry});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final l10n = context.l10n;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,7 +354,7 @@ class _ShortcutRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.only(top: 4, right: 8),
             child: Text(
-              shortcutActionLabel(binding.action, l10n),
+              entry.label,
               style: theme.textTheme.bodyMedium?.copyWith(
                 height: 1.3,
                 color: theme.colorScheme.onSurface,
@@ -369,7 +366,7 @@ class _ShortcutRow extends StatelessWidget {
         Flexible(
           child: Align(
             alignment: Alignment.topRight,
-            child: ShortcutActivatorCaps(activator: binding.activator),
+            child: ShortcutActivatorCaps(activator: entry.activator),
           ),
         ),
       ],
@@ -377,11 +374,18 @@ class _ShortcutRow extends StatelessWidget {
   }
 }
 
-class _ShortcutGroup {
-  const _ShortcutGroup({required this.category, required this.bindings});
+class _ShortcutEntry {
+  const _ShortcutEntry({required this.label, required this.activator});
 
-  final ShortcutCategory category;
-  final List<ShortcutBinding> bindings;
+  final String label;
+  final SingleActivator activator;
+}
+
+class _ShortcutGroup {
+  const _ShortcutGroup({required this.title, required this.entries});
+
+  final String title;
+  final List<_ShortcutEntry> entries;
 }
 
 List<_ShortcutGroup> _buildGroups(
@@ -400,50 +404,76 @@ List<_ShortcutGroup> _buildGroups(
 
   return [
     for (final category in ShortcutCategory.values)
-      if (_filterBindingsForCategory(
-        groupedBindings[category] ?? const [],
-        category: category,
-        l10n: l10n,
-        query: normalizedQuery,
-      ).isNotEmpty)
-        _ShortcutGroup(
-          category: category,
-          bindings: List<ShortcutBinding>.unmodifiable(
-            _filterBindingsForCategory(
-              groupedBindings[category] ?? const [],
-              category: category,
-              l10n: l10n,
-              query: normalizedQuery,
-            ),
+      ...() {
+        final entries = _filterEntries(
+          [
+            for (final binding in groupedBindings[category] ?? const [])
+              _ShortcutEntry(
+                label: shortcutActionLabel(binding.action, l10n),
+                activator: binding.activator,
+              ),
+          ],
+          groupTitle: shortcutCategoryLabel(category, l10n),
+          query: normalizedQuery,
+        );
+        return entries.isEmpty
+            ? const <_ShortcutGroup>[]
+            : [
+                _ShortcutGroup(
+                  title: shortcutCategoryLabel(category, l10n),
+                  entries: entries,
+                ),
+              ];
+      }(),
+    // 撰写快捷键(静态展示):硬编码在编辑器层、不走可自定义的
+    // shortcutProvider 体系,事实源 composer_shortcuts.dart。
+    ...() {
+      final entries = _filterEntries(
+        [
+          _ShortcutEntry(
+            label: l10n.shortcuts_composerSubmit,
+            activator: composerSubmitActivators().first,
           ),
-        ),
+          for (final spec in buildComposerShortcutSpecs())
+            _ShortcutEntry(label: spec.label(l10n), activator: spec.activator),
+        ],
+        groupTitle: l10n.shortcuts_composer,
+        query: normalizedQuery,
+      );
+      return entries.isEmpty
+          ? const <_ShortcutGroup>[]
+          : [
+              _ShortcutGroup(
+                title: l10n.shortcuts_composer,
+                entries: entries,
+              ),
+            ];
+    }(),
   ];
 }
 
-List<ShortcutBinding> _filterBindingsForCategory(
-  List<ShortcutBinding> bindings, {
-  required ShortcutCategory category,
-  required AppLocalizations l10n,
+List<_ShortcutEntry> _filterEntries(
+  List<_ShortcutEntry> entries, {
+  required String groupTitle,
   required String query,
 }) {
-  if (query.isEmpty) return bindings;
+  if (query.isEmpty) return List.unmodifiable(entries);
 
-  final categoryLabel = shortcutCategoryLabel(category, l10n).toLowerCase();
-  if (categoryLabel.contains(query)) {
-    return bindings;
+  if (groupTitle.toLowerCase().contains(query)) {
+    return List.unmodifiable(entries);
   }
 
-  return bindings.where((binding) {
-    final actionLabel = shortcutActionLabel(binding.action, l10n).toLowerCase();
-    final keyLabel = ShortcutBinding.formatActivator(binding.activator)
-        .toLowerCase();
-    final keyParts = ShortcutBinding.formatActivatorParts(binding.activator)
+  return List.unmodifiable(entries.where((entry) {
+    final actionLabel = entry.label.toLowerCase();
+    final keyLabel =
+        ShortcutBinding.formatActivator(entry.activator).toLowerCase();
+    final keyParts = ShortcutBinding.formatActivatorParts(entry.activator)
         .join(' ')
         .toLowerCase();
     return actionLabel.contains(query) ||
         keyLabel.contains(query) ||
         keyParts.contains(query);
-  }).toList();
+  }));
 }
 
 List<List<_ShortcutGroup>> _buildMasonryColumns(
@@ -462,7 +492,7 @@ List<List<_ShortcutGroup>> _buildMasonryColumns(
     }
 
     columns[targetColumn].add(group);
-    estimatedHeights[targetColumn] += 68 + group.bindings.length * 54;
+    estimatedHeights[targetColumn] += 68 + group.entries.length * 54;
   }
 
   return columns;

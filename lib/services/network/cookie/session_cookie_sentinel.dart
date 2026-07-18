@@ -186,6 +186,10 @@ class SessionCookieSentinel {
             cookie.expiresAt!.isBefore(DateTime.now())) {
           continue;
         }
+        // cf_clearance 单向流(WV→jar):它只在 WebView 中由 CF 签发/更新,
+        // Dio 侧不产新值。回灌经 toSetCookieHeader 会丢 Partitioned,在 WV
+        // 里复制出一枚 CF 从未签发的非分区副本(双变体来源),一律不回写。
+        if (cookie.name == 'cf_clearance') continue;
         // 用 toSetCookieHeader 保留 hostOnly/Domain/SameSite, 避免与 WV
         // 网络层写入的同名 cookie 共存 (详见 _writeWinnerToWebView 注释)
         await _writer.setRawCookie(
@@ -410,6 +414,38 @@ class SessionCookieSentinel {
     // CHECK 3: generation (在副作用前)
     if (_isCancelled(entryGen)) {
       return _emitCancelled(url, name, entryGen, stopwatch);
+    }
+
+    // cf_clearance 单向流(WV→jar):WV 是它唯一的产地,app 绝不删除/重写
+    // WV 里的 cf_clearance——删+重写会经 toSetCookieHeader 丢掉 Partitioned,
+    // 在 WV 里造出一枚 CF 从未签发的非分区副本(双变体来源)。这里退化为
+    // 只读:_pickWinner 已按 expiresDate 取最新那枚,只把它同步进 jar 供
+    // native 使用,WV 一概不动(多变体交给 CF 自身与自然过期收敛)。
+    if (name == 'cf_clearance') {
+      if (winnerResult != null && winnerResult.source == 'webview') {
+        await _syncWinnerToJar(url, winnerResult.cookieInfo);
+      }
+      _markSweepSuccess(name);
+      final result = SweepResult(
+        name: name,
+        status: SweepStatus.swept,
+        variantsBefore: variantsBefore,
+        variantsAfter: variantsBefore,
+        winnerSource: winnerResult?.source,
+        elapsed: stopwatch.elapsed,
+      );
+      _eventController.add(SweepCompleted(result: result));
+      CookieLogger.sweep(
+        event: 'swept',
+        url: url,
+        name: name,
+        intent: 'ensureUnique',
+        variantsBefore: variantsBefore,
+        variantsAfter: variantsBefore,
+        winnerSource: winnerResult?.source,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+      );
+      return result;
     }
 
     await _executeDelete(url, name);

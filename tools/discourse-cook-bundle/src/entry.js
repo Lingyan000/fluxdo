@@ -290,7 +290,17 @@ function cook(raw) {
 // oneboxer-cache 的 lookupCache 读 `.outerHTML`，Discourse web 里存的是
 // DOM 元素，这里裸引擎没有 DOM，用同形对象即可。
 function seedOnebox(url, html) {
-  setOneboxCache(url.replace(/\/$/, ""), { outerHTML: html });
+  // 首个标签注入 data-fluxdo-onebox-url 标记:站内话题的 onebox HTML
+  // 是 aside.quote(与真引用卡同形),Dart 解析层靠此标记区分「onebox
+  // 展开物(raw=裸 URL)」与「用户手写引用(raw=[quote])」——序列化
+  // 写错即毁帖。标记只存在于编辑器预览 cook,服务端 cooked 永远没有。
+  const cleanUrl = url.replace(/\/$/, "");
+  const marked = String(html).replace(
+    /<([a-zA-Z][\w-]*)/,
+    (m, tag) =>
+      `<${tag} data-fluxdo-onebox-url="${cleanUrl.replace(/"/g, "&quot;")}"`
+  );
+  setOneboxCache(cleanUrl, { outerHTML: marked });
   return "ok";
 }
 

@@ -4,6 +4,7 @@ import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 import '../utils/bookmark_name_utils.dart';
+import 'pending_post.dart';
 import 'user.dart';
 
 /// 标签模型
@@ -149,12 +150,14 @@ class TopicUser {
   final String username;
   final String? name;
   final String avatarTemplate;
+  final String? animatedAvatar;
 
   TopicUser({
     required this.id,
     required this.username,
     this.name,
     required this.avatarTemplate,
+    this.animatedAvatar,
   });
 
   /// 显示名:优先昵称,空则回退 username
@@ -169,13 +172,23 @@ class TopicUser {
       username: json['username'] as String? ?? '',
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String? ?? '',
+      animatedAvatar: json['animated_avatar'] as String?,
     );
   }
 
+  /// 静态模板端点 URL(恒为尺寸化静态小图);动图原件见 [animatedAvatarUrl]
   String getAvatarUrl({int size = 40}) {
     final template = avatarTemplate.replaceAll('{size}', '$size');
     return UrlHelper.resolveUrlWithCdn(template);
   }
+
+  /// 动画头像原件 URL(无则 null)。注意这是**原始 gif 全文件**
+  /// (几百 KB~几 MB,无尺寸化),只应喂给真正播放动画的层;
+  /// 静态展示一律用 [getAvatarUrl] 的模板端点(几 KB 小图)
+  String? get animatedAvatarUrl =>
+      (animatedAvatar != null && animatedAvatar!.isNotEmpty)
+      ? UrlHelper.resolveUrlWithCdn(animatedAvatar!)
+      : null;
 }
 
 /// 话题海报（参与者）信息
@@ -211,6 +224,7 @@ class TopicPoster {
                   username: json['_username'] as String? ?? '',
                   name: json['_name'] as String?,
                   avatarTemplate: json['_avatar_template'] as String? ?? '',
+                  animatedAvatar: json['_animated_avatar'] as String?,
                 )
               : null),
     );
@@ -1541,6 +1555,9 @@ class TopicDetail {
   // 多解决方案场景下长度可 > 1,对齐 Discourse 的 accepted_answers 数组)
   final List<AcceptedAnswer> acceptedAnswers;
 
+  // 当前用户在本主题下的待审核回复(仅认证 + 站点启用审核队列时返回)
+  final List<PendingPost> pendingPosts;
+
   bool get hasAcceptedAnswer => acceptedAnswers.isNotEmpty;
   int? get acceptedAnswerPostNumber =>
       acceptedAnswers.isEmpty ? null : acceptedAnswers.first.postNumber;
@@ -1585,6 +1602,7 @@ class TopicDetail {
     this.bookmarkName,
     this.bookmarkReminderAt,
     this.acceptedAnswers = const [],
+    this.pendingPosts = const [],
   });
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
@@ -1760,6 +1778,10 @@ class TopicDetail {
       bookmarkName: topicBookmarkName,
       bookmarkReminderAt: topicBookmarkReminderAt,
       acceptedAnswers: acceptedAnswers,
+      pendingPosts: (json['pending_posts'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => PendingPost.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 
@@ -1802,6 +1824,7 @@ class TopicDetail {
     bool clearBookmarkName = false,
     bool clearBookmarkReminderAt = false,
     List<AcceptedAnswer>? acceptedAnswers,
+    List<PendingPost>? pendingPosts,
   }) {
     return TopicDetail(
       id: id ?? this.id,
@@ -1843,6 +1866,7 @@ class TopicDetail {
           ? null
           : (bookmarkReminderAt ?? this.bookmarkReminderAt),
       acceptedAnswers: acceptedAnswers ?? this.acceptedAnswers,
+      pendingPosts: pendingPosts ?? this.pendingPosts,
     );
   }
 }
@@ -1954,6 +1978,8 @@ Map<String, dynamic> normalizeBookmarkListEntry(
         'extras': 'latest',
         if (user.containsKey('avatar_template'))
           '_avatar_template': user['avatar_template'],
+        if (user.containsKey('animated_avatar'))
+          '_animated_avatar': user['animated_avatar'],
         if (user.containsKey('username')) '_username': user['username'],
         if (user.containsKey('name')) '_name': user['name'],
       },

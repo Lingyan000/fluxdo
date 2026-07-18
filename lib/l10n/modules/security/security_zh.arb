@@ -64,6 +64,11 @@
   "cf_verifyTimedOutTitle": "验证还没完成",
   "cf_verifyTimeout": "验证还没完成，可以重新加载后再试",
   "cf_verifying": "正在验证，已等待 {seconds}s",
+  "cf_sessionCompatTitle": "切换到临时兼容模式？",
+  "cf_sessionCompatMessage": "安全验证已经完成，但当前原生网络仍未被 Cloudflare 信任。可以在本次使用期间改用浏览器内核发送主站请求，应用重启或退出登录后会自动恢复。",
+  "cf_sessionCompatEnable": "本次使用兼容模式",
+  "cf_sessionCompatEnabled": "已临时切换到兼容模式",
+  "cf_sessionCompatDisable": "退出临时兼容模式",
   "@cf_verifying": {
     "placeholders": {
       "seconds": {

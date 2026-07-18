@@ -112,6 +112,37 @@ void main() {
       expect(cookieHeader, contains('theme=scoped'));
       expect(cookieHeader, contains('theme=root'));
     });
+
+    test('cf_clearance 同名多枚时取过期最新那枚(取新兜底),与顺序无关', () {
+      // cf_clearance 单向流(WV→jar),正常只有一枚;万一 jar 里同名多枚,
+      // 兜底按过期时间取最新(后签发=当前有效),与值长度/插入顺序无关。
+      final now = DateTime.now();
+      final older = Cookie('cf_clearance', 'older-value')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..secure = true
+        ..httpOnly = true
+        ..expires = now.add(const Duration(hours: 1));
+      final newer = Cookie('cf_clearance', 'newer-value')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..secure = true
+        ..httpOnly = true
+        ..expires = now.add(const Duration(days: 30));
+
+      for (final cookies in [
+        [older, newer],
+        [newer, older],
+      ]) {
+        final selected = AppCookieManager.selectCookiesForTest(
+          cookies,
+          Uri.parse('https://linux.do/topics/timings'),
+        );
+        final clearance = selected.where((c) => c.name == 'cf_clearance');
+        expect(clearance, hasLength(1));
+        expect(clearance.first.value, 'newer-value');
+      }
+    });
   });
 
   group('CookieJarService.buildCookieHeaderForRequest', () {
@@ -131,6 +162,30 @@ void main() {
       expect(header, contains('cf_clearance=cf-token'));
       expect(header, contains('linux_do_cdk_session_id=cdk-token'));
       expect(header, isNot(contains('_t=')));
+    });
+
+    test('cf_clearance 同名多枚时取过期最新那枚(取新兜底),与顺序无关', () {
+      final now = DateTime.now();
+      final older = Cookie('cf_clearance', 'older-value')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..expires = now.add(const Duration(hours: 1));
+      final newer = Cookie('cf_clearance', 'newer-value')
+        ..domain = '.linux.do'
+        ..path = '/'
+        ..expires = now.add(const Duration(days: 30));
+
+      for (final cookies in [
+        [older, newer],
+        [newer, older],
+      ]) {
+        final header = CookieJarService.buildCookieHeaderForRequest(
+          cookies,
+          Uri.parse('https://linux.do/topics/timings'),
+        );
+        expect(header, contains('newer-value'));
+        expect(header, isNot(contains('older-value')));
+      }
     });
   });
 }

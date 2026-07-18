@@ -33,6 +33,8 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+# 本地依赖覆盖(未发布版本的 path 覆盖,机器相关,不入库)
+pubspec_overrides.yaml
 # 不带前导斜杠：递归 ignore 所有子目录的 build/（含 packages/*/build/）
 build/
 /coverage/
@@ -100,3 +102,7 @@ lib/l10n/generated/app_localizations_compat.g.dart
 extension/devtools/build/
 devtools_extension/.flutter-plugins
 devtools_extension/pubspec.lock
+
+# 桌面端随包 ffmpeg 的构建期下载缓存
+windows/.ffmpeg-cache/
+linux/.ffmpeg-cache/

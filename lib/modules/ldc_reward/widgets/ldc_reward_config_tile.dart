@@ -61,7 +61,9 @@ class LdcRewardConfigTile extends ConsumerWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isConfigured ? context.l10n.reward_configured : context.l10n.reward_notConfigured,
+                      isConfigured
+                          ? context.l10n.reward_configured
+                          : context.l10n.reward_notConfigured,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -71,7 +73,9 @@ class LdcRewardConfigTile extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Icon(
-                isConfigured ? Symbols.check_circle_rounded : Symbols.settings_rounded,
+                isConfigured
+                    ? Symbols.check_circle_rounded
+                    : Symbols.settings_rounded,
                 color: isConfigured
                     ? Colors.green
                     : theme.colorScheme.onSurfaceVariant,
@@ -83,7 +87,11 @@ class LdcRewardConfigTile extends ConsumerWidget {
     );
   }
 
-  void _showConfigDialog(BuildContext context, WidgetRef ref, bool isConfigured) {
+  void _showConfigDialog(
+    BuildContext context,
+    WidgetRef ref,
+    bool isConfigured,
+  ) {
     final clientIdController = TextEditingController();
     final clientSecretController = TextEditingController();
     final theme = Theme.of(context);
@@ -142,10 +150,17 @@ class LdcRewardConfigTile extends ConsumerWidget {
         actions: [
           if (isConfigured)
             TextButton(
-              onPressed: () {
-                ref.read(ldcRewardCredentialsProvider.notifier).clear();
-                Navigator.pop(ctx);
-                ToastService.showSuccess(S.current.toast_credentialCleared);
+              onPressed: () async {
+                try {
+                  await ref.read(ldcRewardCredentialsProvider.notifier).clear();
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ToastService.showSuccess(S.current.toast_credentialCleared);
+                } catch (error) {
+                  ToastService.showError(
+                    S.current.common_operationFailed(error.toString()),
+                  );
+                }
               },
               child: Text(
                 context.l10n.reward_clearCredential,
@@ -157,19 +172,27 @@ class LdcRewardConfigTile extends ConsumerWidget {
             child: Text(context.l10n.common_cancel),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final clientId = _sanitizeCredential(clientIdController.text);
-              final clientSecret =
-                  _sanitizeCredential(clientSecretController.text);
+              final clientSecret = _sanitizeCredential(
+                clientSecretController.text,
+              );
               if (clientId.isEmpty || clientSecret.isEmpty) {
                 ToastService.showError(S.current.toast_credentialIncomplete);
                 return;
               }
-              ref
-                  .read(ldcRewardCredentialsProvider.notifier)
-                  .save(clientId, clientSecret);
-              Navigator.pop(ctx);
-              ToastService.showSuccess(S.current.toast_credentialSaved);
+              try {
+                await ref
+                    .read(ldcRewardCredentialsProvider.notifier)
+                    .save(clientId, clientSecret);
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                ToastService.showSuccess(S.current.toast_credentialSaved);
+              } catch (error) {
+                ToastService.showError(
+                  S.current.common_operationFailed(error.toString()),
+                );
+              }
             },
             child: Text(context.l10n.common_save),
           ),

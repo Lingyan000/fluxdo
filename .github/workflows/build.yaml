@@ -592,10 +592,14 @@ jobs:
           # fallback 模式下 plain 文本直接复制 markdown 版本
           cp release_notes.md release_notes.txt
 
+      - name: Compose release notes (highlights + folded detail)
+        run: |
+          python3 scripts/ci/compose_release_notes.py \
+            --tag "${{ github.ref_name }}" \
+            --stable "${{ env.IS_STABLE }}"
+
       - name: Append release template
         run: |
-          # TG 通知不带下载表格（安装包直接随消息发文件），先留一份纯 notes 副本
-          cp release_notes.md release_notes_tg.md
           sed 's/VERSION/${{ steps.version.outputs.VERSION }}/g' .github/release_template.md >> release_notes.md
 
       - name: Generate SHA256 checksums

@@ -46,9 +46,17 @@ modules:
       - install -Dm644 source-tree/flatpak/com.github.lingyan000.fluxdo.desktop /app/share/applications/com.github.lingyan000.fluxdo.desktop
       - install -Dm644 source-tree/flatpak/com.github.lingyan000.fluxdo.metainfo.xml /app/share/metainfo/com.github.lingyan000.fluxdo.metainfo.xml
       - install -Dm644 source-tree/flatpak/icons/com.github.lingyan000.fluxdo.png /app/share/icons/hicolor/512x512/apps/com.github.lingyan000.fluxdo.png
+      # 媒体压缩:静态 ffmpeg 进 /app/bin(PATH),app 运行时按 PATH 查找。
+      # 沙箱构建阶段禁网,CMake 的构建期下载会跳过(WARNING),CLI 由
+      # 本 source 在源准备阶段(允许联网+sha256 校验)提供。
+      - install -Dm755 ffmpeg-linux-x64 /app/bin/ffmpeg
       - rm -rf /app/include /app/lib/pkgconfig /app/share/pkgconfig /app/share/aclocal
       - rm -f /app/bin/unifdef /app/bin/woff2_compress /app/bin/woff2_decompress
     sources:
       - type: dir
         path: stage/source-tree
         dest: source-tree
+      - type: file
+        url: https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-linux-x64
+        sha256: ed652b2f32e0851d1946894fb8333f5b677c1b2ce6b9d187910a67f8b99da028
+        dest-filename: ffmpeg-linux-x64

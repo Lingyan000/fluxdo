@@ -30,6 +30,7 @@ import 'metaverse_page.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
+import 'pending_posts_page.dart';
 import 'private_messages_page.dart';
 import 'invite_links_page.dart';
 import '../providers/ldc_providers.dart';
@@ -781,6 +782,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           iconColor: Colors.indigo,
           title: context.l10n.profile_privateMessages,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivateMessagesPage())),
+        ),
+        _buildOptionTile(
+          icon: Symbols.pending_actions_rounded,
+          iconColor: Colors.amber,
+          title: context.l10n.review_myPending,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PendingPostsPage())),
         ),
         _buildOptionTile(
           icon: Symbols.military_tech_rounded,

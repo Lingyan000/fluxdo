@@ -10,6 +10,7 @@ import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/code_selection_context.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../../utils/frame_jank_monitor.dart';
+import '../../common/perf_span_box.dart';
 import '../post_boost/boost_danmaku.dart';
 import '../post_signature_block.dart';
 import '../small_action_item.dart';
@@ -183,7 +184,11 @@ class _PostItemState extends ConsumerState<PostItem> {
     const danmakuTrackHeight = 36.0;
 
     final isModeratorAction = post.postType == PostTypes.moderatorAction;
-    return PostSegmentFrame(
+    // PerfSpanBox:整帖子树的 layout/paint 账单(lay:post#N / pnt:post#N),
+    // 与上面 noteBuild 的在场名单互补(监控关闭零开销,纯代理盒无视觉影响)
+    return PerfSpanBox(
+      label: 'post#${post.postNumber}',
+      child: PostSegmentFrame(
       post: post,
       selected: widget.selected,
       highlight: widget.highlight,
@@ -198,33 +203,29 @@ class _PostItemState extends ConsumerState<PostItem> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SelectionContainer.disabled(
-              child: PostHeaderSection(
-                post: post,
-                topicId: widget.topicId,
-                isTopicOwner: widget.isTopicOwner,
-                showStamp: _acceptedAnswer,
-                padding: EdgeInsets.zero,
-                onJumpToPost: widget.onJumpToPost,
-                onEditWiki: widget.onEdit,
-                onMentionUser: widget.onMentionUser,
-                danmakuActive: showDanmakuToggle ? showDanmaku : null,
-                onToggleDanmaku: showDanmakuToggle
-                    ? () => setState(() {
-                        _danmakuOverride = !showDanmaku;
-                      })
-                    : null,
-              ),
+            PostHeaderSection(
+              post: post,
+              topicId: widget.topicId,
+              isTopicOwner: widget.isTopicOwner,
+              showStamp: _acceptedAnswer,
+              padding: EdgeInsets.zero,
+              onJumpToPost: widget.onJumpToPost,
+              onEditWiki: widget.onEdit,
+              onMentionUser: widget.onMentionUser,
+              danmakuActive: showDanmakuToggle ? showDanmaku : null,
+              onToggleDanmaku: showDanmakuToggle
+                  ? () => setState(() {
+                      _danmakuOverride = !showDanmaku;
+                    })
+                  : null,
             ),
             const SizedBox(height: 12),
             if (post.notice != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: SelectionContainer.disabled(
-                  child: PostNoticeWidget(
-                    notice: post.notice!,
-                    username: post.username,
-                  ),
+                child: PostNoticeWidget(
+                  notice: post.notice!,
+                  username: post.username,
                 ),
               ),
             Container(
@@ -266,7 +267,9 @@ class _PostItemState extends ConsumerState<PostItem> {
                               height: 1.5,
                               fontSize:
                                   (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                                  ref.watch(preferencesProvider).contentFontScale,
+                                  ref
+                                      .watch(preferencesProvider)
+                                      .contentFontScale,
                             ),
                             // 自研选区恒开(外层系统 SelectionArea 已拆):
                             // 未登录时 onQuoteRequest 为 null,toolbar 自动
@@ -275,13 +278,13 @@ class _PostItemState extends ConsumerState<PostItem> {
                             onQuoteRequest: widget.onQuoteSelection == null
                                 ? null
                                 : (plainText) =>
-                                    widget.onQuoteSelection!(plainText, post),
+                                      widget.onQuoteSelection!(plainText, post),
                             onCopyQuoteRequest: (plainText) =>
                                 QuoteSelectionHelper.copyQuoteToClipboard(
-                              selectedText: plainText,
-                              post: post,
-                              topicId: widget.topicId,
-                            ),
+                                  selectedText: plainText,
+                                  post: post,
+                                  topicId: widget.topicId,
+                                ),
                             onCopyToast: () => ToastService.showSuccess(
                               context.l10n.common_copiedToClipboard,
                             ),
@@ -320,72 +323,69 @@ class _PostItemState extends ConsumerState<PostItem> {
             if (post.cookedHidden &&
                 post.canSeeHiddenPost &&
                 widget.onExpandHiddenPost != null)
-              SelectionContainer.disabled(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: InkWell(
-                    onTap: () => widget.onExpandHiddenPost!(post.id),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 4,
-                        horizontal: 8,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Symbols.visibility_rounded,
-                            size: 15,
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: InkWell(
+                  onTap: () => widget.onExpandHiddenPost!(post.id),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Symbols.visibility_rounded,
+                          size: 15,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          context.l10n.post_viewHiddenInfo,
+                          style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.primary,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            context.l10n.post_viewHiddenInfo,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            SelectionContainer.disabled(
-              child: PostFooterSection(
-                key: _footerKey,
-                post: post,
-                forceShowBoostList: _danmakuOverride == false,
-                danmakuActive: showDanmakuToggle ? showDanmaku : null,
-                topicId: widget.topicId,
-                topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,
-                acceptedAnswers: widget.acceptedAnswers,
-                padding: const EdgeInsets.only(top: 12),
-                highlightBoostUsername: widget.highlightBoostUsername,
-                onReply: widget.onReply,
-                onEdit: widget.onEdit,
-                onShareAsImage: widget.onShareAsImage,
-                onRefreshPost: widget.onRefreshPost,
-                onJumpToPost: widget.onJumpToPost,
-                onSolutionChanged: widget.onSolutionChanged,
-                useReplyDialog: widget.useReplyDialog,
-                topicTitle: widget.topicTitle,
-                isPrivateMessageTopic: widget.isPrivateMessageTopic,
-                isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
-                onShowPostDetail: widget.onShowPostDetail,
-                hideRepliesButton: widget.hideRepliesButton,
-                opTopSlot: widget.opTopSlot,
-                onAcceptedAnswerChanged: (accepted) {
-                  if (!mounted) return;
-                  setState(() {
-                    _acceptedAnswer = accepted;
-                  });
-                },
-              ),
+            PostFooterSection(
+              key: _footerKey,
+              post: post,
+              forceShowBoostList: _danmakuOverride == false,
+              danmakuActive: showDanmakuToggle ? showDanmaku : null,
+              topicId: widget.topicId,
+              topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,
+              acceptedAnswers: widget.acceptedAnswers,
+              padding: const EdgeInsets.only(top: 12),
+              highlightBoostUsername: widget.highlightBoostUsername,
+              onReply: widget.onReply,
+              onEdit: widget.onEdit,
+              onShareAsImage: widget.onShareAsImage,
+              onRefreshPost: widget.onRefreshPost,
+              onJumpToPost: widget.onJumpToPost,
+              onSolutionChanged: widget.onSolutionChanged,
+              useReplyDialog: widget.useReplyDialog,
+              topicTitle: widget.topicTitle,
+              isPrivateMessageTopic: widget.isPrivateMessageTopic,
+              isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
+              onShowPostDetail: widget.onShowPostDetail,
+              hideRepliesButton: widget.hideRepliesButton,
+              opTopSlot: widget.opTopSlot,
+              onAcceptedAnswerChanged: (accepted) {
+                if (!mounted) return;
+                setState(() {
+                  _acceptedAnswer = accepted;
+                });
+              },
             ),
           ],
         ),
+      ),
       ),
     );
   }

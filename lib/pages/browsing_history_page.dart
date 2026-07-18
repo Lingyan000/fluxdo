@@ -191,6 +191,8 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
           final blockedUsernames = ref.watch(
             preferencesProvider.select((p) => p.normalizedBlockedUsernames),
           );
+          // 话题卡自定义样式:改设置触发 rebuild(自绘排版直读全局快照)
+          ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
           final visibleTopics = BlockedUserFilter.visibleTopics(
             topics,
             blockedUsernames,

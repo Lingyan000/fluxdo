@@ -1,3 +1,5 @@
+import 'dart:io' show File;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +22,17 @@ class PerfDiagnosticsPage extends StatefulWidget {
 }
 
 class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
+  /// 上次会话快照(退后台时落盘的 perf_diag_last.txt),null = 不存在
+  File? _snapshotFile;
+
+  @override
+  void initState() {
+    super.initState();
+    FrameJankMonitor.snapshotFile().then((f) {
+      if (mounted) setState(() => _snapshotFile = f);
+    });
+  }
+
   Future<void> _toggle(bool enabled) async {
     if (enabled) {
       FrameJankMonitor.start();
@@ -50,6 +63,19 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
   void _clear() {
     FrameJankMonitor.clear();
     ToastService.showInfo('已清空记录');
+  }
+
+  Future<void> _shareSnapshot() async {
+    final file = _snapshotFile;
+    if (file == null) return;
+    try {
+      final text = await file.readAsString();
+      await SharePlus.instance.share(
+        ShareParams(text: text, subject: 'FluxDO 性能诊断快照(上次会话)'),
+      );
+    } catch (e) {
+      ToastService.showError('读取快照失败: $e');
+    }
   }
 
   String _ms(Duration d) => (d.inMicroseconds / 1000).toStringAsFixed(1);
@@ -186,6 +212,28 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (_snapshotFile != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '上次会话快照 '
+                      '(${_fmtSnapshotTime(_snapshotFile!.lastModifiedSync())})',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '分享上次会话快照',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Symbols.share_rounded, size: 18),
+                    onPressed: _shareSnapshot,
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
           ],
         ),
@@ -197,6 +245,9 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
       '${t.hour.toString().padLeft(2, '0')}:'
       '${t.minute.toString().padLeft(2, '0')}:'
       '${t.second.toString().padLeft(2, '0')}';
+
+  String _fmtSnapshotTime(DateTime t) =>
+      '${t.month}/${t.day} ${_fmtTime(t)}';
 
   Widget _jankTile(ThemeData theme, JankRecord j) {
     final heavy = j.total.inMilliseconds >= 20;

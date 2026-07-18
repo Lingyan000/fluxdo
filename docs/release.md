@@ -1,5 +1,14 @@
 # 发版与 iOS IPA
 
+## 版本亮点(stable 发版前)
+
+stable 版本的发布日志正文取自 `highlights/v<版本>.md`(用户视角亮点),GitHub Release 会把全量
+commit 明细折叠在 `<details>` 里,Telegram / AltStore 只发亮点。文件缺失时 CI 自动回退全量明细,
+不挡发版,但 `release.dart` 会在发版信息里警告。
+
+发版前在 Claude Code 里运行 `/release-highlights` 起草,人工修订后提交(tag 必须打在包含该文件的
+commit 上),写作约定见 `highlights/README.md`。beta / rc 不需要亮点文件。
+
 ## 标准入口
 
 本地开发推荐直接使用 `just`：

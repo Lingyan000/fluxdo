@@ -42,5 +42,10 @@
   "cf_verifyTimedOutMessage": "The page is still open. Reload the verification page, or exit and try again later.",
   "cf_verifyTimedOutTitle": "Verification is not finished",
   "cf_verifyTimeout": "Verification is not finished. You can reload and try again.",
-  "cf_verifying": "Verifying, waited {seconds}s"
+  "cf_verifying": "Verifying, waited {seconds}s",
+  "cf_sessionCompatTitle": "Switch to temporary compatibility mode?",
+  "cf_sessionCompatMessage": "Security verification completed, but Cloudflare still does not trust the native connection. Main-site requests can use the browser engine for this session. Restarting the app or signing out restores the original mode.",
+  "cf_sessionCompatEnable": "Use for this session",
+  "cf_sessionCompatEnabled": "Temporary compatibility mode enabled",
+  "cf_sessionCompatDisable": "Exit temporary compatibility mode"
 }

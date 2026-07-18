@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/topic_card_style.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/cf_challenge_service.dart';
 import '../utils/blocked_user_filter.dart';
+import '../widgets/topic/topic_card_layout.dart';
 import 'theme_provider.dart';
 
 /// 嵌套视图连接线样式
@@ -170,11 +172,11 @@ class AppPreferences {
   /// 对话框背景高斯模糊
   final bool dialogBlur;
 
-  /// 显示用户签名
+  /// 显示用户签名。默认关闭:签名在网页本就是 opt-in 功能
+  /// (signatures_visible_by_default 默认 false,需用户主动开启),
+  /// 且第三方签名图成本高、良莠不齐,默认关对齐网页更稳妥。
   final bool showSignatures;
 
-  /// 小尾巴动画 SVG 自适应帧率
-  final bool adaptiveSignatureFrameRate;
 
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
@@ -230,6 +232,9 @@ class AppPreferences {
   /// 编辑器工具栏外显工具 id 列表（空 = 全部收进「更多」面板）
   final List<String> editorToolbarTools;
 
+  /// 话题卡片自定义样式（元信息字段开关 / 头像布局 / 动态头像）
+  final TopicCardStyle topicCardStyle;
+
   AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
@@ -258,8 +263,7 @@ class AppPreferences {
     this.aiTranslationModelKey,
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
-    this.showSignatures = true,
-    this.adaptiveSignatureFrameRate = true,
+    this.showSignatures = false,
     this.boostDanmaku = false,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
@@ -278,6 +282,7 @@ class AppPreferences {
     this.progressGestureLongPressEnabled = true,
     this.progressGestureMenuActions = _defaultProgressGestureMenu,
     this.editorToolbarTools = const [],
+    this.topicCardStyle = TopicCardStyle.defaults,
   });
 
   AppPreferences copyWith({
@@ -309,7 +314,6 @@ class AppPreferences {
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
     bool? showSignatures,
-    bool? adaptiveSignatureFrameRate,
     bool? boostDanmaku,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
@@ -328,6 +332,7 @@ class AppPreferences {
     bool? progressGestureLongPressEnabled,
     List<ProgressGestureAction>? progressGestureMenuActions,
     List<String>? editorToolbarTools,
+    TopicCardStyle? topicCardStyle,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -370,8 +375,6 @@ class AppPreferences {
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
-      adaptiveSignatureFrameRate:
-          adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
@@ -400,6 +403,7 @@ class AppPreferences {
       progressGestureMenuActions:
           progressGestureMenuActions ?? this.progressGestureMenuActions,
       editorToolbarTools: editorToolbarTools ?? this.editorToolbarTools,
+      topicCardStyle: topicCardStyle ?? this.topicCardStyle,
     );
   }
 }
@@ -437,8 +441,6 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
-  static const String _adaptiveSignatureFrameRateKey =
-      'pref_adaptive_signature_frame_rate';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
@@ -466,6 +468,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _progressGestureMenuActionsKey =
       'pref_progress_gesture_menu_actions';
   static const String _editorToolbarToolsKey = 'pref_editor_toolbar_tools';
+  static const String _topicCardStyleKey = 'pref_topic_card_style';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -509,9 +512,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           aiTranslationModelKey: _prefs.getString(_aiTranslationModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
-          showSignatures: _prefs.getBool(_showSignaturesKey) ?? true,
-          adaptiveSignatureFrameRate:
-              _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
+          showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
@@ -557,9 +558,13 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           ),
           editorToolbarTools:
               _prefs.getStringList(_editorToolbarToolsKey) ?? const [],
+          topicCardStyle: TopicCardStyle.fromJsonString(
+            _prefs.getString(_topicCardStyleKey),
+          ),
         ),
       ) {
     isPortraitLocked = state.portraitLock;
+    TopicCardStyleScope.current = state.topicCardStyle;
     CfChallengeService().autoVerifyEnabled = state.autoCfChallenge;
     _syncSchedulerConfig();
   }
@@ -745,15 +750,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setBool(_dialogBlurKey, enabled);
   }
 
+  Future<void> setTopicCardStyle(TopicCardStyle style) async {
+    if (state.topicCardStyle == style) return;
+    state = state.copyWith(topicCardStyle: style);
+    // 排版层直读全局快照(免逐调用点透传);stamp 含 style 保证重排,
+    // evictAll 兜底清掉 LRU 里的旧排版
+    TopicCardStyleScope.current = style;
+    TopicCardLayout.evictAll();
+    await _prefs.setString(_topicCardStyleKey, style.toJsonString());
+  }
+
   Future<void> setShowSignatures(bool enabled) async {
     state = state.copyWith(showSignatures: enabled);
     await _prefs.setBool(_showSignaturesKey, enabled);
   }
 
-  Future<void> setAdaptiveSignatureFrameRate(bool enabled) async {
-    state = state.copyWith(adaptiveSignatureFrameRate: enabled);
-    await _prefs.setBool(_adaptiveSignatureFrameRateKey, enabled);
-  }
 
   Future<void> setBoostDanmaku(bool enabled) async {
     if (state.boostDanmaku == enabled) return;

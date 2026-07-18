@@ -15,9 +15,13 @@ import 'package:dio/dio.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
+import '../../utils/platform_utils.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
+import 'composer_shortcuts.dart';
 import 'editor_tools.dart';
+import 'media_upload_helper.dart';
+import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
 import 'link_insert_dialog.dart';
 import 'template_insert_dialog.dart';
@@ -32,6 +36,7 @@ class MarkdownToolbar extends StatefulWidget {
 
   /// 内容焦点节点（可选，用于恢复焦点）
   final FocusNode? focusNode;
+
 
   /// 是否显示预览按钮
   final bool showPreviewButton;
@@ -393,8 +398,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       return;
     }
 
-    final linkText = result['text']!;
     final url = result['url']!;
+    final rawText = result['text']!.trim();
+    final linkText = rawText.isEmpty ? url : rawText;
     final link = '[$linkText]($url)';
 
     // 插入链接
@@ -919,6 +925,58 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     }
   }
 
+  /// 音/视频改名上传(.xz 绕扩展名白名单,4MB 上限)→ 插 HTML 标签。
+  Future<void> pickAndUploadMedia({required bool isAudio}) async {
+    final tag = await pickAndUploadMediaTag(context, isAudio: isAudio);
+    if (tag == null || !mounted) return;
+    final selection = widget.controller.selection;
+    final text = widget.controller.text;
+    final needsLeadingNewline = selection.isValid &&
+        selection.start > 0 &&
+        text[selection.start - 1] != '\n';
+    final prefix = needsLeadingNewline ? '\n' : '';
+    insertText('$prefix$tag\n');
+  }
+
+  /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
+  /// 非行首先补换行(与媒体标签插入同款;模板文本与富 composer 的
+  /// 「+」插入菜单一致)。
+  void insertBlockSnippet(String snippet) {
+    final selection = widget.controller.selection;
+    final text = widget.controller.text;
+    final needsLeadingNewline = selection.isValid &&
+        selection.start > 0 &&
+        text[selection.start - 1] != '\n';
+    final prefix = needsLeadingNewline ? '\n' : '';
+    insertText('$prefix$snippet\n');
+  }
+
+  /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
+  Future<void> recordAndInsertVoice() async {
+    final path = await showVoiceRecorderSheet(context);
+    if (path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: path.split('/').last,
+        isAudio: true,
+        voice: true,
+      );
+      if (tag == null || !mounted) return;
+      final selection = widget.controller.selection;
+      final text = widget.controller.text;
+      final needsLeadingNewline = selection.isValid &&
+          selection.start > 0 &&
+          text[selection.start - 1] != '\n';
+      final prefix = needsLeadingNewline ? '\n' : '';
+      insertText('$prefix$tag\n');
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
   /// 构建中部滚动区域的工具按钮
   ///
   /// [MarkdownToolbar.visibleToolIds] 为 null（桌面端）时显示全部工具，
@@ -937,6 +995,10 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   Widget _buildToolButton(EditorTool tool) {
     final s = S.current;
+    // 桌面端 tooltip 标注快捷键(如「粗体 (⌘B)」;移动端无物理键盘不标)
+    final hint =
+        PlatformUtils.isDesktop ? composerShortcutHint(tool.id) : null;
+    final tooltip = '${tool.label(s)}${hint ?? ''}';
 
     if (tool.hasMenu) {
       final theme = Theme.of(context);
@@ -948,7 +1010,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
           ),
           child: tool.icon,
         ),
-        tooltip: tool.label(s),
+        tooltip: tooltip,
         itemBuilder: (context) => tool.menuItems!(s),
         onSelected: (value) => tool.onMenuSelected!(this, value),
         padding: EdgeInsets.zero,
@@ -964,7 +1026,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       onPressed: _isUploading && isUpload ? null : () => tool.action!(this),
       isLoading: isImage && _isUploading,
       label: isImage ? _uploadProgress : null,
-      tooltip: tool.label(s),
+      tooltip: tooltip,
     );
   }
 

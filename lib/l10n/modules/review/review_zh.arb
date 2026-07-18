@@ -1,0 +1,23 @@
+{
+  "@@locale": "zh",
+  "review_myPending": "待审内容",
+  "review_awaitingApproval": "等待审核",
+  "review_withdraw": "撤回",
+  "review_withdrawConfirmTitle": "撤回待审内容",
+  "review_withdrawConfirmContent": "确定撤回这条待审核的内容吗？撤回后将从审核队列中移除，且无法恢复。",
+  "review_withdrawn": "已撤回",
+  "review_withdrawFailed": "撤回失败: {error}",
+  "@review_withdrawFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "review_withdrawAndEdit": "撤回并重新编辑",
+  "review_withdrawAndEditConfirmContent": "将先从审核队列撤回这条内容，原文带回编辑器；重新提交后需再次审核。中途放弃编辑的话内容不会自动恢复。",
+  "review_typeNewTopic": "新话题",
+  "review_typeReply": "回复",
+  "review_empty": "没有等待审核的内容",
+  "review_viewAction": "查看"
+}

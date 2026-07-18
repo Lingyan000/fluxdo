@@ -61,6 +61,18 @@ Future<void> main(List<String> args) async {
   stdout.writeln('Release Version: $releaseVersion');
   stdout.writeln('Pubspec Version: $pubspecVersion');
   stdout.writeln('类型: ${isPrerelease ? '预发布版' : '稳定版'}');
+  if (!isPrerelease) {
+    // stable 的 GH Release / TG / AltStore 正文取自人工亮点文件,缺失时 CI
+    // 自动回退全量 commit 明细(不挡发版),这里只提醒,由下方确认交互兜底
+    final highlightsPath = 'highlights/$tagName.md';
+    if (File(highlightsPath).existsSync()) {
+      stdout.writeln('版本亮点: $highlightsPath');
+    } else {
+      stdout.writeln('版本亮点: 缺失($highlightsPath)');
+      stdout.writeln('  警告: 发布日志将回退为全量 commit 明细,');
+      stdout.writeln('  建议先用 /release-highlights 起草亮点并提交后再发版');
+    }
+  }
   stdout.writeln('分支: $currentBranch');
   if (currentBranch != 'main') {
     stdout.writeln('注意: 当前不在 main 分支');

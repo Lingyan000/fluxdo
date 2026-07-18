@@ -8,9 +8,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../widgets/common/perf_overlay.dart';
 import 'jank_profiler.dart';
+import 'perf_layer_inventory.dart';
 
 /// 一条掉帧记录(供诊断页展示与导出)
 class JankRecord {
@@ -38,6 +40,11 @@ class JankRecord {
   /// 现场解剖结果(JankProfiler 异步回填):该帧时间窗内 timeline
   /// 事件的耗时归并,如 `BUILD 12.1ms | PostItem 5.2ms | ...`。
   String? detail;
+
+  /// 追加一段 detail(换行分隔);同步账单与异步解剖互不覆盖。
+  void appendDetail(String more) {
+    detail = detail == null ? more : '$detail\n$more';
+  }
 }
 
 /// 一条诊断事件(NAV / MSGBUS / TYPING / SCROLL-PROBE 等)
@@ -47,6 +54,43 @@ class DiagEvent {
   final DateTime time;
   final String tag;
   final String message;
+}
+
+/// 一帧的 UI 线程相位耗时(µs),由 [PerfPipelineProbe] 实测墙钟填充。
+///
+/// FrameTiming.buildDuration 是 vsync→scene 提交的整段 UI 线程时间,
+/// build/layout/paint 全混在里面(semantics 还在其外);这里把相位拆开,
+/// "build 大帧"才能区分是 widget 构建贵还是排版贵——两者修法完全不同。
+class PhaseSample {
+  int animateUs = 0; // handleBeginFrame:ticker/动画回调
+  int drawFrameUs = 0; // WidgetsBinding.drawFrame 整体(build+相位+finalize)
+  int layoutUs = 0;
+  int compositingBitsUs = 0;
+  int paintUs = 0;
+  int semanticsUs = 0;
+
+  /// build+finalize ≈ drawFrame 总量减去四个 flush 相位。
+  int get buildApproxUs =>
+      (drawFrameUs - layoutUs - compositingBitsUs - paintUs - semanticsUs)
+          .clamp(0, 1 << 62);
+
+  bool get hasData => drawFrameUs > 0;
+
+  static String _ms(int us) => (us / 1000).toStringAsFixed(1);
+
+  /// 展示行,如 `UI相位: 动画 0.2 | build≈ 3.1 | layout 8.2 | paint 0.9 | sem 1.6`
+  /// (cb 与 sem 仅在 ≥0.3ms 时显示,减少噪音)。build≈ 含 finalizeTree。
+  String summaryLine() {
+    final parts = <String>[
+      if (animateUs >= 300) '动画 ${_ms(animateUs)}',
+      'build≈ ${_ms(buildApproxUs)}',
+      'layout ${_ms(layoutUs)}',
+      if (compositingBitsUs >= 300) 'cb ${_ms(compositingBitsUs)}',
+      'paint ${_ms(paintUs)}',
+      if (semanticsUs >= 300) 'sem ${_ms(semanticsUs)}',
+    ];
+    return 'UI相位: ${parts.join(' | ')}';
+  }
 }
 
 /// 帧卡顿监控:app 内自采、自看、自导出的掉帧诊断
@@ -67,8 +111,21 @@ class FrameJankMonitor {
   /// release 开关的 SharedPreferences key
   static const prefKey = 'pref_perf_diagnostics';
 
-  /// 单帧总耗时超过该值视为掉帧(120Hz 预算 8.3ms,放宽一点过滤噪音)
-  static const _jankThreshold = Duration(milliseconds: 10);
+  /// 帧预算:按当前显示刷新率动态计算(120Hz→8.3ms,60Hz→16.7ms),拿不到
+  /// 刷新率时退到 60Hz 预算。判定用 build/raster **各自**对比预算,而非
+  /// totalSpan 对固定值——totalSpan 是流水线跨度(build+队列+raster 可以
+  /// 各自达标但跨度超阈),旧的"totalSpan>10ms"在 120Hz 下大量假阳性,
+  /// 既污染环形缓冲又抢占解剖节流窗口。
+  ///
+  /// 预算另加 [_budgetSlackUs] 余量过滤贴线噪音(与旧 10ms 阈值在 120Hz
+  /// 下的宽容度一致:8.3+1.7≈10)。
+  static const _budgetSlackUs = 1700;
+
+  static int _budgetUs() {
+    final rate = displayRefreshRate();
+    final baseUs = (rate == null || rate < 1) ? 16667 : (1e6 / rate).round();
+    return baseUs + _budgetSlackUs;
+  }
 
   /// Logcat 汇总输出间隔
   static const _summaryInterval = Duration(seconds: 10);
@@ -105,6 +162,8 @@ class FrameJankMonitor {
   static DateTime? _lastNav;
   static String _lastNavDesc = '';
   static int _lastImageCacheBytes = 0;
+  static DateTime _lastLayerInventoryAt =
+      DateTime.fromMillisecondsSinceEpoch(0);
 
   static void start() {
     if (_started) return;
@@ -122,7 +181,8 @@ class FrameJankMonitor {
     // 悬浮监控面板:开关持久化在 prefs,跟随监控启动恢复
     unawaited(PerfOverlay.restoreIfEnabled());
     debugPrint(
-      '[JANK] monitor started, threshold ${_jankThreshold.inMilliseconds}ms',
+      '[JANK] monitor started, budget ${(_budgetUs() / 1000).toStringAsFixed(1)}ms'
+      '@${displayRefreshRate()?.toStringAsFixed(0) ?? '?'}Hz',
     );
   }
 
@@ -251,6 +311,81 @@ class FrameJankMonitor {
 
   static final Map<int, List<String>> _buildNotes = {};
 
+  // ---------------------------------------------------------------------------
+  // 帧内 span 账单(release 可用):回答"这几毫秒花在谁身上、花了多少"。
+  //
+  // noteBuild 是"在场名单"(谁 build 了),span 是"账单"(layout/paint/解析
+  // 各花了几 µs)。来源:PerfSpanBox 代理盒(lay:/pnt: 前缀,子树粒度)与
+  // RenderParseCache(parse: 前缀)。按帧号存最近 64 帧,JANK 记录时把同帧
+  // 账单降序 top 若干写进 detail,并给出"未覆盖余量"(相位总量 − span 合计)
+  // ——余量大说明大头在埋点之外(框架/第三方),盲区大小自见。
+  // ---------------------------------------------------------------------------
+
+  static final Map<int, List<(String, int)>> _spans = {};
+
+  /// 计时埋点上报:label 建议带前缀(lay:/pnt:/parse:),micros 为耗时 µs。
+  /// 监控关闭时零开销。
+  static void noteSpan(String label, int micros) {
+    if (!_started) return;
+    final frame =
+        WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
+    (_spans[frame] ??= []).add((label, micros));
+    if (_spans.length > 64) {
+      int? oldest;
+      for (final k in _spans.keys) {
+        if (oldest == null || k < oldest) oldest = k;
+      }
+      _spans.remove(oldest);
+    }
+  }
+
+  /// 本帧 span 账单行:降序 top6 + layout 未覆盖余量。
+  /// [phase] 提供 layout 相位总量时,余量 = layout − Σ(lay: span);
+  /// 余量 >1ms 才展示——它是"埋点盲区"的量化指标。
+  static String? _spanLineFor(int frameNumber, PhaseSample? phase) {
+    final spans = _spans[frameNumber];
+    if (spans == null || spans.isEmpty) return null;
+    final sorted = [...spans]..sort((a, b) => b.$2.compareTo(a.$2));
+    final head = sorted
+        .take(6)
+        .map((s) => '${s.$1} ${(s.$2 / 1000).toStringAsFixed(1)}')
+        .join(' | ');
+    final more = sorted.length > 6 ? ' +${sorted.length - 6}' : '';
+    var line = 'spans[$head$more]';
+    if (phase != null && phase.layoutUs > 0) {
+      var layCovered = 0;
+      for (final s in spans) {
+        if (s.$1.startsWith('lay:')) layCovered += s.$2;
+      }
+      final uncovered = phase.layoutUs - layCovered;
+      if (uncovered > 1000) {
+        line += ' 未覆盖 layout ≈${(uncovered / 1000).toStringAsFixed(1)}ms';
+      }
+    }
+    return line;
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI 相位样本(release 可用):PerfPipelineProbe 按帧号写入,JANK 时取用。
+  // ---------------------------------------------------------------------------
+
+  static final Map<int, PhaseSample> _phases = {};
+
+  /// 取(或建)指定帧的相位槽,PerfPipelineProbe 在各相位累加耗时。
+  /// 监控关闭时返回 null(调用方直通,不计时)。
+  static PhaseSample? phaseSlot(int frameNumber) {
+    if (!_started) return null;
+    final slot = _phases[frameNumber] ??= PhaseSample();
+    if (_phases.length > 64) {
+      int? oldest;
+      for (final k in _phases.keys) {
+        if (oldest == null || k < oldest) oldest = k;
+      }
+      _phases.remove(oldest);
+    }
+    return slot;
+  }
+
   /// 重组件 build 时上报(监控关闭时零开销)
   static void noteBuild(String key) {
     if (!_started) return;
@@ -294,6 +429,9 @@ class FrameJankMonitor {
   static void clear() {
     jankRecords.clear();
     events.clear();
+    _spans.clear();
+    _phases.clear();
+    _buildNotes.clear();
     sessionStart = DateTime.now();
     sessionFrames = 0;
     sessionJanks = 0;
@@ -307,6 +445,8 @@ class FrameJankMonitor {
 
   static void _onTimings(List<FrameTiming> timings) {
     var changed = false;
+    final budgetUs = _budgetUs();
+    final budget = Duration(microseconds: budgetUs);
     for (final t in timings) {
       _frames++;
       sessionFrames++;
@@ -318,7 +458,9 @@ class FrameJankMonitor {
       if (t.rasterDuration > sessionWorstRaster) {
         sessionWorstRaster = t.rasterDuration;
       }
-      if (t.totalSpan > _jankThreshold) {
+      // 判定:build/raster 各自超各自预算才算掉帧。流水线并行下 totalSpan
+      // 可以在两端都达标时超阈(build 4 + 队列 2 + raster 5 @120Hz),那不丢帧。
+      if (t.buildDuration > budget || t.rasterDuration > budget) {
         _janks++;
         sessionJanks++;
         final nav = _lastNav;
@@ -343,6 +485,19 @@ class FrameJankMonitor {
           vsyncOverhead: t.vsyncOverhead,
           cause: cause,
         );
+        // ---- detail 组装:多行结构 ----
+        // 行1: UI 相位拆分(PerfPipelineProbe 实测,有数据才出)
+        // 行2: span 账单(PerfSpanBox / parse 埋点,有数据才出)
+        // 行3: 队列等待 / build 名单 / imageCache 等短条目(| 分隔)
+        // JankProfiler 异步解剖经 appendDetail 追加,不覆盖以上同步账单。
+        final lines = <String>[];
+        final phase = _phases[t.frameNumber];
+        if (phase != null && phase.hasData) {
+          lines.add(phase.summaryLine());
+        }
+        final spanLine = _spanLineFor(t.frameNumber, phase);
+        if (spanLine != null) lines.add(spanLine);
+
         final details = <String>[];
         // 排队拆分:total 远大于三分项之和的帧,缺口在 buildFinish →
         // rasterStart 之间(raster 线程忙别的活/抢不到核,帧在管线里干等)。
@@ -374,9 +529,21 @@ class FrameJankMonitor {
           details.add(
               'imageCache ${cache.currentSize}张/${sizeMb}MB (Δ${deltaMb}MB) '
               'pending=${cache.pendingImageCount}');
+          // 图层清单:分类点名本帧(近似)提交了什么(pictures 字节/saveLayer
+          // 源/平台视图/纹理)+ 与上次大帧 diff。独立节流,遍历不常发生。
+          final now = DateTime.now();
+          if (now.difference(_lastLayerInventoryAt) >=
+              const Duration(seconds: 2)) {
+            _lastLayerInventoryAt = now;
+            final inventory = LayerInventory.capture();
+            if (inventory != null) details.add(inventory);
+          }
         }
         if (details.isNotEmpty) {
-          record.detail = details.join(' | ');
+          lines.add(details.join(' | '));
+        }
+        if (lines.isNotEmpty) {
+          record.detail = lines.join('\n');
         }
         _lastImageCacheBytes =
             PaintingBinding.instance.imageCache.currentSizeBytes;
@@ -401,6 +568,8 @@ class FrameJankMonitor {
         '[JANK] summary: $_janks/$_frames janky, '
         'worst build ${_ms(_worstBuild)}ms, '
         'worst raster ${_ms(_worstRaster)}ms, '
+        'budget ${(budgetUs / 1000).toStringAsFixed(1)}ms'
+        '@${displayRefreshRate()?.toStringAsFixed(0) ?? '?'}Hz, '
         'semantics: ${semanticsEnabled ? countSemanticsNodes() : 'off'}, '
         'platform views: ${countPlatformViews()}',
       );
@@ -617,6 +786,30 @@ class FrameJankMonitor {
     return views.first.display.refreshRate;
   }
 
+  /// 退后台时把当前诊断导出落盘一份(logs/perf_diag_last.txt,整文件覆盖)。
+  /// 进程随后被杀时环形缓冲里的现场不再全丢;诊断页提供读取与分享入口。
+  /// 静默失败:落盘是尽力而为,不能反过来干扰退后台路径。
+  static Future<void> persistSnapshot() async {
+    if (!_started || (jankRecords.isEmpty && events.isEmpty)) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/logs/perf_diag_last.txt');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(exportText());
+    } catch (_) {}
+  }
+
+  /// 上次会话快照文件(不存在时返回 null)。诊断页展示与分享用。
+  static Future<File?> snapshotFile() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/logs/perf_diag_last.txt');
+      return await file.exists() ? file : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 生成导出文本:头部汇总 + jank/事件合并时间轴(时间正序)
   static String exportText() {
     final buf = StringBuffer();
@@ -641,7 +834,10 @@ class FrameJankMonitor {
       'worst build: ${_ms(sessionWorstBuild)}ms, '
       'worst raster: ${_ms(sessionWorstRaster)}ms',
     );
-    buf.writeln('刷新率: ${displayRefreshRate()?.toStringAsFixed(0) ?? '?'}Hz');
+    buf.writeln(
+      '刷新率: ${displayRefreshRate()?.toStringAsFixed(0) ?? '?'}Hz, '
+      '判定预算: ${(_budgetUs() / 1000).toStringAsFixed(1)}ms(build/raster 各自)',
+    );
     buf.writeln(
       '语义树: ${semanticsEnabled ? '${countSemanticsNodes()} 节点' : '未启用'}',
     );
@@ -665,7 +861,7 @@ class FrameJankMonitor {
               '(build ${_ms(j.buildDuration)} / raster ${_ms(j.rasterDuration)} '
               '/ ov ${_ms(j.vsyncOverhead)})'
               '${j.cause == null ? '' : ' [${j.cause}]'}'
-              '${j.detail == null ? '' : '\n           ↳ ${j.detail}'}'
+              '${j.detail == null ? '' : '\n           ↳ ${j.detail!.replaceAll('\n', '\n           ↳ ')}'}'
         ),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     for (final l in lines) {

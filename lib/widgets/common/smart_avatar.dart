@@ -34,27 +34,64 @@ class SmartAvatar extends StatefulWidget {
 class _SmartAvatarState extends State<SmartAvatar> {
   static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
 
+  /// SVG 探测结果的全局记忆(URL → svg 内容,null = 已确认非 SVG)。
+  ///
+  /// 绝大多数头像不是 SVG,却在**每次挂载**付一次 cache_manager 查询
+  /// (sqlite + 文件 stat)+ FutureBuilder 两阶段 rebuild(loading →
+  /// CNI)—— 列表快滚一屏十几个头像张张交税,是单卡首建成本的组成
+  /// 部分。记忆后重访头像同步单阶段直达;URL 版本化(带 hash),
+  /// 换头像即新条目。"未下载时记为非 SVG"不破坏语义:下载后若真是
+  /// SVG,仍由 CNI errorWidget → _SvgFallbackBuilder 内容嗅探兜底。
+  static final Map<String, String?> _svgProbeMemo = {};
+  static const int _svgProbeMemoCap = 1500;
+
+  static void _memoizeSvgProbe(String url, String? content) {
+    _svgProbeMemo.remove(url);
+    _svgProbeMemo[url] = content;
+    if (_svgProbeMemo.length > _svgProbeMemoCap) {
+      _svgProbeMemo.remove(_svgProbeMemo.keys.first);
+    }
+  }
+
   Future<String?>? _svgProbeFuture;
+
+  /// memo 命中(或无需探测)时为 true:build 走同步单阶段,零 FutureBuilder
+  bool _svgProbeResolved = false;
+  String? _svgProbeSync;
 
   @override
   void initState() {
     super.initState();
-    _svgProbeFuture = _createSvgProbeFuture(widget.imageUrl);
+    _setupSvgProbe(widget.imageUrl);
   }
 
   @override
   void didUpdateWidget(SmartAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageUrl != widget.imageUrl) {
-      _svgProbeFuture = _createSvgProbeFuture(widget.imageUrl);
+      _setupSvgProbe(widget.imageUrl);
     }
   }
 
-  Future<String?>? _createSvgProbeFuture(String? imageUrl) {
+  void _setupSvgProbe(String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty || isNativeAnimatedUrl(imageUrl)) {
-      return null;
+      _svgProbeResolved = true;
+      _svgProbeSync = null;
+      _svgProbeFuture = null;
+      return;
     }
-    return _loadSvgContentIfPresent(imageUrl);
+    if (_svgProbeMemo.containsKey(imageUrl)) {
+      _svgProbeResolved = true;
+      _svgProbeSync = _svgProbeMemo[imageUrl];
+      _svgProbeFuture = null;
+      return;
+    }
+    _svgProbeResolved = false;
+    _svgProbeSync = null;
+    _svgProbeFuture = _loadSvgContentIfPresent(imageUrl).then((content) {
+      _memoizeSvgProbe(imageUrl, content);
+      return content;
+    });
   }
 
   Future<String?> _loadSvgContentIfPresent(String imageUrl) async {
@@ -75,6 +112,39 @@ class _SmartAvatarState extends State<SmartAvatar> {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 静态图路径:CachedNetworkImage,解码失败时再次嗅探 SVG 兜底。
+  Widget _buildStaticImage(
+    Color fgColor,
+    double innerRadius,
+    double innerSize,
+  ) {
+    // 解码尺寸约束:头像显示直径 innerSize(常见 32~72dp),但服务端
+    // 返回的头像位图可能远大于显示尺寸,不约束就按原图解码上传 —— 快滚
+    // 多头像同帧首绘时纹理上传叠加成 raster 尖峰(书签/话题列表 raster
+    // 大帧的头像份额)。按显示直径 × dpr 解码,单张纹理量降一到两个
+    // 数量级;× 2 留一档清晰度余量,cover 裁切不糊。
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
+    return CachedNetworkImage(
+      imageUrl: widget.imageUrl!,
+      cacheManager: _cacheManager,
+      width: innerSize,
+      height: innerSize,
+      memCacheWidth: decodeSide,
+      memCacheHeight: decodeSide,
+      fit: BoxFit.cover,
+      fadeInDuration: const Duration(milliseconds: 150),
+      fadeOutDuration: const Duration(milliseconds: 150),
+      placeholder: (context, url) => _buildLoading(fgColor, innerRadius),
+      errorWidget: (context, url, error) => _SvgFallbackBuilder(
+        imageUrl: widget.imageUrl!,
+        cacheManager: _cacheManager,
+        size: innerSize,
+        fallback: _buildFallback(fgColor, innerRadius),
+      ),
+    );
   }
 
   @override
@@ -118,6 +188,13 @@ class _SmartAvatarState extends State<SmartAvatar> {
           },
         ),
       );
+    } else if (_svgProbeResolved) {
+      // 探测结果已知(memo 命中 / 无需探测):同步单阶段,零 FutureBuilder。
+      // 快滚重访头像走这里 —— 不再付 sqlite 查询与两阶段 rebuild。
+      child = _svgProbeSync != null
+          ? (_buildSvg(_svgProbeSync!, innerSize) ??
+                _buildFallback(fgColor, innerRadius))
+          : _buildStaticImage(fgColor, innerRadius, innerSize);
     } else {
       child = FutureBuilder<String?>(
         future: _svgProbeFuture,
@@ -133,22 +210,7 @@ class _SmartAvatarState extends State<SmartAvatar> {
           }
 
           // 静态图使用 CachedNetworkImage，解码失败时再次嗅探 SVG 兜底。
-          return CachedNetworkImage(
-            imageUrl: widget.imageUrl!,
-            cacheManager: _cacheManager,
-            width: innerSize,
-            height: innerSize,
-            fit: BoxFit.cover,
-            fadeInDuration: const Duration(milliseconds: 150),
-            fadeOutDuration: const Duration(milliseconds: 150),
-            placeholder: (context, url) => _buildLoading(fgColor, innerRadius),
-            errorWidget: (context, url, error) => _SvgFallbackBuilder(
-              imageUrl: widget.imageUrl!,
-              cacheManager: _cacheManager,
-              size: innerSize,
-              fallback: _buildFallback(fgColor, innerRadius),
-            ),
-          );
+          return _buildStaticImage(fgColor, innerRadius, innerSize);
         },
       );
     }

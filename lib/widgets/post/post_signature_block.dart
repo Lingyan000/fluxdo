@@ -6,7 +6,6 @@ import '../../providers/preferences_provider.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../content/discourse_image.dart';
-import '../content/signature_animation_scope.dart';
 
 /// 帖子底部的用户签名区块（discourse-signatures 插件）。
 ///
@@ -43,11 +42,7 @@ class PostSignatureBlock extends ConsumerStatefulWidget {
   });
 
   /// 是否应渲染签名（供调用方在外层 if 中短路，避免空 Padding）。
-  static bool shouldRender(
-    WidgetRef ref,
-    Post post, {
-    int? categoryId,
-  }) {
+  static bool shouldRender(WidgetRef ref, Post post, {int? categoryId}) {
     final preloaded = PreloadedDataService();
     if (!preloaded.signaturesEnabled) return false;
     if (!ref.watch(preferencesProvider).showSignatures) return false;
@@ -105,11 +100,6 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
 
     final theme = Theme.of(context);
     final preloaded = PreloadedDataService();
-    final adaptiveFrameRate = ref.watch(
-      preferencesProvider.select(
-        (preferences) => preferences.adaptiveSignatureFrameRate,
-      ),
-    );
 
     // URL 模式:user_signature 是图片地址(advanced 关)。合法性已由
     // shouldRender 把关;此处兜底——非法地址(历史脏数据可为任意
@@ -155,23 +145,18 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
 
     return Padding(
       padding: EdgeInsets.only(top: widget.spacing),
-      child: SelectionContainer.disabled(
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.only(top: widget.spacing),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-                width: 0.5,
-              ),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.only(top: widget.spacing),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+              width: 0.5,
             ),
           ),
-          child: SignatureAnimationScope(
-            adaptiveFrameRate: adaptiveFrameRate,
-            child: content,
-          ),
         ),
+        child: content,
       ),
     );
   }
@@ -179,9 +164,14 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
 
 /// 加载失败时静默折叠为零尺寸的签名图。
 ///
-/// 对齐浏览器行为:签名 img 加载失败(第三方签名服务离线、域名解析
-/// 失败等)时不占任何空间——分隔线仍在(与网页一致,网页的 <hr> 也
-/// 不随图片失败消失),但不出现裂图占位块。
+/// 对齐浏览器行为:无尺寸声明的 img 加载中不占空间、失败(服务离线、
+/// 域名失效等)折叠为零——分隔线仍在(与网页一致,<hr> 不随图片失败
+/// 消失),不出现裂图占位块。
+///
+/// 注:曾按"linux.do 下发 COEP: require-corp"做过跨域 CORP/CORS 预检
+/// 闸门,后证伪——那个响应头取自 Cloudflare challenge 盾页而非真实
+/// 页面(x-archive-orig-cf-mitigated: challenge),真实页面无 COEP,
+/// 第三方签名图网页可正常显示。已撤销,勿再按盾页响应头归因站点配置。
 class _SilentlyCollapsingImage extends StatefulWidget {
   final String url;
 
@@ -203,8 +193,7 @@ class _SilentlyCollapsingImageState extends State<_SilentlyCollapsingImage> {
       url: widget.url,
       fit: BoxFit.scaleDown,
       // 浏览器语义:无尺寸声明的 img 加载中不占空间、失败折叠为零。
-      // 网页对该数据"直接不显示"正是这两条 —— 加载阶段本就没有占位
-      // spinner,onerror 后仅剩 <hr>。app 端同构:成功才发生落位。
+      // 加载阶段没有占位 spinner,失败后仅剩分隔线:成功才发生落位。
       placeholderBuilder: (_) => const SizedBox.shrink(),
       errorBuilder: (_) {
         _knownBroken.add(widget.url);

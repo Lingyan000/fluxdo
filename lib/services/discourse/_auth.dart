@@ -1569,6 +1569,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
     // ===== 第二步：主动停止后台 Service =====
     MessageBusService().stopAll();
     unawaited(CfClearanceRefreshService().stop());
+    WebViewAdapterSettingsService.instance.resetSessionFallback();
+    CfChallengeService().resetSessionCompatibilityDecision();
 
     // ===== 第三步：调用登出 API（可选，用新的 generation） =====
     if (callApi) {

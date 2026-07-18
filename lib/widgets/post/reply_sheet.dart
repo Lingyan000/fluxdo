@@ -3,11 +3,16 @@ import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../markdown_editor/composer_shortcuts.dart';
+import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/markdown_editor.dart';
 import '../markdown_editor/rich_composer/rich_composer_editor.dart';
 import '../../providers/preferences_provider.dart';
 import '../../models/topic.dart';
 import '../../models/draft.dart';
+import '../../models/pending_post.dart';
+import '../../pages/pending_posts_page.dart';
+import '../../services/local_notification_service.dart' show navigatorKey;
 import '../../services/discourse/discourse_service.dart';
 import '../../services/ai_post_review_service.dart';
 import '../../services/presence_service.dart';
@@ -51,6 +56,8 @@ Future<void> _waitForEmbeddedBrowserTeardown() async {
 /// [preloadedDraftFuture] 预加载的草稿 Future（在点击回复按钮时就发起请求）
 /// [initialContent] 可选，预填内容（划词引用时使用）
 /// [initialTitle] 可选，预填标题（私信模式时使用）
+/// [onEnqueued] 可选，帖子被送审时回调(携带待审内容摘要);
+/// 不传时降级为 toast 提示 + 「查看」跳转待审列表页
 /// 返回创建的 Post 对象，取消或失败返回 null
 Future<Post?> showReplySheet({
   required BuildContext context,
@@ -66,6 +73,7 @@ Future<Post?> showReplySheet({
   bool isPrivateMessageTopic = false,
   bool isPmWithNonHumanUser = false,
   ShortcutSurfaceConfig? shortcutSurface,
+  ValueChanged<PendingPost>? onEnqueued,
 }) async {
   final suspension = DynamicContentSuspensionService.instance.acquire(
     reason: 'reply_sheet',
@@ -94,6 +102,7 @@ Future<Post?> showReplySheet({
         topicTitle: topicTitle,
         isPrivateMessageTopic: isPrivateMessageTopic,
         isPmWithNonHumanUser: isPmWithNonHumanUser,
+        onEnqueued: onEnqueued,
       ),
     );
   } finally {
@@ -154,6 +163,7 @@ class ReplySheet extends ConsumerStatefulWidget {
   final String? topicTitle; // 普通回帖审核时带上的话题标题
   final bool isPrivateMessageTopic; // 当前话题是否为私信话题
   final bool isPmWithNonHumanUser; // 当前私信话题是否包含非真人用户
+  final ValueChanged<PendingPost>? onEnqueued; // 帖子被送审时回调
 
   const ReplySheet({
     super.key,
@@ -169,6 +179,7 @@ class ReplySheet extends ConsumerStatefulWidget {
     this.topicTitle,
     this.isPrivateMessageTopic = false,
     this.isPmWithNonHumanUser = false,
+    this.onEnqueued,
   });
 
   @override
@@ -528,12 +539,29 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         if (!mounted) return;
         Navigator.of(context).pop(newPost);
       }
-    } on PostEnqueuedException {
+    } on PostEnqueuedException catch (e) {
       // 审核场景：删除草稿，提示用户，关闭编辑器
       await _draftController?.deleteDraft();
       _submitted = true;
       if (!mounted) return;
-      ToastService.showInfo(S.current.post_pendingReview);
+      final pending = e.pendingPost;
+      if (widget.onEnqueued != null && pending != null) {
+        // 宿主接管展示(如主题页底部待审块),轻提示即可
+        widget.onEnqueued!(pending);
+        ToastService.showInfo(S.current.post_pendingReview);
+      } else {
+        // 无宿主接管:toast 带「查看」入口跳待审列表页
+        ToastService.show(
+          S.current.post_pendingReview,
+          type: ToastType.info,
+          actionLabel: S.current.review_viewAction,
+          onAction: () {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+            );
+          },
+        );
+      }
       Navigator.of(context).pop();
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理:发送失败,恢复草稿保存
@@ -584,7 +612,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     // 使用 FractionallySizedBox 固定 0.95 高度
     // SafeArea(bottom: false)：顶部安全区域由 SafeArea 处理，
     // 底部安全区域由 ChatBottomPanelContainer 内部管理，避免双重底部间距
-    return SafeArea(
+    // CallbackShortcuts 包整个弹层:Cmd/Ctrl+Enter 提交(对齐 Discourse
+    // composer),焦点在标题输入框时同样生效;守卫与发送按钮一致。
+    final sheet = SafeArea(
       bottom: false,
       child: FractionallySizedBox(
         heightFactor: 0.95,
@@ -796,15 +826,17 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                       ],
 
                       // 2. 编辑器区域(feature flag:富文本 / markdown;
-                      // 双向切换 150ms 淡入过渡)
+                      // ComposerSwitchFade 无并存直切+淡入 —— 防双模
+                      // 并存 IME 交接竞态,说明见 create_topic_page)
                       Expanded(
-                        child:
-                            (ref.watch(
-                                  preferencesProvider.select(
-                                    (p) => p.useRichComposer,
-                                  ),
-                                ) &&
-                                !_richFallback)
+                        child: ComposerSwitchFade(
+                          child:
+                              (ref.watch(
+                                    preferencesProvider.select(
+                                      (p) => p.useRichComposer,
+                                    ),
+                                  ) &&
+                                  !_richFallback)
                             // 富文本的初始导入是一次性的(不监听 controller
                             // 后续变化)——编辑原帖 raw / 草稿加载完成前挂载
                             // 会用空 controller 建空文档,之后镜像回写覆盖
@@ -875,6 +907,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                           !_isInPrivateMessageContext, // 私信不允许提及群组
                                     ),
                               ),
+                        ),
                       ),
                     ],
                   ),
@@ -897,6 +930,16 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
           ),
         ),
       ),
+    );
+
+    return CallbackShortcuts(
+      bindings: {
+        for (final activator in composerSubmitActivators())
+          activator: () {
+            if (!_isSubmitting && !_isLoadingRaw) _submit();
+          },
+      },
+      child: sheet,
     );
   }
 }

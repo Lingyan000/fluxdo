@@ -121,6 +121,12 @@ class AppCookieManager extends Interceptor {
   /// 代表服务器最新轮换的值（如 _t 会话 token）。
   /// domain cookie 来自 syncFromWebView（WKWebView 自动添加 domain），
   /// 可能是旧值。优先 host-only 确保发送服务器最新认可的值。
+  /// 测试用:直接对给定 cookie 列表跑发请求选优,返回最终发送顺序。
+  /// 绕过真实 CookieJar 的落库去重,便于验证 cf_clearance 双变体选优。
+  @visibleForTesting
+  static List<Cookie> selectCookiesForTest(List<Cookie> cookies, Uri uri) =>
+      _selectCookies(cookies, uri);
+
   static List<Cookie> _selectCookies(List<Cookie> cookies, Uri uri) {
     final requestHost = uri.host.toLowerCase();
     final baseHost = CookieJarService.appBaseHost;
@@ -186,9 +192,22 @@ class AppCookieManager extends Interceptor {
     );
     if (domainLengthDiff != 0) return domainLengthDiff;
 
-    final candidateValueLength = candidate.value.length;
-    final existingValueLength = existing.value.length;
-    return candidateValueLength.compareTo(existingValueLength);
+    // 同分同域时按过期时间取最新("取新"兜底):cf_clearance 只由 WebView 里
+    // 的 CF 更新、单向流回 jar;万一 jar 里同名多枚,后签发的过期更晚、即当前
+    // 有效那枚。native 侧拿不到分区等更强信号,取新是最优兜底(与写侧
+    // BoundarySync._selectBestWebViewCookie 的 expiresDate 决胜口径一致)。
+    final candidateExpires = candidate.expires;
+    final existingExpires = existing.expires;
+    if (candidateExpires != null &&
+        existingExpires != null &&
+        candidateExpires != existingExpires) {
+      return candidateExpires.compareTo(existingExpires);
+    }
+    if ((candidateExpires == null) != (existingExpires == null)) {
+      // 持久 cookie(带过期时间)胜过会话 cookie
+      return candidateExpires != null ? 1 : -1;
+    }
+    return candidate.value.length.compareTo(existing.value.length);
   }
 
   static int _cookiePriorityScore(Cookie cookie, String requestHost) {
@@ -674,6 +693,9 @@ class AppCookieManager extends Interceptor {
       for (var i = 0; i < filteredCookies.length; i++) {
         final cookie = filteredCookies[i];
         if (!criticalNames.contains(cookie.name)) continue;
+        // cf_clearance 只在 WebView 中由 CF 更新,Dio 侧永远不产新值——
+        // 绝不从 Dio 侧回推它到 WebView(会丢 Partitioned 造非分区副本)。
+        if (cookie.name == 'cf_clearance') continue;
         if (_intentForCookie(cookie) == SweepIntent.delete) continue;
         final rawSetCookie =
             await _canonicalAuthSetCookieHeaderIfManaged(cookie.name) ??

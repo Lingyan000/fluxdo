@@ -287,6 +287,13 @@ def main() -> int:
             contributors = [u for u in authors if u.lower() != owner.lower()]
             notes_html = md_to_html(tidy_notes(notes_md))
 
+    # 正文可能是人工亮点版（不含 " by @user" 后缀），贡献者致谢固定从
+    # cliff 明细快照收集，两者解耦
+    detail_notes = Path(os.getenv("RELEASE_NOTES_DETAIL_FILE", "release_notes_detail.md"))
+    if detail_notes.exists():
+        _, authors = strip_authors(detail_notes.read_text(encoding="utf-8"))
+        contributors = [u for u in authors if u.lower() != owner.lower()]
+
     link_parts: list[str] = []
     if repo and version and not is_prerelease:
         url = f"https://github.com/{repo}/releases/tag/v{version}"

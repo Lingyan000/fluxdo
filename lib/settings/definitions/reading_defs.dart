@@ -107,18 +107,6 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             onChanged: (ref, v) =>
                 ref.read(preferencesProvider.notifier).setShowSignatures(v),
           ),
-        if (PreloadedDataService().signaturesEnabled)
-          SwitchModel(
-            id: 'adaptiveSignatureFrameRate',
-            title: l10n.reading_adaptiveSignatureFrameRate,
-            subtitle: l10n.reading_adaptiveSignatureFrameRateDesc,
-            icon: Symbols.speed_rounded,
-            getValue: (ref) =>
-                ref.watch(preferencesProvider).adaptiveSignatureFrameRate,
-            onChanged: (ref, v) => ref
-                .read(preferencesProvider.notifier)
-                .setAdaptiveSignatureFrameRate(v),
-          ),
         CustomModel(
           id: 'bookmarksOpenMode',
           title: l10n.reading_bookmarksOpenMode,

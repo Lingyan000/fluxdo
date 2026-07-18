@@ -18,6 +18,10 @@ import workmanager_apple
     // 注册 cookie 同步 channel，用于将 cookie 写入 HTTPCookieStorage.shared
     // WKWebView 的 sharedCookiesEnabled 在创建时从 HTTPCookieStorage.shared 读取 cookie
     if let controller = window?.rootViewController as? FlutterViewController {
+      // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
+      MediaTranscodeHandler.shared.register(
+        messenger: controller.binaryMessenger
+      )
       // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
       let proxyCertChannel = FlutterMethodChannel(
         name: "com.fluxdo/proxy_cert",

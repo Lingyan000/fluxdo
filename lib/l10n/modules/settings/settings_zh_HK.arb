@@ -103,6 +103,8 @@
   "settings_title": "應用設定",
   "settings_selectHint": "選擇左側設定項，在此處進行配置",
   "shortcuts_closeOverlay": "關閉浮層",
+  "shortcuts_composer": "撰寫",
+  "shortcuts_composerSubmit": "提交（傳送/發佈）",
   "shortcuts_conflict": "與「{action}」衝突",
   "@shortcuts_conflict": {
     "placeholders": {

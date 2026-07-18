@@ -10,17 +10,22 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart'
+    show Uint8List, defaultTargetPlatform, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
+        CalloutKind,
         CodeBlockNode,
+        OneboxNode,
+        QuoteCardNode,
         EmojiRun,
         ImageRun,
         InlineNode,
@@ -28,7 +33,11 @@ import 'package:fluxdo_render/fluxdo_render.dart'
         MentionRun,
         NodeFactory;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 
 import '../../../constants.dart';
 import '../../../models/mention_user.dart';
@@ -38,6 +47,7 @@ import '../../../services/discourse_cook_service.dart';
 import '../../../services/emoji_handler.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
+import '../../../utils/link_launcher.dart';
 import '../../../utils/platform_utils.dart';
 import '../../../utils/url_helper.dart';
 import '../../common/fading_edge_scroll_view.dart';
@@ -47,8 +57,16 @@ import '../../mention/mention_autocomplete.dart';
 import '../emoji_sticker_panel.dart';
 import '../image_upload_dialog.dart';
 import '../link_insert_dialog.dart';
+import '../template_insert_dialog.dart';
+import '../composer_shortcuts.dart' show composerShortcutHint;
+import '../markdown_toolbar.dart' show MarkdownToolbarState;
+import 'callout_edit_dialog.dart';
 import 'composer_doc_codec.dart';
+import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
+import '../media_upload_helper.dart';
+import '../cursor_swipe_control.dart';
+import '../voice_recorder_sheet.dart';
 
 /// 孤岛渲染工厂:复用 generic callbacks 的全部 builder(emoji 缓存池/
 /// 图片管线/代码高亮…),编辑器里的岛与阅读端视觉一致。
@@ -133,8 +151,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 挂它):编辑器正文/表格 cell/代码块输入等任何子输入框聚焦时它都
   /// hasFocus —— 容器不会在"编辑器 → 表格 cell"焦点切换的间隙误判
   /// 离开输入区收键盘。canRequestFocus:false 不参与实际聚焦。
-  final FocusNode _editorAreaFocus =
-      FocusNode(debugLabel: 'RichComposerArea', canRequestFocus: false);
+  final FocusNode _editorAreaFocus = FocusNode(
+    debugLabel: 'RichComposerArea',
+    canRequestFocus: false,
+  );
 
   /// 编辑区滚动(header + 正文同一容器);宿主经 [scrollToTop] 把
   /// 滚出屏的头部(标题校验失败等场景)拉回可见。
@@ -142,8 +162,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 键盘/表情面板容器(MarkdownEditor 同款:键盘态占位、表情态等高
   /// 面板、无键盘时底部安全区 —— 切换零跳变)。
-  final _panelController =
-      ChatBottomPanelContainerController<_RichPanelType>();
+  final _panelController = ChatBottomPanelContainerController<_RichPanelType>();
   _RichPanelType _currentPanel = _RichPanelType.none;
 
   /// 用户意图面板(防焦点竞争:表情面板打开期间焦点变化不得关面板)。
@@ -165,6 +184,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 岛渲染工厂:initState 建一次(build 里每帧新建会让孤岛 didUpdateWidget
   /// 判定 factory 变化 → 代码块每次打字重新高亮)。
   NodeFactory? _nodeFactory;
+
+  /// 虚拟指针(手势光标二维形态):滑钮 pan 驱动编辑器浮动光标链。
+  final _virtualPointer = FluxdoEditorVirtualPointer();
 
   @override
   void initState() {
@@ -205,6 +227,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _serializeDebounce?.cancel();
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
+    _linkToolbarOverlay?.remove();
+    _oneboxToolbarOverlay?.remove();
     _removeSlashOverlay();
     _removeImageOverlay();
     _altFocus.dispose();
@@ -252,8 +276,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       if (raw == widget.controller.text) return;
       widget.controller.text = raw;
       if (kDebugMode && sw.elapsedMilliseconds > 8) {
-        debugPrint('[RichComposer] serialize+mirror '
-            '${sw.elapsedMilliseconds}ms (${raw.length} chars)');
+        debugPrint(
+          '[RichComposer] serialize+mirror '
+          '${sw.elapsedMilliseconds}ms (${raw.length} chars)',
+        );
       }
     });
     _updateMentionQuery();
@@ -268,9 +294,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (b is! TextBlock) return false;
     // 空文档判定含块类型:'- ' 转成空列表项/'# ' 转成空标题/包了容器
     // 都不算空 —— 否则 hint 与列表圆点/标题光标叠画(实测截图)。
-    return b.content.length == 0 &&
-        b.isParagraph &&
-        b.containers.isEmpty;
+    return b.content.length == 0 && b.isParagraph && b.containers.isEmpty;
   }
 
   /// 立即序列化(宿主提交前调用,确保 controller 是最新;镜像 debounce
@@ -281,7 +305,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null) return;
     final raw = docToRaw(editor.blocks);
     if (raw != widget.controller.text) {
-      widget.controller.text = raw;
+      // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
+      // collapsed(-1);切到源码模式时 TextField attach 的**首帧**
+      // setEditingState 就带着 -1 发给平台(EditableText 的聚焦纠偏
+      // 发生在 _openInputConnection 之后)——Android restartInput /
+      // macOS 输入模型以"无光标态"初始化,Gboard 等 IME 的退格基于
+      // 其光标缓存,从此对既有文本失效 = 真机"切过去旧文字删不掉、
+      // 新输入正常"。选区必须在这里就合法。
+      widget.controller.value = TextEditingValue(
+        text: raw,
+        selection: TextSelection.collapsed(offset: raw.length),
+      );
     }
   }
 
@@ -299,21 +333,33 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 浮层按键拦截(编辑器 onKeyEvent 首先调):斜杠菜单激活时接管
   /// 上下/回车/Tab/Esc。
   bool _interceptKeyEvent(KeyEvent event) {
-    if (_slashOverlay == null) return false;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+    // Cmd/Ctrl+K 插入链接(对齐 Discourse composer;内核不处理 keyK,
+    // 弹窗动作属宿主层 —— 与剪贴板三键同理不进纯状态层)
+    if (_slashOverlay == null &&
+        event.logicalKey == LogicalKeyboardKey.keyK &&
+        (defaultTargetPlatform == TargetPlatform.macOS
+            ? HardwareKeyboard.instance.isMetaPressed
+            : HardwareKeyboard.instance.isControlPressed)) {
+      _insertLink();
+      return true;
+    }
+    if (_slashOverlay == null) return false;
     final items = _slashFiltered;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowDown:
         _slashSelected = (_slashSelected + 1) % items.length;
         _slashOverlay!.markNeedsBuild();
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _ensureSlashSelectedVisible());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _ensureSlashSelectedVisible(),
+        );
         return true;
       case LogicalKeyboardKey.arrowUp:
         _slashSelected = (_slashSelected - 1 + items.length) % items.length;
         _slashOverlay!.markNeedsBuild();
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _ensureSlashSelectedVisible());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _ensureSlashSelectedVisible(),
+        );
         return true;
       case LogicalKeyboardKey.enter:
       case LogicalKeyboardKey.numpadEnter:
@@ -331,42 +377,136 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 候选:(关键字集, 标签, 图标, 动作)。关键字含中文与英文别名。
   late final List<(List<String>, String, IconData, Future<void> Function())>
-      _slashItems = [
-    (['h1', 'heading', '标题', 'bt'], '标题 1', Icons.title_rounded,
-        () async => _applySlashBlock((s) => s.setHeading(1))),
-    (['h2', '标题2'], '标题 2', Icons.title_rounded,
-        () async => _applySlashBlock((s) => s.setHeading(2))),
-    (['h3', '标题3'], '标题 3', Icons.title_rounded,
-        () async => _applySlashBlock((s) => s.setHeading(3))),
-    (['ul', 'list', '列表', 'lb', 'wxlb'], '无序列表',
-        Icons.format_list_bulleted_rounded,
-        () async => _applySlashBlock((s) => s.toggleList(ordered: false))),
-    (['ol', '有序', 'yxlb'], '有序列表', Icons.format_list_numbered_rounded,
-        () async => _applySlashBlock((s) => s.toggleList(ordered: true))),
-    (['quote', '引用', 'yy'], '引用', Icons.format_quote_rounded,
-        () async => _applySlashBlock((s) => s.toggleQuote())),
-    (['table', '表格', 'bg'], '表格', Icons.table_chart_outlined,
-        () async => insertMarkdownSnippet(
-            '| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |')),
-    (['code', '代码', 'dm'], '代码块', Icons.code_rounded,
-        () async => insertMarkdownSnippet('```dart\n// 代码\n```')),
-    (['math', '公式', 'gs'], '公式块', Icons.functions_rounded,
-        () async => insertMarkdownSnippet(r'$$' '\nE=mc^2\n' r'$$')),
-    (['hr', 'divider', '分隔', 'fgx'], '分隔线', Icons.horizontal_rule_rounded,
-        () async => insertMarkdownSnippet('---')),
-    (['details', '折叠', 'zd'], '折叠详情', Icons.expand_circle_down_outlined,
-        () async =>
-            insertMarkdownSnippet('[details="点开看"]\n折叠内容\n[/details]')),
-    (['spoiler', '剧透', 'jt'], '剧透遮罩', Icons.blur_on_rounded,
-        () async => insertMarkdownSnippet('[spoiler]\n剧透内容\n[/spoiler]')),
-    (['date', '日期', '时间', 'rq', 'sj'], '日期时间', Icons.event_rounded,
-        () async => _insertLocalDate()),
-    (['image', '图片', 'tp'], '上传图片', Icons.image_outlined,
-        () async => _pickAndUploadImages()),
+  _slashItems = [
+    (
+      ['h1', 'heading', '标题', 'bt'],
+      '标题 1',
+      Icons.title_rounded,
+      () async => _applySlashBlock((s) => s.setHeading(1)),
+    ),
+    (
+      ['h2', '标题2'],
+      '标题 2',
+      Icons.title_rounded,
+      () async => _applySlashBlock((s) => s.setHeading(2)),
+    ),
+    (
+      ['h3', '标题3'],
+      '标题 3',
+      Icons.title_rounded,
+      () async => _applySlashBlock((s) => s.setHeading(3)),
+    ),
+    (
+      ['ul', 'list', '列表', 'lb', 'wxlb'],
+      '无序列表',
+      Icons.format_list_bulleted_rounded,
+      () async => _applySlashBlock((s) => s.toggleList(ordered: false)),
+    ),
+    (
+      ['ol', '有序', 'yxlb'],
+      '有序列表',
+      Icons.format_list_numbered_rounded,
+      () async => _applySlashBlock((s) => s.toggleList(ordered: true)),
+    ),
+    (
+      ['quote', '引用', 'yy'],
+      '引用',
+      Icons.format_quote_rounded,
+      () async => _applySlashBlock((s) => s.toggleQuote()),
+    ),
+    (
+      ['table', '表格', 'bg'],
+      '表格',
+      Icons.table_chart_outlined,
+      () async =>
+          insertMarkdownSnippet('| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |'),
+    ),
+    (
+      ['code', '代码', 'dm'],
+      '代码块',
+      Icons.code_rounded,
+      () async => insertMarkdownSnippet('```dart\n// 代码\n```'),
+    ),
+    (
+      ['math', '公式', 'gs'],
+      '公式块',
+      Icons.functions_rounded,
+      () async => insertMarkdownSnippet(
+        r'$$'
+        '\nE=mc^2\n'
+        r'$$',
+      ),
+    ),
+    (
+      ['hr', 'divider', '分隔', 'fgx'],
+      '分隔线',
+      Icons.horizontal_rule_rounded,
+      () async => insertMarkdownSnippet('---'),
+    ),
+    (
+      ['details', '折叠', 'zd'],
+      '折叠详情',
+      Icons.expand_circle_down_outlined,
+      () async => insertMarkdownSnippet('[details="点开看"]\n折叠内容\n[/details]'),
+    ),
+    (
+      ['spoiler', '剧透', 'jt'],
+      '剧透遮罩',
+      Icons.blur_on_rounded,
+      () async => insertMarkdownSnippet('[spoiler]\n剧透内容\n[/spoiler]'),
+    ),
+    (
+      ['date', '日期', '时间', 'rq', 'sj'],
+      '日期时间',
+      Icons.event_rounded,
+      () async => _insertLocalDate(),
+    ),
+    (
+      ['image', '图片', 'tp'],
+      '上传图片',
+      Icons.image_outlined,
+      () async => _pickAndUploadImages(),
+    ),
+    (
+      ['callout', '标注', 'bz', 'note'],
+      '标注 Callout',
+      Icons.sticky_note_2_outlined,
+      () async => _insertCallout(),
+    ),
+    (
+      ['link', '链接', 'lj'],
+      '插入链接',
+      Icons.link_rounded,
+      () async => _insertLink(),
+    ),
+    (
+      ['audio', '音频', 'yp'],
+      '上传音频',
+      Icons.audiotrack_rounded,
+      () async => _pickAndInsertMedia(isAudio: true),
+    ),
+    (
+      ['video', '视频', 'sp'],
+      '上传视频',
+      Icons.videocam_outlined,
+      () async => _pickAndInsertMedia(isAudio: false),
+    ),
+    (
+      ['voice', '语音', 'luyin'],
+      '语音消息',
+      Icons.mic_rounded,
+      () async => _recordAndInsertVoice(),
+    ),
+    (
+      ['template', '模板', 'mb'],
+      '我的模板',
+      Icons.assignment_outlined,
+      () async => _insertTemplate(),
+    ),
   ];
 
   List<(List<String>, String, IconData, Future<void> Function())>
-      get _slashFiltered {
+  get _slashFiltered {
     final q = (_slashQuery ?? '').toLowerCase();
     if (q.isEmpty) return _slashItems;
     return [
@@ -433,8 +573,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             screen.height - MediaQuery.viewInsetsOf(context).bottom - 8;
         const menuWidth = 244.0;
         // 7 行 × 40 + 边距(半行截断暗示可滚);小屏/键盘挤压时收缩
-        var menuMaxHeight =
-            302.0.clamp(120.0, (safeBottom - 24).clamp(120.0, 302.0));
+        var menuMaxHeight = 302.0.clamp(
+          120.0,
+          (safeBottom - 24).clamp(120.0, 302.0),
+        );
         double left;
         double? top;
         double? bottom;
@@ -444,10 +586,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           final above = caret.top - safeTop;
           if (below >= menuMaxHeight + 16 || below >= above) {
             top = caret.bottom + 6;
-            menuMaxHeight = menuMaxHeight.clamp(120.0, (below - 12).clamp(120.0, 302.0));
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (below - 12).clamp(120.0, 302.0),
+            );
           } else {
             bottom = screen.height - caret.top + 6;
-            menuMaxHeight = menuMaxHeight.clamp(120.0, (above - 12).clamp(120.0, 302.0));
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (above - 12).clamp(120.0, 302.0),
+            );
           }
         } else {
           left = 16;
@@ -496,8 +644,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (top < viewTop) {
       _slashScroll.jumpTo(top);
     } else if (bottom > viewBottom) {
-      _slashScroll.jumpTo(
-          bottom - _slashScroll.position.viewportDimension);
+      _slashScroll.jumpTo(bottom - _slashScroll.position.viewportDimension);
     }
   }
 
@@ -513,11 +660,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         final before = block.content.text.substring(0, sel.extent.offset);
         final m = RegExp(r'^/[\w一-鿿]*$').firstMatch(before);
         if (m != null) {
-          editor.updateSelection(EditorSelection(
-            base: EditorPosition(blockId: block.id, offset: 0),
-            extent:
-                EditorPosition(blockId: block.id, offset: sel.extent.offset),
-          ));
+          editor.updateSelection(
+            EditorSelection(
+              base: EditorPosition(blockId: block.id, offset: 0),
+              extent: EditorPosition(
+                blockId: block.id,
+                offset: sel.extent.offset,
+              ),
+            ),
+          );
           editor.deleteSelection();
         }
       }
@@ -609,12 +760,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           final above = caret.top - safeTop;
           if (below >= menuMaxHeight + 16 || below >= above) {
             top = caret.bottom + 4;
-            menuMaxHeight =
-                menuMaxHeight.clamp(120.0, (below - 12).clamp(120.0, 220.0));
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (below - 12).clamp(120.0, 220.0),
+            );
           } else {
             bottom = screen.height - caret.top + 4;
-            menuMaxHeight =
-                menuMaxHeight.clamp(120.0, (above - 12).clamp(120.0, 220.0));
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (above - 12).clamp(120.0, 220.0),
+            );
           }
         } else {
           left = 16;
@@ -657,15 +812,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final m = RegExp(r'@([\w_-]*)$').firstMatch(before);
     if (m == null) return;
     // 删掉 @query 前缀,插入 mention 原子 + 空格
-    editor.updateSelection(EditorSelection(
-      base: EditorPosition(blockId: block.id, offset: m.start),
-      extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
-    ));
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: m.start),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
     editor.deleteSelection();
-    editor.insertAtom(MentionRun(
-      username: user.username,
-      href: '/u/${user.username}',
-    ));
+    editor.insertAtom(
+      MentionRun(username: user.username, href: '/u/${user.username}'),
+    );
     editor.insertText(' ');
     _dismissMention();
   }
@@ -774,9 +930,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 从未聚焦过(选区 null)→ 落到文档末尾,插入不静默丢
     if (editor.selection == null) {
       final last = editor.blocks.last;
-      editor.updateSelection(EditorSelection.collapsed(
-        EditorPosition(blockId: last.id, offset: last.selectionLength),
-      ));
+      editor.updateSelection(
+        EditorSelection.collapsed(
+          EditorPosition(blockId: last.id, offset: last.selectionLength),
+        ),
+      );
     }
     final sw = kDebugMode ? (Stopwatch()..start()) : null;
     final fragment = await markdownToDoc(markdown);
@@ -788,9 +946,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       editor.pastePlainText(markdown);
     }
     if (kDebugMode) {
-      debugPrint('[RichComposer] insert "${markdown.split('\n').first}" '
-          'cook=${sw!.elapsedMilliseconds}ms frag=${fragment?.length} '
-          'blocks $before→${editor.blocks.length} sel=${editor.selection}');
+      debugPrint(
+        '[RichComposer] insert "${markdown.split('\n').first}" '
+        'cook=${sw!.elapsedMilliseconds}ms frag=${fragment?.length} '
+        'blocks $before→${editor.blocks.length} sel=${editor.selection}',
+      );
     }
   }
 
@@ -809,8 +969,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         if (confirmed == null) continue;
         setState(() => _uploadingCount++);
         try {
-          final uploadResult =
-              await DiscourseService().uploadImage(confirmed.path);
+          final uploadResult = await DiscourseService().uploadImage(
+            confirmed.path,
+          );
           // 预置 short_url → 完整 url 解析缓存(编辑器里的图立即可显)
           final url = uploadResult.url;
           if (url != null) {
@@ -833,6 +994,58 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   int _uploadingCount = 0;
+
+  /// 音视频上传插入(插入菜单):file_picker 选 → .xz 改名上传 →
+  /// <audio>/<video> 标签经 cook 岛化插入。
+  Future<void> _pickAndInsertMedia({required bool isAudio}) async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: isAudio ? FileType.audio : FileType.video,
+    );
+    final file = picked?.files.single;
+    final path = file?.path;
+    if (file == null || path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: file.name,
+        isAudio: isAudio,
+      );
+      if (tag == null || !mounted) return;
+      await insertMarkdownSnippet(tag);
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
+  /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
+  Future<void> _recordAndInsertVoice() async {
+    final path = await showVoiceRecorderSheet(context);
+    if (path == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: path.split('/').last,
+        isAudio: true,
+        voice: true,
+      );
+      if (tag == null || !mounted) return;
+      await insertMarkdownSnippet(tag);
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
+  /// 用户自定义模板(MD 模式「模板」同一选择器):内容为 markdown,
+  /// 经 cook 导入链富内容化插入。
+  Future<void> _insertTemplate() async {
+    final template = await showTemplateInsertDialog(context);
+    if (template == null || !mounted) return;
+    await insertMarkdownSnippet(template.content);
+  }
 
   /// 插入/施加链接:选区非空 → 对选中文字加 link mark(文字保留);
   /// 折叠 → 对话框输入文字+URL 后插入(经 cook)。
@@ -859,11 +1072,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 覆盖编辑白名单外的全部常用块 —— 验证任何类型不再需要手写语法。
   Future<void> _showInsertMenu(BuildContext anchorContext) async {
     final entries = <(String, String, IconData)>[
-      ('表格', '| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |', Icons.table_chart_outlined),
+      (
+        '表格',
+        '| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |',
+        Icons.table_chart_outlined,
+      ),
       ('代码块', '```dart\n// 代码\n```', Icons.code_rounded),
-      ('公式块', r'$$' '\nE=mc^2\n' r'$$', Icons.functions_rounded),
+      (
+        '公式块',
+        r'$$'
+            '\nE=mc^2\n'
+            r'$$',
+        Icons.functions_rounded,
+      ),
       ('分隔线', '---', Icons.horizontal_rule_rounded),
-      ('折叠详情', '[details="点开看"]\n折叠内容\n[/details]', Icons.expand_circle_down_outlined),
+      (
+        '折叠详情',
+        '[details="点开看"]\n折叠内容\n[/details]',
+        Icons.expand_circle_down_outlined,
+      ),
       ('剧透遮罩', '[spoiler]\n剧透内容\n[/spoiler]', Icons.blur_on_rounded),
       ('引用卡', '[quote]\n引用内容\n[/quote]', Icons.format_quote_rounded),
     ];
@@ -882,21 +1109,23 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         PopupMenuItem<String>(
           value: value,
           height: 40,
-          child: Row(children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: menuScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(6),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: menuScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.6,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, size: 15, color: menuScheme.onSurfaceVariant),
               ),
-              child: Icon(icon, size: 15,
-                  color: menuScheme.onSurfaceVariant),
-            ),
-            const SizedBox(width: 10),
-            Text(label, style: const TextStyle(fontSize: 13)),
-          ]),
+              const SizedBox(width: 10),
+              Text(label, style: const TextStyle(fontSize: 13)),
+            ],
+          ),
         );
 
     final selected = await showMenu<String>(
@@ -919,9 +1148,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       constraints: const BoxConstraints(maxWidth: 230),
       items: [
         for (final (label, md, icon) in entries) item(md, icon, label),
+        // 链接:与工具栏链接按钮同一流程(选区加 mark/对话框插入)
+        item('__callout__', Icons.sticky_note_2_outlined, '标注 Callout'),
+        item('__link__', Icons.link_rounded, '插入链接'),
         // 日期时间:弹属性对话框选时间再插原子(不再是死模板)
         item('__date__', Icons.event_rounded, '日期时间'),
+        // 音视频:选文件改名 .xz 上传后插 <audio>/<video> 标签
+        item('__audio__', Icons.audiotrack_rounded, '上传音频'),
+        item('__video__', Icons.videocam_outlined, '上传视频'),
+        item('__voice__', Icons.mic_rounded, '语音消息'),
         const PopupMenuDivider(height: 8),
+        // 用户自定义模板(与 MD 模式「模板」同一选择器,内容经 cook)
+        item('__template__', Icons.assignment_outlined, '我的模板…'),
         item('__custom__', Icons.data_object_rounded, 'Markdown 片段…'),
       ],
     );
@@ -930,6 +1168,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _insertCustomMarkdown();
     } else if (selected == '__date__') {
       await _insertLocalDate();
+    } else if (selected == '__audio__' || selected == '__video__') {
+      await _pickAndInsertMedia(isAudio: selected == '__audio__');
+    } else if (selected == '__voice__') {
+      await _recordAndInsertVoice();
+    } else if (selected == '__callout__') {
+      await _insertCallout();
+    } else if (selected == '__link__') {
+      await _insertLink();
+    } else if (selected == '__template__') {
+      await _insertTemplate();
     } else {
       await insertMarkdownSnippet(selected);
     }
@@ -944,9 +1192,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (run == null || !mounted) return;
     if (editor.selection == null) {
       final last = editor.blocks.last;
-      editor.updateSelection(EditorSelection.collapsed(
-        EditorPosition(blockId: last.id, offset: last.selectionLength),
-      ));
+      editor.updateSelection(
+        EditorSelection.collapsed(
+          EditorPosition(blockId: last.id, offset: last.selectionLength),
+        ),
+      );
     }
     editor.insertAtom(run);
   }
@@ -1010,11 +1260,488 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     );
   }
 
+  /// 剪贴板富格式粘贴,优先级:text/html → 纯位图 → (回落)纯文本。
+  ///
+  /// - html(网页/Word 复制):→ markdown 清洗 → cook 导入链。结构
+  ///   保留,网页图走外链不吃上传流量(官方 composer 同取舍);
+  /// - 纯位图(截图 Cmd+V,无 html 无文本):上传站内 → 图原子。
+  ///   确认框+上传是长流程,fire-and-forget 不占粘贴调用 —— 插入由
+  ///   [insertUploadedImage] 在上传完成时按彼时光标位执行;
+  /// - 位图 + 文本并存(Excel 单元格等):文本优先(返回 null 回落),
+  ///   避免双插。
+  ///
+  /// 任一步落空返回 null,FluxdoEditor 回落纯文本路径 —— 内容不丢。
+  Future<List<EditorBlock>?> _importRichPaste() async {
+    final clipboard = SystemClipboard.instance;
+    if (clipboard == null) return null; // 平台无系统剪贴板访问
+    final reader = await clipboard.read();
+    if (reader.canProvide(Formats.htmlText)) {
+      final html = await reader.readValue(Formats.htmlText);
+      if (html != null && html.trim().isNotEmpty) {
+        final md = clipboardHtmlToMarkdown(html);
+        if (md != null) return markdownToDoc(md);
+      }
+      // html 存在但转换落空 → 文本回落。不碰位图:带 html 的位图多是
+      // 网页复制附带的渲染快照,上传它反而错。
+      return null;
+    }
+    if (!reader.canProvide(Formats.plainText)) {
+      final img = await MarkdownToolbarState.readImageFromReader(reader);
+      if (img != null) {
+        unawaited(_uploadPastedImage(img.$1, img.$2));
+      }
+    }
+    return null;
+  }
+
+  /// 粘贴位图上传:临时文件 → 确认框(与选图插入同 UX,可改名/取消误粘)
+  /// → 上传 → 图原子插入。与 [_pickAndUploadImages] 单图流程同构。
+  Future<void> _uploadPastedImage(Uint8List bytes, String ext) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final tempFile = File(p.join(tempDir.path, fileName));
+      await tempFile.writeAsBytes(bytes);
+      if (!mounted) return;
+      final confirmed = await showImageUploadDialog(
+        context,
+        imagePath: tempFile.path,
+        imageName: fileName,
+      );
+      if (confirmed == null) return;
+      setState(() => _uploadingCount++);
+      try {
+        final uploadResult = await DiscourseService().uploadImage(
+          confirmed.path,
+        );
+        final url = uploadResult.url;
+        if (url != null) {
+          DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
+        }
+        if (!mounted) return;
+        insertUploadedImage(
+          shortUrl: uploadResult.shortUrl,
+          alt: confirmed.originalName,
+          width: uploadResult.width,
+          height: uploadResult.height,
+        );
+      } finally {
+        if (mounted) setState(() => _uploadingCount--);
+      }
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    }
+  }
+
   // -----------------------------------------------------------------
   // 图片原子浮层(官方 ImageNodeView 复刻:上工具条 + 下 alt 输入条)
   // -----------------------------------------------------------------
 
   ImageAtomSelection? _imageSel;
+  // -----------------------------------------------------------------
+  // 链接工具条(官方 link-toolbar 对齐:光标进链接浮出
+  // [编辑|复制|取消链接|加载预览|访问])
+  // -----------------------------------------------------------------
+
+  LinkCaretInfo? _linkCaret;
+  OverlayEntry? _linkToolbarOverlay;
+
+  void _onLinkCaret(LinkCaretInfo? info) {
+    _linkCaret = info;
+    if (info == null) {
+      _linkToolbarOverlay?.remove();
+      _linkToolbarOverlay = null;
+      return;
+    }
+    if (_linkToolbarOverlay == null) {
+      _showLinkToolbar();
+    } else {
+      _linkToolbarOverlay!.markNeedsBuild();
+    }
+  }
+
+  /// 链接是否独占一段(加载预览仅此时可用:替换整段为裸 URL 经 cook
+  /// 成 onebox —— 官方 show-preview 对行内链接同样隐藏)。
+  bool _linkIsWholeParagraph(LinkCaretInfo info) {
+    final editor = _editor;
+    if (editor == null) return false;
+    final block = editor.textBlockById(info.blockId);
+    if (block == null || !block.isParagraph || block.containers.isNotEmpty) {
+      return false;
+    }
+    final t = block.content.text;
+    // info 可能是上一帧的(onLinkCaret 帧后上抛):删除中 end 会大于
+    // 已变短的文本,substring 直接 RangeError 红屏刷屏 —— 陈旧即 false
+    if (info.start < 0 || info.end > t.length || info.start > info.end) {
+      return false;
+    }
+    return t.substring(0, info.start).trim().isEmpty &&
+        t.substring(info.end).trim().isEmpty;
+  }
+
+  /// 浮层重建帧的陈旧 info 防御:块还在、区间仍在文本内才算活着
+  /// (编辑/删除进行中先隐藏,帧后新 info 到达再现)。
+  bool _linkCaretAlive(LinkCaretInfo info) {
+    final editor = _editor;
+    if (editor == null) return false;
+    final block = editor.textBlockById(info.blockId);
+    if (block == null) return false;
+    return info.start >= 0 &&
+        info.end <= block.content.length &&
+        info.start <= info.end;
+  }
+
+  void _showLinkToolbar() {
+    _linkToolbarOverlay = OverlayEntry(
+      builder: (context) {
+        final info = _linkCaret;
+        if (info == null || !_linkCaretAlive(info)) {
+          return const SizedBox.shrink();
+        }
+        final scheme = Theme.of(context).colorScheme;
+        final screen = MediaQuery.sizeOf(context);
+        final href = info.href ?? '';
+
+        // href 缩略标签(官方 visit 按钮的 translatedLabel 同款:剥站内
+        // origin / mailto / https 前缀)
+        var label = href;
+        final origin = UrlHelper.resolveUrl('');
+        if (origin.isNotEmpty && label.startsWith(origin)) {
+          label = label.substring(origin.length);
+          if (label.isEmpty) label = '/';
+        }
+        label = label.replaceFirst(RegExp(r'^(mailto:|https://)'), '');
+
+        Widget btn(IconData icon, String tooltip, VoidCallback onTap) =>
+            Tooltip(
+              message: tooltip,
+              // 桌面 hover 即弹提示 + 条重定位时残影叠字:加等待窗
+              waitDuration: const Duration(milliseconds: 600),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(icon, size: 17, color: scheme.onSurfaceVariant),
+                ),
+              ),
+            );
+
+        const barH = 40.0;
+        final top = info.rangeGlobal.top - barH - 6 < kToolbarHeight
+            ? info.rangeGlobal.bottom + 6
+            : info.rangeGlobal.top - barH - 6;
+
+        // 水平锚定链接(此前居中屏幕,链接在左条飘中间):Align 比例
+        // 定位 —— 链接中心在可用宽的比例映射到 -1..1,免测条宽且天然
+        // 不越屏(官方 float-kit placement bottom + fallback 的近似)。
+        final availW = screen.width - 24;
+        final anchorX = info.rangeGlobal.center.dx.clamp(
+          12.0,
+          screen.width - 12.0,
+        );
+        final alignX = availW <= 0 ? 0.0 : (((anchorX - 12) / availW) * 2 - 1);
+
+        return Positioned(
+          left: 12,
+          right: 12,
+          top: top.clamp(8.0, screen.height - barH - 8),
+          child: Align(
+            alignment: Alignment(alignX.clamp(-1.0, 1.0), 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TapRegion(
+                  // 与编辑器同组:点工具条不收光标态
+                  groupId: 'rich-composer-link-toolbar',
+                  child: _FloatingPanel(
+                    maxHeight: barH + 4,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        btn(Icons.edit_rounded, '编辑链接', _editLinkAtCaret),
+                        btn(Icons.copy_rounded, '复制链接', () {
+                          Clipboard.setData(ClipboardData(text: href));
+                          ScaffoldMessenger.maybeOf(this.context)?.showSnackBar(
+                            const SnackBar(
+                              content: Text('链接已复制'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        }),
+                        btn(Icons.link_off_rounded, '移除链接', _unlinkAtCaret),
+                        if (_linkIsWholeParagraph(info))
+                          btn(
+                            Icons.expand_rounded,
+                            '加载预览',
+                            _convertLinkToPreview,
+                          ),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: scheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                        // 访问:图标 + href 缩略标签
+                        Tooltip(
+                          message: '访问链接',
+                          child: InkWell(
+                            onTap: href.isEmpty
+                                ? null
+                                : () => launchContentLink(this.context, href),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.open_in_new_rounded,
+                                    size: 15,
+                                    color: scheme.primary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 150,
+                                    ),
+                                    child: Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: scheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    Overlay.of(context).insert(_linkToolbarOverlay!);
+  }
+
+  /// 编辑链接:预填当前文字+href,提交 = 选中原区间 → 删 → 插新
+  /// [text](url)(insertMarkdownSnippet 同 cook 链,官方 replaceText
+  /// 同语义)。
+  Future<void> _editLinkAtCaret() async {
+    final info = _linkCaret;
+    final editor = _editor;
+    if (info == null || editor == null || !_linkCaretAlive(info)) {
+      return;
+    }
+    final result = await showLinkInsertDialog(
+      context,
+      initialText: info.text,
+      initialUrl: info.href,
+      editing: true,
+    );
+    if (result == null || !mounted) return;
+    final url = result['url'] ?? '';
+    if (url.isEmpty) return;
+    final text = (result['text'] ?? '').trim();
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: info.blockId, offset: info.start),
+        extent: EditorPosition(blockId: info.blockId, offset: info.end),
+      ),
+    );
+    await insertMarkdownSnippet('[${text.isEmpty ? url : text}]($url)');
+  }
+
+  /// 取消链接:对链接区间 removeLink(文字保留)。
+  void _unlinkAtCaret() {
+    final info = _linkCaret;
+    final editor = _editor;
+    if (info == null || editor == null || !_linkCaretAlive(info)) {
+      return;
+    }
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: info.blockId, offset: info.start),
+        extent: EditorPosition(blockId: info.blockId, offset: info.end),
+      ),
+    );
+    editor.removeLink();
+    // 光标落链接尾(collapsed),工具条随 onLinkCaret(null) 自动收
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: info.blockId, offset: info.end),
+      ),
+    );
+  }
+
+  /// 加载预览(官方 show-preview):链接独占段 → 先取 onebox 数据种进
+  /// cook 引擎(不种的话裸 URL 再 cook 仍是 loading 态链接,出不了
+  /// 卡片),再整段替换为裸 URL 经 cook → onebox 岛。
+  Future<void> _convertLinkToPreview() async {
+    final info = _linkCaret;
+    final editor = _editor;
+    if (info == null || editor == null || !_linkCaretAlive(info)) {
+      return;
+    }
+    final href = info.href;
+    if (href == null || href.isEmpty) return;
+    if (!_linkIsWholeParagraph(info)) return;
+    final block = editor.textBlockById(info.blockId);
+    if (block == null) return;
+
+    final cookService = DiscourseCookService();
+    final cooked = await cookService.cook(href);
+    if (cooked != null) {
+      // 取回 onebox HTML 种进引擎(内部去重,失败静默 —— 拿不到数据
+      // 时下面的插入产物仍是可编辑裸链接,无损)
+      await cookService.resolveOneboxes(cooked);
+    }
+    if (!mounted) return;
+
+    // 选中整段内容(含链接前后空白)→ 粘贴语义替换为 onebox 岛
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: info.blockId, offset: 0),
+        extent: EditorPosition(
+          blockId: info.blockId,
+          offset: block.content.length,
+        ),
+      ),
+    );
+    await insertMarkdownSnippet(href);
+  }
+
+  // -----------------------------------------------------------------
+  // onebox 工具条(官方 onebox-toolbar:复制 | 移除预览 | 访问)
+  // -----------------------------------------------------------------
+
+  IslandSelection? _islandSel;
+  OverlayEntry? _oneboxToolbarOverlay;
+
+  /// 岛的 onebox 身份:OneboxNode(外链卡)恒有 url;QuoteCardNode 仅
+  /// oneboxUrl 标记非空(站内话题 onebox 展开物)时算 —— 真引用卡不出。
+  String? _oneboxUrlOf(IslandBlock island) => switch (island.node) {
+        OneboxNode(:final url) => (url == null || url.isEmpty) ? null : url,
+        QuoteCardNode(:final oneboxUrl) =>
+          (oneboxUrl == null || oneboxUrl.isEmpty) ? null : oneboxUrl,
+        _ => null,
+      };
+
+  void _onIslandSelected(IslandSelection? sel) {
+    _islandSel = sel;
+    final url = sel == null ? null : _oneboxUrlOf(sel.island);
+    if (url == null) {
+      _oneboxToolbarOverlay?.remove();
+      _oneboxToolbarOverlay = null;
+      return;
+    }
+    if (_oneboxToolbarOverlay == null) {
+      _showOneboxToolbar();
+    } else {
+      _oneboxToolbarOverlay!.markNeedsBuild();
+    }
+  }
+
+  void _showOneboxToolbar() {
+    _oneboxToolbarOverlay = OverlayEntry(builder: (context) {
+      final sel = _islandSel;
+      final url = sel == null ? null : _oneboxUrlOf(sel.island);
+      if (sel == null || url == null) return const SizedBox.shrink();
+      final scheme = Theme.of(context).colorScheme;
+      final screen = MediaQuery.sizeOf(context);
+
+      Widget btn(IconData icon, String tooltip, VoidCallback onTap) =>
+          Tooltip(
+            message: tooltip,
+            waitDuration: const Duration(milliseconds: 600),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(icon, size: 17, color: scheme.onSurfaceVariant),
+              ),
+            ),
+          );
+
+      const barH = 40.0;
+      final rect = sel.globalRect;
+      final top = rect.top - barH - 6 < kToolbarHeight
+          ? rect.bottom + 6
+          : rect.top - barH - 6;
+      final availW = screen.width - 24;
+      final anchorX = rect.center.dx.clamp(12.0, screen.width - 12.0);
+      final alignX =
+          availW <= 0 ? 0.0 : (((anchorX - 12) / availW) * 2 - 1);
+
+      return Positioned(
+        left: 12,
+        right: 12,
+        top: top.clamp(8.0, screen.height - barH - 8),
+        child: Align(
+          alignment: Alignment(alignX.clamp(-1.0, 1.0), 0),
+          child: TapRegion(
+            groupId: 'rich-composer-onebox-toolbar',
+            child: _FloatingPanel(
+              maxHeight: barH + 4,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                btn(Icons.copy_rounded, '复制链接', () {
+                  Clipboard.setData(ClipboardData(text: url));
+                  ScaffoldMessenger.maybeOf(this.context)?.showSnackBar(
+                    const SnackBar(
+                      content: Text('链接已复制'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                }),
+                btn(Icons.close_fullscreen_rounded, '移除预览',
+                    _removeOneboxPreview),
+                Container(
+                  width: 1,
+                  height: 20,
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+                btn(Icons.open_in_new_rounded, '访问链接',
+                    () => launchContentLink(this.context, url)),
+              ]),
+            ),
+          ),
+        ),
+      );
+    });
+    Overlay.of(context).insert(_oneboxToolbarOverlay!);
+  }
+
+  /// 移除预览(官方 removePreview):onebox 岛 → 可编辑链接文字段
+  /// (文本=href 的 link mark;裸 URL 序列化规则保 raw 不变)。
+  void _removeOneboxPreview() {
+    final sel = _islandSel;
+    final editor = _editor;
+    if (sel == null || editor == null) return;
+    final url = _oneboxUrlOf(sel.island);
+    if (url == null) return;
+    final content = EditableTextContent(
+      text: url,
+      marks: [
+        MarkSpan(start: 0, end: url.length, kind: MarkKind.link, attr: url),
+      ],
+    );
+    editor.replaceIsland(sel.island.id, [
+      TextBlock(id: editor.nextBlockId(), content: content),
+    ]);
+  }
+
   OverlayEntry? _imageOverlay;
 
   /// alt 输入条展开态与草稿(浮层重建间保持)。
@@ -1078,156 +1805,192 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   void _showImageOverlay() {
     _altExpanded = false;
-    _imageOverlay = OverlayEntry(builder: (context) {
-      final sel = _imageSel;
-      if (sel == null) return const SizedBox.shrink();
-      final rect = sel.globalRect;
-      final img = sel.image;
-      final screen = MediaQuery.sizeOf(context);
-      final scheme = Theme.of(context).colorScheme;
+    _imageOverlay = OverlayEntry(
+      builder: (context) {
+        final sel = _imageSel;
+        if (sel == null) return const SizedBox.shrink();
+        final rect = sel.globalRect;
+        final img = sel.image;
+        final screen = MediaQuery.sizeOf(context);
+        final scheme = Theme.of(context).colorScheme;
 
-      final effScale = (img.scale ?? 100).round();
-      final hasWxH = (img.origWidth ?? img.width) != null &&
-          (img.origHeight ?? img.height) != null;
+        final effScale = (img.scale ?? 100).round();
+        final hasWxH =
+            (img.origWidth ?? img.width) != null &&
+            (img.origHeight ?? img.height) != null;
 
-      // 键盘上方安全底(移动端浮层不压键盘)
-      final safeBottom =
-          screen.height - MediaQuery.viewInsetsOf(context).bottom - 8;
+        // 键盘上方安全底(移动端浮层不压键盘)
+        final safeBottom =
+            screen.height - MediaQuery.viewInsetsOf(context).bottom - 8;
 
-      // 上:工具条(顶部空间不足翻到图下方与 alt 条错层)
-      const barH = 44.0; // 40px 图标钮 + 面板边
-      final barAbove = rect.top - barH - 6 >= 8;
-      final barLeft = rect.left.clamp(8.0, screen.width - 220.0);
-      final barTop = (barAbove ? rect.top - barH - 6 : rect.bottom + 6)
-          .clamp(8.0, (safeBottom - barH).clamp(8.0, double.infinity));
+        // 上:工具条(顶部空间不足翻到图下方与 alt 条错层)
+        const barH = 44.0; // 40px 图标钮 + 面板边
+        final barAbove = rect.top - barH - 6 >= 8;
+        final barLeft = rect.left.clamp(8.0, screen.width - 220.0);
+        final barTop = (barAbove ? rect.top - barH - 6 : rect.bottom + 6).clamp(
+          8.0,
+          (safeBottom - barH).clamp(8.0, double.infinity),
+        );
 
-      // 下:alt 条(clamp 进安全区;放不下与 bar 同侧错层)
-      final altWidth = rect.width.clamp(180.0, 320.0);
-      const altH = 40.0;
-      final altTop = (barAbove ? rect.bottom + 6 : rect.bottom + barH + 12)
-          .clamp(8.0, (safeBottom - altH).clamp(8.0, double.infinity));
+        // 下:alt 条(clamp 进安全区;放不下与 bar 同侧错层)
+        final altWidth = rect.width.clamp(180.0, 320.0);
+        const altH = 40.0;
+        final altTop = (barAbove ? rect.bottom + 6 : rect.bottom + barH + 12)
+            .clamp(8.0, (safeBottom - altH).clamp(8.0, double.infinity));
 
-      Widget iconBtn(IconData icon, String tooltip,
-          {VoidCallback? onTap, Color? color}) {
-        final enabled = onTap != null;
-        return Tooltip(
-          message: tooltip,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              // 18 + 11×2 = 40px 触控目标(移动可点性;桌面统一无碍)
-              padding: const EdgeInsets.all(11),
-              child: Icon(
-                icon,
-                size: 18,
-                color: enabled
-                    ? (color ?? scheme.onSurfaceVariant)
-                    : scheme.onSurfaceVariant.withValues(alpha: 0.3),
+        Widget iconBtn(
+          IconData icon,
+          String tooltip, {
+          VoidCallback? onTap,
+          Color? color,
+        }) {
+          final enabled = onTap != null;
+          return Tooltip(
+            message: tooltip,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                // 18 + 11×2 = 40px 触控目标(移动可点性;桌面统一无碍)
+                padding: const EdgeInsets.all(11),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: enabled
+                      ? (color ?? scheme.onSurfaceVariant)
+                      : scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                ),
               ),
             ),
-          ),
-        );
-      }
+          );
+        }
 
-      return Stack(children: [
-        Positioned(
-          left: barLeft,
-          top: barTop,
-          child: _FloatingPanel(
-            maxHeight: barH,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              iconBtn(Symbols.zoom_out_rounded, '缩小',
-                  onTap: hasWxH && effScale > 50
-                      ? () => _scaleImage(-25)
-                      : null),
-              iconBtn(Symbols.zoom_in_rounded, '放大',
-                  onTap: hasWxH && effScale < 100
-                      ? () => _scaleImage(25)
-                      : null),
-              Container(
-                width: 1,
-                height: 20,
-                color: scheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-              iconBtn(Symbols.grid_view_rounded, '加入网格',
-                  onTap: _addSelectedImageToGrid),
-              iconBtn(Symbols.delete_outline_rounded, '删除图片',
-                  onTap: _deleteSelectedImage, color: scheme.error),
-            ]),
-          ),
-        ),
-        // alt 输入条(官方 image-alt-text-input:collapsed 单行 1.5em →
-        // 展开 4.25em textarea **变高**;Enter 保存收起、Shift+Enter 换行、
-        // Esc 还原;展开即聚焦全选)
-        Positioned(
-          left: rect.left.clamp(8.0, screen.width - altWidth - 8),
-          top: altTop,
-          width: altWidth,
-          child: _FloatingPanel(
-            maxHeight: 108,
-            child: _altExpanded
-                ? Focus(
-                    onKeyEvent: (node, event) {
-                      if (event is! KeyDownEvent) return KeyEventResult.ignored;
-                      if (event.logicalKey == LogicalKeyboardKey.escape) {
-                        // Esc:还原收起(不保存)
-                        _altExpanded = false;
-                        _altController?.text = img.alt;
-                        _imageOverlay?.markNeedsBuild();
-                        return KeyEventResult.handled;
-                      }
-                      // Enter 保存收起(官方 keydown Enter → onClose);
-                      // Shift+Enter 留给换行。多行 TextField 的 Enter
-                      // 默认换行、onSubmitted 不触发,必须在这拦。
-                      if (event.logicalKey == LogicalKeyboardKey.enter &&
-                          !HardwareKeyboard.instance.isShiftPressed) {
-                        _saveAlt(_altController?.text ?? '');
-                        return KeyEventResult.handled;
-                      }
-                      return KeyEventResult.ignored;
-                    },
-                    child: TextField(
-                      controller: _altController ??=
-                          TextEditingController(text: img.alt),
-                      focusNode: _altFocus,
-                      autofocus: true,
-                      // 官方展开 4.25em ≈ 3 行:展开 = 变高
-                      minLines: 3,
-                      maxLines: 3,
-                      style: const TextStyle(fontSize: 13, height: 1.5),
-                      decoration: const InputDecoration(
-                        hintText: '替代文本',
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        border: InputBorder.none,
-                      ),
-                      onTapOutside: (_) => _saveAlt(_altController!.text),
+        return Stack(
+          children: [
+            Positioned(
+              left: barLeft,
+              top: barTop,
+              child: _FloatingPanel(
+                maxHeight: barH,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    iconBtn(
+                      Symbols.zoom_out_rounded,
+                      '缩小',
+                      onTap: hasWxH && effScale > 50
+                          ? () => _scaleImage(-25)
+                          : null,
                     ),
-                  )
-                : InkWell(
-                    onTap: _expandAltInput,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      child: Text(
-                        img.alt.isEmpty ? '替代文本' : img.alt,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: img.alt.isEmpty
-                              ? scheme.onSurfaceVariant.withValues(alpha: 0.6)
-                              : scheme.onSurfaceVariant,
+                    iconBtn(
+                      Symbols.zoom_in_rounded,
+                      '放大',
+                      onTap: hasWxH && effScale < 100
+                          ? () => _scaleImage(25)
+                          : null,
+                    ),
+                    Container(
+                      width: 1,
+                      height: 20,
+                      color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                    iconBtn(
+                      Symbols.grid_view_rounded,
+                      '加入网格',
+                      onTap: _addSelectedImageToGrid,
+                    ),
+                    iconBtn(
+                      Symbols.delete_outline_rounded,
+                      '删除图片',
+                      onTap: _deleteSelectedImage,
+                      color: scheme.error,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // alt 输入条(官方 image-alt-text-input:collapsed 单行 1.5em →
+            // 展开 4.25em textarea **变高**;Enter 保存收起、Shift+Enter 换行、
+            // Esc 还原;展开即聚焦全选)
+            Positioned(
+              left: rect.left.clamp(8.0, screen.width - altWidth - 8),
+              top: altTop,
+              width: altWidth,
+              child: _FloatingPanel(
+                maxHeight: 108,
+                child: _altExpanded
+                    ? Focus(
+                        onKeyEvent: (node, event) {
+                          if (event is! KeyDownEvent) {
+                            return KeyEventResult.ignored;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.escape) {
+                            // Esc:还原收起(不保存)
+                            _altExpanded = false;
+                            _altController?.text = img.alt;
+                            _imageOverlay?.markNeedsBuild();
+                            return KeyEventResult.handled;
+                          }
+                          // Enter 保存收起(官方 keydown Enter → onClose);
+                          // Shift+Enter 留给换行。多行 TextField 的 Enter
+                          // 默认换行、onSubmitted 不触发,必须在这拦。
+                          if (event.logicalKey == LogicalKeyboardKey.enter &&
+                              !HardwareKeyboard.instance.isShiftPressed) {
+                            _saveAlt(_altController?.text ?? '');
+                            return KeyEventResult.handled;
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        child: TextField(
+                          controller: _altController ??= TextEditingController(
+                            text: img.alt,
+                          ),
+                          focusNode: _altFocus,
+                          autofocus: true,
+                          // 官方展开 4.25em ≈ 3 行:展开 = 变高
+                          minLines: 3,
+                          maxLines: 3,
+                          style: const TextStyle(fontSize: 13, height: 1.5),
+                          decoration: const InputDecoration(
+                            hintText: '替代文本',
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                          onTapOutside: (_) => _saveAlt(_altController!.text),
+                        ),
+                      )
+                    : InkWell(
+                        onTap: _expandAltInput,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            img.alt.isEmpty ? '替代文本' : img.alt,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: img.alt.isEmpty
+                                  ? scheme.onSurfaceVariant.withValues(
+                                      alpha: 0.6,
+                                    )
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-          ),
-        ),
-      ]);
-    });
+              ),
+            ),
+          ],
+        );
+      },
+    );
     Overlay.of(context).insert(_imageOverlay!);
   }
 
@@ -1311,7 +2074,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final raw = img.lightboxUrl ?? img.origSrc ?? img.src;
     String resolved;
     if (DiscourseImageUtils.isUploadUrl(raw)) {
-      final r = DiscourseImageUtils.getCachedUploadUrl(raw) ??
+      final r =
+          DiscourseImageUtils.getCachedUploadUrl(raw) ??
           await DiscourseImageUtils.resolveUploadUrl(raw);
       if (r == null || !mounted) return;
       resolved = r;
@@ -1340,43 +2104,48 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   Future<void> _editContainerTitle(ContainerFrame frame) async {
     final editor = _editor;
     if (editor == null) return;
-    final current = switch (frame) {
-      DetailsFrame(:final summary) => summary,
-      CalloutFrame(:final title) => title ?? '',
-      _ => null,
-    };
-    if (current == null) return;
 
+    // Callout:全属性原位编辑(类型/标题/折叠三态),与插入同一对话框
+    if (frame is CalloutFrame) {
+      final spec = await showCalloutEditDialog(
+        context,
+        type: frame.typeRaw,
+        title: frame.title ?? '',
+        foldable: frame.foldable,
+      );
+      if (spec == null || !mounted) return;
+      final title = spec.title.trim();
+      final next = CalloutFrame(
+        groupId: frame.groupId,
+        kind: CalloutKind.fromType(spec.type),
+        typeRaw: spec.type,
+        title: title.isEmpty ? null : title,
+        foldable: spec.foldable,
+      );
+      if (next != frame) {
+        editor.updateContainerFrame(frame.groupId, next);
+      }
+      return;
+    }
+
+    if (frame is! DetailsFrame) return;
     final text = await showAppDialog<String>(
       context: context,
-      builder: (ctx) => _SingleLineInputDialog(
-        title: frame is DetailsFrame ? '折叠标题' : '标注标题',
-        initialText: current,
-      ),
+      builder: (ctx) =>
+          _SingleLineInputDialog(title: '折叠标题', initialText: frame.summary),
     );
-    if (text == null || text == current || !mounted) return;
+    if (text == null || text == frame.summary || !mounted) return;
+    editor.updateContainerFrame(
+      frame.groupId,
+      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open),
+    );
+  }
 
-    final newFrame = switch (frame) {
-      DetailsFrame(:final groupId, :final open) =>
-        DetailsFrame(groupId: groupId, summary: text, open: open),
-      CalloutFrame(
-        :final groupId,
-        :final kind,
-        :final typeRaw,
-        :final foldable,
-      ) =>
-        CalloutFrame(
-          groupId: groupId,
-          kind: kind,
-          typeRaw: typeRaw,
-          title: text.isEmpty ? null : text,
-          foldable: foldable,
-        ),
-      _ => null,
-    };
-    if (newFrame != null) {
-      editor.updateContainerFrame(frame.groupId, newFrame);
-    }
+  /// 插入 Callout:属性对话框 → Obsidian 语法经 cook 容器化。
+  Future<void> _insertCallout() async {
+    final spec = await showCalloutEditDialog(context);
+    if (spec == null || !mounted) return;
+    await insertMarkdownSnippet('> ${spec.headerMarkdown}\n> 内容');
   }
 
   /// markdown 多行输入对话框(插入片段/岛编辑共用;showAppDialog 统一
@@ -1419,17 +2188,23 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         orElse: () => editor.blocks.last,
       );
       if (lastText is! TextBlock) return;
-      editor.updateSelection(EditorSelection.collapsed(
-        EditorPosition(
-            blockId: lastText.id, offset: lastText.selectionLength),
-      ));
+      editor.updateSelection(
+        EditorSelection.collapsed(
+          EditorPosition(
+            blockId: lastText.id,
+            offset: lastText.selectionLength,
+          ),
+        ),
+      );
     }
-    editor.insertAtom(ImageRun(
-      src: shortUrl,
-      alt: alt,
-      width: width?.toDouble(),
-      height: height?.toDouble(),
-    ));
+    editor.insertAtom(
+      ImageRun(
+        src: shortUrl,
+        alt: alt,
+        width: width?.toDouble(),
+        height: height?.toDouble(),
+      ),
+    );
   }
 
   // -----------------------------------------------------------------
@@ -1495,13 +2270,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                         child: Stack(
                           children: [
                             ConstrainedBox(
-                              // padding 在内,故 min = 全视口高(编辑器裸高
-                              // = 视口 - 24,与旧结构等价)
+                              // padding 在内,故 min = 全视口高
                               constraints: BoxConstraints(
                                 minHeight: viewport.maxHeight,
                               ),
                               child: Padding(
-                                padding: const EdgeInsets.all(12),
+                                // 水平 20 = 与 header 标题对齐(源码模式
+                                // 同值);垂直 12 兼吸收表格悬挂柄溢出
+                                padding: const EdgeInsets.fromLTRB(
+                                    20, 12, 20, 12),
                                 child: FluxdoEditor(
                                   state: editor,
                                   autofocus: true,
@@ -1512,6 +2289,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // 编辑块(失败/不可用时 FluxdoEditor 内部
                                   // 降级纯文本粘贴)
                                   markdownImporter: markdownToDoc,
+                                  virtualPointer: _virtualPointer,
+                                  // 富粘贴:剪贴板 text/html(网页/Word)
+                                  // → markdown 清洗 → 同一条 cook 导入链;
+                                  // 无 html/转换落空回落上面纯文本路径
+                                  richPasteImporter: _importRichPaste,
                                   // 双击岛 → 源码编辑对话框
                                   onIslandEditRequest: _editIsland,
                                   // 点 details/callout 壳标题 → 原位改标题
@@ -1538,6 +2320,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // 彼时矩形还是上一帧旧值,不跟随的话初始
                                   // 位置错、直到下次 markNeedsBuild(如按
                                   // 上下键)才跳到正确位置。
+                                  // collapsed 光标进出链接 → 链接工具条
+                                  // (编辑/复制/取消链接/预览/访问)
+                                  onLinkCaret: _onLinkCaret,
+                                  // 岛整选 → onebox 工具条(复制/移除
+                                  // 预览/访问)
+                                  onIslandSelected: _onIslandSelected,
                                   onCaretRectChanged: (r) {
                                     if (r == _caretGlobalRect) return;
                                     _caretGlobalRect = r;
@@ -1547,30 +2335,28 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // 浮层激活时接管上下/回车/Esc(否则被编辑
                                   // 器拿去移光标)
                                   keyEventInterceptor: _interceptKeyEvent,
-                                  baseTextStyle: Theme.of(context)
-                                      .textTheme
-                                      .bodyLarge
-                                      ?.copyWith(height: 1.5),
+                                  baseTextStyle: Theme.of(
+                                    context,
+                                  ).textTheme.bodyLarge?.copyWith(height: 1.5),
                                 ),
                               ),
                             ),
                             if (isEmpty)
                               Positioned(
-                                left: 12,
-                                // 12(编辑区 padding) + 4(块 vertical
-                                // padding) 与首行文字同源
+                                // 与编辑区 padding 同源:水平 20(对齐
+                                // header 标题),垂直 12 + 4(块 vertical
+                                // padding)= 首行文字基线
+                                left: 20,
                                 top: 16,
                                 child: IgnorePointer(
                                   child: Text(
                                     widget.hintText,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
+                                    style: Theme.of(context).textTheme.bodyLarge
                                         ?.copyWith(
                                           height: 1.5,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .outline,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.outline,
                                         ),
                                   ),
                                 ),
@@ -1597,13 +2383,49 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           onPickImage: _pickAndUploadImages,
           onInsertLink: _insertLink,
           onInsertMenu: _showInsertMenu,
+          // 手势光标(虚拟指针):幽灵光标跟手+实光标吸附+贴边自动滚;
+          // 桌面有物理键盘,不占工具栏
+          onPointerStart: _isDesktop
+              ? null
+              : ({required extend}) => _virtualPointer.start(extend: extend),
+          onPointerMove: _isDesktop ? null : _virtualPointer.moveBy,
+          onPointerEnd: _isDesktop ? null : _virtualPointer.end,
           onSwitchToSource: widget.onSwitchToSource == null
               ? null
               : () {
                   // 先落盘再切换:controller.text 即最新 markdown,
                   // 宿主换 MarkdownEditor 后内容无缝衔接
                   flushToController();
+                  // 关键:两编辑器共用同一 focusNode,富文本用自管 IME
+                  // (EditorImeClient 持全局 TextInput 连接)。切换是
+                  // AnimatedSwitcher 150ms 动画,期间富↔源并存;焦点始终
+                  // 停在同一 focusNode(hasFocus 不变)→ 富文本 _ime.detach
+                  // (只在失焦时触发)不会跑 → 源码 TextField 抢不到有效
+                  // 连接 = 切过去无法输入/删除。unfocus 主动让富文本失焦
+                  // 放开连接,再延迟交棒回同一 node —— 彼时富文本已
+                  // 退场,挂着它的源码 TextField attach 即干净重连,
+                  // 切完立刻能打能删(不用点一下正文)。
+                  _editorFocus.unfocus();
                   widget.onSwitchToSource!();
+                  if (!_ownsFocus) {
+                    final node = _editorFocus;
+                    final controller = widget.controller;
+                    // 宿主已换 KeyedSubtree 直切(无 150ms 并存窗口),
+                    // 80ms 只等本帧 dispose 落定
+                    Timer(const Duration(milliseconds: 80), () {
+                      // 本 State 已 dispose,不查 mounted;node/controller
+                      // 归宿主所有。220ms 内页面整体退场会撞已 dispose
+                      // 对象 —— fire-and-forget 场景,吞掉即可。
+                      try {
+                        if (!controller.selection.isValid) {
+                          controller.selection = TextSelection.collapsed(
+                            offset: controller.text.length,
+                          );
+                        }
+                        if (node.canRequestFocus) node.requestFocus();
+                      } catch (_) {}
+                    });
+                  }
                 },
         ),
         // 键盘/表情面板容器(MarkdownEditor 同款 ChatBottomPanelContainer:
@@ -1657,8 +2479,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 );
               case ChatBottomPanelType.other:
                 if (data == _RichPanelType.emoji) {
-                  return ColoredBox(
-                      color: surface, child: _buildEmojiPanel());
+                  return ColoredBox(color: surface, child: _buildEmojiPanel());
                 }
                 return const SizedBox.shrink();
               case ChatBottomPanelType.none:
@@ -1730,6 +2551,9 @@ class _RichToolbar extends StatefulWidget {
     required this.onPickImage,
     required this.onInsertLink,
     required this.onInsertMenu,
+    this.onPointerStart,
+    this.onPointerMove,
+    this.onPointerEnd,
     this.onSwitchToSource,
   });
 
@@ -1740,13 +2564,26 @@ class _RichToolbar extends StatefulWidget {
   final VoidCallback onPickImage;
   final VoidCallback onInsertLink;
   final void Function(BuildContext anchorContext) onInsertMenu;
+
+  /// 手势光标(虚拟指针):滑钮 pan 驱动浮动光标二维漂移;
+  /// [onPointerStart] null 不显示。
+  final bool Function({required bool extend})? onPointerStart;
+  final ValueChanged<Offset>? onPointerMove;
+  final VoidCallback? onPointerEnd;
+
   final VoidCallback? onSwitchToSource;
 
   @override
   State<_RichToolbar> createState() => _RichToolbarState();
 }
 
-typedef _Sig = ({int marksBits, int kindIndex, int headingLevel, bool ordered, bool inQuote});
+typedef _Sig = ({
+  int marksBits,
+  int kindIndex,
+  int headingLevel,
+  bool ordered,
+  bool inQuote,
+});
 
 class _RichToolbarState extends State<_RichToolbar> {
   late _Sig _sig = _compute();
@@ -1796,6 +2633,13 @@ class _RichToolbarState extends State<_RichToolbar> {
 
   bool _hasMark(MarkKind kind) => (_sig.marksBits & (1 << kind.index)) != 0;
 
+  /// tooltip 快捷键后缀:桌面端按平台标注(⌘B / Ctrl+B,事实源
+  /// composer_shortcuts.dart);移动端无物理键盘不标。
+  static String _tip(String label, String toolId) {
+    if (!PlatformUtils.isDesktop) return label;
+    return '$label${composerShortcutHint(toolId) ?? ''}';
+  }
+
   /// 行内剧透:有选区 → toggle mark;折叠光标 → 插占位文字并整选
   /// (官方 rich editor inputRule 同款:立即可打字覆盖占位)。
   void _toggleInlineSpoiler() {
@@ -1812,11 +2656,15 @@ class _RichToolbarState extends State<_RichToolbar> {
     final start = sel.extent.offset;
     state.insertText(placeholder);
     // 选中占位并施加 mark(选区保留 —— 用户直接打字即替换)
-    state.updateSelection(EditorSelection(
-      base: EditorPosition(blockId: block.id, offset: start),
-      extent: EditorPosition(
-          blockId: block.id, offset: start + placeholder.length),
-    ));
+    state.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: start),
+        extent: EditorPosition(
+          blockId: block.id,
+          offset: start + placeholder.length,
+        ),
+      ),
+    );
     state.toggleMark(MarkKind.spoilerInline);
   }
 
@@ -1824,8 +2672,9 @@ class _RichToolbarState extends State<_RichToolbar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final state = widget.state;
-    final pillColor =
-        theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45);
+    final pillColor = theme.colorScheme.surfaceContainerHighest.withValues(
+      alpha: 0.45,
+    );
     final isListItem = _sig.kindIndex == TextBlockKind.listItem.index;
 
     return Container(
@@ -1863,64 +2712,107 @@ class _RichToolbarState extends State<_RichToolbar> {
                     fadeRight: true,
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: Row(children: [
-                        _btn(FontAwesomeIcons.bold, '粗体 (Cmd+B)',
+                      child: Row(
+                        children: [
+                          _btn(
+                            FontAwesomeIcons.bold,
+                            _tip('粗体', 'bold'),
                             active: _hasMark(MarkKind.strong),
-                            onTap: () => state.toggleMark(MarkKind.strong)),
-                        _btn(FontAwesomeIcons.italic, '斜体 (Cmd+I)',
+                            onTap: () => state.toggleMark(MarkKind.strong),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.italic,
+                            _tip('斜体', 'italic'),
                             active: _hasMark(MarkKind.em),
-                            onTap: () => state.toggleMark(MarkKind.em)),
-                        _btn(FontAwesomeIcons.strikethrough,
-                            '删除线 (Cmd+Shift+X)',
+                            onTap: () => state.toggleMark(MarkKind.em),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.strikethrough,
+                            _tip('删除线', 'strikethrough'),
                             active: _hasMark(MarkKind.lineThrough),
-                            onTap: () =>
-                                state.toggleMark(MarkKind.lineThrough)),
-                        _btn(FontAwesomeIcons.code, '行内代码 (Cmd+E)',
+                            onTap: () => state.toggleMark(MarkKind.lineThrough),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.code,
+                            _tip('行内代码', 'inlineCode'),
                             active: _hasMark(MarkKind.inlineCode),
-                            onTap: () =>
-                                state.toggleMark(MarkKind.inlineCode)),
-                        _btn(FontAwesomeIcons.eyeSlash, '行内剧透',
+                            onTap: () => state.toggleMark(MarkKind.inlineCode),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.eyeSlash,
+                            '行内剧透',
                             active: _hasMark(MarkKind.spoilerInline),
-                            onTap: _toggleInlineSpoiler),
-                        _divider(theme),
-                        _headingBtn(theme),
-                        _btn(FontAwesomeIcons.listUl, '无序列表',
+                            onTap: _toggleInlineSpoiler,
+                          ),
+                          _divider(theme),
+                          _headingBtn(theme),
+                          _btn(
+                            FontAwesomeIcons.listUl,
+                            _tip('无序列表', 'bulletList'),
                             active: isListItem && !_sig.ordered,
-                            onTap: () => state.toggleList(ordered: false)),
-                        _btn(FontAwesomeIcons.listOl, '有序列表',
+                            onTap: () => state.toggleList(ordered: false),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.listOl,
+                            _tip('有序列表', 'numberedList'),
                             active: isListItem && _sig.ordered,
-                            onTap: () => state.toggleList(ordered: true)),
-                        _btn(FontAwesomeIcons.quoteRight, '引用',
-                            active: _sig.inQuote, onTap: state.toggleQuote),
-                        _divider(theme),
-                        _btn(FontAwesomeIcons.link, '插入链接',
-                            onTap: widget.onInsertLink),
-                        widget.uploading
-                            ? const Padding(
-                                padding:
-                                    EdgeInsets.symmetric(horizontal: 12),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                            onTap: () => state.toggleList(ordered: true),
+                          ),
+                          _btn(
+                            FontAwesomeIcons.quoteRight,
+                            _tip('引用', 'quote'),
+                            active: _sig.inQuote,
+                            onTap: state.toggleQuote,
+                          ),
+                          _divider(theme),
+                          _btn(
+                            FontAwesomeIcons.link,
+                            _tip('插入链接', 'link'),
+                            onTap: widget.onInsertLink,
+                          ),
+                          widget.uploading
+                              ? const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 12),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                              : _btn(
+                                  FontAwesomeIcons.image,
+                                  '上传图片',
+                                  onTap: widget.onPickImage,
                                 ),
-                              )
-                            : _btn(FontAwesomeIcons.image, '上传图片',
-                                onTap: widget.onPickImage),
-                        // Builder:拿"+"按钮自己的 context —— 菜单锚定
-                        // 按钮矩形(否则弹到编辑器区域角落)
-                        Builder(
-                          builder: (btnCtx) => _btn(
+                          // Builder:拿"+"按钮自己的 context —— 菜单锚定
+                          // 按钮矩形(否则弹到编辑器区域角落)
+                          Builder(
+                            builder: (btnCtx) => _btn(
                               FontAwesomeIcons.circlePlus,
                               '插入块(表格/代码/公式…)',
-                              onTap: () => widget.onInsertMenu(btnCtx)),
-                        ),
-                      ]),
+                              onTap: () => widget.onInsertMenu(btnCtx),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
+              // 手势光标(虚拟指针):按住滑钮二维漂移驱动光标
+              if (widget.onPointerStart != null) ...[
+                _Pill(
+                  color: pillColor,
+                  child: CursorSwipeControl(
+                    onPointerStart: widget.onPointerStart,
+                    onPointerMove: widget.onPointerMove,
+                    onPointerEnd: widget.onPointerEnd,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               // 右:源码模式切换(胶囊背景;含当前模式徽标 —— 用户能
               // 看出自己在富文本态、点击去向是源码)
               if (widget.onSwitchToSource != null)
@@ -1933,25 +2825,30 @@ class _RichToolbarState extends State<_RichToolbar> {
                       borderRadius: BorderRadius.circular(18),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(
-                            Symbols.code_rounded,
-                            size: 18,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'MD',
-                            style: TextStyle(
-                              fontSize: 11,
-                              height: 1.0,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.3,
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Symbols.code_rounded,
+                              size: 18,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
-                          ),
-                        ]),
+                            const SizedBox(width: 4),
+                            Text(
+                              'MD',
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.0,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1965,18 +2862,22 @@ class _RichToolbarState extends State<_RichToolbar> {
 
   /// 工具组间竖分隔线(粗/斜/删/码 | 标题/列表/引用 | 链接/图/插入)。
   Widget _divider(ThemeData theme) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Container(
-          width: 1,
-          height: 18,
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: Container(
+      width: 1,
+      height: 18,
+      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+    ),
+  );
 
   /// 标准工具按钮(MarkdownToolbar._ToolbarButton 同参:FaIcon 16 +
   /// compact + onSurfaceVariant;激活态 primary)。
-  Widget _btn(FaIconData icon, String tooltip,
-      {bool active = false, required VoidCallback onTap}) {
+  Widget _btn(
+    FaIconData icon,
+    String tooltip, {
+    bool active = false,
+    required VoidCallback onTap,
+  }) {
     final theme = Theme.of(context);
     return IconButton(
       visualDensity: VisualDensity.compact,
@@ -2012,27 +2913,48 @@ class _RichToolbarState extends State<_RichToolbar> {
         for (final level in [1, 2, 3])
           PopupMenuItem(
             value: level,
-            child: Text('标题 $level',
-                style: TextStyle(
-                  fontSize: 18.0 - level * 1.5,
-                  fontWeight: FontWeight.w600,
-                )),
+            child: Row(
+              children: [
+                Text(
+                  '标题 $level',
+                  style: TextStyle(
+                    fontSize: 18.0 - level * 1.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                // 快捷键标注(桌面端;⌘⌥1.. / Ctrl+Alt+1..)
+                if (PlatformUtils.isDesktop) ...[
+                  const SizedBox(width: 12),
+                  Text(
+                    (composerShortcutHint('heading$level') ?? '').trim(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         const PopupMenuItem(value: 0, child: Text('正文')),
       ],
-      onSelected: (level) =>
-          widget.state.setHeading(level == 0 ? null : level),
+      onSelected: (level) => widget.state.setHeading(level == 0 ? null : level),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: active
-            ? Text('H${_sig.headingLevel}',
+            ? Text(
+                'H${_sig.headingLevel}',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: theme.colorScheme.primary,
-                ))
-            : FaIcon(FontAwesomeIcons.heading,
-                size: 16, color: theme.colorScheme.onSurfaceVariant),
+                ),
+              )
+            : FaIcon(
+                FontAwesomeIcons.heading,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
       ),
     );
   }
@@ -2076,8 +2998,9 @@ class _MarkdownInputDialog extends StatefulWidget {
 }
 
 class _MarkdownInputDialogState extends State<_MarkdownInputDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialText);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
 
   @override
   void dispose() {
@@ -2127,13 +3050,13 @@ class _SingleLineInputDialog extends StatefulWidget {
   final String initialText;
 
   @override
-  State<_SingleLineInputDialog> createState() =>
-      _SingleLineInputDialogState();
+  State<_SingleLineInputDialog> createState() => _SingleLineInputDialogState();
 }
 
 class _SingleLineInputDialogState extends State<_SingleLineInputDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialText);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
 
   @override
   void dispose() {
@@ -2180,9 +3103,7 @@ class _FloatingPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.18),
@@ -2235,38 +3156,43 @@ class _SlashMenuRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest
-                      .withValues(alpha: selected ? 0.9 : 0.6),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  icon,
-                  size: 15,
-                  color: selected ? scheme.primary : scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected ? scheme.primary : scheme.onSurface,
+            child: Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: selected ? 0.9 : 0.6,
+                    ),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  child: Icon(
+                    icon,
+                    size: 15,
+                    color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              if (selected)
-                Icon(Icons.keyboard_return_rounded,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected ? scheme.primary : scheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (selected)
+                  Icon(
+                    Icons.keyboard_return_rounded,
                     size: 13,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-            ]),
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2298,53 +3224,57 @@ class _MentionRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(children: [
-              if (avatarUrl != null && avatarUrl.isNotEmpty)
-                SmartAvatar(
-                  imageUrl: avatarUrl,
-                  radius: 12,
-                  fallbackText: user.username,
-                )
-              else
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: scheme.primaryContainer,
-                  child: Text(
-                    user.username.isEmpty
-                        ? '?'
-                        : user.username[0].toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: scheme.onPrimaryContainer,
+            child: Row(
+              children: [
+                if (avatarUrl != null && avatarUrl.isNotEmpty)
+                  SmartAvatar(
+                    imageUrl: avatarUrl,
+                    radius: 12,
+                    fallbackText: user.username,
+                  )
+                else
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: scheme.primaryContainer,
+                    child: Text(
+                      user.username.isEmpty
+                          ? '?'
+                          : user.username[0].toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onPrimaryContainer,
+                      ),
                     ),
                   ),
-                ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '@${user.username}',
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (showName)
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        user.name!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
+                        '@${user.username}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
-                  ],
+                      if (showName)
+                        Text(
+                          user.name!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
         ),
       ),

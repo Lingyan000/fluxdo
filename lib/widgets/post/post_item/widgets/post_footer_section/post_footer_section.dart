@@ -13,6 +13,7 @@ import '../../../../../providers/discourse_providers.dart';
 import '../../../../../providers/ai_translation_provider.dart';
 import '../../../../../providers/preferences_provider.dart';
 import '../../../../../utils/blocked_user_filter.dart';
+import '../../../../../utils/frame_jank_monitor.dart';
 import 'package:dio/dio.dart';
 import '../../../../../services/app_error_handler.dart';
 import '../../../../../services/discourse/discourse_service.dart';
@@ -193,7 +194,8 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   void _handleBoostDeleted(Boost boost) {
     if (!mounted) return;
     setState(() {
-      _boosts.removeWhere((b) => b.id == boost.id);
+      // _boosts 可能来自 _dedupeBoostsById 的固定长度列表,不能原地 removeWhere
+      _boosts = _boosts.where((b) => b.id != boost.id).toList();
       final currentUser = ref.read(currentUserProvider).value;
       if (currentUser != null && boost.user.username == currentUser.username) {
         _canBoost = true;
@@ -250,13 +252,14 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
 
     try {
       await _service.deleteBoost(boost.id);
-      if (!mounted) return;
-      _handleBoostDeleted(boost);
-      ToastService.showSuccess(S.current.boost_deleted);
     } catch (_) {
       if (!mounted) return;
       ToastService.showError(S.current.boost_deleteFailed);
+      return;
     }
+    if (!mounted) return;
+    _handleBoostDeleted(boost);
+    ToastService.showSuccess(S.current.boost_deleted);
   }
 
   bool _shouldFetchBoostActionState({
@@ -490,14 +493,14 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
 
   @override
   Widget build(BuildContext context) {
+    // 帖内构成归因:与 pHdr 配对,点名单帖固定成本的大头(操作栏/boost
+    // 列表在 footer;监控关闭零开销)
+    FrameJankMonitor.noteBuild('pFtr#${widget.post.postNumber}');
     final theme = Theme.of(context);
     final currentUser = ref.read(currentUserProvider).value;
     final isOwnPost =
         currentUser != null && currentUser.username == widget.post.username;
     final isGuest = currentUser == null;
-
-    // 预热打赏凭证，避免首次打开更多菜单时因 AsyncLoading 导致打赏选项不显示
-    ref.watch(ldcRewardCredentialsProvider);
 
     return Padding(
       padding: widget.padding,
@@ -506,7 +509,10 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
         children: [
           PostLinks(
             linkCounts: widget.post.linkCounts,
-            defaultExpanded: ref.watch(preferencesProvider).expandRelatedLinks,
+            // select:整 provider watch 会让任何偏好变化都重建所有在屏帖脚
+            defaultExpanded: ref.watch(
+              preferencesProvider.select((p) => p.expandRelatedLinks),
+            ),
           ),
           if (widget.post.postNumber == 1 &&
               widget.topicHasAcceptedAnswer &&

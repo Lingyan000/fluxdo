@@ -68,6 +68,7 @@ mixin _UtilsMixin on _DiscourseServiceBase {
     if (respData is Map && respData['action'] == 'enqueued') {
       throw PostEnqueuedException(
         pendingCount: respData['pending_count'] as int? ?? 0,
+        pendingPost: _parsePendingPost(respData['pending_post']),
       );
     }
 

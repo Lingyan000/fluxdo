@@ -112,6 +112,8 @@ class CfChallengeService {
   final _verifyCompleter = <Completer<bool>>[];
   BuildContext? _context;
   static DateTime? _lastToastAt;
+  Future<bool>? _activeSessionCompatPrompt;
+  bool _sessionCompatPromptDeclined = false;
   Completer<BuildContext>? _contextReadyCompleter;
   VoidCallback? _activePromoteToForeground;
   bool _pendingPromoteToForeground = false;
@@ -184,6 +186,62 @@ class CfChallengeService {
     } else {
       ToastService.showInfo(message);
     }
+  }
+
+  /// 原生链路在完成验证后仍被 CF 拒绝时，询问用户是否仅在本次会话
+  /// 使用浏览器网络栈。并发失败请求共享同一个弹窗结果。
+  Future<bool> confirmSessionCompatibilityMode() {
+    if (_sessionCompatPromptDeclined) return Future.value(false);
+    final active = _activeSessionCompatPrompt;
+    if (active != null) return active;
+
+    late final Future<bool> future;
+    future = _confirmSessionCompatibilityModeInternal().whenComplete(() {
+      if (identical(_activeSessionCompatPrompt, future)) {
+        _activeSessionCompatPrompt = null;
+      }
+    });
+    _activeSessionCompatPrompt = future;
+    return future;
+  }
+
+  Future<bool> _confirmSessionCompatibilityModeInternal() async {
+    BuildContext? context = _context;
+    if (context == null || !context.mounted) {
+      context = navigatorKey.currentContext;
+    }
+    if (context == null || !context.mounted) return false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(S.current.cf_sessionCompatTitle),
+        content: Text(S.current.cf_sessionCompatMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(S.current.cf_sessionCompatEnable),
+          ),
+        ],
+      ),
+    );
+    final confirmed = result == true;
+    if (!confirmed) {
+      // 用户本次会话已经明确拒绝，不在后续 CF 失败时反复打扰。
+      _sessionCompatPromptDeclined = true;
+    }
+    return confirmed;
+  }
+
+  void resetSessionCompatibilityDecision() {
+    _sessionCompatPromptDeclined = false;
   }
 
   void setContext(BuildContext context) {
@@ -288,9 +346,6 @@ class CfChallengeService {
 
     final verifyUrl = '${AppConstants.baseUrl}/challenge';
     CfChallengeLogger.logVerifyStart(verifyUrl);
-    unawaited(
-      CfChallengeLogger.logAccessIps(url: verifyUrl, context: 'verify_start'),
-    );
 
     // 尝试获取 context：传入的 > 已设置的 > 全局 navigatorKey
     BuildContext? ctx = context ?? _context;

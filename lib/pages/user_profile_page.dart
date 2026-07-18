@@ -1086,6 +1086,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = ref.watch(currentUserProvider).value;
+    // 话题卡自定义样式:改设置触发 rebuild(投票 tab 的话题卡直读全局快照)
+    ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
 
     if (_isLoading) {
       return const UserProfileSkeleton();

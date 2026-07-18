@@ -115,7 +115,8 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
     // OP 也算可见
     final ns = widget.nestedState;
-    final opPost = ns.opPost != null &&
+    final opPost =
+        ns.opPost != null &&
             !BlockedUserFilter.isBlockedUsername(
               ns.opPost!.username,
               widget.blockedUsernames,
@@ -135,15 +136,13 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         controller: widget.scrollController,
         slivers: [
           SliverToBoxAdapter(
-            child: SelectionContainer.disabled(
-              child: TopicDetailHeader(
-                detail: widget.detail,
-                headerKey: widget.headerKey,
-                showTitle: !widget.hideHeaderTitle,
-                onVoteChanged: widget.onVoteChanged,
-                onNotificationLevelChanged: widget.onNotificationLevelChanged,
-                onJumpToPost: widget.onJumpToPost,
-              ),
+            child: TopicDetailHeader(
+              detail: widget.detail,
+              headerKey: widget.headerKey,
+              showTitle: !widget.hideHeaderTitle,
+              onVoteChanged: widget.onVoteChanged,
+              onNotificationLevelChanged: widget.onNotificationLevelChanged,
+              onJumpToPost: widget.onJumpToPost,
             ),
           ),
 

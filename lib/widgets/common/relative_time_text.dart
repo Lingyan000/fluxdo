@@ -1,7 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import '../../utils/relative_time_clock.dart';
 import '../../utils/time_utils.dart';
 
 /// 时间显示样式
@@ -16,12 +15,15 @@ enum TimeDisplayStyle {
   suffixed,
 }
 
-/// 可自动刷新的相对时间 Widget
+/// 自动刷新的相对时间 Widget
 ///
 /// 特性：
 /// - 长按 Tooltip 显示精确时间
-/// - Timer 根据时间差动态调整刷新频率
-/// - 页面不可见时自动暂停 Timer
+/// - 刷新订阅全局分钟心跳 [RelativeTimeClock] —— 此前每实例自养
+///   Timer(15s~30min 自适应)+ 各自 setState,一屏十几个实例就是
+///   十几个定时器在随机时刻独立醒来;现在全 app 同一节拍、同帧
+///   重建,实例自身零常驻资源。亚分钟档("刚刚"→"1分钟前")的
+///   过渡最多迟 1 分钟,属可接受粒度。
 class RelativeTimeText extends StatefulWidget {
   const RelativeTimeText({
     super.key,
@@ -52,48 +54,26 @@ class RelativeTimeText extends StatefulWidget {
 }
 
 class _RelativeTimeTextState extends State<RelativeTimeText> {
-  Timer? _timer;
+  bool _subscribed = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _scheduleTimer();
+  void _onTick() {
+    if (mounted) setState(() {});
   }
 
-  @override
-  void didUpdateWidget(RelativeTimeText oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.dateTime != widget.dateTime) {
-      _timer?.cancel();
-      _scheduleTimer();
+  void _setSubscribed(bool value) {
+    if (_subscribed == value) return;
+    _subscribed = value;
+    if (value) {
+      RelativeTimeClock.instance.addListener(_onTick);
+    } else {
+      RelativeTimeClock.instance.removeListener(_onTick);
     }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _setSubscribed(false);
     super.dispose();
-  }
-
-  /// 根据时间差动态调整刷新频率
-  Duration _getRefreshInterval() {
-    if (widget.dateTime == null) return const Duration(minutes: 30);
-
-    final diff = DateTime.now().difference(widget.dateTime!);
-    if (diff.inMinutes < 1) return const Duration(seconds: 15);
-    if (diff.inHours < 1) return const Duration(seconds: 30);
-    if (diff.inHours < 24) return const Duration(minutes: 5);
-    return const Duration(minutes: 30);
-  }
-
-  void _scheduleTimer() {
-    // 通过 TickerMode 检查页面是否可见
-    _timer = Timer(_getRefreshInterval(), () {
-      if (mounted) {
-        setState(() {});
-        _scheduleTimer();
-      }
-    });
   }
 
   String _buildDisplayText() {
@@ -111,12 +91,9 @@ class _RelativeTimeTextState extends State<RelativeTimeText> {
 
   @override
   Widget build(BuildContext context) {
-    // TickerMode 为 false 时暂停 Timer
-    if (!TickerMode.valuesOf(context).enabled) {
-      _timer?.cancel();
-    } else if (_timer == null || !_timer!.isActive) {
-      _scheduleTimer();
-    }
+    // 页面不可见(TickerMode off,如被覆盖的路由)时退订,回到可见
+    // 时重订 —— 与旧实现的 Timer 暂停语义一致
+    _setSubscribed(TickerMode.valuesOf(context).enabled);
 
     final displayText = _buildDisplayText();
     final tooltipText = TimeUtils.formatTooltipTime(widget.dateTime);

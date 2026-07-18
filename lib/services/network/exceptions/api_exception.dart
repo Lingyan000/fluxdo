@@ -1,4 +1,5 @@
 import '../../../l10n/s.dart';
+import '../../../models/pending_post.dart';
 
 /// 429 Rate Limit 异常（重试耗尽后抛出）
 class RateLimitException implements Exception {
@@ -23,7 +24,12 @@ class ServerException implements Exception {
 /// 帖子进入审核队列异常
 class PostEnqueuedException implements Exception {
   final int pendingCount;
-  PostEnqueuedException({this.pendingCount = 0});
+
+  /// enqueued 响应里的 `pending_post`(reviewable 摘要),
+  /// 用于即时把待审内容挂进主题页底部待审块;极老版本服务端可能缺失
+  final PendingPost? pendingPost;
+
+  PostEnqueuedException({this.pendingCount = 0, this.pendingPost});
 
   @override
   String toString() => S.current.network_postPendingReview;

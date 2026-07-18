@@ -25,6 +25,10 @@ class BoundarySyncService {
   final CookieJarService _jar = CookieJarService();
   final PlatformCookieStrategy _strategy = PlatformCookieStrategy.create();
 
+  /// 已记录过的良性双变体签名（会话级，防同一对变体随轮询反复刷日志）。
+  final Set<String> _loggedBenignDuplicateSignatures = <String>{};
+  static const int _maxBenignDuplicateSignatures = 32;
+
   /// 从 WebView 读取一个 cookie 值，但不写入 CookieJar。
   ///
   /// 用于 auth 恢复时把 WebView session 当作候选值先验证，避免未验证的
@@ -488,9 +492,6 @@ class BoundarySyncService {
         .map((cookie) => cookie.value?.toString() ?? '')
         .where((value) => value.isNotEmpty)
         .toSet();
-    final level = isSessionCookie || distinctValues.length > 1
-        ? 'warning'
-        : 'debug';
 
     // 诊断增强:flutter_inappwebview 的 Cookie 对象拿不到 Partitioned 属性,
     // 经 RawCookieWriter(GET_COOKIE_INFO / WKHTTPCookieStore) 按值匹配回查,
@@ -506,6 +507,28 @@ class BoundarySyncService {
     bool? partitionedOf(Cookie cookie) =>
         partitionedByValue[cookie.value?.toString() ?? ''];
 
+    // 降噪:CF 双发的 cf_clearance 双变体是已知良性形态(源头在站点 CF
+    // 配置,客户端只能选优),同一对变体只在首见时记 info,轮询重复降 debug;
+    // 任何偏离该形态的双变体保持 warning 不去重。
+    final benign = _isBenignClearanceDuplicate(
+      name: name,
+      cookies: cookies,
+      selected: selected,
+      isSessionCookie: isSessionCookie,
+      partitionedOf: partitionedOf,
+    );
+    final String level;
+    if (benign) {
+      final firstSeen = _rememberBenignDuplicate(
+        _benignDuplicateSignature(host, name, cookies),
+      );
+      level = firstSeen ? 'info' : 'debug';
+    } else {
+      level = isSessionCookie || distinctValues.length > 1
+          ? 'warning'
+          : 'debug';
+    }
+
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
@@ -513,9 +536,12 @@ class BoundarySyncService {
       'event': isSessionCookie
           ? 'duplicate_session_cookie_from_webview'
           : 'duplicate_cookie_from_webview',
-      'message': isSessionCookie
+      'message': benign
+          ? 'WebView 中检测到 CF 双发 cf_clearance 双变体（已知良性形态），已选最新签发'
+          : isSessionCookie
           ? 'WebView 中检测到重复会话 Cookie，已在边界同步时选优'
           : 'WebView 中检测到重复 Cookie，已在边界同步时选优',
+      if (benign) 'benignDuplicate': true,
       'url': url,
       'host': host,
       'name': name,
@@ -546,5 +572,102 @@ class BoundarySyncService {
           )
           .toList(growable: false),
     });
+  }
+
+  /// 判定是否为「CF 双发 cf_clearance」的已知良性双变体形态。
+  ///
+  /// 该形态的定案(见 4a5dc08):同 zone 的 Challenge Page(非分区)与
+  /// Turnstile pre-clearance(CHIPS 分区)各签一份,同名同域同路径共存,
+  /// 源头在站点 CF 配置,客户端无法消除。判定必须逐条核验而非只看名字,
+  /// 任何一条不满足都按原 warning 处理:
+  /// 1. name == cf_clearance 且恰好 2 枚(3 枚以上不是双发形态);
+  /// 2. 两枚值均非空且互不相同(同值残留走原 debug 分支);
+  /// 3. 两枚属性同构(domain/path/secure/httpOnly 一致)——CF 双发除
+  ///    分区键外属性完全相同,属性有差说明混入了别的来源;
+  /// 4. 两枚都未过期、都带 expiresDate 且不相等(前后两次签发),
+  ///    且选优命中 expiresDate 更晚那枚——这是"选对了"的核验点,
+  ///    选错旧份正是当年盾频发的根因(e646a23),选错必须保持 warning;
+  /// 5. 分区属性可读时,不允许出现两枚同为分区/同为非分区——同一存储键
+  ///    本应互相覆盖,出现即偏离双发形态。
+  bool _isBenignClearanceDuplicate({
+    required String name,
+    required List<Cookie> cookies,
+    required Cookie selected,
+    required bool isSessionCookie,
+    required bool? Function(Cookie) partitionedOf,
+  }) {
+    // 1. 名字与数量
+    if (isSessionCookie || name != 'cf_clearance') return false;
+    if (cookies.length != 2) return false;
+
+    // 2. 值非空且互异
+    final values = cookies
+        .map((cookie) => cookie.value?.toString() ?? '')
+        .toList(growable: false);
+    if (values.any((value) => value.isEmpty)) return false;
+    if (values[0] == values[1]) return false;
+
+    // 3. 属性同构
+    final a = cookies[0];
+    final b = cookies[1];
+    if (CookieJarService.normalizeWebViewCookieDomain(a.domain) !=
+        CookieJarService.normalizeWebViewCookieDomain(b.domain)) {
+      return false;
+    }
+    if ((a.path ?? '/') != (b.path ?? '/')) return false;
+    if (a.isSecure != b.isSecure) return false;
+    if (a.isHttpOnly != b.isHttpOnly) return false;
+
+    // 4. 都未过期 + 前后两次签发 + 选优命中最新
+    final now = DateTime.now();
+    final expiresList = <DateTime>[];
+    for (final cookie in cookies) {
+      final expires = CookieJarService.parseWebViewCookieExpires(
+        cookie.expiresDate,
+      );
+      if (expires == null || !expires.isAfter(now)) return false;
+      expiresList.add(expires);
+    }
+    if (expiresList[0] == expiresList[1]) return false;
+    final selectedExpires = CookieJarService.parseWebViewCookieExpires(
+      selected.expiresDate,
+    );
+    final newest = expiresList[0].isAfter(expiresList[1])
+        ? expiresList[0]
+        : expiresList[1];
+    if (selectedExpires != newest) return false;
+
+    // 5. 分区属性可读时核验"一分区一非分区"(null=平台读不出,不否决)
+    final partitionFlags = cookies.map(partitionedOf).toList(growable: false);
+    final partitionedCount = partitionFlags.where((f) => f == true).length;
+    final nonPartitionedCount = partitionFlags.where((f) => f == false).length;
+    if (partitionedCount > 1 || nonPartitionedCount > 1) return false;
+
+    return true;
+  }
+
+  String _benignDuplicateSignature(
+    String host,
+    String name,
+    List<Cookie> cookies,
+  ) {
+    final valueHashes =
+        cookies.map((cookie) => (cookie.value?.toString() ?? '').hashCode).toList()
+          ..sort();
+    return '$host|$name|${valueHashes.join(',')}';
+  }
+
+  /// 记录良性双变体签名。返回 true 表示首见（应记 info），false 表示
+  /// 同一对变体的重复观测（降 debug）。
+  bool _rememberBenignDuplicate(String signature) {
+    if (_loggedBenignDuplicateSignatures.contains(signature)) return false;
+    if (_loggedBenignDuplicateSignatures.length >=
+        _maxBenignDuplicateSignatures) {
+      _loggedBenignDuplicateSignatures.remove(
+        _loggedBenignDuplicateSignatures.first,
+      );
+    }
+    _loggedBenignDuplicateSignatures.add(signature);
+    return true;
   }
 }

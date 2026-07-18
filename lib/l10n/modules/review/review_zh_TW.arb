@@ -1,0 +1,23 @@
+{
+  "@@locale": "zh_TW",
+  "review_myPending": "待稽核內容",
+  "review_awaitingApproval": "等待稽核",
+  "review_withdraw": "撤回",
+  "review_withdrawConfirmTitle": "撤回待稽核內容",
+  "review_withdrawConfirmContent": "確定撤回這條待稽核的內容嗎？撤回後將從稽核佇列中移除，且無法復原。",
+  "review_withdrawn": "已撤回",
+  "review_withdrawFailed": "撤回失敗: {error}",
+  "@review_withdrawFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "review_withdrawAndEdit": "撤回並重新編輯",
+  "review_withdrawAndEditConfirmContent": "將先從稽核佇列撤回這條內容，原文帶回編輯器；重新提交後需再次稽核。中途放棄編輯的話內容不會自動復原。",
+  "review_typeNewTopic": "新話題",
+  "review_typeReply": "回覆",
+  "review_empty": "沒有等待稽核的內容",
+  "review_viewAction": "檢視"
+}

@@ -21,6 +21,7 @@ import '../../models/draft.dart';
 import '../../models/invite_link.dart';
 import '../../models/template.dart';
 import '../../models/post_revision.dart';
+import '../../models/pending_post.dart';
 
 import '../../constants.dart';
 import '../../providers/message_bus_providers.dart';
@@ -35,6 +36,7 @@ import '../network/cookie/session_snapshot.dart';
 import '../cf_challenge_service.dart';
 import '../message_bus_service.dart';
 import '../network/adapters/webview_http_adapter.dart';
+import '../network/webview/webview_adapter_settings_service.dart';
 import '../login_ready_coordinator.dart';
 import '../network/discourse_dio.dart';
 import '../network/interceptors/self_healing_interceptor.dart';
@@ -67,6 +69,7 @@ part '_nested.dart';
 part '_policy.dart';
 part '_revisions.dart';
 part '_onebox.dart';
+part '_reviewables.dart';
 
 /// 基类，包含所有共享字段
 abstract class _DiscourseServiceBase {
@@ -130,7 +133,8 @@ class DiscourseService extends _DiscourseServiceBase
         _NestedMixin,
         _PolicyMixin,
         _RevisionsMixin,
-        _OneboxMixin {
+        _OneboxMixin,
+        _ReviewablesMixin {
   static const String baseUrl = AppConstants.baseUrl;
   static const String _usernameKey = 'linux_do_username';
   static const _summaryCacheDuration = Duration(minutes: 5);

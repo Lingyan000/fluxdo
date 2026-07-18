@@ -61,6 +61,21 @@ final List<EditorTool> editorTools = [
     label: (s) => s.toolPanel_attachment,
     action: (t) => t.pickAndUploadFile(),
   ),
+  // 音视频改名上传(.xz 绕站点扩展名白名单,4MB 上限;插 <audio>/<video>
+  // 标签,网页端原生播放)
+  EditorTool(
+    id: 'media',
+    icon: const FaIcon(FontAwesomeIcons.film),
+    label: (s) => '音视频',
+    menuItems: (s) => const [
+      PopupMenuItem(value: 'audio', child: Text('上传音频')),
+      PopupMenuItem(value: 'video', child: Text('上传视频')),
+      PopupMenuItem(value: 'voice', child: Text('语音消息')),
+    ],
+    onMenuSelected: (t, value) => value == 'voice'
+        ? t.recordAndInsertVoice()
+        : t.pickAndUploadMedia(isAudio: value == 'audio'),
+  ),
   EditorTool(
     id: 'heading',
     icon: const FaIcon(FontAwesomeIcons.heading),
@@ -158,6 +173,24 @@ final List<EditorTool> editorTools = [
     icon: const FaIcon(FontAwesomeIcons.fileCode),
     label: (s) => s.toolPanel_codeBlock,
     action: (t) => t.insertCodeBlock(),
+  ),
+  // 块级模板插入(与富 composer「+」插入菜单同款模板文本)
+  EditorTool(
+    id: 'insertBlock',
+    icon: const FaIcon(FontAwesomeIcons.squarePlus),
+    label: (s) => '插入块',
+    menuItems: (s) => const [
+      PopupMenuItem(value: 'table', child: Text('表格')),
+      PopupMenuItem(value: 'math', child: Text('公式块')),
+      PopupMenuItem(value: 'hr', child: Text('分隔线')),
+      PopupMenuItem(value: 'details', child: Text('折叠详情')),
+    ],
+    onMenuSelected: (t, value) => t.insertBlockSnippet(switch (value) {
+      'table' => '| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |',
+      'math' => '\$\$\nE=mc^2\n\$\$',
+      'hr' => '---',
+      _ => '[details="点开看"]\n折叠内容\n[/details]',
+    }),
   ),
   EditorTool(
     id: 'spoiler',

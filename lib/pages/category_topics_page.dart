@@ -542,6 +542,8 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
+    // 话题卡自定义样式:改设置触发 rebuild(自绘排版直读全局快照)
+    ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
     _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
     final (visible, hidden, hiddenByBlocked) = TopicKeywordFilter.apply(
       _topics,

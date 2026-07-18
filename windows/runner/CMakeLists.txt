@@ -30,6 +30,13 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
+# quickjs_engine 0.1.1 的 pubspec 声明 pluginClass: QuickjsEnginePlugin,
+# Flutter 据此生成 registrant 调 QuickjsEnginePluginRegisterWithRegistrar;
+# 但其 windows 头/实现导出的是 CApi 后缀版本 —— 符号错位,链接
+# identifier not found。上游未修前用别名宏桥接(语义同一函数)。
+target_compile_definitions(${BINARY_NAME} PRIVATE
+  "QuickjsEnginePluginRegisterWithRegistrar=QuickjsEnginePluginCApiRegisterWithRegistrar")
+
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)

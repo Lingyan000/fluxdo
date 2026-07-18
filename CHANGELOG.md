@@ -2,10 +2,440 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.23] - 2026-07-14
+
+
+### 🌟 新功能
+
+- 发布日志双层化:stable 用人工亮点正文 + 折叠 commit 明细,附 v0.2.23 亮点 by @Lingyan000
+
+- 源码模式升级悬浮虚拟指针:幽灵光标二维漂移+命中吸附(与富文本同交互) by @Lingyan000
+
+- 滑钮可发现性:首次按下浮内联提示(前几次,持久计数永久收声) by @Lingyan000
+
+- Callout 插入/壳全属性编辑 + 斜杠菜单补全 by @Lingyan000
+
+- 手势光标升级虚拟指针:富文本按住滑钮二维漂移驱动光标 by @Lingyan000
+
+- 手势光标:工具栏滑钮驱动光标移动/扩选(移动端) by @Lingyan000
+
+- 富 composer 插入菜单接「我的模板」:与 MD 模式同一选择器,内容经 cook 富内容化 by @Lingyan000
+
+- Composer 插入入口补全:MD 模式插入块菜单 + 富文本插入菜单链接项 by @Lingyan000
+
+- Composer 媒体全家桶:富粘贴 + 音视频上传 + 语音消息 + 超 4MB 压缩 by @Lingyan000
+
+- Segments 重算计时归因:定位分页落地帧的 33ms 无构建记录嫌疑 by @Lingyan000
+
+- 图片首绘归因:raster 大帧清单区分 img+(新首绘)/img≈(缓存重挂) by @Lingyan000
+
+- 帖内构成归因:header/footer 细粒度埋点,点名单帖固定成本大头 by @Lingyan000
+
+- 签名体系对齐网页+动画 SVG 管线:user_signature 语义/服务端开关门禁/full_svg_flutter 首帧快照点击播放 by @Lingyan000
+
+- 首页收放体系四改:耦合收尾+起手迟滞+消隐纱+chip飞标题一镜到底 by @Lingyan000
+
+- 渐变顶栏模糊质感定稿:IGN 盘旋转 + 轻 blur 收口,雾面干净 by @Lingyan000
+
+- 折叠态标题前缀报当前分类(信息迁移) + 工具栏弹性化防窄栏溢出 by @Lingyan000
+
+- 首页统一弹簧运动系统 + 侧栏分类⇄标签双页签(服务端标签组/搜索/组导航) by @Lingyan000
+
+- Composer 顶栏渐变模糊:单 pass 变力 shader,消散连续、内容透出 by @Lingyan000
+
+- 首页整块右滑跟手拖出侧栏(手势语义纠偏+受控抽屉) by @Lingyan000
+
+- 创建页 AppBar 按钮区重排:功能直出不折叠 + 草稿指示瞬态化 by @Lingyan000
+
+- Composer 顶栏渐变模糊:模糊+遮罩自上而下消散到透明 by @Lingyan000
+
+- Composer UI 重设计:透出式顶栏 + 底部元数据属性条 by @Lingyan000
+
+- 手机端 composer 重构:分类上收 AppBar + 标题/标签入滚动流 by @Lingyan000
+
+- 侧栏全局手势 + 收放语义分治 + 搜索胶囊/空白三症终修 by @Lingyan000
+
+- 分类侧栏跟手滑动 + 搜索胶囊大字体档撑破修复 by @Lingyan000
+
+- RichComposer 手机端三缺口:安全区 + 编辑区点击铺满 + 键盘⇄表情等高切换 by @Lingyan000
+
+- 首页头部/分类导航整体重构:overlay 收缩 + 胶囊一镜到底 + 分类侧栏 by @Lingyan000
+
+- 编辑话题页接入富文本模式(三宿主页齐了) by @Lingyan000
+
+- 源码⇄富文本双向切换 + 工具栏气质优化 by @Lingyan000
+
+- 编辑器移动端 M2(S6/S7):浮层键盘安全区 + 触控目标 + 键盘占位 by @Lingyan000
+
+- 网格内图工具条(宿主侧)+ 查看器打开时浮层隐藏 by @Lingyan000
+
+- 图片交互 1:1 复刻官方 composer(宿主侧):浮层工具条 + alt 输入条 + 查看器 by @Lingyan000
+
+- 掉帧诊断增强:platform views 计数、CPU「其它」线程名明细、STALL 现场抓取、回跳近帧构建归因 by @Lingyan000
+
+- Rich composer 接线代码块岛内编辑:onCodeBlockEdited → updateIslandNode 直换 by @Lingyan000
+
+- 编辑预览图片缩放控件(100/75/50):源码预览 + 富文本岛,官方正则改 raw by @Lingyan000
+
+- WebM/Opus 语音重封装 CAF:苹果系可播浏览器录音贴 by @Lingyan000
+
+- 性能监控升级:全局悬浮面板 + JANK 排队拆分 + 线程 CPU 自动采样 by @Lingyan000
+
+- Mermaid 图表块重做:legacy UI 回归 + kroki 双源出图 + 矢量查看页 by @Lingyan000
+
+- 斜杠菜单:段首 / 唤起块插入(类 Notion 输入体验之二) by @Lingyan000
+
+- 浏览器授权登录:User API Key 授权 + OTP 换 _t by @Lingyan000
+
+- 日期时间可编辑:属性对话框(官方 local-dates-create modal 精简版) by @Lingyan000
+
+- 富文本 composer:表格原位编辑/壳标题编辑接线,删对话框式表格编辑器 by @Lingyan000
+
+- 表格结构化编辑 + 行内剧透入口 + 红屏修复 by @Lingyan000
+
+- 富文本 composer:岛双击源码编辑 + 源码模式切换按钮 by @Lingyan000
+
+- 富文本 composer(实验性):M3 宿主接入 + 编辑帖子 + 插入面板 by @Lingyan000
+
+- 帧内构建归因:JANK 大帧 detail 列出本帧在建什么(release 可用) by @Lingyan000
+
+- 搜索卡片对齐话题卡片新版布局 + 搜索列表骨架屏 by @Lingyan000
+
+
+### 🐛 修复
+
+- 源码模式滑钮光标不可见根因修复:readOnly 态 TextField 不渲染光标 by @Lingyan000
+
+- 滑钮手势按下即独占:左滑预览等外层同向手势抢不走 by @Lingyan000
+
+- 手势光标三修:去 Tooltip 长按冲突 + 滑钮 44x36 足尺 + MD 步进滚动跟随 by @Lingyan000
+
+- 卡片按压灰底残留修复 + 书签列表滚动三刀 by @Lingyan000
+
+- 随包 ffmpeg 降级为可选组件:离线打包环境(Flatpak 沙箱禁网)不挡构建 by @Lingyan000
+
+- 解码闸门:排队期间 codec 被 dispose 的竞态防护 + 队列级取消 by @Lingyan000
+
+- 视频全屏 dispose 崩溃修复:只读缓存+GlobalKey收养+keepAlive钉住 by @Lingyan000
+
+- Linux 补 quickjs_engine 头缺失的 FLUTTER_PLUGIN_EXPORT 宏定义:Flatpak 编译 unknown type name by @Lingyan000
+
+- Windows 桥接 quickjs_engine 插件注册符号错位:pluginClass 生成名→实际导出的 CApi 名 by @Lingyan000
+
+- 渐变顶栏收口 blur 补 TileMode.clamp:去掉暗色下顶边一条未模糊线 by @Lingyan000
+
+- 渐变顶栏两修:初始态不遮标题 + 属性条字数贴最右 by @Lingyan000
+
+- 表情面板切键盘不弹:关闭分支同样显式 TextInput.show by @Lingyan000
+
+- 修复 CF 验证子资源错误误报 by @Lingyan000
+
+- 手机端三修:点击区真铺满 + 面板切回弹键盘 + 斜杠菜单状态栏安全距离 by @Lingyan000
+
+- Common_ui:级联子菜单高度过估致面板飘离锚点 by @Lingyan000
+
+- 修 Android Chrome 授权登录浏览器一闪跳回:改用 Custom Tabs by @Lingyan000
+
+- Alt 输入体验对齐官方:展开变高(3 行)+ 展开即聚焦全选 by @Lingyan000
+
+- 图片浮层红屏:_FloatingPanel 补 Material 祖先 by @Lingyan000
+
+- 富文本表情包插不进:sticker markdown 带 ,30% 后缀,手写正则不匹配静默丢 by @Lingyan000
+
+- Grid 瓦片不出缩放胶囊:FittedBox 无约束上下文浮层会缩放变形 by @Lingyan000
+
+- 短链解析负缓存:lookup-urls 确认不存在的 upload 短链会话内不再重试 by @Lingyan000
+
+- 帖内视频/音频播放修复:short-url 路径解析 + 改名上传媒体兼容 by @Lingyan000
+
+- 斜杠菜单初始位置滞后一帧:光标矩形变化时重建活跃浮层 by @Lingyan000
+
+- 插入菜单锚定「+」按钮 + 密度收敛 by @Lingyan000
+
+- 斜杠菜单三修:光标锚定 + 上下键/回车导航 + hint 叠列表圆点 by @Lingyan000
+
+- 真机红屏主犯:对话框 controller pop 后立即 dispose by @Lingyan000
+
+- 插入块无反应:cook 挂起无降级 + 插入链路诊断日志 by @Lingyan000
+
+- Bootstrap 治理:404 永动机(退避+换弹药)+ 成功态改「进程×登录会话」级 by @Lingyan000
+
+- 图片滑动关闭停帧:滑动中冻结 loading→completed 树切换 + 载体重绑 by @Lingyan000
+
+- 图片治理:占位挂 frameBuilder(AVIF/动图无占位根因)+ 比例记忆治回跳残余 by @Lingyan000
+
+- 视频帖治理:滚动不连续(比例记忆+滚动冻结展开)+ 初始化失败降级卡 by @Lingyan000
+
+- 滚动锚定哨兵改武装式:arm 在 state 落地帧才修正,修"回复给"展开/收起位置漂移 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 视频压缩上 HEVC:同码率画质 +30~50%,失败自动回退 H264 by @Lingyan000
+
+- ️ 视频压缩提质三刀:预算折扣 0.74→0.92 + 分辨率按码率动态(短视频 720p)+ 桌面 x264 veryfast by @Lingyan000
+
+- ️ 话题卡全线自绘:单渲染对象 + 排版全局缓存,挂载帧纯绘制 by @Lingyan000
+
+- ️ 头像解码尺寸约束:治多头像同帧上屏的 raster 尖峰 by @Lingyan000
+
+- ️ 书签卡分类表列表层直传:去掉每卡 categoryMapProvider 订阅 by @Lingyan000
+
+- ️ message bus 滚动期延迟投递:治"帧开工晚"型掉帧 by @Lingyan000
+
+- ️ 去掉 /latest 消息的双重处理 by @Lingyan000
+
+- ️ 卡片减负第二批:catTags 去 Opacity 层 + 色带图标字形化 + 字形 span 公共化 by @Lingyan000
+
+- ️ 卡片挂载帧减负:统计项单段落化 + 已读退灰去 Opacity 层 by @Lingyan000
+
+- ️ 书签长列表结构病对症:三趟 O(N) 记忆化 + 卡片签名缓存 by @Lingyan000
+
+- ️ 标题状态图标字形化:清掉标题段落上最后 6 个 WidgetSpan 占位 by @Lingyan000
+
+- ️ 详情页重建减负四刀 + 头像主题失效修复 by @Lingyan000
+
+- ️ 优化首页话题列表滚动性能 by @Lingyan000
+
+- ️ CJK 字形图集预热:把 Impeller 图集扩容/搬家赶出滚动帧 by @Lingyan000
+
+- ️ 动画 SVG 播放/首帧四连修:首帧剪层 + 低频时钟 + 自持播放器 + 签名 COEP 准入 by @Lingyan000
+
+- ️ 接入 native_animated_image 0.3.4:webp/GIF 首帧上传纳入全局解码闸门 by @Lingyan000
+
+- ️ 全局图片解码并发闸门:限解码即限 Impeller 纹理上传,治图密话题 raster 尖峰 by @Lingyan000
+
+- ️ 首页快滚专项:头像 SVG 探测记忆 + 列表卡去 keepalive 包装 + 偏好 select 化 by @Lingyan000
+
+- ️ 话题卡片 Card 壳换轻装:砍每卡一套 AnimatedPhysicalModel 隐式动画基建 by @Lingyan000
+
+- ️ 图片操作卡顿两刀:缩放切档零重解码 + 瓦片解码 cap 屏宽 by @Lingyan000
+
+- 话题页整页 rebuild 解耦:detail watch 下沉到 AppBar/body/AI 页 Consumer 边界,落地帧页面骨架短路 by @Lingyan000
+
+- 高负载滚动掉帧专项:图片首绘分帧、动图滚动冻结、翻页渐进物化+解析预热、msgbus 大包隔离、cf WebView 滚动挂起 by @Lingyan000
+
+- ️ emoji 动图 RepaintBoundary 改无条件:堵住动 WebP/AVIF 漏网导致的整帖每帧重绘 by @Lingyan000
+
+- ️ 列表滚动优化(闲鱼方案落地):比例监听收口 + 跳转进入渐进物化 by @Lingyan000
+
+- ️ 弹幕 Ticker 生命周期:可见才跑、放完即停,消每帧 setState 空转 by @Lingyan000
+
+- ️ 进入掉帧治理:转场期先骨架 + 首屏渐进物化,物化成本挪出动画窗口 by @Lingyan000
+
+- ️ 内容滚动首建治理:随分块阈值下调扩容长帖解析缓存(64→128) by @Lingyan000
+
+- ️ 转场治理:FadeForwards saveLayer 换 Cupertino,Android 预测返回拷贝改造保留 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 撤宿主 grid 浮层(动作已内聚进子包 EditorImageGrid),只留查看器接线 by @Lingyan000
+
+
+### 📦 依赖更新
+
+- Flatpak:静态 ffmpeg 经 file source 装入 /app/bin(媒体压缩 CLI) by @Lingyan000
+
+
+### 🔧 其他
+
+- ⬆️ fluxdo_render:div/center 容器拆壳修复(对齐 div 包图丢图只剩 meta 文字)+ 测试基建 Windows 兼容 by @Lingyan000
+
+- 🔥 源码模式手势光标下线:TextField 命中吸附不可靠(悬浮到位不落真光标),只保留富文本侧 by @Lingyan000
+
+- ⬆️ fluxdo_render:虚拟指针无光标用例语义更新 by @Lingyan000
+
+- 💄 手势光标单控件化 + 随时可用 by @Lingyan000
+
+- 💄 手势光标恢复移动端限定(桌面验收完毕,物理键盘无需滑钮) by @Lingyan000
+
+- 🔥 字形图集预热退场:未经 A/B 终审的机制不留在生产里 by @Lingyan000
+
+- 💄 手势光标图标修正:滑钮=I 光标、选择开关=text_select 图标,说明文案同步 by @Lingyan000
+
+- ⬆️ fluxdo_render:mention 去 WidgetSpan(纯 TextSpan + painter 药丸) by @Lingyan000
+
+- ⬆️ fluxdo_render:移动端选区二期(collapsed 光标拖柄 + 手柄边缘自动滚) by @Lingyan000
+
+- ⬆️ fluxdo_render:行内代码灰底 painter 条件挂载(无行内代码的文本块省一个 CustomPaint) by @Lingyan000
+
+- ⬆️ fluxdo_render:图片体系 1:1 复刻官方 + 编辑器移动端一期 + emoji 修复 by @Lingyan000
+
+- 💄 浮层规格拉平:插入菜单/标题弹层接统一容器样式 by @Lingyan000
+
+- 💄 斜杠/mention 浮层 Notion 化 by @Lingyan000
+
+- ⬆️ fluxdo_render:表格块选择柄被裁(根 Stack Clip.none) by @Lingyan000
+
+- ⬆️ fluxdo_render:表格圆角回归 + hover 柄淡显体系 by @Lingyan000
+
+- ⬆️ fluxdo_render:表格行列操作 Notion 化 + cell 编辑态强化 by @Lingyan000
+
+- ⬆️ fluxdo_render:表格块级选择柄(整选/删除入口) by @Lingyan000
+
+- ⬆️ fluxdo_render:修表格 cell 双光标(自管区让路 + hasPrimaryFocus) by @Lingyan000
+
+- 💄 修双 spinner 叠影:富 composer 挂载门禁占位改留空 by @Lingyan000
+
+- ⬆️ fluxdo_render:修表格 cell 编辑按键被编辑器拦截 by @Lingyan000
+
+- ⬆️ fluxdo_render:修粘贴丢容器壳 + 壳重排红屏(M5-B 回归) by @Lingyan000
+
+- ⬆️ fluxdo_render:M5 容器块可进入编辑 + 行内 spoiler/link mark by @Lingyan000
+
+- 💄 富文本 composer UI 止血:单一底部工具栏,与纯文本编辑器同构 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.22...v0.2.23
+
+## [0.2.22] - 2026-07-07
+
+
+### 🌟 新功能
+
+- 话题列表 keyed reconcile + 锚定哨兵,修顶部动态插入的错位/跳变 by @Lingyan000
+
+- 滚动锚定哨兵:空闲期上方帖子高度变化同帧修正,对齐浏览器 scroll anchoring by @Lingyan000
+
+- 诊断导出带应用版本指纹,防旧包日志误判新修复无效 by @Lingyan000
+
+- 预览补齐 unicode emoji 转换 + onebox 异步展开 by @Lingyan000
+
+- 编辑器预览 1:1 cook:app 内跑 Discourse 官方 markdown-it 管线 by @Lingyan000
+
+- 性能监控补 WebView/线程阻塞归因:WEBVIEW 事件流 + STALL 双探针 by @Lingyan000
+
+- 话题卡片改为标题置顶布局:头像跨两行,分类固定行首 by @Lingyan000
+
+- 话题卡片改版:Gmail 式三行布局 by @Lingyan000
+
+- 长按头像径向菜单 + 复制用户名 by @Lingyan000
+
+- 添加本地实现的用户黑名单功能 (#307) ([#307](https://github.com/lingyan000/fluxdo/pull/307)) by @Ooxygen7
+
+- 优化 Boost 点击预览交互 (#299) ([#299](https://github.com/lingyan000/fluxdo/pull/299)) by @miniworldcnmm
+
+- 用户个人页新增 Boost/投票/已解决列表 + 修 tab 回弹抖动 by @Lingyan000
+
+- 更新渲染引擎:spoiler 动画连续不重播 + pipeline 预热消首帧卡顿 by @Lingyan000
+
+- 分享成图接入 screenshotMode:表格全渲染 + mermaid 立即出图 by @Lingyan000
+
+
+### 🐛 修复
+
+- Fingerprint 端点正则不再写死压缩函数名 by @Lingyan000
+
+- 滚动中冻结 msgbus 帖子更新,修"滚动时被拉一下"的布局跳变 by @Lingyan000
+
+- AVIF 帖内图全尺寸纹理上传漏洞 + raster 大帧 ImageCache 归因快照 by @Lingyan000
+
+- 修图片解码上限对 webp 完全失效:改 decode-time ResizeImage + 高度双向 cap by @Lingyan000
+
+- 修 CF 盾频发:CHIPS 双 cf_clearance 变体 + 边界同步选优振荡 by @Lingyan000
+
+- 贴底改用 viewport anchor:底部空白排除在滚动范围外 + 修回顶停半路 by @Lingyan000
+
+- Fingerprint 端点正则不再写死压缩函数名 by @Lingyan000
+
+- 修复桌面端用户卡片更多菜单不显示:菜单推到兄弟 Navigator 时 InheritedTheme.capture 祖先断言失败 by @Lingyan000
+
+- 修复话题详情页进度条初始定位时数字爬升 by @Lingyan000
+
+- 修复 Hive box 损坏崩溃,图片缓存索引改用 sqlite 后端 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ msgbus 积压攒批+坍缩,修长时间挂后台回前台的几秒卡顿 by @Lingyan000
+
+- ️ 启用 HCPP:修 iframe 在屏时整页滚动降级卡顿 by @Lingyan000
+
+- ️ iframe 帖子滚动卡顿:WebView 平台视图 KeepAlive 保活,修 chunk 虚拟化反复销毁重建 by @Lingyan000
+
+- ️ Android cookie IPC 全面撤离平台主线程:raw_cookie 通道下沉 HandlerThread by @Lingyan000
+
+- ️ CfRefresh 平台线程减负:stale 重建改原地重载 + 轮询降频 + health 免同步 by @Lingyan000
+
+- ️ 滚动/更新掉帧治理 + 性能诊断设施 by @Lingyan000
+
+- ️ 补回全局解析缓存层 + 滚动停止后空闲预热 chunk by @Lingyan000
+
+- ️ 修图片引发的滚动卡顿:内容图/轮播/emoji/视频封面按显示尺寸解码 + RepaintBoundary 隔离动画重绘 + 挂载即预取 by @Lingyan000
+
+- ️ 帖子初始定位改 center 锚点构造性定位:首帧即目标顶对齐 by @Lingyan000
+
+- ️ 更新渲染引擎:表格列宽测量缓存 + 行内代码灰底矩形缓存 by @Lingyan000
+
+- ️ 分页 spinner 改 ValueNotifier 驱动:loadMore/loadPrevious 起止不再发射 AsyncLoading 整页 rebuild by @Lingyan000
+
+- ️ 拆除帖子列表外层系统 SelectionArea:正文选区统一走自研,未登录降级仅复制 by @Lingyan000
+
+- ️ 更新渲染引擎:spoiler shader 降耗,修大区域/滚动掉帧 by @Lingyan000
+
+- ️ 更新渲染引擎:InlineSpanText flatten 缓存 + 块级 widget 树记忆化,rebuild 不再全量重排版 by @Lingyan000
+
+- ️ 长帖 chunk 懒解析:进入 cacheExtent 才 parse,画廊推迟到首次点图构建 by @Lingyan000
+
+- ️ _buildRenderSegments 按 posts/gaps 身份记忆化,高频 rebuild 不再重付 O(N) 建表成本 by @Lingyan000
+
+- ️ 已读上报不再触发整页 rebuild:session watch 改 listen,updateSeen 推迟到 idle by @Lingyan000
+
+- ️ typingUsers 监听下沉到打字指示器,presence 消息不再整列表重建 by @Lingyan000
+
+- ️ 更新渲染引擎:spoiler 遮罩改 GPU shader 粒子,修多实例同屏卡顿 by @Lingyan000
+
+- ️ 修复图片缓存索引迁移后初次加载慢,v7 清空旧缓存目录 by @Lingyan000
+
+- ️ 优化启动预加载解析 by @Lingyan000
+
+
+### 🔧 其他
+
+- Revert "⚡️ iframe 帖子滚动卡顿:WebView 平台视图 KeepAlive 保活,修 chunk 虚拟化反复销毁重建" by @Lingyan000
+
+- 💄 LoadingSpinner 撑满可见尺寸:去掉 38/48 容器留白,按动画全程最大回转半径精确防溢出 by @Lingyan000
+
+- 💄 分段卡片下沉 common_ui,补齐 ai_model_manager 覆盖 by @Lingyan000
+
+- 💄 LoadingSpinner 1:1 复刻 M3E LoadingIndicator:7 形状循环 morph + 650ms 弹簧节奏 + 4666ms 全局旋转 by @Lingyan000
+
+- 💄 外观页 UI 优化:主题色卡大屏定宽、应用图标改 keyline 设计稿风格卡片 by @Lingyan000
+
+- ⬆️ 更新渲染引擎:修复两手柄重合时拖拽死亡、放大镜残留 by @Lingyan000
+
+- 💄 设置/个人页全面切换 M3 Expressive 分段卡片风格 by @Lingyan000
+
+- 💚 修复 Flatpak 离线构建:sqlite3 hook 改用 vendored amalgamation 源码编译 by @Lingyan000
+
+- 🔧 移除 .gitmodules 中的 fetchRecurseSubmodules 配置 by @Lingyan000
+
+- ⬆️ 更新渲染引擎:修复行内代码灰底溢出到相邻文字 by @Lingyan000
+
+- ⬆️ 更新渲染引擎:修复移动端选区滚动误清、手柄反选、放大镜焦点 by @Lingyan000
+
+- 🔧 修复子模块依赖配置 by @Lingyan000
+
+- ⬆️ fluxdo_render → 90e8f48:长串软换行(修行内代码/长串溢出) by @Lingyan000
+
+- ⬆️ fluxdo_render → cce35c9:移动端选区震动/拖柄toolbar/向回选修复 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.21...v0.2.22
+
 ## [0.2.21] - 2026-06-23
 
 
 ### 🌟 新功能
+
+- 接入 fluxdo_render 自研渲染引擎,完整下线 fwfh by @Lingyan000
+
+- 支持信任要求空状态进度展示 by @Lingyan000
 
 - 全局图标统一为 Material Symbols Rounded + 支持自绘 by @Lingyan000
 
@@ -19,6 +449,12 @@
 
 
 ### 🐛 修复
+
+- 修复渲染 benchmark 引用已删 legacy + 清理 iframe dead code by @Lingyan000
+
+- 修复元宇宙余额卡片 loading 态与数据态高度不一致 by @Lingyan000
+
+- 修复 Windows 最小化后窗口无法还原 (#302) by @Lingyan000
 
 - 修复网络适配器与 Cookie 同步稳定性 by @Lingyan000
 
@@ -34,6 +470,11 @@
 - 隔离自驱动重绘 + 头像 SVG 探测短路 by @Lingyan000
 
 - 优化后台 WebView 资源占用 by @Lingyan000
+
+
+### ✅ 测试
+
+- 修复测试超时和断言失败 by @Lingyan000
 
 
 

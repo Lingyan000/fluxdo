@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 通知权限 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 语音消息录制 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- APK 安装权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 查询所有已安装应用（内置浏览器解析应用链接需要获取目标应用图标和名称） -->

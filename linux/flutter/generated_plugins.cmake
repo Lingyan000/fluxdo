@@ -14,6 +14,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   gtk
   irondash_engine_context
   quickjs_engine
+  record_linux
   screen_retriever_linux
   super_native_extensions
   url_launcher_linux

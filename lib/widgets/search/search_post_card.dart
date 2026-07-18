@@ -6,9 +6,13 @@ import '../../models/search_result.dart';
 import '../../providers/category_provider.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/platform_utils.dart';
+import '../../utils/responsive.dart';
 import '../common/category_tags_line.dart';
 import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
+import '../topic/painted_topic_card.dart';
+import '../topic/topic_card_layout.dart';
+import '../topic/topic_item_builder.dart' show kUsePaintedTopicCard;
 
 /// 搜索结果帖子卡片 — 与话题卡片同款的标题置顶布局:
 /// 1. 标题(满宽,最多两行,支持搜索高亮)+ 右侧 AI标记/#楼层 槽位
@@ -33,6 +37,45 @@ class SearchPostCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final topic = post.topic;
 
+    // 获取分类信息
+    final categoryMap = ref.watch(categoryMapProvider).value;
+    final categoryId = topic?.categoryId;
+    Category? category;
+    if (categoryId != null && categoryMap != null) {
+      category = categoryMap[categoryId];
+    }
+
+    // ── 自绘路径(默认):排版全局缓存 + 单渲染对象,与话题卡同引擎
+    // (kUsePaintedTopicCard 总开关一键回退 widget 版)
+    if (kUsePaintedTopicCard) {
+      final viewportWidth = MediaQuery.sizeOf(context).width - 32; // 页边 16×2
+      final isMobile = Responsive.isMobile(context);
+      final cardWidth = isMobile
+          ? viewportWidth
+          : (viewportWidth > Breakpoints.maxContentWidth
+              ? Breakpoints.maxContentWidth
+              : viewportWidth);
+      final layout = TopicCardLayout.obtainSearch(
+        identity: 'search:${post.id}',
+        post: post,
+        width: cardWidth,
+        theme: theme,
+        category: category,
+        statsAvailableWidth: cardWidth - 64,
+      );
+      Widget card = PaintedTopicCard(
+        layout: layout,
+        onTap: onTap,
+        onLongPress: onLongPress,
+      );
+      if (!isMobile) {
+        card = Center(child: SizedBox(width: cardWidth, child: card));
+      }
+      return card;
+    }
+
+    // ── widget 版(回退保险丝)────────────────────────────────
+
     // 搜索结果无已读态,统一用话题卡片的强调态样式
     final titleColor = theme.colorScheme.onSurface;
     final titleStyle = theme.textTheme.bodyMedium?.copyWith(
@@ -42,14 +85,6 @@ class SearchPostCard extends ConsumerWidget {
       color: titleColor,
     );
     final metaColor = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8);
-
-    // 获取分类信息
-    final categoryMap = ref.watch(categoryMapProvider).value;
-    final categoryId = topic?.categoryId;
-    Category? category;
-    if (categoryId != null && categoryMap != null) {
-      category = categoryMap[categoryId];
-    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -229,6 +264,15 @@ class SearchPostCard extends ConsumerWidget {
         topic,
         theme,
         titleStyle,
+      );
+    }
+
+    if (!topic.closed && !topic.archived) {
+      return Text(
+        topic.title,
+        style: titleStyle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       );
     }
 

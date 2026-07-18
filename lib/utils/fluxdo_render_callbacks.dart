@@ -251,11 +251,7 @@ class FluxdoRenderCallbacks {
   static void _trackClick(String url, int postId, int? topicId) {
     if (topicId == null) return;
     if (!shouldTrackClick(url)) return;
-    DiscourseService().trackClick(
-      url: url,
-      postId: postId,
-      topicId: topicId,
-    );
+    DiscourseService().trackClick(url: url, postId: postId, topicId: topicId);
   }
 
   /// 默认内部链接点击。
@@ -278,13 +274,15 @@ class FluxdoRenderCallbacks {
     )) {
       return;
     }
-    Navigator.of(ctx).push(MaterialPageRoute(
-      builder: (_) => TopicDetailPage(
-        topicId: topicId,
-        initialTitle: topicSlug,
-        scrollToPostNumber: postNumber,
+    Navigator.of(ctx).push(
+      MaterialPageRoute(
+        builder: (_) => TopicDetailPage(
+          topicId: topicId,
+          initialTitle: topicSlug,
+          scrollToPostNumber: postNumber,
+        ),
       ),
-    ));
+    );
   }
 
   // ==========================================================================
@@ -335,9 +333,9 @@ class FluxdoRenderCallbacks {
   /// [_codeBlockBuilder] 已按 language 整块接管)。
   static CodeBlockHighlighter get _codeBlockHighlighter =>
       (ctx, code, language) {
-    // 同步 fast-path,async 高亮用 _AsyncHighlightedCode 包一层。
-    return _AsyncHighlightedCode(code: code, language: language);
-  };
+        // 同步 fast-path,async 高亮用 _AsyncHighlightedCode 包一层。
+        return _AsyncHighlightedCode(code: code, language: language);
+      };
 
   /// 代码块整块 override:mermaid 换成独立图表块(灰底容器 + 图表/代码
   /// 切换顶栏 + mermaid.ink 出图,逐字对齐 legacy _MermaidWidget)。
@@ -354,16 +352,16 @@ class FluxdoRenderCallbacks {
   /// 引用卡头像:走 SmartAvatar(鉴权 + CDN 重写)。
   static QuoteAvatarBuilder get _quoteAvatarBuilder =>
       (ctx, username, avatarUrl, size) {
-    final resolvedUrl = (avatarUrl ?? '').isEmpty
-        ? null
-        : UrlHelper.resolveUrlWithCdn(avatarUrl!);
-    return SmartAvatar(
-      imageUrl: resolvedUrl,
-      radius: size / 2,
-      fallbackText: username,
-      backgroundColor: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-    );
-  };
+        final resolvedUrl = (avatarUrl ?? '').isEmpty
+            ? null
+            : UrlHelper.resolveUrlWithCdn(avatarUrl!);
+        return SmartAvatar(
+          imageUrl: resolvedUrl,
+          radius: size / 2,
+          fallbackText: username,
+          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+        );
+      };
 
   /// 块级数学公式:flutter_math_fork,失败回退 monospace 原文。
   static MathBlockBuilder get _mathBlockBuilder => (ctx, node) {
@@ -382,8 +380,9 @@ class FluxdoRenderCallbacks {
               node.latex,
               style: TextStyle(
                 fontFamily: 'monospace',
-                color:
-                    Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                color: Theme.of(
+                  ctx,
+                ).colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -439,50 +438,50 @@ class FluxdoRenderCallbacks {
         posterUrl = resolved;
       }
     }
-    final dimensOk = node.width != null &&
+    final dimensOk =
+        node.width != null &&
         node.width! > 0 &&
         node.height != null &&
         node.height! > 0;
     Widget playerFor(String resolvedSrc) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: DiscourseVideoPlayer(
-              resolvedSrc,
-              aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
-              autoResize: !dimensOk,
-              controls: true,
-              poster: posterUrl == null
-                  ? null
-                  : Image(
-                      // 封面按列宽(屏宽兜底)× dpr 解码,不吃原图全分辨率
-                      image: ResizeImage.resizeIfNeeded(
-                        (MediaQuery.sizeOf(ctx).width *
-                                MediaQuery.devicePixelRatioOf(ctx))
-                            .round(),
-                        null,
-                        discourseImageProvider(posterUrl),
-                      ),
-                      fit: BoxFit.contain,
-                      // 加载失败降级为无封面。不配的话 debug 模式下
-                      // Flutter 用暗红 Placeholder 顶上来(红色一闪)。
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-              errorBuilder: (c, failedUrl, error) => _VideoErrorFallback(
-                url: failedUrl,
-                error: error,
-              ),
-              loadingBuilder: (c, _, child) => Center(
-                child: posterUrl != null
-                    ? child
-                    : const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-            ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: DiscourseVideoPlayer(
+          resolvedSrc,
+          aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
+          autoResize: !dimensOk,
+          controls: true,
+          poster: posterUrl == null
+              ? null
+              : Image(
+                  // 封面按列宽(屏宽兜底)× dpr 解码,不吃原图全分辨率
+                  image: ResizeImage.resizeIfNeeded(
+                    (MediaQuery.sizeOf(ctx).width *
+                            MediaQuery.devicePixelRatioOf(ctx))
+                        .round(),
+                    null,
+                    discourseImageProvider(posterUrl),
+                  ),
+                  fit: BoxFit.contain,
+                  // 加载失败降级为无封面。不配的话 debug 模式下
+                  // Flutter 用暗红 Placeholder 顶上来(红色一闪)。
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+          errorBuilder: (c, failedUrl, error) =>
+              _VideoErrorFallback(url: failedUrl, error: error),
+          loadingBuilder: (c, _, child) => Center(
+            child: posterUrl != null
+                ? child
+                : const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
           ),
-        );
+        ),
+      ),
+    );
     const probing = Padding(
       padding: EdgeInsets.symmetric(vertical: 8),
       child: AspectRatio(
@@ -523,7 +522,10 @@ class FluxdoRenderCallbacks {
       ),
     );
     Widget compatPlayerFor(String src) => _withPlayableUrl(
-        src, (url) => DiscourseAudioPlayer(url: url), probing);
+      src,
+      (url) => DiscourseAudioPlayer(url: url, voice: node.voice),
+      probing,
+    );
     if (!DiscourseImageUtils.isUploadUrl(rawSrc)) {
       return compatPlayerFor(UrlHelper.resolveUrlWithCdn(rawSrc));
     }
@@ -567,19 +569,19 @@ class FluxdoRenderCallbacks {
   /// 后回调 startDownload);文件名用 parser 抓到的锚点文件名。
   static AttachmentDownloadHandler get _onDownloadAttachment =>
       (ctx, href, filename) {
-    launchContentLink(
-      ctx,
-      href,
-      onDownloadAttachment: (downloadUrl) {
-        ProviderScope.containerOf(ctx, listen: false)
-            .read(downloadProvider.notifier)
-            .startDownload(
-              url: downloadUrl,
-              suggestedFilename: filename.isEmpty ? null : filename,
-            );
-      },
-    );
-  };
+        launchContentLink(
+          ctx,
+          href,
+          onDownloadAttachment: (downloadUrl) {
+            ProviderScope.containerOf(ctx, listen: false)
+                .read(downloadProvider.notifier)
+                .startDownload(
+                  url: downloadUrl,
+                  suggestedFilename: filename.isEmpty ? null : filename,
+                );
+          },
+        );
+      };
 
   /// 嵌入 iframe:用 IframeNode 结构化字段直接构造 IframeWidget(webview),
   /// 不再反构造 DOM。web 平台无 InAppWebView,返回 null 走子包内置占位卡。
@@ -883,7 +885,8 @@ class FluxdoRenderCallbacks {
     _GalleryData resolveGallery() {
       final cached = galleryCache;
       if (cached != null) return cached;
-      final galleryImages = lightboxImageRuns ??
+      final galleryImages =
+          lightboxImageRuns ??
           lightboxImageRunsProvider?.call() ??
           collectLightboxImageRuns(
             parsedNodes ??
@@ -919,6 +922,7 @@ class FluxdoRenderCallbacks {
         indexByImageIndex: galleryIndexByImageIndex,
       );
     }
+
     return FluxdoRenderCallbacks(
       linkHandler: (ctx, href) {
         // 先追踪链接点击(fire-and-forget,对齐 legacy
@@ -1009,7 +1013,7 @@ class FluxdoRenderCallbacks {
     required String heroTagNamespace,
     int? topicId,
     void Function(int topicId, String? topicSlug, int? postNumber)?
-        onInternalLinkTap,
+    onInternalLinkTap,
     // 编辑器预览场景:可缩放图(客户端 cook 预览形态)出 100/75/50 缩放
     // 胶囊,点击回调宿主改 raw。阅读端不传(无控件,零成本)。
     void Function(ImageRun image, int scale)? onImageScaleChanged,
@@ -1023,8 +1027,7 @@ class FluxdoRenderCallbacks {
             if (onInternalLinkTap != null) {
               onInternalLinkTap(innerTopicId, topicSlug, postNumber);
             } else {
-              _defaultInternalLinkTap(
-                  ctx, innerTopicId, topicSlug, postNumber);
+              _defaultInternalLinkTap(ctx, innerTopicId, topicSlug, postNumber);
             }
           },
         );
@@ -1151,7 +1154,8 @@ class FluxdoRenderCallbacks {
                     width: 24,
                     height: 24,
                     child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   ),
                 ),
               ),
@@ -1194,24 +1198,26 @@ class FluxdoRenderCallbacks {
                   final fullUrl = image.lightboxUrl ?? resolvedUrl;
                   final resolvedFullUrl =
                       DiscourseImageUtils.isUploadUrl(fullUrl)
-                          ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
-                              fullUrl)
-                          : UrlHelper.resolveUrlWithCdn(fullUrl);
+                      ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
+                            fullUrl)
+                      : UrlHelper.resolveUrlWithCdn(fullUrl);
                   // 画廊数据在点击时才解析(长帖懒解析场景首次点图会触发
                   // 全 chunk parse,离散动作可接受;之后命中缓存)。
                   // 全帖画廊非空时走画廊 viewer(左右切同帖其他图);否则单图。
                   final gallery = galleryResolver?.call();
                   final galleryIndex =
                       gallery?.indexByImageIndex[image.indexInPost];
-                  final hasGallery = gallery != null &&
+                  final hasGallery =
+                      gallery != null &&
                       gallery.urls.length > 1 &&
                       galleryIndex != null &&
                       galleryIndex >= 0 &&
                       galleryIndex < gallery.urls.length;
                   DiscourseImageUtils.openViewer(
                     context: ctx,
-                    imageUrl:
-                        DiscourseImageUtils.getOriginalUrl(resolvedFullUrl),
+                    imageUrl: DiscourseImageUtils.getOriginalUrl(
+                      resolvedFullUrl,
+                    ),
                     heroTag: heroTag,
                     thumbnailUrl: resolvedUrl,
                     galleryImages: hasGallery ? gallery.urls : null,
@@ -1319,8 +1325,10 @@ class FluxdoRenderCallbacks {
     return Builder(
       builder: (context) {
         final dark = Theme.of(context).brightness == Brightness.dark;
-        final resolved =
-            SvgUtils.resolveColorSchemeMedia(svgSource, dark: dark);
+        final resolved = SvgUtils.resolveColorSchemeMedia(
+          svgSource,
+          dark: dark,
+        );
 
         if (AnimatedSvgView.hasAnimations(resolved)) {
           return AnimatedSvgView(svgSource: resolved);
@@ -1518,9 +1526,9 @@ class _MermaidBlockState extends State<_MermaidBlock>
   }
 
   void _retry() => setState(() {
-        _retryCount++;
-        _sourceIndex = 0; // 重试从主源(kroki)重来
-      });
+    _retryCount++;
+    _sourceIndex = 0; // 重试从主源(kroki)重来
+  });
 
   /// kroki.io 出图 URL(主源):`GET /mermaid/{png|svg}/{zlib+base64url}?theme=`。
   ///
@@ -1568,12 +1576,15 @@ class _MermaidBlockState extends State<_MermaidBlock>
                 begin: Alignment(-1.0 + 2.0 * controller.value, 0),
                 end: Alignment(-0.5 + 2.0 * controller.value, 0),
                 colors: [
-                  theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
-                  theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.6),
-                  theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.6,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                 ],
                 stops: const [0.0, 0.5, 1.0],
               ),
@@ -1692,7 +1703,9 @@ class _MermaidBlockState extends State<_MermaidBlock>
                   Text(
                     S.current.codeBlock_chartLoadFailed,
                     style: TextStyle(
-                        color: theme.colorScheme.error, fontSize: 12),
+                      color: theme.colorScheme.error,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
@@ -1701,7 +1714,9 @@ class _MermaidBlockState extends State<_MermaidBlock>
                     label: Text(S.current.common_retry),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -1722,8 +1737,9 @@ class _MermaidBlockState extends State<_MermaidBlock>
     final screenshotMode = ScreenshotMode.of(context);
     final bgColor = isDark ? const Color(0xff282a36) : const Color(0xfff6f8fa);
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.3);
-    final thumbColor =
-        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.15);
+    final thumbColor = (isDark ? Colors.white : Colors.black).withValues(
+      alpha: 0.15,
+    );
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -1741,86 +1757,90 @@ class _MermaidBlockState extends State<_MermaidBlock>
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: borderColor)),
             ),
-            child: SelectionContainer.disabled(
-              child: Row(
-                children: [
-                  InkWell(
-                    onTap: () => setState(() => _showCode = !_showCode),
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _showCode
-                                ? Symbols.auto_graph_rounded
-                                : Symbols.code_rounded,
-                            size: 16,
-                            color: theme.colorScheme.onSurface
-                                .withValues(alpha: 0.7),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _showCode = !_showCode),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _showCode
+                              ? Symbols.auto_graph_rounded
+                              : Symbols.code_rounded,
+                          size: 16,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _showCode
-                                ? S.current.codeBlock_chart
-                                : S.current.codeBlock_code,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.7),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _showCode
+                              ? S.current.codeBlock_chart
+                              : S.current.codeBlock_code,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.7,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  // 矢量放大(仅图表态):kroki SVG + WebView,大图任意
-                  // 缩放不糊 —— kroki PNG 恒 1x,mindmap 等大图位图必糊。
-                  if (!_showCode)
-                    InkWell(
-                      onTap: () {
-                        MermaidViewerPage.open(
-                          context,
-                          svgUrl:
-                              _buildKrokiUrl(widget.code, isDark, svg: true),
-                          fallbackImageUrl: _sourceIndex > 0
-                              ? _buildMermaidInkUrl(widget.code, isDark,
-                                  width: 2000)
-                              : _buildKrokiUrl(widget.code, isDark),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Symbols.pan_zoom_rounded,
-                          size: 16,
-                          color: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
+                ),
+                const Spacer(),
+                // 矢量放大(仅图表态):kroki SVG + WebView,大图任意
+                // 缩放不糊 —— kroki PNG 恒 1x,mindmap 等大图位图必糊。
+                if (!_showCode)
                   InkWell(
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: widget.code));
-                      ToastService.showSuccess(S.current.common_codeCopied);
+                      MermaidViewerPage.open(
+                        context,
+                        svgUrl: _buildKrokiUrl(widget.code, isDark, svg: true),
+                        fallbackImageUrl: _sourceIndex > 0
+                            ? _buildMermaidInkUrl(
+                                widget.code,
+                                isDark,
+                                width: 2000,
+                              )
+                            : _buildKrokiUrl(widget.code, isDark),
+                      );
                     },
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
                       padding: const EdgeInsets.all(6),
                       child: Icon(
-                        Symbols.content_copy_rounded,
+                        Symbols.pan_zoom_rounded,
                         size: 16,
-                        color:
-                            theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: widget.code));
+                    ToastService.showSuccess(S.current.common_codeCopied);
+                  },
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Symbols.content_copy_rounded,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           // 内容区域:16:9 固定高度框(对齐官方 mermaid 主题组件
@@ -1954,10 +1974,8 @@ String _attr(String s) => s
     .replaceAll('>', '&gt;');
 
 /// 转义文本内容(用于 textContent)。
-String _escape(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+String _escape(String s) =>
+    s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 /// 注入 mention 状态 emoji(对齐 legacy discourse_html_content_widget
 /// _preprocessHtml 第 243-264 行)。原始 cooked 的 mention 链接不含状态
@@ -2010,8 +2028,10 @@ String _injectClickCounts(String html, List<LinkCount>? linkCounts) {
       final openTag = match.group(1)!;
       final content = match.group(2)!;
       final closeTag = match.group(3)!;
-      final newOpenTag =
-          openTag.replaceFirst('<a', '<a data-clicks="$formatted"');
+      final newOpenTag = openTag.replaceFirst(
+        '<a',
+        '<a data-clicks="$formatted"',
+      );
       return '$newOpenTag$content$closeTag'
           ' <span class="click-count"> $formatted </span>';
     });
@@ -2044,9 +2064,7 @@ class _VideoErrorFallback extends StatelessWidget {
       onTap: () => launchInExternalBrowser(url),
       child: Container(
         alignment: Alignment.center,
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.3,
-        ),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

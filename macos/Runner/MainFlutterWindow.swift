@@ -11,6 +11,11 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
+    MediaTranscodeHandler.shared.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+
     // 注册 cookie 同步 channel，用于将 cookie 写入 HTTPCookieStorage.shared
     // WKWebView 的 sharedCookiesEnabled 在创建时从 HTTPCookieStorage.shared 读取 cookie
     let channel = FlutterMethodChannel(
