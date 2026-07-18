@@ -3,29 +3,29 @@ import 'package:fluxdo/services/network/doh/webview_mitm_policy.dart';
 
 void main() {
   group('WebViewMitmPolicy', () {
-    test('Windows 高性能模式使用端到端 TLS', () {
+    test('CONNECT 始终 MITM 解密(与上游一致,SNI 阻断防护依赖出口改写)', () {
       expect(
         WebViewMitmPolicy.useMitmConnect(
           isWindows: true,
           webViewAdapterEnabled: false,
         ),
-        isFalse,
+        isTrue,
       );
+      expect(
+        WebViewMitmPolicy.useMitmConnect(
+          isWindows: false,
+          webViewAdapterEnabled: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('Windows 启用 DoH 即要求 CA,与网络引擎选择无关', () {
       expect(
         WebViewMitmPolicy.requiresTrustedCa(
           isWindows: true,
           dohEnabled: true,
           webViewAdapterEnabled: false,
-        ),
-        isFalse,
-      );
-    });
-
-    test('Windows WebView 加 DoH 时使用 MITM 并要求 CA', () {
-      expect(
-        WebViewMitmPolicy.useMitmConnect(
-          isWindows: true,
-          webViewAdapterEnabled: true,
         ),
         isTrue,
       );
@@ -50,18 +50,30 @@ void main() {
       );
     });
 
-    test('其他平台保持上游 MITM 策略', () {
+    test('网关模式只由 DoH 与网关开关决定', () {
       expect(
-        WebViewMitmPolicy.useMitmConnect(
-          isWindows: false,
+        WebViewMitmPolicy.useGatewayMode(
+          isWindows: true,
+          dohEnabled: true,
+          gatewayEnabled: false,
+          webViewAdapterEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        WebViewMitmPolicy.useGatewayMode(
+          isWindows: true,
+          dohEnabled: true,
+          gatewayEnabled: true,
           webViewAdapterEnabled: false,
         ),
         isTrue,
       );
       expect(
-        WebViewMitmPolicy.requiresTrustedCa(
-          isWindows: false,
-          dohEnabled: true,
+        WebViewMitmPolicy.useGatewayMode(
+          isWindows: true,
+          dohEnabled: false,
+          gatewayEnabled: true,
           webViewAdapterEnabled: true,
         ),
         isFalse,
