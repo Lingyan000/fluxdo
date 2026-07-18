@@ -341,7 +341,7 @@ class _PreviewBar extends StatelessWidget {
             key: ValueKey('preview-${e.id}'),
             entry: e,
             index: i,
-            canDrag: !e.locked,
+            canDrag: e.id != NavEntryIds.home,
             canRemove: canRemove,
             onRemove: () => onRemove(e),
           );
@@ -451,14 +451,14 @@ class _PreviewItem extends StatelessWidget {
     );
 
     if (canDrag) {
-      // Delayed 避免水平滑动误触；长按 ~500ms 才进入拖动
-      return ReorderableDelayedDragStartListener(
+      // 直接响应鼠标和触控拖动；只有首页固定在第一位。
+      return ReorderableDragStartListener(
         key: key,
         index: index,
         child: core,
       );
     }
-    // 首页等 locked 项：不包拖动监听，但仍需要有 Key
+    // 首页固定项：不包拖动监听，但仍需要有 Key
     return KeyedSubtree(key: key, child: core);
   }
 }
