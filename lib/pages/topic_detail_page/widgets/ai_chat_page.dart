@@ -47,6 +47,9 @@ class AiChatPage extends ConsumerStatefulWidget {
   /// 回复话题回调（将 AI 回复内容预填到回复框）
   final void Function(String content)? onReplyToTopic;
 
+  /// 嵌入话题页时按 Escape 返回话题正文
+  final VoidCallback? onEscape;
+
   const AiChatPage({
     super.key,
     required this.topicId,
@@ -54,6 +57,7 @@ class AiChatPage extends ConsumerStatefulWidget {
     this.embedded = false,
     this.detail,
     this.onReplyToTopic,
+    this.onEscape,
   });
 
   @override
@@ -838,6 +842,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                 );
               },
               onStop: chatNotifier.stopGeneration,
+              onEscape: widget.onEscape,
               modelButton: currentModel == null
                   ? null
                   : _ModelLogoButton(
