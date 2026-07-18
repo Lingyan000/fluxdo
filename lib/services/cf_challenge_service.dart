@@ -396,8 +396,19 @@ class CfChallengeService {
 
     // 清理资源
     void cleanup() {
-      if (entry.mounted) {
-        entry.remove();
+      void removeEntry() {
+        if (entry.mounted) {
+          entry.remove();
+        }
+      }
+
+      // Windows 插件会在 evaluateJavascript 返回后继续派发原生回调。
+      // 先让页面停止所有探测，再延迟销毁 PlatformView，避免回调命中已经
+      // 释放的 UserContentController（0xc0000005）。其他平台保持原时序。
+      if (io.Platform.isWindows) {
+        Future.delayed(_postCleanupCooldown, removeEntry);
+      } else {
+        removeEntry();
       }
       if (interceptorRoute?.isActive ?? false) {
         interceptorRoute?.navigator?.removeRoute(interceptorRoute!);
@@ -1927,6 +1938,17 @@ class _CfChallengePageState extends State<CfChallengePage> {
             // 上报到这里。子资源连接被刷新流程关闭时，主验证页通常仍可正常
             // 使用；不要因此结束加载态或向用户显示整页加载失败。
             if (!isMainFrame) return;
+
+            // WebView2 在 CF 完成验证并切换主文档时，会把被替换的旧导航
+            // 上报为 CONNECTION_ABORTED。此时完成探测已经接管流程，不应把
+            // 浏览器主动停止旧连接误报成直连 DoH 加载失败。
+            final isExpectedCompletionAbort =
+                io.Platform.isWindows &&
+                error.type == WebResourceErrorType.CONNECTION_ABORTED &&
+                (_hasSeenChallenge ||
+                    _checkingOriginFallback ||
+                    _hideOriginFallbackPage);
+            if (isExpectedCompletionAbort) return;
 
             _pageReadyFallbackTimer?.cancel();
             if (mounted) {
