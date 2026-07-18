@@ -8,9 +8,18 @@ import 'master_detail_layout.dart';
 /// Master-Detail 页面。使用 [NavigatorState.removeRoute] 而不是简单 pop，
 /// 避免临时路由上方还有用户主动打开的页面时误关掉错误的路由。
 class AutoRestoreMasterDetailRoute extends StatefulWidget {
-  const AutoRestoreMasterDetailRoute({super.key, required this.child});
+  const AutoRestoreMasterDetailRoute({
+    super.key,
+    required this.child,
+    this.onRestore,
+    this.masterWidth = MasterDetailLayout.defaultMasterWidth,
+    this.minDetailWidth = MasterDetailLayout.defaultMinDetailWidth,
+  });
 
   final Widget child;
+  final VoidCallback? onRestore;
+  final double masterWidth;
+  final double minDetailWidth;
 
   @override
   State<AutoRestoreMasterDetailRoute> createState() =>
@@ -23,7 +32,11 @@ class _AutoRestoreMasterDetailRouteState
 
   @override
   Widget build(BuildContext context) {
-    final canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(context);
+    final canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(
+      context,
+      masterWidth: widget.masterWidth,
+      minDetailWidth: widget.minDetailWidth,
+    );
     if (!canShowBothPanes) {
       _removeScheduled = false;
       return widget.child;
@@ -34,8 +47,13 @@ class _AutoRestoreMasterDetailRouteState
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final route = ModalRoute.of(context);
-        if (route == null || !route.isActive) return;
-        Navigator.of(context).removeRoute(route);
+        if (route == null || !route.isCurrent) {
+          _removeScheduled = false;
+          return;
+        }
+        final navigator = Navigator.of(context);
+        widget.onRestore?.call();
+        if (route.isActive) navigator.removeRoute(route);
       });
     }
 

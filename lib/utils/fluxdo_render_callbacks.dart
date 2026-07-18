@@ -280,7 +280,7 @@ class FluxdoRenderCallbacks {
         initialTitle: topicSlug,
         scrollToPostNumber: postNumber,
       ),
-    );
+    ));
   }
 
   // ==========================================================================

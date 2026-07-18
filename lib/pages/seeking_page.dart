@@ -12,10 +12,10 @@ import '../services/toast_service.dart';
 import '../utils/time_utils.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/content/collapsed_html_content.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/full_screen_pane_stack.dart';
 import '../widgets/layout/master_detail_layout.dart';
-import 'topic_detail_page/topic_detail_page.dart';
 import 'topics_screen.dart' show PaneContentWidget;
-import 'user_profile_page.dart';
 
 /// 追觅：实时监控指定用户的发帖 / 回复 / 点赞 / 表情回应 / Boost 动态。
 ///
@@ -37,6 +37,8 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   /// 只看此人过滤（点用户头像切换）
   String? _focusUser;
+  bool? _lastCanShowParallel;
+  bool _isAutoSwitching = false;
 
   @override
   void initState() {
@@ -112,36 +114,31 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   void _openActivity(SeekingActivity activity) {
     if (activity.topicId <= 0) return;
+    final notifier = ref.read(selectedSeekingProvider.notifier);
     if (_canShowParallel(context)) {
-      ref
-          .read(selectedSeekingProvider.notifier)
-          .select(
-            topicId: activity.topicId,
-            initialTitle: activity.title,
-            scrollToPostNumber: activity.postNumber,
-          );
+      notifier.select(
+        topicId: activity.topicId,
+        initialTitle: activity.title,
+        scrollToPostNumber: activity.postNumber,
+      );
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TopicDetailPage(
-          topicId: activity.topicId,
-          scrollToPostNumber: activity.postNumber,
-        ),
+    _openSelectedPaneInFullScreen(
+      () => notifier.select(
+        topicId: activity.topicId,
+        initialTitle: activity.title,
+        scrollToPostNumber: activity.postNumber,
       ),
     );
   }
 
   void _openProfile(String username) {
+    final notifier = ref.read(selectedSeekingProvider.notifier);
     if (_canShowParallel(context)) {
-      ref.read(selectedSeekingProvider.notifier).selectProfile(username);
+      notifier.selectProfile(username);
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
-    );
+    _openSelectedPaneInFullScreen(() => notifier.selectProfile(username));
   }
 
   bool _canShowParallel(BuildContext context) =>
@@ -150,6 +147,76 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
         masterWidth: _parallelMasterWidth,
         minDetailWidth: _parallelMinDetailWidth,
       );
+
+  Widget _buildFullScreenPaneStack() => AutoRestoreMasterDetailRoute(
+    masterWidth: _parallelMasterWidth,
+    minDetailWidth: _parallelMinDetailWidth,
+    child: FullScreenPaneStack(
+      stackProvider: selectedSeekingProvider,
+      builder: (_, entry, onBack) => PaneContentWidget(
+        key: _paneKey(entry, 'fullscreen'),
+        entry: entry,
+        stackProvider: selectedSeekingProvider,
+        parentActive: true,
+        onBack: onBack,
+      ),
+    ),
+  );
+
+  void _pushFullScreenPaneStack() {
+    Navigator.of(context)
+        .push<void>(
+          MaterialPageRoute(builder: (_) => _buildFullScreenPaneStack()),
+        )
+        .whenComplete(() {
+          if (!mounted) return;
+          setState(() => _isAutoSwitching = false);
+        });
+  }
+
+  void _openSelectedPaneInFullScreen(VoidCallback selectPane) {
+    if (_isAutoSwitching) return;
+    _isAutoSwitching = true;
+    _lastCanShowParallel = false;
+    selectPane();
+    _pushFullScreenPaneStack();
+  }
+
+  void _maybePushSelectedPane(
+    SelectedTopicState selected,
+    bool canShowParallel,
+  ) {
+    if (_isAutoSwitching) return;
+    if (!widget.isActive) {
+      _lastCanShowParallel = canShowParallel;
+      return;
+    }
+
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      _lastCanShowParallel = canShowParallel;
+      return;
+    }
+
+    final previous = _lastCanShowParallel;
+    _lastCanShowParallel = canShowParallel;
+    if (canShowParallel ||
+        !selected.hasSelection ||
+        (previous != null && !previous)) {
+      return;
+    }
+
+    _isAutoSwitching = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pushFullScreenPaneStack();
+    });
+  }
+
+  Key _paneKey(PaneEntry entry, String slot) => ValueKey(
+    'seeking_${slot}_${entry.kind}_'
+    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -274,12 +341,18 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
     );
 
     final selected = ref.watch(selectedSeekingProvider);
-    if (!_canShowParallel(context) || !selected.hasSelection) return page;
+    final canShowParallel = _canShowParallel(context);
+    _maybePushSelectedPane(selected, canShowParallel);
+    if (!canShowParallel || !selected.hasSelection) return page;
 
     final notifier = ref.read(selectedSeekingProvider.notifier);
-    final master = selected.isStacked
+    final previousEntry = selected.isStacked
+        ? selected.stack[selected.stack.length - 2]
+        : null;
+    final master = previousEntry != null
         ? PaneContentWidget(
-            entry: selected.stack[selected.stack.length - 2],
+            key: _paneKey(previousEntry, 'master'),
+            entry: previousEntry,
             stackProvider: selectedSeekingProvider,
             truncateOnPush: true,
             parentActive: widget.isActive,
@@ -293,6 +366,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       preferredMasterRatio: selected.isStacked ? 0.5 : 0.4,
       master: master,
       detail: PaneContentWidget(
+        key: _paneKey(selected.topEntry!, 'detail'),
         entry: selected.topEntry!,
         stackProvider: selectedSeekingProvider,
         parentActive: widget.isActive,
@@ -867,20 +941,18 @@ class _ActivityTile extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const Spacer(),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 76,
-            child: Text(
-              TimeUtils.formatRelativeTime(activity.createdAt),
-              maxLines: 1,
-              textAlign: TextAlign.left,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
         ],
+      ),
+      trailing: SizedBox(
+        width: 76,
+        child: Text(
+          TimeUtils.formatRelativeTime(activity.createdAt),
+          maxLines: 1,
+          textAlign: TextAlign.right,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

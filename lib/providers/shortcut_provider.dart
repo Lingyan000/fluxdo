@@ -319,11 +319,18 @@ class ShortcutScopeBinding {
     BuildContext context,
     Map<ShortcutAction, VoidCallback> callbacks,
   ) {
+    registerForRoute(ModalRoute.of(context), callbacks);
+  }
+
+  void registerForRoute(
+    Route<dynamic>? route,
+    Map<ShortcutAction, VoidCallback> callbacks,
+  ) {
     if (_disposed) return;
     _registry.register(
       scope: scope,
       owner: _owner,
-      route: ModalRoute.of(context),
+      route: route,
       callbacks: callbacks,
     );
   }
