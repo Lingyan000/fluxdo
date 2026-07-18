@@ -161,6 +161,10 @@ dependencies:
   chewie: any
   video_player: any
   just_audio: ^0.10.6 # 原生上传音频播放(FluxdoRender audioBuilder)
+  # just_audio 本身不包含 Windows/Linux 实现；桌面端使用 media_kit 后端。
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.9
+  media_kit_libs_linux: ^1.2.1
   rhttp:
     git:
       url: https://github.com/Lingyan000/rhttp_plus.git
