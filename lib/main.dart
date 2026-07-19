@@ -274,7 +274,11 @@ Future<void> main() async {
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
     if (isVisible) {
-      await WindowStateService.instance.attach(prefs);
+      if (Platform.isMacOS) {
+        await WindowStateService.instance.restore(prefs);
+      } else {
+        await WindowStateService.instance.attach(prefs);
+      }
       if (Platform.isLinux) {
         await windowManager.focus();
       }
