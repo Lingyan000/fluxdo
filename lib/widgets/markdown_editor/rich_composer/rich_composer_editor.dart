@@ -61,6 +61,7 @@ import '../template_insert_dialog.dart';
 import '../composer_shortcuts.dart' show composerShortcutHint;
 import '../markdown_toolbar.dart' show MarkdownToolbarState;
 import 'callout_edit_dialog.dart';
+import 'block_completion_rules.dart';
 import 'composer_doc_codec.dart';
 import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
@@ -178,6 +179,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   final LayerLink _mentionLink = LayerLink();
   OverlayEntry? _mentionOverlay;
   List<MentionUser> _mentionCandidates = const [];
+
+  /// mention 浮层的键盘选中项(回车/Tab 确认;候选刷新时归零)。
+  int _mentionSelected = 0;
   String _mentionQuery = '';
   Timer? _mentionDebounce;
 
@@ -343,6 +347,39 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             : HardwareKeyboard.instance.isControlPressed)) {
       _insertLink();
       return true;
+    }
+    // mention 浮层的键盘导航(此前完全没接 —— 回车会穿透到编辑器变成
+    // 分段,选不中候选人)。放在 slash 之前:两者不会同时开。
+    if (_mentionOverlay != null && _mentionCandidates.isNotEmpty) {
+      final n = _mentionCandidates.length;
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.arrowDown:
+          setState(() => _mentionSelected = (_mentionSelected + 1) % n);
+          _mentionOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.arrowUp:
+          setState(() => _mentionSelected = (_mentionSelected - 1 + n) % n);
+          _mentionOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.enter:
+        case LogicalKeyboardKey.numpadEnter:
+        case LogicalKeyboardKey.tab:
+          _insertMention(_mentionCandidates[_mentionSelected.clamp(0, n - 1)]);
+          return true;
+        case LogicalKeyboardKey.escape:
+          _dismissMention();
+          return true;
+      }
+    }
+    // 块完成规则(回车触发):```围栏 / $$公式 / |表格| / 成对 HTML。
+    // 这些结构的收尾时机天然是回车 —— 其余块级规则(`# `/`- `/`> `)
+    // 敲空格即可判定,围栏后面还要打语言名,不能一见第三个反引号就转。
+    if (_mentionOverlay == null &&
+        _slashOverlay == null &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+      if (_tryBlockCompletion()) return true;
     }
     if (_slashOverlay == null) return false;
     final items = _slashFiltered;
@@ -727,6 +764,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         final result = await dataSource(query);
         if (!mounted || _mentionQuery != query) return;
         _mentionCandidates = result.users;
+        _mentionSelected = 0;
         if (_mentionCandidates.isEmpty) {
           _dismissMention();
         } else {
@@ -790,6 +828,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 final user = _mentionCandidates[i];
                 return _MentionRow(
                   user: user,
+                  selected: i == _mentionSelected,
                   onTap: () => _insertMention(user),
                 );
               },
@@ -828,6 +867,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   void _dismissMention() {
     _mentionQuery = '';
+    _mentionSelected = 0;
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
   }
@@ -924,6 +964,87 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 万能插入原语:markdown 片段 → cook 链路 → 富内容块,粘贴语义并入
   /// 光标处。所有"+"菜单项(表格/公式/details/…)与链接/图片全走这条 ——
   /// 插入面 = markdown 语法面,零专用代码。cook 失败/超时降级纯文本。
+  // -----------------------------------------------------------------
+  // 块完成规则(回车触发 → cook → 岛)
+  // -----------------------------------------------------------------
+
+  /// 回车时判定当前位置能否收尾成一个可渲染结构;命中则替换。
+  ///
+  /// 判定逻辑在 [detectBlockCompletion](纯函数,单测覆盖);这里只负责
+  /// 前置条件与真正的替换。返回 true = 已接管这次回车。
+  bool _tryBlockCompletion() {
+    final editor = _editor;
+    if (editor == null || editor.hasComposing) return false;
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) return false;
+    final blocks = editor.blocks;
+    final i = blocks.indexWhere((b) => b.id == sel.extent.blockId);
+    if (i < 0) return false;
+    final cur = blocks[i];
+    if (cur is! TextBlock) return false;
+    // 光标必须在行尾:行中回车是分段意图,不是收尾。
+    if (sel.extent.offset != cur.content.length) return false;
+
+    final hit = detectBlockCompletion(
+      [for (final b in blocks) b is TextBlock ? b.content.text : null],
+      i,
+    );
+    if (hit == null) return false;
+    _replaceBlocksWithSnippet(
+      hit.from,
+      hit.to,
+      hit.markdown,
+      splitAfter: hit.splitAfter,
+    );
+    return true;
+  }
+
+  /// 选中 [from,to] 这几个块 → 删除 → cook 插入 [markdown] 的产物。
+  ///
+  /// [splitAfter] = 插完再分段(行内 HTML 场景:回车本意仍是换行,只是
+  /// 顺手把这段渲染了)。
+  void _replaceBlocksWithSnippet(
+    int from,
+    int to,
+    String markdown, {
+    bool splitAfter = false,
+  }) {
+    final editor = _editor;
+    if (editor == null) return;
+    final blocks = editor.blocks;
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: blocks[from].id, offset: 0),
+        extent: EditorPosition(
+          blockId: blocks[to].id,
+          offset: blocks[to].selectionLength,
+        ),
+      ),
+    );
+    editor.deleteSelection();
+    // cook 是异步的;期间用户可能继续打字,insertMarkdownSnippet 自身
+    // 按当前选区插入,与斜杠菜单同一语义。
+    unawaited(() async {
+      final before = editor.blocks.map((b) => b.id).toSet();
+      await insertMarkdownSnippet(markdown);
+      if (!mounted) return;
+      if (splitAfter) {
+        _editor?.splitBlock();
+        return;
+      }
+      // 新插入的岛:请求自动进入编辑态,光标落进代码框/公式框 ——
+      // 否则打完 ``` 回车光标停在岛外面,还得再点一下才能写代码。
+      final ed = _editor;
+      if (ed == null) return;
+      for (final b in ed.blocks) {
+        if (b is IslandBlock && !before.contains(b.id)) {
+          ed.requestIslandEdit(b.id);
+          break;
+        }
+      }
+    }());
+  }
+
   Future<void> insertMarkdownSnippet(String markdown) async {
     final editor = _editor;
     if (editor == null || markdown.isEmpty) return;
@@ -3203,10 +3324,17 @@ class _SlashMenuRow extends StatelessWidget {
 /// mention 候选行:头像 + @用户名/显示名(纯文本编辑器 mention 面板
 /// 同视觉语言)。
 class _MentionRow extends StatelessWidget {
-  const _MentionRow({required this.user, required this.onTap});
+  const _MentionRow({
+    required this.user,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final MentionUser user;
   final VoidCallback onTap;
+
+  /// 键盘选中项(回车确认的目标),画一层底色。
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -3217,7 +3345,9 @@ class _MentionRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
       child: Material(
-        color: Colors.transparent,
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
