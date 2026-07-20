@@ -404,6 +404,34 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [top]);
   }
 
+  /// 消费掉栈顶的"自动打开回复框"意图。
+  ///
+  /// 这个标记必须**用一次就清**：它挂在 PaneEntry 上，只要还是 true，
+  /// 任何导致话题面板重建的事（草稿层被抽掉、栈变动、tab 切换）都会让
+  /// 它再触发一次 —— 实测发完私信回复框又自己弹出来。页面里的
+  /// `_autoOpenReplyHandled` 是 State 字段，面板一重建就跟着重置，
+  /// 拦不住，所以得在状态源头清。
+  void consumeAutoOpenReply() {
+    final top = state.topEntry;
+    if (top == null || top.kind != PaneKind.topic) return;
+    if (!top.autoOpenReply && top.autoReplyToPostNumber == null) return;
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.topic(
+          topicId: top.topicId!,
+          initialTitle: top.initialTitle,
+          scrollToPostNumber: top.scrollToPostNumber,
+          instanceId: top.instanceId,
+          highlightBoostUsername: top.highlightBoostUsername,
+          initialRevisionPostNumber: top.initialRevisionPostNumber,
+          initialRevisionNumber: top.initialRevisionNumber,
+          // 就是这里：清掉，别再弹第二次
+        ),
+      ],
+    );
+  }
+
   /// 抽掉栈中某一类层，其余层保持相对顺序。
   ///
   /// 草稿栏用:草稿全部处理完之后，草稿这一层要从栈里消失，但**右边的

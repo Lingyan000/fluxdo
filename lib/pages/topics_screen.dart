@@ -298,6 +298,12 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                               selectedTopic.initialRevisionPostNumber,
                           initialRevisionNumber:
                               selectedTopic.initialRevisionNumber,
+                          // 这里是**重建** entry，漏一个字段就等于把它吞掉：
+                          // 之前漏了这两个，话题草稿点进来回复框根本不弹。
+                          autoOpenReply:
+                              selectedTopic.topEntry!.autoOpenReply,
+                          autoReplyToPostNumber:
+                              selectedTopic.topEntry!.autoReplyToPostNumber,
                         )
                       : selectedTopic.topEntry!,
                   stackProvider: selectedTopicProvider,
@@ -979,6 +985,10 @@ class TopicDetailPane extends ConsumerWidget {
       onEmbeddedBack: onBack,
       parentActive: parentActive,
       autoOpenReply: autoOpenReply,
+      // 弹过一次就把意图从栈里清掉，否则面板每次重建都会再弹
+      onAutoReplyConsumed: () => ref
+          .read((stackProvider ?? selectedTopicProvider).notifier)
+          .consumeAutoOpenReply(),
       autoReplyToPostNumber: autoReplyToPostNumber,
     );
   }
