@@ -76,6 +76,7 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
           entry: previous,
           stackProvider: selectedMessageProvider,
           truncateOnPush: true,
+          parentActive: widget.isActive,
         ),
       ],
     );
@@ -233,9 +234,16 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     _maybePushDetail(selectedMessage, canShowDetailPane);
     if (!canShowDetailPane) return listScaffold;
 
+    // 左栏本质是不是"列表"（私信列表 / 草稿处理栏）——决定给窄栏还是
+    // 对半分。草稿处理栏是列表，对半分会让它空得离谱。
+    final masterIsListLike = !selectedMessage.isStacked ||
+        selectedMessage.stack[selectedMessage.stack.length - 2].kind ==
+            PaneKind.drafts;
     return MasterDetailLayout(
-      maxMasterRatio: selectedMessage.isStacked ? 0.8 : MasterDetailLayout.defaultMaxMasterRatio,
-      preferredMasterRatio: selectedMessage.isStacked ? 0.5 : 0.25,
+      maxMasterRatio: masterIsListLike
+          ? MasterDetailLayout.defaultMaxMasterRatio
+          : 0.8,
+      preferredMasterRatio: masterIsListLike ? 0.25 : 0.5,
       master: _buildMasterPane(selectedMessage, listScaffold),
       detail: selectedMessage.hasSelection
           ? PaneContentWidget(

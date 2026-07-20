@@ -326,13 +326,13 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
   /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
   /// 草稿页是平行视界的一层内容，不是自成一套分栏。
   void pushDrafts() {
-    // 草稿层在栈里最多一个。FAB 的显示条件是 `!isStacked`，而
-    // `[drafts]` 长度为 1 仍算"未压栈"——不挡这一下，再点一次就变成
-    // `[drafts, drafts]`，左栏预览位和右栏 detail 双双是草稿页。
-    if (state.stack.any((e) => e.kind == PaneKind.drafts)) return;
-    state = SelectedTopicState(
-      stack: [...state.stack, const PaneEntry.drafts()],
-    );
+    // 草稿**占据**右栏，不是叠在别人上面：右边已经有话题时顶替掉它，
+    // 左边保持信息流/私信列表。所以整栈重置成单层草稿，而不是 append
+    // —— append 会让"栈里两个草稿"和"草稿压在话题上"两种烂状态都成立。
+    if (state.stack.length == 1 && state.stack.single.kind == PaneKind.drafts) {
+      return; // 已经就是它，别白重建一次状态
+    }
+    state = const SelectedTopicState(stack: [PaneEntry.drafts()]);
   }
 
   /// master 面板"上一层预览"里打开草稿：截断栈顶后压入。
@@ -434,6 +434,28 @@ final selectedTopicProvider = SelectedTopicProvider((ref) {
 final selectedMessageProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
+
+/// 把草稿和某条话题/私信一起放进栈：`[草稿, 内容]`。
+///
+/// 这是"处理草稿"的标准形态 —— 左栏草稿处理栏、右栏正在处理的那条。
+/// 处理完最后一条时 [SelectedTopicNotifier.removeEntriesOfKind] 抽掉草稿
+/// 层，栈剩 `[内容]`，左栏自然退回该内容对应的列表（信息流 / 私信列表）。
+extension DraftHandoff on SelectedTopicNotifier {
+  void openDraftTarget({
+    required int topicId,
+    int? scrollToPostNumber,
+    bool autoOpenReply = true,
+    int? autoReplyToPostNumber,
+  }) {
+    pushDrafts(); // 栈重置成 [草稿]
+    push(
+      topicId: topicId,
+      scrollToPostNumber: scrollToPostNumber,
+      autoOpenReply: autoOpenReply,
+      autoReplyToPostNumber: autoReplyToPostNumber,
+    ); // → [草稿, 内容]
+  }
+}
 
 /// 「我的」页右栏的平行视界栈。
 ///

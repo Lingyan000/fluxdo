@@ -2782,6 +2782,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         height: height?.toDouble(),
       ),
     );
+    // 图后自动换行:图片几乎总是独占一行,插完把光标送到下一行,省得
+    // 每次手动敲回车（继续打字就直接接在图后面了）。走 insertNewline
+    // 而不是硬分块,跟用户的回车语义设置保持一致。
+    editor.insertNewline();
   }
 
   // -----------------------------------------------------------------

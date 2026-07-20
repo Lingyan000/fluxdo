@@ -953,6 +953,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           child: Consumer(
             builder: (context, ref, _) => DraftsPage(
               embeddedMode: true,
+              autoCloseWhenEmpty: truncateOnPush,
               onEmbeddedBack: onBack,
               // 草稿处理完 → 抽掉草稿这一层（不是 pop，右边的话题要留着）
               onAllHandled: () => ref

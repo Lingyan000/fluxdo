@@ -400,6 +400,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
           entry: previous,
           stackProvider: selectedTopicProvider,
           truncateOnPush: true,
+          // 左栏预览位也要跟随 tab 活跃态（草稿列表靠它决定何时重拉）
+          parentActive: widget.isActive,
         ),
       ],
     );
@@ -1049,6 +1051,10 @@ class PaneContentWidget extends StatelessWidget {
           child: Consumer(
             builder: (context, ref, _) => DraftsPage(
               embeddedMode: true,
+              // 跟随宿主 tab 的活跃状态：切走再切回来要重新拉一次草稿
+              isActive: parentActive,
+              // truncateOnPush = 我在左栏预览位 = 我是"处理栏"，空了该撤
+              autoCloseWhenEmpty: truncateOnPush,
               onEmbeddedBack: onBack,
               onAllHandled: () => ref
                   .read(stackProvider.notifier)

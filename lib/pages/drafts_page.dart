@@ -15,6 +15,7 @@ import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../services/drafts_signal.dart';
 import '../providers/selected_topic_provider.dart';
+import '../widgets/layout/master_detail_layout.dart';
 import 'create_topic_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 
@@ -33,7 +34,14 @@ class DraftsPage extends ConsumerStatefulWidget {
     this.embeddedMode = false,
     this.onEmbeddedBack,
     this.onAllHandled,
+    this.autoCloseWhenEmpty = false,
   });
+
+  /// 列表空了就回调 [onAllHandled]（把草稿这一层撤掉）。
+  ///
+  /// 只有**左栏处理栏**该开：那个位置的草稿栏存在意义就是"还有东西要
+  /// 处理"。栈顶（右栏）的草稿栏空了要老实显示空态。
+  final bool autoCloseWhenEmpty;
 
   /// 是否为当前活跃的 tab（嵌入底栏时用于决定是否响应 NavActionBus）
   final bool isActive;
@@ -58,8 +66,15 @@ class DraftsPage extends ConsumerStatefulWidget {
 class _DraftsPageState extends ConsumerState<DraftsPage> {
   final ScrollController _scrollController = ScrollController();
 
-  /// 本页生命周期内是否出现过草稿 —— [widget.onAllHandled] 的触发前提。
-  bool _hadDrafts = false;
+
+  /// 当前是否有右栏可用（宽屏双栏）。
+  ///
+  /// **必须在 build 里取**：`canShowBothPanesFor` 内部是
+  /// `MediaQuery.sizeOf(context)`，会注册 InheritedWidget 依赖。在点击
+  /// 回调里调用 = 在 build 之外注册依赖，而本页所在的面板子树会被
+  /// GlobalKey 换父节点（master 预览位 ↔ detail 位），换完这条依赖就
+  /// 指向了非后代元素 —— 实测红屏 `check that it really is our descendant`。
+  bool _canShowBothPanes = false;
 
   @override
   void initState() {
@@ -68,6 +83,22 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
     // 发送/舍弃都会删草稿 → 服务层 bump 信号 → 这里刷新，那一条自动
     // 消失。页面自己看不到回复框里发生了什么，只能靠这个信号。
     DraftsSignal.revision.addListener(_onDraftsChanged);
+  }
+
+  @override
+  void didUpdateWidget(DraftsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 重新变成活跃 tab → 刷一次。草稿可能是在**别的 tab** 里产生的
+    // （典型：跑去私信回了一半），本页一直挂在 IndexedStack 里没重建，
+    // 不主动刷就永远停在切走之前那份列表。
+    if (!oldWidget.isActive && widget.isActive) {
+      // didUpdateWidget 跑在 **build 阶段**，这里直接 ref.invalidate 会在
+      // 构建途中改 provider，把元素树搞成不一致状态（实测红屏：
+      // `_dependents.isEmpty is not true`）。挪到帧后。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onDraftsChanged();
+      });
+    }
   }
 
   @override
@@ -104,7 +135,8 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
   @override
   Widget build(BuildContext context) {
     final draftsAsync = ref.watch(draftsProvider);
-
+    // 在 build 里取（见字段注释：不能在点击回调里读 MediaQuery）
+    _canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(context);
 
     // 嵌入底栏时响应快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -149,17 +181,21 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
         onRefresh: _onRefresh,
         child: draftsAsync.when(
           data: (drafts) {
-            // 草稿全部**处理完**（本来有，一条条发完/删完）→ 这一层自动
-            // 退场：右边的话题留着，左边回到信息流 / 私信列表。
+            // 草稿处理完 → 这一层自动退场：右边的内容留着，左边回到
+            // 信息流 / 私信列表。
             //
-            // 判据必须是"曾经有过"而不是"现在是空"：打开时就没草稿的情况
-            // 应该老老实实显示空态，立刻自己关掉会让人以为点击没生效。
-            if (drafts.isNotEmpty) {
-              _hadDrafts = true;
-            } else if (_hadDrafts && widget.onAllHandled != null) {
-              _hadDrafts = false;
+            // 判据是**栈位置**，不是"本页见过草稿没有"：
+            // - 在栈顶（右栏，随便看看）→ 空了就老实显示空态，自己关掉
+            //   会让人以为点击没生效；
+            // - 在栈顶之下（左栏处理栏）→ 空了就是没得处理了，撤掉。
+            //
+            // 早先用的是本地历史标记（_hadDrafts），但左栏那个 DraftsPage
+            // 是**另一个实例**，它常常是在列表已经空了之后才建出来的，
+            // 标记恒为 false，于是永远不触发 —— 实测"处理完草稿点私信"
+            // 停在「左草稿(空) + 右私信」。
+            if (drafts.isEmpty && widget.autoCloseWhenEmpty) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) widget.onAllHandled!();
+                if (mounted) widget.onAllHandled?.call();
               });
             }
             if (drafts.isEmpty) {
@@ -259,20 +295,30 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       }
 
       if (topicId == null) return; // 不刷新
-      // 点草稿里的话题是**唯一**该压栈的入口：草稿挪到左栏当列表，话题
-      // 进右栏。这样才能边看话题边处理剩下的草稿，处理完这一层自动退场
-      // （见 [DraftsPage.onAllHandled]）。
+
+      // 按**草稿自己的类型**分流到对应的那套栈，摆成 `[草稿, 内容]`：
+      // 左栏草稿处理栏、右栏正在处理的那条。处理完草稿层被抽掉，栈剩
+      // `[内容]`，左栏自然退回该内容对应的列表（信息流 / 私信列表）。
       //
-      // 注意别跟"左栏点东西替换右侧草稿"搞混——那条路径走列表的
-      // `select`（清栈重来），压根不经过这里。
-      if (EmbeddedStackScope.maybePushTopic(
-        context,
-        topicId: topicId,
-        scrollToPostNumber: replyToPostNumber,
-        autoOpenReply: true,
-        autoReplyToPostNumber: replyToPostNumber,
-      )) {
-        return; // 已进栈，草稿层还在（挪到左栏），无需刷新
+      // **不能用 `EmbeddedStackScope.maybePushTopic`**：它跟着"当前所处的
+      // 作用域"走。草稿栏一旦被摆到私信栈上（处理某条私信草稿时），在它
+      // 里面再点一条**普通话题**的草稿，就会把话题压进**私信栈** ——
+      // 实测左边私信列表、右边话题。归属得由草稿类型决定，与当前在哪无关。
+      if (_canShowBothPanes) {
+        final isPm = draft.isPrivateMessage;
+        ref.requestNavDestination(
+          isPm ? NavEntryIds.messages : NavEntryIds.home,
+        );
+        ref
+            .read(
+              (isPm ? selectedMessageProvider : selectedTopicProvider).notifier,
+            )
+            .openDraftTarget(
+              topicId: topicId,
+              scrollToPostNumber: replyToPostNumber,
+              autoReplyToPostNumber: replyToPostNumber,
+            );
+        return;
       }
       // 不在任何嵌入面板里（窄屏全屏路由）：照旧 push，回来再刷新
       await Navigator.push(
