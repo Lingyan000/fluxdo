@@ -21,6 +21,12 @@ import '../content/discourse_image.dart';
 /// identical() 判定渲染配置变化，每 build 新建闭包会击穿其块缓存，
 /// 造成全列表每帧重建（曾引发整页 jank）。
 class PostSignatureBlock extends ConsumerStatefulWidget {
+  static const _allowedImageHosts = <String>{
+    'prompt.iwooji.com',
+    'cdn3.ldstatic.com',
+    'idcflare.com',
+  };
+
   final Post post;
 
   /// 话题分类 id，用于 signatures_show_in_categories 门禁；
@@ -52,7 +58,7 @@ class PostSignatureBlock extends ConsumerStatefulWidget {
     // user_updated 时清理,历史脏数据(任意纯文本)会一直残留在
     // signature_url 里;网页 img 加载失败被浏览器折叠不可见,
     // app 端若照渲染就是一块裂图——直接不渲染。
-    if (!preloaded.signaturesAdvancedMode && !_isValidImageUrl(signature)) {
+    if (!preloaded.signaturesAdvancedMode && !isAllowedImageUrl(signature)) {
       return false;
     }
     if (preloaded.signaturesFirstPostOnly && post.postNumber != 1) {
@@ -67,11 +73,12 @@ class PostSignatureBlock extends ConsumerStatefulWidget {
     return true;
   }
 
-  static bool _isValidImageUrl(String s) {
-    final uri = Uri.tryParse(s.trim());
+  /// 小尾巴图片只按 URL 的 host 精确允许三个域名；子域名和路径不参与匹配。
+  static bool isAllowedImageUrl(String source) {
+    final uri = Uri.tryParse(source.trim());
     return uri != null &&
         (uri.scheme == 'http' || uri.scheme == 'https') &&
-        uri.host.isNotEmpty;
+        _allowedImageHosts.contains(uri.host.toLowerCase());
   }
 
   @override
@@ -105,7 +112,7 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
     // shouldRender 把关;此处兜底——非法地址(历史脏数据可为任意
     // 文本)直接不渲染,不给裂图机会。
     if (!preloaded.signaturesAdvancedMode) {
-      if (!PostSignatureBlock._isValidImageUrl(signature)) {
+      if (!PostSignatureBlock.isAllowedImageUrl(signature)) {
         return const SizedBox.shrink();
       }
     }

@@ -33,8 +33,15 @@ class NewEngineLongPostData {
   /// 第 [index] 块的解析结果(未解析时顺序补齐前缀并缓存)。
   List<BlockNode> parsedChunkAt(int index) => parseData.parsedChunkAt(index);
 
+  /// 已解析则返回,未解析返回 null(避免 itemBuilder 同步 parse)。
+  List<BlockNode>? tryParsedChunkAt(int index) =>
+      parseData.tryParsedChunkAt(index);
+
   /// 第 [index] 块的图片 indexInPost 起始偏移。
   int imageOffsetAt(int index) => parseData.imageOffsetAt(index);
+
+  /// 已解析则返回偏移,未解析返回 null。
+  int? tryImageOffsetAt(int index) => parseData.tryImageOffsetAt(index);
 
   /// 长帖且可切多 chunk 时返回数据;否则 null(短帖走整段 PostItem)。
   static NewEngineLongPostData? tryBuild(

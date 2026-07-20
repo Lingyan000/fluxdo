@@ -167,10 +167,28 @@ class LongPostParseData {
     return _parsed[index]!;
   }
 
+  /// 已解析则返回,未解析返回 null(供 itemBuilder 异步化路径使用)。
+  List<BlockNode>? tryParsedChunkAt(int index) {
+    if (index < 0 || index >= _parsed.length) return null;
+    for (var i = 0; i <= index; i++) {
+      if (_parsed[i] == null) return null;
+    }
+    return _parsed[index];
+  }
+
   /// 第 [index] 块的图片 indexInPost 起始偏移。
   int imageOffsetAt(int index) {
     ensureParsedThrough(index);
     return _offsets[index]!;
+  }
+
+  /// 已解析则返回偏移,未解析返回 null。
+  int? tryImageOffsetAt(int index) {
+    if (index < 0 || index >= _offsets.length) return null;
+    for (var i = 0; i <= index; i++) {
+      if (_offsets[i] == null) return null;
+    }
+    return _offsets[index];
   }
 
   /// 是否还有未解析的 chunk(空闲预热用)。chunks 为空视为已完成,

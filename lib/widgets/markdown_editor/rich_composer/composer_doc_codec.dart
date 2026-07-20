@@ -20,7 +20,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:fluxdo_render/editor.dart';
-import 'package:fluxdo_render/fluxdo_render.dart' show ParagraphParser;
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show ParagraphParser, normalizeArrowsInCooked;
 
 import '../../../services/discourse_cook_service.dart';
 
@@ -93,7 +94,11 @@ Future<List<EditorBlock>?> markdownToDocGuarded(String raw) async {
 
 /// cooked 归一化:每行 trim、去空行(块间空行数 / 行内缩进是渲染无关
 /// 噪声;两边同口径归一,不影响"结构不同必不等"的判别力)。
-String _normalizeCooked(String cooked) => cooked
+///
+/// 另外把 ASCII 箭头归一成单字形:解析器会把 `->` 连字成 `→`,序列化
+/// 回去就是 `→`,与原 raw 的 `-&gt;` 天然不等 —— 不在这里同口径归一,
+/// 任何带箭头的帖子都会被门禁误判成"往返有损"而降级源码模式。
+String _normalizeCooked(String cooked) => normalizeArrowsInCooked(cooked)
     .split('\n')
     .map((l) => l.trim())
     .where((l) => l.isNotEmpty)

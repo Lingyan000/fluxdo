@@ -48,6 +48,10 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   bool? _lastCanShowDetailPane;
   bool _isAutoSwitching = false;
 
+  /// 左栏是不是"列表形态"（信息流 / 草稿列表）。列表给窄栏，内容预览
+  /// 才对半分。build 里按当前栈算。
+  bool _masterIsListLike = true;
+
   /// 当前活跃的 provider 实例 ID，布局切换时复用
   String? _activeInstanceId;
   int? _activeTopicId;
@@ -192,6 +196,10 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   Widget build(BuildContext context) {
     final selectedTopic = ref.watch(selectedTopicProvider);
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+    // 左栏本质是不是"列表"（信息流 / 草稿列表）——决定给窄栏还是对半分
+    _masterIsListLike = !selectedTopic.isStacked ||
+        selectedTopic.stack[selectedTopic.stack.length - 2].kind ==
+            PaneKind.drafts;
     final user = ref.watch(currentUserProvider).value;
 
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让
@@ -254,10 +262,14 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       child: MasterDetailLayout(
         // 压栈时 master 显示的是"上一层"内容而不是列表，才是真正的平行
         // 视界——放宽到接近对半分；master 还是列表时维持列表该有的窄栏。
-        maxMasterRatio: selectedTopic.isStacked
+        //
+        // 例外：上一层是**草稿列表**时它本质仍是列表（一列卡片），
+        // 对半分太宽、右边话题被挤扁 —— 按列表口径给窄栏。
+        maxMasterRatio: selectedTopic.isStacked && !_masterIsListLike
             ? 0.8
             : MasterDetailLayout.defaultMaxMasterRatio,
-        preferredMasterRatio: selectedTopic.isStacked ? 0.5 : 0.25,
+        preferredMasterRatio:
+            selectedTopic.isStacked && !_masterIsListLike ? 0.5 : 0.25,
         master: _wrapPaneTap(
           ActivePane.master,
           _buildMasterPane(selectedTopic),
@@ -409,6 +421,15 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   }
 
   void _openDrafts(BuildContext context) {
+    // 首页信息流**自己**就是平行视界宿主（左列表 + 右 detail），但这里的
+    // context 在栈外（FAB/菜单），拿不到 EmbeddedStackScope —— 之前靠
+    // scope 查找必然落空、每次都全屏。直接压首页栈：草稿列表进右栏，
+    // 左边信息流不动。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ref.read(selectedTopicProvider.notifier).pushDrafts();
+      return;
+    }
+    // 窄屏没有右栏可承载，照旧全屏
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const DraftsPage()),
@@ -901,6 +922,8 @@ class TopicDetailPane extends ConsumerWidget {
     this.onBack,
     this.stackProvider,
     this.truncateOnPush = false,
+    this.autoOpenReply = false,
+    this.autoReplyToPostNumber,
   });
 
   final int topicId;
@@ -923,6 +946,10 @@ class TopicDetailPane extends ConsumerWidget {
   /// 的栈顶——内部链接点击应该截断栈顶后压入（替换右侧正显示的那层），
   /// 见 [TopicDetailPage.truncateOnPush] 注释。
   final bool truncateOnPush;
+
+  /// 进入即弹回复框(草稿续写)。
+  final bool autoOpenReply;
+  final int? autoReplyToPostNumber;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -949,6 +976,8 @@ class TopicDetailPane extends ConsumerWidget {
       truncateOnPush: truncateOnPush,
       onEmbeddedBack: onBack,
       parentActive: parentActive,
+      autoOpenReply: autoOpenReply,
+      autoReplyToPostNumber: autoReplyToPostNumber,
     );
   }
 }
@@ -991,6 +1020,8 @@ class PaneContentWidget extends StatelessWidget {
           onBack: onBack,
           stackProvider: stackProvider,
           truncateOnPush: truncateOnPush,
+          autoOpenReply: entry.autoOpenReply,
+          autoReplyToPostNumber: entry.autoReplyToPostNumber,
         );
       case PaneKind.profile:
         return EmbeddedStackScope(
@@ -1007,6 +1038,23 @@ class PaneContentWidget extends StatelessWidget {
           stackProvider: stackProvider,
           truncateOnPush: truncateOnPush,
           child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
+        );
+      case PaneKind.drafts:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          // 草稿处理完 → 把草稿这一层从栈里抽掉（不是 pop：pop 会连右边
+          // 的话题一起关掉）。master 预览位的 onBack 本来就是 null，所以
+          // 这条必须独立接线，否则草稿栏永远赖着不走。
+          child: Consumer(
+            builder: (context, ref, _) => DraftsPage(
+              embeddedMode: true,
+              onEmbeddedBack: onBack,
+              onAllHandled: () => ref
+                  .read(stackProvider.notifier)
+                  .removeEntriesOfKind(PaneKind.drafts),
+            ),
+          ),
         );
     }
   }

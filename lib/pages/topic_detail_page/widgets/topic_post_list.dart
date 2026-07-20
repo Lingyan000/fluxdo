@@ -23,6 +23,7 @@ import 'package:fluxdo_render/fluxdo_render.dart' show HtmlChunk;
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/render_parse_cache.dart';
 import '../../../widgets/post/post_item/segmented_long_post.dart';
+import '../../../widgets/post/post_item/widgets/post_segment_frame.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'typing_indicator.dart';
@@ -193,6 +194,9 @@ class _TopicPostListState extends State<TopicPostList> {
   /// 长帖正文 chunk 的 widget 实例缓存(key: (post.id, chunkIndex)),
   /// 语义同上;data 实例由 [_longPostDataFor] 的内容签名保证稳定。
   final Map<(int, int), _ChunkWidgetCacheEntry> _chunkWidgetCache = {};
+
+  /// 长帖 chunk 异步解析在途标记,避免 itemBuilder 每帧重复 schedule。
+  final Set<(int, int)> _chunkParsePending = {};
 
   /// 渐进物化上限(段数,null = 不限制)。before/after 两条 SliverList
   /// 各一份:翻页只发生在一侧,单值会误截另一侧已物化的段。
@@ -714,6 +718,7 @@ class _TopicPostListState extends State<TopicPostList> {
     // 不再持有 widget 配置树;翻页只增不减,不受影响
     _shortPostCache.removeWhere((postId, _) => !activePostIds.contains(postId));
     _chunkWidgetCache.removeWhere((key, _) => !activePostIds.contains(key.$1));
+    _chunkParsePending.removeWhere((key) => !activePostIds.contains(key.$1));
     var structureHash = 0;
     for (final s in segments) {
       structureHash = Object.hash(
@@ -1321,6 +1326,41 @@ class _TopicPostListState extends State<TopicPostList> {
           child = cachedChunk.widget;
           break;
         }
+        // 优先读已解析缓存;miss 时不在 itemBuilder 同步 ensureParsedThrough
+        // (滚到靠后 chunk 会连环 parse 打出 STALL),改为 skeleton + idle 解析。
+        final nodes = data.tryParsedChunkAt(ci);
+        final imageOffset = data.tryImageOffsetAt(ci);
+        if (nodes == null || imageOffset == null) {
+          if (_chunkParsePending.add(chunkKey)) {
+            final parseData = data;
+            final parseIndex = ci;
+            final parseKey = chunkKey;
+            scheduleIdleTask(() {
+              if (!mounted) return;
+              parseData.parsedChunkAt(parseIndex);
+              _chunkParsePending.remove(parseKey);
+              _chunkWidgetCache.remove(parseKey);
+              if (mounted) setState(() {});
+            }, isCanceled: () => !mounted);
+          }
+          child = PostSegmentFrame(
+            post: post,
+            selected: isSelectedPost,
+            highlight: highlight,
+            showBottomBorder: false,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: SizedBox(
+                height: 72,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: LoadingSpinner(size: 18),
+                ),
+              ),
+            ),
+          );
+          break;
+        }
         child = NewEngineChunkSegment(
           post: post,
           topicId: detail.id,
@@ -1328,10 +1368,8 @@ class _TopicPostListState extends State<TopicPostList> {
           highlight: highlight,
           chunk: segment.chunkData!,
           chunkIndex: ci,
-          // 懒解析:首次进入 cacheExtent 时才 parse 该 chunk(带前缀补齐),
-          // 避免进话题/分页落地帧一次性解析长帖所有 chunk
-          imageIndexOffset: data.imageOffsetAt(ci),
-          parsedNodes: data.parsedChunkAt(ci),
+          imageIndexOffset: imageOffset,
+          parsedNodes: nodes,
           footnotesHtml: data.footnotesHtml,
           callbacks: data.callbacks,
           onQuoteSelection: onQuoteSelection,

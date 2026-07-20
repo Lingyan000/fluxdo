@@ -22,6 +22,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
+        applyArrowLigatures,
         CalloutKind,
         CodeBlockNode,
         OneboxNode,
@@ -39,11 +40,17 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+
 import '../../../constants.dart';
+import '../../../l10n/s.dart';
+import '../../../providers/preferences_provider.dart';
+import '../../../services/discourse_cache_manager.dart';
 import '../../../models/mention_user.dart';
 import '../../../services/app_error_handler.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../services/discourse_cook_service.dart';
+import '../../../services/emoji_alias_service.dart';
 import '../../../services/emoji_handler.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
@@ -175,6 +182,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 重建整个 emoji grid)。
   Widget? _emojiPanelChild;
 
+  /// 从 `:` 浮层的「更多」进面板时带过去的搜索词(消费一次即清)。
+  String? _emojiPanelInitialSearch;
+
   // mention 补全状态
   final LayerLink _mentionLink = LayerLink();
   OverlayEntry? _mentionOverlay;
@@ -184,6 +194,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   int _mentionSelected = 0;
   String _mentionQuery = '';
   Timer? _mentionDebounce;
+
+  // `:` emoji 补全状态(与 mention 同构,但候选来自本地别名索引,不防抖 ——
+  // 索引在会话开始时一次性拉好,之后每次按键都是内存里过滤)
+  OverlayEntry? _emojiOverlay;
+  List<EmojiAliasHit> _emojiCandidates = const [];
+
+  /// 选中项。取值 0..N-1 为候选,== N 为末行「更多」。
+  int _emojiSelected = 0;
+  String? _emojiQuery;
+
+  /// 浮层里最多几条真候选(第 6 行固定是「更多」)。
+  static const int _emojiCandidateLimit = 5;
 
   /// 岛渲染工厂:initState 建一次(build 里每帧新建会让孤岛 didUpdateWidget
   /// 判定 factory 变化 → 代码块每次打字重新高亮)。
@@ -214,6 +236,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return;
     }
     final editor = EditorState(blocks: doc);
+    // 回车语义(软换行 / 分段)。硬件按键链在 _interceptKeyEvent 里按
+    // Shift 临时反转,IME 路径直接读这个值。
+    editor.enterInsertsSoftBreak = _enterSoftBreakPref;
     editor.addListener(_onDocChanged);
     setState(() {
       _editor = editor;
@@ -231,6 +256,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _serializeDebounce?.cancel();
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
+    _removeEmojiOverlay();
+    EmojiAliasService().invalidate();
     _linkToolbarOverlay?.remove();
     _oneboxToolbarOverlay?.remove();
     _removeSlashOverlay();
@@ -286,7 +313,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         );
       }
     });
+    _tryArrowLigature();
     _updateMentionQuery();
+    _updateEmojiQuery();
     _updateSlashQuery();
   }
 
@@ -371,15 +400,70 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           return true;
       }
     }
+    // emoji 浮层键盘导航。可选项 = 候选数 + 1(末行「更多」)。
+    if (_emojiOverlay != null && _emojiCandidates.isNotEmpty) {
+      final n = _emojiCandidates.length + 1;
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.arrowDown:
+          setState(() => _emojiSelected = (_emojiSelected + 1) % n);
+          _emojiOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.arrowUp:
+          setState(() => _emojiSelected = (_emojiSelected - 1 + n) % n);
+          _emojiOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.enter:
+        case LogicalKeyboardKey.numpadEnter:
+        case LogicalKeyboardKey.tab:
+          if (_emojiSelected >= _emojiCandidates.length) {
+            _openEmojiPanelWithQuery();
+          } else {
+            _commitEmoji(_emojiCandidates[_emojiSelected].name);
+          }
+          return true;
+        case LogicalKeyboardKey.escape:
+          _dismissEmoji();
+          return true;
+      }
+    }
+    // 回车 = 软换行(默认)。放在块完成规则**之后**判定,见下面那段:
+    // ```围栏 / 表格这类收尾仍然要吃掉回车。
     // 块完成规则(回车触发):```围栏 / $$公式 / |表格| / 成对 HTML。
     // 这些结构的收尾时机天然是回车 —— 其余块级规则(`# `/`- `/`> `)
     // 敲空格即可判定,围栏后面还要打语言名,不能一见第三个反引号就转。
+    final isEnterKey = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    // Cmd/Ctrl+Enter 是宿主的**发送**快捷键,这里一个字节都不能碰 ——
+    // 内核的回车分支本来就有 `when !primary` 放行它冒泡,宿主拦截层
+    // 漏掉同一守卫会把发送吞掉(实测回归:加软换行后 Ctrl+Enter 失灵)。
+    final primaryEnter = isEnterKey &&
+        (defaultTargetPlatform == TargetPlatform.macOS
+            ? HardwareKeyboard.instance.isMetaPressed
+            : HardwareKeyboard.instance.isControlPressed);
     if (_mentionOverlay == null &&
         _slashOverlay == null &&
+        _emojiOverlay == null &&
+        !primaryEnter &&
         !HardwareKeyboard.instance.isShiftPressed &&
-        (event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+        isEnterKey) {
+      // 左右方向键走到岛(分割线/表格/代码块…)上时,内核会把整个岛
+      // 选中 —— 此时回车 = 进去改它的源码。岛是只读块,没有这条键盘
+      // 路径就只剩双击一种入口,纯键盘操作根本改不了已插入的 `***`。
+      if (_tryEditSelectedIsland()) return true;
       if (_tryBlockCompletion()) return true;
+    }
+    // 软换行:回车插 `\n`(cook 成 <br>,与 Discourse 网页版 composer 一致),
+    // Shift+回车才新建段落;设置关掉时两者互换。块完成规则已在上面吃掉了
+    // 它该吃的回车,走到这里的就是纯粹的换行意图。
+    if (_mentionOverlay == null &&
+        _slashOverlay == null &&
+        _emojiOverlay == null &&
+        !primaryEnter &&
+        isEnterKey &&
+        _handleEnterAsSoftBreak(
+          shift: HardwareKeyboard.instance.isShiftPressed,
+        )) {
+      return true;
     }
     if (_slashOverlay == null) return false;
     final items = _slashFiltered;
@@ -877,6 +961,330 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _mentionOverlay = null;
   }
 
+  /// 回车软换行偏好。本 State 不是 ConsumerState(改继承会牵动整个
+  /// 编辑器),按项目既有做法从容器直读,不订阅重建 —— 这个值只在建
+  /// EditorState 和按下回车的瞬间用到,不需要响应式。
+  bool get _enterSoftBreakPref => ProviderScope.containerOf(context,
+          listen: false)
+      .read(preferencesProvider)
+      .composerEnterSoftBreak;
+
+  /// 回车键的换行语义。返回 true = 已接管。
+  ///
+  /// 背景(实测):富文本编辑器此前每次回车都新建块,序列化时块间用
+  /// `\n\n` 连接 → cook 成两个 `<p>`,行距比别人明显大;而 Discourse
+  /// 网页版 composer 的回车插的是单个 `\n` → `<p>a<br>b</p>`。这里对齐
+  /// 后者,并保留 Shift 反转与关闭开关的退路。
+  bool _handleEnterAsSoftBreak({required bool shift}) {
+    final editor = _editor;
+    if (editor == null || editor.hasComposing) return false;
+    if (editor.selection == null) return false;
+    final soft = _enterSoftBreakPref;
+    // 开关决定「不按 Shift」时的语义,Shift 永远取反。软换行不成立时
+    // 返回 false 让内核走默认 splitBlock。
+    if (soft == shift) return false;
+    editor.sealHistory();
+    // 列表项/标题的例外判定在内核里(与 IME 路径共用同一套)
+    editor.enterInsertsSoftBreak = true;
+    editor.insertNewline();
+    editor.enterInsertsSoftBreak = soft;
+    return true;
+  }
+
+  /// 浮层锚定:下方优先,上翻时高度按光标上方空间收缩(不顶进状态栏)。
+  /// mention / emoji 两个浮层同一套算法。
+  ({double left, double? top, double? bottom, double maxHeight}) _overlayAnchor(
+    BuildContext context, {
+    required double menuWidth,
+    required double maxHeight,
+  }) {
+    final caret = _caretGlobalRect;
+    final screen = MediaQuery.sizeOf(context);
+    final safeTop = MediaQuery.viewPaddingOf(context).top + 8;
+    final safeBottom =
+        screen.height - MediaQuery.viewInsetsOf(context).bottom - 8;
+    if (caret == null) {
+      return (
+        left: 16,
+        top: null,
+        bottom: screen.height - safeBottom + 80,
+        maxHeight: maxHeight,
+      );
+    }
+    final left = caret.left.clamp(8.0, screen.width - menuWidth - 8);
+    final below = safeBottom - caret.bottom;
+    final above = caret.top - safeTop;
+    if (below >= maxHeight + 16 || below >= above) {
+      return (
+        left: left,
+        top: caret.bottom + 4,
+        bottom: null,
+        maxHeight: (below - 12).clamp(120.0, maxHeight),
+      );
+    }
+    return (
+      left: left,
+      top: null,
+      bottom: screen.height - caret.top + 4,
+      maxHeight: (above - 12).clamp(120.0, maxHeight),
+    );
+  }
+
+  // -----------------------------------------------------------------
+  // `:` emoji 补全(监听光标前缀 `:word`)
+  // -----------------------------------------------------------------
+
+  /// 触发前缀:`:` 后跟 emoji 短名允许的字符。
+  ///
+  /// 前面必须是行首或非单词字符 —— 否则 `http://` 的冒号、中文里的
+  /// `12:30` 都会把浮层顶出来。
+  static final _emojiTriggerRe = RegExp(r'(?:^|[^\w:])[:]([\w+-]*)$');
+
+  /// 打完整的 `:name:`(含收尾冒号)直接转 emoji 原子。
+  ///
+  /// 这是"`:rofl:` 打出来不渲染"的根因修复 —— 此前既没有行内规则、
+  /// 回车也不收尾,只能靠面板点。返回 true = 已转换。
+  bool _tryCompleteEmojiShortcode() {
+    final editor = _editor;
+    if (editor == null || editor.hasComposing) return false;
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) return false;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return false;
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = RegExp(r'(?:^|[^\w:]):([\w+-]+):$').firstMatch(before);
+    if (m == null) return false;
+    final name = m.group(1)!;
+    // 合法性必须校验:否则 `12:30:` / `a:b:` 都会变成裂图
+    if (!EmojiAliasService().isKnownEmoji(name)) return false;
+
+    final start = sel.extent.offset - (name.length + 2);
+    if (start < 0) return false;
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: start),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
+    editor.deleteSelection();
+    _insertEmoji(name);
+    return true;
+  }
+
+  /// 光标前刚打完的 ASCII 箭头 → 单字形(`->` → `→`)。
+  ///
+  /// 与渲染侧(ParagraphParser 的连字)同一张表:帖子里看到的是 `→`,
+  /// 编辑器里打出来也得当场变成 `→`,否则"一体"只在只读态成立。
+  ///
+  /// 替换成**真字符**而不是显示层障眼法 —— 单字形本来就是一个 code
+  /// unit,光标偏移天然对得上,也不用给序列化器加特例。
+  /// 定型时机是**打完那个空格**,不是打完箭头本身:
+  /// - 与渲染侧"前后要有空白"的规则同口径(紧贴单词的 `a->b` 不算箭头);
+  /// - 顺带解决边打边替换的歧义 —— `<->` 打到一半时 `<-` 后面还没空格,
+  ///   不会被提前吃掉,双向箭头打得出来。
+  static final _arrowTailRe = RegExp(r'(?<=^|\s)(<-+>|-+>|<-+)(\s)$');
+
+  bool _tryArrowLigature() {
+    final editor = _editor;
+    if (editor == null || editor.hasComposing) return false;
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) return false;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return false;
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = _arrowTailRe.firstMatch(before);
+    if (m == null) return false;
+    final arrow = m.group(1)!;
+    final space = m.group(2)!;
+    final glyph = applyArrowLigatures('$arrow$space').trimRight();
+    if (glyph == arrow) return false;
+    // 只吃掉箭头本身,刚打的空格原样留下
+    final start = sel.extent.offset - arrow.length - space.length;
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: start),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
+    editor.deleteSelection();
+    editor.insertText('$glyph$space');
+    return true;
+  }
+
+  void _updateEmojiQuery() {
+    final editor = _editor;
+    if (editor == null) return;
+    // 先看是不是刚打完收尾冒号 —— 命中就转原子,浮层无事可做
+    if (_tryCompleteEmojiShortcode()) {
+      _dismissEmoji();
+      return;
+    }
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) {
+      _dismissEmoji();
+      return;
+    }
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) {
+      _dismissEmoji();
+      return;
+    }
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = _emojiTriggerRe.firstMatch(before);
+    if (m == null) {
+      _dismissEmoji();
+      return;
+    }
+    final query = m.group(1)!;
+    if (query == _emojiQuery) return;
+    final isNewSession = _emojiQuery == null;
+    _emojiQuery = query;
+
+    final service = EmojiAliasService();
+    if (isNewSession && !service.isLoaded) {
+      // 本次 `:` 输入会话的唯一一次请求;回来后按当时的查询词重算。
+      service.ensureLoaded().then((_) {
+        if (!mounted || _emojiQuery == null) return;
+        _refreshEmojiCandidates();
+      });
+      return;
+    }
+    _refreshEmojiCandidates();
+  }
+
+  void _refreshEmojiCandidates() {
+    final query = _emojiQuery;
+    if (query == null) return;
+    _emojiCandidates = EmojiAliasService().search(
+      query,
+      limit: _emojiCandidateLimit,
+    );
+    _emojiSelected = 0;
+    if (_emojiCandidates.isEmpty) {
+      // 没有候选就不留「更多」孤零零一行 —— 那既选不出东西也挡视线。
+      _removeEmojiOverlay();
+    } else {
+      _showEmojiOverlay();
+    }
+  }
+
+  void _showEmojiOverlay() {
+    if (_emojiOverlay != null) {
+      _emojiOverlay!.markNeedsBuild();
+      return;
+    }
+    _emojiOverlay = OverlayEntry(
+      builder: (context) {
+        final anchor = _overlayAnchor(context, menuWidth: 260, maxHeight: 240);
+        return Positioned(
+          left: anchor.left,
+          top: anchor.top,
+          bottom: anchor.bottom,
+          width: 260,
+          child: _FloatingPanel(
+            maxHeight: anchor.maxHeight,
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(4),
+              // +1 = 末行「更多」
+              itemCount: _emojiCandidates.length + 1,
+              itemBuilder: (context, i) {
+                if (i == _emojiCandidates.length) {
+                  return _EmojiMoreRow(
+                    selected: i == _emojiSelected,
+                    onTap: _openEmojiPanelWithQuery,
+                  );
+                }
+                final hit = _emojiCandidates[i];
+                return _EmojiCandidateRow(
+                  hit: hit,
+                  selected: i == _emojiSelected,
+                  onTap: () => _commitEmoji(hit.name),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+    Overlay.of(context).insert(_emojiOverlay!);
+  }
+
+  /// 选中候选:删掉 `:query` 前缀,插入 emoji 原子。
+  void _commitEmoji(String name) {
+    final editor = _editor;
+    if (editor == null) return;
+    final sel = editor.selection;
+    if (sel == null) return;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return;
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = _emojiTriggerRe.firstMatch(before);
+    if (m == null) return;
+    // group(0) 可能含前置的那个非单词字符,冒号位置要按 `:` 本身算
+    final colonAt = before.lastIndexOf(':');
+    if (colonAt < 0) return;
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: colonAt),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
+    editor.deleteSelection();
+    _insertEmoji(name);
+    _dismissEmoji();
+  }
+
+  /// 「更多」:把已打的 `:query` 从正文里撤掉,再开表情面板并带上搜索词。
+  ///
+  /// 撤掉是必须的 —— 用户是去面板里挑,挑完插入的是 emoji 原子,残留
+  /// 半截 `:rof` 就成了脏文本。
+  void _openEmojiPanelWithQuery() {
+    final query = _emojiQuery ?? '';
+    _deleteEmojiTriggerText();
+    _dismissEmoji();
+    _emojiPanelInitialSearch = query;
+    // 面板子树是缓存的,搜索词变了必须重建,否则带不进去
+    _emojiPanelChild = null;
+    if (_intendedPanel != _RichPanelType.emoji) _toggleEmojiPanel();
+  }
+
+  /// 删掉光标前那段 `:query` 触发文本。
+  void _deleteEmojiTriggerText() {
+    final editor = _editor;
+    if (editor == null) return;
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) return;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return;
+    final before = block.content.text.substring(0, sel.extent.offset);
+    if (_emojiTriggerRe.firstMatch(before) == null) return;
+    final colonAt = before.lastIndexOf(':');
+    if (colonAt < 0) return;
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: colonAt),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
+    editor.deleteSelection();
+  }
+
+  void _dismissEmoji() {
+    if (_emojiQuery == null && _emojiOverlay == null) return;
+    _emojiQuery = null;
+    _emojiSelected = 0;
+    _emojiCandidates = const [];
+    // 一次输入会话结束 → 丢缓存,下次敲 `:` 重新拉最新别名表
+    EmojiAliasService().invalidate();
+    _removeEmojiOverlay();
+  }
+
+  void _removeEmojiOverlay() {
+    _emojiOverlay?.remove();
+    _emojiOverlay = null;
+  }
+
   // -----------------------------------------------------------------
   // emoji / sticker / 上传 / 插入
   // -----------------------------------------------------------------
@@ -950,7 +1358,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
       // sticker markdown(含 ,30% 缩放后缀)走 cook 链路整段导入
       onStickerSelected: insertMarkdownSnippet,
+      initialSearch: _emojiPanelInitialSearch,
     );
+    _emojiPanelInitialSearch = null;
     return SizedBox(height: _panelHeight, child: _emojiPanelChild);
   }
 
@@ -982,43 +1392,75 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (i < 0) return false;
     final cur = blocks[i];
     if (cur is! TextBlock) return false;
-    // 光标必须在行尾:行中回车是分段意图,不是收尾。
-    if (sel.extent.offset != cur.content.length) return false;
 
-    final hit = detectBlockCompletion(
-      [for (final b in blocks) b is TextBlock ? b.content.text : null],
-      i,
+    // 展开成**逻辑行**再判定。软换行(回车插段内 `\n`)之后一个块可以
+    // 含多行,若仍拿整块文本去匹配 `^\*\*\*$` 这类规则必然落空 ——
+    // 实测回归:开了软换行后 `***`/围栏/表格全部失灵。
+    final lines = <String?>[];
+    final anchors = <_LineAnchor?>[];
+    for (var bi = 0; bi < blocks.length; bi++) {
+      final b = blocks[bi];
+      if (b is! TextBlock) {
+        lines.add(null); // 岛:结构不透明,回溯不跨岛
+        anchors.add(null);
+        continue;
+      }
+      final text = b.content.text;
+      var start = 0;
+      while (true) {
+        final nl = text.indexOf('\n', start);
+        final end = nl < 0 ? text.length : nl;
+        lines.add(text.substring(start, end));
+        anchors.add(_LineAnchor(blockIndex: bi, start: start, end: end));
+        if (nl < 0) break;
+        start = nl + 1;
+      }
+    }
+
+    // 光标所在的那一行,且必须在**行尾**(行中回车是换行意图,不是收尾)
+    final caret = sel.extent.offset;
+    final lineIndex = anchors.indexWhere(
+      (a) => a != null && a.blockIndex == i && a.end == caret,
     );
+    if (lineIndex < 0) return false;
+
+    final hit = detectBlockCompletion(lines, lineIndex);
     if (hit == null) return false;
-    _replaceBlocksWithSnippet(
-      hit.from,
-      hit.to,
+    final from = anchors[hit.from]!;
+    final to = anchors[hit.to]!;
+    _replaceRangeWithSnippet(
+      blocks[from.blockIndex].id,
+      from.start,
+      blocks[to.blockIndex].id,
+      to.end,
       hit.markdown,
       splitAfter: hit.splitAfter,
     );
     return true;
   }
 
-  /// 选中 [from,to] 这几个块 → 删除 → cook 插入 [markdown] 的产物。
+  /// 选中 [fromBlockId]:[fromOffset] → [toBlockId]:[toOffset] 这段 →
+  /// 删除 → cook 插入 [markdown] 的产物。
+  ///
+  /// 用**精确偏移**而不是整块:软换行之后一个块可能含多行,只该替换命中
+  /// 的那几行,块里其余的行必须原样留着。
   ///
   /// [splitAfter] = 插完再分段(行内 HTML 场景:回车本意仍是换行,只是
   /// 顺手把这段渲染了)。
-  void _replaceBlocksWithSnippet(
-    int from,
-    int to,
+  void _replaceRangeWithSnippet(
+    String fromBlockId,
+    int fromOffset,
+    String toBlockId,
+    int toOffset,
     String markdown, {
     bool splitAfter = false,
   }) {
     final editor = _editor;
     if (editor == null) return;
-    final blocks = editor.blocks;
     editor.updateSelection(
       EditorSelection(
-        base: EditorPosition(blockId: blocks[from].id, offset: 0),
-        extent: EditorPosition(
-          blockId: blocks[to].id,
-          offset: blocks[to].selectionLength,
-        ),
+        base: EditorPosition(blockId: fromBlockId, offset: fromOffset),
+        extent: EditorPosition(blockId: toBlockId, offset: toOffset),
       ),
     );
     editor.deleteSelection();
@@ -1336,6 +1778,20 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 岛源码编辑:双击岛 → 对话框(初值 = 岛的 markdown)→ 确认后重
   /// cook 替换。一次覆盖所有岛类型 —— 岛内 WYSIWYG 前的通用编辑通道。
   /// 清空 = 删岛。(表格不走这:cell 原位编辑见 [_onTableEdited]。)
+  /// 当前选区正好整个覆盖一个岛 → 打开源码编辑框。返回 true = 已接管。
+  ///
+  /// 内核 `_selectIsland` 的表示就是 base/extent 同在岛块、offset 0→1。
+  bool _tryEditSelectedIsland() {
+    final editor = _editor;
+    if (editor == null) return false;
+    final sel = editor.selection;
+    if (sel == null || sel.base.blockId != sel.extent.blockId) return false;
+    final block = editor.blockById(sel.base.blockId);
+    if (block is! IslandBlock) return false;
+    _editIsland(block);
+    return true;
+  }
+
   Future<void> _editIsland(IslandBlock island) async {
     final editor = _editor;
     if (editor == null) return;
@@ -3321,6 +3777,20 @@ class _SlashMenuRow extends StatelessWidget {
   }
 }
 
+/// 逻辑行在文档里的锚点:属于哪个块、在块内的起止偏移。
+/// 软换行让一个块可以含多行,块完成规则按行判定就需要这个映射。
+class _LineAnchor {
+  const _LineAnchor({
+    required this.blockIndex,
+    required this.start,
+    required this.end,
+  });
+
+  final int blockIndex;
+  final int start;
+  final int end;
+}
+
 /// mention 候选行:头像 + @用户名/显示名(纯文本编辑器 mention 面板
 /// 同视觉语言)。
 class _MentionRow extends StatelessWidget {
@@ -3401,6 +3871,124 @@ class _MentionRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// emoji 候选行:图片 + `:name:`,靠别名命中时把命中的那个别名也标出来
+/// (搜"笑死"出来一排脸,不标就不知道为什么是它们)。
+class _EmojiCandidateRow extends StatelessWidget {
+  const _EmojiCandidateRow({
+    required this.hit,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  final EmojiAliasHit hit;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Material(
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Image(
+                  image: emojiImageProvider(
+                    EmojiHandler().getEmojiUrl(hit.name),
+                  ),
+                  width: 20,
+                  height: 20,
+                  errorBuilder: (_, _, _) => const SizedBox(width: 20),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    ':${hit.name}:',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (hit.matchedAlias != null) ...[
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      hit.matchedAlias!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// emoji 浮层末行「更多」:跳去表情面板接着搜。
+class _EmojiMoreRow extends StatelessWidget {
+  const _EmojiMoreRow({required this.onTap, this.selected = false});
+
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Material(
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  Symbols.more_horiz_rounded,
+                  size: 20,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  S.current.emoji_more,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.primary,
                   ),
                 ),
               ],

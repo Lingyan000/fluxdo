@@ -2567,8 +2567,11 @@ class _TopicListState extends ConsumerState<_TopicList>
   Set<String> _lastAutoLoadBlockedUsernames = const <String>{};
   bool? _lastAutoLoadWholeWord;
 
+  /// wantKeepAlive 读取此字段，避免在 getter 内 ref.read。
+  bool _keepAlive = true;
+
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => _keepAlive;
 
   /// 列表区域顶部圆角
   static const _topBorderRadius = BorderRadius.only(
@@ -2808,6 +2811,10 @@ class _TopicListState extends ConsumerState<_TopicList>
           );
     final isCurrentTab =
         ref.watch(currentTabCategoryIdProvider) == widget.categoryId;
+    if (_keepAlive != isCurrentTab) {
+      _keepAlive = isCurrentTab;
+      updateKeepAlive();
+    }
 
     // 当前 tab：watch provider 建立订阅，并缓存到本地
     // 非当前 tab：stale 显示 loading，否则显示缓存数据；均不订阅 provider
@@ -2866,7 +2873,9 @@ class _TopicListState extends ConsumerState<_TopicList>
       hiddenByBlocked = byBlocked;
       return visible;
     });
-    final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
+    final selectedTopicId = ref.watch(
+      selectedTopicProvider.select((s) => s.topicId),
+    );
     // 列表层读取一次；itemBuilder 冷挂载每张卡时直接复用结果。
     final enableLongPress = ref.watch(
       preferencesProvider.select((p) => p.longPressPreview),

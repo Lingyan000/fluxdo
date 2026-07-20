@@ -157,15 +157,80 @@ class DiscourseCookService {
   /// code/pre 内的同形文本已被 cook 转义成 `&lt;span`，不会误伤。
   @visibleForTesting
   static String postProcessCooked(String cooked, {required String baseUri}) {
-    return cooked.replaceAllMapped(_mentionSpanRe, (m) {
+    final withMentions = cooked.replaceAllMapped(_mentionSpanRe, (m) {
       final username = m.group(1)!;
       return '<a class="mention" href="$baseUri/u/$username">@$username</a>';
     });
+    return applyBbcodeColor(withMentions);
   }
 
   static final RegExp _mentionSpanRe = RegExp(
     r'<span class="mention">@([^<]+)</span>',
   );
+
+  /// `[color=…]` / `[bgcolor=…]` → 带行内 style 的 span。
+  ///
+  /// **为什么在 cook 之后做**:着色 BBCode 由 discourse-bbcode-color 插件
+  /// 提供,不在我们的 cook bundle 里(bundle 只打了 spoiler/details/math/
+  /// poll/policy/checklist/local-dates/chat/footnote),所以 cook 把
+  /// `[color=…]` 原样当普通文字吐回来。
+  ///
+  /// 也**不能改成 cook 之前**把它换成 `<span style="…">` —— Discourse 的
+  /// HTML 消毒器会把 span 上的 style 剥掉(实测
+  /// `<span style="color:#FF0000">红</span>` → `<span>红</span>`),
+  /// 只有那个插件在注册语法时一并把它加进了消毒白名单。放在 cook 之后
+  /// 消毒器已经跑完,加什么留什么。
+  ///
+  /// 阅读端本就认 `span[style]` 里的 color / background-color
+  /// (paragraph_parser → ColoredRun),所以这里补完即可复用整条渲染链。
+  ///
+  /// 只处理**颜色值合法**的形态(`#rgb`/`#rrggbb`/CSS 颜色名),否则原样
+  /// 留着 —— 免得把 `[color=不是颜色]` 这种普通文本也吞了。
+  @visibleForTesting
+  static String applyBbcodeColor(String html) {
+    var out = html;
+    for (var i = 0; i < _maxBbcodeColorDepth; i++) {
+      final next = out.replaceAllMapped(_bbcodeColorRe, (m) {
+        final tag = m.group(1)!.toLowerCase();
+        // 颜色值可能已经被 cook 的 hashtag 特性包了标签:
+        // `[color=#FF0000]` → `[color=<span class="hashtag-raw">#FF0000</span>]`
+        // (`#FF0000` 长得像话题标签)。先剥标签再校验,否则带 `#` 的
+        // 十六进制颜色**全都**会被判非法 —— 实测就是这个原因导致
+        // `[color=#FF0000]` 不渲染,而 `[color=red]` 正常。
+        final value = _stripTags(m.group(2)!).trim();
+        if (!_isSafeCssColor(value)) return m.group(0)!;
+        final prop = tag == 'bgcolor' ? 'background-color' : 'color';
+        return '<span style="$prop:$value">${m.group(3)}</span>';
+      });
+      if (next == out) break; // 收敛(无嵌套可展开)
+      out = next;
+    }
+    return out;
+  }
+
+  /// 嵌套展开上限:`[bgcolor][color]…[/color][/bgcolor]` 这类套两层就够,
+  /// 留点余量;有界防病态输入下的长循环。
+  static const int _maxBbcodeColorDepth = 4;
+
+  /// 最内层优先(内容里不再有同名开/闭标签),配合循环由内向外展开。
+  ///
+  /// 颜色值放宽到"可含 HTML 标签"(见上面 hashtag 的坑),长度给到 120
+  /// 是因为包一层 `<span class="hashtag-raw">…</span>` 就要 40 多字符;
+  /// 真正的合法性由 [_isSafeCssColor] 在剥标签之后把关。
+  static final RegExp _bbcodeColorRe = RegExp(
+    r'\[(color|bgcolor)=((?:[^\]<]|<[^>]*>){1,120}?)\]'
+    r'((?:(?!\[/?(?:color|bgcolor))[\s\S])*)\[/\1\]',
+    caseSensitive: false,
+  );
+
+  /// 剥掉字符串里的 HTML 标签,只留纯文本。
+  static String _stripTags(String s) => s.replaceAll(RegExp(r'<[^>]*>'), '');
+
+  /// 颜色值白名单:`#rgb` / `#rrggbb` / 纯字母 CSS 颜色名。
+  /// 不放行 `url(...)`、`expression(...)` 等可注入形态。
+  static bool _isSafeCssColor(String v) =>
+      RegExp(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$').hasMatch(v) ||
+      RegExp(r'^[a-zA-Z]{1,20}$').hasMatch(v);
 
   // -------------------------------------------------------------------
   // onebox 异步解析（对齐 web composer 预览的 loadOneboxes /

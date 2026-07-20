@@ -41,6 +41,13 @@ final _fenceRe = RegExp(r'^```([\w+#.-]*)$');
 /// `$$` 公式块起始行。
 final _mathRe = RegExp(r'^\$\$$');
 
+/// 分割线独占一行(`---` / `***` / `___`)。
+///
+/// 内核的 hr 输入规则要求**尾随一个空格**(`^(---|\*\*\*|___) $`),
+/// 打完 `***` 直接回车不匹配 —— 补上回车这条路径(实测三种写法 cook
+/// 都出 `<hr>`)。
+final _hrRe = RegExp(r'^(-{3,}|\*{3,}|_{3,})$');
+
 /// `| 列 | 列 |` 表头行(至少两列 —— 一根竖线的普通句子不该变表格)。
 final _tableRe = RegExp(r'^\|[^|]*\|[^|]*\|\s*$');
 
@@ -90,6 +97,59 @@ String? _singleLineBlockHtml(String text) {
   return htmlBlockTags.contains(open) ? open : null;
 }
 
+// ---------------------------------------------------------------------
+// BBCode(Discourse 的另一套标记语法,与 HTML 并行)
+// ---------------------------------------------------------------------
+
+/// 块级 BBCode:整段变岛。
+/// **只列 cook 引擎真支持的**。放进引擎不认的标签(曾经放过 `note`/
+/// `aside`/`table`/`chat`/`floatl`/`floatr`)后果很具体:检测命中 → 送
+/// cook → 原样吐回字面量 → 用户看到回车分了段但没渲染。增删前务必用
+/// tools/discourse-cook-bundle 实跑一遍。
+const bbcodeBlockTags = {
+  'quote', 'details', 'grid', 'wrap', 'poll',
+  // 这两个 cook 出来是块级容器(pre / div.spoiler),归块级
+  'code', 'spoiler',
+};
+
+/// 行内 BBCode:只把本段送 cook,不变岛。
+///
+/// 只列**最终能渲染出来**的 —— 判据不是"cook bundle 认不认",而是
+/// "整条链路(cook + 宿主后置转换)出不出效果":
+/// - `color`/`bgcolor`:bundle 里没有 discourse-bbcode-color,但
+///   [DiscourseCookService.applyBbcodeColor] 在 cook 之后补 span,所以算支持;
+/// - `size`/`font`:没有对应后置转换,仍不支持;
+/// - `sup`/`sub`/`highlight`/`mark`:**BBCode 形式**引擎不认(HTML 形式
+///   `<sup>` 才认,见 [htmlInlineTags])。
+const bbcodeInlineTags = {
+  'b', 'i', 'u', 's', 'url', 'email', 'img', 'color', 'bgcolor',
+};
+
+/// `[tag]` / `[tag=值]` / `[tag 属性=值]` 开标签。
+final _bbOpenRe = RegExp(r'\[([a-zA-Z][\w-]*)(=[^\]]*|\s[^\]]*)?\]');
+
+/// `[/tag]` 闭标签独占一行。
+final _bbClosingRe = RegExp(r'^\[/([a-zA-Z][\w-]*)\]$');
+
+/// 本段是否含**成对闭合**的行内 BBCode(`[color=#f00]红[/color]`)。
+bool hasCompleteInlineBbcode(String text) {
+  for (final m in _bbOpenRe.allMatches(text)) {
+    final tag = m.group(1)!.toLowerCase();
+    if (!bbcodeInlineTags.contains(tag)) continue;
+    if (text.contains('[/$tag]', m.end)) return true;
+  }
+  return false;
+}
+
+/// 本行是否是**单行写完**的块级 BBCode(`[quote]内容[/quote]`)。
+String? _singleLineBlockBbcode(String text) {
+  final m = _bbOpenRe.matchAsPrefix(text);
+  if (m == null) return null;
+  final tag = m.group(1)!.toLowerCase();
+  if (!bbcodeBlockTags.contains(tag)) return null;
+  return text.endsWith('[/$tag]') ? tag : null;
+}
+
 /// 判定 [index] 块处按下回车能否收尾。
 ///
 /// [blockTexts] 是全文档各块的文本;**岛块传 null**(结构不透明,HTML
@@ -111,6 +171,10 @@ BlockCompletion? detectBlockCompletion(List<String?> blockTexts, int index) {
       to: index,
       markdown: '```${fence.group(1)!}\n\n```',
     );
+  }
+  if (_hrRe.hasMatch(text)) {
+    // 统一成 `---`:三种写法 cook 结果相同,序列化口径取一种就够
+    return BlockCompletion(from: index, to: index, markdown: '---');
   }
   if (_mathRe.hasMatch(text)) {
     return BlockCompletion(
@@ -153,13 +217,39 @@ BlockCompletion? detectBlockCompletion(List<String?> blockTexts, int index) {
     }
   }
 
-  // ---- 单行写完的块级 HTML:`<div>内容</div>` ----
+  // ---- 成对块级 BBCode:`[quote]` … `[/quote]` 跨块回溯 ----
+  final bbClosing = _bbClosingRe.firstMatch(text);
+  if (bbClosing != null) {
+    final tag = bbClosing.group(1)!.toLowerCase();
+    if (bbcodeBlockTags.contains(tag)) {
+      for (var j = index - 1; j >= 0 && index - j <= 64; j--) {
+        final t = blockTexts[j];
+        if (t == null) break; // 夹了岛 → 不跨岛聚合
+        final om = _bbOpenRe.matchAsPrefix(t.trim());
+        if (om != null &&
+            om.group(1)!.toLowerCase() == tag &&
+            om.end == t.trim().length) {
+          return BlockCompletion(
+            from: j,
+            to: index,
+            markdown: [for (var k = j; k <= index; k++) blockTexts[k]!]
+                .join('\n'),
+          );
+        }
+      }
+    }
+  }
+
+  // ---- 单行写完的块级 BBCode / HTML ----
+  if (_singleLineBlockBbcode(text) != null) {
+    return BlockCompletion(from: index, to: index, markdown: raw);
+  }
   if (_singleLineBlockHtml(text) != null) {
     return BlockCompletion(from: index, to: index, markdown: raw);
   }
 
-  // ---- 行内 HTML:只换本段,结构不动 ----
-  if (hasCompleteInlineHtml(raw)) {
+  // ---- 行内 HTML / BBCode:只换本段,结构不动 ----
+  if (hasCompleteInlineHtml(raw) || hasCompleteInlineBbcode(raw)) {
     return BlockCompletion(
       from: index,
       to: index,

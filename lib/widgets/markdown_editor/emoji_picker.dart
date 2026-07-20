@@ -26,10 +26,15 @@ class EmojiPicker extends ConsumerStatefulWidget {
   /// 底部额外 padding（用于给悬浮 Tab 留空间）
   final double bottomPadding;
 
+  /// 非空则挂载后自动弹出搜索面板并预填该词(编辑器 `:` 浮层的
+  /// 「更多」入口)。
+  final String? initialSearch;
+
   const EmojiPicker({
     super.key,
     required this.onEmojiSelected,
     this.bottomPadding = 0,
+    this.initialSearch,
   });
 
   @override
@@ -55,6 +60,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
   bool _isProgrammaticScroll = false;
   bool _scrollThrottled = false;
+
+  /// initialSearch 只消费一次 —— 面板保活(wantKeepAlive),不设标志会在
+  /// 每次 rebuild 时反复弹搜索面板。
+  bool _initialSearchHandled = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -171,8 +180,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
   Future<void> _showSearchDialog(
     BuildContext context,
-    Map<String, List<Emoji>>? emojiGroups,
-  ) async {
+    Map<String, List<Emoji>>? emojiGroups, {
+    String? initialQuery,
+  }) async {
     if (emojiGroups == null || emojiGroups.isEmpty) return;
     final allEmojis = emojiGroups.values.expand((e) => e).toList();
     final onSelected = widget.onEmojiSelected;
@@ -182,7 +192,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _EmojiSearchSheet(allEmojis: allEmojis),
+      builder: (context) =>
+          _EmojiSearchSheet(allEmojis: allEmojis, initialQuery: initialQuery),
     );
 
     if (selectedEmoji != null) {
@@ -197,6 +208,20 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   Widget build(BuildContext context) {
     super.build(context);
     final emojisAsync = ref.watch(emojiGroupsProvider);
+
+    // 从编辑器 `:` 浮层的「更多」进来:等 emoji 表就绪后自动开搜索并预填
+    final pendingSearch = widget.initialSearch;
+    if (!_initialSearchHandled &&
+        pendingSearch != null &&
+        pendingSearch.isNotEmpty &&
+        emojisAsync.value != null) {
+      _initialSearchHandled = true;
+      final groups = emojisAsync.value;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showSearchDialog(context, groups, initialQuery: pendingSearch);
+      });
+    }
 
     return ClipRect(
       child: Container(
@@ -545,7 +570,10 @@ extension StringExtension on String {
 class _EmojiSearchSheet extends StatefulWidget {
   final List<Emoji> allEmojis;
 
-  const _EmojiSearchSheet({required this.allEmojis});
+  /// 预填的搜索词(从编辑器 `:` 浮层带过来)。
+  final String? initialQuery;
+
+  const _EmojiSearchSheet({required this.allEmojis, this.initialQuery});
 
   @override
   State<_EmojiSearchSheet> createState() => _EmojiSearchSheetState();
@@ -562,6 +590,14 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
     _searchController.addListener(() {
       setState(() => _query = _searchController.text.toLowerCase().trim());
     });
+    final initial = widget.initialQuery;
+    if (initial != null && initial.isNotEmpty) {
+      // 先塞文本再让 listener 同步 _query;光标落到词尾方便接着改
+      _searchController.value = TextEditingValue(
+        text: initial,
+        selection: TextSelection.collapsed(offset: initial.length),
+      );
+    }
   }
 
   @override

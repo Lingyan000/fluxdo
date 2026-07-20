@@ -4,13 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
+import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
-enum PaneKind { topic, profile, settings }
+enum PaneKind { topic, profile, settings, drafts }
 
 /// 平行视界导航栈里的一层。
 class PaneEntry {
@@ -22,6 +23,8 @@ class PaneEntry {
     this.highlightBoostUsername,
     this.initialRevisionPostNumber,
     this.initialRevisionNumber,
+    this.autoOpenReply = false,
+    this.autoReplyToPostNumber,
   }) : kind = PaneKind.topic,
        username = null;
 
@@ -33,7 +36,22 @@ class PaneEntry {
       instanceId = null,
       highlightBoostUsername = null,
       initialRevisionPostNumber = null,
-      initialRevisionNumber = null;
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
+
+  const PaneEntry.drafts()
+    : kind = PaneKind.drafts,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
@@ -44,7 +62,9 @@ class PaneEntry {
       instanceId = null,
       highlightBoostUsername = null,
       initialRevisionPostNumber = null,
-      initialRevisionNumber = null;
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
 
   final PaneKind kind;
   final int? topicId;
@@ -57,6 +77,13 @@ class PaneEntry {
   final String? highlightBoostUsername;
   final int? initialRevisionPostNumber;
   final int? initialRevisionNumber;
+
+  /// 进入这一层后自动弹出回复框——草稿列表点进来时用（草稿的意义就是
+  /// 接着写，不该让用户再手点一次回复）。
+  final bool autoOpenReply;
+
+  /// 自动弹出的回复框回复的目标楼层（null = 回复整个话题）。
+  final int? autoReplyToPostNumber;
 }
 
 /// 平行视界（Master-Detail 模式）的导航栈状态。
@@ -107,10 +134,14 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     String? highlightBoostUsername,
     int? initialRevisionPostNumber,
     int? initialRevisionNumber,
+    bool autoOpenReply = false,
+    int? autoReplyToPostNumber,
   }) {
     state = SelectedTopicState(
       stack: [
         PaneEntry.topic(
+          autoOpenReply: autoOpenReply,
+          autoReplyToPostNumber: autoReplyToPostNumber,
           topicId: topicId,
           initialTitle: initialTitle,
           scrollToPostNumber: scrollToPostNumber,
@@ -146,11 +177,15 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     String? highlightBoostUsername,
     int? initialRevisionPostNumber,
     int? initialRevisionNumber,
+    bool autoOpenReply = false,
+    int? autoReplyToPostNumber,
   }) {
     state = SelectedTopicState(
       stack: [
         ...state.stack,
         PaneEntry.topic(
+          autoOpenReply: autoOpenReply,
+          autoReplyToPostNumber: autoReplyToPostNumber,
           topicId: topicId,
           initialTitle: initialTitle,
           scrollToPostNumber: scrollToPostNumber,
@@ -207,6 +242,8 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     String? initialTitle,
     int? scrollToPostNumber,
     String? instanceId,
+    bool autoOpenReply = false,
+    int? autoReplyToPostNumber,
   }) {
     if (state.stack.length < 2) {
       push(
@@ -214,6 +251,8 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
         initialTitle: initialTitle,
         scrollToPostNumber: scrollToPostNumber,
         instanceId: instanceId,
+        autoOpenReply: autoOpenReply,
+        autoReplyToPostNumber: autoReplyToPostNumber,
       );
       return;
     }
@@ -221,6 +260,8 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
       stack: [
         ...state.stack.take(state.stack.length - 1),
         PaneEntry.topic(
+          autoOpenReply: autoOpenReply,
+          autoReplyToPostNumber: autoReplyToPostNumber,
           topicId: topicId,
           initialTitle: initialTitle,
           scrollToPostNumber: scrollToPostNumber,
@@ -259,6 +300,8 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
           highlightBoostUsername: current.highlightBoostUsername,
           initialRevisionPostNumber: current.initialRevisionPostNumber,
           initialRevisionNumber: current.initialRevisionNumber,
+          autoOpenReply: current.autoOpenReply,
+          autoReplyToPostNumber: current.autoReplyToPostNumber,
         ),
       ],
     );
@@ -278,6 +321,33 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
   /// 从搜索结果直接选择用户资料：清空旧搜索详情栈，以该资料作为第一层。
   void selectProfile(String username) {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
+  }
+
+  /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
+  /// 草稿页是平行视界的一层内容，不是自成一套分栏。
+  void pushDrafts() {
+    // 草稿层在栈里最多一个。FAB 的显示条件是 `!isStacked`，而
+    // `[drafts]` 长度为 1 仍算"未压栈"——不挡这一下，再点一次就变成
+    // `[drafts, drafts]`，左栏预览位和右栏 detail 双双是草稿页。
+    if (state.stack.any((e) => e.kind == PaneKind.drafts)) return;
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.drafts()],
+    );
+  }
+
+  /// master 面板"上一层预览"里打开草稿：截断栈顶后压入。
+  void pushDraftsTruncating() {
+    if (state.stack.length < 2) {
+      pushDrafts();
+      return;
+    }
+    // 同 [pushDrafts]：草稿层唯一，截断后若下面还压着一个草稿就别再加
+    final kept = state.stack
+        .take(state.stack.length - 1)
+        .where((e) => e.kind != PaneKind.drafts);
+    state = SelectedTopicState(
+      stack: [...kept, const PaneEntry.drafts()],
+    );
   }
 
   /// 打开设置：压栈，保留之前的层。
@@ -334,6 +404,18 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [top]);
   }
 
+  /// 抽掉栈中某一类层，其余层保持相对顺序。
+  ///
+  /// 草稿栏用:草稿全部处理完之后，草稿这一层要从栈里消失，但**右边的
+  /// 话题/私信必须留着** —— 所以不能用 pop(那会关掉栈顶的话题)。
+  /// 抽掉后 `[草稿, 话题]` 变成 `[话题]`，左栏自然退回信息流/私信列表。
+  void removeEntriesOfKind(PaneKind kind) {
+    if (!state.stack.any((e) => e.kind == kind)) return;
+    state = SelectedTopicState(
+      stack: state.stack.where((e) => e.kind != kind).toList(),
+    );
+  }
+
   void clear() {
     state = const SelectedTopicState();
   }
@@ -350,6 +432,15 @@ final selectedTopicProvider = SelectedTopicProvider((ref) {
 /// 私信列表的导航栈——跟首页话题列表各自独立一份状态，切 tab 互不干扰，
 /// 但复用同一套 push/pop/select/clear 语义。
 final selectedMessageProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 「我的」页右栏的平行视界栈。
+///
+/// 「我的」在宽屏是"左资料 + 右卡片"的双栏,右栏这一半可以被压进来的
+/// 内容(草稿列表 / 设置)顶替 —— 这样从「我的」点草稿就是右半边显示
+/// 草稿列表,而不是整屏跳走。
+final selectedProfilePaneProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
@@ -442,27 +533,36 @@ class EmbeddedStackScope extends InheritedWidget {
   /// 返回 `true` 表示已经由面板栈接管；返回 `false` 时调用方应按普通全屏
   /// 页面处理。这里只负责状态，不依赖具体页面类，避免导航基础层反向依赖
   /// 话题详情页面。
+  /// [replaceTop] = 用新内容**替换**右栏当前层而不是叠一层。草稿列表点
+  /// 某条草稿属于"在列表里看另一项",不该每点一次就多叠一层。
   static bool maybePushTopic(
     BuildContext context, {
     required int topicId,
     String? initialTitle,
     int? scrollToPostNumber,
+    bool autoOpenReply = false,
+    int? autoReplyToPostNumber,
+    bool replaceTop = false,
   }) {
     final scope = _maybeScopeOf(context);
     if (scope == null) return false;
     final container = ProviderScope.containerOf(context, listen: false);
     final notifier = container.read(scope.stackProvider.notifier);
-    if (scope.truncateOnPush) {
+    if (scope.truncateOnPush || replaceTop) {
       notifier.pushTruncating(
         topicId: topicId,
         initialTitle: initialTitle,
         scrollToPostNumber: scrollToPostNumber,
+        autoOpenReply: autoOpenReply,
+        autoReplyToPostNumber: autoReplyToPostNumber,
       );
     } else {
       notifier.push(
         topicId: topicId,
         initialTitle: initialTitle,
         scrollToPostNumber: scrollToPostNumber,
+        autoOpenReply: autoOpenReply,
+        autoReplyToPostNumber: autoReplyToPostNumber,
       );
     }
     return true;
@@ -520,6 +620,25 @@ class EmbeddedStackScope extends InheritedWidget {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
+  }
+
+  /// 打开草稿列表的统一入口：嵌入面板里压栈（右栏显示草稿列表），
+  /// 不在就全屏 push。
+  static void openDrafts(BuildContext context) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushDraftsTruncating();
+      } else {
+        notifier.pushDrafts();
+      }
+      return;
+    }
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DraftsPage()));
   }
 
   /// 打开设置的统一入口：嵌入面板里压栈显示平行视界，不在就全屏 push。

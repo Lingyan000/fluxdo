@@ -20,6 +20,7 @@ import '../user/avatar_action_menu.dart';
 import 'nested_collapsed_bar.dart';
 import 'nested_post_gutter.dart';
 import 'nested_thread_sheet.dart';
+import '../post/post_item/render_parse_cache.dart';
 
 // 桌面端布局常量
 const double _avatarSize = NestedPostAvatar.size;
@@ -537,19 +538,27 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         _buildHeader(theme, post, isOp, isMobile: isMobile),
         const SizedBox(height: 4),
         // Content
-        FluxdoRenderCallbacks.forPost(
-          post: post,
-          topicId: widget.topicId,
-        ).render(
-          cookedHtml: post.cooked,
-          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
-            height: 1.5,
-            fontSize:
-                (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                ref.watch(preferencesProvider).contentFontScale,
-          ),
-          selectionEnabled: false,
-        ),
+        () {
+          final parsed = RenderParseCache.shortPost(post);
+          return FluxdoRenderCallbacks.forPost(
+            post: post,
+            topicId: widget.topicId,
+            preprocessedCooked: parsed.preprocessed,
+            parsedNodes: parsed.nodes,
+          ).render(
+            cookedHtml: parsed.preprocessed,
+            parsedNodes: parsed.nodes,
+            baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.5,
+              fontSize:
+                  (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                  ref.watch(
+                    preferencesProvider.select((p) => p.contentFontScale),
+                  ),
+            ),
+            selectionEnabled: false,
+          );
+        }(),
         // 用户签名
         if (PostSignatureBlock.shouldRender(
           ref,

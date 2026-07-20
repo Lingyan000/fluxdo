@@ -13,8 +13,10 @@ import '../services/toast_service.dart';
 import '../widgets/common/relative_time_text.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
-import 'topic_detail_page/topic_detail_page.dart';
+import '../services/drafts_signal.dart';
+import '../providers/selected_topic_provider.dart';
 import 'create_topic_page.dart';
+import 'topic_detail_page/topic_detail_page.dart';
 
 /// 草稿列表 Provider
 final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
@@ -25,10 +27,29 @@ final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
 
 /// 草稿列表页面
 class DraftsPage extends ConsumerStatefulWidget {
-  const DraftsPage({super.key, this.isActive = true});
+  const DraftsPage({
+    super.key,
+    this.isActive = true,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+    this.onAllHandled,
+  });
 
   /// 是否为当前活跃的 tab（嵌入底栏时用于决定是否响应 NavActionBus）
   final bool isActive;
+
+  /// 平行视界嵌入模式：本页是栈里的一层（右栏内容），AppBar 用
+  /// [onEmbeddedBack] 关闭当前层而不是 Navigator pop（嵌入面板不在
+  /// Navigator 路由栈里）。语义与 [SettingsPage] 一致。
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
+
+  /// 草稿从"有"变成"全部处理完"时回调一次。
+  ///
+  /// 与 [onEmbeddedBack] 分开是有意的：master 面板里的草稿栏**不该有
+  /// 返回按钮**（onEmbeddedBack 为 null），但它恰恰是最需要自动退场的
+  /// 那一个 —— 复用同一个回调会把返回按钮一起带出来。
+  final VoidCallback? onAllHandled;
 
   @override
   ConsumerState<DraftsPage> createState() => _DraftsPageState();
@@ -37,26 +58,38 @@ class DraftsPage extends ConsumerStatefulWidget {
 class _DraftsPageState extends ConsumerState<DraftsPage> {
   final ScrollController _scrollController = ScrollController();
 
+  /// 本页生命周期内是否出现过草稿 —— [widget.onAllHandled] 的触发前提。
+  bool _hadDrafts = false;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_publishScrollProgress);
+    // 发送/舍弃都会删草稿 → 服务层 bump 信号 → 这里刷新，那一条自动
+    // 消失。页面自己看不到回复框里发生了什么，只能靠这个信号。
+    DraftsSignal.revision.addListener(_onDraftsChanged);
   }
 
   @override
   void dispose() {
+    DraftsSignal.revision.removeListener(_onDraftsChanged);
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onDraftsChanged() {
+    if (!mounted) return;
+    ref.invalidate(draftsProvider);
+  }
+
+  /// 发布"距顶进度"给底栏图标（NavActionBus 的 progress provider）
   void _publishScrollProgress() {
     if (!_scrollController.hasClients) return;
     final raw = _scrollController.offset;
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.drafts));
     final atZero = progress == 0 && current != 0;
-    final crossed =
-        (progress >= navScrollIconThreshold) !=
+    final crossed = (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.drafts).notifier).state =
@@ -71,6 +104,7 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
   @override
   Widget build(BuildContext context) {
     final draftsAsync = ref.watch(draftsProvider);
+
 
     // 嵌入底栏时响应快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -100,12 +134,34 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       }
     });
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.drafts_title)),
+    final page = Scaffold(
+      appBar: AppBar(
+        title: Text(context.l10n.drafts_title),
+        // embeddedMode 但 onEmbeddedBack 为空（master 面板"上一层预览"）
+        // 时不塞 BackButton——BackButton(onPressed: null) 会退化成默认
+        // Navigator.maybePop()，捅穿到应用根导航栈（见 settings_page 同注）。
+        automaticallyImplyLeading: !widget.embeddedMode,
+        leading: widget.embeddedMode && widget.onEmbeddedBack != null
+            ? BackButton(onPressed: widget.onEmbeddedBack)
+            : null,
+      ),
       body: DesktopRefreshIndicator(
         onRefresh: _onRefresh,
         child: draftsAsync.when(
           data: (drafts) {
+            // 草稿全部**处理完**（本来有，一条条发完/删完）→ 这一层自动
+            // 退场：右边的话题留着，左边回到信息流 / 私信列表。
+            //
+            // 判据必须是"曾经有过"而不是"现在是空"：打开时就没草稿的情况
+            // 应该老老实实显示空态，立刻自己关掉会让人以为点击没生效。
+            if (drafts.isNotEmpty) {
+              _hadDrafts = true;
+            } else if (_hadDrafts && widget.onAllHandled != null) {
+              _hadDrafts = false;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) widget.onAllHandled!();
+              });
+            }
             if (drafts.isEmpty) {
               return Center(
                 child: Column(
@@ -155,6 +211,8 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
         ),
       ),
     );
+
+    return page;
   }
 
   /// 点击草稿
@@ -200,21 +258,34 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
             draft.topicId ?? int.tryParse(draftKey.replaceFirst('topic_', ''));
       }
 
-      if (topicId != null) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TopicDetailPage(
-              topicId: topicId!,
-              scrollToPostNumber: replyToPostNumber, // 跳转到对应帖子
-              autoOpenReply: true,
-              autoReplyToPostNumber: replyToPostNumber,
-            ),
-          ),
-        );
-      } else {
-        return; // 不刷新
+      if (topicId == null) return; // 不刷新
+      // 点草稿里的话题是**唯一**该压栈的入口：草稿挪到左栏当列表，话题
+      // 进右栏。这样才能边看话题边处理剩下的草稿，处理完这一层自动退场
+      // （见 [DraftsPage.onAllHandled]）。
+      //
+      // 注意别跟"左栏点东西替换右侧草稿"搞混——那条路径走列表的
+      // `select`（清栈重来），压根不经过这里。
+      if (EmbeddedStackScope.maybePushTopic(
+        context,
+        topicId: topicId,
+        scrollToPostNumber: replyToPostNumber,
+        autoOpenReply: true,
+        autoReplyToPostNumber: replyToPostNumber,
+      )) {
+        return; // 已进栈，草稿层还在（挪到左栏），无需刷新
       }
+      // 不在任何嵌入面板里（窄屏全屏路由）：照旧 push，回来再刷新
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TopicDetailPage(
+            topicId: topicId!,
+            scrollToPostNumber: replyToPostNumber,
+            autoOpenReply: true,
+            autoReplyToPostNumber: replyToPostNumber,
+          ),
+        ),
+      );
     } else {
       return; // 不刷新
     }

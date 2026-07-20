@@ -20,10 +20,15 @@ class EmojiStickerPanel extends StatefulWidget {
   /// 选中表情包的回调，参数为 Markdown 图片文本
   final ValueChanged<String> onStickerSelected;
 
+  /// 从编辑器 `:` 浮层的「更多」进来时带的搜索词:非空则自动弹出
+  /// 搜索面板并预填。
+  final String? initialSearch;
+
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
     required this.onStickerSelected,
+    this.initialSearch,
   });
 
   @override
@@ -56,6 +61,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
         EmojiPicker(
           onEmojiSelected: widget.onEmojiSelected,
           bottomPadding: bottomPadding,
+          initialSearch: widget.initialSearch,
         ),
         StickerPicker(
           onStickerSelected: widget.onStickerSelected,

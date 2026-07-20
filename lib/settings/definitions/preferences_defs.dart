@@ -121,6 +121,17 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
               ref.read(preferencesProvider.notifier).setUseRichComposer(v),
         ),
         SwitchModel(
+          id: 'composerEnterSoftBreak',
+          title: l10n.preferences_composerEnterSoftBreak,
+          subtitle: l10n.preferences_composerEnterSoftBreakDesc,
+          icon: Symbols.keyboard_return_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).composerEnterSoftBreak,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setComposerEnterSoftBreak(v),
+        ),
+        SwitchModel(
           id: 'aiPostReview',
           title: l10n.preferences_aiPostReview,
           subtitle: l10n.preferences_aiPostReviewDesc,

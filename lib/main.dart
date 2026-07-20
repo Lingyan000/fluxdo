@@ -1355,9 +1355,15 @@ class _MainPageState extends ConsumerState<MainPage>
       (e) => e.id == NavEntryIds.notifications,
     );
     final activeEntryId = pageEntries[safePageIndex].id;
-    final topicParallelStacked = ref.watch(selectedTopicProvider).isStacked;
-    final messageParallelStacked = ref.watch(selectedMessageProvider).isStacked;
-    final seekingParallelStacked = ref.watch(selectedSeekingProvider).isStacked;
+    final topicParallelStacked = ref.watch(
+      selectedTopicProvider.select((s) => s.isStacked),
+    );
+    final messageParallelStacked = ref.watch(
+      selectedMessageProvider.select((s) => s.isStacked),
+    );
+    final seekingParallelStacked = ref.watch(
+      selectedSeekingProvider.select((s) => s.isStacked),
+    );
     final hideNavigationRail =
         (activeEntryId == NavEntryIds.home && topicParallelStacked) ||
         (activeEntryId == NavEntryIds.messages && messageParallelStacked) ||

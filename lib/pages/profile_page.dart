@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
@@ -430,7 +431,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
         ] : null,
       ),
-      body: showWideLayout ? _buildWideBody(theme) : _buildMobileBody(theme),
+      // 宽屏才提供平行视界栈：窄屏没有右栏可承载，openDrafts/openSettings
+      // 必须走全屏 push（有 scope 却没人渲染 = 点了没反应）。
+      body: showWideLayout
+          ? EmbeddedStackScope(
+              stackProvider: selectedProfilePaneProvider,
+              child: _buildWideBody(theme),
+            )
+          : _buildMobileBody(theme),
     );
   }
 
@@ -493,6 +501,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   /// 平板/桌面端：左右双栏布局
   Widget _buildWideBody(ThemeData theme) {
+    // 右半边：栈为空时是原来的卡片列表，压了内容（草稿/设置）就顶替掉。
+    final selected = ref.watch(selectedProfilePaneProvider);
+    final entry = selected.topEntry;
+    final notifier = ref.read(selectedProfilePaneProvider.notifier);
     return Row(
       children: [
         SizedBox(
@@ -501,7 +513,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         VerticalDivider(width: 1, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
         Expanded(
-          child: _buildRightPanel(theme),
+          child: entry == null
+              ? _buildRightPanel(theme)
+              : PaneContentWidget(
+                  key: ValueKey(
+                    'profile_pane_${entry.kind}_'
+                    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                  ),
+                  entry: entry,
+                  stackProvider: selectedProfilePaneProvider,
+                  parentActive: widget.isActive,
+                  onBack: () =>
+                      selected.isStacked ? notifier.pop() : notifier.clear(),
+                ),
         ),
       ],
     );
@@ -680,10 +704,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         icon: Symbols.drafts_rounded,
         iconColor: Colors.teal,
         title: context.l10n.profile_myDrafts,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DraftsPage()),
-        ),
+        // 嵌入平行视界时压栈显示在右栏，否则全屏 push（统一入口）
+        onTap: () => EmbeddedStackScope.openDrafts(context),
       ),
       (
         icon: Symbols.history_rounded,

@@ -22,6 +22,25 @@ void main() {
     });
   });
 
+  group('分割线', () {
+    test('--- / *** / ___ 回车都出 hr', () {
+      for (final raw in ['---', '***', '___', '----', '*****']) {
+        final hit = at([raw]);
+        expect(hit, isNotNull, reason: raw);
+        expect(hit!.markdown, '---', reason: '统一序列化口径');
+        expect(hit.splitAfter, isFalse, reason: '岛承载结构,回车被消耗');
+      }
+    });
+
+    test('不足三个 / 混写 / 带正文不触发', () {
+      expect(at(['--']), isNull);
+      expect(at(['**']), isNull);
+      expect(at(['-*-']), isNull);
+      expect(at(['--- 正文']), isNull);
+      expect(at(['正文 ***']), isNull);
+    });
+  });
+
   group('公式与表格', () {
     test(r'$$ → 公式块', () {
       expect(at([r'$$'])!.markdown, r'$$' '\n\n' r'$$');
@@ -115,6 +134,102 @@ void main() {
 
     test('开闭标签不匹配 → 不触发', () {
       expect(at(['<div>内容</section>']), isNull);
+    });
+  });
+
+  group('BBCode', () {
+    test('行内:[b] / [i] / [u] / [s] → 只换本段,回车照常换行', () {
+      final hit = at(['这是[b]粗字[/b]哦'])!;
+      expect(hit.splitAfter, isTrue);
+      expect(hit.from, 0);
+      expect(at(['[i]斜[/i]']), isNotNull);
+      expect(at(['[u]下划线[/u]']), isNotNull);
+      expect(at(['[s]删除[/s]']), isNotNull);
+    });
+
+    test('行内:[url] / [email] / [img]', () {
+      expect(at(['看[url=https://a.b]这里[/url]']), isNotNull);
+      expect(at(['[email]a@b.c[/email]']), isNotNull);
+      expect(at(['[img]https://a.b/x.png[/img]']), isNotNull);
+    });
+
+    // 白名单曾经凭印象写,放进了一堆 cook 引擎不认的标签 —— 检测命中但
+    // cook 原样吐回字面量,表现为"回车分了段却没渲染"(实测复现:
+    // `[color=#FF0000]a[/color]` 回车后纹丝不动)。这些必须不触发。
+    // color/bgcolor:cook bundle 里没有 discourse-bbcode-color,但宿主
+    // 在 cook 之后补 span(DiscourseCookService.applyBbcodeColor),整条
+    // 链路能渲染出来,所以属于支持。
+    test('[color] / [bgcolor] 靠宿主后置转换支持', () {
+      final hit = at(['这是[color=#FF0000]红字[/color]哦'])!;
+      expect(hit.splitAfter, isTrue, reason: '行内,回车仍要换行');
+      expect(at(['[bgcolor=#fff]底色[/bgcolor]']), isNotNull);
+    });
+
+    test('引擎不支持的 BBCode 一律不触发', () {
+      for (final raw in [
+        '[size=20]大字[/size]',
+        '[font=arial]字体[/font]',
+        '[sup]上标[/sup]', // BBCode 形式不认,HTML <sup> 才认
+        '[sub]下标[/sub]',
+        '[highlight]高亮[/highlight]',
+        '[mark]标记[/mark]',
+      ]) {
+        expect(at([raw]), isNull, reason: raw);
+      }
+      for (final tag in ['note', 'aside', 'table', 'chat', 'floatl', 'floatr']) {
+        expect(at(['[$tag]', '内容', '[/$tag]']), isNull, reason: tag);
+        expect(at(['[$tag]内容[/$tag]']), isNull, reason: tag);
+      }
+    });
+
+    test('[code] / [spoiler] 归块级(cook 出来是 pre / div,不是行内)', () {
+      expect(at(['[code]x[/code]'])!.splitAfter, isFalse);
+      expect(at(['[spoiler]剧透[/spoiler]'])!.splitAfter, isFalse);
+    });
+
+    test('块级:[quote] … [/quote] 跨块回溯,整段变岛', () {
+      final hit = at(['[quote]', '引用内容', '[/quote]'])!;
+      expect(hit.from, 0);
+      expect(hit.to, 2);
+      expect(hit.splitAfter, isFalse);
+      expect(hit.markdown, '[quote]\n引用内容\n[/quote]');
+    });
+
+    test('块级:带参数的开标签也能配上', () {
+      expect(at(['[quote="某人, post:1"]', '内容', '[/quote]']), isNotNull);
+      expect(at(['[details="标题"]', '内容', '[/details]']), isNotNull);
+    });
+
+    test('块级:单行写完也认', () {
+      final hit = at(['[quote]短引用[/quote]'])!;
+      expect(hit.splitAfter, isFalse);
+    });
+
+    test('排除:未闭合 / 非白名单 / 找不到开标签', () {
+      expect(at(['[color=#f00]红字']), isNull);
+      expect(at(['[nosuchtag]x[/nosuchtag]']), isNull);
+      expect(at(['正文', '[/quote]']), isNull);
+    });
+
+    test('块级 BBCode 回溯不跨岛', () {
+      expect(at(['[quote]', null, '[/quote]']), isNull);
+    });
+  });
+
+  // 软换行(回车插段内 \n)之后一个块可以含多行,调用方必须把文档展开成
+  // **逻辑行**再喂进来。这里锁住"前面有内容的那一行"仍能收尾 ——
+  // 实测回归:开了软换行后 `***`/围栏/表格全失灵,就是因为拿整块文本匹配。
+  group('多行块(软换行)按行判定', () {
+    test('前面有正文行时,末行仍能命中', () {
+      expect(at(['上一行', '***'])!.markdown, '---');
+      expect(at(['上一行', '```dart'])!.markdown, '```dart\n\n```');
+      expect(at(['上一行', '| a | b |']), isNotNull);
+    });
+
+    test('命中区间只覆盖那一行', () {
+      final hit = at(['上一行', '***'])!;
+      expect(hit.from, 1);
+      expect(hit.to, 1, reason: '不能把"上一行"一起吞掉');
     });
   });
 
