@@ -97,6 +97,12 @@ class TopicDetailPage extends ConsumerStatefulWidget {
   final bool restoreExistingPaneStack; // 宽屏缩窄产生的临时路由，恢复时保留原栈
   final VoidCallback? restoreParentPaneStack; // 恢复前先还原下层临时路由的平行视界栈
   final bool autoOpenReply; // 自动打开回复框（从草稿进入时使用）
+
+  /// 自动回复意图**已消费**：调用方应把它从状态源头清掉。
+  ///
+  /// [_autoOpenReplyHandled] 只是 State 字段，面板一重建就重置，拦不住
+  /// 重复弹出（实测发完私信回复框又弹一次）。
+  final VoidCallback? onAutoReplyConsumed;
   final int? autoReplyToPostNumber; // 自动回复的帖子编号（从草稿进入时使用）
   final String? instanceId; // 外部指定的 provider 实例 ID（布局切换时复用）
   final bool autoOpenAiChat; // 自动打开 AI 聊天面板
@@ -140,6 +146,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
     this.restoreExistingPaneStack = false,
     this.restoreParentPaneStack,
     this.autoOpenReply = false,
+    this.onAutoReplyConsumed,
     this.autoReplyToPostNumber,
     this.instanceId,
     this.stackProvider,
@@ -1967,6 +1974,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           _autoOpenReplyHandled = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
+              // 先从状态源头清掉意图,再弹框:清晚了这一帧的重建又会命中
+              widget.onAutoReplyConsumed?.call();
               // 如果指定了回复帖子编号，找到对应的帖子
               Post? replyToPost;
               if (widget.autoReplyToPostNumber != null) {

@@ -135,6 +135,15 @@ class Draft {
   final String? avatarTemplate; // 头像模板
   final int? topicId; // 话题 ID
 
+  /// 目标话题的原型（`regular` / `private_message`），来自列表 API 的
+  /// **顶层** `archetype` 字段。
+  ///
+  /// **别用 [DraftData.archetypeId] 判私信**：那是 composer 自己的原型，
+  /// 回复一个已有私信时它照样是 `"regular"`（实测 `/drafts.json`
+  /// 返回 `data.archetypeId="regular"` 而顶层 `archetype="private_message"`）。
+  /// 只有顶层这个字段描述的是**话题**本身。
+  final String? archetype;
+
   const Draft({
     required this.draftKey,
     required this.data,
@@ -145,7 +154,13 @@ class Draft {
     this.username,
     this.avatarTemplate,
     this.topicId,
+    this.archetype,
   });
+
+  /// 这条草稿对应的是不是私信。
+  bool get isPrivateMessage =>
+      archetype == DraftAction.privateMessage.value ||
+      isNewPrivateMessageKey(draftKey);
 
   /// 从 API 响应解析
   factory Draft.fromJson(Map<String, dynamic> json) {
@@ -183,6 +198,7 @@ class Draft {
       username: json['username'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
       topicId: topicId,
+      archetype: json['archetype'] as String?,
     );
   }
 
@@ -213,6 +229,7 @@ class Draft {
     String? username,
     String? avatarTemplate,
     int? topicId,
+    String? archetype,
   }) {
     return Draft(
       draftKey: draftKey ?? this.draftKey,
@@ -224,6 +241,7 @@ class Draft {
       username: username ?? this.username,
       avatarTemplate: avatarTemplate ?? this.avatarTemplate,
       topicId: topicId ?? this.topicId,
+      archetype: archetype ?? this.archetype,
     );
   }
 

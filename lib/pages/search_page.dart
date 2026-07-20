@@ -29,6 +29,7 @@ import '../utils/blocked_user_filter.dart';
 import '../utils/discourse_url_parser.dart';
 import '../widgets/common/search_capsule.dart';
 import '../utils/link_launcher.dart';
+import 'drafts_page.dart';
 import 'settings_page.dart';
 
 /// 搜索框中的站内直达链接标准化。支持完整 URL、`linux.do/...` 和相对路径；
@@ -944,6 +945,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           stackProvider: _stackProvider,
           truncateOnPush: truncateOnPush,
           child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
+        );
+      case PaneKind.drafts:
+        return EmbeddedStackScope(
+          stackProvider: _stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: Consumer(
+            builder: (context, ref, _) => DraftsPage(
+              embeddedMode: true,
+              autoCloseWhenEmpty: truncateOnPush,
+              onEmbeddedBack: onBack,
+              // 草稿处理完 → 抽掉草稿这一层（不是 pop，右边的话题要留着）
+              onAllHandled: () => ref
+                  .read(_stackProvider.notifier)
+                  .removeEntriesOfKind(PaneKind.drafts),
+            ),
+          ),
         );
     }
   }
