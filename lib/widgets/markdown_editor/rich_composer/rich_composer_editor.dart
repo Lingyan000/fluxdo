@@ -647,6 +647,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 光标前缀 = 段首 `/query` → 弹菜单(块级插入语义只在段首,行中的
   /// `/` 是普通字符 —— Notion 同款)。
+  /// 斜杠菜单触发/前缀正则。提到 static:`_updateSlashQuery` 每次文档
+  /// 变更(≈每键)都跑,现编正则纯浪费。
+  static final _slashQueryRe = RegExp(r'^/([\w一-鿿]*)$');
+  static final _slashPrefixRe = RegExp(r'^/[\w一-鿿]*$');
+
   void _updateSlashQuery() {
     final editor = _editor;
     if (editor == null) return;
@@ -661,7 +666,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return;
     }
     final before = block.content.text.substring(0, sel.extent.offset);
-    final m = RegExp(r'^/([\w一-鿿]*)$').firstMatch(before);
+    final m = _slashQueryRe.firstMatch(before);
     if (m == null) {
       _dismissSlash();
       return;
@@ -788,7 +793,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       final block = editor.textBlockById(sel.extent.blockId);
       if (block != null) {
         final before = block.content.text.substring(0, sel.extent.offset);
-        final m = RegExp(r'^/[\w一-鿿]*$').firstMatch(before);
+        final m = _slashPrefixRe.firstMatch(before);
         if (m != null) {
           editor.updateSelection(
             EditorSelection(
@@ -827,6 +832,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   // mention 补全(监听光标前缀 @word)
   // -----------------------------------------------------------------
 
+  /// `@查询` 正则。`_updateMentionQuery` 每次文档变更(≈每键)都跑,
+  /// 提到 static 免去现编;`_insertMention` 复用同一条。
+  static final _mentionQueryRe = RegExp(r'@([\w_-]*)$');
+
   void _updateMentionQuery() {
     final dataSource = widget.mentionDataSource;
     final editor = _editor;
@@ -842,7 +851,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return;
     }
     final before = block.content.text.substring(0, sel.extent.offset);
-    final m = RegExp(r'@([\w_-]*)$').firstMatch(before);
+    final m = _mentionQueryRe.firstMatch(before);
     if (m == null) {
       _dismissMention();
       return;
@@ -941,7 +950,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final block = editor.textBlockById(sel.extent.blockId);
     if (block == null) return;
     final before = block.content.text.substring(0, sel.extent.offset);
-    final m = RegExp(r'@([\w_-]*)$').firstMatch(before);
+    final m = _mentionQueryRe.firstMatch(before);
     if (m == null) return;
     // 删掉 @query 前缀,插入 mention 原子 + 空格
     editor.updateSelection(
@@ -1053,6 +1062,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   ///
   /// 这是"`:rofl:` 打出来不渲染"的根因修复 —— 此前既没有行内规则、
   /// 回车也不收尾,只能靠面板点。返回 true = 已转换。
+  /// 完整 `:name:` 正则。经 `_updateEmojiQuery` 每次文档变更都会跑到,
+  /// 提到 static 免去现编。
+  static final _emojiCompleteRe = RegExp(r'(?:^|[^\w:]):([\w+-]+):$');
+
   bool _tryCompleteEmojiShortcode() {
     final editor = _editor;
     if (editor == null || editor.hasComposing) return false;
@@ -1061,7 +1074,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final block = editor.textBlockById(sel.extent.blockId);
     if (block == null) return false;
     final before = block.content.text.substring(0, sel.extent.offset);
-    final m = RegExp(r'(?:^|[^\w:]):([\w+-]+):$').firstMatch(before);
+    final m = _emojiCompleteRe.firstMatch(before);
     if (m == null) return false;
     final name = m.group(1)!;
     // 合法性必须校验:否则 `12:30:` / `a:b:` 都会变成裂图
