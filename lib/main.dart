@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
@@ -1188,11 +1189,13 @@ class _MainPageState extends ConsumerState<MainPage>
         duration: const Duration(seconds: 8),
         elevation: 0,
         padding: EdgeInsets.zero,
-        margin: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: 16 + MediaQuery.paddingOf(context).bottom,
-        ),
+        // 用 width 而不是 margin:margin 会让 SnackBar 自身的盒子撑满整宽,
+        // 而**吃点击的是 SnackBar 的 Material**(backgroundColor 透明只是
+        // 看不见,render box 照样 hit-test)—— 于是这 8 秒里右下角的悬浮
+        // 回复按钮点不动(它是手动 Positioned 的,拿不到 Scaffold FAB 的
+        // 自动避让)。改成只占卡片那么宽、居中,两侧就空出来了。
+        // 注意 width 与 margin 互斥,底部安全区由 floating 行为自行处理。
+        width: math.min(560, MediaQuery.sizeOf(context).width - 32),
       ),
     );
     unawaited(controller.closed.then((_) => markPromptedOnce()));
