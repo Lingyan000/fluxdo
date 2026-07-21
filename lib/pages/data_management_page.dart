@@ -96,9 +96,9 @@ class _CacheManagementSectionState
     try {
       await Future.wait([
         DiscourseCacheManager().emptyCache(),
-        EmojiCacheManager().emptyCache(),
         ExternalImageCacheManager().emptyCache(),
         StickerCacheManager().emptyCache(),
+        BlobImageCache.clearAll(),
       ]);
       // emptyCache() 只清除了索引，磁盘文件可能残留，需要删除整个目录
       await CacheSizeService.deleteImageCacheDirs();
@@ -167,9 +167,9 @@ class _CacheManagementSectionState
       final prefs = ref.read(sharedPreferencesProvider);
       await Future.wait([
         DiscourseCacheManager().emptyCache(),
-        EmojiCacheManager().emptyCache(),
         ExternalImageCacheManager().emptyCache(),
         StickerCacheManager().emptyCache(),
+        BlobImageCache.clearAll(),
         AiChatStorageService(prefs).deleteAllSessions(),
         _doClearCookies(),
       ]);

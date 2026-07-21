@@ -7,12 +7,14 @@ import '../discourse_cache_manager.dart';
 
 /// 缓存大小计算服务
 class CacheSizeService {
-  /// flutter_cache_manager 的缓存 key 列表
+  /// flutter_cache_manager 的缓存 key 列表 + blob 缓存根目录。
+  /// 都在 `getTemporaryDirectory()` 下,统计/删除口径一致。
   static const _cacheKeys = [
     DiscourseCacheManager.key,
-    EmojiCacheManager.key,
+    kLegacyEmojiCacheKey,
     ExternalImageCacheManager.key,
     StickerCacheManager.key,
+    BlobImageCache.dirName,
   ];
 
   /// 计算图片缓存大小（遍历三个 CacheManager 的磁盘目录）

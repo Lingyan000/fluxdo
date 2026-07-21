@@ -126,7 +126,7 @@ class StickerThumbnailProvider
       if (_knownThumbnailKeys.contains(thumbKey)) continue;
       if (_pendingThumbnailTasks.containsKey(thumbKey)) continue;
 
-      final cachedBytes = await _readCachedThumbnailBytes(cacheManager, thumbKey);
+      final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
       if (cachedBytes != null) continue;
 
       try {
@@ -210,7 +210,6 @@ class StickerThumbnailProvider
               ? await _resize(srcImage, targetSize)
               : srcImage;
       await _cacheThumbnail(
-        cacheManager,
         _thumbnailCacheKey(url, targetSize),
         displayImage,
       );
@@ -235,7 +234,7 @@ class StickerThumbnailProvider
     final thumbKey = _thumbnailCacheKey(url, targetSize);
     if (_knownThumbnailKeys.contains(thumbKey)) return;
 
-    final cachedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (cachedBytes != null) return;
 
     final pending = _pendingThumbnailTasks[thumbKey];
@@ -287,7 +286,7 @@ class StickerThumbnailProvider
     final thumbKey = _thumbnailCacheKey(key.url, key.targetSize);
 
     // 快速路径:PNG 缓存命中 → Flutter 内置 PNG codec(毫秒级)
-    final cachedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (cachedBytes != null) {
       return _decodeThumbnailBytes(cachedBytes, key.scale);
     }
@@ -298,7 +297,7 @@ class StickerThumbnailProvider
       targetSize: key.targetSize,
       cacheManager: manager,
     );
-    final warmedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final warmedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (warmedBytes != null) {
       return _decodeThumbnailBytes(warmedBytes, key.scale);
     }
@@ -309,7 +308,7 @@ class StickerThumbnailProvider
       url: key.url,
       targetSize: key.targetSize,
     );
-    unawaited(_cacheThumbnail(manager, thumbKey, displayImage));
+    unawaited(_cacheThumbnail(thumbKey, displayImage));
     return ImageInfo(image: displayImage, scale: key.scale);
   }
 
@@ -380,14 +379,17 @@ String _thumbnailCacheKey(String url, int targetSize) {
   return 'sticker_thumb:$targetSize:$url';
 }
 
-Future<Uint8List?> _readCachedThumbnailBytes(
-  BaseCacheManager manager,
-  String thumbKey,
-) async {
-  final cached = await manager.getFileFromCache(thumbKey);
-  if (cached == null) return null;
+/// 缩略图 PNG 走 [BlobImageCache](零 sqlite 寻址):30 张同屏的 grid
+/// 场景下,cache_manager 的每 key 一次 SELECT 是纯浪费。原图字节仍走
+/// cache manager(下载进度/大文件语义)。
+Future<Uint8List?> _readCachedThumbnailBytes(String thumbKey) async {
+  final bytes = await BlobImageCache.read(
+    BlobImageCache.stickerThumbBucket,
+    thumbKey,
+  );
+  if (bytes == null) return null;
   _knownThumbnailKeys.add(thumbKey);
-  return cached.file.readAsBytes();
+  return bytes;
 }
 
 Future<ImageInfo> _decodeThumbnailBytes(
@@ -414,7 +416,7 @@ Future<void> _warmThumbnail({
       url: url,
       targetSize: targetSize,
     );
-    await _cacheThumbnail(manager, thumbKey, displayImage);
+    await _cacheThumbnail(thumbKey, displayImage);
     _knownThumbnailKeys.add(thumbKey);
   } finally {
     displayImage?.dispose();
@@ -529,18 +531,14 @@ Future<ui.Image> _rgbaToUiImage(Uint8List rgba, int width, int height) {
   return completer.future;
 }
 
-Future<void> _cacheThumbnail(
-  BaseCacheManager manager,
-  String key,
-  ui.Image image,
-) async {
+Future<void> _cacheThumbnail(String key, ui.Image image) async {
   try {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData != null) {
-      await manager.putFile(
+      await BlobImageCache.write(
+        BlobImageCache.stickerThumbBucket,
         key,
         byteData.buffer.asUint8List(),
-        fileExtension: 'png',
       );
     }
   } catch (_) {

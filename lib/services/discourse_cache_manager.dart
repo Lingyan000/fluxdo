@@ -7,6 +7,8 @@ import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 import 'avif_image_provider.dart';
 export 'avif_image_provider.dart' show AvifImageProvider;
+import 'blob_image_cache.dart';
+export 'blob_image_cache.dart' show BlobImageCache, BlobImageProvider;
 import 'dio_http_client.dart';
 import 'throttled_cache_object_provider.dart';
 
@@ -15,12 +17,18 @@ import 'throttled_cache_object_provider.dart';
 /// 同时是 sqlite 索引库文件名（ApplicationSupport/{key}.db）与缓存文件
 /// 目录名（Temporary/{key}/）。migration v7 依赖此列表清理孤儿文件，
 /// 新增 manager 时必须同步追加。
+///
+/// `emojiImageCache` 已退役(emoji 改走 [BlobImageCache] 零索引寻址,
+/// migration v8 清理旧目录),字面量保留供迁移引用。
 const List<String> kImageCacheKeys = [
   DiscourseCacheManager.key,
-  EmojiCacheManager.key,
+  kLegacyEmojiCacheKey,
   ExternalImageCacheManager.key,
   StickerCacheManager.key,
 ];
+
+/// 旧 emoji 缓存的 cacheKey(仅供迁移/清理引用)。
+const String kLegacyEmojiCacheKey = 'emojiImageCache';
 
 /// Discourse 图片缓存管理器
 ///
@@ -130,32 +138,6 @@ class DiscourseCacheManager extends CacheManager with ImageCacheManager {
       preloadImage(url);
     }
   }
-}
-
-/// Emoji 专用缓存管理器
-///
-/// 与内容图片分离，避免小体积高频 emoji 被大图片 LRU 淘汰。
-/// emoji 体积小（3-10KB）、种类有限、复用率极高，适合长期缓存。
-class EmojiCacheManager extends CacheManager with ImageCacheManager {
-  static const String key = 'emojiImageCache';
-  static EmojiCacheManager? _instance;
-
-  factory EmojiCacheManager() {
-    _instance ??= EmojiCacheManager._();
-    return _instance!;
-  }
-
-  EmojiCacheManager._() : super(
-    Config(
-      key,
-      // emoji 几乎不变,长期缓存 + 大容量。Discourse 全套 emoji 几千个 +
-      // 自定义 emoji,5000 太紧 → 滚回前面的 emoji 频繁 LRU evict。
-      stalePeriod: const Duration(days: 90),
-      maxNrOfCacheObjects: 15000,
-      repo: ThrottledCacheObjectProvider(databaseName: key),
-      fileService: HttpFileService(httpClient: DioHttpClient()),
-    ),
-  );
 }
 
 /// 通用外部图片缓存管理器
@@ -276,12 +258,14 @@ ImageProvider discourseImageProvider(String url, {double scale = 1.0}) {
 
 /// 创建 Emoji 图片 Provider
 ///
-/// 使用独立的 [EmojiCacheManager]，不与内容图片竞争缓存空间
+/// 走 [BlobImageCache](Telegram 式 MD5 确定性寻址,零 sqlite 索引)。
+/// emoji 全集实测 100% 静态 PNG,单一路径即可;64px 目标尺寸走解码
+/// 闸门的小图旁路,由引擎 worker 池并行解码。
 ImageProvider emojiImageProvider(String url, {double scale = 1.0}) {
-  return CachedNetworkImageProvider(
+  return BlobImageProvider(
     url,
+    bucket: BlobImageCache.emojiBucket,
     scale: scale,
-    cacheManager: EmojiCacheManager(),
   );
 }
 

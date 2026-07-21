@@ -367,8 +367,8 @@ Future<void> main() async {
   if (prefs.getBool('pref_clear_cache_on_exit') == true) {
     Future.wait([
       DiscourseCacheManager().emptyCache(),
-      EmojiCacheManager().emptyCache(),
       ExternalImageCacheManager().emptyCache(),
+      BlobImageCache.clearAll(),
     ]).then((_) => CacheSizeService.deleteImageCacheDirs()).ignore();
   }
 
@@ -405,6 +405,16 @@ Future<void> main() async {
     'event': 'app_start',
     'message': '应用启动',
   });
+
+  // 启动后台维护:迁移 trash 目录清扫(v7/v8 rename 出来的待删区)+
+  // blob 缓存过期扫描(24h 节流)。都在首帧渲染完 + 60s 空闲后跑,
+  // 重活全在 Isolate.run,不与启动/首屏抢资源。
+  unawaited(() async {
+    await WidgetsBinding.instance.waitUntilFirstFrameRasterized;
+    await Future.delayed(const Duration(seconds: 60));
+    await MigrationService.purgeTrash();
+    await BlobImageCache.sweep(prefs);
+  }());
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {
