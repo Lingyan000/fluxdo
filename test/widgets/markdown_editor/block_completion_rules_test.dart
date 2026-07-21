@@ -165,9 +165,18 @@ void main() {
       expect(at(['[bgcolor=#fff]底色[/bgcolor]']), isNotNull);
     });
 
+    // size 与 color 同理:宿主在 cook 之后补 font-size span
+    // (DiscourseCookService.applyBbcodeSize),阅读端解析成 SizedRun。
+    // 此前这条断言写在"不支持"那组里 —— 那是后置转换尚未存在时的正确
+    // 结论,补上转换后前提已变。回归:手打 [size=…] 回车不渲染。
+    test('[size] 靠宿主后置转换支持', () {
+      final hit = at(['这是[size=150]大字[/size]哦'])!;
+      expect(hit.splitAfter, isTrue, reason: '行内,回车仍要换行');
+      expect(at(['[size=0]隐藏[/size]']), isNotNull);
+    });
+
     test('引擎不支持的 BBCode 一律不触发', () {
       for (final raw in [
-        '[size=20]大字[/size]',
         '[font=arial]字体[/font]',
         '[sup]上标[/sup]', // BBCode 形式不认,HTML <sup> 才认
         '[sub]下标[/sub]',

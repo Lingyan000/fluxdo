@@ -161,7 +161,7 @@ class DiscourseCookService {
       final username = m.group(1)!;
       return '<a class="mention" href="$baseUri/u/$username">@$username</a>';
     });
-    return applyBbcodeColor(withMentions);
+    return applyBbcodeSize(applyBbcodeColor(withMentions));
   }
 
   static final RegExp _mentionSpanRe = RegExp(
@@ -207,6 +207,38 @@ class DiscourseCookService {
     }
     return out;
   }
+
+  /// `[size=N]` → `<span style="font-size:N%">`。
+  ///
+  /// 与 [applyBbcodeColor] 同因同法:字号 BBCode 也由服务端插件提供,不在
+  /// 我们的 cook bundle 里,cook 会把 `[size=N]` 原样当文字吐回来;而放在
+  /// cook 之前替换又会被 HTML 消毒器把 style 剥掉 —— 只能在 cook 之后补。
+  ///
+  /// 映射取自服务端实测样本:`[size=0]` → `font-size:0%`(视觉隐藏)、
+  /// `[size=150]` → `font-size:150%`,即 `N` ↔ `N%` 直给。
+  /// 阅读端已认 `span[style]` 的 font-size(paragraph_parser → SizedRun),
+  /// 补完即复用整条渲染链;两端一致才能过往返门禁。
+  ///
+  /// 只认纯数字值,`[size=大]` 这类原样留着当普通文本。
+  @visibleForTesting
+  static String applyBbcodeSize(String html) {
+    var out = html;
+    for (var i = 0; i < _maxBbcodeColorDepth; i++) {
+      final next = out.replaceAllMapped(
+        _bbcodeSizeRe,
+        (m) => '<span style="font-size:${m.group(1)}%">${m.group(2)}</span>',
+      );
+      if (next == out) break; // 收敛
+      out = next;
+    }
+    return out;
+  }
+
+  /// 最内层优先(内容里不再有同名开/闭标签),配合循环由内向外展开。
+  static final RegExp _bbcodeSizeRe = RegExp(
+    r'\[size=(\d{1,4})\]((?:(?!\[/?size)[\s\S])*)\[/size\]',
+    caseSensitive: false,
+  );
 
   /// 嵌套展开上限:`[bgcolor][color]…[/color][/bgcolor]` 这类套两层就够,
   /// 留点余量;有界防病态输入下的长循环。

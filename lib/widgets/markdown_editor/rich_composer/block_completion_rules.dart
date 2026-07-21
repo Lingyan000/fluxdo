@@ -118,11 +118,13 @@ const bbcodeBlockTags = {
 /// "整条链路(cook + 宿主后置转换)出不出效果":
 /// - `color`/`bgcolor`:bundle 里没有 discourse-bbcode-color,但
 ///   [DiscourseCookService.applyBbcodeColor] 在 cook 之后补 span,所以算支持;
-/// - `size`/`font`:没有对应后置转换,仍不支持;
+/// - `size`:同理 —— [DiscourseCookService.applyBbcodeSize] 在 cook 之后补
+///   `font-size` span,阅读端解析成 SizedRun,算支持;
+/// - `font`:没有对应后置转换,仍不支持;
 /// - `sup`/`sub`/`highlight`/`mark`:**BBCode 形式**引擎不认(HTML 形式
 ///   `<sup>` 才认,见 [htmlInlineTags])。
 const bbcodeInlineTags = {
-  'b', 'i', 'u', 's', 'url', 'email', 'img', 'color', 'bgcolor',
+  'b', 'i', 'u', 's', 'url', 'email', 'img', 'color', 'bgcolor', 'size',
 };
 
 /// `[tag]` / `[tag=值]` / `[tag 属性=值]` 开标签。
