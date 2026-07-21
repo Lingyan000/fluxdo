@@ -19,12 +19,17 @@ class CacheSizeService {
 
   /// 计算图片缓存大小（遍历三个 CacheManager 的磁盘目录）
   ///
-  /// flutter_cache_manager 将缓存存储在 `getTemporaryDirectory()/{key}` 下
+  /// flutter_cache_manager 将缓存存储在 `getTemporaryDirectory()/{key}` 下。
+  /// 迁移产生的 `*.trash` 待删目录也计入 —— 后台清扫前的窗口期里它们
+  /// 仍占磁盘,不算进来会出现"明明占几百 MB 却显示无缓存"。
   static Future<int> getImageCacheSize() async {
     final tempDir = await getTemporaryDirectory();
     int totalSize = 0;
     for (final key in _cacheKeys) {
       totalSize += await _getDirectorySize(Directory('${tempDir.path}/$key'));
+    }
+    for (final dir in await _trashDirs(tempDir)) {
+      totalSize += await _getDirectorySize(dir);
     }
     return totalSize;
   }
@@ -69,6 +74,8 @@ class CacheSizeService {
   ///
   /// emptyCache() 只清除了 CacheManager 追踪的条目，
   /// 磁盘上的文件可能残留，需要直接删除整个目录来彻底清理。
+  /// 迁移遗留的 `*.trash` 待删目录一并删(用户主动清缓存 = 立即释放,
+  /// 不等后台清扫)。
   static Future<void> deleteImageCacheDirs() async {
     final tempDir = await getTemporaryDirectory();
     for (final key in _cacheKeys) {
@@ -77,6 +84,24 @@ class CacheSizeService {
         await dir.delete(recursive: true);
       }
     }
+    for (final dir in await _trashDirs(tempDir)) {
+      try {
+        await dir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  /// Temporary 下迁移产生的 `*.trash` 待删目录。
+  static Future<List<Directory>> _trashDirs(Directory tempDir) async {
+    final result = <Directory>[];
+    try {
+      await for (final e in tempDir.list()) {
+        if (e is Directory && e.path.endsWith('.trash')) {
+          result.add(e);
+        }
+      }
+    } catch (_) {}
+    return result;
   }
 
   /// 格式化字节为可读字符串
