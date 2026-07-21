@@ -82,12 +82,19 @@ mixin _SearchMixin on _DiscourseServiceBase {
     }
   }
 
-  /// 搜索用户（用于 @提及自动补全）
+  /// 搜索用户（用于 @提及自动补全 / 私信收件人选择）
+  ///
+  /// [includeMessageableGroups]：只返回**当前用户能发私信**的群组
+  /// （Discourse users_controller#search_users 的三个群组开关语义不同：
+  /// `include_groups` = 所有可见群组、`include_mentionable_groups` = 可 @
+  /// 的群组、`include_messageable_groups` = 可发私信的群组）。新建私信选
+  /// 收件人时应当只开这一个，另两个关掉——否则会列出发不了私信的群组。
   Future<MentionSearchResult> searchUsers({
     required String term,
     int? topicId,
     int? categoryId,
     bool includeGroups = true,
+    bool includeMessageableGroups = false,
     int limit = 6,
   }) async {
     try {
@@ -96,6 +103,11 @@ mixin _SearchMixin on _DiscourseServiceBase {
         'include_groups': includeGroups,
         'limit': limit,
       };
+      if (includeMessageableGroups) {
+        queryParams['include_messageable_groups'] = true;
+        // 新建私信不绑定话题：不限定「话题可见用户」，否则搜不到人
+        queryParams['topic_allowed_users'] = false;
+      }
       if (topicId != null) {
         queryParams['topic_id'] = topicId;
       }
