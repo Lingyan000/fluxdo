@@ -449,10 +449,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // Cmd/Ctrl+Enter 是宿主的**发送**快捷键,这里一个字节都不能碰 ——
     // 内核的回车分支本来就有 `when !primary` 放行它冒泡,宿主拦截层
     // 漏掉同一守卫会把发送吞掉(实测回归:加软换行后 Ctrl+Enter 失灵)。
-    final primaryEnter = isEnterKey &&
-        (defaultTargetPlatform == TargetPlatform.macOS
-            ? HardwareKeyboard.instance.isMetaPressed
-            : HardwareKeyboard.instance.isControlPressed);
+    // 用内核的权威判定,**不要**直接读 HardwareKeyboard:平台/IME 会把
+    // Ctrl 弄成假的「已抬起」,两边口径不一致就会出现「Ctrl+Enter 换两行
+    // 且发不出去」(内核分段 + 宿主软换行各插一次)。
+    final primaryEnter = isEnterKey && primaryModifierHeld(event);
     if (_mentionOverlay == null &&
         _slashOverlay == null &&
         _emojiOverlay == null &&
