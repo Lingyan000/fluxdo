@@ -345,6 +345,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _serializeDebounce?.cancel();
     final editor = _editor;
     if (editor == null) return;
+    // 先收口显形:光标停在格式边界时(如 `**内容|**`)mark 被摘掉、`**`
+    // 是**普通文本**,直接序列化会把星号当字面量转义成 `\*\*`,发出去就
+    // 不渲染了。显形只是编辑期的可视化,落盘前必须装回结构。
+    editor.commitReveals();
     final raw = docToRaw(editor.blocks);
     if (raw != widget.controller.text) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
