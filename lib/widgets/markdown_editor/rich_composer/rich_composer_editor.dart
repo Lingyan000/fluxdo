@@ -235,7 +235,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       widget.onFallbackToPlain?.call();
       return;
     }
-    final editor = EditorState(blocks: doc);
+    // 逃生口:导入的文档若以非空引用/岛结尾、或有相邻困住块,补顶层空段,
+    // 让光标有落点跳出(引用回复正文才不会被吸进引用块)。只在导入这一
+    // 处补,不动 EditorState 命令契约;序列化时未填的空段自动回收。
+    var gapN = 0;
+    final gapped = insertEscapeGaps(doc, () => 'e_gap_${gapN++}');
+    final editor = EditorState(blocks: gapped);
+    // 注意:**不要**在这里预设 selection。此刻 FluxdoEditor 还没 build、
+    // IME client 未 attach,抢跑的选区会让输入连接以错位状态初始化 ——
+    // 实测表现为光标不渲染、按键路由失灵(Ctrl+Enter 等宿主快捷键全废)。
+    // 选区交给聚焦流程正常建立;引用下方的落点由上面的逃生空段提供。
     // 回车语义(软换行 / 分段)。硬件按键链在 _interceptKeyEvent 里按
     // Shift 临时反转,IME 路径直接读这个值。
     editor.enterInsertsSoftBreak = _enterSoftBreakPref;
