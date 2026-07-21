@@ -513,9 +513,23 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
               memCacheWidth: 64,
               memCacheHeight: 64,
               cacheManager: EmojiCacheManager(),
+              placeholder: _buildEmojiPlaceholder,
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 加载中的淡底占位(Telegram 双端同款:~6% alpha,几乎不可见但
+  /// 消除"空白格子逐个蹦图"的观感)。图就绪即直接替换,无过渡动画。
+  static Widget _buildEmojiPlaceholder(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
       ),
     );
   }
@@ -726,6 +740,8 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                               memCacheWidth: 80,
                               memCacheHeight: 80,
                               cacheManager: EmojiCacheManager(),
+                              placeholder:
+                                  _EmojiPickerState._buildEmojiPlaceholder,
                             ),
                           ),
                         ),
