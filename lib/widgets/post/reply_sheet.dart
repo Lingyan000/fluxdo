@@ -882,13 +882,6 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                   : RichComposerEditor(
                                       key: _richKey,
                                       controller: _contentController,
-                                      // 与底部 CallbackShortcuts 同一个守卫,
-                                      // 两条路幂等(_isSubmitting 会挡住重入)
-                                      onSubmitShortcut: () {
-                                        if (!_isSubmitting && !_isLoadingRaw) {
-                                          _submit();
-                                        }
-                                      },
                                       focusNode: _contentFocusNode,
                                       hintText: context.l10n.editor_hintText,
                                       emojiPanelHeight: _emojiPanelHeight,
