@@ -45,6 +45,7 @@ import '../../../services/app_error_handler.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../services/discourse_cook_service.dart';
 import '../../../services/emoji_handler.dart';
+import '../../../utils/clipboard_image_native.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../../utils/link_launcher.dart';
@@ -1289,6 +1290,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       final img = await MarkdownToolbarState.readImageFromReader(reader);
       if (img != null) {
         unawaited(_uploadPastedImage(img.$1, img.$2));
+        return null;
+      }
+      // 原生兜底(Windows):剪贴板历史(Win+V)放的 OLE data object 只在
+      // OLE 层声明标记类格式,位图挂在原始 Win32 剪贴板上,super_clipboard
+      // 枚举不到 —— 表现为「Win+V 粘贴图片没反应」。探针实测原生能拿到
+      // CF_DIB 并成功转出 PNG,见 clipboard_image_native.dart。
+      final native = readClipboardImageNative();
+      if (native != null) {
+        unawaited(_uploadPastedImage(native, 'png'));
       }
     }
     return null;
