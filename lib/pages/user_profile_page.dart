@@ -4,7 +4,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:share_plus/share_plus.dart';
 import '../models/user.dart';
 import '../models/user_action.dart';
 import '../models/topic.dart';
@@ -393,7 +392,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       username: username,
       anonymousShare: prefs.anonymousShare,
     );
-    SharePlus.instance.share(ShareParams(text: url));
+    ShareUtils.shareLink(context, url: url);
   }
 
   /// 设置用户订阅级别

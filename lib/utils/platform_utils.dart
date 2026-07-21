@@ -14,6 +14,9 @@ class PlatformUtils {
       debugDesktopOverride ??
       (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux));
 
+  /// 是否运行在 Windows（原生分享面板体验差,链接分享需特殊处理）
+  static bool get isWindows => !kIsWeb && Platform.isWindows;
+
   /// 是否运行在移动操作系统（Android / iOS）
   static bool get isMobile =>
       debugDesktopOverride == null

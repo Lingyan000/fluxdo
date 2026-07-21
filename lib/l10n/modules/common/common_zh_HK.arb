@@ -34,6 +34,8 @@
   "common_copiedToClipboard": "已複製到剪貼板",
   "common_copy": "複製",
   "common_copyLink": "複製鏈接",
+  "common_systemShare": "系統分享",
+  "common_linkCopied": "鏈接已複製",
   "common_copyQuote": "複製引用",
   "common_custom": "自定義",
   "common_decodeAvif": "解碼 AVIF",

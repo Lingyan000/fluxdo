@@ -10,7 +10,6 @@ import '../../utils/idle_task.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../l10n/s.dart';
 import '../../utils/frame_jank_monitor.dart';
 import '../../utils/html_text_mapper.dart';

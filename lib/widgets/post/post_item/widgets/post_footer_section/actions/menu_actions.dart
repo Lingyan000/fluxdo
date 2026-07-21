@@ -4,7 +4,7 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
   Future<void> _sharePost() async {
     final url =
         '${AppConstants.baseUrl}/t/${widget.topicId}/${widget.post.postNumber}';
-    await SharePlus.instance.share(ShareParams(text: url));
+    await ShareUtils.shareLink(context, url: url);
   }
 
   void _showFlagDialog(BuildContext context) {

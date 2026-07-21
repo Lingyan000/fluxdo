@@ -3,7 +3,6 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../l10n/s.dart';
 import '../../models/category.dart';
 import '../../models/search_result.dart';
@@ -475,7 +474,7 @@ class SearchPreviewDialog extends ConsumerWidget {
                   username: user?.username,
                   anonymousShare: prefs.anonymousShare,
                 );
-                SharePlus.instance.share(ShareParams(text: url));
+                ShareUtils.shareLink(context, url: url);
               },
               icon: const Icon(Symbols.share_rounded, size: 20),
               tooltip: context.l10n.common_share,

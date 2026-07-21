@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
@@ -9,6 +10,9 @@ import '../constants.dart';
 import '../l10n/s.dart';
 import '../services/toast_service.dart';
 import 'platform_utils.dart';
+
+/// Windows 链接分享菜单的用户选择。
+enum _LinkShareChoice { copy, system }
 
 /// 文件分享/保存结果。
 ///
@@ -39,6 +43,63 @@ class ShareUtils {
       return base;
     }
     return '$base?u=$username';
+  }
+
+  /// 分享一条链接。
+  ///
+  /// Windows 的原生分享面板体验很差(还不带"复制链接"),这里在 Windows 上
+  /// 先弹一个轻量菜单让用户在「复制链接 / 系统分享」间选择;其它平台维持
+  /// 原样直接调用系统分享面板。
+  static Future<void> shareLink(
+    BuildContext context, {
+    required String url,
+    String? subject,
+  }) async {
+    if (!PlatformUtils.isWindows) {
+      await SharePlus.instance.share(ShareParams(text: url, subject: subject));
+      return;
+    }
+
+    final choice = await showDialog<_LinkShareChoice>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(S.current.common_share),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _LinkShareChoice.copy),
+            child: Row(
+              children: [
+                const Icon(Icons.link_rounded, size: 20),
+                const SizedBox(width: 12),
+                Text(S.current.common_copyLink),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _LinkShareChoice.system),
+            child: Row(
+              children: [
+                const Icon(Icons.ios_share_rounded, size: 20),
+                const SizedBox(width: 12),
+                Text(S.current.common_systemShare),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    switch (choice) {
+      case _LinkShareChoice.copy:
+        await Clipboard.setData(ClipboardData(text: url));
+        ToastService.show(S.current.common_linkCopied);
+      case _LinkShareChoice.system:
+        await SharePlus.instance.share(
+          ShareParams(text: url, subject: subject),
+        );
+      case null:
+        break; // 用户取消
+    }
   }
 
   /// 分享或保存文件

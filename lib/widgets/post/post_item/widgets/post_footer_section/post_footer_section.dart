@@ -3,7 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
+import '../../../../../utils/share_utils.dart';
 import 'dart:async';
 import '../../../../../l10n/s.dart';
 import '../../../../../constants.dart';

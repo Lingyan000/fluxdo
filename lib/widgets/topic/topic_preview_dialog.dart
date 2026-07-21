@@ -3,7 +3,6 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
@@ -704,7 +703,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                 username: user?.username,
                 anonymousShare: prefs.anonymousShare,
               );
-              SharePlus.instance.share(ShareParams(text: url));
+              ShareUtils.shareLink(context, url: url);
             },
             icon: const Icon(Symbols.share_rounded, size: 20),
             tooltip: S.current.common_share,

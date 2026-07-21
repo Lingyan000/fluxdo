@@ -27,6 +27,8 @@
   "common_copiedToClipboard": "Copied to clipboard",
   "common_copy": "Copy",
   "common_copyLink": "Copy link",
+  "common_systemShare": "System share",
+  "common_linkCopied": "Link copied",
   "common_copyQuote": "Copy quote",
   "common_custom": "Custom",
   "common_decodeAvif": "Decoding AVIF",
