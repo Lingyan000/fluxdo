@@ -1,14 +1,14 @@
 name: Build and Release
 
+# fork 专用精简版:上游那套 Android(签名/GCP/Crashlytics)、Flatpak、
+# changelog、Telegram/AltStore/GitHub Pages 全靠 fork 上没有的 secrets,
+# 只会失败并发邮件。这里只保留在 fork 上能稳定绿的 iOS / macOS / Windows,
+# 构建完直接把产物发到本 fork 的 Release。
+
 on:
   push:
     tags:
       - 'v*'
-
-env:
-  IS_STABLE: ${{ !contains(github.ref, '-') }}
-  FLUTTER_LINUX_VERSION: '3.44.0'
-  ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
   build:
@@ -20,21 +20,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: android
-            os: ubuntu-latest
-            arch: arm64-v8a
-            rust-target: aarch64-linux-android
-            flutter-target: android-arm64
-          - platform: android
-            os: ubuntu-latest
-            arch: armeabi-v7a
-            rust-target: armv7-linux-androideabi
-            flutter-target: android-arm
-          - platform: android
-            os: ubuntu-latest
-            arch: x86_64
-            rust-target: x86_64-linux-android
-            flutter-target: android-x64
           - platform: ios
             os: macos-latest
           - platform: macos
@@ -50,35 +35,10 @@ jobs:
             arch: x86_64
 
     steps:
-      # ubuntu-latest 可用空间仅 ~14GB,Flutter+NDK+Rust 缓存+Gradle 产物会把盘写满,
-      # 先删掉本构建用不到的预装组件,约可腾出 25GB+
-      - name: Free disk space
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          echo "清理前:" && df -h /
-          sudo rm -rf \
-            /usr/share/dotnet \
-            /usr/local/lib/android/sdk/ndk \
-            /opt/ghc \
-            /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL \
-            /usr/share/swift \
-            /usr/local/share/powershell \
-            /usr/local/share/chromium
-          sudo docker image prune --all --force > /dev/null 2>&1 || true
-          echo "清理后:" && df -h /
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Setup Java
-        if: startsWith(matrix.platform, 'android')
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -87,11 +47,9 @@ jobs:
           cache: true
 
       - name: Setup Rust
-        if: startsWith(matrix.platform, 'android') || matrix.platform == 'macos' || matrix.platform == 'ios' || matrix.platform == 'windows'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust build
-        if: startsWith(matrix.platform, 'android') || matrix.platform == 'macos' || matrix.platform == 'ios' || matrix.platform == 'windows'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: core/doh_proxy
@@ -105,70 +63,9 @@ jobs:
         if: matrix.platform == 'macos'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: Setup Android build environment
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          rustup target add ${{ matrix.rust-target }}
-          cargo install cargo-ndk
-          sudo apt-get update && sudo apt-get install -y cmake
-
-      - name: Setup Android NDK
-        if: startsWith(matrix.platform, 'android')
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'ndk;${{ env.ANDROID_NDK_VERSION }}'
-
-      - name: Configure Android NDK path
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          ndk_path="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
-          test -d "${ndk_path}"
-          echo "ANDROID_NDK_HOME=${ndk_path}" >> "${GITHUB_ENV}"
-          echo "ANDROID_NDK_ROOT=${ndk_path}" >> "${GITHUB_ENV}"
-
-      - name: Setup Android Signing
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
-          echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > android/key.properties
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
-
       - name: Configure Git for CocoaPods
         if: matrix.platform == 'ios' || matrix.platform == 'macos'
         run: git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Build Android
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          dart tool/flutterw.dart build apk --release --target-platform ${{ matrix.flutter-target }} --dart-define=cronetHttpNoPlay=true --split-debug-info=build/symbols
-          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep "lib/${{ matrix.arch }}/libdoh_proxy.so"
-          cmp -s core/doh_proxy/certs/ca.der android/app/src/main/res/raw/proxy_ca.der
-          cmp -s core/doh_proxy/certs/ca.crt assets/certs/proxy_ca.pem
-          mkdir -p dist
-          mv build/app/outputs/flutter-apk/app-release.apk dist/fluxdo-${{ matrix.arch }}.apk
-
-      - name: Authenticate to Google Cloud
-        if: startsWith(matrix.platform, 'android')
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SA_EMAIL }}
-
-      - name: Upload Dart symbols to Crashlytics
-        if: startsWith(matrix.platform, 'android')
-        run: |
-          npx -y firebase-tools@latest crashlytics:symbols:upload \
-            --app=1:98542877021:android:e555169791c86bb9c950b4 \
-            build/symbols
-
-      - name: Archive Dart symbols
-        if: startsWith(matrix.platform, 'android')
-        uses: actions/upload-artifact@v4
-        with:
-          name: dart-symbols-${{ matrix.arch }}
-          path: build/symbols
-          retention-days: 90
-          if-no-files-found: error
 
       - name: Build iOS
         if: matrix.platform == 'ios'
@@ -254,270 +151,12 @@ jobs:
           path: ./dist
           overwrite: true
 
-  flatpak_prepare_sources:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_LINUX_VERSION }}
-          cache: true
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core/doh_proxy
-          key: flatpak
-
-      - name: Prepare Flatpak source tree
-        env:
-          PUB_CACHE: ${{ github.workspace }}/.pub-cache
-        run: bash scripts/ci/flatpak/prepare_source_tree.sh
-
-      - name: Upload Flatpak source tree artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: flatpak-source-tree-internal
-          path: .artifacts/flatpak/fluxdo-flatpak-source-tree.tar.gz
-          if-no-files-found: error
-          overwrite: true
-
-  ensure_flatpak_wpe_layer:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
-      options: --privileged
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read WPE layer version
-        id: layer
-        run: |
-          version="$(tr -d '\r\n' < flatpak/wpe-layer.version)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Try downloading prebuilt WPE layer
-        id: fetch
-        run: |
-          mkdir -p dist
-          asset="fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst"
-          base_url="https://github.com/${{ github.repository }}/releases/download/flatpak-wpe-layer-${{ steps.layer.outputs.version }}"
-          if curl -fsIL "${base_url}/${asset}" > /dev/null; then
-            curl -fL "${base_url}/${asset}" -o "dist/${asset}"
-            curl -fL "${base_url}/${asset}.sha256" -o "dist/${asset}.sha256"
-            (
-              cd dist
-              sha256sum -c "${asset}.sha256"
-            )
-            echo "hit=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build WPE layer on cache miss
-        if: steps.fetch.outputs.hit != 'true'
-        run: |
-          flatpak --system remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          xvfb-run --auto-servernum flatpak-builder \
-            --repo=repo \
-            --disable-rofiles-fuse \
-            --install-deps-from=flathub \
-            --force-clean \
-            --default-branch=stable \
-            --arch=x86_64 \
-            --ccache \
-            --verbose \
-            flatpak_wpe_layer \
-            flatpak/com.github.lingyan000.fluxdo.wpe-layer.yml
-          bash scripts/ci/flatpak/package_wpe_layer.sh \
-            flatpak_wpe_layer \
-            dist/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst
-
-      - name: Publish WPE layer release on cache miss
-        if: steps.fetch.outputs.hit != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: flatpak-wpe-layer-${{ steps.layer.outputs.version }}
-          name: Flatpak WPE Layer ${{ steps.layer.outputs.version }}
-          body: |
-            Prebuilt Flatpak WPE dependency layer for Fluxdo.
-          prerelease: true
-          make_latest: false
-          files: |
-            dist/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst
-            dist/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst.sha256
-          fail_on_unmatched_files: true
-          overwrite_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload WPE layer workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: flatpak-wpe-layer-current
-          path: |
-            dist/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst
-            dist/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst.sha256
-          if-no-files-found: error
-          overwrite: true
-
-  flatpak_package:
-    needs:
-      - flatpak_prepare_sources
-      - ensure_flatpak_wpe_layer
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
-      options: --privileged
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download Flatpak source tree artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: flatpak-source-tree-internal
-          path: .artifacts/flatpak
-
-      - name: Download WPE layer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: flatpak-wpe-layer-current
-          path: flatpak/stage/wpe-layer
-
-      - name: Extract Flatpak source tree
-        run: |
-          echo "解包前:" && df -h /
-          rm -rf flatpak/stage/source-tree
-          mkdir -p flatpak/stage/source-tree
-          tar -xzf .artifacts/flatpak/fluxdo-flatpak-source-tree.tar.gz -C flatpak/stage/source-tree
-          rm -rf .artifacts/flatpak
-          ls -la flatpak/stage/source-tree
-          du -sh flatpak/stage/source-tree flatpak/stage/wpe-layer || true
-          echo "解包并清理源包后:" && df -h /
-
-      - name: Build Flatpak bundle
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          manifest-path: flatpak/com.github.lingyan000.fluxdo.yml
-          bundle: fluxdo-linux-x86_64.flatpak
-          branch: stable
-          repository-name: flathub
-          arch: x86_64
-          verbose: true
-          upload-artifact: false
-
-      - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifact-linux-flatpak-x86_64
-          path: fluxdo-linux-x86_64.flatpak
-          if-no-files-found: error
-          overwrite: true
-
-  changelog:
-    needs:
-      - build
-      - flatpak_package
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, '-') }}
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: refs/heads/main
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install git-cliff
-        uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
-
-      - name: Generate CHANGELOG.md (cliff, beta folded into stable)
-        id: cliff
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git cliff \
-            --tag "${{ github.ref_name }}" \
-            --ignore-tags '.*-(alpha|beta|rc).*' \
-            --output CHANGELOG.md
-
-      - name: Fallback - Generate Changelog (legacy bash)
-        if: steps.cliff.outcome == 'failure'
-        run: |
-          echo "::warning::git-cliff 失败，回退到 legacy bash 拼接"
-          last_ver=$(grep -m1 '^## ' CHANGELOG.md 2>/dev/null | sed 's/^## //' || echo "")
-
-          tags=($(git tag --merged HEAD --sort=-creatordate))
-
-          temp="NEW_CHANGELOG.md"
-          > "$temp"
-
-          for i in "${!tags[@]}"; do
-              curr="${tags[i]}"
-              [[ "$curr" == "$last_ver" ]] && break
-
-              prev="${tags[i+1]}"
-              range="${prev:+$prev..}$curr"
-
-              echo -e "## $curr\n" >> "$temp"
-              git log --no-merges --pretty=format:"- %s" "$range" | \
-                grep -v 'Update changelog' | \
-                grep -v 'Co-Authored-By: Release Script' | \
-                grep -v '^- chore: bump version to ' >> "$temp" || true
-              echo "" >> "$temp"
-          done
-
-          [ -f CHANGELOG.md ] && cat CHANGELOG.md >> "$temp"
-          mv "$temp" CHANGELOG.md
-
-      - name: Commit Changelog
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add CHANGELOG.md
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(changelog): regenerate for ${{ github.ref_name }} [skip ci]"
-            git push
-          fi
-
   upload:
-    needs:
-      - build
-      - flatpak_package
+    needs: build
     runs-on: ubuntu-latest
-    permissions: write-all
-    services:
-      telegram-bot-api:
-        image: aiogram/telegram-bot-api:latest
-        env:
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-        ports:
-          - 8081:8081
-
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -528,82 +167,7 @@ jobs:
       - name: List artifacts
         run: ls -la ./dist/
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Install git-cliff
-        uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
-
-      - name: Generate release notes (cliff)
-        id: cliff_notes
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 不能用 --current：在 --ignore-tags 下它仍把范围缩到“上一个 tag”，
-          # 会让 stable 只显示最后一个 beta 的增量（而非从上一个 stable 起算）。
-          # 改为显式算出对比基准 tag + 限定 range。
-          TAG="${{ github.ref_name }}"
-          if [[ "${{ env.IS_STABLE }}" == "true" ]]; then
-            # stable：基准 = 拓扑上一个 stable tag（跳过 beta），再用 --ignore-tags 把整个 beta 周期折叠进来
-            PREV=$(git describe --tags --abbrev=0 --exclude='*-*' "${TAG}^" 2>/dev/null || true)
-            EXTRA=(--ignore-tags '.*-(alpha|beta|rc).*')
-          else
-            # beta：基准 = 拓扑上一个 tag（含 beta），只显示本次相对上次发布的增量
-            PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
-            EXTRA=()
-          fi
-          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="$TAG"; fi
-          echo "::notice::release notes 范围 = ${RANGE}"
-          # GH Release body + TG 文本源（带 markdown 链接、分组、PR、贡献者）
-          git cliff "$RANGE" "${EXTRA[@]}" --strip header --output release_notes.md
-          # AltStore localizedDescription 用的 plain 文本（无 markdown 链接）
-          git cliff "$RANGE" "${EXTRA[@]}" --strip all \
-            --body "$(cat .github/cliff-plain.tera)" \
-            --output release_notes.txt
-
-      - name: Fallback - Generate release notes (legacy bash)
-        if: steps.cliff_notes.outcome == 'failure'
-        run: |
-          echo "::warning::git-cliff 失败，回退到 legacy bash"
-          tags=($(git tag --merged HEAD --sort=-creatordate))
-          preTag=$(curl -s "https://api.github.com/repos/lingyan000/fluxdo/releases/latest" | \
-          sed -nE 's/.*"tag_name": "([^"]+)".*/\1/p' || echo "")
-
-          out="release_notes.md"
-          > "$out"
-
-          for i in "${!tags[@]}"; do
-            curr="${tags[i]}"
-            [[ "$curr" == "$preTag" ]] && break
-
-            prev="${tags[i+1]}"
-            range="${prev:+$prev..}$curr"
-
-            git log --no-merges --pretty=format:"- %s" "$range" | \
-              grep -v 'Update changelog' | \
-              grep -v 'Co-Authored-By: Release Script' | \
-              grep -v '^- chore: bump version to ' >> "$out" || true
-            echo "" >> "$out"
-          done
-          # fallback 模式下 plain 文本直接复制 markdown 版本
-          cp release_notes.md release_notes.txt
-
-      - name: Compose release notes (highlights + folded detail)
-        run: |
-          python3 scripts/ci/compose_release_notes.py \
-            --tag "${{ github.ref_name }}" \
-            --stable "${{ env.IS_STABLE }}"
-
-      - name: Append release template
-        run: |
-          sed 's/VERSION/${{ steps.version.outputs.VERSION }}/g' .github/release_template.md >> release_notes.md
-
       - name: Generate SHA256 checksums
-        if: env.IS_STABLE == 'true'
         run: |
           cd ./dist
           for file in $(find . -type f -not -name "*.sha256"); do
@@ -611,120 +175,12 @@ jobs:
           done
 
       - name: Create Release
-        if: env.IS_STABLE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: ./dist/*
-          body_path: release_notes.md
+          generate_release_notes: true
           draft: false
-          prerelease: false
+          # tag 里带 '-'(如 markreveal.6)一律当 prerelease
+          prerelease: ${{ contains(github.ref, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update AltStore Source
-        if: env.IS_STABLE == 'true'
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          VERSION_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          DOWNLOAD_URL="https://github.com/lingyan000/fluxdo/releases/download/v${VERSION}/fluxdo-unsigned.ipa"
-          IPA_SIZE=$(stat -c%s "./dist/fluxdo-unsigned.ipa" 2>/dev/null || stat -f%z "./dist/fluxdo-unsigned.ipa")
-          # 从 plain 版本按段落边界截断到 1500 字符以内，避免硬截到段落中间
-          VERSION_DESC=$(awk 'BEGIN{RS=""; ORS="\n\n"; n=0} {n+=length($0)+2; if(n>1500) exit; print}' release_notes.txt)
-
-          # 尝试从 gh-pages 获取已有的 source.json（保留历史版本）
-          EXISTING_SOURCE=""
-          if git fetch origin gh-pages 2>/dev/null; then
-            EXISTING_SOURCE=$(git show origin/gh-pages:source.json 2>/dev/null || echo "")
-          fi
-
-          if [ -n "$EXISTING_SOURCE" ]; then
-            # 基于已有的 source.json，追加新版本
-            echo "$EXISTING_SOURCE" | jq \
-              --arg ver "$VERSION" \
-              --arg date "$VERSION_DATE" \
-              --arg url "$DOWNLOAD_URL" \
-              --argjson size "$IPA_SIZE" \
-              --arg desc "$VERSION_DESC" \
-              '.apps[0].versions = [{
-                "version": $ver,
-                "date": $date,
-                "downloadURL": $url,
-                "size": $size,
-                "localizedDescription": $desc
-              }] + [.apps[0].versions[] | select(.version != $ver)]' \
-              > altstore/source.json
-          else
-            # 首次生成，基于模板
-            jq \
-              --arg ver "$VERSION" \
-              --arg date "$VERSION_DATE" \
-              --arg url "$DOWNLOAD_URL" \
-              --argjson size "$IPA_SIZE" \
-              --arg desc "$VERSION_DESC" \
-              '.apps[0].versions = [{
-                "version": $ver,
-                "date": $date,
-                "downloadURL": $url,
-                "size": $size,
-                "localizedDescription": $desc
-              }]' \
-              altstore/source.json > altstore/source_tmp.json
-            mv altstore/source_tmp.json altstore/source.json
-          fi
-
-      - name: Prepare GitHub Pages
-        if: env.IS_STABLE == 'true'
-        run: |
-          mkdir -p gh-pages-deploy
-          cp altstore/source.json gh-pages-deploy/
-          # App Icon 文件名会随图标重构变化（如 #272 把 Icon-App-1024x1024@1x.png
-          # 改成了 AppIcon-Light/Dark-1024x1024.png），这里动态挑一张 1024 的非 dark 图，
-          # 避免硬编码路径失效导致整个发布 job 中断。
-          icon_src=$(ls ios/Runner/Assets.xcassets/AppIcon.appiconset/*1024* 2>/dev/null | grep -iv dark | head -n1)
-          if [ -z "$icon_src" ]; then
-            echo "::error::未找到 1024 App Icon，无法生成 gh-pages icon.png"
-            exit 1
-          fi
-          cp "$icon_src" gh-pages-deploy/icon.png
-
-      - name: Deploy to GitHub Pages
-        if: env.IS_STABLE == 'true'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh-pages-deploy
-          keep_files: false
-
-      # TG 通知放在 job 最后：beta 没有 GitHub Release，TG 是唯一发布渠道，
-      # 失败必须让 CI 红（不能 continue-on-error 吞掉）。放最后保证 TG 失败
-      # 不挡 stable 的 Release/AltStore/Pages，且重跑时前面步骤均幂等不会重复发布。
-      # 脚本内部失败会回收已发出的消息，重跑不产生重复。
-      - name: Wait for telegram-bot-api
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        if: env.TELEGRAM_BOT_TOKEN
-        run: |
-          for i in {1..20}; do
-            if curl -sf "http://localhost:8081/bot${TELEGRAM_BOT_TOKEN}/getMe" > /dev/null; then
-              echo "telegram-bot-api is ready"
-              exit 0
-            fi
-            echo "waiting for telegram-bot-api..."
-            sleep 2
-          done
-          echo "telegram-bot-api not ready"
-          exit 1
-
-      - name: Send Telegram notification
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-          IS_PRERELEASE: ${{ contains(github.ref, '-') }}
-          TELEGRAM_API_BASE: http://localhost:8081
-          RELEASE_NOTES_FILE: release_notes_tg.md
-        if: env.TELEGRAM_BOT_TOKEN
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-          python release_telegram.py
