@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'pm_recipient_field.dart';
 import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/markdown_editor.dart';
@@ -47,6 +48,8 @@ Future<Post?> showReplySheet({
   int? categoryId,
   Post? replyToPost,
   String? targetUsername,
+  /// 新建私信（无预设收件人）：收件人由用户在编辑器内搜索添加
+  bool composePrivateMessage = false,
   String? draftKey,
   Future<Draft?>? preloadedDraftFuture,
   String? initialContent,
@@ -68,6 +71,7 @@ Future<Post?> showReplySheet({
       categoryId: categoryId,
       replyToPost: replyToPost,
       targetUsername: targetUsername,
+      composePrivateMessage: composePrivateMessage,
       draftKey: draftKey,
       preloadedDraftFuture: preloadedDraftFuture,
       initialContent: initialContent,
@@ -117,6 +121,9 @@ class ReplySheet extends ConsumerStatefulWidget {
   final int? categoryId;
   final Post? replyToPost;
   final String? targetUsername;
+
+  /// 新建私信（无预设收件人）
+  final bool composePrivateMessage;
   final String? draftKey; // 恢复已有草稿时传入的原草稿 key
   final Post? editPost; // 编辑模式：要编辑的帖子
   final Future<Draft?>? preloadedDraftFuture; // 预加载的草稿
@@ -133,6 +140,7 @@ class ReplySheet extends ConsumerStatefulWidget {
     this.categoryId,
     this.replyToPost,
     this.targetUsername,
+    this.composePrivateMessage = false,
     this.draftKey,
     this.editPost,
     this.preloadedDraftFuture,
@@ -179,7 +187,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     if (widget.targetUsername != null) widget.targetUsername!,
   ];
 
-  bool get _isPrivateMessage => widget.targetUsername != null;
+  bool get _isPrivateMessage =>
+      widget.targetUsername != null || widget.composePrivateMessage;
+
+  /// 收件人可编辑：新建私信场景（已指定对象的「发私信给某人」不改收件人）
+  bool get _canEditRecipients => widget.composePrivateMessage;
 
   /// 是否在私信话题中（创建新私信 或 回复已有私信话题）
   bool get _isInPrivateMessageContext =>
@@ -459,6 +471,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
 
+    // 新建私信必须有收件人（已指定对象的场景收件人固定，天然非空）
+    if (_isPrivateMessage && _recipients.isEmpty) {
+      _showError(S.current.pm_noRecipient);
+      return;
+    }
+
     setState(() => _isSubmitting = true);
     // 对齐 Discourse 前端 composer.set("disableDrafts", true):
     // 发送途中关掉自动保存,避免与 PostCreator 推进的 draft_sequence 撞 409
@@ -647,13 +665,19 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                   ),
                                 ] else if (_isPrivateMessage)
                                   Expanded(
-                                    child: Text(
-                                      context.l10n.post_sendPmTitle(
-                                        _recipients.join(', '),
-                                      ),
-                                      style: theme.textTheme.titleSmall,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    child: _canEditRecipients
+                                        ? Text(
+                                            context.l10n.pm_newTitle,
+                                            style: theme.textTheme.titleSmall,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : Text(
+                                            context.l10n.post_sendPmTitle(
+                                              _recipients.join(', '),
+                                            ),
+                                            style: theme.textTheme.titleSmall,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                   )
                                 else if (widget.replyToPost != null) ...[
                                   SmartAvatar(
@@ -756,6 +780,16 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                         ],
                       ),
 
+                      // 新建私信：收件人选择（已指定对象时不显示，收件人固定）
+                      if (_canEditRecipients)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: PmRecipientField(
+                            recipients: _recipients,
+                            autofocus: true,
+                            onChanged: (v) => setState(() => _recipients = v),
+                          ),
+                        ),
                       // 私信标题输入框（仅私信模式）
                       if (_isPrivateMessage) ...[
                         Padding(
