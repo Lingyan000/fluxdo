@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fluxdo_render/editor.dart' show primaryModifierHeld, shiftModifierHeld;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -115,12 +116,14 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   /// 全局键盘事件处理，检测 Cmd+V / Ctrl+V 粘贴图片
   bool _handleRawKeyEvent(KeyEvent event) {
     if (widget.focusNode == null || !widget.focusNode!.hasFocus) return false;
+    // 修饰键用内核的权威判定,不直接读 HardwareKeyboard:平台注入(Win+V)
+    // 与中文输入法切中英文都会让缓存状态失真(Ctrl 假抬起 / Shift 假按住),
+    // 直接读会让这条粘贴路径时灵时不灵。Alt 无失真先例,保持原样。
     if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.keyV &&
-        !HardwareKeyboard.instance.isShiftPressed &&
+        !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
-        (HardwareKeyboard.instance.isMetaPressed ||
-            HardwareKeyboard.instance.isControlPressed)) {
+        primaryModifierHeld(event)) {
       _handlePasteImage();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理

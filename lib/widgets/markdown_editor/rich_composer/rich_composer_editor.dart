@@ -14,8 +14,7 @@ import 'dart:io' show File;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
-import 'package:flutter/foundation.dart'
-    show Uint8List, defaultTargetPlatform, kDebugMode;
+import 'package:flutter/foundation.dart' show Uint8List, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -108,6 +107,7 @@ class RichComposerEditor extends StatefulWidget {
     this.emojiPanelHeight = 280.0,
     this.onEmojiPanelChanged,
     this.mentionDataSource,
+    this.onSubmitShortcut,
     this.onFallbackToPlain,
     this.onSwitchToSource,
   });
@@ -132,6 +132,15 @@ class RichComposerEditor extends StatefulWidget {
 
   /// 初始导入失败(cook 不可用/草稿含不可解析内容)时回调 —— 宿主应
   /// 切回纯文本 MarkdownEditor。
+  /// 主修饰键 + 回车的提交回调。
+  ///
+  /// **不能只靠宿主的 CallbackShortcuts** —— 那条路用 Flutter 的
+  /// SingleActivator 匹配,依赖 HardwareKeyboard 的缓存修饰键状态;
+  /// Windows 上平台注入/IME 会让 Ctrl 假抬起,activator 匹配不上,
+  /// 表现为「Ctrl+Enter 按了没反应」。这里用内核的权威判定直接触发,
+  /// 不受状态失真影响(宿主那条保留,两边幂等:先到先得)。
+  final VoidCallback? onSubmitShortcut;
+
   final VoidCallback? onFallbackToPlain;
 
   /// 用户主动点"源码模式"按钮。调用前编辑器已 flushToController
@@ -385,9 +394,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 弹窗动作属宿主层 —— 与剪贴板三键同理不进纯状态层)
     if (_slashOverlay == null &&
         event.logicalKey == LogicalKeyboardKey.keyK &&
-        (defaultTargetPlatform == TargetPlatform.macOS
-            ? HardwareKeyboard.instance.isMetaPressed
-            : HardwareKeyboard.instance.isControlPressed)) {
+        primaryModifierHeld(event)) {
       _insertLink();
       return true;
     }
@@ -454,11 +461,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // Ctrl 弄成假的「已抬起」,两边口径不一致就会出现「Ctrl+Enter 换两行
     // 且发不出去」(内核分段 + 宿主软换行各插一次)。
     final primaryEnter = isEnterKey && primaryModifierHeld(event);
+    // 直接触发提交,不依赖宿主 CallbackShortcuts 的 SingleActivator 匹配
+    // (它按 HardwareKeyboard 的缓存状态匹配,Ctrl 假抬起时匹配不上)。
+    if (primaryEnter && widget.onSubmitShortcut != null) {
+      widget.onSubmitShortcut!();
+      return true;
+    }
     if (_mentionOverlay == null &&
         _slashOverlay == null &&
         _emojiOverlay == null &&
         !primaryEnter &&
-        !HardwareKeyboard.instance.isShiftPressed &&
+        !shiftModifierHeld() &&
         isEnterKey) {
       // 左右方向键走到岛(分割线/表格/代码块…)上时,内核会把整个岛
       // 选中 —— 此时回车 = 进去改它的源码。岛是只读块,没有这条键盘
@@ -474,9 +487,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         _emojiOverlay == null &&
         !primaryEnter &&
         isEnterKey &&
-        _handleEnterAsSoftBreak(
-          shift: HardwareKeyboard.instance.isShiftPressed,
-        )) {
+        // 用内核权威判定:直接读 HardwareKeyboard 时,输入法切中英文
+        // 吞掉的 Shift key-up 会让「回车=软换行」被反转成分段。
+        _handleEnterAsSoftBreak(shift: shiftModifierHeld())) {
       return true;
     }
     if (_slashOverlay == null) return false;
@@ -2548,7 +2561,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                           // Shift+Enter 留给换行。多行 TextField 的 Enter
                           // 默认换行、onSubmitted 不触发,必须在这拦。
                           if (event.logicalKey == LogicalKeyboardKey.enter &&
-                              !HardwareKeyboard.instance.isShiftPressed) {
+                              !shiftModifierHeld()) {
                             _saveAlt(_altController?.text ?? '');
                             return KeyEventResult.handled;
                           }
