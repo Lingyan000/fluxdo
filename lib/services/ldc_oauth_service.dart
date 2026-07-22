@@ -83,7 +83,7 @@ class LdcOAuthService {
     final String authUrl;
     try {
       authUrl = await getAuthUrl();
-    } on DioException {
+    } on DioException catch (_) {
       throw Exception(S.current.oauth_getAuthUrlFailed);
     }
 
@@ -100,7 +100,7 @@ class LdcOAuthService {
           extra: {'skipCsrf': true, 'allowRedirectSetCookie': true},
         ),
       );
-    } on DioException {
+    } on DioException catch (_) {
       throw Exception(S.current.oauth_networkError);
     }
 

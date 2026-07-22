@@ -78,8 +78,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
 
   Future<void> _enableLdc() async {
     try {
-      final service = LdcOAuthService();
-      final result = await service.authorize(context);
+      final result = await LdcOAuthService().authorize(context);
 
       if (result && mounted) {
         final prefs = await SharedPreferences.getInstance();
