@@ -7,11 +7,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/site_customization.dart';
 import '../constants.dart';
+import '../pages/image_viewer_page.dart';
 import '../pages/user_profile_page.dart';
 import '../pages/webview_page.dart';
 import '../providers/preferences_provider.dart';
 import '../services/discourse/discourse_service.dart';
 import '../widgets/common/external_link_confirm_dialog.dart';
+import '../widgets/content/discourse_html_content/image_utils.dart';
 import 'discourse_url_parser.dart';
 import 'link_security.dart';
 import 'url_helper.dart';
@@ -44,6 +46,16 @@ bool _isUploadLink(String url) {
   return url.contains('/uploads/') ||
       url.contains('/secure-uploads/') ||
       url.contains('/secure-media-uploads/');
+}
+
+/// 严格按扩展名判断图片链接(不像 [DiscourseImageUtils.isImageUrl] 那样
+/// 靠路径包含 `/uploads/`/`/original/` 兜底——那个宽松判据是为了在 DOM
+/// 里找 lightbox 链接,误判无害;这里要拦截"点了就直接开查看器"的链接,
+/// 误判会把 PDF/zip 等非图片附件也当图片打开,必须严格。
+bool _isImageLinkUrl(String url) {
+  final path = Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
+  const exts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'];
+  return exts.any(path.endsWith);
 }
 
 /// 打开外部链接
@@ -106,6 +118,7 @@ Future<void> launchExternalLink(BuildContext context, String url) async {
 /// 处理所有类型的链接：
 /// - 用户链接 /u/username → 打开用户页面
 /// - 话题链接 /t/topic/123 → 调用 onInternalLinkTap 或用 WebView 打开
+/// - 图片直链（站点域名/CDN/S3 CDN）→ 内置查看器直接打开，对齐网页端
 /// - 附件链接 /uploads/ → 外部浏览器打开
 /// - 站点内部链接（主域名或子域名）→ 内置浏览器
 /// - Email 链接 → 外部邮件客户端
@@ -143,7 +156,21 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 3. 附件链接：优先使用内置下载，回退外部浏览器
+  // 3. 图片直链(站点自己的域名/CDN/S3 CDN)→ 直接用内置查看器打开,
+  //    与网页端一致(点图直接看大图,不当"外部链接"走离站确认弹窗)。
+  //    只信任站点自己配置的域名——不是随便一个图片后缀的外链都放行。
+  if (_isImageLinkUrl(url)) {
+    final fullUrl = UrlHelper.resolveUrlWithCdn(
+      isInternalUrlString(url) ? UrlHelper.resolveUrl(url) : url,
+    );
+    final uri = Uri.tryParse(fullUrl);
+    if (uri != null && UrlHelper.isTrustedImageHost(uri)) {
+      await ImageViewerPage.open(context, DiscourseImageUtils.getOriginalUrl(fullUrl));
+      return;
+    }
+  }
+
+  // 4. 附件链接：优先使用内置下载，回退外部浏览器
   if (_isUploadLink(url) && isInternalUrlString(url)) {
     final fullUrl = UrlHelper.resolveUrl(url);
     if (onDownloadAttachment != null) {
@@ -157,7 +184,7 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 4. Email 链接
+  // 5. Email 链接
   if (url.startsWith('mailto:')) {
     final uri = Uri.tryParse(url);
     if (uri != null && await canLaunchUrl(uri)) {
@@ -166,14 +193,14 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 5. 站点内部链接（主域名或子域名、相对路径）→ 内置浏览器
+  // 6. 站点内部链接（主域名或子域名、相对路径）→ 内置浏览器
   if (isInternalUrlString(url)) {
     final fullUrl = UrlHelper.resolveUrl(url);
     WebViewPage.open(context, fullUrl);
     return;
   }
 
-  // 6. 外部链接 → 根据用户偏好决定
+  // 7. 外部链接 → 根据用户偏好决定
   await launchExternalLink(context, url);
 }
 
