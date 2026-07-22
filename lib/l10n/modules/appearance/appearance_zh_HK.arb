@@ -44,6 +44,7 @@
   "progressGesture_action_aiAssistant": "AI 助手",
   "progressGesture_action_bookmark": "收藏",
   "progressGesture_action_exportArticle": "匯出文章",
+  "progressGesture_action_goBack": "返回",
   "progressGesture_action_filter": "過濾帖子",
   "progressGesture_action_jumpToUnread": "跳到未讀",
   "progressGesture_action_none": "無（不觸發）",

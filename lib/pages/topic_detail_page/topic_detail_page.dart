@@ -1610,6 +1610,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             .enterSearchMode();
       case ProgressGestureAction.refresh:
         unawaited(_handleRefresh());
+      case ProgressGestureAction.goBack:
+        if (mounted) {
+          unawaited(Navigator.of(context).maybePop());
+        }
     }
   }
 

@@ -11,6 +11,7 @@ import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/post/reply_sheet.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../l10n/s.dart';
@@ -82,6 +83,18 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     return false;
   }
 
+  /// 新建私信：收件人在编辑器内搜索选择（用户或可发私信的群组）。
+  Future<void> _composeNewMessage() async {
+    final created = await showReplySheet(
+      context: context,
+      composePrivateMessage: true,
+    );
+    if (!mounted || created == null) return;
+    // 新私信会同时进「收件箱」与「已发送」，两个都刷新
+    ref.read(pmInboxProvider.notifier).refresh();
+    ref.read(pmSentProvider.notifier).refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     // 底栏派发的快捷动作：查询当前激活 tab 的 filter，转发到对应子 widget。
@@ -121,6 +134,14 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
             for (final filter in _filters)
               _PrivateMessageTabView(filter: filter),
           ],
+        ),
+        // 新建私信：此前只能从某个用户的头像菜单发起，对方没在可见处
+        // 发过言就完全没有路径。对齐 Discourse 网页版私信列表的入口。
+        floatingActionButton: FloatingActionButton(
+          heroTag: 'composePm',
+          onPressed: _composeNewMessage,
+          tooltip: context.l10n.pm_newTitle,
+          child: const Icon(Icons.edit_rounded),
         ),
       ),
     );
