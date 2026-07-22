@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -185,13 +187,17 @@ class CfChallengeInterceptor extends Interceptor {
         );
       }
 
-      // 静默请求（isSilent）不再尝试后台自动验证：实测"后台/不可见模式"
-      // 起验证 WebView 会撞上 flutter_inappwebview_windows_plugin 的一处
-      // 原生崩溃（0xc0000005，多次复现于 User API Key 静默换 OTP/撤销/
+      // Windows 静默请求（isSilent）不尝试后台自动验证：实测"后台/不可见
+      // 模式"起验证 WebView 会撞上 flutter_inappwebview_windows_plugin 的
+      // 一处原生崩溃（0xc0000005，多次复现于 User API Key 静默换 OTP/撤销/
       // CSRF 刷新等场景），且用户完全无感知，出问题也无法排查。静默请求
       // 直接快速失败，交给调用方已有的降级逻辑处理；真正需要过盾时，
       // 走用户能看见、能手动操作的前台验证（页面数据/操作请求分支）。
-      if (isSilent) {
+      // 崩溃属于 Windows 插件的析构竞态，其余平台保留后台静默过盾
+      // （那里还有 CfClearanceRefreshService 主动续期，双通路并存）。
+      // TODO(Windows): vendored aliveGuard 修复落地后重测复现，若已消除
+      // 可将静默验证接入 EmbeddedBrowserControllerPool 串行化后恢复。
+      if (isSilent && Platform.isWindows) {
         CfChallengeLogger.log(
           '[INTERCEPTOR] Silent request skips background verify (crash-prone): '
           '$requestMethod $requestUrl mode=$requestMode',
@@ -201,7 +207,9 @@ class CfChallengeInterceptor extends Interceptor {
         );
       }
 
-      final result = await cfService.showManualVerify(null, true);
+      // 静默请求只在后台尝试验证；页面数据/操作请求在前台展示验证。
+      // （Windows 静默请求已在上方快速失败，不会到达这里。）
+      final result = await cfService.showManualVerify(null, !isSilent);
 
       if (result == true) {
         final syncOk = await _syncCookiesOnce();
