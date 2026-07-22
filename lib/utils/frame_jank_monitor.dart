@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../widgets/common/perf_overlay.dart';
+import 'frame_scheduler_probe.dart';
 import 'jank_profiler.dart';
 import 'perf_layer_inventory.dart';
 
@@ -164,6 +165,48 @@ class FrameJankMonitor {
   static int _lastImageCacheBytes = 0;
   static DateTime _lastLayerInventoryAt =
       DateTime.fromMillisecondsSinceEpoch(0);
+
+  // ---------------------------------------------------------------------------
+  // 空转探测(release 可用):回答"静止页面为什么还在持续出帧"。
+  //
+  // 空转帧 build/raster 都极小,永远不触发 JANK 记录,却持续烧电烧
+  // GPU(mermaid shimmer 出图后永动即此类,靠人工审计才揪出)。判定:
+  // 连续 _spinFrameThreshold 帧微负载(build+raster < 3ms)且最近
+  // _spinPointerQuiet 内无指针输入(滚动/惯性/拖拽的微负载帧不算)。
+  // 成立 → 打 SPIN 事件 + 武装 FrameSchedulerProbe 抓一轮调度归因
+  // (SPIN-PROF),5 分钟节流,同一空转源一个会话只报一次即够定位。
+  // ---------------------------------------------------------------------------
+
+  static int _microLoadStreak = 0;
+  static DateTime _lastSpinReport = DateTime.fromMillisecondsSinceEpoch(0);
+  static const int _spinFrameThreshold = 120; // 连续 ~1-2s(60/120Hz)
+  static const Duration _spinPointerQuiet = Duration(seconds: 2);
+  static const Duration _spinThrottle = Duration(minutes: 5);
+  static const Duration _microLoad = Duration(milliseconds: 3);
+
+  static void _spinDetect(FrameTiming t) {
+    if (t.buildDuration + t.rasterDuration >= _microLoad) {
+      _microLoadStreak = 0;
+      return;
+    }
+    _microLoadStreak++;
+    if (_microLoadStreak < _spinFrameThreshold) return;
+    _microLoadStreak = 0;
+    final binding = WidgetsBinding.instance;
+    if (binding is! FrameSchedulerProbe) return;
+    final FrameSchedulerProbe probe = binding;
+    final now = DateTime.now();
+    // 指针静默期内才算空转;交互中的微负载连击是正常滚动
+    if (now.difference(probe.lastPointerAt) < _spinPointerQuiet) return;
+    if (now.difference(_lastSpinReport) < _spinThrottle) return;
+    _lastSpinReport = now;
+    logEvent(
+      'SPIN',
+      '静止空转:连续 $_spinFrameThreshold 帧微负载无交互 '
+      '(transient=${probe.lastTransientCount}),武装调度归因',
+    );
+    probe.armSpinCapture();
+  }
 
   static void start() {
     if (_started) return;
@@ -446,6 +489,7 @@ class FrameJankMonitor {
     for (final t in timings) {
       _frames++;
       sessionFrames++;
+      _spinDetect(t);
       if (t.buildDuration > _worstBuild) _worstBuild = t.buildDuration;
       if (t.rasterDuration > _worstRaster) _worstRaster = t.rasterDuration;
       if (t.buildDuration > sessionWorstBuild) {
@@ -525,6 +569,16 @@ class FrameJankMonitor {
           details.add(
               'imageCache ${cache.currentSize}张/${sizeMb}MB (Δ${deltaMb}MB) '
               'pending=${cache.pendingImageCount}');
+          // dec 归因:上传发生在解码完成点(与首绘可差多帧),dec 事件
+          // 记录在解码那一帧的构建名单里。raster 大帧本身多是 build 极小
+          // 的帧(不满足上面 build>6ms 的名单条件),这里按 raster 口径
+          // 独立附上 —— 同帧/邻帧见 dec = 上传嫌疑坐实;零 dec = 排除
+          // 图片,矛头转 PSO 编译/平台线程挤占等(2026-07-22 首屏簇
+          // 291 张图零 dec 记录的归因盲区,即此条件缺失)。
+          final notes = _buildNotesFor(t.frameNumber);
+          if (notes != null && notes.contains('dec:')) {
+            details.add(notes);
+          }
           // 图层清单:分类点名本帧(近似)提交了什么(pictures 字节/saveLayer
           // 源/平台视图/纹理)+ 与上次大帧 diff。独立节流,遍历不常发生。
           final now = DateTime.now();

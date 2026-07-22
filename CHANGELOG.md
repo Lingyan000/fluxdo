@@ -2,6 +2,104 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.24] - 2026-07-17
+
+
+### 🌟 新功能
+
+- 话题卡片自定义样式:字段精简/头像布局/动态头像 + 设置页实时预览 by @Lingyan000
+
+- 增加 CF 会话级临时兼容恢复 by @Lingyan000
+
+- 桌面端撰写快捷键完善(对齐 Discourse composer) by @Lingyan000
+
+- 待审核内容支持:主题页待审块 + 待审列表页 + 撤回/重编辑 by @Lingyan000
+
+- ComposerSwitchFade:双模切换淡入壳(无并存直切+新编辑器淡入) by @Lingyan000
+
+- Onebox 工具条:选中卡片浮出[复制|移除预览|访问](官方 onebox-toolbar 对齐) by @Lingyan000
+
+- 行内 onebox 链接可编辑(子包)+ 加载预览接 onebox 种子链 by @Lingyan000
+
+- 链接体验对齐官方 composer:光标进链浮工具条 + 编辑对话框升级 by @Lingyan000
+
+
+### 🐛 修复
+
+- 自绘卡动图头像:双 URL 分层(静帧秒出 + overlay 原位播放) by @Lingyan000
+
+- 修复 CF 会话内持续 403(重启也无解):回收无效恢复机器 + cf_clearance 单向流 by @Lingyan000
+
+- 修复静默 CF 验证循环与会话网络恢复 by @Lingyan000
+
+- 恢复 WebView 分区 cookie(CHIPS):移除进程级禁用 by @Lingyan000
+
+- 修复首页侧栏无法通过返回键关闭 by @Lingyan000
+
+- 修复 boost 删除误报失败且无法重新 boost by @Lingyan000
+
+- 补提 onebox 标记的 bundle 改动(seedOnebox 注入 data-fluxdo-onebox-url) by @Lingyan000
+
+- 双模切换与 macOS 快捷键系列修复(合并笔) by @Lingyan000
+
+- 链接工具条水平锚定链接(此前居中屏幕);tooltip 加等待窗防叠字 by @Lingyan000
+
+- 切换后旧文字无法删除第三刀:flush 原子赋值(选区不再 -1 首帧发平台) by @Lingyan000
+
+- 富→源切换 IME 交接补完:unfocus 放开连接后延迟交棒回聚焦 by @Lingyan000
+
+- 动画 SVG 画面空白时隐藏播放角标:快照 alpha 抽样判定 by @Lingyan000
+
+- 撤销签名 COEP 准入闸门:归因依据是 CF 盾页响应头,真实页面无 COEP by @Lingyan000
+
+- 手写签名 SVG 空白修复:CSS d:path() 帧值解包 + 首帧采样改周期中点 by @Lingyan000
+
+- 自绘卡已读态不即时更新:排版缓存内容变即换实例 by @Lingyan000
+
+- 富→源切换后无法输入/删除修复 + collapsed 长按粘贴(子包) by @Lingyan000
+
+- 用户签名默认关闭:对齐网页 opt-in 语义 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 关闭触摸重采样(-38ms 延迟主导项) + 监控精细化五件套 by @Lingyan000
+
+- ️ 优化详情页掉帧并统一敏感存储 by @Lingyan000
+
+- ️ 相对时间全局单心跳:每实例 Timer 归零 + 自绘卡时间自刷 by @Lingyan000
+
+- ️ 详情页解析预热滚动让路:原子长任务不再挤占滚动帧 by @Lingyan000
+
+
+### 📝 文档
+
+- 起草 v0.2.24 版本亮点 by @Lingyan000
+
+
+### 🔧 其他
+
+- 🔇 cf_clearance 双变体日志降噪:良性形态五道核验后降级 by @Lingyan000
+
+- ⬆️ doh_proxy: CF 验证域名走隧道直连 by @Lingyan000
+
+- ⬆️ fluxdo_render:代码块横向溢出内容可拖选(内部滚动器边缘自动滚) by @Lingyan000
+
+- ⬆️ fluxdo_render:选区对齐 SDK(全选/ProcessText/原生放大镜/失焦清选区) by @Lingyan000
+
+- ⬆️ fluxdo_render:岛加段把手 + onIslandSelected by @Lingyan000
+
+- 💄 富文本 hint 占位随编辑区边距同步到 20(光标压字错位) by @Lingyan000
+
+- 💄 编辑区水平边距统一 20:富文本(12)/源码(16)对齐 header 标题(20) by @Lingyan000
+
+- ⬆️ fluxdo_render:onebox 展开物不固化 [quote](毁帖修复)+ magnifier 新签名适配 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.23...v0.2.24
+
 ## [0.2.23] - 2026-07-14
 
 

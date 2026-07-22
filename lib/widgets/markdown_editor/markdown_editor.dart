@@ -13,6 +13,7 @@ import 'package:super_clipboard/super_clipboard.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse_cook_service.dart';
 import '../../services/emoji_handler.dart';
+import '../../utils/emoji_shortcodes.dart';
 import '../../utils/platform_utils.dart';
 import '../mention/mention_autocomplete.dart';
 import 'composer_shortcuts.dart';
@@ -703,6 +704,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           _toolbarKey.currentState?.insertText(markdown);
         }
       },
+      onBackspace: () =>
+          deleteBackwardWithEmojiShortcodes(widget.controller),
     );
     // TextFieldTapRegion 防止点击表情面板时 TextField 失焦
     return TextFieldTapRegion(

@@ -10,7 +10,6 @@ import '../../services/emoji_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
-import '../common/cached_image.dart';
 import '../common/loading_spinner.dart';
 import '../../../../../l10n/s.dart';
 
@@ -383,14 +382,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
                             final groupIndex = hasRecent ? index - 1 : index;
                             final firstEmoji =
                                 emojiGroups[groupKeys[groupIndex]]!.first;
-                            icon = CachedImage(
-                              url: EmojiHandler().getEmojiUrl(firstEmoji.name),
+                            icon = _EmojiCell(
+                              name: firstEmoji.name,
                               width: 24,
                               height: 24,
-                              memCacheWidth: 48,
-                              memCacheHeight: 48,
-                              fit: BoxFit.contain,
-                              cacheManager: EmojiCacheManager(),
+                              decodeSize: 48,
                             );
                           }
                           return GestureDetector(
@@ -507,13 +503,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           message: ':${emoji.name}:',
           child: Padding(
             padding: const EdgeInsets.all(4.0),
-            child: CachedImage(
-              url: EmojiHandler().getEmojiUrl(emoji.name),
-              fit: BoxFit.contain,
-              memCacheWidth: 64,
-              memCacheHeight: 64,
-              cacheManager: EmojiCacheManager(),
-            ),
+            child: _EmojiCell(name: emoji.name, decodeSize: 64),
           ),
         ),
       ),
@@ -538,6 +528,55 @@ extension StringExtension on String {
   String capitalize() {
     if (isEmpty) return this;
     return "${this[0].toUpperCase()}${substring(1)}";
+  }
+}
+
+/// 单个 emoji 图片 cell:BlobImageProvider(零 sqlite 寻址)+ 解码
+/// 尺寸约束 + 淡底占位。
+///
+/// 占位是 Telegram 双端同款的 ~6% alpha 圆角底 —— 几乎不可见,但消除
+/// 冷缓存下"空白格子逐个蹦图"的观感;图就绪直接替换,无过渡动画,
+/// 稳态零视觉差异。
+class _EmojiCell extends StatelessWidget {
+  const _EmojiCell({
+    required this.name,
+    required this.decodeSize,
+    this.width,
+    this.height,
+  });
+
+  final String name;
+  final int decodeSize;
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image(
+      image: ResizeImage(
+        emojiImageProvider(EmojiHandler().getEmojiUrl(name)),
+        width: decodeSize,
+        height: decodeSize,
+        policy: ResizeImagePolicy.fit,
+      ),
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) return child;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SizedBox(width: width, height: height),
+        );
+      },
+      errorBuilder: (_, _, _) => SizedBox(width: width, height: height),
+    );
   }
 }
 
@@ -720,13 +759,7 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                           message: ':${emoji.name}:',
                           child: Padding(
                             padding: const EdgeInsets.all(4.0),
-                            child: CachedImage(
-                              url: EmojiHandler().getEmojiUrl(emoji.name),
-                              fit: BoxFit.contain,
-                              memCacheWidth: 80,
-                              memCacheHeight: 80,
-                              cacheManager: EmojiCacheManager(),
-                            ),
+                            child: _EmojiCell(name: emoji.name, decodeSize: 80),
                           ),
                         ),
                       );

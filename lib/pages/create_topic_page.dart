@@ -536,6 +536,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         },
         onTap: () {
           _editorKey.currentState?.closeEmojiPanel();
+          _richKey.currentState?.closeEmojiPanel();
         },
       ),
     );
@@ -608,6 +609,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         _editorKey.currentState?.closeEmojiPanel();
+        _richKey.currentState?.closeEmojiPanel();
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
@@ -715,6 +717,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                               if (_showPreview) {
                                 FocusScope.of(context).unfocus();
                                 _editorKey.currentState?.closeEmojiPanel();
+                                _richKey.currentState?.closeEmojiPanel();
                               }
                             },
                             children: [

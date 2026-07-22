@@ -4,7 +4,11 @@ part of '../post_footer_section.dart';
 
 extension _PostFooterReactionActions on _PostFooterSectionState {
   void _syncReactionToProvider(List<PostReaction> reactions, PostReaction? currentUserReaction) {
-    final params = TopicDetailParams(widget.topicId);
+    // 经活跃实例注册表找回页面 provider:页面 params 带 UUID instanceId,
+    // 这里凭 topicId 直接 new 一个空 instanceId 的 params 只会命中(并
+    // 凭空创建+全量拉取)一个孤儿实例,更新落不到在显示的数据上。
+    final params = TopicDetailNotifier.activeParamsFor(widget.topicId);
+    if (params == null) return;
 
     try {
       ref

@@ -19,10 +19,12 @@ import '../../../utils/scroll_busy_signal.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/anchor_guard_sliver.dart';
 import '../../../widgets/common/loading_spinner.dart';
-import 'package:fluxdo_render/fluxdo_render.dart' show HtmlChunk;
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show BlockNode, HtmlChunk, ParagraphWarmup, ParagraphWarmupProbe;
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/render_parse_cache.dart';
 import '../../../widgets/post/post_item/segmented_long_post.dart';
+import '../../../widgets/post/quote_image_scope.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'typing_indicator.dart';
@@ -524,15 +526,29 @@ class _TopicPostListState extends State<TopicPostList> {
     return result;
   }
 
-  /// 滚动停下后空闲预热:把已进列表的长帖中尚未解析的 chunk 逐块解析,
-  /// 每个 idle task 只解析一块(1-3ms),再滚到它们时 parse 直接命中缓存。
-  /// 新滚动开始(_warmUpGeneration 递增)即停止,不与滚动帧抢主线程。
+  /// 滚动停下后空闲预热,两级流水(单 idle task 只做一小步,不与滚动帧
+  /// 抢主线程;新滚动开始 _warmUpGeneration 递增即全部停):
+  ///
+  /// 1. **chunk 预解析**(原有):把已进列表的长帖中尚未解析的 chunk
+  ///    逐块解析(1-3ms/块),再滚到时 parse 命中 RenderParseCache;
+  /// 2. **段落预 flatten + 预排版**(笔2 新增):对滚动方向前方的楼层,
+  ///    把顶层段落 flatten 进 FlattenCache、纯文字段落排版进
+  ///    ParagraphLayoutCache —— 首次滚到也全程查表(直绘零排版)。
+  ///    缓存 key 经 ParagraphWarmupProbe 探针取自真实挂载(theme/
+  ///    baseStyle/env/宽度全同源,不手工重建);探针未收敛(首屏尚无
+  ///    直绘块挂载)则本轮只跑第 1 级。
   int _warmUpGeneration = 0;
+
+  /// 段落预热游标:(postId, nodeIndex);楼层列表变化后从头再扫
+  /// (已热的段落是缓存命中,重扫只付查表成本)。
+  int? _warmPostCursor;
+  int _warmNodeCursor = 0;
 
   void _scheduleChunkWarmUp() {
     final generation = ++_warmUpGeneration;
     void step() {
       if (!mounted || generation != _warmUpGeneration) return;
+      // ---- 级 1:未解析 chunk ----
       LongPostParseData? pending;
       for (final entry in _longPostRenderCache.values) {
         final data = entry.newEngineData?.parseData;
@@ -541,15 +557,110 @@ class _TopicPostListState extends State<TopicPostList> {
           break;
         }
       }
-      if (pending == null) return;
-      SchedulerBinding.instance.scheduleTask(() {
-        if (!mounted || generation != _warmUpGeneration) return;
-        pending!.warmUpOneChunk();
-        step();
-      }, Priority.idle);
+      if (pending != null) {
+        SchedulerBinding.instance.scheduleTask(() {
+          if (!mounted || generation != _warmUpGeneration) return;
+          pending!.warmUpOneChunk();
+          step();
+        }, Priority.idle);
+        return;
+      }
+      // ---- 级 2:方向前方楼层的段落 flatten + 排版 ----
+      _scheduleParagraphWarmUp(generation);
     }
 
     step();
+  }
+
+  /// 段落预热一步:取滚动方向前方(向下读 = 当前楼层之后)最近的
+  /// 未热完楼层,预热其顶层段落;单步预算 4ms,步进由 idle task 驱动。
+  void _scheduleParagraphWarmUp(int generation) {
+    final snapshot = ParagraphWarmupProbe.snapshot();
+    if (snapshot == null) return; // 探针未收敛,等下次滚动停止再试
+    final posts = detail.postStream.posts;
+    if (posts.isEmpty) return;
+
+    // 从当前可见楼层向后扫(简化方向感知:向下阅读是绝对主流;向上
+    // 回滚由 FlattenCache/LayoutCache 的 LRU 覆盖 —— 刚看过的都在)。
+    final anchorNumber = _lastReportedPostNumber;
+    var startIndex = anchorNumber == null
+        ? 0
+        : (_postNumberToIndex[anchorNumber] ?? 0);
+    // 游标续跑:同一楼层没热完接着热,否则从锚点楼层往后找。
+    SchedulerBinding.instance.scheduleTask(() {
+      if (!mounted || generation != _warmUpGeneration) return;
+      // 找目标楼层:游标楼层仍有效则续,否则从 startIndex 起第一个
+      // 已有解析产物的楼层(不为预热触发解析 —— 短帖解析很便宜但
+      // 语义上归级 1/首建;这里只吃现成 AST)。
+      List<BlockNode>? nodes;
+      int? postId;
+      if (_warmPostCursor != null) {
+        final idx = posts.indexWhere((p) => p.id == _warmPostCursor);
+        if (idx >= 0) {
+          nodes = _warmNodesFor(posts[idx]);
+          postId = _warmPostCursor;
+        }
+      }
+      if (nodes == null) {
+        _warmNodeCursor = 0;
+        for (var i = startIndex; i < posts.length; i++) {
+          final candidate = _warmNodesFor(posts[i]);
+          if (candidate != null && candidate.isNotEmpty) {
+            // 已全热完的楼层 warmParagraphs 一圈查表(<0.1ms)后返回 -1,
+            // 游标自然推进,不重复付费。
+            nodes = candidate;
+            postId = posts[i].id;
+            break;
+          }
+        }
+      }
+      if (nodes == null || postId == null) return; // 前方无可热楼层,收工
+
+      final next = ParagraphWarmup.warmParagraphs(
+        nodes: nodes,
+        ctx: snapshot,
+        context: context,
+        // 预热产物按 (inlines 身份, style, theme) 进全局缓存,handler 用
+        // 共享 static(emoji/mention/localDate/math/download)+ 无 post
+        // 语境的兜底即可 —— 挂载时若 handler 语义不同也不影响:内容同
+        // 身份 → 命中的是 span/排版,recognizer 行为经 mount 桥现取活
+        // context,linkHandler 闭包冻结的 post.id 仅用于点击追踪,预热
+        // 段落全部来自「该 post 自己的 AST」,forPost 语义一致。
+        totalImagesInPost: 0,
+        startIndex: _warmNodeCursor,
+        budgetMicros: 4000,
+      );
+      if (next == -1) {
+        // 本楼层热完,游标移到下一楼层(下一步找)。
+        final idx = posts.indexWhere((p) => p.id == postId);
+        _warmPostCursor =
+            (idx >= 0 && idx + 1 < posts.length) ? posts[idx + 1].id : null;
+        _warmNodeCursor = 0;
+        if (_warmPostCursor == null) return; // 到底了
+      } else {
+        _warmPostCursor = postId;
+        _warmNodeCursor = next;
+      }
+      _scheduleParagraphWarmUp(generation); // 下一 idle 步
+    }, Priority.idle);
+  }
+
+  /// 楼层的现成 AST(只取已解析的,不触发解析):
+  /// - 短帖:RenderParseCache.shortPost(命中即回;未解析过的短帖
+  ///   解析本身 1-3ms,顺带做了也无妨 —— shortPost 内部会解析并缓存);
+  /// - 长帖:各 chunk 均已由级 1 热过,拼接全部 chunk 节点。
+  List<BlockNode>? _warmNodesFor(Post post) {
+    final longEntry = _longPostRenderCache[post.id];
+    final parseData = longEntry?.newEngineData?.parseData;
+    if (parseData != null) {
+      if (!parseData.fullyParsed) return null; // 级 1 尚未完成,先跳过
+      final all = <BlockNode>[];
+      for (var i = 0; i < parseData.chunks.length; i++) {
+        all.addAll(parseData.parsedChunkAt(i));
+      }
+      return all;
+    }
+    return RenderParseCache.shortPost(post).nodes;
   }
 
   String _segmentKey(_PostRenderSegment segment) {
@@ -931,7 +1042,13 @@ class _TopicPostListState extends State<TopicPostList> {
     // 不再包系统 SelectionArea:正文选区全部由 FluxdoRender 自研选区承担
     // (含未登录场景 —— toolbar 降级只留「复制」)。header/footer 等普通
     // Widget 不创建系统选区节点,省掉手势竞技场竞争与 registrar 树维护。
-    return NotificationListener<ScrollNotification>(
+    //
+    // QuoteImageScope:图片长按菜单的「引用」handler 在 tap 时刻就近现取
+    // (flatten 产物进全局缓存后,callbacks 闭包里的冻结引用可能指向已
+    // 销毁页面的 State,见 QuoteImageScope 文档)。
+    return QuoteImageScope(
+      handler: widget.onQuoteImage,
+      child: NotificationListener<ScrollNotification>(
       onNotification: _handleScrollNotification,
       child: Listener(
         behavior: HitTestBehavior.translucent,
@@ -1151,6 +1268,7 @@ class _TopicPostListState extends State<TopicPostList> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -1310,12 +1428,17 @@ class _TopicPostListState extends State<TopicPostList> {
         // widget 实例让框架整棵短路。单帖更新(点赞等)触发的整页
         // rebuild 里,正文富文本的重建是最大头,这里短路后更新只剩
         // header/footer 的轻量重建。
+        // 首 chunk 额外携带弹幕层(读 post.boosts/boostUsername),必须
+        // 连 post 实例一起比对 —— 否则新 boost 到达后弹幕拿的还是旧数据。
         final chunkKey = (post.id, ci);
         final cachedChunk = _chunkWidgetCache[chunkKey];
         if (cachedChunk != null &&
             identical(cachedChunk.data, data) &&
             cachedChunk.selected == isSelectedPost &&
-            cachedChunk.highlight == highlight) {
+            cachedChunk.highlight == highlight &&
+            (ci != 0 ||
+                (identical(cachedChunk.post, post) &&
+                    cachedChunk.boostUsername == boostUsername))) {
           child = cachedChunk.widget;
           break;
         }
@@ -1333,11 +1456,15 @@ class _TopicPostListState extends State<TopicPostList> {
           footnotesHtml: data.footnotesHtml,
           callbacks: data.callbacks,
           onQuoteSelection: onQuoteSelection,
+          highlightBoostUsername: ci == 0 ? boostUsername : null,
+          topicTitle: detail.title,
         );
         _chunkWidgetCache[chunkKey] = _ChunkWidgetCacheEntry(
           data: data,
+          post: post,
           selected: isSelectedPost,
           highlight: highlight,
+          boostUsername: boostUsername,
           widget: child,
         );
         break;
@@ -1428,14 +1555,20 @@ class _ShortPostCacheEntry {
 /// 长帖正文 chunk 段的实例缓存条目
 class _ChunkWidgetCacheEntry {
   final NewEngineLongPostData data;
+
+  /// 首 chunk 弹幕层读 post.boosts,post 实例参与缓存签名
+  final Post post;
   final bool selected;
   final bool highlight;
+  final String? boostUsername;
   final Widget widget;
 
   const _ChunkWidgetCacheEntry({
     required this.data,
+    required this.post,
     required this.selected,
     required this.highlight,
+    required this.boostUsername,
     required this.widget,
   });
 }

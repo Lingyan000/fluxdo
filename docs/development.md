@@ -102,7 +102,37 @@ just release -- patch --dry-run
 - 当本地签名材料缺失时，`debug` 使用默认 debug signing，`profile/release` 自动回退到 debug signing
 - Android 构建会优先使用 Android Studio 自带 JBR；如需手动指定，可设置 `FLUXDO_ANDROID_JAVA_HOME`
 - Apple 平台不再把 `DEVELOPMENT_TEAM` 写死在共享 `pbxproj`
-- 如需 Xcode 真机签名或本地签名构建，复制 [apple/Local.xcconfig.example](/D:/teng/Documents/i/ldx/apple/Local.xcconfig.example:1) 为 `apple/Local.xcconfig` 并填入自己的 `FLUXDO_APPLE_DEVELOPMENT_TEAM`
+- 如需 Xcode 真机签名或本地签名构建，复制 [apple/Local.xcconfig.example](/D:/teng/Documents/i/ldx/apple/Local.xcconfig.example:1) 为 `apple/Local.xcconfig`，按文件内注释选择签名方案
 - 原生产物准备统一走 `just native -- ...` 或 `dart run tool/project_tasks.dart native:prepare ...`
 - Windows / iOS 平台工程已移除内置 cargo / shell build hook，只消费仓库脚本预先落盘的 native 产物
 - macOS 保留一个轻量级 bundle copy/sign 阶段，只负责拷贝和签名已准备好的 native 产物
+
+## macOS 代码签名
+
+macOS 默认走 adhoc 签名（`AppInfo.xcconfig` 中 `FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = -`），无需证书即可构建。但 adhoc 签名的 CDHash 每次构建都变，钥匙串（`flutter_secure_storage`）会把新构建当成新 app，每次启动反复弹「想要使用钥匙串中的 flutter_secure_storage_service」授权窗。
+
+消除弹窗需要一个稳定的签名身份。无 Apple ID 时可用自签证书：
+
+```bash
+# 1. 生成 100 年期自签代码签名证书 + p12（目录自选，不要放进仓库）
+openssl req -x509 -newkey rsa:2048 -keyout fluxdo-key.pem -out fluxdo-cert.pem \
+  -days 36500 -nodes -subj "/CN=FluxDO Code Signing" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=critical,codeSigning" \
+  -addext "basicConstraints=critical,CA:false"
+openssl pkcs12 -export -legacy -out fluxdo-codesign.p12 \
+  -inkey fluxdo-key.pem -in fluxdo-cert.pem -passout pass:<密码>
+
+# 2. 导入 login 钥匙串并授信（codeSign 策略）
+security import fluxdo-codesign.p12 -k ~/Library/Keychains/login.keychain-db \
+  -P <密码> -T /usr/bin/codesign
+security add-trusted-cert -p codeSign -r trustRoot \
+  -k ~/Library/Keychains/login.keychain-db fluxdo-cert.pem
+
+# 3. 确认 identity 有效
+security find-identity -v -p codesigning   # 应列出 "FluxDO Code Signing"
+```
+
+然后在 `apple/Local.xcconfig` 中启用（见 example 文件的「用法 1」）。切换后首次启动钥匙串还会弹最后一次（旧 ACL 只认 adhoc 旧构建），点「始终允许」后 rebuild 不再弹。
+
+CI 发版使用同一张证书：把 p12 的 base64 与密码配置为仓库 secrets `MACOS_CODESIGN_P12_BASE64` / `MACOS_CODESIGN_P12_PASSWORD`（见 `.github/workflows/build.yaml` 的 "Setup macOS code signing" 步骤）。secrets 缺失时（如 fork）自动回退 adhoc 签名，构建不会失败。自签证书不等于公证，用户下载 DMG 后仍需右键打开或 `xattr -cr` 解除隔离，与 adhoc 时代一致。

@@ -321,8 +321,11 @@ class ImageContextMenu {
   /// 复制图片到剪贴板
   static Future<void> _copyImage(String imageUrl) async {
     try {
-      final bytes = await DiscourseCacheManager().getImageBytes(imageUrl);
-      if (bytes == null || bytes.isEmpty) {
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.contentBucket,
+        imageUrl,
+      );
+      if (bytes.isEmpty) {
         ToastService.showError(S.current.image_fetchFailed);
         return;
       }
@@ -344,7 +347,10 @@ class ImageContextMenu {
   /// 分享图片
   static Future<void> _shareImage(String imageUrl) async {
     try {
-      final file = await DiscourseCacheManager().getSingleFile(imageUrl);
+      final file = await BlobImageCache.getFile(
+        BlobImageCache.contentBucket,
+        imageUrl,
+      );
       final ext = _getExtensionFromUrl(imageUrl);
       final xFile = XFile(file.path, mimeType: 'image/$ext');
       await ShareUtils.shareOrSaveFile(xFile);

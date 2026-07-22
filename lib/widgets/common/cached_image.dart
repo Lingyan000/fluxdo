@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 
+import '../../services/blob_image_cache.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 
@@ -33,7 +32,10 @@ class CachedImage extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit? fit;
-  final BaseCacheManager? cacheManager;
+
+  /// 图片字节所在 blob bucket(默认正文 content;贴纸传 stickerOriginal,
+  /// emoji 传 emoji)。
+  final String bucket;
 
   /// 限制图片在内存中的解码尺寸。
   ///
@@ -70,7 +72,7 @@ class CachedImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit,
-    this.cacheManager,
+    this.bucket = BlobImageCache.contentBucket,
     this.memCacheWidth,
     this.memCacheHeight,
     this.thumbnailMode = false,
@@ -120,7 +122,7 @@ class CachedImage extends StatelessWidget {
       return StickerThumbnailProvider(
         url,
         targetSize: targetSize!,
-        cacheManager: cacheManager,
+        bucket: bucket,
       );
     }
 
@@ -128,7 +130,7 @@ class CachedImage extends StatelessWidget {
 
     // 完整 AVIF 动画(长按预览 / 大图):flutter_avif (libavif + dav1d) 解码
     if (lower.endsWith('.avif')) {
-      return AvifImageProvider(url, cacheManager: cacheManager);
+      return AvifImageProvider(url, bucket: bucket);
     }
 
     // 完整 GIF / animated WebP / APNG 动画:NativeAnimatedImageProvider 走
@@ -141,25 +143,14 @@ class CachedImage extends StatelessWidget {
     if (lower.endsWith('.gif') ||
         lower.endsWith('.webp') ||
         lower.endsWith('.apng')) {
-      final cache = cacheManager ?? DiscourseCacheManager();
       return NativeAnimatedImageProvider.fromBytesProvider(
-        loader: () async {
-          final file = await cache.getSingleFile(url);
-          final bytes = await file.readAsBytes();
-          if (bytes.isEmpty) {
-            throw Exception('empty bytes for $url');
-          }
-          return bytes;
-        },
+        loader: () => BlobImageCache.fetch(bucket, url),
         tag: url,
       );
     }
 
-    // 静态格式:Flutter 内置 codec + ResizeImage(节省内存)
-    ImageProvider provider = CachedNetworkImageProvider(
-      url,
-      cacheManager: cacheManager,
-    );
+    // 静态格式:blob 直寻址 + ResizeImage(节省内存)
+    ImageProvider provider = BlobImageProvider(url, bucket: bucket);
     if (hasTargetSize) {
       provider = ResizeImage(
         provider,

@@ -5,12 +5,14 @@ import 'package:fluxdo_render/fluxdo_render.dart';
 import '../../../models/topic.dart';
 import '../../../l10n/s.dart';
 import '../../../providers/preferences_provider.dart';
+import '../../../providers/topic_session_provider.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/code_selection_context.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../common/perf_span_box.dart';
+import '../post_boost/boost_actions.dart';
 import '../post_boost/boost_danmaku.dart';
 import '../post_signature_block.dart';
 import '../small_action_item.dart';
@@ -98,11 +100,6 @@ class PostItem extends ConsumerStatefulWidget {
 class _PostItemState extends ConsumerState<PostItem> {
   _ShortPostNewEngineRenderData? _newEngineRenderData;
   late bool _acceptedAnswer;
-  final GlobalKey<PostFooterSectionState> _footerKey =
-      GlobalKey<PostFooterSectionState>();
-
-  /// 帖子级临时关闭弹幕。null = 跟随全局偏好；false = 临时关
-  bool? _danmakuOverride;
 
   @override
   void initState() {
@@ -170,7 +167,14 @@ class _PostItemState extends ConsumerState<PostItem> {
       blockedUsernames,
     );
     final hasBoosts = visibleBoosts.isNotEmpty;
-    final danmakuActive = danmakuPref && (_danmakuOverride ?? true);
+    // 帖级临时关闭在会话层(topicSessionProvider):长帖分段与短帖共享,
+    // 且不随 sliver 回收丢失
+    final danmakuOff = ref.watch(
+      topicSessionProvider(
+        widget.topicId,
+      ).select((s) => s.danmakuOffPostIds.contains(post.id)),
+    );
+    final danmakuActive = danmakuPref && !danmakuOff;
     final showDanmaku = danmakuActive && hasBoosts;
     // 仅当全局开关开启且有 boost 时，才展示帖子级 toggle 按钮
     final showDanmakuToggle = danmakuPref && hasBoosts;
@@ -214,9 +218,9 @@ class _PostItemState extends ConsumerState<PostItem> {
               onMentionUser: widget.onMentionUser,
               danmakuActive: showDanmakuToggle ? showDanmaku : null,
               onToggleDanmaku: showDanmakuToggle
-                  ? () => setState(() {
-                      _danmakuOverride = !showDanmaku;
-                    })
+                  ? () => ref
+                        .read(topicSessionProvider(widget.topicId).notifier)
+                        .setDanmakuOff(post.id, showDanmaku)
                   : null,
             ),
             const SizedBox(height: 12),
@@ -302,9 +306,14 @@ class _PostItemState extends ConsumerState<PostItem> {
                         trackHeight: danmakuTrackHeight,
                         highlightUsername: widget.highlightBoostUsername,
                         onBoostTap: (boost, anchorRect) {
-                          _footerKey.currentState?.showBoostActions(
-                            boost,
+                          BoostActions.show(
+                            context: context,
+                            ref: ref,
+                            post: post,
+                            topicId: widget.topicId,
+                            boost: boost,
                             anchorRect: anchorRect,
+                            topicTitle: widget.topicTitle,
                           );
                         },
                       ),
@@ -354,9 +363,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                 ),
               ),
             PostFooterSection(
-              key: _footerKey,
               post: post,
-              forceShowBoostList: _danmakuOverride == false,
               danmakuActive: showDanmakuToggle ? showDanmaku : null,
               topicId: widget.topicId,
               topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,

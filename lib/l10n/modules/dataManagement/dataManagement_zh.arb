@@ -25,6 +25,12 @@
   "dataManagement_backupSubject": "FluxDO 数据备份",
   "dataManagement_cacheManagement": "缓存管理",
   "dataManagement_calculating": "计算中...",
+  "dataManagement_categoryAvatar": "头像",
+  "dataManagement_categoryContent": "帖子图片",
+  "dataManagement_categoryEmoji": "表情",
+  "dataManagement_categoryExternal": "外部图片",
+  "dataManagement_categoryOther": "其它",
+  "dataManagement_categorySticker": "表情包",
   "dataManagement_clearAiChatContent": "将删除所有 AI 聊天记录，此操作不可恢复。",
   "dataManagement_clearAiChatTitle": "清除 AI 聊天数据",
   "dataManagement_clearAll": "全部清除",
@@ -36,12 +42,24 @@
   "dataManagement_clearCookieTitle": "清除 Cookie 缓存",
   "dataManagement_clearOnExit": "退出时清除图片缓存",
   "dataManagement_clearOnExitDesc": "下次启动时自动清除图片缓存",
+  "dataManagement_clearSelected": "清理所选 ({size})",
+  "@dataManagement_clearSelected": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_clearSelectedContent": "所选缓存清除后将在需要时重新下载。",
+  "dataManagement_clearSelectedTitle": "清理所选缓存",
   "dataManagement_confirmImport": "确认导入",
   "dataManagement_cookieCache": "Cookie 缓存",
   "dataManagement_cookieCleared": "Cookie 缓存已清除，请重新登录",
   "dataManagement_dataBackup": "数据备份",
   "dataManagement_exportData": "导出数据",
   "dataManagement_exportDesc": "将偏好设置导出为文件",
+  "dataManagement_exportSensitiveWarning": "备份文件包含 AI API Key、代理密码、Notion Token 等敏感信息，请妥善保管。",
+  "dataManagement_exportConfirmTitle": "导出数据",
   "dataManagement_exportFailed": "导出失败: {error}",
   "@dataManagement_exportFailed": {
     "placeholders": {
@@ -54,6 +72,14 @@
   "@dataManagement_exportTime": {
     "placeholders": {
       "time": {
+        "type": "String"
+      }
+    }
+  },
+  "dataManagement_freedSpace": "已释放 {size}",
+  "@dataManagement_freedSpace": {
+    "placeholders": {
+      "size": {
         "type": "String"
       }
     }

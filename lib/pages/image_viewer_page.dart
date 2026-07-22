@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -7,6 +9,7 @@ import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
+import '../services/image_decode_spec_memo.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/screenshot_utils.dart';
@@ -125,7 +128,6 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   bool _isSaving = false;
   bool _isSharing = false;
   bool _showUI = true;
-  final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
   late final DynamicContentSuspensionLease _dynamicContentLease;
 
   /// 滑动关闭状态入口:loadStateChanged 用它判断"滑动进行中",冻结
@@ -161,9 +163,30 @@ class _ImageViewerPageState extends State<ImageViewerPage>
         .clamp(2048.0, 8192.0)
         .round();
     return ResizeImage(
-      discourseImageProvider(url),
+      discourseImageProvider(
+        url,
+        bucket: BlobImageCache.originalBucket,
+        // 用户主动点开的大图,插到所有预建/预取前面
+        priority: DownloadPriority.high,
+      ),
       width: longestPx,
       height: longestPx,
+      policy: ResizeImagePolicy.fit,
+    );
+  }
+
+  /// 缩略图占位 provider:按帖内登记的解码参数原样重建 —— ImageCache 的
+  /// key 是 ResizeImageKey(内层 key + 宽高 + 策略),参数一致才能同步命中
+  /// 帖内那份还在屏的解码位图;裸 provider 是不同 key,Hero 转场帧会白付
+  /// 一次全量解码(原图 jpg/png 尤其疼)。未登记(非帖内入口)退回裸
+  /// provider,行为同旧。
+  ImageProvider _thumbnailProvider(String url) {
+    final spec = ImageDecodeSpecMemo.peek(url);
+    if (spec == null) return discourseImageProvider(url);
+    return ResizeImage(
+      discourseImageProvider(url),
+      width: spec.$1,
+      height: spec.$2,
       policy: ResizeImagePolicy.fit,
     );
   }
@@ -265,7 +288,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     if (currentIndex < images.length - 1) {
       preloadUrls.add(images[currentIndex + 1]);
     }
-    _cacheManager.preloadImages(preloadUrls);
+    for (final url in preloadUrls) {
+      unawaited(
+        BlobImageCache.precache(BlobImageCache.originalBucket, url),
+      );
+    }
   }
 
   /// 获取当前显示的图片 URL
@@ -303,9 +330,12 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
       // 使用缓存管理器获取图片字节（优先从缓存读取）
       final imageUrl = _currentImageUrl;
-      final Uint8List? imageBytes = await _cacheManager.getImageBytes(imageUrl);
+      final Uint8List imageBytes = await BlobImageCache.fetch(
+        BlobImageCache.originalBucket,
+        imageUrl,
+      );
 
-      if (imageBytes == null || imageBytes.isEmpty) {
+      if (imageBytes.isEmpty) {
         throw Exception(S.current.image_fetchFailed);
       }
 
@@ -506,7 +536,10 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     try {
       final imageUrl = _currentImageUrl;
       // 获取缓存文件（如果不存在会自动下载）
-      final file = await _cacheManager.getSingleFile(imageUrl);
+      final file = await BlobImageCache.getFile(
+        BlobImageCache.originalBucket,
+        imageUrl,
+      );
 
       // 分享文件
       final xFile = XFile(
@@ -766,9 +799,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                           if (widget.thumbnailUrl != null &&
                               widget.thumbnailUrl != widget.imageUrl) {
                             return Image(
-                              image: discourseImageProvider(
-                                widget.thumbnailUrl!,
-                              ),
+                              image: _thumbnailProvider(widget.thumbnailUrl!),
                               fit: BoxFit.contain,
                             );
                           }
@@ -800,9 +831,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                               widget.thumbnailUrl != null &&
                               widget.thumbnailUrl != widget.imageUrl) {
                             return Image(
-                              image: discourseImageProvider(
-                                widget.thumbnailUrl!,
-                              ),
+                              image: _thumbnailProvider(widget.thumbnailUrl!),
                               fit: BoxFit.contain,
                             );
                           }
@@ -894,7 +923,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                                     LoadState.loading) {
                                   if (thumbUrl != null && thumbUrl != url) {
                                     return Image(
-                                      image: discourseImageProvider(thumbUrl),
+                                      image: _thumbnailProvider(thumbUrl),
                                       fit: BoxFit.contain,
                                     );
                                   }
@@ -924,7 +953,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                                       false) {
                                     if (thumbUrl != null && thumbUrl != url) {
                                       return Image(
-                                        image: discourseImageProvider(thumbUrl),
+                                        image: _thumbnailProvider(thumbUrl),
                                         fit: BoxFit.contain,
                                       );
                                     }
@@ -1136,10 +1165,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   /// 构建图片解码 fallback 组件（SVG / AVIF）
   Widget _buildSvgFallback(String imageUrl) {
-    return _ImageDecodeFallback(
-      imageUrl: imageUrl,
-      cacheManager: _cacheManager,
-    );
+    return _ImageDecodeFallback(imageUrl: imageUrl);
   }
 }
 
@@ -1147,12 +1173,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 /// 当普通图片解码失败时，依次检测 SVG 和 AVIF 并渲染
 class _ImageDecodeFallback extends StatefulWidget {
   final String imageUrl;
-  final DiscourseCacheManager cacheManager;
 
-  const _ImageDecodeFallback({
-    required this.imageUrl,
-    required this.cacheManager,
-  });
+  const _ImageDecodeFallback({required this.imageUrl});
 
   @override
   State<_ImageDecodeFallback> createState() => _ImageDecodeFallbackState();
@@ -1173,8 +1195,10 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
 
   Future<void> _detectAndDecode() async {
     try {
-      final file = await widget.cacheManager.getSingleFile(widget.imageUrl);
-      final bytes = await file.readAsBytes();
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.originalBucket,
+        widget.imageUrl,
+      );
 
       if (bytes.isEmpty || !mounted) return;
 
@@ -1196,6 +1220,7 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
         final si = ScalableImage.fromSvgString(svgString, warnF: (_) {});
         if (mounted) {
           setState(() {
+            _svgSi = si;
             _isSvg = true;
             _checked = true;
           });
@@ -1278,8 +1303,13 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
       // 使用 AvifImageProvider 解码并渲染，自动支持动画 AVIF
       return Center(
         child: Image(
-          // 查看器要原图清晰度,放开帖内默认的 2048 帧上限
-          image: AvifImageProvider(widget.imageUrl, maxDimension: null),
+          // 查看器要原图清晰度,放开帖内默认的 2048 帧上限;bucket 与
+          // 本组件嗅探时的 fetch 一致(original),避免同图双份缓存。
+          image: AvifImageProvider(
+            widget.imageUrl,
+            maxDimension: null,
+            bucket: BlobImageCache.originalBucket,
+          ),
           fit: BoxFit.contain,
         ),
       );

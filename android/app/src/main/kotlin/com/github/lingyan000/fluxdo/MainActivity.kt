@@ -92,8 +92,15 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        FairMemoryReceiver.detachEngine(flutterEngine)
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 公平内存预警 → Dart 标准 memoryPressure 的转发依赖 engine 引用
+        FairMemoryReceiver.attachEngine(flutterEngine)
         // 媒体转码通道(音视频压缩到 4MB:media3 Transformer 硬编)
         MediaTranscodeChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->

@@ -895,6 +895,26 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     widget.onEmojiPanelChanged?.call(false);
   }
 
+  /// 关闭表情面板(供外部调用,如返回键拦截/标题栏点击 ——
+  /// MarkdownEditor.closeEmojiPanel 同构):收面板不弹键盘。
+  /// 宿主页 PopScope 只认 onEmojiPanelChanged 回落 canPop,这里
+  /// 直接同步状态,不等容器 onPanelTypeChange 转一圈。
+  void closeEmojiPanel() {
+    if (_intendedPanel == _RichPanelType.none &&
+        _currentPanel != _RichPanelType.emoji) {
+      return;
+    }
+    _intendedPanel = _RichPanelType.none;
+    _panelController.updatePanelType(
+      ChatBottomPanelType.none,
+      forceHandleFocus: ChatBottomHandleFocus.none,
+    );
+    if (_showEmojiPanel) {
+      setState(() => _showEmojiPanel = false);
+      widget.onEmojiPanelChanged?.call(false);
+    }
+  }
+
   /// 面板高度:键盘高度已知用键盘高(等高切换),否则 emojiPanelHeight
   /// 兜底;都含底部安全区。
   double get _panelHeight {
@@ -910,6 +930,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
       // sticker markdown(含 ,30% 缩放后缀)走 cook 链路整段导入
       onStickerSelected: insertMarkdownSnippet,
+      // 富编辑器的 backspace 原生处理岛/容器边界,直接复用
+      onBackspace: () => _editor?.backspace(),
     );
     return SizedBox(height: _panelHeight, child: _emojiPanelChild);
   }

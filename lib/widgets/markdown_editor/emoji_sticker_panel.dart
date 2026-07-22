@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../models/emoji.dart';
+import '../../utils/platform_utils.dart';
 import 'emoji_picker.dart';
 import 'sticker_picker.dart';
 import '../../../../../l10n/s.dart';
@@ -20,10 +21,16 @@ class EmojiStickerPanel extends StatefulWidget {
   /// 选中表情包的回调，参数为 Markdown 图片文本
   final ValueChanged<String> onStickerSelected;
 
+  /// 退格回调(移动端表情键盘标配:面板打开时软键盘收起,没有它
+  /// 就只能切回键盘删)。null 或桌面端不显示退格键(桌面端焦点常驻
+  /// 输入框,物理退格直接可用)。
+  final VoidCallback? onBackspace;
+
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
     required this.onStickerSelected,
+    this.onBackspace,
   });
 
   @override
@@ -116,6 +123,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
     final totalBottomPadding = floatingTabHeight + safeBottom;
 
@@ -154,6 +162,44 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
             ),
           ),
         ),
+
+        // 悬浮退格键(仅移动端,与 Tab 同层同显隐节奏,靠右)
+        if (widget.onBackspace != null && PlatformUtils.isMobile)
+          Positioned(
+            right: 12,
+            bottom: safeBottom + 4,
+            child: AnimatedSlide(
+              offset: _tabVisible ? Offset.zero : const Offset(0, 2),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: Material(
+                color: theme.colorScheme.surface.withValues(alpha: 0.95),
+                shape: const CircleBorder(),
+                elevation: 2,
+                shadowColor: Colors.black.withValues(alpha: 0.1),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: widget.onBackspace,
+                  child: SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: Center(
+                      // backspace 字形视觉重心偏右(左侧是箭头尖),
+                      // 几何居中后看着偏右,向左 1px 光学补偿。
+                      child: Transform.translate(
+                        offset: const Offset(-1, 0),
+                        child: Icon(
+                          Symbols.backspace_rounded,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

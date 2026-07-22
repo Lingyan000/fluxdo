@@ -629,6 +629,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
               if (didPop) return;
               if (_showEmojiPanel) {
                 _editorKey.currentState?.closeEmojiPanel();
+                _richKey.currentState?.closeEmojiPanel();
                 setState(() => _showEmojiPanel = false);
               }
             },
@@ -812,6 +813,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             onTap: () {
                               if (_showEmojiPanel) {
                                 _editorKey.currentState?.closeEmojiPanel();
+                                _richKey.currentState?.closeEmojiPanel();
                                 setState(() => _showEmojiPanel = false);
                               }
                             },
