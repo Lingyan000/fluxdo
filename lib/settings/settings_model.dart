@@ -112,6 +112,9 @@ final class IntSliderModel extends SettingsModel {
 final class ActionModel extends SettingsModel {
   final IconData icon;
 
+  /// 是否允许副标题按内容自然换行。默认保持单行，适合短状态值。
+  final bool wrapSubtitle;
+
   /// 动态副标题（如当前 URL）
   final String? Function(WidgetRef ref)? getDynamicSubtitle;
 
@@ -122,6 +125,7 @@ final class ActionModel extends SettingsModel {
     required super.title,
     super.subtitle,
     required this.icon,
+    this.wrapSubtitle = false,
     this.getDynamicSubtitle,
     required this.onTap,
   });

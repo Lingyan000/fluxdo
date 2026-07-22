@@ -13,6 +13,7 @@ import '../../../models/topic.dart';
 import '../../../models/pending_post.dart';
 import '../../../providers/message_bus_providers.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/blocked_content_info_visibility.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/scroll_busy_signal.dart';
@@ -89,6 +90,9 @@ class TopicPostList extends StatefulWidget {
   final void Function(int postId)? onFillGapBefore;
   final void Function(int postId)? onFillGapAfter;
 
+  /// 是否显示论坛原生屏蔽/忽略内容产生的 Gap 占位提示。
+  final bool showBlockedContentInfo;
+
   /// 展开隐藏帖子回调
   final void Function(int postId)? onExpandHiddenPost;
 
@@ -148,6 +152,7 @@ class TopicPostList extends StatefulWidget {
     this.onPointerScroll,
     this.onFillGapBefore,
     this.onFillGapAfter,
+    this.showBlockedContentInfo = true,
     this.onExpandHiddenPost,
     this.useReplyDialog = false,
     this.onShowPostDetail,
@@ -696,7 +701,10 @@ class _TopicPostListState extends State<TopicPostList> {
   void _buildRenderSegments(List<Post> posts) {
     // posts 与 gaps 身份都没变 → segments/映射表必然一致，直接复用。
     // 高亮/选中/typing 等高频 rebuild 不再重付 O(N) 的分段与建表成本
-    final gaps = detail.postStream.gaps;
+    final gaps = BlockedContentInfoVisibility.visiblePostGaps(
+      enabled: widget.showBlockedContentInfo,
+      gaps: detail.postStream.gaps,
+    );
     if (identical(_segmentsSourcePosts, posts) &&
         identical(_segmentsSourceGaps, gaps)) {
       return;

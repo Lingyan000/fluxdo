@@ -55,4 +55,34 @@ void main() {
       BookmarksOpenMode.defaultRoute,
     );
   });
+
+  test('拉黑信息显示默认开启并持久化用户选择', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+
+    expect(
+      container.read(preferencesProvider).showBlockedContentInfo,
+      isTrue,
+    );
+
+    await container
+        .read(preferencesProvider.notifier)
+        .setShowBlockedContentInfo(false);
+
+    expect(
+      container.read(preferencesProvider).showBlockedContentInfo,
+      isFalse,
+    );
+    final prefs = container.read(sharedPreferencesProvider);
+    expect(prefs.getBool('pref_show_blocked_content_info'), isFalse);
+
+    final reloaded = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(reloaded.dispose);
+    expect(
+      reloaded.read(preferencesProvider).showBlockedContentInfo,
+      isFalse,
+    );
+  });
 }

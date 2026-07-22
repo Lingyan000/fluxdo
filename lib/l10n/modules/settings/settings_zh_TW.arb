@@ -59,7 +59,9 @@
     }
   },
   "preferences_blockedUsernamesHint": "輸入使用者名稱後按 Enter 新增",
-  "preferences_blockedUsernamesHelper": "無需輸入 @；使用者名稱精確比對，不區分大小寫；不會呼叫 Discourse 的忽略功能",
+  "preferences_blockedUsernamesHelper": "無需輸入@，不區分大小寫",
+  "preferences_showBlockedContentInfo": "封鎖資訊顯示",
+  "preferences_showBlockedContentInfoDesc": "顯示已隱藏話題的數量提示和被封鎖回覆的佔位提示",
   "preferences_autoPanguSpacing": "自動混排最佳化",
   "preferences_autoPanguSpacingDesc": "輸入時自動插入中英文混排空格",
   "preferences_useRichComposer": "富文字編輯器(實驗性)",

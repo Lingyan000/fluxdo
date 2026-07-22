@@ -59,7 +59,9 @@
     }
   },
   "preferences_blockedUsernamesHint": "Enter a username, then press Enter",
-  "preferences_blockedUsernamesHelper": "Do not include @. Usernames are matched exactly, case-insensitively. This does not use Discourse ignore.",
+  "preferences_blockedUsernamesHelper": "No @ required; case-insensitive",
+  "preferences_showBlockedContentInfo": "Show blocked-content info",
+  "preferences_showBlockedContentInfoDesc": "Show hidden-topic counts and placeholders for blocked replies",
   "preferences_autoPanguSpacing": "Auto CJK spacing",
   "preferences_autoPanguSpacingDesc": "Auto-insert spaces between CJK and Latin text",
   "preferences_useRichComposer": "Rich composer (experimental)",

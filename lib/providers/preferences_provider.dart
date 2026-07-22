@@ -115,6 +115,12 @@ class AppPreferences {
   /// 本地内容屏蔽用户名列表。只影响本客户端的展示，不会同步到 Discourse。
   final List<String> blockedUsernames;
 
+  /// 是否显示内容被过滤或屏蔽后的提示信息。
+  ///
+  /// 关闭后仍会执行关键词过滤、本地拉黑与论坛原生屏蔽/忽略，只是不再显示
+  /// 话题列表顶部的隐藏数量或话题详情中的隐藏回复占位符。
+  final bool showBlockedContentInfo;
+
   /// 话题关键词过滤的归一化形式（lowercase），匹配时使用
   late final List<String> normalizedFilterKeywords = List.unmodifiable(
     topicFilterKeywords
@@ -239,6 +245,7 @@ class AppPreferences {
     required this.topicFilterKeywords,
     this.topicFilterWholeWord = false,
     this.blockedUsernames = const [],
+    this.showBlockedContentInfo = true,
     required this.crashlytics,
     required this.portraitLock,
     required this.hideBarOnScroll,
@@ -286,6 +293,7 @@ class AppPreferences {
     List<String>? topicFilterKeywords,
     bool? topicFilterWholeWord,
     List<String>? blockedUsernames,
+    bool? showBlockedContentInfo,
     bool? crashlytics,
     bool? portraitLock,
     bool? hideBarOnScroll,
@@ -334,6 +342,8 @@ class AppPreferences {
       topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
       topicFilterWholeWord: topicFilterWholeWord ?? this.topicFilterWholeWord,
       blockedUsernames: blockedUsernames ?? this.blockedUsernames,
+      showBlockedContentInfo:
+          showBlockedContentInfo ?? this.showBlockedContentInfo,
       crashlytics: crashlytics ?? this.crashlytics,
       portraitLock: portraitLock ?? this.portraitLock,
       hideBarOnScroll: hideBarOnScroll ?? this.hideBarOnScroll,
@@ -399,6 +409,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
   static const String _topicFilterWholeWordKey = 'pref_topic_filter_whole_word';
   static const String _blockedUsernamesKey = 'pref_blocked_usernames';
+  static const String _showBlockedContentInfoKey =
+      'pref_show_blocked_content_info';
   static const String _crashlyticsKey = 'pref_crashlytics';
   static const String _portraitLockKey = 'pref_portrait_lock';
   static const String _hideBarOnScrollKey = 'pref_hide_bar_on_scroll';
@@ -466,6 +478,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               _prefs.getBool(_topicFilterWholeWordKey) ?? false,
           blockedUsernames:
               _prefs.getStringList(_blockedUsernamesKey) ?? const [],
+          showBlockedContentInfo:
+              _prefs.getBool(_showBlockedContentInfoKey) ?? true,
           crashlytics: _prefs.getBool(_crashlyticsKey) ?? true,
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
           hideBarOnScroll: _prefs.getBool(_hideBarOnScrollKey) ?? true,
@@ -614,6 +628,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     }
     state = state.copyWith(blockedUsernames: sanitized);
     await _prefs.setStringList(_blockedUsernamesKey, sanitized);
+  }
+
+  Future<void> setShowBlockedContentInfo(bool enabled) async {
+    if (state.showBlockedContentInfo == enabled) return;
+    state = state.copyWith(showBlockedContentInfo: enabled);
+    await _prefs.setBool(_showBlockedContentInfoKey, enabled);
   }
 
   Future<void> setCrashlytics(bool enabled) async {

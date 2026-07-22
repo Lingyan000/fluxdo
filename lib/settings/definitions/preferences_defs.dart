@@ -58,6 +58,7 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           title: l10n.preferences_topicFilterKeywords,
           subtitle: l10n.preferences_topicFilterKeywordsDesc,
           icon: Symbols.filter_alt_off_rounded,
+          wrapSubtitle: true,
           getDynamicSubtitle: (ref) {
             final count = ref
                 .watch(preferencesProvider)
@@ -73,6 +74,7 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           title: l10n.preferences_blockedUsernames,
           subtitle: l10n.preferences_blockedUsernamesDesc,
           icon: Symbols.person_off_rounded,
+          wrapSubtitle: true,
           getDynamicSubtitle: (ref) {
             final count = ref
                 .watch(preferencesProvider)
@@ -82,6 +84,17 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             return l10n.preferences_blockedUsernamesCount(count);
           },
           onTap: (context, ref) => showBlockedUsernamesDialog(context, ref),
+        ),
+        SwitchModel(
+          id: 'showBlockedContentInfo',
+          title: l10n.preferences_showBlockedContentInfo,
+          subtitle: l10n.preferences_showBlockedContentInfoDesc,
+          icon: Symbols.visibility_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).showBlockedContentInfo,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setShowBlockedContentInfo(v),
         ),
         PlatformConditionalModel(
           inner: SwitchModel(
