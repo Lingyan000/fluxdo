@@ -27,6 +27,9 @@ import 'topic_detail_page/topic_detail_page.dart';
 import 'user_profile_page.dart';
 import 'create_topic_page.dart';
 import 'drafts_page.dart';
+import 'trust_level_requirements_page.dart';
+import 'metaverse_page.dart';
+import 'invite_links_page.dart';
 
 /// 话题屏幕
 /// 在手机上显示单栏列表，平板上显示 Master-Detail 双栏
@@ -222,6 +225,14 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
           _leftTag = null;
         });
       }
+    });
+
+    // 分类抽屉 / 话题预览弹窗等拿不到 HomeWorkspaceScope 的地方，通过
+    // 这个 provider 请求把标签接入左栏（见 workspaceTagRequestProvider
+    // 注释）。nonce 保证连续点同一个标签也能触发。
+    ref.listen(workspaceTagRequestProvider, (_, request) {
+      if (request == null) return;
+      _showTag(request.tag);
     });
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）
@@ -1072,6 +1083,15 @@ class PaneContentWidget extends StatelessWidget {
             ),
           ),
         );
+      case PaneKind.trustLevelRequirements:
+        return TrustLevelRequirementsPage(
+          embeddedMode: true,
+          onEmbeddedBack: onBack,
+        );
+      case PaneKind.metaverse:
+        return MetaversePage(embeddedMode: true, onEmbeddedBack: onBack);
+      case PaneKind.inviteLinks:
+        return InviteLinksPage(embeddedMode: true, onEmbeddedBack: onBack);
     }
   }
 }

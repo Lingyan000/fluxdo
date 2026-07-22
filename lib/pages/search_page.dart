@@ -31,6 +31,9 @@ import '../widgets/common/search_capsule.dart';
 import '../utils/link_launcher.dart';
 import 'drafts_page.dart';
 import 'settings_page.dart';
+import 'trust_level_requirements_page.dart';
+import 'metaverse_page.dart';
+import 'invite_links_page.dart';
 
 /// 搜索框中的站内直达链接标准化。支持完整 URL、`linux.do/...` 和相对路径；
 /// 普通关键词原样返回，后续由 [isInternalUrlString] 判定后继续普通搜索。
@@ -961,6 +964,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   .removeEntriesOfKind(PaneKind.drafts),
             ),
           ),
+        );
+      case PaneKind.trustLevelRequirements:
+        return TrustLevelRequirementsPage(
+          key: const ValueKey('search_trust_level_requirements'),
+          embeddedMode: true,
+          onEmbeddedBack: onBack,
+        );
+      case PaneKind.metaverse:
+        return MetaversePage(
+          key: const ValueKey('search_metaverse'),
+          embeddedMode: true,
+          onEmbeddedBack: onBack,
+        );
+      case PaneKind.inviteLinks:
+        return InviteLinksPage(
+          key: const ValueKey('search_invite_links'),
+          embeddedMode: true,
+          onEmbeddedBack: onBack,
         );
     }
   }

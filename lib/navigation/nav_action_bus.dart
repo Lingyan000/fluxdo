@@ -135,6 +135,24 @@ class NavDestinationRequest {
 final navDestinationRequestProvider =
     StateProvider<NavDestinationRequest?>((ref) => null);
 
+/// 从首页平行视界之外（分类抽屉 / 话题预览弹窗 / 其它无法拿到
+/// [HomeWorkspaceScope] 的地方）请求"把某个标签当信息流打开"。
+///
+/// 抽屉/弹窗结构性拿不到 HomeWorkspaceScope（分别是与首页内容平级的
+/// Overlay、根 Navigator 的对话框），没法直接调 workspace.onShowTag。
+/// 这里改走 provider + 切 tab 的路子（跟固定分类快捷入口同一套），
+/// TopicsScreen 监听后把标签接到自己的左栏，两种屏宽都由
+/// MasterDetailLayout 统一处理，不需要调用方关心宽窄屏。
+class WorkspaceTagRequest {
+  const WorkspaceTagRequest({required this.tag, required this.nonce});
+
+  final String tag;
+  final int nonce;
+}
+
+final workspaceTagRequestProvider =
+    StateProvider<WorkspaceTagRequest?>((ref) => null);
+
 /// 派发入口
 extension NavActionDispatch on WidgetRef {
   void dispatchNavAction(String targetId, NavAction action) {
@@ -152,6 +170,17 @@ extension NavActionDispatch on WidgetRef {
     read(_navActionNonceProvider.notifier).state = next;
     read(navDestinationRequestProvider.notifier).state = NavDestinationRequest(
       targetId: targetId,
+      nonce: next,
+    );
+  }
+
+  /// 切到首页 tab 并把 [tag] 接入首页平行视界左栏（信息流语义）。
+  void openWorkspaceTag(String tag) {
+    requestNavDestination(NavEntryIds.home);
+    final next = read(_navActionNonceProvider) + 1;
+    read(_navActionNonceProvider.notifier).state = next;
+    read(workspaceTagRequestProvider.notifier).state = WorkspaceTagRequest(
+      tag: tag,
       nonce: next,
     );
   }

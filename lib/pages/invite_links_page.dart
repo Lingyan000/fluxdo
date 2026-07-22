@@ -52,7 +52,16 @@ extension on _InviteExpiryPreset {
 }
 
 class InviteLinksPage extends ConsumerStatefulWidget {
-  const InviteLinksPage({super.key});
+  const InviteLinksPage({
+    super.key,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
+
+  /// 平行视界嵌入模式：AppBar 用 [onEmbeddedBack] 关闭当前层，而不是
+  /// 默认的 Navigator pop。
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
 
   @override
   ConsumerState<InviteLinksPage> createState() => _InviteLinksPageState();
@@ -506,7 +515,13 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.invite_title)),
+      appBar: AppBar(
+        title: Text(context.l10n.invite_title),
+        automaticallyImplyLeading: !widget.embeddedMode,
+        leading: widget.embeddedMode && widget.onEmbeddedBack != null
+            ? BackButton(onPressed: widget.onEmbeddedBack)
+            : null,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

@@ -24,11 +24,17 @@ class BadgePage extends ConsumerStatefulWidget {
   final String? badgeSlug;
   final String? username; // 可选，筛选特定用户
 
+  /// 平行视界嵌入模式（"我的徽章"宽屏左右栏的右侧详情）：不显示返回箭头
+  /// ——右栏是"选中态展示"，不是压栈，点左边另一枚徽章直接替换内容，
+  /// 没有"返回"语义。
+  final bool embeddedMode;
+
   const BadgePage({
     super.key,
     required this.badgeId,
     this.badgeSlug,
     this.username,
+    this.embeddedMode = false,
   });
 
   @override
@@ -229,6 +235,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
       pinned: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       elevation: 0,
+      automaticallyImplyLeading: !widget.embeddedMode,
       iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
       flexibleSpace: FlexibleSpaceBar(
         background: Container(

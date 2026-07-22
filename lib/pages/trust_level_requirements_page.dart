@@ -12,7 +12,16 @@ import '../services/network/discourse_dio.dart';
 import '../l10n/s.dart';
 
 class TrustLevelRequirementsPage extends ConsumerStatefulWidget {
-  const TrustLevelRequirementsPage({super.key});
+  const TrustLevelRequirementsPage({
+    super.key,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
+
+  /// 平行视界嵌入模式：AppBar 用 [onEmbeddedBack] 关闭当前层，而不是
+  /// 默认的 Navigator pop(embeddedMode 时本来就没有可 pop 的路由)。
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
 
   @override
   ConsumerState<TrustLevelRequirementsPage> createState() =>
@@ -499,6 +508,10 @@ class _TrustLevelRequirementsPageState
       title: Text(context.l10n.trustLevel_appBarTitle),
       centerTitle: false,
       expandedHeight: 200,
+      automaticallyImplyLeading: !widget.embeddedMode,
+      leading: widget.embeddedMode && widget.onEmbeddedBack != null
+          ? BackButton(onPressed: widget.onEmbeddedBack)
+          : null,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: BoxDecoration(
@@ -1056,6 +1069,10 @@ class _TrustLevelRequirementsPageState
           SliverAppBar.large(
             title: Text(context.l10n.trustLevel_appBarTitle),
             centerTitle: false,
+            automaticallyImplyLeading: !widget.embeddedMode,
+            leading: widget.embeddedMode && widget.onEmbeddedBack != null
+                ? BackButton(onPressed: widget.onEmbeddedBack)
+                : null,
           ),
           SliverFillRemaining(
             hasScrollBody: false,

@@ -14,7 +14,7 @@ import '../../utils/tag_icon_list.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/category_topics_page.dart';
-import '../../pages/tag_topics_page.dart';
+import '../../navigation/nav_action_bus.dart';
 import '../../l10n/s.dart';
 import 'topic_notification_button.dart'
     show getCategoryNotificationIcon, showCategoryNotificationLevelSheet;
@@ -332,6 +332,16 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   void _closeAndPush(Widget page) {
     widget.onRequestClose();
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  /// 关抽屉并把标签接入首页平行视界左栏（信息流语义）。
+  ///
+  /// 抽屉是跟首页内容平级挂在 AdaptiveScaffold 顶层的 Overlay，结构上
+  /// 拿不到 HomeWorkspaceScope，不能直接调 workspace.onShowTag——走
+  /// [WidgetRef.openWorkspaceTag]（切 tab + provider 通知首页）。
+  void _closeAndOpenTag(String tag) {
+    widget.onRequestClose();
+    ref.openWorkspaceTag(tag);
   }
 
   /// 长按/右键分类行：收藏与订阅的操作菜单（低频操作不常驻行上）
@@ -691,7 +701,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
               _TagRow(
                 tag: tag,
                 heat: maxCount > 0 ? tag.count / maxCount : 0,
-                onTap: () => _closeAndPush(TagTopicsPage(tagName: tag.name)),
+                onTap: () => _closeAndOpenTag(tag.name),
               ),
             );
           }

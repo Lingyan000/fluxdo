@@ -21,7 +21,7 @@ import '../common/smart_avatar.dart';
 import '../common/topic_badges.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../pages/category_topics_page.dart';
-import '../../pages/tag_topics_page.dart';
+import '../../navigation/nav_action_bus.dart';
 import '../../../../../l10n/s.dart';
 
 /// 预览弹窗中的操作项
@@ -523,11 +523,10 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             ),
             onTap: () {
               Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => TagTopicsPage(tagName: tag.name),
-                ),
-              );
+              // 弹窗挂在根 Navigator 的 Overlay 上，结构上拿不到
+              // HomeWorkspaceScope，走 openWorkspaceTag（切 tab +
+              // provider 通知首页），而不是整页 push。
+              ref.openWorkspaceTag(tag.name);
             },
           ),
         ),

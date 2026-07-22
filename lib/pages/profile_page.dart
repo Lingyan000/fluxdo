@@ -708,6 +708,45 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
+  /// 打开信任等级要求：宽屏走本页自己的平行视界栈（右栏顶替），
+  /// 窄屏没有右栏承载，退回整页 push。
+  void _openTrustLevelRequirements() {
+    if (_showWideLayout) {
+      ref.read(selectedProfilePaneProvider.notifier).pushTrustLevelRequirements();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TrustLevelRequirementsPage()),
+    );
+  }
+
+  /// 打开元宇宙：宽屏走本页自己的平行视界栈（右栏顶替），
+  /// 窄屏没有右栏承载，退回整页 push。
+  void _openMetaverse() {
+    if (_showWideLayout) {
+      ref.read(selectedProfilePaneProvider.notifier).pushMetaverse();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MetaversePage()),
+    );
+  }
+
+  /// 打开邀请链接：宽屏走本页自己的平行视界栈（右栏顶替），
+  /// 窄屏没有右栏承载，退回整页 push。
+  void _openInviteLinks() {
+    if (_showWideLayout) {
+      ref.read(selectedProfilePaneProvider.notifier).pushInviteLinks();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const InviteLinksPage()),
+    );
+  }
+
   Widget _buildContentCard(ThemeData theme) {
     final actions = [
       (
@@ -848,17 +887,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.verified_user_rounded,
           iconColor: Colors.green,
           title: context.l10n.profile_trustRequirements,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrustLevelRequirementsPage()))
+          onTap: _openTrustLevelRequirements,
         ),
         if (canAccessInviteLinks)
           _buildOptionTile(
             icon: Symbols.link_rounded,
             iconColor: Colors.cyan,
             title: context.l10n.profile_inviteLinks,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const InviteLinksPage()),
-            ),
+            onTap: _openInviteLinks,
           ),
         _buildOptionTile(
           icon: Symbols.history_edu_rounded,
@@ -873,7 +909,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.explore_rounded,
           iconColor: Colors.deepOrange,
           title: context.l10n.profile_metaverse,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MetaversePage()))
+          onTap: _openMetaverse,
         ),
       ],
     );

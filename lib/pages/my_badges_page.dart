@@ -12,6 +12,7 @@ import '../utils/font_awesome_helper.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import 'badge_page.dart';
 import '../l10n/s.dart';
+import '../widgets/layout/master_detail_layout.dart';
 
 /// 我的徽章页面
 class MyBadgesPage extends ConsumerStatefulWidget {
@@ -26,6 +27,13 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
   bool _isLoading = true;
   Object? _error;
   StackTrace? _errorStack;
+
+  /// 宽屏左右栏：右侧当前展示的徽章（左侧点击切换，不压栈）。
+  UserBadge? _selectedBadge;
+
+  /// build 里存下的宽屏判定，供点击回调读（不能在回调里读 MediaQuery，
+  /// 见 profile_page.dart 同类注释）。
+  bool _showWideLayout = false;
 
   @override
   void initState() {
@@ -89,47 +97,102 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
         totalCount += list.length;
       }
     }
+    _showWideLayout = MasterDetailLayout.canShowBothPanesFor(context);
 
-    return Scaffold(
-      body: _isLoading
-          ? const MyBadgesSkeleton()
-          : _error != null
-              ? ErrorView(
-                  error: _error!,
-                  stackTrace: _errorStack,
-                  onRetry: _loadBadges,
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadBadges,
-                  child: CustomScrollView(
-                    slivers: [
-                      _buildAppBar(context, totalCount),
-                      if (_groupedBadges == null || _groupedBadges!.isEmpty)
-                        SliverFillRemaining(
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Symbols.military_tech_rounded,
-                                    size: 64, color: Colors.grey[400]),
-                                const SizedBox(height: 16),
-                                Text(context.l10n.myBadges_empty,
-                                    style: TextStyle(color: Colors.grey[600])),
-                              ],
-                            ),
+    final listBody = _isLoading
+        ? const MyBadgesSkeleton()
+        : _error != null
+            ? ErrorView(
+                error: _error!,
+                stackTrace: _errorStack,
+                onRetry: _loadBadges,
+              )
+            : RefreshIndicator(
+                onRefresh: _loadBadges,
+                child: CustomScrollView(
+                  slivers: [
+                    _buildAppBar(context, totalCount),
+                    if (_groupedBadges == null || _groupedBadges!.isEmpty)
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Symbols.military_tech_rounded,
+                                  size: 64, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              Text(context.l10n.myBadges_empty,
+                                  style: TextStyle(color: Colors.grey[600])),
+                            ],
                           ),
-                        )
-                      else ...[
-                        const SliverPadding(padding: EdgeInsets.only(top: 16)),
-                        _buildBadgeSection(BadgeType.gold),
-                        _buildBadgeSection(BadgeType.silver),
-                        _buildBadgeSection(BadgeType.bronze),
-                        const SliverPadding(
-                            padding: EdgeInsets.only(bottom: 48)),
-                      ],
+                        ),
+                      )
+                    else ...[
+                      const SliverPadding(padding: EdgeInsets.only(top: 16)),
+                      _buildBadgeSection(BadgeType.gold),
+                      _buildBadgeSection(BadgeType.silver),
+                      _buildBadgeSection(BadgeType.bronze),
+                      const SliverPadding(
+                          padding: EdgeInsets.only(bottom: 48)),
                     ],
-                  ),
+                  ],
                 ),
+              );
+
+    if (!_showWideLayout) {
+      return Scaffold(body: listBody);
+    }
+
+    // 宽屏：左侧勋章网格（跟窄屏同一份内容），右侧点中的徽章详情——
+    // 平级铺开，不走 Navigator push，点另一枚直接替换右栏。
+    return Scaffold(
+      body: Row(
+        children: [
+          Expanded(child: listBody),
+          VerticalDivider(
+            width: 1,
+            thickness: 0.5,
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.3),
+          ),
+          Expanded(
+            child: _selectedBadge == null
+                ? _buildDetailEmptyState(context)
+                : BadgePage(
+                    key: ValueKey('badge_detail_${_selectedBadge!.badge!.id}'),
+                    badgeId: _selectedBadge!.badge!.id,
+                    badgeSlug: _selectedBadge!.badge!.slug,
+                    username: ref.read(currentUserProvider).value?.username,
+                    embeddedMode: true,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Symbols.military_tech_rounded,
+            size: 64,
+            color: theme.colorScheme.outline.withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            context.l10n.myBadges_selectHint,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -279,17 +342,20 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
     return InkWell(
       onTap: () {
         final user = ref.read(currentUserProvider).value;
-        if (user != null) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => BadgePage(
-                badgeId: badge.id,
-                badgeSlug: badge.slug,
-                username: user.username,
-              ),
-            ),
-          );
+        if (user == null) return;
+        if (_showWideLayout) {
+          setState(() => _selectedBadge = userBadge);
+          return;
         }
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => BadgePage(
+              badgeId: badge.id,
+              badgeSlug: badge.slug,
+              username: user.username,
+            ),
+          ),
+        );
       },
       borderRadius: BorderRadius.circular(20),
       child: Container(

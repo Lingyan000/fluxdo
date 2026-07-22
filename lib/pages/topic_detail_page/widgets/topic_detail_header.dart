@@ -13,10 +13,10 @@ import '../../../widgets/common/relative_time_text.dart';
 import '../../../utils/number_utils.dart';
 import '../../../widgets/topic/topic_notification_button.dart';
 import '../../../widgets/layout/home_workspace_scope.dart';
+import '../../../navigation/nav_action_bus.dart';
 import 'topic_vote_button.dart';
 import '../../../widgets/common/topic_badges.dart';
 import '../../category_topics_page.dart';
-import '../../tag_topics_page.dart';
 
 /// 话题详情页头部组件
 class TopicDetailHeader extends ConsumerWidget {
@@ -181,12 +181,10 @@ class TopicDetailHeader extends ConsumerWidget {
                           workspace.onShowTag(tag.name);
                           return;
                         }
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TagTopicsPage(tagName: tag.name),
-                          ),
-                        );
+                        // 不在首页平行视界子树里（比如从搜索/私信等入口
+                        // 打开的话题详情）：切到首页 tab 把标签接成信息流，
+                        // 而不是整页 push——同一份标签体验各入口一致。
+                        ref.openWorkspaceTag(tag.name);
                       },
                     ),
                   ),

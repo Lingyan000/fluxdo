@@ -29,6 +29,7 @@
   "badge_silverBadge": "银牌徽章",
   "myBadges_badgeUnit": "枚徽章",
   "myBadges_empty": "暂无徽章",
+  "myBadges_selectHint": "点击左侧徽章查看详情",
   "myBadges_title": "我的徽章",
   "myBadges_totalEarned": "累计获得"
 }

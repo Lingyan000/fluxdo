@@ -48,7 +48,15 @@ class WebViewCookiePriming {
   // 内部状态
   // ---------------------------------------------------------------------------
 
-  bool _isPrimed = false;
+  /// 已完成 priming 的域名集合(host)。
+  ///
+  /// 原来是单个全局 `bool _isPrimed`:只要 prime 过一次(通常是启动早期
+  /// 用 baseUrl 触发),后续任何域名的 prime() 调用都被这个全局标志短路,
+  /// 一个 cookie 都不会再写——多域名场景(比如从 App 内打开
+  /// credit.linux.do 这类第三方域名的 WebView)会拿到完全没同步过 cookie
+  /// 的 WV,表现为"卡登录页"。改成按 host 记录,幂等语义收窄到"这个域名
+  /// 是否已经 prime 过",不同域名互不影响。
+  final Set<String> _primedHosts = {};
 
   static const Duration _variantCleanupRetryDelay = Duration(milliseconds: 120);
   static const int _variantCleanupMaxAttempts = 2;
@@ -61,14 +69,15 @@ class WebViewCookiePriming {
   // 公开 API
   // ---------------------------------------------------------------------------
 
-  /// 当前 WV 是否已就绪。
-  bool get isPrimed => _isPrimed;
+  /// 当前 WV 是否已就绪(至少有一个域名 primed 过;仅供 devtools 展示)。
+  bool get isPrimed => _primedHosts.isNotEmpty;
 
   /// 确保 WV 中的 critical cookies 与 jar 同步。
   ///
-  /// 详见 §5.2 接口契约。
+  /// 详见 §5.2 接口契约。幂等按 [url] 的 host 判定,不同域名各自独立。
   Future<void> prime(String url) async {
-    if (_isPrimed) return;
+    final host = Uri.tryParse(url)?.host ?? '';
+    if (host.isNotEmpty && _primedHosts.contains(host)) return;
 
     // 同 url 并发去重
     final existing = _primingFuture;
@@ -76,7 +85,7 @@ class WebViewCookiePriming {
       return existing;
     }
 
-    final future = _primeInternal(url);
+    final future = _primeInternal(url, host);
     _primingFuture = future;
     _primingUrl = url;
 
@@ -90,9 +99,9 @@ class WebViewCookiePriming {
     }
   }
 
-  /// 标记 WV 状态为"未就绪"。
+  /// 标记 WV 状态为"未就绪"(全部域名)。
   void invalidate() {
-    _isPrimed = false;
+    _primedHosts.clear();
   }
 
   /// 等待当前正在进行的 priming 完成（如有）。
@@ -104,7 +113,7 @@ class WebViewCookiePriming {
   /// 仅测试用：重置内部状态。
   @visibleForTesting
   void resetForTest() {
-    _isPrimed = false;
+    _primedHosts.clear();
     _primingFuture = null;
     _primingUrl = null;
   }
@@ -113,9 +122,10 @@ class WebViewCookiePriming {
   // 内部实现
   // ---------------------------------------------------------------------------
 
-  Future<void> _primeInternal(String url) async {
+  Future<void> _primeInternal(String url, String host) async {
     final stopwatch = Stopwatch()..start();
-    CookieLogger.priming(event: 'invoked', url: url, isPrimed: _isPrimed);
+    final alreadyPrimed = host.isNotEmpty && _primedHosts.contains(host);
+    CookieLogger.priming(event: 'invoked', url: url, isPrimed: alreadyPrimed);
     // 注册 url 到 observer, 后续 WV 外部 cookie 变化时会对该 url sweep
     CookieStoreObserver.instance.registerUrl(url);
     try {
@@ -251,7 +261,7 @@ class WebViewCookiePriming {
         }
       }
 
-      // 4. verify pass (信息汇总, 不影响 _isPrimed)
+      // 4. verify pass (信息汇总, 不影响 _primedHosts)
       // 用 jar 最新状态 (而非 T0 快照) 避免把"期间被外部删除"误报为 missing
       var verified = 0;
       final missingNames = <String>[];
@@ -266,7 +276,7 @@ class WebViewCookiePriming {
         }
       }
 
-      _isPrimed = true;
+      if (host.isNotEmpty) _primedHosts.add(host);
       final hasMismatch = mismatched.isNotEmpty || missingNames.isNotEmpty;
       debugPrint(
         '[Priming] WV primed for $url: '
@@ -288,7 +298,7 @@ class WebViewCookiePriming {
       );
     } catch (e, s) {
       debugPrint('[Priming] prime $url failed: $e\n$s');
-      _isPrimed = false;
+      if (host.isNotEmpty) _primedHosts.remove(host);
       CookieLogger.priming(
         event: 'failed',
         url: url,

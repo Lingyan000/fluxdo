@@ -15,6 +15,7 @@
   "badge_silverBadge": "Silver badge",
   "myBadges_badgeUnit": " badges",
   "myBadges_empty": "No badges",
+  "myBadges_selectHint": "Select a badge on the left to see details",
   "myBadges_title": "My Badges",
   "myBadges_totalEarned": "Total earned"
 }

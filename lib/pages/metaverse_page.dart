@@ -14,7 +14,16 @@ import '../widgets/cdk_balance_card.dart';
 import '../modules/ldc_reward/ldc_reward.dart';
 
 class MetaversePage extends ConsumerStatefulWidget {
-  const MetaversePage({super.key});
+  const MetaversePage({
+    super.key,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
+
+  /// 平行视界嵌入模式：AppBar 用 [onEmbeddedBack] 关闭当前层，而不是
+  /// 默认的 Navigator pop。
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
 
   @override
   ConsumerState<MetaversePage> createState() => _MetaversePageState();
@@ -162,6 +171,10 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                 SliverAppBar.large(
                   title: Text(context.l10n.metaverse_title),
                   centerTitle: false,
+                  automaticallyImplyLeading: !widget.embeddedMode,
+                  leading: widget.embeddedMode && widget.onEmbeddedBack != null
+                      ? BackButton(onPressed: widget.onEmbeddedBack)
+                      : null,
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -11,7 +11,15 @@ import '../widgets/layout/auto_restore_master_detail_route.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
-enum PaneKind { topic, profile, settings, drafts }
+enum PaneKind {
+  topic,
+  profile,
+  settings,
+  drafts,
+  trustLevelRequirements,
+  metaverse,
+  inviteLinks,
+}
 
 /// 平行视界导航栈里的一层。
 class PaneEntry {
@@ -55,6 +63,45 @@ class PaneEntry {
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
+
+  const PaneEntry.trustLevelRequirements()
+    : kind = PaneKind.trustLevelRequirements,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
+
+  const PaneEntry.metaverse()
+    : kind = PaneKind.metaverse,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null;
+
+  const PaneEntry.inviteLinks()
+    : kind = PaneKind.inviteLinks,
       topicId = null,
       username = null,
       initialTitle = null,
@@ -354,6 +401,27 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
   void pushSettings() {
     state = SelectedTopicState(
       stack: [...state.stack, const PaneEntry.settings()],
+    );
+  }
+
+  /// 打开信任等级要求：压栈，保留之前的层。
+  void pushTrustLevelRequirements() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.trustLevelRequirements()],
+    );
+  }
+
+  /// 打开元宇宙：压栈，保留之前的层。
+  void pushMetaverse() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.metaverse()],
+    );
+  }
+
+  /// 打开邀请链接：压栈，保留之前的层。
+  void pushInviteLinks() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.inviteLinks()],
     );
   }
 
