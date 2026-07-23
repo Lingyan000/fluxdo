@@ -325,6 +325,13 @@ class _LinkTag extends _Tag {
               _extensionFromUrl(attr['href']) ??
               _extensionFromUrl(attr['data-download-href']);
           if (ext != null) href += '.$ext';
+        } else {
+          // 客户端 cook 预览形态(见 _ImageTag 同名注释):没有
+          // data-base62-sha1 时,真实短链在 img 的 data-orig-src。
+          final origSrc = img.attributes['data-orig-src'];
+          if (origSrc != null && origSrc.startsWith('upload://')) {
+            href = origSrc;
+          }
         }
 
         final width = img.attributes['width'];
@@ -372,6 +379,14 @@ class _ImageTag extends _Tag {
       final ext = _extensionFromUrl(attr['src'] ?? pAttr['src']) ??
           _extensionFromUrl(attr['data-orig-src']);
       if (ext != null) src = '$src.$ext';
+    } else {
+      // 刚发帖/编辑后本地乐观渲染的「客户端 cook 预览形态」:src 是占位图
+      // /images/transparent.png,没有 data-base62-sha1,真实短链在
+      // data-orig-src(等服务端返回真 cooked 前一直是这个形态)。
+      final origSrc = attr['data-orig-src'] ?? pAttr['data-orig-src'];
+      if (origSrc != null && origSrc.startsWith('upload://')) {
+        src = origSrc;
+      }
     }
 
     // emoji
