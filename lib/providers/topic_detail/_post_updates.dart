@@ -468,9 +468,50 @@ extension PostUpdateMethods on TopicDetailNotifier {
   void removeBoostFromPost(int postId, int boostId) {
     _updatePostById(postId, (post) {
       final currentBoosts = List<Boost>.from(post.boosts ?? []);
-      final removed = currentBoosts.removeWhere((b) => b.id == boostId);
+      currentBoosts.removeWhere((b) => b.id == boostId);
       // 删除后可能恢复 canBoost，但这取决于是否是自己的 boost
       // 由于 MessageBus 不携带这个信息，保守处理不改变 canBoost
+      return post.copyWith(boosts: currentBoosts);
+    });
+  }
+
+  /// 本地创建 Boost 落地(自己在帖脚发的,与 msgbus 回声幂等去重)。
+  ///
+  /// boost 是弹幕层/列表/action bar 共用的 provider 数据 —— 此前只写
+  /// footer 本地 state,弹幕模式读不到,自己刚发的 boost 直接消失。
+  void applyLocalBoostCreated(int postId, Boost boost) {
+    _updatePostById(postId, (post) {
+      final currentBoosts = List<Boost>.from(post.boosts ?? []);
+      if (currentBoosts.any((b) => b.id == boost.id)) return post;
+      currentBoosts.add(boost);
+      // 自己发的必然消耗本地 boost 权限
+      return post.copyWith(boosts: currentBoosts, canBoost: false);
+    });
+  }
+
+  /// 本地删除 Boost 落地;删自己的才恢复 canBoost(调用方判定)。
+  void applyLocalBoostDeleted(
+    int postId,
+    int boostId, {
+    required bool restoreCanBoost,
+  }) {
+    _updatePostById(postId, (post) {
+      final currentBoosts = List<Boost>.from(post.boosts ?? []);
+      currentBoosts.removeWhere((b) => b.id == boostId);
+      return post.copyWith(
+        boosts: currentBoosts,
+        canBoost: restoreCanBoost ? true : post.canBoost,
+      );
+    });
+  }
+
+  /// 本地更新单条 Boost(举报后补拉详情等);不存在则忽略。
+  void applyLocalBoostChanged(int postId, Boost boost) {
+    _updatePostById(postId, (post) {
+      final currentBoosts = List<Boost>.from(post.boosts ?? []);
+      final index = currentBoosts.indexWhere((b) => b.id == boost.id);
+      if (index == -1) return post;
+      currentBoosts[index] = boost;
       return post.copyWith(boosts: currentBoosts);
     });
   }

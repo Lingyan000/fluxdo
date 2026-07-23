@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:archive/archive.dart' show ZLibEncoder;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -36,6 +35,7 @@ import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
 import '../widgets/common/image_context_menu.dart';
 import '../widgets/common/smart_avatar.dart';
+import '../widgets/post/quote_image_scope.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/content/audio/discourse_audio_player.dart';
 import '../widgets/content/svg_view.dart';
@@ -734,6 +734,20 @@ class FluxdoRenderCallbacks {
   /// 不传 resolver(单图打开、菜单隐藏引用)。heroTag 统一 `${heroNamespace}_img_N`。
   /// [galleryResolver] 惰性:仅在用户点图时调用(见 _buildImageWidget onTap),
   /// build 阶段零解析成本。
+  /// 按设备 dpr 从 srcset 选档(浏览器语义:scale ≥ dpr 的最小档,
+  /// 都不够则取最大档)。Discourse 契约:src=1x 主档,srcset 含 1.5x/2x
+  /// (cooked_processor_mixin optimize_image!)。无 srcset 返回 null
+  /// (调用方回落 src)。3x 屏由此从"690px 拉伸模糊"变 2x 档,与 web
+  /// 端渲染等价;解码纹理量不变(ResizeImage 仍按显示宽 × dpr cap)。
+  static String? _pickSrcsetUrl(ImageRun image, double dpr) {
+    if (image.srcset.isEmpty) return null;
+    final sorted = [...image.srcset]..sort((a, b) => a.scale.compareTo(b.scale));
+    for (final c in sorted) {
+      if (c.scale >= dpr - 0.01) return c.url;
+    }
+    return sorted.last.url;
+  }
+
   static ImageContentBuilder _imageContentBuilder({
     required String heroNamespace,
     _GalleryData Function()? galleryResolver,
@@ -1176,8 +1190,26 @@ class FluxdoRenderCallbacks {
           height: dispH,
           child: Builder(
             builder: (ctx) {
+              // srcset 按 dpr 选档(仅 http(s) src;upload:// 短链解析后的
+              // resolvedUrl 与 srcset 候选不同源,不混用)。cacheKey 保持
+              // resolvedUrl:查看器 thumbnailUrl / Hero 同 key 复用不受
+              // 档位影响。
+              final srcsetUrl = DiscourseImageUtils.isUploadUrl(image.src)
+                  ? null
+                  : _pickSrcsetUrl(
+                      image, MediaQuery.devicePixelRatioOf(ctx));
+              final displayUrl = srcsetUrl == null
+                  ? resolvedUrl
+                  : UrlHelper.resolveUrlWithCdn(srcsetUrl);
+              final dominant = image.dominantColor;
               Widget img = LazyImage(
-                imageProvider: discourseImageProvider(resolvedUrl),
+                imageProvider: discourseImageProvider(displayUrl),
+                placeholderColor: dominant == null
+                    ? null
+                    : Color(
+                        0xFF000000 |
+                            (int.tryParse(dominant, radix: 16) ?? 0xEEEEEE),
+                      ),
                 width: dispW,
                 height: dispH,
                 // 解码恒按**原始宽**(scale 乘之前的声明宽):缩放档切换
@@ -1187,18 +1219,26 @@ class FluxdoRenderCallbacks {
                 // 行为不变。
                 decodeWidth: image.origWidth ?? dispW,
                 heroTag: heroTag,
-                cacheKey: resolvedUrl,
+                cacheKey: displayUrl,
                 onTap: () {
                   // 打开大图前清掉自研选区:图片 tap 被 HeroImage 手势赢走,
                   // 选区层收不到不会自动清(否则返回后选区还残留)。
                   SelectionScope.clearAt(ctx);
-                  // 优先用 lightboxUrl(原图大版本);否则用当前 resolvedUrl(已 CDN 重写)
+                  // Discourse 契约:a.lightbox[href] 就是原图 URL,直接用;
+                  // 只有裸 <img>(无 lightbox 包装)才用 /optimized/→
+                  // /original/ 正则反推兜底(正则对 CDN 变体路径有漏配
+                  // 风险,能不用就不用)。
+                  final hasLightbox = image.lightboxUrl != null;
                   final fullUrl = image.lightboxUrl ?? resolvedUrl;
-                  final resolvedFullUrl =
+                  var resolvedFullUrl =
                       DiscourseImageUtils.isUploadUrl(fullUrl)
                       ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
                             fullUrl)
                       : UrlHelper.resolveUrlWithCdn(fullUrl);
+                  if (!hasLightbox) {
+                    resolvedFullUrl =
+                        DiscourseImageUtils.getOriginalUrl(resolvedFullUrl);
+                  }
                   // 画廊数据在点击时才解析(长帖懒解析场景首次点图会触发
                   // 全 chunk parse,离散动作可接受;之后命中缓存)。
                   // 全帖画廊非空时走画廊 viewer(左右切同帖其他图);否则单图。
@@ -1213,11 +1253,9 @@ class FluxdoRenderCallbacks {
                       galleryIndex < gallery.urls.length;
                   DiscourseImageUtils.openViewer(
                     context: ctx,
-                    imageUrl: DiscourseImageUtils.getOriginalUrl(
-                      resolvedFullUrl,
-                    ),
+                    imageUrl: resolvedFullUrl,
                     heroTag: heroTag,
-                    thumbnailUrl: resolvedUrl,
+                    thumbnailUrl: displayUrl,
                     galleryImages: hasGallery ? gallery.urls : null,
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
@@ -1281,6 +1319,10 @@ class FluxdoRenderCallbacks {
   /// 否则用当前已 CDN 重写的 resolvedUrl;再过一遍 getOriginalUrl 还原
   /// /optimized/ → /original/(与 onTap 打开大图同口径)。getOriginalUrl
   /// 幂等,ImageContextMenu.show 内部还会再调一次,无副作用。
+  ///
+  /// 引用 handler 在 **tap 时刻**经 [QuoteImageScope] 就近现取(flatten
+  /// 产物进全局缓存后,闭包冻结的 [onQuoteImage] 可能指向已销毁页面的
+  /// State);无作用域场景(分享截图等)回落冻结引用。
   static void _showImageContextMenu(
     BuildContext context, {
     required ImageRun image,
@@ -1290,6 +1332,8 @@ class FluxdoRenderCallbacks {
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
   }) {
+    final scope = QuoteImageScope.maybeOf(context);
+    final liveQuoteHandler = scope != null ? scope.handler : onQuoteImage;
     final fullUrl = image.lightboxUrl ?? resolvedUrl;
     final resolvedFullUrl = DiscourseImageUtils.isUploadUrl(fullUrl)
         ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ?? fullUrl)
@@ -1300,7 +1344,7 @@ class FluxdoRenderCallbacks {
       imageUrl: menuUrl,
       post: post,
       topicId: topicId,
-      onQuoteImage: onQuoteImage,
+      onQuoteImage: liveQuoteHandler,
       position: position,
     );
   }
@@ -1392,6 +1436,10 @@ class _AsyncHighlightedCode extends StatefulWidget {
 
 class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   List<HighlightToken>? _tokens;
+  // memoize:span 树只在 tokens / 明暗切换时重建,普通 build 直接复用。
+  // 大代码块 tokensToSpan 是主线程大头,不能每帧重算。
+  TextSpan? _span;
+  bool? _spanIsDark;
 
   @override
   void initState() {
@@ -1404,17 +1452,31 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     super.didUpdateWidget(old);
     if (old.code != widget.code || old.language != widget.language) {
       _tokens = null;
+      _span = null;
       unawaited(_load());
     }
   }
 
   Future<void> _load() async {
+    // 网页端同款熔断:超大块 / lang-auto 大块保持纯 monospace,
+    // 提前短路连 isolate 往返都省掉。
+    if (HighlighterService.instance.shouldSkipHighlight(
+      widget.code,
+      widget.language,
+    )) {
+      return;
+    }
     try {
       final tokens = await HighlighterService.instance.highlightAsync(
         widget.code,
         language: widget.language,
       );
-      if (mounted) setState(() => _tokens = tokens);
+      if (mounted) {
+        setState(() {
+          _tokens = tokens;
+          _span = null;
+        });
+      }
     } catch (_) {
       // 高亮失败:保持 null,fallback 显示纯 monospace
     }
@@ -1434,12 +1496,15 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     if (_tokens == null) {
       return Text(widget.code, style: baseStyle);
     }
-    final span = HighlighterService.instance.tokensToSpan(
-      _tokens!,
-      isDark: isDark,
-      baseStyle: baseStyle,
-    );
-    return Text.rich(span);
+    if (_span == null || _spanIsDark != isDark) {
+      _span = HighlighterService.instance.tokensToSpan(
+        _tokens!,
+        isDark: isDark,
+        baseStyle: baseStyle,
+      );
+      _spanIsDark = isDark;
+    }
+    return Text.rich(_span!);
   }
 }
 
@@ -1466,8 +1531,7 @@ class _MermaidBlock extends StatefulWidget {
   State<_MermaidBlock> createState() => _MermaidBlockState();
 }
 
-class _MermaidBlockState extends State<_MermaidBlock>
-    with SingleTickerProviderStateMixin {
+class _MermaidBlockState extends State<_MermaidBlock> {
   bool _showCode = false;
   bool _shouldLoad = false;
   bool _initialized = false;
@@ -1478,32 +1542,21 @@ class _MermaidBlockState extends State<_MermaidBlock>
   int _sourceIndex = 0;
   final _vController = ScrollController();
   final _hController = ScrollController();
-  AnimationController? _shimmerController;
 
   // 缓存 key:对齐 legacy 'mermaid-${text.hashCode}',用于 LazyLoadScope。
   String get _cacheKey => 'mermaid-${widget.code.hashCode}';
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
-      // 已在本页 LazyLoadScope 里加载过则直接出图、停掉 shimmer。
+      // 已在本页 LazyLoadScope 里加载过则直接出图。
       // 截图模式(离屏渲染)下 VisibilityDetector 永不触发,读 ScreenshotMode
       // 直接立即出图,避免分享成图截到 shimmer 占位。
       if (LazyLoadScope.isLoaded(context, _cacheKey) ||
           ScreenshotMode.of(context)) {
         _shouldLoad = true;
-        _shimmerController?.stop();
       }
     }
   }
@@ -1512,7 +1565,6 @@ class _MermaidBlockState extends State<_MermaidBlock>
   void dispose() {
     _vController.dispose();
     _hController.dispose();
-    _shimmerController?.dispose();
     super.dispose();
   }
 
@@ -1559,38 +1611,11 @@ class _MermaidBlockState extends State<_MermaidBlock>
   }
 
   /// shimmer 占位(铺满固定内容框,1500ms 线性渐变,RepaintBoundary 隔离重绘)。
+  /// controller 由 [_MermaidShimmer] 自持:占位被真图/代码态替换即随 State
+  /// dispose,不会出图后继续空转产帧(旧版 controller 挂在块 State 上,
+  /// 出图后无人 stop,每个已渲染 mermaid 块都是常驻帧生产者)。
   Widget _buildShimmer(ThemeData theme, {bool withMargin = true}) {
-    final controller = _shimmerController;
-    if (controller == null) return const SizedBox.expand();
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, child) {
-          return Container(
-            margin: withMargin ? const EdgeInsets.all(12) : null,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              gradient: LinearGradient(
-                begin: Alignment(-1.0 + 2.0 * controller.value, 0),
-                end: Alignment(-0.5 + 2.0 * controller.value, 0),
-                colors: [
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.3,
-                  ),
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.6,
-                  ),
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.3,
-                  ),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          );
-        },
-      ),
-    );
+    return _MermaidShimmer(theme: theme, withMargin: withMargin);
   }
 
   /// 代码态:HighlighterService 高亮 mermaid 源码,在固定内容框内双向滚动。
@@ -1675,14 +1700,19 @@ class _MermaidBlockState extends State<_MermaidBlock>
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: CachedNetworkImage(
+        child: Image(
           key: ValueKey('$imageUrl-$_retryCount'),
-          imageUrl: imageUrl,
-          cacheManager: ExternalImageCacheManager(),
+          image: BlobImageProvider(
+            imageUrl,
+            bucket: BlobImageCache.externalBucket,
+          ),
           fit: BoxFit.contain,
-          placeholder: (context, url) =>
-              _buildShimmer(theme, withMargin: false),
-          errorWidget: (context, url, error) {
+          gaplessPlayback: true,
+          frameBuilder: (context, child, frame, wasSync) {
+            if (wasSync || frame != null) return child;
+            return _buildShimmer(theme, withMargin: false);
+          },
+          errorBuilder: (context, error, stack) {
             if (!onInk) {
               // 主源失败 → 下一帧切备源(build 内不能直接 setState)
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1857,6 +1887,72 @@ class _MermaidBlockState extends State<_MermaidBlock>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// mermaid shimmer 占位:controller 自持,占位从树上移除即 dispose,
+/// 保证"占位在=动画在,占位走=帧调度停"。
+class _MermaidShimmer extends StatefulWidget {
+  const _MermaidShimmer({required this.theme, required this.withMargin});
+
+  final ThemeData theme;
+  final bool withMargin;
+
+  @override
+  State<_MermaidShimmer> createState() => _MermaidShimmerState();
+}
+
+class _MermaidShimmerState extends State<_MermaidShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Container(
+            margin: widget.withMargin ? const EdgeInsets.all(12) : null,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              gradient: LinearGradient(
+                begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
+                end: Alignment(-0.5 + 2.0 * _controller.value, 0),
+                colors: [
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.6,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

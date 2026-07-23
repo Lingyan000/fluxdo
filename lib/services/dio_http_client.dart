@@ -52,22 +52,42 @@ class DioHttpClient extends http.BaseClient {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
   };
 
-  /// 全局图片下载并发上限。
+  /// 图片下载并发通道(下载侧按内容域分队,与缓存 bucket 分池同思路)。
   ///
-  /// flutter_cache_manager 的 WebHelper 虽然每个 manager 限 10 并发,但
-  /// 内容 / emoji / sticker / 外部 4 个 manager 共享同一条网络:emoji 与
-  /// sticker 面板同时 keep-alive、再叠加贴内图片时,瞬时 30+ 并发会造成
-  /// TLS 握手风暴、带宽互相挤占和 CDN 限流(429→裂图)。这里在 Dio 层做
-  /// 全局兜底。
+  /// 曾是单一全局 8 槽 FIFO —— cache_manager 时代每个 manager 自带 10
+  /// 并发互相稀释,问题不显;全量走 blob 单一入口后,贴纸面板一开
+  /// (30+ 张几百 KB~几 MB 动图 + 批量预取)就把 8 槽全占满,正文图
+  /// 排在几十个大文件后面,表现为"贴纸一多正文图加载不出来"。
   ///
-  /// 实现上 [send] 会把 body **完整读进内存后**才返回并在 finally 释放槽:
-  /// - 并发槽覆盖整个 body 传输阶段,限流不是只限"拿到响应头";
-  /// - WebHelper 对非 200/304 响应直接 throw、从不消费 body 流,如果释放
-  ///   时机挂在"调用方读完流"上,每个失败响应都会泄漏一个槽,8 次 404/429
-  ///   之后全 app 图片下载死锁。读完再返回让释放变成确定性的。
-  /// 经此 client 的都是图片/小文件(cache manager 专用),8 并发 × 几 MB
-  /// 的瞬时内存可控;进度事件本来就没有 UI 在消费,无损失。
-  static final _Semaphore _downloadSemaphore = _Semaphore(8);
+  /// 修法 = 按内容域分通道,物理隔离:
+  /// - **small 12 槽**:emoji 等 KB 级小文件。耗时被 RTT 主导而非带宽,
+  ///   高并发是纯赚(连接复用后无 TLS 风暴,浏览器 H2 加载 emoji 同为
+  ///   几十路);6 槽跑 200 张 ≈ 200/6×RTT≈5s,12 槽砍半。
+  /// - **content 6 槽**:正文/头像/原图/外部图(几十 KB~几 MB 混合,
+  ///   带宽敏感,并发过高互相挤占)。
+  /// - **sticker 3 槽**:贴纸原文件(面板预取型、单文件大),独立通道
+  ///   防挤占内容。
+  static final _Semaphore _smallSemaphore = _Semaphore(12);
+  static final _Semaphore _contentSemaphore = _Semaphore(6);
+  static final _Semaphore _stickerSemaphore = _Semaphore(3);
+
+  /// [send](http.BaseClient 接口,现无常驻调用方)沿用内容通道。
+  static _Semaphore get _downloadSemaphore => _contentSemaphore;
+
+  static _Semaphore _semaphoreOf(DownloadChannel channel) => switch (channel) {
+        DownloadChannel.small => _smallSemaphore,
+        DownloadChannel.content => _contentSemaphore,
+        DownloadChannel.sticker => _stickerSemaphore,
+      };
+
+  /// 把仍在 [channel] 等待队列中的 [url] 提到高优先级(滚入视野)。
+  /// 在途/未排队/已完成均为无操作 —— 幂等,调用方无需判断状态。
+  static void bumpPending(DownloadChannel channel, String url) =>
+      _semaphoreOf(channel).bump(url);
+
+  /// 把仍在 [channel] 等待队列中的 [url] 沉到低优先级队尾(滚出视野)。
+  static void sinkPending(DownloadChannel channel, String url) =>
+      _semaphoreOf(channel).sink(url);
 
   /// 提取 [AppConstants.baseUrl] 的 host(例如 `linux.do`),用于判断主域。
   /// 注意是 host 比对而不是 URL prefix 比对 —— 子域(`auth.linux.do` 等)
@@ -85,7 +105,10 @@ class DioHttpClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    await _downloadSemaphore.acquire();
+    await _downloadSemaphore.acquire(
+      request.url.toString(),
+      DownloadPriority.normal,
+    );
     try {
       // 转换 headers
       final headers = <String, dynamic>{};
@@ -170,31 +193,145 @@ class DioHttpClient extends http.BaseClient {
   void close() {
     // 不关闭共享的 Dio 实例
   }
+
+  /// 直接拉取 URL 的完整字节(BlobImageCache 专用):按 [channel] 选
+  /// 并发通道、同一套双 dio 分流,流式读 body 逐 chunk 上报进度。
+  ///
+  /// 非 200 抛 [http.ClientException];[onProgress] 的 total 在响应无
+  /// content-length(或 gzip)时为 null。
+  Future<Uint8List> fetchBytes(
+    Uri url, {
+    DownloadChannel channel = DownloadChannel.content,
+    DownloadPriority priority = DownloadPriority.normal,
+    void Function(int received, int? total)? onProgress,
+  }) async {
+    final semaphore = _semaphoreOf(channel);
+    await semaphore.acquire(url.toString(), priority);
+    try {
+      final isMainDomain = _isMainDomain(url);
+      final extra = <String, dynamic>{};
+      if (isMainDomain) {
+        extra[WebViewHttpAdapter.resourceKindExtraKey] =
+            WebViewHttpAdapter.resourceKindImage;
+        extra[WebViewHttpAdapter.cookieModeExtraKey] =
+            WebViewHttpAdapter.cookieModeReadOnly;
+      }
+      final response = await _selectDio(url).get<dio.ResponseBody>(
+        url.toString(),
+        options: dio.Options(
+          responseType: dio.ResponseType.stream,
+          extra: extra,
+          validateStatus: (status) => true,
+        ),
+      );
+      if (response.statusCode != 200) {
+        throw http.ClientException(
+          'HTTP ${response.statusCode} for $url',
+          url,
+        );
+      }
+      final contentLength = int.tryParse(
+        response.headers.value('content-length') ?? '',
+      );
+      final total =
+          (contentLength != null && contentLength > 0) ? contentLength : null;
+
+      final builder = BytesBuilder(copy: false);
+      final body = response.data;
+      if (body != null) {
+        await for (final chunk in body.stream) {
+          builder.add(chunk);
+          onProgress?.call(builder.length, total);
+        }
+      }
+      return builder.takeBytes();
+    } on dio.DioException catch (e) {
+      throw http.ClientException('Dio error: ${e.message}', url);
+    } finally {
+      semaphore.release();
+    }
+  }
 }
 
-/// 简单异步信号量,限制全局图片下载并发。
+/// 图片下载并发通道(见 [DioHttpClient._smallSemaphore] 注释)。
+enum DownloadChannel {
+  /// KB 级小文件(emoji)—— RTT 主导,高并发纯赚。
+  small,
+
+  /// 正文/头像/原图/外部图 —— 带宽敏感的混合内容。
+  content,
+
+  /// 贴纸原文件 —— 面板预取型、单文件大,独立通道防挤占内容。
+  sticker,
+}
+
+/// 下载请求优先级(Telegram FileLoaderPriorityQueue 的两级简化)。
+enum DownloadPriority {
+  /// 在视口内 / 用户主动操作(查看器、保存、分享)。
+  high,
+
+  /// 预建 / 预取 / 已滚出视口。
+  normal,
+}
+
+/// 两级优先级信号量:释放槽位时 high 队列先行;同级 FIFO。
+///
+/// 配合 [DioHttpClient.bumpPending] / [DioHttpClient.sinkPending]:
+/// 排队中的请求可随视野变化在两级间迁移(滚入视野 → high 插队,
+/// 滚出视野 → 沉回 normal 队尾),在途请求不动 —— 已下载字节写盘
+/// 即缓存,取消只会白扔投资(我们没有 TG 的 .temp 断点续传,几 MB
+/// 以下文件也不值得建)。
 class _Semaphore {
   _Semaphore(this.maxCount);
 
   final int maxCount;
   int _current = 0;
-  final _queue = <Completer<void>>[];
+  final _high = <_Waiter>[];
+  final _normal = <_Waiter>[];
 
-  Future<void> acquire() {
+  Future<void> acquire(String key, DownloadPriority priority) {
     if (_current < maxCount) {
       _current++;
       return Future.value();
     }
-    final c = Completer<void>();
-    _queue.add(c);
-    return c.future;
+    final w = _Waiter(key);
+    (priority == DownloadPriority.high ? _high : _normal).add(w);
+    return w.completer.future;
   }
 
   void release() {
-    if (_queue.isNotEmpty) {
-      _queue.removeAt(0).complete();
+    final queue = _high.isNotEmpty ? _high : _normal;
+    if (queue.isNotEmpty) {
+      queue.removeAt(0).completer.complete();
     } else {
       _current--;
     }
   }
+
+  /// 把排队中的 [key] 提到 high 队尾(已在 high / 未在队列则无操作)。
+  void bump(String key) {
+    final i = _normal.indexWhere((w) => w.key == key);
+    if (i < 0) return;
+    _high.add(_normal.removeAt(i));
+  }
+
+  /// 把排队中的 [key] 沉到 normal 队尾(滚出视野的预建请求让路)。
+  void sink(String key) {
+    final i = _high.indexWhere((w) => w.key == key);
+    if (i >= 0) {
+      _normal.add(_high.removeAt(i));
+      return;
+    }
+    // 已在 normal:移到队尾(后来的视野内请求先走)
+    final j = _normal.indexWhere((w) => w.key == key);
+    if (j >= 0 && j != _normal.length - 1) {
+      _normal.add(_normal.removeAt(j));
+    }
+  }
+}
+
+class _Waiter {
+  _Waiter(this.key);
+  final String key;
+  final completer = Completer<void>();
 }

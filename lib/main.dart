@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 import 'package:window_manager/window_manager.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 import 'pages/topics_page.dart';
 import 'pages/data_management_page.dart';
@@ -54,6 +53,9 @@ import 'services/cf_challenge_logger.dart';
 import 'services/browser_trust_coordinator.dart';
 import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show FlattenCache, ParagraphLayoutCache;
+
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
 import 'services/windows_protocol_registrar_stub.dart'
@@ -77,6 +79,7 @@ import 'providers/connectivity_provider.dart';
 import 'utils/dialog_utils.dart';
 import 'utils/frame_jank_monitor.dart';
 import 'utils/image_decode_gate.dart';
+import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'utils/time_utils.dart';
 
@@ -149,6 +152,16 @@ Future<void> main() async {
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
   NativeAnimatedImageProvider.firstFrameGate = ImageDecodeGate.run;
 
+  // FlattenCache / ParagraphLayoutCache miss 的成本上报 span 账单
+  // (flat:/tlay: 前缀,与 parse:/lay:/pnt: 同一管道;监控关闭时
+  // noteSpan 空操作)。tlay:miss 大量出现 = 直绘布局缓存失效异常。
+  FlattenCache.profileHook = (micros) {
+    FrameJankMonitor.noteSpan('flat:miss', micros);
+  };
+  ParagraphLayoutCache.profileHook = (micros) {
+    FrameJankMonitor.noteSpan('tlay:miss', micros);
+  };
+
   // 触摸重采样已定案关闭(回归框架默认 false)。曾为治"120Hz 触摸 ×
   // 60Hz 显示"的滚动微抖开启(96a94f1),但 SDK 的重采样偏移是按 60Hz
   // 最坏情况校准的固定 -38ms(gestures/binding.dart _defaultSamplingOffset,
@@ -175,14 +188,6 @@ Future<void> main() async {
   );
   if (!kReleaseMode && profileWidgetBuilds) {
     debugProfileBuildsEnabled = true;
-  }
-
-  // 桌面端(Windows/Linux)图片缓存索引走 sqlite,需 FFI 提供 sqlite3;移动端 /
-  // macOS 用各自原生 sqflite(flutter_cache_manager 已带),无需处理。必须在任何
-  // 数据库操作(CacheManager / migration)之前设好 databaseFactory。
-  if (Platform.isWindows || Platform.isLinux) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
   }
 
   // Release 模式下禁用 debugPrint 输出：全项目有数百处 debugPrint 调试输出，
@@ -362,11 +367,9 @@ Future<void> main() async {
 
   // 冷启动自动清除图片缓存（如果用户开启了该选项）
   if (prefs.getBool('pref_clear_cache_on_exit') == true) {
-    Future.wait([
-      DiscourseCacheManager().emptyCache(),
-      EmojiCacheManager().emptyCache(),
-      ExternalImageCacheManager().emptyCache(),
-    ]).then((_) => CacheSizeService.deleteImageCacheDirs()).ignore();
+    BlobImageCache.clearAll()
+        .then((_) => CacheSizeService.deleteImageCacheDirs())
+        .ignore();
   }
 
   // 应用竖屏锁定设置（仅移动端）
@@ -402,6 +405,16 @@ Future<void> main() async {
     'event': 'app_start',
     'message': '应用启动',
   });
+
+  // 启动后台维护:迁移 trash 目录清扫(v7/v8 rename 出来的待删区)+
+  // blob 缓存过期扫描(24h 节流)。都在首帧渲染完 + 60s 空闲后跑,
+  // 重活全在 Isolate.run,不与启动/首屏抢资源。
+  unawaited(() async {
+    await WidgetsBinding.instance.waitUntilFirstFrameRasterized;
+    await Future.delayed(const Duration(seconds: 60));
+    await MigrationService.purgeTrash();
+    await BlobImageCache.sweep(prefs);
+  }());
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {
@@ -1092,6 +1105,26 @@ class _MainPageState extends ConsumerState<MainPage>
         unawaited(_resumeFromBackground());
       });
     }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    // 系统内存压力统一入口:iOS 内存警告 / Android onTrimMemory /
+    // 金标联盟公平运行内存 TRIM 广播(FairMemoryReceiver 翻译成同一
+    // memoryPressure 通道)。imageCache(最大头,256MB 上限)由框架
+    // PaintingBinding.handleMemoryPressure 自清,这里补自建缓存:
+    // - RenderParseCache:纯数据,清空安全;
+    // - FlattenCache:引用计数设计,在用条目标 dead 延迟释放,安全;
+    // - ParagraphLayoutCache 刻意不清:evictAll 会 dispose 在屏
+    //   RenderObject 仍持有的 ui.Paragraph(paint 不重走 layout,
+    //   仅 reassemble 全量重建场景安全),且量级仅数 MB 不值得冒险。
+    RenderParseCache.clear();
+    FlattenCache.evictAll();
+    // 公平内存机制下持续增长会触达查杀线,先把监控现场落盘(未启用
+    // 或无记录时内部直接返回,静默失败)。
+    unawaited(FrameJankMonitor.persistSnapshot());
+    debugPrint('[MainPage] 内存压力:已清理解析/flatten 缓存');
   }
 
   Future<void> _resumeFromBackground() async {

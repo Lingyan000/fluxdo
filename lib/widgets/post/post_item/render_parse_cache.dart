@@ -123,6 +123,13 @@ class RenderParseCache {
       map.remove(map.keys.first);
     }
   }
+
+  /// 全清(系统内存压力响应)。纯数据缓存无 dispose 语义,清空安全:
+  /// 在屏帖子 State 自持解析产物引用不受影响,滚回来 miss 重解析即可。
+  static void clear() {
+    _short.clear();
+    _long.clear();
+  }
 }
 
 class _ShortEntry {

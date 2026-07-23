@@ -9,18 +9,26 @@ class TopicSessionState {
   /// 话题标题（用于基于话题的私信预填标题等）
   final String? topicTitle;
 
+  /// 帖级临时关闭弹幕的帖子 id(全局弹幕偏好开启时的单帖覆盖)。
+  /// 下沉到会话层:短帖 PostItem 与长帖 header/chunk/footer 是不同
+  /// widget,State 级开关无法共享,且随 sliver 回收丢失。
+  final Set<int> danmakuOffPostIds;
+
   const TopicSessionState({
     this.readPostNumbers = const {},
     this.topicTitle,
+    this.danmakuOffPostIds = const {},
   });
 
   TopicSessionState copyWith({
     Set<int>? readPostNumbers,
     String? topicTitle,
+    Set<int>? danmakuOffPostIds,
   }) {
     return TopicSessionState(
       readPostNumbers: readPostNumbers ?? this.readPostNumbers,
       topicTitle: topicTitle ?? this.topicTitle,
+      danmakuOffPostIds: danmakuOffPostIds ?? this.danmakuOffPostIds,
     );
   }
 }
@@ -49,6 +57,19 @@ class TopicSessionNotifier extends Notifier<TopicSessionState> {
   void setTopicTitle(String? title) {
     if (title == null || title.isEmpty || state.topicTitle == title) return;
     state = state.copyWith(topicTitle: title);
+  }
+
+  /// 帖级临时弹幕开关(off=true 表示该帖临时关闭弹幕、回退列表展示)
+  void setDanmakuOff(int postId, bool off) {
+    final current = state.danmakuOffPostIds;
+    if (off == current.contains(postId)) return;
+    final updated = {...current};
+    if (off) {
+      updated.add(postId);
+    } else {
+      updated.remove(postId);
+    }
+    state = state.copyWith(danmakuOffPostIds: updated);
   }
 }
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -227,14 +228,18 @@ class MigrationService {
     // 文件会永久占据磁盘(可达数百 MB)。目录里绝大多数文件都是这种孤儿,
     // 不值得为少数已重新入索引的文件做逐文件比对 —— 整目录删除,连同刚起步
     // 的 sqlite 索引 db 一起删,全部从零重建(纯缓存,按需重新下载)。
-    // 运行时机在 runApp 之前,CacheManager 尚未 open,无并发读写。
+    //
+    // **防卡顿契约**(有升级卡顿的用户反馈,疑似此处):迁移跑在 runApp
+    // 之前,绝不能同步递归删数百 MB(几千次文件系统调用)。改为
+    // rename 成 .trash(原子,毫秒级),真正的递归删除由 [purgeTrash]
+    // 在启动后台完成;被杀断也无害,下次启动重新清扫。
     Migration(
       key: 'image_cache_orphan_purge_v7',
       name: 'Purge image cache directories',
       shouldRun: (prefs) async {
         try {
           final tempDir = await getTemporaryDirectory();
-          for (final key in kImageCacheKeys) {
+          for (final key in kLegacyImageCacheKeys) {
             if (await io.Directory(p.join(tempDir.path, key)).exists()) {
               return true;
             }
@@ -247,25 +252,138 @@ class MigrationService {
       run: () async {
         final tempDir = await getTemporaryDirectory();
         final supportDir = await getApplicationSupportDirectory();
-        for (final key in kImageCacheKeys) {
-          try {
-            final cacheDir = io.Directory(p.join(tempDir.path, key));
-            if (await cacheDir.exists()) {
-              await cacheDir.delete(recursive: true);
-            }
-            // sqlite 索引一并删除,避免残留指向已删文件的 dangling 条目。
-            for (final suffix in const ['.db', '.db-wal', '.db-shm']) {
-              final f = io.File(p.join(supportDir.path, '$key$suffix'));
-              if (await f.exists()) await f.delete();
-            }
-            debugPrint('[Migration v7] 已清空缓存: $key');
-          } catch (e) {
-            debugPrint('[Migration v7] 清理 $key 失败 (忽略): $e');
+        for (final key in kLegacyImageCacheKeys) {
+          await _trashCacheDir(tempDir, key);
+          await _deleteCacheDb(supportDir, key);
+        }
+      },
+    ),
+    // v8: emoji 缓存迁往 BlobImageCache(零 sqlite 寻址),旧
+    // emojiImageCache 整体废弃 —— 直接删不迁移(纯缓存,按需重下)。
+    // 同 v7 的防卡顿契约:rename → 后台删。
+    Migration(
+      key: 'emoji_blob_cache_v8',
+      name: 'Retire legacy emoji image cache',
+      shouldRun: (prefs) async {
+        try {
+          final tempDir = await getTemporaryDirectory();
+          if (await io.Directory(
+            p.join(tempDir.path, kLegacyEmojiCacheKey),
+          ).exists()) {
+            return true;
           }
+          final supportDir = await getApplicationSupportDirectory();
+          return await io.File(
+            p.join(supportDir.path, '$kLegacyEmojiCacheKey.db'),
+          ).exists();
+        } catch (_) {
+          return false;
+        }
+      },
+      run: () async {
+        final tempDir = await getTemporaryDirectory();
+        final supportDir = await getApplicationSupportDirectory();
+        await _trashCacheDir(tempDir, kLegacyEmojiCacheKey);
+        await _deleteCacheDb(supportDir, kLegacyEmojiCacheKey);
+      },
+    ),
+    // v9: 图片缓存全量迁入 BlobImageCache(零 sqlite 寻址),
+    // flutter_cache_manager 退役 —— 三个旧缓存(正文/贴纸/外部)目录 +
+    // db 三件套废弃。直接删不迁移(纯缓存按需重下);同 v7 防卡顿契约。
+    Migration(
+      key: 'image_cache_blob_unification_v9',
+      name: 'Retire flutter_cache_manager image caches',
+      shouldRun: (prefs) async {
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final supportDir = await getApplicationSupportDirectory();
+          for (final key in kLegacyImageCacheKeys) {
+            if (await io.Directory(p.join(tempDir.path, key)).exists()) {
+              return true;
+            }
+            if (await io.File(p.join(supportDir.path, '$key.db')).exists()) {
+              return true;
+            }
+          }
+          return false;
+        } catch (_) {
+          return false;
+        }
+      },
+      run: () async {
+        final tempDir = await getTemporaryDirectory();
+        final supportDir = await getApplicationSupportDirectory();
+        for (final key in kLegacyImageCacheKeys) {
+          await _trashCacheDir(tempDir, key);
+          await _deleteCacheDb(supportDir, key);
         }
       },
     ),
   ];
+
+  /// 把缓存目录原子 rename 成 `<key>.<millis>.trash`,加入待删清单。
+  /// rename 同卷内是纯目录项操作,与目录大小无关(毫秒级)。
+  static Future<void> _trashCacheDir(io.Directory tempDir, String key) async {
+    try {
+      final dir = io.Directory(p.join(tempDir.path, key));
+      if (!await dir.exists()) return;
+      final trashPath = p.join(
+        tempDir.path,
+        '$key.${DateTime.now().millisecondsSinceEpoch}$_trashSuffix',
+      );
+      await dir.rename(trashPath);
+      debugPrint('[Migration] 已移入待删区: $key');
+    } catch (e) {
+      debugPrint('[Migration] trash $key 失败 (忽略): $e');
+    }
+  }
+
+  /// 删除 sqlite 索引三件套(小文件,同步删无压力)。
+  static Future<void> _deleteCacheDb(
+    io.Directory supportDir,
+    String key,
+  ) async {
+    for (final suffix in const ['.db', '.db-wal', '.db-shm']) {
+      try {
+        final f = io.File(p.join(supportDir.path, '$key$suffix'));
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        debugPrint('[Migration] 删除 $key$suffix 失败 (忽略): $e');
+      }
+    }
+  }
+
+  static const String _trashSuffix = '.trash';
+
+  /// 后台清扫 Temporary 下的 `*.trash` 目录(v7/v8 rename 出来的,以及
+  /// 上次启动被杀断残留的)。递归删除跑在 [Isolate.run],主 isolate 与
+  /// 启动路径零负担;调用方应在首帧后空闲时机 unawaited 触发。
+  static Future<void> purgeTrash() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempPath = tempDir.path;
+      final deleted = await Isolate.run(() {
+        var count = 0;
+        for (final e in io.Directory(tempPath).listSync()) {
+          if (e is! io.Directory || !e.path.endsWith(_trashSuffix)) continue;
+          try {
+            e.deleteSync(recursive: true);
+            count++;
+          } catch (_) {}
+        }
+        return count;
+      });
+      if (deleted > 0) {
+        debugPrint('[Migration] 后台清扫 $deleted 个 .trash 目录');
+      }
+    } catch (e) {
+      debugPrint('[Migration] purgeTrash 失败 (忽略): $e');
+    }
+  }
+
+  /// 全部迁移完成标记 key(供备份服务排除,数据驱动不抄常量)。
+  static List<String> get migrationKeys =>
+      [for (final m in _migrations) m.key, 'cookie_domain_migration_v2'];
 
   /// 判断是否为 v0.1.x 以前的老用户。
   ///

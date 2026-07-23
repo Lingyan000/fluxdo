@@ -120,6 +120,9 @@
       }
     }
   },
+  "pm_recipientHint": "搜尋用戶或群組",
+  "pm_newTitle": "新建私信",
+  "pm_noRecipient": "請至少新增一個收件人",
   "post_sendPmTitle": "發送私信給 @{username}",
   "@post_sendPmTitle": {
     "placeholders": {

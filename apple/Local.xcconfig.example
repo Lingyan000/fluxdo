@@ -2,12 +2,25 @@
 //
 // This file is intentionally ignored by git so each developer can keep
 // personal signing settings out of the shared Xcode project files.
+//
+// 不创建本文件时的默认行为：macOS 走 adhoc 签名（identity = -），无需任何
+// 证书即可构建运行。缺点：每次 rebuild 后 CDHash 变化，钥匙串
+// （flutter_secure_storage）会把新构建当成新 app，反复弹授权窗。
 
-// 用法 1：填入 Apple Team ID，正常签名（最常见）
-FLUXDO_APPLE_DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// 用法 1：自签代码签名证书（无需 Apple ID，推荐日常开发使用）。
+// 证书 leaf 稳定后钥匙串按证书授信，「始终允许」一次后 rebuild 不再弹窗。
+// 生成方式见 docs/development.md「macOS 代码签名」一节。
+// FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = FluxDO Code Signing
+// FLUXDO_APPLE_CODE_SIGN_STYLE = Manual
+// FLUXDO_APPLE_CODE_SIGNING_ALLOWED = YES
 
-// 用法 2：本地无 Apple Team 时，完全关闭 macOS 签名以便本地调试
-// （把上面那行删掉或注释掉，然后取消下列 3 行的注释）
+// 用法 2：有 Apple Team 时，填入 Team ID 正常签名（iOS 真机也用这个）
+// FLUXDO_APPLE_DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = Apple Development
+// FLUXDO_APPLE_CODE_SIGN_STYLE = Automatic
+
+// 用法 3：完全关闭 macOS 签名（不推荐：entitlements 不会注入 .app，
+// file_picker 等依赖 entitlement 自检的插件会报 ENTITLEMENT_REQUIRED_WRITE）
 // FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX =
-// FdLUXDO_APPLE_CODE_SIGN_STYLE = Manual
+// FLUXDO_APPLE_CODE_SIGN_STYLE = Manual
 // FLUXDO_APPLE_CODE_SIGNING_ALLOWED = NO

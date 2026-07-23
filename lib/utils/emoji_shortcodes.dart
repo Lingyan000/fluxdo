@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 final RegExp emojiShortcodeRegex = RegExp(r':([^\s:]+(?:\:t\d)?):');
 
@@ -94,6 +95,47 @@ TextSelection normalizeEmojiShortcodeSelection(
     offset: normalizedOffset,
     affinity: selection.affinity,
   );
+}
+
+/// 对 [controller] 执行一次"表情键盘退格":
+/// 有选区删选区;光标前是完整 `:shortcode:` 时整体删除
+/// (复用 [expandRangeToEmojiShortcodeBoundaries],与
+/// [EmojiShortcodeDeleteFormatter] 的输入语义一致);
+/// 否则按字素簇删一个字符(防拆 Unicode emoji 代理对)。
+/// 返回是否发生了修改。
+bool deleteBackwardWithEmojiShortcodes(TextEditingController controller) {
+  final text = controller.text;
+  final selection = controller.selection;
+  if (text.isEmpty) return false;
+
+  if (selection.isValid && !selection.isCollapsed) {
+    final newText = text.replaceRange(selection.start, selection.end, '');
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: selection.start),
+    );
+    return true;
+  }
+
+  final cursor = selection.isValid ? selection.end : text.length;
+  if (cursor <= 0) return false;
+
+  final before = text.substring(0, cursor);
+  final lastChar = before.characters.last;
+  var start = cursor - lastChar.length;
+
+  final expanded = expandRangeToEmojiShortcodeBoundaries(
+    text,
+    TextRange(start: start, end: cursor),
+  );
+  start = expanded.start;
+
+  final newText = text.replaceRange(start, cursor, '');
+  controller.value = TextEditingValue(
+    text: newText,
+    selection: TextSelection.collapsed(offset: start),
+  );
+  return true;
 }
 
 class EmojiShortcodeDeleteFormatter extends TextInputFormatter {

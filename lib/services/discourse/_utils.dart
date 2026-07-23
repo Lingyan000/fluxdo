@@ -1,24 +1,30 @@
 part of 'discourse_service.dart';
 
+/// 把 /emojis.json 原始数据解析成分组模型(纯函数,网络与快照回放同路)。
+Map<String, List<Emoji>> parseEmojiGroups(Map<String, dynamic> data) {
+  final Map<String, List<Emoji>> emojiGroups = {};
+  data.forEach((group, emojis) {
+    if (emojis is List) {
+      emojiGroups[group] = emojis
+          .map((e) => Emoji.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+  });
+  return emojiGroups;
+}
+
 /// 工具方法
 mixin _UtilsMixin on _DiscourseServiceBase {
   /// 获取所有表情列表
   Future<Map<String, List<Emoji>>> getEmojis() async {
+    return parseEmojiGroups(await getEmojisRaw());
+  }
+
+  /// 获取 /emojis.json 原始数据(供 SWR 快照落盘/比对用)。
+  Future<Map<String, dynamic>> getEmojisRaw() async {
     try {
       final response = await _dio.get('/emojis.json');
-      final data = response.data as Map<String, dynamic>;
-
-      final Map<String, List<Emoji>> emojiGroups = {};
-
-      data.forEach((group, emojis) {
-        if (emojis is List) {
-          emojiGroups[group] = emojis
-              .map((e) => Emoji.fromJson(e as Map<String, dynamic>))
-              .toList();
-        }
-      });
-
-      return emojiGroups;
+      return response.data as Map<String, dynamic>;
     } catch (e) {
       if (e is DioException) {
         throw _handleDioError(e);

@@ -71,7 +71,16 @@ class _BoostDanmakuState extends State<BoostDanmaku>
   Duration _lastElapsed = Duration.zero;
 
   final List<_FlyingDanmaku> _flying = [];
-  int _nextGroupIndex = 0;
+
+  /// 待发射队列(groupingKey,FIFO)。此前是 _nextGroupIndex 单调指针,
+  /// 隐含"组只会追加"假设 —— 新 boost 内容与已放完的组相同时组数不变、
+  /// 指针已到末尾,永远不再发射。改为队列后按"含未见过的 boost"补队。
+  final List<String> _pendingKeys = [];
+
+  /// 已进过队的 boost id:didUpdateWidget 时凭差集识别新到的 boost,
+  /// 把它所在的组(含合入已有组的情况)重新补进发射队列。
+  final Set<int> _seenBoostIds = {};
+
   double _secondsUntilNextLaunch = 0;
   late List<double> _trackLastRightEdge;
   double _viewportWidth = 0;
@@ -83,11 +92,13 @@ class _BoostDanmakuState extends State<BoostDanmaku>
   final math.Random _rng = math.Random();
 
   late List<BoostGroup> _groups;
+  Map<String, BoostGroup> _groupsByKey = const {};
 
   @override
   void initState() {
     super.initState();
-    _groups = groupBoostsByContent(widget.boosts);
+    _rebuildGroups();
+    _pendingKeys.addAll(_groups.map((g) => g.groupingKey));
     _trackCount = widget.maxTrackCount.clamp(1, widget.maxTrackCount);
     _trackLastRightEdge = List.filled(_trackCount, -double.infinity);
     _ticker = createTicker(_onTick);
@@ -101,17 +112,44 @@ class _BoostDanmakuState extends State<BoostDanmaku>
     _syncTicker();
   }
 
+  void _rebuildGroups() {
+    _groups = groupBoostsByContent(widget.boosts);
+    _groupsByKey = {for (final g in _groups) g.groupingKey: g};
+    _seenBoostIds.addAll(widget.boosts.map((b) => b.id));
+  }
+
   @override
   void didUpdateWidget(covariant BoostDanmaku oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.boosts != widget.boosts) {
-      final oldGroupCount = _groups.length;
-      _groups = groupBoostsByContent(widget.boosts);
-      // 如果新增了 group，继续从原指针往后发；不回放已发过的
-      if (_groups.length < oldGroupCount) {
-        _nextGroupIndex = _nextGroupIndex.clamp(0, _groups.length);
+      final newIds = widget.boosts
+          .map((b) => b.id)
+          .where((id) => !_seenBoostIds.contains(id))
+          .toSet();
+      _rebuildGroups();
+      // 组已消失(boost 被删)的排队项出队
+      _pendingKeys.removeWhere((key) => !_groupsByKey.containsKey(key));
+      // 含新 boost 的组补进队列:全新组、和"新 boost 合入已放完的组"
+      // 都会重飞一次(展示最新 ×count)
+      for (final group in _groups) {
+        if (_pendingKeys.contains(group.groupingKey)) continue;
+        if (group.boosts.any((b) => newIds.contains(b.id))) {
+          _pendingKeys.add(group.groupingKey);
+        }
       }
-      _syncTicker();
+      _ensureTicker(); // 新 boost 到达:停表状态下重新起飞
+    }
+  }
+
+  /// Ticker 生命周期唯一裁决点:可见 且 还有活(飞行中/待发射)才跑。
+  void _ensureTicker() {
+    final hasWork = _flying.isNotEmpty || _pendingKeys.isNotEmpty;
+    final shouldRun = _visible && _groups.isNotEmpty && hasWork;
+    if (shouldRun && !_ticker.isActive) {
+      _lastElapsed = Duration.zero;
+      _ticker.start();
+    } else if (!shouldRun && _ticker.isActive) {
+      _ticker.stop();
     }
   }
 
@@ -128,8 +166,7 @@ class _BoostDanmakuState extends State<BoostDanmaku>
     _syncTicker();
   }
 
-  bool get _hasAnimationWork =>
-      _nextGroupIndex < _groups.length || _flying.isNotEmpty;
+  bool get _hasAnimationWork => _pendingKeys.isNotEmpty || _flying.isNotEmpty;
 
   void _syncTicker() {
     final shouldRun =
@@ -180,8 +217,8 @@ class _BoostDanmakuState extends State<BoostDanmaku>
         }
       }
 
-      // 还有未发射的 group 才安排下一次发射；发完即止，不循环。
-      if (_nextGroupIndex < _groups.length) {
+      // 队列非空才安排下一次发射；发完即止，不循环。
+      if (_pendingKeys.isNotEmpty) {
         _secondsUntilNextLaunch -= dt;
         if (_secondsUntilNextLaunch <= 0) {
           _tryLaunchNext();
@@ -194,12 +231,14 @@ class _BoostDanmakuState extends State<BoostDanmaku>
         }
       }
     });
-    // 最后一条飞出屏幕后立即停表，不再让空弹幕层永久占用 VSync。
+    // 最后一条飞出屏幕后立即停表，不再让空弹幕层永久占用 VSync
+    // (_syncTicker 是唯一裁决点,比直接 _ticker.stop() 多兜可见性等
+    // 其它条件)。
     _syncTicker();
   }
 
   void _tryLaunchNext() {
-    if (_nextGroupIndex >= _groups.length) return;
+    if (_pendingKeys.isEmpty) return;
     var bestTrack = -1;
     var bestRight = double.infinity;
     for (var i = 0; i < _trackCount; i++) {
@@ -211,8 +250,8 @@ class _BoostDanmakuState extends State<BoostDanmaku>
     if (bestTrack == -1) return;
     if (bestRight > _viewportWidth - 24) return;
 
-    final group = _groups[_nextGroupIndex];
-    _nextGroupIndex++;
+    final group = _groupsByKey[_pendingKeys.removeAt(0)];
+    if (group == null) return;
     final isHighlighted =
         widget.highlightUsername != null &&
         group.boosts.any((b) => b.user.username == widget.highlightUsername);
@@ -242,7 +281,9 @@ class _BoostDanmakuState extends State<BoostDanmaku>
           _visible = visible;
           // 从不可见 → 可见且当前没有飞行中的弹幕时，重置一轮
           if (visible && _flying.isEmpty) {
-            _nextGroupIndex = 0;
+            _pendingKeys
+              ..clear()
+              ..addAll(_groups.map((g) => g.groupingKey));
             _secondsUntilNextLaunch = 0;
           }
           _syncTicker();

@@ -355,6 +355,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         _editorKey.currentState?.closeEmojiPanel();
+        _richKey.currentState?.closeEmojiPanel();
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
@@ -503,6 +504,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
             : null,
         onTap: () {
           _editorKey.currentState?.closeEmojiPanel();
+          _richKey.currentState?.closeEmojiPanel();
         },
       );
     }
@@ -623,6 +625,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                   if (_showPreview) {
                     FocusScope.of(context).unfocus();
                     _editorKey.currentState?.closeEmojiPanel();
+                    _richKey.currentState?.closeEmojiPanel();
                   }
                 },
                 children: [

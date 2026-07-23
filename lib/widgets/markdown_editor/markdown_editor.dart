@@ -13,9 +13,11 @@ import 'package:super_clipboard/super_clipboard.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse_cook_service.dart';
 import '../../services/emoji_handler.dart';
+import '../../utils/emoji_shortcodes.dart';
 import '../../utils/platform_utils.dart';
 import '../mention/mention_autocomplete.dart';
 import 'composer_shortcuts.dart';
+import 'emoji_popover.dart';
 import 'emoji_sticker_panel.dart';
 import 'markdown_renderer.dart';
 import 'markdown_tool_panel.dart';
@@ -132,6 +134,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   /// 生命周期内稳定,缓存安全。
   Widget? _emojiPanelChild;
 
+  /// 桌面端表情悬浮弹层控制器(移动端为 null,走 docked 面板)
+  EmojiPopoverController? _emojiPopover;
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +146,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       _focusNode = FocusNode();
       _ownsFocusNode = true;
     }
+    if (_isDesktop) {
+      _emojiPopover = EmojiPopoverController()
+        ..addListener(_onEmojiPopoverChanged);
+    }
     EmojiHandler().init();
     // 预热 1:1 cook 引擎(eval bundle + 注入站点数据),
     // 让首次切预览时 JS cook 已就绪
@@ -149,8 +158,14 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     widget.controller.addListener(_handleTextChange);
   }
 
+  /// 弹层开合同步工具栏表情按钮高亮
+  void _onEmojiPopoverChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _emojiPopover?.dispose();
     _panguTimer?.cancel();
     widget.controller.removeListener(_handleTextChange);
     _scrollController.dispose();
@@ -313,6 +328,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   /// 关闭表情/工具面板（供外部调用，如返回键拦截）
   void closeEmojiPanel() {
+    if (_isDesktop) {
+      _emojiPopover?.hide();
+      return;
+    }
     if (_intendedPanel != EditorPanelType.none ||
         _currentPanelType == EditorPanelType.emoji ||
         _currentPanelType == EditorPanelType.tools) {
@@ -330,6 +349,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   /// 切换自定义面板（表情/工具）
   void _togglePanel(EditorPanelType type) {
+    // 桌面端表情走悬浮弹层,不进 docked 容器
+    if (_isDesktop && type == EditorPanelType.emoji) {
+      _emojiPopover!.toggle(context, panel: _ensureEmojiPanelChild());
+      return;
+    }
     if (_intendedPanel == type) {
       // 关闭面板
       _intendedPanel = EditorPanelType.none;
@@ -474,7 +498,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   }
 
   /// 当前是否显示表情面板
-  bool get showEmojiPanel => _intendedPanel == EditorPanelType.emoji;
+  bool get showEmojiPanel => _isDesktop
+      ? (_emojiPopover?.isOpen ?? false)
+      : _intendedPanel == EditorPanelType.emoji;
 
   void _applyPanguSpacing() {
     if (_isApplyingPangu) return;
@@ -677,11 +703,16 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         : max(widget.emojiPanelHeight, safeBottom);
   }
 
-  /// 构建表情面板，高度与键盘一致
-  Widget _buildEmojiPanel() {
+  /// 构建(或复用)EmojiStickerPanel 缓存实例,docked 与桌面悬浮弹层共用
+  Widget _ensureEmojiPanelChild() {
     // EmojiStickerPanel 只创建一次(见 _emojiPanelChild 注释);
     // 高度变化只影响外层 SizedBox,不触达 grid 子树。
     _emojiPanelChild ??= EmojiStickerPanel(
+      // 桌面悬浮弹层:搜索走内联视图,布局按小窗收紧;
+      // 面板内开 Navigator 层 sheet(表情包市场)前先收弹层
+      inlineSearch: _isDesktop,
+      compact: _isDesktop,
+      onDismissRequested: _isDesktop ? () => _emojiPopover?.hide() : null,
       onEmojiSelected: (emoji) {
         // 确保编辑器有焦点（搜索弹窗关闭后焦点可能丢失）
         if (!_focusNode.hasFocus) {
@@ -703,12 +734,19 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           _toolbarKey.currentState?.insertText(markdown);
         }
       },
+      onBackspace: () =>
+          deleteBackwardWithEmojiShortcodes(widget.controller),
     );
+    return _emojiPanelChild!;
+  }
+
+  /// 构建表情面板，高度与键盘一致
+  Widget _buildEmojiPanel() {
     // TextFieldTapRegion 防止点击表情面板时 TextField 失焦
     return TextFieldTapRegion(
       child: SizedBox(
         height: _panelHeight,
-        child: _emojiPanelChild,
+        child: _ensureEmojiPanelChild(),
       ),
     );
   }
@@ -838,7 +876,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           onApplyPangu: _applyPanguSpacing,
           showPanguButton: !ref.watch(preferencesProvider).autoPanguSpacing,
           onToggleEmoji: () => _togglePanel(EditorPanelType.emoji),
-          isEmojiPanelVisible: _intendedPanel == EditorPanelType.emoji,
+          isEmojiPanelVisible: showEmojiPanel,
+          // 桌面端表情按钮由弹层锚点包裹(跟随定位 + toggle 无闪烁)
+          emojiPopover: _emojiPopover,
           // 桌面端空间充足，显示全部工具，不启用网格面板
           onToggleTools:
               _isDesktop ? null : () => _togglePanel(EditorPanelType.tools),

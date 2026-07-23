@@ -1,8 +1,10 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import '../../../../services/discourse_cache_manager.dart';
+import '../../../../services/image_decode_spec_memo.dart';
 import '../image_utils.dart';
 import 'image_grid_builder.dart';
 
@@ -118,13 +120,14 @@ class _ImageCarouselState extends State<_ImageCarousel> {
 
   /// 预加载当前页 ± _preloadRange 的图片到磁盘缓存
   void _preloadAdjacent(int centerIndex) {
-    final cacheManager = DiscourseCacheManager();
     final start = math.max(0, centerIndex - _preloadRange);
     final end = math.min(widget.images.length - 1, centerIndex + _preloadRange);
     for (int i = start; i <= end; i++) {
       final url = _resolvedUrls[i];
       if (url != null) {
-        cacheManager.preloadImage(url);
+        unawaited(
+          BlobImageCache.precache(BlobImageCache.contentBucket, url),
+        );
       }
     }
   }
@@ -324,16 +327,28 @@ class _CarouselSlideState extends State<_CarouselSlide>
         ? heroTags[globalIndex]
         : 'carousel_${widget.imageData.src.hashCode}';
 
-    // 限制解码尺寸：轮播高度 300 * dpr，避免解码超大原图
+    // 解码尺寸双向 cap(decode-time ResizeImage,engine 下采样,全格式
+    // 生效)。不要走 CachedNetworkImageProvider 的 maxWidth/maxHeight ——
+    // 那是 flutter_cache_manager 的 resize 路径:webp 不在
+    // supportedFileNames 里直接原图返回(等于没约束);jpg/png 则解码后
+    // PNG 重编码再写第二份磁盘缓存,首次加载反而多付几百 ms。
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final maxHeight = (widget.carouselHeight * dpr).toInt();
+    final cacheWidth = (MediaQuery.sizeOf(context).width * dpr).round();
+    final cacheHeight = (widget.carouselHeight * dpr).round();
+    // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
+    ImageDecodeSpecMemo.remember(url, cacheWidth, cacheHeight);
 
     return GestureDetector(
       onTap: () => widget.onTap(context, widget.index, url),
       child: Hero(
         tag: heroTag,
         child: Image(
-          image: discourseImageProvider(url, maxHeight: maxHeight),
+          image: ResizeImage(
+            discourseImageProvider(url),
+            width: cacheWidth,
+            height: cacheHeight,
+            policy: ResizeImagePolicy.fit,
+          ),
           fit: BoxFit.contain,
           width: double.infinity,
           height: widget.carouselHeight,

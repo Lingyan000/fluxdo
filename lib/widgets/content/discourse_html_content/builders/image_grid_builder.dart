@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import '../../../../services/discourse_cache_manager.dart';
+import '../../../../services/image_decode_spec_memo.dart';
 import '../../../../utils/url_helper.dart';
 import '../image_utils.dart';
 import '../../lazy_load_scope.dart';
@@ -260,6 +261,8 @@ class _GridImageTileState extends State<_GridImageTile> {
     final maxSide =
         widget.columnWidth > displayHeight ? widget.columnWidth : displayHeight;
     final cachePx = (maxSide * dpr).round();
+    // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
+    ImageDecodeSpecMemo.remember(displayUrl, cachePx, cachePx);
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,

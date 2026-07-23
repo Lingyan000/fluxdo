@@ -243,7 +243,7 @@ class _StickerGroupTile extends ConsumerWidget {
             memCacheHeight: 80,
             thumbnailMode: true,
             fit: BoxFit.cover,
-            cacheManager: StickerCacheManager(),
+            bucket: BlobImageCache.stickerOriginalBucket,
             placeholder: (_) => _buildFallbackIcon(theme),
             errorBuilder: (_, _, _) => _buildFallbackIcon(theme),
           ),

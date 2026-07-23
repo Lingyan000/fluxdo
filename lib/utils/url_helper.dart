@@ -78,6 +78,30 @@ class UrlHelper {
     return _withPrefix(url);
   }
 
+  /// 是否是"可信图片域名"(站点主域名/子域名,或站点配置的 CDN / S3 CDN)。
+  ///
+  /// 用于判断裸链接(`<a href="...jpg">`)能不能像网页端一样直接打开图片
+  /// 查看器,而不是走"即将离开外部网站"的确认弹窗——只信任站点自己配置
+  /// 的域名,不是随便一个 .jpg 后缀的外链都放行。
+  static bool isTrustedImageHost(Uri uri) {
+    final host = uri.host;
+    if (host.isEmpty) return false;
+
+    bool hostMatches(String? base) {
+      if (base == null || base.isEmpty) return false;
+      final baseUri = Uri.tryParse(base.startsWith('//') ? 'https:$base' : base);
+      final baseHost = baseUri?.host ?? '';
+      if (baseHost.isEmpty) return false;
+      return host == baseHost || host.endsWith('.$baseHost');
+    }
+
+    final siteBase = Uri.tryParse(AppConstants.baseUrl)?.host;
+    if (siteBase != null && siteBase.isNotEmpty) {
+      if (host == siteBase || host.endsWith('.$siteBase')) return true;
+    }
+    return hostMatches(_cdnUrl) || hostMatches(_s3CdnUrl);
+  }
+
   static bool samePrefix(String url) {
     final prefix = _baseUri;
     if (prefix.isEmpty) {

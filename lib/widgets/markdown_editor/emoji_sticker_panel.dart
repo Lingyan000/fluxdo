@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../models/emoji.dart';
+import '../../utils/platform_utils.dart';
 import 'emoji_picker.dart';
 import 'sticker_picker.dart';
 import '../../../../../l10n/s.dart';
 
 /// 悬浮 Tab 的高度（含上下内边距），用于给内容区预留底部空间
 const double floatingTabHeight = 48;
+
+/// 紧凑模式(桌面悬浮弹层)的悬浮 Tab 预留高度
+const double floatingTabHeightCompact = 40;
 
 /// 表情/表情包面板容器
 ///
@@ -20,10 +24,31 @@ class EmojiStickerPanel extends StatefulWidget {
   /// 选中表情包的回调，参数为 Markdown 图片文本
   final ValueChanged<String> onStickerSelected;
 
+  /// 退格回调(移动端表情键盘标配:面板打开时软键盘收起,没有它
+  /// 就只能切回键盘删)。null 或桌面端不显示退格键(桌面端焦点常驻
+  /// 输入框,物理退格直接可用)。
+  final VoidCallback? onBackspace;
+
+  /// 搜索用内联视图(桌面悬浮弹层场景:bottomSheet 会被压在
+  /// OverlayEntry 弹层下面,且交互割裂),false 走 bottomSheet。
+  final bool inlineSearch;
+
+  /// 紧凑模式(桌面悬浮弹层):切换胶囊/间距按小窗比例收紧,
+  /// 圆角背景交给弹层壳,面板自身不再画顶部圆角。
+  final bool compact;
+
+  /// 请求宿主收起面板(桌面悬浮弹层:面板内要弹 Navigator 层的 sheet
+  /// 时先收弹层,否则 sheet 被 root overlay 的弹层压住)
+  final VoidCallback? onDismissRequested;
+
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
     required this.onStickerSelected,
+    this.onBackspace,
+    this.inlineSearch = false,
+    this.compact = false,
+    this.onDismissRequested,
   });
 
   @override
@@ -56,10 +81,14 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
         EmojiPicker(
           onEmojiSelected: widget.onEmojiSelected,
           bottomPadding: bottomPadding,
+          inlineSearch: widget.inlineSearch,
+          compact: widget.compact,
         ),
         StickerPicker(
           onStickerSelected: widget.onStickerSelected,
           bottomPadding: bottomPadding,
+          compact: widget.compact,
+          onDismissRequested: widget.onDismissRequested,
         ),
       ];
     }
@@ -116,8 +145,11 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final totalBottomPadding = floatingTabHeight + safeBottom;
+    final tabHeight =
+        widget.compact ? floatingTabHeightCompact : floatingTabHeight;
+    final totalBottomPadding = tabHeight + safeBottom;
 
     return Stack(
       children: [
@@ -140,11 +172,11 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           ),
         ),
 
-        // 悬浮切换 Tab
+        // 悬浮切换 Tab(紧凑模式桌面无安全区,补 6px 底距不贴边)
         Positioned(
           left: 0,
           right: 0,
-          bottom: safeBottom,
+          bottom: widget.compact ? safeBottom + 6 : safeBottom,
           child: Center(
             child: AnimatedSlide(
               offset: _tabVisible ? Offset.zero : const Offset(0, 2),
@@ -154,23 +186,68 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
             ),
           ),
         ),
+
+        // 悬浮退格键(仅移动端,与 Tab 同层同显隐节奏,靠右)
+        if (widget.onBackspace != null && PlatformUtils.isMobile)
+          Positioned(
+            right: 12,
+            bottom: safeBottom + 4,
+            child: AnimatedSlide(
+              offset: _tabVisible ? Offset.zero : const Offset(0, 2),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: Material(
+                color: theme.colorScheme.surface.withValues(alpha: 0.95),
+                shape: const CircleBorder(),
+                elevation: 2,
+                shadowColor: Colors.black.withValues(alpha: 0.1),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: widget.onBackspace,
+                  child: SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: Center(
+                      // backspace 字形视觉重心偏右(左侧是箭头尖),
+                      // 几何居中后看着偏右,向左 1px 光学补偿。
+                      child: Transform.translate(
+                        offset: const Offset(-1, 0),
+                        child: Icon(
+                          Symbols.backspace_rounded,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildFloatingTab(BuildContext context) {
     final theme = Theme.of(context);
-    const buttonWidth = 90.0;
+    final compact = widget.compact;
+    final buttonWidth = compact ? 76.0 : 90.0;
     const gap = 4.0;
 
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: EdgeInsets.all(compact ? 3 : 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
+        // 紧凑模式在弹层里,弹层自带边框阴影,胶囊影收轻 + 加细边
+        border: compact
+            ? Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              )
+            : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withValues(alpha: compact ? 0.06 : 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -184,7 +261,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
               : _currentPage.toDouble();
 
           return SizedBox(
-            height: 34,
+            height: compact ? 30 : 34,
             child: Stack(
               children: [
                 // 滑动指示器
@@ -249,6 +326,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
     required double width,
     required VoidCallback onTap,
   }) {
+    final compact = widget.compact;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -260,17 +338,17 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
             children: [
               AppIcon(
                 icon,
-                size: 18,
+                size: compact ? 16 : 18,
                 fill: selected ? 1 : 0,
                 color: selected
                     ? theme.colorScheme.primary
                     : theme.colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 6),
+              SizedBox(width: compact ? 5 : 6),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: compact ? 12 : 13,
                   fontWeight: selected ? FontWeight.w500 : FontWeight.normal,
                   color: selected
                       ? theme.colorScheme.primary

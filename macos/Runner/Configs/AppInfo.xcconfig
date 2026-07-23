@@ -17,9 +17,12 @@ PRODUCT_COPYRIGHT = Copyright © 2026 FluxDO. All rights reserved.
 MARKETING_VERSION = $(FLUTTER_BUILD_NAME)
 CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
 
-// Apple 签名默认值（与原硬编码一致）。在 apple/Local.xcconfig 中可覆盖以本地关闭签名。
-FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = Apple Development
-FLUXDO_APPLE_CODE_SIGN_STYLE = Automatic
+// Apple 签名默认值：adhoc 签名（无需 Apple Team / 证书），保证 fresh checkout
+// 与无 secrets 的 CI 都能直接构建，且走完 codesign 步骤把 entitlements 注入 .app。
+// 有稳定签名身份（自签证书 / Apple Development）时在 apple/Local.xcconfig 中覆盖，
+// 可消除每次 rebuild 后钥匙串（flutter_secure_storage）反复弹窗的问题。
+FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = -
+FLUXDO_APPLE_CODE_SIGN_STYLE = Manual
 FLUXDO_APPLE_CODE_SIGNING_ALLOWED = YES
 
 #include? "../../../apple/Local.xcconfig"
