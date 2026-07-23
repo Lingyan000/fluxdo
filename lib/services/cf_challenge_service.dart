@@ -1970,7 +1970,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
             _handlePageReady(controller, reason: 'onLoadStop');
           },
           onReceivedError: (controller, request, error) {
-            if (_finishingFromVerifyResponse) return;
+            // _hasPopped:验证已收场,但 Windows 上 PlatformView 延迟 1.2s
+            // 才销毁(见 _postCleanupCooldown)。这段窗口里 WebView2 掐掉
+            // 在途主文档导航会上报 CONNECTION_ABORTED,不能再弹「加载失败」
+            // ——用户看到的将是验证成功后凭空冒出的错误 toast。
+            if (_hasPopped || _finishingFromVerifyResponse) return;
 
             final uri = Uri.tryParse(request.url.toString());
             final isMainFrame = request.isForMainFrame == true;
