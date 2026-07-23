@@ -26,6 +26,18 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
   @override
   Future<List<Topic>> build() async {
+    // 话题列表里每张卡的 unread/highestPostNumber 是拉取那一刻的快照,
+    // 之后帖子有新回复只有 topicTrackingStateProvider(MessageBus /latest
+    // /unread 频道实时更新)会变,列表卡本身不会跟着刷新——挂了小红点
+    // 却一直不变。这里订阅追踪状态,把变化同步回当前显示的话题上,
+    // 不需要用户手动下拉刷新整个列表。
+    ref.listen<Map<int, TrackedTopicState>>(topicTrackingStateProvider, (
+      previous,
+      next,
+    ) {
+      _syncFromTrackingState(next);
+    });
+
     // 所有参数使用 ref.read（不建立依赖），
     // 由 UI 层在参数变化时主动 invalidate provider
     final currentFilter = ref.read(topicFilterProvider);
@@ -412,6 +424,47 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         const PagedPage<Topic>(items: <Topic>[], hasMore: false),
       ),
     );
+  }
+
+  /// 用 topicTrackingStateProvider 的实时数据刷新当前列表里对应话题的
+  /// unread 计数(见 build() 里的 ref.listen)。只在真有变化的话题上
+  /// 重建,列表其余部分不受影响。
+  void _syncFromTrackingState(Map<int, TrackedTopicState> tracking) {
+    final topics = state.value;
+    if (topics == null || tracking.isEmpty) return;
+
+    List<Topic>? newList;
+    for (var i = 0; i < topics.length; i++) {
+      final topic = topics[i];
+      final tracked = tracking[topic.id];
+      // 只在追踪状态真的比当前显示更新时才采信:tracking map 是全局
+      // 单例,任何一个话题的消息都会让整个 map 换新触发这个监听,旧/被
+      // 重放的消息(长轮询重连补发)可能带着比本地已读状态更旧的
+      // lastReadPostNumber——直接套用会出现"刚读完又变回未读"。
+      if (tracked == null || tracked.highestPostNumber <= topic.highestPostNumber) {
+        continue;
+      }
+
+      final lastRead = tracked.lastReadPostNumber ?? topic.lastReadPostNumber;
+      final highest = tracked.highestPostNumber;
+      final newUnread = lastRead == null
+          ? topic.unread
+          : (highest - lastRead).clamp(0, highest);
+
+      if (newUnread == topic.unread && highest == topic.highestPostNumber) {
+        continue;
+      }
+
+      newList ??= [...topics];
+      newList[i] = topic.copyWith(
+        unread: newUnread,
+        highestPostNumber: highest,
+      );
+    }
+
+    if (newList != null) {
+      state = AsyncValue.data(newList);
+    }
   }
 
   void updateSeen(int topicId, int highestSeen, {bool updateTracking = true}) {
