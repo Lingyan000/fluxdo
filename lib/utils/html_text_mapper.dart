@@ -6,6 +6,20 @@ import 'package:html/dom.dart' as dom;
 /// 根据选中的纯文本反查原始 HTML 片段，用于划词引用功能。
 /// 核心思路：DFS 遍历 DOM 文本节点，构建偏移映射，子串匹配定位对应 HTML。
 class HtmlTextMapper {
+  /// 判断选中的纯文本是否等于整帖内容(全选场景)。
+  ///
+  /// 全选时没有必要走子串反查(那套算法对图片等占位符文本的还原本就不完全
+  /// 可靠,详见 [extractHtml] 里 img 分支的已知局限),调用方应直接对整个
+  /// [cooked] 做转换,绕开反查失败退化成纯文本(如图片被复制成裸文件名)。
+  static bool isFullSelection(String cooked, String selectedPlainText) {
+    if (cooked.isEmpty || selectedPlainText.isEmpty) return false;
+    final fragment = html_parser.parseFragment(cooked);
+    final textNodes = <_TextNodeInfo>[];
+    final buffer = StringBuffer();
+    _collectTextNodes(fragment, textNodes, buffer);
+    return _normalize(buffer.toString()) == _normalize(selectedPlainText);
+  }
+
   /// 从 cooked HTML 中提取与选中纯文本对应的 HTML 片段
   ///
   /// [cooked] 帖子的 HTML 内容 (post.cooked)
@@ -344,6 +358,17 @@ class HtmlTextMapper {
     List<_TextNodeInfo> result,
     StringBuffer buffer,
   ) {
+    // lightbox 图片的悬浮遮罩层(`<div class="meta">` 内的文件名/尺寸信息):
+    // 纯 CSS hover 展示,渲染引擎的选区投影里根本不存在这段文字。当年不
+    // 排除会在这里重复贡献一份文本(常与 img 的 alt 撞车),把后续偏移量
+    // 全部对齐错位,导致选区跨过图片时反查失败、退化成裸文本。
+    if (node is dom.Element &&
+        node.localName == 'div' &&
+        (node.attributes['class'] ?? '').split(' ').contains('meta') &&
+        node.parent?.localName == 'a') {
+      return;
+    }
+
     if (node.nodeType == dom.Node.TEXT_NODE) {
       final text = node.text ?? '';
       if (text.isNotEmpty) {

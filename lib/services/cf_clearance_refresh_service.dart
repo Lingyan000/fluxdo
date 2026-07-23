@@ -124,10 +124,9 @@ class CfClearanceRefreshService {
   /// 这个方法不阻塞启动链路；没有 sitekey 或没有现存 cf_clearance 时不会
   /// 主动拉起验证页，交给正常请求的 CF challenge 流程处理。
   void start() {
-    // Windows 的常驻 Turnstile WebView 会让 Flutter 合成线程持续退化，
-    // 最终卡死；按需 CF 验证仍由 CfChallengeService 负责。
-    if (io.Platform.isWindows) return;
-
+    // (2026-07-23：此前 Windows 因常驻 Turnstile WebView 反复触发合成线程
+    // 卡死而禁用；pause/resume 改为复用同一个 WebView、不再逐次销毁重建后，
+    // 实测卡顿明显缓解且能正常静默续期，解除禁用。)
     _shouldBeRunning = true;
     _pausedByLifecycle = false;
     if (_isRunning && !_isDisposing) return;

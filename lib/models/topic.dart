@@ -302,6 +302,50 @@ class Topic {
     this.canHaveAnswer = false,
   });
 
+  Topic copyWith({
+    bool? unseen,
+    int? unread,
+    int? newPosts,
+    int? lastReadPostNumber,
+    bool clearLastReadPostNumber = false,
+    int? highestPostNumber,
+  }) {
+    return Topic(
+      id: id,
+      title: title,
+      slug: slug,
+      postsCount: postsCount,
+      replyCount: replyCount,
+      views: views,
+      likeCount: likeCount,
+      excerpt: excerpt,
+      createdAt: createdAt,
+      lastPostedAt: lastPostedAt,
+      lastPosterUsername: lastPosterUsername,
+      categoryId: categoryId,
+      pinned: pinned,
+      visible: visible,
+      closed: closed,
+      archived: archived,
+      tags: tags,
+      posters: posters,
+      unseen: unseen ?? this.unseen,
+      unread: unread ?? this.unread,
+      newPosts: newPosts ?? this.newPosts,
+      lastReadPostNumber: clearLastReadPostNumber
+          ? null
+          : (lastReadPostNumber ?? this.lastReadPostNumber),
+      highestPostNumber: highestPostNumber ?? this.highestPostNumber,
+      bookmarkedPostNumber: bookmarkedPostNumber,
+      bookmarkId: bookmarkId,
+      bookmarkName: bookmarkName,
+      bookmarkReminderAt: bookmarkReminderAt,
+      bookmarkableType: bookmarkableType,
+      hasAcceptedAnswer: hasAcceptedAnswer,
+      canHaveAnswer: canHaveAnswer,
+    );
+  }
+
   factory Topic.fromJson(
     Map<String, dynamic> json, {
     Map<int, TopicUser>? userMap,
