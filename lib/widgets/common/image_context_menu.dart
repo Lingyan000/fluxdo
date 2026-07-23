@@ -156,11 +156,13 @@ class ImageContextMenu {
       ],
     ];
 
+    debugPrint('[调试跳转] ImageContextMenu 弹出 desktop menu');
     showSwipeDismissibleMenu<String>(
       context: context,
       position: relativeRect,
       items: items,
     ).then((value) {
+      debugPrint('[调试跳转] ImageContextMenu desktop menu 关闭 value=$value');
       if (value == null) return;
       if (!context.mounted) return;
       _handleMenuAction(

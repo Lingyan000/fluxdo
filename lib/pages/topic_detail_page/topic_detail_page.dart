@@ -282,6 +282,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void initState() {
     super.initState();
+    debugPrint(
+      '[调试跳转] TopicDetailPage.initState topicId=${widget.topicId} scrollToPostNumber=${widget.scrollToPostNumber}\n${StackTrace.current}',
+    );
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
@@ -657,6 +660,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   @override
   void dispose() {
+    debugPrint(
+      '[调试跳转] TopicDetailPage.dispose topicId=${widget.topicId}\n${StackTrace.current}',
+    );
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
     _route?.animation?.removeStatusListener(_onRouteEnterAnimStatus);

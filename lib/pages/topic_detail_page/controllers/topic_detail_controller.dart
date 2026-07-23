@@ -315,6 +315,9 @@ class TopicDetailController extends ChangeNotifier {
 
   /// 准备跳转到帖子（重新加载数据）
   void prepareJumpToPost(int postNumber) {
+    debugPrint(
+      '[调试跳转] prepareJumpToPost($postNumber)\n${StackTrace.current}',
+    );
     _updateScrollState(
       TopicScrollState(
         showBackToTop: _scrollState.showBackToTop,
@@ -331,6 +334,9 @@ class TopicDetailController extends ChangeNotifier {
 
   /// 准备刷新
   void prepareRefresh(int anchorPostNumber, {bool skipHighlight = false}) {
+    debugPrint(
+      '[调试跳转] prepareRefresh($anchorPostNumber)\n${StackTrace.current}',
+    );
     _updateScrollState(
       TopicScrollState(
         showBackToTop: _scrollState.showBackToTop,
@@ -372,6 +378,7 @@ class TopicDetailController extends ChangeNotifier {
 
   /// 清除跳转目标
   void clearJumpTarget() {
+    debugPrint('[调试跳转] clearJumpTarget()\n${StackTrace.current}');
     _updateScrollState(_scrollState.copyWith(clearJumpTarget: true));
   }
 
@@ -388,6 +395,9 @@ class TopicDetailController extends ChangeNotifier {
 
   /// 本地跳转到帖子（不重新请求，仅重置视图中心）
   void jumpToPostLocally(int postNumber) {
+    debugPrint(
+      '[调试跳转] jumpToPostLocally($postNumber)\n${StackTrace.current}',
+    );
     // 重置可见性数据
     resetVisibility();
 

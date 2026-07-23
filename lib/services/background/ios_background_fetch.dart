@@ -126,11 +126,17 @@ void callbackDispatcher() {
             body = username;
           }
 
+          final parsedType = notificationType != null
+              ? NotificationType.fromId(notificationType)
+              : null;
           await LocalNotificationService().show(
             title: title,
             body: body,
             topicId: topicId,
             postNumber: postNumber,
+            isPrivateMessage:
+                parsedType == NotificationType.privateMessage ||
+                parsedType == NotificationType.invitedToPrivateMessage,
           );
         }
       }

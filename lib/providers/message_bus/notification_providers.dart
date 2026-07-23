@@ -247,12 +247,18 @@ class NotificationAlertChannelNotifier extends Notifier<void> {
 
         debugPrint('[NotificationAlert] 发送系统通知: title=$title, body=$body, topicId=$topicId, postNumber=$postNumber');
 
+        final parsedType = notificationType != null
+            ? NotificationType.fromId(notificationType)
+            : null;
         LocalNotificationService().show(
           title: title,
           body: body,
           id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
           topicId: topicId,
           postNumber: postNumber,
+          isPrivateMessage:
+              parsedType == NotificationType.privateMessage ||
+              parsedType == NotificationType.invitedToPrivateMessage,
         );
       }
     }

@@ -1507,33 +1507,44 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                 );
                               }
                             },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                              ),
-                              child: AvatarWithFlair(
-                                flairSize: 30,
-                                flairRight: -7,
-                                flairBottom: -4,
-                                flairUrl: _user?.flairUrl,
-                                flairName: _user?.flairName,
-                                flairBgColor: _user?.flairBgColor,
-                                flairColor: _user?.flairColor,
-                                avatar: Hero(
-                                  tag: 'user_avatar_${_user?.username ?? ''}',
-                                  child: SmartAvatar(
-                                    imageUrl: _user?.getAvatarUrl() != null
-                                        ? _user!.getAvatarUrl(size: 144)
-                                        : null,
-                                    radius: 36,
-                                    fallbackText: _user?.username,
+                            child: Builder(
+                              builder: (context) {
+                                // linux.do 站点定制:个别账号头像方形化,外层白边框
+                                // 得跟 SmartAvatar 里的裁切形状对齐,不然会出现
+                                // "图是方的、外层白圈还是圆的"这种两层错位。
+                                final avatarUrl = _user?.getAvatarUrl(size: 144);
+                                final isSquare = isSquareAvatarUrl(avatarUrl);
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    shape: isSquare
+                                        ? BoxShape.rectangle
+                                        : BoxShape.circle,
+                                    borderRadius:
+                                        isSquare ? BorderRadius.circular(8) : null,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
                                   ),
-                                ),
-                              ),
+                                  child: AvatarWithFlair(
+                                    flairSize: 30,
+                                    flairRight: -7,
+                                    flairBottom: -4,
+                                    flairUrl: _user?.flairUrl,
+                                    flairName: _user?.flairName,
+                                    flairBgColor: _user?.flairBgColor,
+                                    flairColor: _user?.flairColor,
+                                    avatar: Hero(
+                                      tag: 'user_avatar_${_user?.username ?? ''}',
+                                      child: SmartAvatar(
+                                        imageUrl: avatarUrl,
+                                        radius: 36,
+                                        fallbackText: _user?.username,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 16),

@@ -10,7 +10,7 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show File;
+import 'dart:io' show File, Platform;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
@@ -1899,9 +1899,108 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       final native = readClipboardImageNative();
       if (native != null) {
         unawaited(_uploadPastedImage(native, 'png'));
+        return null;
+      }
+      // 文件路径粘贴(资源管理器/文件应用里复制文件后 Ctrl+V):剪贴板给的是
+      // 文件列表(Windows CF_HDROP),不是图片位图/html,上面两步天然拿不到。
+      // 按扩展名分流到已有的媒体/图片上传链路。
+      for (final item in reader.items) {
+        if (!item.canProvide(Formats.fileUri)) continue;
+        final uri = await item.readValue(Formats.fileUri);
+        if (uri == null) continue;
+        final path = uri.toFilePath(windows: Platform.isWindows);
+        final name = p.basename(path);
+        final ext = p.extension(path).toLowerCase();
+        if (_pastedVideoExtensions.contains(ext) ||
+            _pastedAudioExtensions.contains(ext)) {
+          unawaited(
+            _uploadPastedMediaFile(
+              path,
+              name,
+              isAudio: _pastedAudioExtensions.contains(ext),
+            ),
+          );
+        } else if (_pastedImageExtensions.contains(ext)) {
+          unawaited(_uploadPastedImageFile(path, name));
+        }
       }
     }
     return null;
+  }
+
+  static const _pastedVideoExtensions = {
+    '.mp4',
+    '.mov',
+    '.webm',
+    '.mkv',
+    '.avi',
+  };
+  static const _pastedAudioExtensions = {
+    '.mp3',
+    '.m4a',
+    '.wav',
+    '.ogg',
+    '.flac',
+  };
+  static const _pastedImageExtensions = {
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.webp',
+    '.bmp',
+  };
+
+  /// 粘贴的音视频文件(已有本地路径,不用像位图那样先落临时文件)。
+  Future<void> _uploadPastedMediaFile(
+    String path,
+    String name, {
+    required bool isAudio,
+  }) async {
+    if (!mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final tag = await uploadMediaFileAsTag(
+        context,
+        path: path,
+        name: name,
+        isAudio: isAudio,
+      );
+      if (tag == null || !mounted) return;
+      await insertMarkdownSnippet(tag);
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
+  }
+
+  /// 粘贴的图片文件(已有本地路径,复用与选图插入同 UX 的确认框)。
+  Future<void> _uploadPastedImageFile(String path, String name) async {
+    if (!mounted) return;
+    final confirmed = await showImageUploadDialog(
+      context,
+      imagePath: path,
+      imageName: name,
+    );
+    if (confirmed == null || !mounted) return;
+    setState(() => _uploadingCount++);
+    try {
+      final uploadResult = await DiscourseService().uploadImage(
+        confirmed.path,
+      );
+      final url = uploadResult.url;
+      if (url != null) {
+        DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
+      }
+      if (!mounted) return;
+      insertUploadedImage(
+        shortUrl: uploadResult.shortUrl,
+        alt: confirmed.originalName,
+        width: uploadResult.width,
+        height: uploadResult.height,
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingCount--);
+    }
   }
 
   /// 粘贴位图上传:临时文件 → 确认框(与选图插入同 UX,可改名/取消误粘)

@@ -390,6 +390,16 @@ class _CertGuideState extends State<_CertGuide> {
             _loading = false;
           });
         }
+      } else if (Platform.isWindows) {
+        // Windows: per-device 强制(共享内置 CA 绝不进系统信任库),
+        // 仍需检测设备 CA 是否已进用户根信任库并给出安装引导
+        final installed = await WindowsCertTrustService.instance.isInstalled();
+        if (mounted) {
+          setState(() {
+            _installed = installed;
+            _loading = false;
+          });
+        }
       } else {
         // macOS: per-device 强制启用，钥匙串自动添加，不显示引导
         if (mounted) {
@@ -400,14 +410,9 @@ class _CertGuideState extends State<_CertGuide> {
       }
     } else {
       final usePerDevice = await CertPreferenceService.usePerDevice();
-      // Windows: WebView2 按系统信任库校验网关 MITM 证书,必须检测安装状态
-      final installed = Platform.isWindows
-          ? await WindowsCertTrustService.instance.isInstalled()
-          : false;
       if (mounted) {
         setState(() {
           _perDeviceEnabled = usePerDevice;
-          _installed = installed;
           _loading = false;
         });
       }
@@ -430,35 +435,8 @@ class _CertGuideState extends State<_CertGuide> {
   }
 
   Future<void> _togglePerDevice(bool value) async {
-    // Windows 开启设备证书时，先安装并信任新 CA，再重启网关；用户取消
-    // 安装则回滚偏好，避免把正在工作的旧证书链路切断。
-    if (Platform.isWindows && value) {
-      await CertPreferenceService.setUsePerDevice(true);
-      final trusted = mounted && await ensureWindowsCertTrusted(context);
-      if (!trusted) {
-        await CertPreferenceService.setUsePerDevice(false);
-        if (mounted) setState(() => _perDeviceEnabled = false);
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _perDeviceEnabled = true;
-          _installed = true;
-        });
-      }
-      await NetworkSettingsService.instance.restartProxy();
-      return;
-    }
-
     await CertPreferenceService.setUsePerDevice(value);
     if (mounted) setState(() => _perDeviceEnabled = value);
-
-    // Windows 关闭设备证书等同于退出本地 MITM 链路：关闭 DoH/网关，
-    // 不切换到另一张 CA 后继续运行，也不再弹出证书安装对话框。
-    if (Platform.isWindows && !value) {
-      await NetworkSettingsService.instance.setDohEnabled(false);
-      return;
-    }
 
     // 重启代理以应用新证书
     await NetworkSettingsService.instance.restartProxy();
@@ -501,8 +479,45 @@ class _CertGuideState extends State<_CertGuide> {
       );
     }
 
+    // Windows: per-device 强制,不显示开关;网关 MITM 依赖系统信任库,
+    // 未安装 CA 时 WebView2 全部握手失败,必须给出安装引导
+    // (certutil 用户级安装,系统弹框确认)
+    if (Platform.isWindows) {
+      return ListTile(
+        leading: Icon(
+          _installed
+              ? Symbols.verified_user_rounded
+              : Symbols.security_rounded,
+          color: _installed ? Colors.green : theme.colorScheme.error,
+        ),
+        title: Text(
+          _installed
+              ? l10n.dohSettings_certInstalled
+              : l10n.dohSettings_certRequired,
+        ),
+        subtitle: Text(
+          _installed
+              ? l10n.dohSettings_certReinstallHint
+              : l10n.dohSettings_certInstallHint,
+          style: TextStyle(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
+        trailing: _installed
+            ? OutlinedButton(
+                onPressed: _installWindowsCert,
+                child: Text(l10n.dohSettings_certReinstall),
+              )
+            : FilledButton(
+                onPressed: _installWindowsCert,
+                child: Text(l10n.dohSettings_certInstall),
+              ),
+      );
+    }
+
     // 其他平台: per-device 证书开关
-    final perDeviceSwitch = SwitchListTile(
+    return SwitchListTile(
       secondary: Icon(
         _perDeviceEnabled ? Symbols.verified_user_rounded : Symbols.security_rounded,
         color: _perDeviceEnabled ? Colors.green : null,
@@ -517,49 +532,5 @@ class _CertGuideState extends State<_CertGuide> {
       value: _perDeviceEnabled,
       onChanged: widget.isApplying ? null : _togglePerDevice,
     );
-
-    // Windows: 网关 MITM 依赖系统信任库,未安装 CA 时 WebView2 全部握手失败,
-    // 必须给出安装引导(certutil 用户级安装,系统弹框确认)
-    if (Platform.isWindows) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          perDeviceSwitch,
-          ListTile(
-            leading: Icon(
-              _installed
-                  ? Symbols.verified_user_rounded
-                  : Symbols.security_rounded,
-              color: _installed ? Colors.green : theme.colorScheme.error,
-            ),
-            title: Text(
-              _installed
-                  ? l10n.dohSettings_certInstalled
-                  : l10n.dohSettings_certRequired,
-            ),
-            subtitle: Text(
-              _installed
-                  ? l10n.dohSettings_certReinstallHint
-                  : l10n.dohSettings_certInstallHint,
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            ),
-            trailing: _installed
-                ? OutlinedButton(
-                    onPressed: _installWindowsCert,
-                    child: Text(l10n.dohSettings_certReinstall),
-                  )
-                : FilledButton(
-                    onPressed: _installWindowsCert,
-                    child: Text(l10n.dohSettings_certInstall),
-                  ),
-          ),
-        ],
-      );
-    }
-
-    return perDeviceSwitch;
   }
 }
