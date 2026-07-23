@@ -136,7 +136,9 @@ class VpnAutoToggleService {
 
   void initialize(SharedPreferences prefs) {
     _prefs = prefs;
-    enabledNotifier.value = prefs.getBool(_keyEnabled) ?? false;
+    // 默认开启:per-device CA/DoH 网关在 VPN 活跃时容易拖慢连接,VPN 用户
+    // 不该还得手动来这页找开关。
+    enabledNotifier.value = prefs.getBool(_keyEnabled) ?? true;
     detectionModeNotifier.value = VpnDetectionMode.fromString(
       prefs.getString(_keyDetectionMode),
     );
