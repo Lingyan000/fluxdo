@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/svg_utils.dart';
 
 /// 智能头像组件
 ///
-/// 静态头像走 [BlobImageProvider](Telegram 式 MD5 直寻址,零 sqlite
-/// 索引,且不再与正文大图挤 DiscourseCacheManager 的 500 条 LRU);
-/// 动图头像走 discourseImageProvider 的 Rust pipeline。
+/// 使用 CachedNetworkImage 加载图片，自动支持 GIF 动画。
 /// 静态头像会先检测内容是否为 SVG，避免伪装成 PNG 的 SVG 进入位图解码器。
 class SmartAvatar extends StatefulWidget {
   final String? imageUrl;
@@ -32,15 +31,36 @@ class SmartAvatar extends StatefulWidget {
   State<SmartAvatar> createState() => _SmartAvatarState();
 }
 
+/// linux.do 站点定制:该账号头像方形化(站点主题 CSS 规则:
+/// `img.avatar[src^=".../user_avatar/linux.do/neo/"]{border-radius:10% !important}`,
+/// 只精确针对这一个用户名,不是站点级/AI persona 通用规则)。
+/// 头像 URL 路径本身带用户名(`/user_avatar/<site>/<username>/...`),
+/// 不需要额外传 username 参数,直接从 URL 判断即可对齐。
+///
+/// 公开(而非 [SmartAvatar] 内部私有判断):凡是自己另起炉灶画头像、不走
+/// [SmartAvatar] 的地方(画布直绘的话题卡片、头像外层单独套边框/背景的
+/// 容器)都得调这个同一份判断，不然会出现"图是方的、外层裁切/边框还是圆
+/// 的"这种两层对不上的错位。
+final RegExp _avatarUsernamePattern = RegExp(r'/user_avatar/[^/]+/([^/]+)/');
+const Set<String> _squareAvatarUsernames = {'neo'};
+
+bool isSquareAvatarUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  final username = _avatarUsernamePattern.firstMatch(url)?.group(1)?.toLowerCase();
+  return username != null && _squareAvatarUsernames.contains(username);
+}
+
 class _SmartAvatarState extends State<SmartAvatar> {
+  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
+
   /// SVG 探测结果的全局记忆(URL → svg 内容,null = 已确认非 SVG)。
   ///
-  /// 绝大多数头像不是 SVG,却在**每次挂载**付一次缓存探测(文件读)
-  /// + FutureBuilder 两阶段 rebuild(loading → Image)—— 列表快滚一屏
-  /// 十几个头像张张交税,是单卡首建成本的组成部分。记忆后重访头像
-  /// 同步单阶段直达;URL 版本化(带 hash),换头像即新条目。
-  /// "未下载时记为非 SVG"不破坏语义:下载后若真是 SVG,仍由
-  /// errorBuilder → _SvgFallbackBuilder 内容嗅探兜底。
+  /// 绝大多数头像不是 SVG,却在**每次挂载**付一次 cache_manager 查询
+  /// (sqlite + 文件 stat)+ FutureBuilder 两阶段 rebuild(loading →
+  /// CNI)—— 列表快滚一屏十几个头像张张交税,是单卡首建成本的组成
+  /// 部分。记忆后重访头像同步单阶段直达;URL 版本化(带 hash),
+  /// 换头像即新条目。"未下载时记为非 SVG"不破坏语义:下载后若真是
+  /// SVG,仍由 CNI errorWidget → _SvgFallbackBuilder 内容嗅探兜底。
   static final Map<String, String?> _svgProbeMemo = {};
   static const int _svgProbeMemoCap = 1500;
 
@@ -95,21 +115,25 @@ class _SmartAvatarState extends State<SmartAvatar> {
 
   Future<String?> _loadSvgContentIfPresent(String imageUrl) async {
     try {
-      // 只读 blob 缓存,不主动触发下载(下载由后面的 Image 负责,避免
-      // 重复请求)。blob 文件无扩展名,靠字节嗅探判断 SVG。
-      final bytes = await BlobImageCache.read(
-        BlobImageCache.avatarBucket,
-        imageUrl,
-      );
-      if (bytes == null || bytes.isEmpty) return null;
-      if (!SvgUtils.isSvgBytes(bytes)) return null;
+      // 用 getFileFromCache 只查缓存元信息,不主动触发下载
+      // (下载由后面的 CachedNetworkImage 负责,避免重复请求)。
+      final fileInfo = await _cacheManager.getFileFromCache(imageUrl);
+      if (fileInfo == null) return null;
+      // 信任响应头:flutter_cache_manager 根据 Content-Type
+      // (image/svg+xml → .svg)给缓存文件起名,这里只看后缀,
+      // 避开读整文件 + 字节嗅探。
+      // 服务端撒谎(回 image/png 但实际是 SVG)的边界场景,
+      // 由 CachedNetworkImage 的 errorWidget → _SvgFallbackBuilder 内容嗅探兜底。
+      if (!fileInfo.file.path.toLowerCase().endsWith('.svg')) return null;
+      final bytes = await fileInfo.file.readAsBytes();
+      if (bytes.isEmpty) return null;
       return SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
     } catch (_) {
       return null;
     }
   }
 
-  /// 静态图路径:BlobImageProvider,解码失败时再次嗅探 SVG 兜底。
+  /// 静态图路径:CachedNetworkImage,解码失败时再次嗅探 SVG 兜底。
   Widget _buildStaticImage(
     Color fgColor,
     double innerRadius,
@@ -122,39 +146,20 @@ class _SmartAvatarState extends State<SmartAvatar> {
     // 数量级;× 2 留一档清晰度余量,cover 裁切不糊。
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
-    return Image(
-      image: ResizeImage(
-        BlobImageProvider(
-          widget.imageUrl!,
-          bucket: BlobImageCache.avatarBucket,
-        ),
-        width: decodeSide,
-        height: decodeSide,
-        policy: ResizeImagePolicy.fit,
-      ),
+    return CachedNetworkImage(
+      imageUrl: widget.imageUrl!,
+      cacheManager: _cacheManager,
       width: innerSize,
       height: innerSize,
+      memCacheWidth: decodeSide,
+      memCacheHeight: decodeSide,
       fit: BoxFit.cover,
-      gaplessPlayback: true,
-      // 复刻 CachedNetworkImage 时代的 150ms 淡入(视觉不变);
-      // AnimatedOpacity 比 OctoImage 的 2 FadeWidget + 2 controller 轻得多。
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded) return child;
-        return Stack(
-          fit: StackFit.passthrough,
-          children: [
-            if (frame == null) _buildLoading(fgColor, innerRadius),
-            AnimatedOpacity(
-              opacity: frame == null ? 0 : 1,
-              duration: const Duration(milliseconds: 150),
-              curve: Curves.easeOut,
-              child: child,
-            ),
-          ],
-        );
-      },
-      errorBuilder: (context, error, stack) => _SvgFallbackBuilder(
+      fadeInDuration: const Duration(milliseconds: 150),
+      fadeOutDuration: const Duration(milliseconds: 150),
+      placeholder: (context, url) => _buildLoading(fgColor, innerRadius),
+      errorWidget: (context, url, error) => _SvgFallbackBuilder(
         imageUrl: widget.imageUrl!,
+        cacheManager: _cacheManager,
         size: innerSize,
         fallback: _buildFallback(fgColor, innerRadius),
       ),
@@ -229,25 +234,36 @@ class _SmartAvatarState extends State<SmartAvatar> {
       );
     }
 
+    final isSquare = isSquareAvatarUrl(widget.imageUrl);
+    final innerDecoration = isSquare
+        ? BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(innerRadius * 0.2),
+          )
+        : BoxDecoration(color: bgColor, shape: BoxShape.circle);
+
     // 使用 BoxDecoration + shape: circle 确保 Hero 动画时保持圆形
     // ClipOval 在 Hero 飞行时不会被正确应用
     Widget avatar = Container(
       width: innerRadius * 2,
       height: innerRadius * 2,
-      decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+      decoration: innerDecoration,
       clipBehavior: Clip.antiAlias,
       child: child,
     );
 
     // 如果有边框，在外层添加，总尺寸保持 radius * 2
     if (widget.border != null) {
+      final outerDecoration = isSquare
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.radius * 0.2),
+              border: widget.border,
+            )
+          : BoxDecoration(shape: BoxShape.circle, border: widget.border);
       avatar = Container(
         width: widget.radius * 2,
         height: widget.radius * 2,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: widget.border,
-        ),
+        decoration: outerDecoration,
         alignment: Alignment.center,
         child: avatar,
       );
@@ -273,12 +289,9 @@ class _SmartAvatarState extends State<SmartAvatar> {
     // 静态灰底占位 — 头像 loading 时间极短,
     // 用 CircularProgressIndicator 会带来 60fps 自转 + InheritedTheme 查询,
     // 在列表多头像同时占位时是热点开销。
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: fgColor.withValues(alpha: 0.08),
-      ),
-    );
+    // 不在这里加自己的 shape:外层 Container 已经按圆形/方形裁切,这里
+    // 铺满矩形即可,否则方形头像 loading 时会露出"圆形补丁"的错位。
+    return Container(color: fgColor.withValues(alpha: 0.08));
   }
 
   Widget _buildFallback(Color fgColor, double radius) {
@@ -302,14 +315,16 @@ class _SmartAvatarState extends State<SmartAvatar> {
 
 /// SVG 检测和渲染组件
 ///
-/// 当位图解码失败时，拉取字节检测是否为 SVG
+/// 当 CachedNetworkImage 解码失败时，检测缓存文件是否为 SVG
 class _SvgFallbackBuilder extends StatefulWidget {
   final String imageUrl;
+  final DiscourseCacheManager cacheManager;
   final double size;
   final Widget fallback;
 
   const _SvgFallbackBuilder({
     required this.imageUrl,
+    required this.cacheManager,
     required this.size,
     required this.fallback,
   });
@@ -330,10 +345,8 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
 
   Future<void> _checkForSvg() async {
     try {
-      final bytes = await BlobImageCache.fetch(
-        BlobImageCache.avatarBucket,
-        widget.imageUrl,
-      );
+      final file = await widget.cacheManager.getSingleFile(widget.imageUrl);
+      final bytes = await file.readAsBytes();
 
       if (bytes.isEmpty || !mounted) return;
 

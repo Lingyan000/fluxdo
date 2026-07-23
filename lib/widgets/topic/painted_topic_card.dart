@@ -8,6 +8,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../utils/relative_time_clock.dart';
 import '../common/animated_avatar_overlay.dart';
+import '../common/smart_avatar.dart' show isSquareAvatarUrl;
 import 'topic_card.dart' show TopicCardInteractiveSurface;
 import 'topic_card_layout.dart';
 
@@ -193,8 +194,7 @@ class _RenderTopicCard extends RenderBox
       canvas.drawParagraph(icon, rect.topLeft + offset + l.titleOffset);
     }
     for (final (rect, url) in l.titleEmojis) {
-      final img = TopicCardImages.lookup(url, this,
-          bucket: BlobImageCache.emojiBucket);
+      final img = TopicCardImages.lookup(url, this);
       if (img != null) {
         canvas.drawImageRect(
           img,
@@ -214,11 +214,20 @@ class _RenderTopicCard extends RenderBox
     final avatarRect = l.avatarRect.shift(offset);
     final avatar = l.avatarUrl == null
         ? null
-        : TopicCardImages.lookup(l.avatarUrl!, this,
-            bucket: BlobImageCache.avatarBucket);
+        : TopicCardImages.lookup(l.avatarUrl!, this);
     if (avatar != null) {
       canvas.save();
-      canvas.clipPath(Path()..addOval(avatarRect));
+      // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
+      // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
+      final clipPath = isSquareAvatarUrl(l.avatarUrl)
+          ? (Path()..addRRect(
+              RRect.fromRectAndRadius(
+                avatarRect,
+                Radius.circular(avatarRect.shortestSide * 0.1),
+              ),
+            ))
+          : (Path()..addOval(avatarRect));
+      canvas.clipPath(clipPath);
       canvas.drawImageRect(
         avatar,
         Rect.fromLTWH(0, 0, avatar.width.toDouble(), avatar.height.toDouble()),
@@ -305,15 +314,12 @@ class _RenderTopicCard extends RenderBox
 class TopicCardImages {
   TopicCardImages._();
 
+  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
   static final Map<String, ui.Image> _images = {};
   static final Map<String, Set<RenderObject>> _waiters = {};
   static const int _cap = 400;
 
-  static ui.Image? lookup(
-    String url,
-    RenderObject requester, {
-    String bucket = BlobImageCache.avatarBucket,
-  }) {
+  static ui.Image? lookup(String url, RenderObject requester) {
     final hit = _images[url];
     if (hit != null) return hit;
     final waiters = _waiters[url];
@@ -322,13 +328,14 @@ class TopicCardImages {
       return null;
     }
     _waiters[url] = {requester};
-    unawaited(_load(url, bucket));
+    unawaited(_load(url));
     return null;
   }
 
-  static Future<void> _load(String url, String bucket) async {
+  static Future<void> _load(String url) async {
     try {
-      final bytes = await BlobImageCache.fetch(bucket, url);
+      final file = await _cacheManager.getSingleFile(url);
+      final bytes = await file.readAsBytes();
       if (bytes.isEmpty) {
         _waiters.remove(url);
         return;
