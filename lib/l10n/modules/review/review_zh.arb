@@ -16,6 +16,7 @@
   },
   "review_withdrawAndEdit": "撤回并重新编辑",
   "review_withdrawAndEditConfirmContent": "将先从审核队列撤回这条内容，原文带回编辑器；重新提交后需再次审核。中途放弃编辑的话内容不会自动恢复。",
+  "review_replyTargetUnknownHint": "注意：无法确认这条内容原本回复的是哪个楼层，重新提交后将作为对话题的直接回复。",
   "review_typeNewTopic": "新话题",
   "review_typeReply": "回复",
   "review_empty": "没有等待审核的内容",

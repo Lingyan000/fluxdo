@@ -49,3 +49,34 @@ class PendingPost {
     );
   }
 }
+
+/// 待审回复的「回复目标楼层」会话级补记(reviewableId → replyToPostNumber)。
+///
+/// 服务端 payload 里存着 reply_to_post_number(new_post_manager.rb enqueue),
+/// 审核通过时回复关系不丢;但发帖人本人可见的所有序列化形态
+/// (TopicPendingPostSerializer / PendingPostSerializer)都不吐这个字段,
+/// 唯一会吐的 ReviewableQueuedPostSerializer 走 GET /review/:id,
+/// Reviewable.viewable_by 只放行 staff/分类版主 —— 本人无权访问。
+///
+/// 所以「撤回并重新编辑」要恢复回复关系,只能趁送审当下 composer 还知道
+/// 上下文时记一笔。注册表按 reviewable id 直寻址,横跨话题详情整刷存活;
+/// 杀进程后丢失(冷场景),此时回复目标未知,UI 需提示用户会退化为直接回复话题。
+class PendingReplyTargetRegistry {
+  PendingReplyTargetRegistry._();
+
+  /// value 为 null = 送审时就是直接回复话题(与「未记录」语义不同)
+  static final Map<int, int?> _targets = {};
+
+  /// 送审当下记录回复目标(null 也要记,表示"确认是直接回复话题")
+  static void record(int reviewableId, int? replyToPostNumber) {
+    _targets[reviewableId] = replyToPostNumber;
+  }
+
+  /// 是否记录过该待审项的送审上下文;false = 冷场景,回复目标未知
+  static bool contains(int reviewableId) => _targets.containsKey(reviewableId);
+
+  static int? lookup(int reviewableId) => _targets[reviewableId];
+
+  /// 撤回成功后清理(重新提交送审会以新 reviewable id 重新记录)
+  static void remove(int reviewableId) => _targets.remove(reviewableId);
+}

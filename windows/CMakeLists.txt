@@ -32,6 +32,12 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# All Windows C/C++ sources in this project are UTF-8. Without an explicit
+# source charset MSVC falls back to the host ANSI code page (936 on zh-CN).
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

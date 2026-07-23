@@ -563,6 +563,15 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       _submitted = true;
       if (!mounted) return;
       final pending = e.pendingPost;
+      if (pending != null && widget.editPost == null && widget.topicId != null) {
+        // enqueued 响应的 pending_post 只有 {id, raw, created_at},回复目标
+        // 服务端 payload 存了但本人可见接口都不吐;趁 composer 还知道上下文
+        // 记入注册表,「撤回并重新编辑」才能恢复"回复某楼"而非退化为直接回复话题
+        PendingReplyTargetRegistry.record(
+          pending.id,
+          widget.replyToPost?.postNumber,
+        );
+      }
       if (widget.onEnqueued != null && pending != null) {
         // 宿主接管展示(如主题页底部待审块),轻提示即可
         widget.onEnqueued!(pending);
