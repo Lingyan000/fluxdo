@@ -44,6 +44,7 @@
   "progressGesture_action_aiAssistant": "AI Assistant",
   "progressGesture_action_bookmark": "Bookmark",
   "progressGesture_action_exportArticle": "Export article",
+  "progressGesture_action_goBack": "Go back",
   "progressGesture_action_filter": "Filter posts",
   "progressGesture_action_jumpToUnread": "Jump to unread",
   "progressGesture_action_none": "None (do nothing)",

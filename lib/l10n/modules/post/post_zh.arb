@@ -169,6 +169,9 @@
       }
     }
   },
+  "pm_recipientHint": "搜索用户或群组",
+  "pm_newTitle": "新建私信",
+  "pm_noRecipient": "请至少添加一个收件人",
   "post_sendPmTitle": "发送私信给 @{username}",
   "@post_sendPmTitle": {
     "placeholders": {
