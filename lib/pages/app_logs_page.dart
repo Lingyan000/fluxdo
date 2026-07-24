@@ -13,6 +13,7 @@ import '../services/log/logger_utils.dart';
 import '../services/network/adapters/platform_adapter.dart';
 import '../services/toast_service.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -852,7 +853,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: LoadingSpinner());
     }
 
     if (_entries.isEmpty) {
@@ -898,7 +899,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
                     ),
                   ),
                 )
-              : RefreshIndicator(
+              : M3eRefreshIndicator(
                   onRefresh: _loadLogs,
                   child: ListView.builder(
                     itemCount: _filtered.length,

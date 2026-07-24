@@ -1,9 +1,7 @@
 import 'dart:ui' as ui show Image;
 import 'package:flutter/material.dart';
 
-import 'utils.dart';
 import 'gesture/utils.dart';
-import 'gesture/gesture.dart';
 import 'gesture/slide_page.dart';
 
 ///
@@ -11,8 +9,6 @@ import 'gesture/slide_page.dart';
 ///  create by zmtzawqlp on 2019/4/3
 ///  modified for extended_image_lite
 ///
-
-typedef LoadStateChanged = Widget? Function(ExtendedImageState state);
 
 /// [rect] is render size
 /// if return true, it will not paint original image,
@@ -28,9 +24,6 @@ typedef GestureOffsetAnimationCallBack = void Function(Offset offset);
 
 /// Animation call back for scale
 typedef GestureScaleAnimationCallBack = void Function(double scale);
-
-/// Double tap call back
-typedef DoubleTap = void Function(ExtendedImageGestureState state);
 
 /// Build page background when slide page
 typedef SlidePageBackgroundHandler =
@@ -53,10 +46,6 @@ typedef SlideEndHandler =
 typedef SlideScaleHandler =
     double? Function(Offset offset, {ExtendedImageSlidePageState state});
 
-/// Init GestureConfig when image is ready.
-typedef InitGestureConfigHandler =
-    GestureConfig Function(ExtendedImageState state);
-
 /// Call on sliding page
 typedef OnSlidingPage = void Function(ExtendedImageSlidePageState state);
 
@@ -66,9 +55,6 @@ typedef CanScrollPage = bool Function(GestureDetails? gestureDetails);
 /// Return initial destination rect
 typedef InitDestinationRect = void Function(Rect initialDestinationRect);
 
-/// Return merged editRect rect
-typedef MergeEditRect = Rect Function(Rect editRect);
-
 /// Build Gesture Image
 typedef BuildGestureImage = Widget Function(GestureDetails gestureDetails);
 
@@ -76,13 +62,6 @@ typedef BuildGestureImage = Widget Function(GestureDetails gestureDetails);
 /// the transform of sliding page must be working on Hero
 /// so that Hero animation wouldn't be strange when pop page
 typedef HeroBuilderForSlidingPage = Widget Function(Widget widget);
-
-/// Build image for gesture, we can handle custom Widget about gesture
-typedef ImageBuilderForGesture =
-    Widget Function(
-      Widget image, {
-      ExtendedImageGestureState? imageGestureState,
-    });
 
 /// Whether should scale image
 typedef CanScaleImage = bool Function(GestureDetails? details);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
@@ -787,8 +788,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       children: [
         // 上下文加载提示
         if (_isLoadingContext)
-          LinearProgressIndicator(
-            minHeight: 2,
+          M3eLinearProgress(
             color: theme.colorScheme.primary,
           ),
 

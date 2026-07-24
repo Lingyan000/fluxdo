@@ -6,4 +6,3 @@ library;
 
 export 'src/app_sheet_scaffold.dart';
 export 'src/dismissible_popup_menu.dart';
-export 'src/segmented_card_group.dart';

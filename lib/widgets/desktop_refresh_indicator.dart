@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../providers/shortcut_provider.dart';
 import '../utils/platform_utils.dart';
@@ -17,7 +18,7 @@ class DesktopRefreshIndicator extends StatefulWidget {
   final Widget child;
   final Future<void> Function() onRefresh;
   final ValueListenable<int>? refreshNotifier;
-  final GlobalKey<RefreshIndicatorState>? refreshIndicatorKey;
+  final GlobalKey<M3eRefreshIndicatorState>? refreshIndicatorKey;
 
   /// 额外的可见性条件（如 isCurrentTab、isActive），
   /// 不满足时不响应信号
@@ -47,13 +48,13 @@ class DesktopRefreshIndicator extends StatefulWidget {
 }
 
 class _DesktopRefreshIndicatorState extends State<DesktopRefreshIndicator> {
-  late final GlobalKey<RefreshIndicatorState> _key;
+  late final GlobalKey<M3eRefreshIndicatorState> _key;
   ValueListenable<int>? _notifier;
 
   @override
   void initState() {
     super.initState();
-    _key = widget.refreshIndicatorKey ?? GlobalKey<RefreshIndicatorState>();
+    _key = widget.refreshIndicatorKey ?? GlobalKey<M3eRefreshIndicatorState>();
     if (PlatformUtils.isDesktop) {
       _notifier = widget.refreshNotifier ?? desktopRefreshNotifier;
       _notifier!.addListener(_onSignal);
@@ -74,7 +75,7 @@ class _DesktopRefreshIndicatorState extends State<DesktopRefreshIndicator> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return M3eRefreshIndicator(
       key: _key,
       onRefresh: widget.onRefresh,
       edgeOffset: widget.edgeOffset,

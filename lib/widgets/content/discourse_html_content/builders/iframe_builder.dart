@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../constants.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/url_helper.dart';
@@ -343,7 +344,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
           if (!_isLoaded && !_hasError)
             Container(
               color: theme.colorScheme.surfaceContainerHighest,
-              child: const Center(child: CircularProgressIndicator()),
+              child: const Center(child: LoadingSpinner()),
             ),
           // 错误状态
           if (_hasError)

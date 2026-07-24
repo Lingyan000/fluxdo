@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'extended_image.dart';
-import 'gesture/slide_page.dart';
-
 enum LoadState {
   /// loading
   loading,
@@ -15,44 +12,6 @@ enum LoadState {
 
   /// failed
   failed,
-}
-
-mixin ExtendedImageState {
-  void reLoadImage();
-  ImageInfo? get extendedImageInfo;
-  LoadState get extendedImageLoadState;
-
-  ///return widget which from LoadStateChanged function immediately
-  late bool returnLoadStateChangedWidget;
-
-  ImageProvider get imageProvider;
-
-  bool get invertColors;
-
-  Object? get imageStreamKey;
-
-  ExtendedImage get imageWidget;
-
-  Widget get completedWidget;
-
-  ImageChunkEvent? get loadingProgress;
-
-  int? get frameNumber;
-
-  bool get wasSynchronouslyLoaded;
-
-  ExtendedImageSlidePageState? get slidePageState;
-
-  Object? get lastException;
-  StackTrace? get lastStack;
-}
-
-enum ExtendedImageMode {
-  /// just show image
-  none,
-
-  /// support be to zoom,scroll
-  gesture,
 }
 
 ///get type from T

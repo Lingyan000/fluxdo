@@ -15,6 +15,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:popover/popover.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../pages/image_viewer_page.dart';
@@ -465,11 +466,7 @@ class FluxdoRenderCallbacks {
           loadingBuilder: (c, _, child) => Center(
             child: posterUrl != null
                 ? child
-                : const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                : const LoadingSpinner(size: 24),
           ),
         ),
       ),
@@ -1156,13 +1153,7 @@ class FluxdoRenderCallbacks {
                   url: resolvedUrl,
                   width: dispW,
                   height: dispH,
-                  placeholderBuilder: (_) => const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
+                  placeholderBuilder: (_) => const LoadingSpinner(size: 24),
                 ),
               ),
             ),
@@ -1265,6 +1256,7 @@ class FluxdoRenderCallbacks {
                   post: post,
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
+                  heroTag: heroTag,
                 ),
                 onSecondaryTapUp: (details) => _showImageContextMenu(
                   ctx,
@@ -1274,6 +1266,7 @@ class FluxdoRenderCallbacks {
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
                   position: details.globalPosition,
+                  heroTag: heroTag,
                 ),
               );
               // 预览缩放胶囊(右上角浮层,子包统一视觉)。仅有界宽上下文
@@ -1325,6 +1318,7 @@ class FluxdoRenderCallbacks {
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
+    String? heroTag,
   }) {
     final scope = QuoteImageScope.maybeOf(context);
     final liveQuoteHandler = scope != null ? scope.handler : onQuoteImage;
@@ -1340,6 +1334,7 @@ class FluxdoRenderCallbacks {
       topicId: topicId,
       onQuoteImage: liveQuoteHandler,
       position: position,
+      heroTag: heroTag,
     );
   }
 

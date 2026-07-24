@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/blob_image_cache.dart';
 import '../../services/media_geometry_memo.dart';
@@ -272,11 +273,7 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
       width: widget.width,
       height: widget.height ?? 100,
       child: const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        child: LoadingSpinner(size: 20),
       ),
     );
   }

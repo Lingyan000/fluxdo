@@ -142,91 +142,53 @@ class DoubleTapZoomController {
 }
 
 /// 双击缩放 Mixin
-/// 
-/// 提供便捷的使用方式，自动管理 AnimationController 和动画
+///
+/// 算目标倍率后委托手势层的弹簧动画(动画由手势层持有,与其他动画
+/// 同受指针打断管理);本 mixin 只保留图片尺寸缓存与目标倍率计算。
 mixin DoubleTapZoomMixin<T extends StatefulWidget> on State<T>, TickerProviderStateMixin<T> {
-  late AnimationController _doubleTapAnimationController;
-  Animation<double>? _doubleTapAnimation;
-  VoidCallback? _doubleTapAnimationListener;
-  
   /// 缓存的图片尺寸（按 URL 存储）
   final Map<String, Size> _imageSizeCache = {};
-  
+
   /// 初始化双击缩放
-  void initDoubleTapZoom() {
-    _doubleTapAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-  }
-  
+  void initDoubleTapZoom() {}
+
   /// 释放资源
-  void disposeDoubleTapZoom() {
-    _doubleTapAnimation?.removeListener(_doubleTapAnimationListener ?? () {});
-    _doubleTapAnimationController.dispose();
-  }
-  
+  void disposeDoubleTapZoom() {}
+
   /// 缓存图片尺寸
   void cacheImageSize(String url, Size size) {
     _imageSizeCache[url] = size;
   }
-  
+
   /// 获取缓存的图片尺寸
   Size? getCachedImageSize(String url) {
     return _imageSizeCache[url];
   }
-  
-  /// 处理双击事件（带平滑动画）
-  /// 
-  /// 这是核心方法，使用 AnimationController + Tween 驱动动画
-  void handleDoubleTapZoom(
-    ExtendedImageGestureState state, {
-    String? imageUrl,
-  }) {
+
+  /// 处理双击事件:弹簧动画驱动缩放收敛(快起慢收,可无缝打断)。
+  ///
+  /// [state] 为包内 DoubleTapTarget 接口(由 GestureSurfaceState 实现)。
+  void handleDoubleTapZoom(DoubleTapTarget state, {String? imageUrl}) {
     final pointerDownPosition = state.pointerDownPosition;
     if (pointerDownPosition == null) return;
-    
+
     final gestureDetails = state.gestureDetails;
     if (gestureDetails == null) return;
-    
+
     final currentScale = gestureDetails.totalScale ?? 1.0;
     final screenSize = MediaQuery.of(context).size;
     final imageSize = imageUrl != null ? getCachedImageSize(imageUrl) : null;
-    
+
     // 计算目标缩放比例
     final targetScale = DoubleTapZoomController.calculateTargetScale(
       currentScale: currentScale,
       screenSize: screenSize,
       imageSize: imageSize,
     );
-    
-    // 移除旧的动画监听器
-    if (_doubleTapAnimationListener != null) {
-      _doubleTapAnimation?.removeListener(_doubleTapAnimationListener!);
-    }
-    
-    // 停止并重置动画控制器
-    _doubleTapAnimationController.stop();
-    _doubleTapAnimationController.reset();
-    
-    // 创建新的动画监听器
-    _doubleTapAnimationListener = () {
-      state.handleDoubleTap(
-        scale: _doubleTapAnimation!.value,
-        doubleTapPosition: pointerDownPosition,
-      );
-    };
-    
-    // 创建缩放动画（使用 easeOutCubic 曲线：快进慢出）
-    _doubleTapAnimation = _doubleTapAnimationController.drive(
-      Tween<double>(begin: currentScale, end: targetScale)
-        .chain(CurveTween(curve: Curves.easeOutCubic)),
+
+    state.animateDoubleTapZoom(
+      targetScale: targetScale,
+      doubleTapPosition: pointerDownPosition,
     );
-    
-    // 添加监听器
-    _doubleTapAnimation!.addListener(_doubleTapAnimationListener!);
-    
-    // 启动动画
-    _doubleTapAnimationController.forward();
   }
 }

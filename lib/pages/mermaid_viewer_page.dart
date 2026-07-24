@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import 'image_viewer_page.dart';
@@ -131,7 +132,7 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
                 ),
               ),
             if (!_loaded && !_error)
-              const Center(child: CircularProgressIndicator()),
+              const Center(child: LoadingSpinner()),
             if (_error)
               Center(
                 child: Column(

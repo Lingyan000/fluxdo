@@ -10,7 +10,7 @@ import '../providers/directory_providers.dart';
 import '../providers/profile_stats_provider.dart';
 import '../utils/number_utils.dart';
 import '../l10n/s.dart';
-import 'common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 统计卡片渲染组件（个人页使用）
 ///

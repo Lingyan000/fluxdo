@@ -11,7 +11,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/cached_image.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'sticker_market_sheet.dart';
 import '../../../../../l10n/s.dart';
 

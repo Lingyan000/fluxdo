@@ -17,7 +17,7 @@ import '../services/migration_service.dart';
 import '../utils/dialog_utils.dart';
 import '../widgets/common/ambient_background.dart';
 import '../widgets/common/error_view.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'preheat_logo.dart';
 
 class PreheatGate extends StatefulWidget {

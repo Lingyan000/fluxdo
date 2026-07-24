@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'dart:async';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/tag_search_result.dart';
@@ -301,13 +302,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                 prefixIcon: _isLoading
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
-                                        child: SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
+                                        child: LoadingSpinner(size: 20),
                                       )
                                     : Icon(
                                         Symbols.search_rounded,
@@ -378,7 +373,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
               // 标签列表
               Expanded(
                 child: !_initialized
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: LoadingSpinner())
                     : displayTags.isEmpty
                     ? Center(
                         child: Text(

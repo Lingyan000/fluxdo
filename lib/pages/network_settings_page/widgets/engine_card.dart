@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/adapters/cronet_fallback_service.dart';
@@ -325,23 +326,19 @@ class _EngineCardState extends State<EngineCard> {
               children: [
                 SizedBox(
                   width: double.infinity,
-                  child: SegmentedButton<RhttpMode>(
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    segments: [
-                      ButtonSegment(
+                  child: M3eButtonGroup<RhttpMode>(
+                    items: [
+                      M3eButtonGroupItem(
                         value: RhttpMode.always,
                         label: Text(l10n.rhttpEngine_alwaysUse),
                       ),
-                      ButtonSegment(
+                      M3eButtonGroupItem(
                         value: RhttpMode.proxyOnly,
                         label: Text(l10n.rhttpEngine_proxyDohOnly),
                       ),
                     ],
-                    selected: {rhttpSettings.mode},
-                    onSelectionChanged: (modes) => rhttp.setMode(modes.first),
+                    selected: rhttpSettings.mode,
+                    onSelected: (mode) => rhttp.setMode(mode),
                   ),
                 ),
                 if (echFallback)

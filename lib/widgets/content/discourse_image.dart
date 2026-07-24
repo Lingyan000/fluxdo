@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/image_viewer_page.dart';
@@ -246,13 +247,9 @@ class _DiscourseImageState extends State<DiscourseImage> {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: theme.colorScheme.outline.withValues(alpha: 0.5),
-          ),
+        child: LoadingSpinner(
+          size: 20,
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
         ),
       ),
     );

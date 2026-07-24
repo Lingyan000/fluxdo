@@ -5,6 +5,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/link_launcher.dart';
 import '../services/toast_service.dart';
@@ -227,9 +228,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         body: Column(
               children: [
                 if (_isLoading)
-                  LinearProgressIndicator(
+                  M3eLinearProgress(
                     value: _progress,
-                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    trackColor: theme.colorScheme.surfaceContainerHighest,
                   ),
                 Expanded(
                   child: Stack(

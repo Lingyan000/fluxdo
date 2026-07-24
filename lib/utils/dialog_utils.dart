@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
@@ -190,11 +191,30 @@ Widget _buildMaterialDialogTransitions(
   Animation<double> secondaryAnimation,
   Widget child,
 ) {
+  // M3E:入场淡入 + 从 0.92 弹性放大(defaultSpatial 解析解,带轻微
+  // 过冲的"落座感");退场纯淡出。关闭 M3E 时维持经典纯淡入。
+  if (M3eFlags.of(context).enabled) {
+    final scale = animation.status == AnimationStatus.reverse
+        ? const AlwaysStoppedAnimation(1.0)
+        : Tween<double>(begin: 0.92, end: 1.0).animate(
+            CurvedAnimation(parent: animation, curve: _kDialogEnterCurve),
+          );
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: ScaleTransition(scale: scale, child: child),
+    );
+  }
   return FadeTransition(
     opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
     child: child,
   );
 }
+
+/// 对话框入场弹簧曲线:defaultSpatial(0.8/380)在 250ms 窗口内的
+/// 解析解,首峰轻微过冲(≈1.7%),收敛即落座。
+final Curve _kDialogEnterCurve = M3eMotion.defaultSpatial.curveFor(
+  const Duration(milliseconds: 250),
+);
 
 /// 替代 [showModalBottomSheet]，自动根据用户偏好添加背景高斯模糊。
 Future<T?> showAppBottomSheet<T>({
