@@ -10,7 +10,7 @@ import '../services/notion/notion_client.dart';
 import '../services/notion/notion_config.dart';
 import '../services/notion/notion_sync_service.dart';
 import '../services/toast_service.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// Notion 同步设置页：分步引导 + 配置编辑。
 class NotionSettingsPage extends ConsumerStatefulWidget {
@@ -413,28 +413,25 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: SegmentedButton<NotionSyncScope>(
-                          segments: [
-                            ButtonSegment(
-                              value: NotionSyncScope.firstPostOnly,
-                              label: Text(
-                                context.l10n.export_firstPostOnly,
-                              ),
+                      M3eButtonGroup<NotionSyncScope>(
+                        items: [
+                          M3eButtonGroupItem(
+                            value: NotionSyncScope.firstPostOnly,
+                            label: Text(
+                              context.l10n.export_firstPostOnly,
                             ),
-                            ButtonSegment(
-                              value: NotionSyncScope.allPosts,
-                              label: Text(context.l10n.common_all),
-                            ),
-                          ],
-                          selected: {cfg.syncScope},
-                          onSelectionChanged: (s) {
-                            ref
-                                .read(notionConfigProvider.notifier)
-                                .update(cfg.copyWith(syncScope: s.first));
-                          },
-                        ),
+                          ),
+                          M3eButtonGroupItem(
+                            value: NotionSyncScope.allPosts,
+                            label: Text(context.l10n.common_all),
+                          ),
+                        ],
+                        selected: cfg.syncScope,
+                        onSelected: (scope) {
+                          ref
+                              .read(notionConfigProvider.notifier)
+                              .update(cfg.copyWith(syncScope: scope));
+                        },
                       ),
                     ],
                   ),

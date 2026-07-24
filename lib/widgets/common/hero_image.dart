@@ -12,7 +12,7 @@ import '../../utils/hero_visibility_controller.dart';
 /// 使用者只需包裹 HeroImage 即可获得完整的 Hero 体验。
 /// 调用方（如 ImageViewerPage）在 initState/onPageChanged/dispose 时
 /// 通知 HeroVisibilityController 即可。
-class HeroImage extends StatelessWidget {
+class HeroImage extends StatefulWidget {
   /// Hero 动画的唯一标识
   final String heroTag;
 
@@ -38,7 +38,43 @@ class HeroImage extends StatelessWidget {
   });
 
   @override
+  State<HeroImage> createState() => _HeroImageState();
+}
+
+class _HeroImageState extends State<HeroImage> {
+  @override
+  void initState() {
+    super.initState();
+    // 注册自身位置:查看器翻页时按 tag 反查并把本缩略图滚进可视区,
+    // 保证 pop 时 Hero 有目的地(否则图片只能原地渐隐)
+    HeroVisibilityController.instance.registerSource(widget.heroTag, context);
+  }
+
+  @override
+  void didUpdateWidget(HeroImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.heroTag != widget.heroTag) {
+      HeroVisibilityController.instance.unregisterSource(
+        oldWidget.heroTag,
+        context,
+      );
+      HeroVisibilityController.instance.registerSource(widget.heroTag, context);
+    }
+  }
+
+  @override
+  void dispose() {
+    HeroVisibilityController.instance.unregisterSource(
+      widget.heroTag,
+      context,
+    );
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final String heroTag = widget.heroTag;
+    final Widget child = widget.child;
     // Opacity 在 Hero 外层控制可见性
     // Hero 飞行在 Overlay 中，不受外层 Opacity 影响
     return ListenableBuilder(
@@ -80,9 +116,9 @@ class HeroImage extends StatelessWidget {
               }
               // 其他图片：显示图片
               return GestureDetector(
-                onTap: onTap,
-                onLongPress: onLongPress,
-                onSecondaryTapUp: onSecondaryTapUp,
+                onTap: widget.onTap,
+                onLongPress: widget.onLongPress,
+                onSecondaryTapUp: widget.onSecondaryTapUp,
                 child: SizedBox(
                   width: heroSize.width,
                   height: heroSize.height,
@@ -91,9 +127,9 @@ class HeroImage extends StatelessWidget {
               );
             },
             child: GestureDetector(
-              onTap: onTap,
-              onLongPress: onLongPress,
-              onSecondaryTapUp: onSecondaryTapUp,
+              onTap: widget.onTap,
+              onLongPress: widget.onLongPress,
+              onSecondaryTapUp: widget.onSecondaryTapUp,
               child: child,
             ),
           ),

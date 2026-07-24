@@ -38,6 +38,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../constants.dart';
 import '../../../models/mention_user.dart';
@@ -55,6 +56,7 @@ import '../../common/fading_edge_scroll_view.dart';
 import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
+import '../emoji_popover.dart';
 import '../emoji_sticker_panel.dart';
 import '../image_upload_dialog.dart';
 import '../link_insert_dialog.dart';
@@ -175,6 +177,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 重建整个 emoji grid)。
   Widget? _emojiPanelChild;
 
+  /// 桌面端表情悬浮弹层控制器(MarkdownEditor 同款;移动端 null)
+  EmojiPopoverController? _emojiPopover;
+
   // mention 补全状态
   final LayerLink _mentionLink = LayerLink();
   OverlayEntry? _mentionOverlay;
@@ -195,8 +200,21 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 预热 cook 引擎:551K JS bundle 的同步 eval 挪到打开编辑器时,
     // 否则落在首次序列化触发预览 cook 的时刻 —— 表现为"打第一个字超卡"。
     DiscourseCookService().warmUp();
+    if (_isDesktop) {
+      _emojiPopover = EmojiPopoverController()
+        ..addListener(_onEmojiPopoverChanged);
+    }
     if (kDebugMode) EditorImeClient.debugLogging = true;
     _importInitial();
+  }
+
+  /// 弹层开合同步 _showEmojiPanel(驱动工具栏表情按钮高亮)
+  void _onEmojiPopoverChanged() {
+    if (!mounted) return;
+    final isOpen = _emojiPopover?.isOpen ?? false;
+    if (_showEmojiPanel != isOpen) {
+      setState(() => _showEmojiPanel = isOpen);
+    }
   }
 
   Future<void> _importInitial() async {
@@ -225,6 +243,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 宿主的草稿监听也还挂着;不 flush 的话宿主 dispose 里的兜底草稿
     // 保存读到旧文本(丢最后一句话)。
     flushToController();
+    _emojiPopover?.dispose();
     _serializeDebounce?.cancel();
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
@@ -843,24 +862,22 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   // -----------------------------------------------------------------
 
   /// 表情面板开关(MarkdownEditor._togglePanel 同构:移动端经
-  /// ChatBottomPanelContainer 与键盘等高互切零跳变;桌面无键盘直接切)。
+  /// ChatBottomPanelContainer 与键盘等高互切零跳变;桌面走悬浮弹层)。
   void _toggleEmojiPanel() {
+    // 桌面端:悬浮弹层,不收 IME、焦点/光标原地不动;
+    // _showEmojiPanel 由 popover listener 同步(驱动按钮高亮)
+    if (_isDesktop) {
+      _emojiPopover!.toggle(context, panel: _ensureEmojiPanelChild());
+      return;
+    }
     if (_intendedPanel == _RichPanelType.emoji) {
       _intendedPanel = _RichPanelType.none;
-      if (_isDesktop) {
-        _panelController.updatePanelType(
-          ChatBottomPanelType.none,
-          forceHandleFocus: ChatBottomHandleFocus.none,
-        );
-        _editorFocus.requestFocus();
-      } else {
-        // 切回键盘:显式 TextInput.show —— 编辑器自管连接一直挂着且
-        // 焦点从未离开,requestFocus 无事发生、syncFromState 判无变化
-        // 不调平台,键盘不会自己弹(与点编辑区切回同一根因)
-        _panelController.updatePanelType(ChatBottomPanelType.keyboard);
-        _editorFocus.requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
+      // 切回键盘:显式 TextInput.show —— 编辑器自管连接一直挂着且
+      // 焦点从未离开,requestFocus 无事发生、syncFromState 判无变化
+      // 不调平台,键盘不会自己弹(与点编辑区切回同一根因)
+      _panelController.updatePanelType(ChatBottomPanelType.keyboard);
+      _editorFocus.requestFocus();
+      SystemChannels.textInput.invokeMethod('TextInput.show');
       setState(() => _showEmojiPanel = false);
       widget.onEmojiPanelChanged?.call(false);
     } else {
@@ -901,6 +918,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 宿主页 PopScope 只认 onEmojiPanelChanged 回落 canPop,这里
   /// 直接同步状态,不等容器 onPanelTypeChange 转一圈。
   void closeEmojiPanel() {
+    if (_isDesktop) {
+      _emojiPopover?.hide();
+      return;
+    }
     if (_intendedPanel == _RichPanelType.none &&
         _currentPanel != _RichPanelType.emoji) {
       return;
@@ -926,15 +947,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         : max(widget.emojiPanelHeight, safeBottom);
   }
 
-  Widget _buildEmojiPanel() {
+  /// 构建(或复用)EmojiStickerPanel 缓存实例,docked 与桌面悬浮弹层共用
+  Widget _ensureEmojiPanelChild() {
     _emojiPanelChild ??= EmojiStickerPanel(
+      // 桌面悬浮弹层:搜索走内联视图,布局按小窗收紧;
+      // 面板内开 Navigator 层 sheet(表情包市场)前先收弹层
+      inlineSearch: _isDesktop,
+      compact: _isDesktop,
+      onDismissRequested: _isDesktop ? () => _emojiPopover?.hide() : null,
       onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
       // sticker markdown(含 ,30% 缩放后缀)走 cook 链路整段导入
       onStickerSelected: insertMarkdownSnippet,
       // 富编辑器的 backspace 原生处理岛/容器边界,直接复用
       onBackspace: () => _editor?.backspace(),
     );
-    return SizedBox(height: _panelHeight, child: _emojiPanelChild);
+    return _emojiPanelChild!;
+  }
+
+  Widget _buildEmojiPanel() {
+    return SizedBox(height: _panelHeight, child: _ensureEmojiPanelChild());
   }
 
   void _insertEmoji(String name) {
@@ -2250,11 +2281,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: LoadingSpinner(size: 24),
         ),
       );
     }
@@ -2411,6 +2438,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           state: editor,
           isEmojiPanelVisible: _showEmojiPanel,
           onToggleEmoji: _toggleEmojiPanel,
+          // 桌面端表情按钮由弹层锚点包裹(跟随定位 + toggle 无闪烁)
+          emojiPopover: _emojiPopover,
           uploading: _uploadingCount > 0,
           onPickImage: _pickAndUploadImages,
           onInsertLink: _insertLink,
@@ -2587,6 +2616,7 @@ class _RichToolbar extends StatefulWidget {
     this.onPointerMove,
     this.onPointerEnd,
     this.onSwitchToSource,
+    this.emojiPopover,
   });
 
   final EditorState state;
@@ -2596,6 +2626,9 @@ class _RichToolbar extends StatefulWidget {
   final VoidCallback onPickImage;
   final VoidCallback onInsertLink;
   final void Function(BuildContext anchorContext) onInsertMenu;
+
+  /// 桌面端表情悬浮弹层控制器(非 null 时表情按钮被锚点包裹)
+  final EmojiPopoverController? emojiPopover;
 
   /// 手势光标(虚拟指针):滑钮 pan 驱动浮动光标二维漂移;
   /// [onPointerStart] null 不显示。
@@ -2700,6 +2733,30 @@ class _RichToolbarState extends State<_RichToolbar> {
     state.toggleMark(MarkKind.spoilerInline);
   }
 
+  /// 表情按钮:桌面端(emojiPopover != null)由弹层锚点包裹,且不切
+  /// keyboard 图标(那是移动端"切回键盘"语义,悬浮弹层不收键盘)
+  Widget _buildEmojiButton(ThemeData theme, Color pillColor) {
+    final popover = widget.emojiPopover;
+    final button = _Pill(
+      color: pillColor,
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        icon: FaIcon(
+          widget.isEmojiPanelVisible && popover == null
+              ? FontAwesomeIcons.keyboard
+              : FontAwesomeIcons.faceSmile,
+          size: 20,
+          color: widget.isEmojiPanelVisible
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        onPressed: widget.onToggleEmoji,
+      ),
+    );
+    if (popover == null) return button;
+    return EmojiPopoverAnchor(controller: popover, child: button);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -2719,22 +2776,7 @@ class _RichToolbarState extends State<_RichToolbar> {
           child: Row(
             children: [
               // 左:表情按钮(胶囊背景,固定)
-              _Pill(
-                color: pillColor,
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: FaIcon(
-                    widget.isEmojiPanelVisible
-                        ? FontAwesomeIcons.keyboard
-                        : FontAwesomeIcons.faceSmile,
-                    size: 20,
-                    color: widget.isEmojiPanelVisible
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: widget.onToggleEmoji,
-                ),
-              ),
+              _buildEmojiButton(theme, pillColor),
               // 中:格式/插入工具(可滚动,无背景)
               Expanded(
                 child: Padding(

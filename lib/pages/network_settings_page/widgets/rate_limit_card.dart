@@ -380,24 +380,14 @@ class _SliderTile extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 7,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: value.toDouble(),
-                    min: min.toDouble(),
-                    max: max.toDouble(),
-                    divisions: max - min,
-                    label: suffix != null ? '$value $suffix' : '$value',
-                    onChanged: (v) => onChanged(v.round()),
-                  ),
+                // 滑块样式走全局主题(M3E 开 = year2023 新样式)
+                Slider(
+                  value: value.toDouble(),
+                  min: min.toDouble(),
+                  max: max.toDouble(),
+                  divisions: max - min,
+                  label: suffix != null ? '$value $suffix' : '$value',
+                  onChanged: (v) => onChanged(v.round()),
                 ),
               ],
             ),

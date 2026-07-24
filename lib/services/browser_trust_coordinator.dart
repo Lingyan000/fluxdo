@@ -748,7 +748,7 @@ document.close();
   window.__fluxdoPreloadedSnapshotInstalled = true;
 
   function capture() {
-    var el = document.querySelector('[data-preloaded]');
+    var el = document.querySelector('#data-preloaded, [data-preloaded]');
     if (!el) return false;
     var parts = [el.outerHTML];
     document.querySelectorAll('meta[name]').forEach(function(m) {

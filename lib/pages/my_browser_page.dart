@@ -10,7 +10,7 @@ import '../providers/web_history_provider.dart';
 import '../utils/time_utils.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'webview_page.dart';
 import 'download_list_page.dart';
 

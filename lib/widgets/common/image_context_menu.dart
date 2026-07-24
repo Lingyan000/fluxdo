@@ -31,6 +31,7 @@ class ImageContextMenu {
   /// [onQuoteImage] 引用回调（打开回复框），为 null 时隐藏「引用」选项
   /// [position] 鼠标全局位置（桌面端右键时传入，用于定位 Popup Menu）
   /// [onClose] 关闭回调（图片查看页内传入，显示「关闭」选项）
+  /// [heroTag] 源缩略图的 Hero tag（「查看大图」打开查看器时飞行转场用）
   static void show({
     required BuildContext context,
     required String imageUrl,
@@ -44,6 +45,7 @@ class ImageContextMenu {
     // 对齐 Web 端「复制引用」原样保留图片格式的行为)。为 null 时(如
     // cooked 里找不到匹配 img)降级用 `![image](CDN 完整 URL)`。
     String? quoteMarkdown,
+    String? heroTag,
   }) {
     final originalUrl = DiscourseImageUtils.getOriginalUrl(imageUrl);
 
@@ -59,6 +61,7 @@ class ImageContextMenu {
         position: position,
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
+        heroTag: heroTag,
       );
     } else {
       _showMobileMenu(
@@ -71,6 +74,7 @@ class ImageContextMenu {
         onQuoteImage: onQuoteImage,
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
+        heroTag: heroTag,
       );
     }
   }
@@ -87,6 +91,7 @@ class ImageContextMenu {
     required Offset position,
     VoidCallback? onClose,
     String? quoteMarkdown,
+    String? heroTag,
   }) {
     final overlayRenderObject = Overlay.of(context).context.findRenderObject();
     if (overlayRenderObject is! RenderBox || !overlayRenderObject.hasSize) {
@@ -100,6 +105,7 @@ class ImageContextMenu {
         topicId: topicId,
         onQuoteImage: onQuoteImage,
         quoteMarkdown: quoteMarkdown,
+        heroTag: heroTag,
       );
       return;
     }
@@ -174,6 +180,7 @@ class ImageContextMenu {
         onQuoteImage: onQuoteImage,
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
+        heroTag: heroTag,
       );
     });
   }
@@ -189,6 +196,7 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     VoidCallback? onClose,
     String? quoteMarkdown,
+    String? heroTag,
   }) {
     AppBottomSheet.show(
       context: context,
@@ -207,6 +215,7 @@ class ImageContextMenu {
                     context,
                     originalUrl,
                     thumbnailUrl: imageUrl,
+                    heroTag: heroTag,
                   );
                 },
               ),
@@ -298,10 +307,16 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     VoidCallback? onClose,
     String? quoteMarkdown,
+    String? heroTag,
   }) {
     switch (action) {
       case 'viewFull':
-        ImageViewerPage.open(context, originalUrl, thumbnailUrl: imageUrl);
+        ImageViewerPage.open(
+          context,
+          originalUrl,
+          thumbnailUrl: imageUrl,
+          heroTag: heroTag,
+        );
       case 'copyImage':
         _copyImage(originalUrl);
       case 'copyLink':

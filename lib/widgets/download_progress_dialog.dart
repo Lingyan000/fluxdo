@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:paper_shaders/paper_shaders.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../providers/apk_update_provider.dart';
@@ -108,26 +109,16 @@ class DownloadProgressDialog extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          LinearProgressIndicator(
+          M3eLinearProgress(
             value: state.progress / 100,
-            backgroundColor: color.withValues(alpha: 0.1),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 2,
-            borderRadius: BorderRadius.circular(1),
+            color: color,
+            trackColor: color.withValues(alpha: 0.1),
           ),
         ],
       );
     } else if (status == ApkDownloadStatus.verifying ||
         status == ApkDownloadStatus.idle) {
-      return SizedBox(
-        width: 60,
-        height: 60,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          backgroundColor: Colors.transparent,
-          valueColor: AlwaysStoppedAnimation<Color>(color),
-        ),
-      );
+      return LoadingSpinner(size: 60, color: color);
     } else {
       IconData icon;
       Color iconColor = color;

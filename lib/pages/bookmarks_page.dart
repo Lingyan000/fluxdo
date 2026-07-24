@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../models/search_filter.dart';
@@ -564,11 +565,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       tooltip: context.l10n.bookmarks_syncBookmarks,
       onPressed: isReconciling ? null : _onManualSync,
       icon: isReconciling
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
+          ? const LoadingSpinner(size: 18)
           : const Icon(Symbols.sync_rounded),
     );
   }

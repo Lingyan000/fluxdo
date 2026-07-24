@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../models/topic.dart';
 import '../../l10n/s.dart';
 import '../../pages/notion_settings_page.dart';
@@ -290,14 +291,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
         child: FilledButton.icon(
           onPressed: _isExporting ? null : _export,
           icon: _isExporting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
+              ? const LoadingSpinner(size: 18, color: Colors.white)
               : const Icon(Symbols.download_rounded),
           label: Text(_buttonLabel(context)),
           style: FilledButton.styleFrom(
@@ -323,22 +317,22 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<ExportScope>(
-              segments: [
-                ButtonSegment(
+            child: M3eButtonGroup<ExportScope>(
+              items: [
+                M3eButtonGroupItem(
                   value: ExportScope.firstPostOnly,
                   label: Text(context.l10n.export_firstPostOnly),
                   icon: const Icon(Symbols.article_rounded),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: ExportScope.allPosts,
                   label: Text(context.l10n.common_all),
                   icon: const Icon(Symbols.forum_rounded),
                 ),
               ],
-              selected: {_scope},
-              onSelectionChanged: (selected) {
-                setState(() => _scope = selected.first);
+              selected: _scope,
+              onSelected: (scope) {
+                setState(() => _scope = scope);
               },
             ),
           ),
@@ -356,27 +350,27 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<_ExportTarget>(
-              segments: const [
-                ButtonSegment(
+            child: M3eButtonGroup<_ExportTarget>(
+              items: const [
+                M3eButtonGroupItem(
                   value: _ExportTarget.md,
                   label: Text('MD'),
                   icon: Icon(Symbols.code_rounded),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: _ExportTarget.html,
                   label: Text('HTML'),
                   icon: Icon(Symbols.html_rounded),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: _ExportTarget.notion,
                   label: Text('Notion'),
                   icon: Icon(Symbols.cloud_sync_rounded),
                 ),
               ],
-              selected: {_target},
-              onSelectionChanged: (selected) {
-                setState(() => _target = selected.first);
+              selected: _target,
+              onSelected: (target) {
+                setState(() => _target = target);
               },
             ),
           ),

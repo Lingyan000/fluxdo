@@ -40,6 +40,7 @@ import '../../services/toast_service.dart';
 import '../../services/log/log_writer.dart';
 import '../../services/log/bookmark_edit_trace.dart';
 import '../../services/navigation/app_route_observer.dart';
+import '../../utils/hero_visibility_controller.dart';
 import '../../widgets/content/lazy_load_scope.dart';
 import '../../widgets/post/post_item_skeleton.dart';
 import '../../widgets/post/post_item/widgets/post_flag_sheet.dart';
@@ -49,6 +50,7 @@ import '../../widgets/post/reply_sheet.dart';
 import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
@@ -336,6 +338,38 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       toggleAiPanelNotifier.addListener(_onToggleAiPanel);
       _schedulePostShortcutRegistration();
     }
+
+    // 注册"按 heroTag 段级滚动"能力:图片查看器翻页时把源缩略图所在
+    // 楼层滚进可视区,保证关闭时 Hero 能飞回原位(缩略图被列表回收时
+    // 的粗定位,精确化由 HeroVisibilityController 二次 ensureVisible)
+    _heroScrollResolver = _scrollToHeroTagSource;
+    HeroVisibilityController.instance.sourceScrollResolver =
+        _heroScrollResolver;
+  }
+
+  /// 本实例注册的 resolver(dispose 时按 identity 注销,避免叠栈的
+  /// 详情页互相覆盖后误清)
+  Future<void> Function(String heroTag)? _heroScrollResolver;
+
+  /// 解析 heroTag(`post_<postId>_img_<idx>`)→ 滚动到对应楼层。
+  Future<void> _scrollToHeroTagSource(String heroTag) async {
+    if (!mounted) return;
+    final match = RegExp(r'^post_(\d+)_img_\d+$').firstMatch(heroTag);
+    if (match == null) return;
+    final postId = int.tryParse(match.group(1)!);
+    if (postId == null) return;
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    final posts = detail?.postStream.posts;
+    if (posts == null) return;
+    final post = posts.where((p) => p.id == postId).firstOrNull;
+    if (post == null) return;
+
+    await _controller.scrollToPost(post.postNumber, posts);
+    // 等两帧:让目标段构建、其中的 HeroImage 完成注册,
+    // 调用方随后二次 ensureVisible 精确到图片
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   bool _isAiSheetOpen = false;
@@ -577,6 +611,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void dispose() {
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
+    // 按 identity 注销:叠栈的详情页可能已覆盖注册,只清自己那份
+    if (identical(
+      HeroVisibilityController.instance.sourceScrollResolver,
+      _heroScrollResolver,
+    )) {
+      HeroVisibilityController.instance.sourceScrollResolver = null;
+    }
     _route?.animation?.removeStatusListener(_onRouteEnterAnimStatus);
     if (_route != null) {
       appRouteObserver.unsubscribe(this);
@@ -618,6 +659,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void didPopNext() {
     _setRouteVisible(true, 'did_pop_next');
     _schedulePostShortcutRegistration();
+    // 叠栈的详情页 pop 后,恢复本页的 heroTag 滚动能力
+    HeroVisibilityController.instance.sourceScrollResolver =
+        _heroScrollResolver;
   }
 
   @override
@@ -2430,11 +2474,7 @@ class _AiAssistantActionIcon extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2, color: color),
-          ),
+          LoadingSpinner(size: 22, color: color),
           Icon(Symbols.auto_awesome_rounded, size: 13, color: color),
         ],
       ),

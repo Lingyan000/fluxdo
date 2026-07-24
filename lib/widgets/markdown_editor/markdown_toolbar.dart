@@ -20,6 +20,7 @@ import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'composer_shortcuts.dart';
 import 'editor_tools.dart';
+import 'emoji_popover.dart';
 import 'media_upload_helper.dart';
 import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
@@ -73,6 +74,10 @@ class MarkdownToolbar extends StatefulWidget {
   /// null（桌面端）= 显示全部工具；空列表 = 中部不显示任何工具
   final List<String>? visibleToolIds;
 
+  /// 桌面端表情悬浮弹层控制器(非 null 时表情按钮被锚点包裹,
+  /// 弹层跟随按钮定位且点按钮不触发弹层的 onTapOutside)
+  final EmojiPopoverController? emojiPopover;
+
   const MarkdownToolbar({
     super.key,
     required this.controller,
@@ -88,6 +93,7 @@ class MarkdownToolbar extends StatefulWidget {
     this.onToggleTools,
     this.isToolsPanelVisible = false,
     this.visibleToolIds,
+    this.emojiPopover,
   });
 
   @override
@@ -1030,6 +1036,30 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     );
   }
 
+  /// 表情按钮:桌面端(emojiPopover != null)由弹层锚点包裹,且不切
+  /// keyboard 图标(那是移动端"切回键盘"语义,悬浮弹层不收键盘)
+  Widget _buildEmojiButton(ThemeData theme, Color pillColor) {
+    final popover = widget.emojiPopover;
+    final button = _ToolbarPill(
+      color: pillColor,
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        icon: FaIcon(
+          widget.isEmojiPanelVisible && popover == null
+              ? FontAwesomeIcons.keyboard
+              : FontAwesomeIcons.faceSmile,
+          size: 20,
+          color: widget.isEmojiPanelVisible
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        onPressed: widget.onToggleEmoji,
+      ),
+    );
+    if (popover == null) return button;
+    return EmojiPopoverAnchor(controller: popover, child: button);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1047,22 +1077,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
           child: Row(
             children: [
               // 左：表情按钮（胶囊背景，固定）
-              _ToolbarPill(
-                color: pillColor,
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: FaIcon(
-                    widget.isEmojiPanelVisible
-                        ? FontAwesomeIcons.keyboard
-                        : FontAwesomeIcons.faceSmile,
-                    size: 20,
-                    color: widget.isEmojiPanelVisible
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: widget.onToggleEmoji,
-                ),
-              ),
+              _buildEmojiButton(theme, pillColor),
               // 中：外显工具（可滚动，无背景）
               Expanded(
                 child: Padding(

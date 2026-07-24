@@ -28,6 +28,8 @@
   "appearance_languageZhHK": "繁體中文（香港）",
   "appearance_languageZhTW": "繁體中文（台灣）",
   "appearance_large": "大",
+  "appearance_m3eStyle": "M3E 组件风格",
+  "appearance_m3eStyleDesc": "加载动画、进度条、按钮形变与下拉刷新",
   "appearance_modeAuto": "自动",
   "appearance_modeDark": "深色",
   "appearance_modeLight": "浅色",

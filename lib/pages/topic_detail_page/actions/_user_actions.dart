@@ -509,10 +509,22 @@ extension _UserActions on _TopicDetailPageState {
       );
     } else {
       // 不在列表中 → 添加
+      // 摘录取当前阅读楼层的正文,不在已加载窗口内则退回首楼
+      final viewportPostNumber = _resolvedViewportPostNumber;
+      final posts = detail?.postStream.posts;
+      final anchorPost = posts == null || posts.isEmpty
+          ? null
+          : posts.firstWhere(
+              (p) => p.postNumber == viewportPostNumber,
+              orElse: () => posts.first,
+            );
       final item = ReadLaterItem(
         topicId: widget.topicId,
         title: detail?.title ?? widget.initialTitle ?? '',
-        scrollToPostNumber: _resolvedViewportPostNumber,
+        scrollToPostNumber: viewportPostNumber,
+        excerpt: anchorPost == null
+            ? null
+            : ReadLaterItem.excerptFromCooked(anchorPost.cooked),
         addedAt: DateTime.now(),
       );
       final success = notifier.add(item);

@@ -1,6 +1,6 @@
 import '../../typedef.dart';
 import '../../utils.dart';
-import '../gesture.dart';
+import '../gesture_controller.dart';
 import '../utils.dart';
 import '../../gesture_detector/official.dart';
 import 'page_controller/official.dart';
@@ -52,6 +52,7 @@ class ExtendedImageGesturePageView extends StatefulWidget {
     List<Widget> children = const <Widget>[],
     CanScrollPage? canScrollPage,
     this.shouldAccpetHorizontalOrVerticalDrag,
+    this.allowImplicitScrolling = false,
   }) : controller = controller ?? _defaultPageController,
        childrenDelegate = SliverChildListDelegate(children),
        physics =
@@ -84,6 +85,7 @@ class ExtendedImageGesturePageView extends StatefulWidget {
     int? itemCount,
     CanScrollPage? canScrollPage,
     this.shouldAccpetHorizontalOrVerticalDrag,
+    this.allowImplicitScrolling = false,
   }) : controller = controller ?? _defaultPageController,
        childrenDelegate = SliverChildBuilderDelegate(
          itemBuilder,
@@ -108,6 +110,7 @@ class ExtendedImageGesturePageView extends StatefulWidget {
     CanScrollPage? canScrollPage,
     required this.childrenDelegate,
     this.shouldAccpetHorizontalOrVerticalDrag,
+    this.allowImplicitScrolling = false,
   }) : controller = controller ?? _defaultPageController,
        physics = _defaultScrollPhysics,
        canScrollPage = canScrollPage ?? _defaultCanScrollPage;
@@ -168,6 +171,12 @@ class ExtendedImageGesturePageView extends StatefulWidget {
   final ShouldAccpetHorizontalOrVerticalDrag?
   shouldAccpetHorizontalOrVerticalDrag;
 
+  /// {@macro flutter.widgets.PageView.allowImplicitScrolling}
+  ///
+  /// 透传给内部 [GesturePageView]:开启后无障碍隐式滚动按页推进,
+  /// 且 cacheExtent 变为 1(预建相邻页)。
+  final bool allowImplicitScrolling;
+
   @override
   ExtendedImageGesturePageViewState createState() =>
       ExtendedImageGesturePageViewState();
@@ -182,22 +191,28 @@ class ExtendedImageGesturePageViewState
   late GestureAnimation _gestureAnimation;
   ScrollPosition get position => pageController.position;
   ExtendedPageController get pageController => widget.controller;
-  ExtendedImageGestureState? get extendedImageGestureState {
-    return extendedImageGestureStates.lastWhere(
-      (ExtendedImageGestureState? element) => element?.mounted ?? false,
+
+  /// 当前活跃的手势仲裁对象(GestureSurfaceState 实现
+  /// [GesturePageViewArbiter],在挂载/pointerDown 时注册)
+  GesturePageViewArbiter? get currentArbiter {
+    return _arbiters.lastWhere(
+      (GesturePageViewArbiter? element) => element?.mounted ?? false,
       orElse: () => null,
     );
   }
 
-  set extendedImageGestureState(ExtendedImageGestureState? value) {
+  void registerArbiter(GesturePageViewArbiter? value) {
     if (value != null && !value.mounted) {
       return;
     }
-    extendedImageGestureStates.add(value!);
+    _arbiters.add(value!);
   }
 
-  final Set<ExtendedImageGestureState?> extendedImageGestureStates =
-      <ExtendedImageGestureState?>{};
+  void unregisterArbiter(GesturePageViewArbiter value) {
+    _arbiters.remove(value);
+  }
+
+  final Set<GesturePageViewArbiter?> _arbiters = <GesturePageViewArbiter?>{};
 
   @override
   void initState() {
@@ -206,10 +221,10 @@ class ExtendedImageGesturePageViewState
     _gestureAnimation = GestureAnimation(
       this,
       offsetCallBack: (Offset value) {
-        final GestureDetails? gestureDetails =
-            extendedImageGestureState?.gestureDetails;
-        if (gestureDetails != null) {
-          extendedImageGestureState?.gestureDetails = GestureDetails(
+        final GesturePageViewArbiter? arbiter = currentArbiter;
+        final GestureDetails? gestureDetails = arbiter?.gestureDetails;
+        if (arbiter != null && gestureDetails != null) {
+          arbiter.gestureDetails = GestureDetails(
             offset: value,
             totalScale: gestureDetails.totalScale,
             gestureDetails: gestureDetails,
@@ -346,6 +361,7 @@ class ExtendedImageGesturePageViewState
       pageSnapping: widget.pageSnapping,
       physics: widget.physics,
       onPageChanged: widget.onPageChanged,
+      allowImplicitScrolling: widget.allowImplicitScrolling,
     );
 
     if (widget.physics.parent == null ||
@@ -389,117 +405,22 @@ class ExtendedImageGesturePageViewState
   void onDragUpdate(DragUpdateDetails details) {
     // _drag might be null if the drag activity ended and called _disposeDrag.
     assert(_hold == null || _drag == null);
-    //final Offset delta = details.delta;
-    if (!widget.canScrollPage(extendedImageGestureState?.gestureDetails)) {
+    if (!widget.canScrollPage(currentArbiter?.gestureDetails)) {
       return;
     }
 
     _drag?.update(details);
-
-    //     return;
-
-    //     if (extendedImageGestureState != null) {
-    //       final GestureDetails? gestureDetails =
-    //           extendedImageGestureState!.gestureDetails;
-    //       if (gestureDetails != null) {
-    //         final int currentPage = pageController.page!.round();
-    // //        bool pageChanging = false;
-    // //
-    // //        if (widget.scrollDirection == Axis.horizontal) {
-    // //          if (delta.dx != 0.0) {
-    // //            if (delta.dx < 0) {
-    // //              pageChanging = pageController.page > currentPage;
-    // //            } else {
-    // //              pageChanging = pageController.page < currentPage;
-    // //            }
-    // //          }
-    // //        } else {
-    // //          if (delta.dy != 0.0) {
-    // //            if (delta.dy < 0) {
-    // //              pageChanging = pageController.page < currentPage;
-    // //            } else {
-    // //              pageChanging = pageController.page > currentPage;
-    // //            }
-    // //          }
-    // //        }
-
-    //         if ((gestureDetails.movePage(delta, widget.scrollDirection) ||
-    //                 (currentPage != pageController.page)) &&
-    //             widget.canMovePage(gestureDetails)) {
-    //           _drag?.update(details);
-    //         } else {
-    //           if (currentPage == pageController.page) {
-    //             extendedImageGestureState!.gestureDetails = GestureDetails(
-    //                 offset: gestureDetails.offset! +
-    //                     delta *
-    //                         extendedImageGestureState!.imageGestureConfig!.speed,
-    //                 totalScale: gestureDetails.totalScale,
-    //                 gestureDetails: gestureDetails);
-    //           }
-    //         }
-    //       } else {
-    //         _drag?.update(details);
-    //       }
-    //     } else {
-    //       _drag?.update(details);
-    //     }
   }
 
   void onDragEnd(DragEndDetails details) {
     // _drag might be null if the drag activity ended and called _disposeDrag.
     assert(_hold == null || _drag == null);
-    if (!widget.canScrollPage(extendedImageGestureState?.gestureDetails)) {
+    if (!widget.canScrollPage(currentArbiter?.gestureDetails)) {
       _drag?.end(DragEndDetails(primaryVelocity: 0.0));
       return;
     }
     _drag?.end(details);
     assert(_drag == null);
-    // return;
-    // DragEndDetails temp = details;
-    // if (extendedImageGestureState != null) {
-    //   final GestureDetails? gestureDetails =
-    //       extendedImageGestureState!.gestureDetails;
-    //   final int currentPage = pageController.page!.round();
-    //   final bool movePage = pageController.page != currentPage;
-
-    //   if (!widget.canMovePage(gestureDetails)) {
-    //     //stop
-    //     temp = DragEndDetails(primaryVelocity: 0.0);
-    //   }
-
-    //   /// stop when zoom in, so that it will not move to next/previous page
-    //   if (!movePage &&
-    //       gestureDetails != null &&
-    //       gestureDetails.totalScale! > 1.0 &&
-    //       (gestureDetails.computeHorizontalBoundary ||
-    //           gestureDetails.computeVerticalBoundary)) {
-    //     //stop
-    //     temp = DragEndDetails(primaryVelocity: 0.0);
-
-    //     // get magnitude from gesture velocity
-    //     final double magnitude = details.velocity.pixelsPerSecond.distance;
-
-    //     // do a significant magnitude
-    //     if (magnitude.greaterThanOrEqualTo(minMagnitude)) {
-    //       Offset direction = details.velocity.pixelsPerSecond /
-    //           magnitude *
-    //           (extendedImageGestureState!.imageGestureConfig!.inertialSpeed);
-
-    //       if (widget.scrollDirection == Axis.horizontal) {
-    //         direction = Offset(direction.dx, 0.0);
-    //       } else {
-    //         direction = Offset(0.0, direction.dy);
-    //       }
-
-    //       _gestureAnimation.animationOffset(
-    //           gestureDetails.offset, gestureDetails.offset! + direction);
-    //     }
-    //   }
-    // }
-
-    // _drag!.end(temp);
-
-    // assert(_drag == null);
   }
 
   void onDragCancel() {
@@ -524,9 +445,8 @@ class ExtendedImageGesturePageViewState
     if (_drag != null) {
       return;
     }
-    for (final ExtendedImageGestureState? extendedImageGestureState
-        in extendedImageGestureStates) {
-      extendedImageGestureState?.handleScaleStart(details);
+    for (final GesturePageViewArbiter? arbiter in _arbiters) {
+      arbiter?.handleScaleStart(details);
     }
   }
 
@@ -534,9 +454,8 @@ class ExtendedImageGesturePageViewState
     if (_drag != null) {
       return;
     }
-    for (final ExtendedImageGestureState? extendedImageGestureState
-        in extendedImageGestureStates) {
-      extendedImageGestureState?.handleScaleUpdate(details);
+    for (final GesturePageViewArbiter? arbiter in _arbiters) {
+      arbiter?.handleScaleUpdate(details);
     }
   }
 
@@ -544,15 +463,14 @@ class ExtendedImageGesturePageViewState
     // if (_drag != null) {
     //   return;
     // }
-    for (final ExtendedImageGestureState? extendedImageGestureState
-        in extendedImageGestureStates) {
-      extendedImageGestureState?.handleScaleEnd(details);
+    for (final GesturePageViewArbiter? arbiter in _arbiters) {
+      arbiter?.handleScaleEnd(details);
     }
   }
 
   bool canHorizontalOrVerticalDrag() {
-    if (extendedImageGestureState != null) {
-      return (extendedImageGestureState?.gestureDetails?.totalScale ?? 1)
+    if (currentArbiter != null) {
+      return (currentArbiter?.gestureDetails?.totalScale ?? 1)
           .lessThanOrEqualTo(1);
     }
     return true;

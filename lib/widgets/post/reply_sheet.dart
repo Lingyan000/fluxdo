@@ -28,7 +28,7 @@ import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
 import '../ai/ai_post_review_button.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 显示回复底部弹框
 /// [topicId] 话题 ID (回复话题/帖子时必需)
@@ -763,13 +763,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                       ? null
                                       : _submit,
                                   child: _isSubmitting
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
+                                      ? const LoadingSpinner(
+                                          size: 20,
+                                          color: Colors.white,
                                         )
                                       : Text(
                                           _isEditMode

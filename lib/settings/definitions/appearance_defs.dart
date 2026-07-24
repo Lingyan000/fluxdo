@@ -7,6 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../pages/topic_card_style_settings_page.dart';
@@ -311,6 +312,23 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       ],
     ),
 
+    // ── M3E 风格 ─────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_m3eStyle,
+      icon: Symbols.animation_rounded,
+      items: [
+        SwitchModel(
+          id: 'm3eStyle',
+          title: l10n.appearance_m3eStyle,
+          subtitle: l10n.appearance_m3eStyleDesc,
+          icon: Symbols.animation_rounded,
+          getValue: (ref) => ref.watch(themeProvider).m3eEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setM3eEnabled(v),
+        ),
+      ],
+    ),
+
     // ── 对话框模糊 ──────────────────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_dialogBlur,
@@ -450,7 +468,7 @@ class _DisplayModeSheetBodyState extends ConsumerState<_DisplayModeSheetBody> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const SizedBox(
               height: 200,
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: LoadingSpinner()),
             );
           }
           if (snapshot.hasError || snapshot.data == null) {
@@ -738,14 +756,7 @@ class _AppIconCard extends StatelessWidget {
                         Container(
                           color: Colors.black26,
                           child: const Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
+                            child: LoadingSpinner(size: 24, color: Colors.white),
                           ),
                         ),
                     ],
