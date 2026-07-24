@@ -50,6 +50,7 @@ class QuoteSelectionHelper {
       if (markdown.trim().isEmpty) markdown = plainSelectedText;
       final quote = QuoteBuilder.build(
         markdown: markdown,
+        displayName: (post.name?.isNotEmpty ?? false) ? post.name! : post.username,
         username: post.username,
         postNumber: post.postNumber,
         topicId: topicId,
@@ -81,6 +82,7 @@ class QuoteSelectionHelper {
 
     final quote = QuoteBuilder.build(
       markdown: markdown,
+      displayName: (post.name?.isNotEmpty ?? false) ? post.name! : post.username,
       username: post.username,
       postNumber: post.postNumber,
       topicId: topicId,

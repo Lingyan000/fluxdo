@@ -128,6 +128,8 @@
   "post_noReactions": "暂无回应",
   "post_opBadge": "主",
   "post_pendingReview": "你的帖子已提交，正在等待审核",
+  "post_todayIsBirthday": "今天是我的生日！",
+  "post_todayIsCakeday": "今天是您加入我们社区的纪念日！",
   "post_reactions": "回应",
   "post_relatedLinks": "相关链接",
   "post_relatedRepliesCount": "相关回复共 {count} 条",

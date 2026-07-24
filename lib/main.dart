@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
@@ -26,7 +25,6 @@ import 'services/auth_issue_notice_service.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
-import 'widgets/common/clipboard_topic_link_snack_content.dart';
 import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -232,8 +230,6 @@ Future<void> main() async {
     AppConstants.initUserAgent(),
     LogWriter.init(),
     ProxyCertificate.initialize(),
-    if (Platform.isWindows)
-      WindowsWebViewEnvironmentService.instance.initialize(),
     // Windows 深链协议注册(discourse:// / fluxdo://):写 HKCU 免管理员,
     // 幂等,失败不阻塞启动。其他平台由清单/plist 声明,此调用为 no-op。
     if (Platform.isWindows) ensureWindowsProtocolsRegistered(),
@@ -344,6 +340,19 @@ Future<void> main() async {
   }
 
   await NetworkSettingsService.instance.initialize(prefs);
+  // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
+  // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
+  // 并行初始化里，等的是"猜的"8s 超时——NetworkSettingsService 前面还排
+  // 着 rhttp(自己就留了最多 5s 预算)等好几个服务，8s 经常等不到真实端口
+  // 就用旧端口摆烂，导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
+  // 也过不去。现在严格排在 NetworkSettingsService 完全初始化（本地代理
+  // 已经启动、setProxy() 已经真正调用过）之后再建，proxyDecision 这时
+  // 早就 complete 了，创建时直接读到确定值，不用再赌超时。
+  // WebView2 Environment 本来也不会在启动最初几百毫秒内被用到（没有
+  // WebView 会那么早创建），稍晚一点创建不影响体感。
+  if (Platform.isWindows) {
+    await WindowsWebViewEnvironmentService.instance.initialize();
+  }
   // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
   // 同一出口,cf_clearance 才对两侧同时有效。
   if (Platform.isWindows) {
@@ -800,6 +809,13 @@ class _MainPageState extends ConsumerState<MainPage>
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
   DateTime? _lastBackPressTime;
+  // 重入防护:启动(_runStartupUiTasks)和「假 resume」(系统配置变更等触发的
+  // didChangeAppLifecycleState resumed)可能在短窗口内先后调用
+  // _checkClipboardTopicLink 两次,不加锁会各自读到同一个 candidate、
+  // 各弹一次提示。之前误以为重复展示是平行视界把这个 State 挂载了两份,
+  // 实际根因是设置页宽屏双栏各有独立 Scaffold、ScaffoldMessenger 两边都弹
+  // ——已改用不挂靠 Scaffold 的 ToastService,这里的锁只用来防同一份
+  // State 内的短窗口重入,不需要 static。
   bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
@@ -1135,7 +1151,7 @@ class _MainPageState extends ConsumerState<MainPage>
   Future<void> _checkClipboardTopicLink() async {
     // 重入防护:启动(_runStartupUiTasks)和「假 resume」(系统配置变更等
     // 触发的 didChangeAppLifecycleState resumed)可能在短窗口内先后调用
-    // 本方法两次;不加锁会各自读到同一个 candidate、各弹一条 SnackBar
+    // 本方法两次;不加锁会各自读到同一个 candidate、各弹一条提示
     // (真机复现:设置页两条一模一样的"检测到剪贴板中的话题链接")。
     if (_clipboardCheckInFlight) return;
     _clipboardCheckInFlight = true;
@@ -1150,63 +1166,36 @@ class _MainPageState extends ConsumerState<MainPage>
       );
       if (!mounted || candidate == null) return;
 
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-
-      var promptHandled = false;
-      void markPromptedOnce() {
-        if (promptHandled) return;
-        promptHandled = true;
-        unawaited(
-          clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
-        );
-      }
-
-      messenger.hideCurrentSnackBar();
-      final controller = messenger.showSnackBar(
-        SnackBar(
-          content: ClipboardTopicLinkSnackContent(
-            message: context.l10n.preferences_clipboardTopicLink_detected,
-            actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-            onOpen: () {
-              markPromptedOnce();
-              messenger.hideCurrentSnackBar();
-              final topic = DiscourseUrlParser.parseTopic(
-                candidate.uri.toString(),
-              );
-              if (topic != null) {
-                ref
-                    .read(selectedTopicProvider.notifier)
-                    .select(
-                      topicId: topic.topicId,
-                      initialTitle: topic.slug,
-                      scrollToPostNumber: topic.postNumber,
-                    );
-                ref.requestNavDestination(NavEntryIds.home);
-              } else {
-                DeepLinkService.instance.handleUri(candidate.uri);
-              }
-            },
-            onDismiss: () {
-              markPromptedOnce();
-              messenger.hideCurrentSnackBar();
-            },
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.transparent,
-          duration: const Duration(seconds: 8),
-          elevation: 0,
-          padding: EdgeInsets.zero,
-          // 用 width 而不是 margin:margin 会让 SnackBar 自身的盒子撑满整宽,
-          // 而**吃点击的是 SnackBar 的 Material**(backgroundColor 透明只是
-          // 看不见,render box 照样 hit-test)—— 于是这 8 秒里右下角的悬浮
-          // 回复按钮点不动(它是手动 Positioned 的,拿不到 Scaffold FAB 的
-          // 自动避让)。改成只占卡片那么宽、居中,两侧就空出来了。
-          // 注意 width 与 margin 互斥,底部安全区由 floating 行为自行处理。
-          width: math.min(560, MediaQuery.sizeOf(context).width - 32),
-        ),
+      // ToastService 而不是 ScaffoldMessenger:设置页宽屏下是主从双栏
+      // (master_detail_layout.dart),两侧各有一个独立 Scaffold，
+      // ScaffoldMessenger 在这种多 Scaffold 场景下会两边都弹一条——
+      // ToastService 是单例 OverlayEntry，不挂靠任何 Scaffold，天然只有
+      // 一份，也就不需要再靠一把跨调用的锁去防重复展示了。
+      unawaited(
+        clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
       );
-      unawaited(controller.closed.then((_) => markPromptedOnce()));
+      ToastService.show(
+        context.l10n.preferences_clipboardTopicLink_detected,
+        duration: const Duration(seconds: 8),
+        actionLabel: context.l10n.preferences_clipboardTopicLink_open,
+        onAction: () {
+          final topic = DiscourseUrlParser.parseTopic(
+            candidate.uri.toString(),
+          );
+          if (topic != null) {
+            ref
+                .read(selectedTopicProvider.notifier)
+                .select(
+                  topicId: topic.topicId,
+                  initialTitle: topic.slug,
+                  scrollToPostNumber: topic.postNumber,
+                );
+            ref.requestNavDestination(NavEntryIds.home);
+          } else {
+            DeepLinkService.instance.handleUri(candidate.uri);
+          }
+        },
+      );
     } finally {
       _clipboardCheckInFlight = false;
     }

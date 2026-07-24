@@ -244,6 +244,9 @@ class ImageContextMenu {
                   Navigator.pop(ctx);
                   final quote = QuoteBuilder.build(
                     markdown: quoteMarkdown ?? '![image]($originalUrl)',
+                    displayName: (post.name?.isNotEmpty ?? false)
+                        ? post.name!
+                        : post.username,
                     username: post.username,
                     postNumber: post.postNumber,
                     topicId: topicId,
@@ -259,6 +262,9 @@ class ImageContextMenu {
                   Navigator.pop(ctx);
                   final quote = QuoteBuilder.build(
                     markdown: quoteMarkdown ?? '![image]($originalUrl)',
+                    displayName: (post.name?.isNotEmpty ?? false)
+                        ? post.name!
+                        : post.username,
                     username: post.username,
                     postNumber: post.postNumber,
                     topicId: topicId,
@@ -308,6 +314,9 @@ class ImageContextMenu {
         if (post != null && topicId != null && onQuoteImage != null) {
           final quote = QuoteBuilder.build(
             markdown: quoteMarkdown ?? '![image]($originalUrl)',
+            displayName: (post.name?.isNotEmpty ?? false)
+                ? post.name!
+                : post.username,
             username: post.username,
             postNumber: post.postNumber,
             topicId: topicId,
@@ -318,6 +327,9 @@ class ImageContextMenu {
         if (post != null && topicId != null) {
           final quote = QuoteBuilder.build(
             markdown: quoteMarkdown ?? '![image]($originalUrl)',
+            displayName: (post.name?.isNotEmpty ?? false)
+                ? post.name!
+                : post.username,
             username: post.username,
             postNumber: post.postNumber,
             topicId: topicId,

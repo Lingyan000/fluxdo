@@ -439,16 +439,21 @@ class _MarkdownBodyState extends State<MarkdownBody> {
       String? post;
       String? topic;
       if (attrs.isNotEmpty) {
-        // 格式: "username, post:N, topic:T"
+        // 格式: "displayName, post:N, topic:T, username:realUsername"
+        // 首字段是显示名(昵称),真实用户名优先取 username: 参数——没有
+        // 这个参数(老格式/外部来源)才退回首字段当用户名用。
         final parts = attrs.split(',').map((s) => s.trim()).toList();
-        if (parts.isNotEmpty) username = parts[0];
+        final displayName = parts.isNotEmpty ? parts[0] : null;
         for (final part in parts.skip(1)) {
           if (part.startsWith('post:')) {
             post = part.substring(5);
           } else if (part.startsWith('topic:')) {
             topic = part.substring(6);
+          } else if (part.startsWith('username:')) {
+            username = part.substring(9);
           }
         }
+        username ??= displayName;
       }
 
       // 将引用内的 markdown 转成 HTML

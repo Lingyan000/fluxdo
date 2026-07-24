@@ -86,6 +86,8 @@
   "post_noReactions": "No reactions",
   "post_opBadge": "OP",
   "post_pendingReview": "Your post is pending review",
+  "post_todayIsBirthday": "It's my birthday today!",
+  "post_todayIsCakeday": "Today is your anniversary of joining our community!",
   "post_reactions": "Reactions",
   "post_relatedLinks": "Related links",
   "post_relatedRepliesCount": "{count} related replies",

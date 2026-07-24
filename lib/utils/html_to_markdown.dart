@@ -436,6 +436,21 @@ class _BlockquoteTag extends _Tag {
   }
 }
 
+/// 递归找 aside.quote 里标题区(class 含 "title")下第一个 `<a>` 的文本
+/// (真实 cooked 结构标题是 `<a>显示名</a>`,取这个而不是 data-username
+/// 属性——参见 _AsideTag.toMarkdown 里的用法说明)。
+String? _findQuoteTitleLinkText(_MdElement el) {
+  final elClass = el.attributes['class'] ?? '';
+  for (final child in el.children) {
+    if (child.name == 'a' && elClass.contains('title')) {
+      return child.innerMarkdown();
+    }
+    final found = _findQuoteTitleLinkText(child);
+    if (found != null) return found;
+  }
+  return null;
+}
+
 /// Aside Tag (aside.quote)
 class _AsideTag extends _BlockTag {
   _AsideTag() : super('', '');
@@ -459,9 +474,17 @@ class _AsideTag extends _BlockTag {
     final username = element!.attributes['data-username'];
     final post = element!.attributes['data-post'];
     final topic = element!.attributes['data-topic'];
+    // 首字段官方语义是**显示名**(昵称),不是登录用户名——直接塞
+    // username 会导致引用发出后标题栏没有可点链接(服务端按首字段当纯
+    // 显示文本处理,查不到人)。真实用户名单独放 username: 参数。
+    final titleLinkText = _findQuoteTitleLinkText(element!)?.trim();
+    final displayName =
+        (titleLinkText != null && titleLinkText.isNotEmpty)
+            ? titleLinkText
+            : username;
 
     final quotePrefix = (username != null && post != null && topic != null)
-        ? '[quote="$username, post:$post, topic:$topic"]'
+        ? '[quote="$displayName, post:$post, topic:$topic, username:$username"]'
         : '[quote]';
 
     return '\n$quotePrefix\n$text\n[/quote]\n';
