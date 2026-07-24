@@ -38,6 +38,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 
@@ -1429,6 +1430,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       // sticker markdown(含 ,30% 缩放后缀)走 cook 链路整段导入
       onStickerSelected: insertMarkdownSnippet,
       initialSearch: _emojiPanelInitialSearch,
+      // 富编辑器的 backspace 原生处理岛/容器边界,直接复用
+      onBackspace: () => _editor?.backspace(),
     );
     _emojiPanelInitialSearch = null;
     return _emojiPanelChild!;
@@ -3021,11 +3024,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: LoadingSpinner(size: 24),
         ),
       );
     }

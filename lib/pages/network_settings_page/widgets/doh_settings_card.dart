@@ -13,7 +13,7 @@ import '../../../services/network/doh_proxy/windows_cert_trust_service.dart';
 import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../doh_detail_settings_page.dart';
 import 'ios_cert_install_dialog.dart';
 

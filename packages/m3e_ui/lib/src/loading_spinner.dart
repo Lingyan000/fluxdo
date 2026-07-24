@@ -3,13 +3,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
+import 'm3e_flags.dart';
+import 'm3e_motion.dart';
+
 /// Material 3 Expressive LoadingIndicator(不定态)的 1:1 复刻。
 ///
 /// 规格与动画节奏逐项对照 Compose material3 的 LoadingIndicator.kt:
 /// - 7 个 MaterialShapes 循环 morph:
 ///   SoftBurst → Cookie9Sided → Pentagon → Pill → Sunny → Cookie4Sided → Oval → 闭环;
 /// - 每 650ms 触发一次 morph,弹簧 spring(dampingRatio 0.6, stiffness 200,
-///   visibilityThreshold 0.1),约 298ms 收敛后停在终点等待下个周期;
+///   visibilityThreshold 0.1),约 298ms 收敛后停在终点等待下个周期
+///   (组件专用规格,非 [M3eMotion] 六档);
 /// - 每次 morph 完成后形状指针步进,叠加 90° 步进旋转(初始 90°);
 /// - 全局旋转 4666ms/圈,线性,与 morph 的 progress*90° 弹性旋转叠加;
 /// - 形状缩放按"动画全程最大回转半径"精确计算,保证任意帧不画出 size 之外;
@@ -28,7 +32,7 @@ class LoadingSpinner extends StatefulWidget {
 class _LoadingSpinnerState extends State<LoadingSpinner>
     with TickerProviderStateMixin {
   // 对应 Compose 的 MorphIntervalMillis 与 GlobalRotationDurationMillis。
-  static const _morphInterval = Duration(milliseconds: _kMorphIntervalMs);
+  static const _morphInterval = Duration(milliseconds: 650);
   static const _globalRotationPeriod = Duration(milliseconds: 4666);
 
   late final AnimationController _cycleController;
@@ -41,16 +45,32 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
   // Compose: morphRotationTargetAngle 初始 QuarterRotation(90°),每次 +90°。
   double _morphRotationTargetAngle = 90;
 
+  /// M3E 开关缓存;关闭时回退经典转圈并停掉本组件的两个 ticker。
+  bool _m3eEnabled = true;
+
   @override
   void initState() {
     super.initState();
     _cycleController =
         AnimationController(vsync: this, duration: _morphInterval)
-          ..addStatusListener(_onCycleCompleted)
-          ..forward();
+          ..addStatusListener(_onCycleCompleted);
     _rotationController =
-        AnimationController(vsync: this, duration: _globalRotationPeriod)
-          ..repeat();
+        AnimationController(vsync: this, duration: _globalRotationPeriod);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final enabled = M3eFlags.of(context).enabled;
+    if (enabled == _m3eEnabled && _cycleController.isAnimating) return;
+    _m3eEnabled = enabled;
+    if (enabled) {
+      if (!_cycleController.isAnimating) _cycleController.forward(from: 0);
+      if (!_rotationController.isAnimating) _rotationController.repeat();
+    } else {
+      _cycleController.stop();
+      _rotationController.stop();
+    }
   }
 
   void _onCycleCompleted(AnimationStatus status) {
@@ -71,6 +91,19 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
 
   @override
   Widget build(BuildContext context) {
+    // M3E 关闭时回退经典转圈:size 语义平移,线宽按 48→4 的比例缩放。
+    if (!M3eFlags.of(context).enabled) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CircularProgressIndicator(
+          color: widget.color,
+          strokeWidth: (widget.size / 12).clamp(2.0, 4.0),
+          padding: EdgeInsets.zero,
+        ),
+      );
+    }
+
     // LoadingIndicatorTokens.ActiveIndicatorColor = Primary。
     final color = widget.color ?? Theme.of(context).colorScheme.primary;
 
@@ -82,7 +115,7 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
           animation: Listenable.merge([_cycleController, _rotationController]),
           builder: (context, child) {
             final progress =
-                _MorphSpringCurve.instance.transform(_cycleController.value);
+                _Md3LoadingGeometry.morphCurve.transform(_cycleController.value);
             return CustomPaint(
               painter: _LoadingIndicatorPainter(
                 morphIndex: _morphIndex,
@@ -103,57 +136,19 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
   }
 }
 
-/// morph 周期时长(ms),对应 Compose 的 MorphIntervalMillis。
-const int _kMorphIntervalMs = 650;
-
-/// 把 650ms 周期映射为 morph 进度:前段是 Compose
-/// spring(dampingRatio 0.6, stiffness 200) 的欠阻尼解析解(带过冲),
-/// 到达 Compose 的时长估算点后 snap 到 1 并保持(Compose 动画结束值即目标值,
-/// 之后等待周期剩余时间)。
-class _MorphSpringCurve extends Curve {
-  const _MorphSpringCurve._();
-
-  static const instance = _MorphSpringCurve._();
-
-  static const double _dampingRatio = 0.6;
-  static const double _stiffness = 200;
-  static const double _visibilityThreshold = 0.1;
-
-  // 欠阻尼弹簧 x(t) = 1 + e^(-ζω₀t)·(c₁cos(ω_d t) + c₂sin(ω_d t)),
-  // 初值 x(0)=0、v(0)=0 ⇒ c₁ = -1,c₂ = -ζ/√(1-ζ²)。
-  static final double _omega0 = math.sqrt(_stiffness);
-  static final double _omegaD =
-      _omega0 * math.sqrt(1 - _dampingRatio * _dampingRatio);
-  static const double _c1 = -1;
-  static final double _c2 =
-      _c1 * _dampingRatio / math.sqrt(1 - _dampingRatio * _dampingRatio);
-
-  // Compose SpringEstimation.estimateUnderDamped:动画时长取包络
-  // √(c₁²+c₂²)·e^(-ζω₀t) 衰减到 visibilityThreshold 的时刻(≈298ms)。
-  static final double _springSeconds =
-      math.log(math.sqrt(_c1 * _c1 + _c2 * _c2) / _visibilityThreshold) /
-          (_dampingRatio * _omega0);
-
-  /// 弹簧输出的最大进度(首个过冲峰,发生在时长截断之前):
-  /// 1 + e^(-ζπ/√(1-ζ²)) ≈ 1.095。
-  static final double peakProgress = 1 +
-      math.exp(-_dampingRatio *
-          math.pi /
-          math.sqrt(1 - _dampingRatio * _dampingRatio));
-
-  @override
-  double transformInternal(double t) {
-    final seconds = t * _kMorphIntervalMs / 1000;
-    if (seconds >= _springSeconds) return 1;
-    final decay = math.exp(-_dampingRatio * _omega0 * seconds);
-    final phase = _omegaD * seconds;
-    return 1 + decay * (_c1 * math.cos(phase) + _c2 * math.sin(phase));
-  }
-}
-
-/// 全局缓存的形状序列与缩放因子:Morph 构造(曲线特征匹配)有成本,
-/// 所有 LoadingSpinner 实例共享一份。
+/// 全局缓存的形状序列、morph 曲线与缩放因子:Morph 构造(曲线特征匹配)
+/// 有成本,所有 LoadingSpinner 实例共享一份。
 abstract final class _Md3LoadingGeometry {
+  /// 把 650ms 周期映射为 morph 进度:前段是 LoadingIndicator.kt 专用弹簧
+  /// spring(dampingRatio 0.6, stiffness 200, visibilityThreshold 0.1) 的
+  /// 欠阻尼解析解(带过冲,峰值 ≈1.095),到达 Compose 的时长估算点
+  /// (≈298ms)后 snap 到 1 并保持,等待周期剩余时间。
+  static final M3eSpringCurve morphCurve =
+      const M3eSpring(dampingRatio: 0.6, stiffness: 200).curveFor(
+    _LoadingSpinnerState._morphInterval,
+    visibilityThreshold: 0.1,
+  );
+
   // LoadingIndicatorDefaults.IndeterminateIndicatorPolygons 的形状顺序。
   static final List<RoundedPolygon> _polygons = [
     MaterialShapes.softBurst,
@@ -189,8 +184,7 @@ abstract final class _Md3LoadingGeometry {
     const samples = 48;
     for (final morph in morphs) {
       for (var s = 0; s <= samples; s++) {
-        final cubics =
-            morph.asCubics(_MorphSpringCurve.peakProgress * s / samples);
+        final cubics = morph.asCubics(morphCurve.peakValue * s / samples);
         // 与 Path.getBounds 口径一致:包围盒含控制点;painter 每帧按该
         // 包围盒中心对齐画布中心后旋转,约束量即各点到该中心的最大距离。
         var minX = double.infinity, minY = double.infinity;

@@ -41,6 +41,9 @@ class FluxdoApplication : Application() {
         } catch (e: Throwable) {
             Log.e("WebViewDebug", "Failed to disable WebView debugging early: ${e.message}", e)
         }
+        // 金标联盟公平运行内存机制:进程级注册 TRIM 广播接收器
+        // (非联盟 ROM 收不到该广播,注册零成本)
+        FairMemoryReceiver.initialize(this)
         // 不在此处初始化 Firebase，等待用户主动开启
     }
 }

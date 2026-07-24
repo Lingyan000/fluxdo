@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.23+2026071419
+version: 0.2.24+2026071622
 
 environment:
   sdk: ^3.10.4
@@ -22,6 +22,7 @@ workspace:
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/fluxdo_render
+  - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
 
@@ -45,12 +46,6 @@ dependencies:
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
   # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
   flutter_js: ^0.8.7
-  cached_network_image: ^3.4.1
-  octo_image: ^2.1.0
-  flutter_cache_manager: ^3.4.1
-  # 桌面(Windows/Linux)图片缓存索引走 sqlite 的 FFI 后端。dart≥3.9 + ffi≥2.4.0
-  # 由 build_hooks 自动打包 sqlite3,无需 sqlite3_flutter_libs;移动 / macOS 用原生 sqflite。
-  sqflite_common_ffi: ^2.4.2
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
@@ -92,6 +87,8 @@ dependencies:
     path: packages/ai_model_manager
   common_ui:
     path: packages/common_ui
+  m3e_ui:
+    path: packages/m3e_ui
   paper_shaders:
     path: packages/paper_shaders
   fluxdo_render:
@@ -139,6 +136,10 @@ dependencies:
   # (mc_arm.rs:5905 usize underflow)。flutter_avif 用 C 的 libavif/dav1d,
   # 工业标准、稳定,直到 native_animated_image v0.3.0 砍掉 AVIF 之前必须保留。
   flutter_avif: ^3.1.0
+  # 显式引 platform_interface(flutter_avif 的传递依赖):AvifFastBridge
+  # 直连它的 FFI 符号表(FlutterAvifImpl.flutterAvifFFI),绕开每帧 protobuf
+  # 解析 + 双重拷贝的慢桥,见 lib/services/avif_fast_bridge.dart。
+  flutter_avif_platform_interface: ^3.1.0
   catcher_2: ^2.1.5
   logging: ^1.3.0
   timezone: ^0.11.0
@@ -146,9 +147,6 @@ dependencies:
   # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
   # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
   chinese_font_library: ^1.2.0
-  # androidx.graphics.shapes 的 Dart 移植(RoundedPolygon/Morph/MaterialShapes),
-  # 用于 1:1 复刻 M3 Expressive LoadingIndicator 的形状变形加载动画。
-  material_new_shapes: ^1.0.0
 
   window_manager: ^0.5.1
   screen_retriever: ^0.2.1

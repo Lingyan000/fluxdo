@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../l10n/s.dart';
-import 'loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 class PagedListFooter extends StatelessWidget {
   const PagedListFooter({

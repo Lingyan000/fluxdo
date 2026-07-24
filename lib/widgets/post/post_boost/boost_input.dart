@@ -160,6 +160,15 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
     setState(() {});
   }
 
+  /// 退格删除:光标前是完整 :shortcode: 时整体删除,否则删一个字符
+  /// (与 EmojiShortcodeDeleteFormatter 的整体删除语义一致 —— 表情
+  /// 面板打开时键盘收起,这是唯一的删除途径)。
+  void _deleteBackward() {
+    if (deleteBackwardWithEmojiShortcodes(_controller)) {
+      setState(() {});
+    }
+  }
+
   void _toggleEmojiPanel() {
     setState(() {
       _showEmojiPanel = !_showEmojiPanel;
@@ -267,7 +276,9 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                       ? context.l10n.common_reply
                       : context.l10n.boost_send,
                   icon: Icon(
-                    isReplyIntent ? Symbols.reply_rounded : Symbols.send_rounded,
+                    isReplyIntent
+                        ? Symbols.reply_rounded
+                        : Symbols.send_rounded,
                     color: _canSubmit
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant.withValues(
@@ -282,16 +293,60 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
 
           const SizedBox(height: 8),
 
-          // Emoji 面板
+          // Emoji 面板(bottomPadding 给底部安全区 + 悬浮退格键留空)
           if (_showEmojiPanel)
             SizedBox(
-              height: 280,
-              child: EmojiPicker(
-                onEmojiSelected: (emoji) => _insertEmoji(emoji),
+              height: 280 + MediaQuery.of(context).padding.bottom,
+              child: Stack(
+                children: [
+                  EmojiPicker(
+                    onEmojiSelected: (emoji) => _insertEmoji(emoji),
+                    bottomPadding:
+                        MediaQuery.of(context).padding.bottom +
+                        (PlatformUtils.isMobile ? 48 : 0),
+                  ),
+                  // 悬浮退格键,仅移动端(面板打开时软键盘收起,没有
+                  // 它就无法删除;桌面端焦点常驻输入框,物理退格直接
+                  // 可用)
+                  if (PlatformUtils.isMobile)
+                    Positioned(
+                      right: 12,
+                      bottom: MediaQuery.of(context).padding.bottom + 8,
+                      child: Material(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        shape: const CircleBorder(),
+                        elevation: 1,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _controller.text.isEmpty
+                              ? null
+                              : _deleteBackward,
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Center(
+                              // 字形视觉重心偏右,向左 1px 光学补偿
+                              child: Transform.translate(
+                                offset: const Offset(-1, 0),
+                                child: Icon(
+                                  Symbols.backspace_rounded,
+                                  size: 20,
+                                  color: _controller.text.isEmpty
+                                      ? theme.colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.3)
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
-          // 底部安全区
+          // 底部安全区(面板打开时安全区已计入面板高度)
           if (!_showEmojiPanel)
             SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],

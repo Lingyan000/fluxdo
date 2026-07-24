@@ -60,7 +60,8 @@ enum ProgressGestureAction {
   aiAssistant,
   readingSettings,
   search,
-  refresh;
+  refresh,
+  goBack;
 
   static ProgressGestureAction fromString(String? value) {
     return ProgressGestureAction.values.firstWhere(

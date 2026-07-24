@@ -26,7 +26,7 @@ void main() {
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
           emojiGroupsProvider.overrideWith(
-            (ref) async => const <String, List<Emoji>>{},
+            (ref) => Stream.value(const <String, List<Emoji>>{}),
           ),
         ],
         child: TranslationProvider(

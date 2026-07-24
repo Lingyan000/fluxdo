@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../providers/theme_provider.dart';
 import '../services/ldc_oauth_service.dart';
 import '../services/cdk_oauth_service.dart';
@@ -315,11 +316,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
               ),
               const SizedBox(width: 8),
               if (_ldcProcessing)
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                const LoadingSpinner(size: 24)
               else
                 FilledButton(
                   onPressed: () => _toggleLdc(true),
@@ -393,11 +390,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
               ),
               const SizedBox(width: 8),
               if (_cdkProcessing)
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                const LoadingSpinner(size: 24)
               else
                 FilledButton(
                   onPressed: () => _toggleCdk(true),

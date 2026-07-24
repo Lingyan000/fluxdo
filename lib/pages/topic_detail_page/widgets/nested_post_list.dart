@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../models/nested_topic.dart';
 import '../../../models/topic.dart';
@@ -279,7 +280,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ns.isLoadingMore
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: LoadingSpinner())
           : Center(
               child: TextButton(
                 onPressed: () =>

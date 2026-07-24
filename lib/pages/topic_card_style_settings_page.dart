@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../models/category.dart';
@@ -308,20 +308,15 @@ class _TopicCardStyleSettingsPageState
             ],
           ),
           const SizedBox(height: 8),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-            ),
-            child: Slider(
-              value: value,
-              min: 13,
-              max: 18,
-              divisions: 10,
-              label: value.toStringAsFixed(
-                  value == value.roundToDouble() ? 0 : 1),
-              onChanged: (v) => _update(style.copyWith(titleFontSize: v)),
-            ),
+          // 滑块样式走全局主题(M3E 开 = year2023 新样式),不再本地覆盖
+          Slider(
+            value: value,
+            min: 13,
+            max: 18,
+            divisions: 10,
+            label: value.toStringAsFixed(
+                value == value.roundToDouble() ? 0 : 1),
+            onChanged: (v) => _update(style.copyWith(titleFontSize: v)),
           ),
         ],
       ),

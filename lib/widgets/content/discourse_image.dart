@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/image_viewer_page.dart';
@@ -8,8 +8,7 @@ import 'svg_view.dart';
 
 /// Discourse 图片组件
 ///
-/// 基于 CachedNetworkImage，支持：
-/// - 内存缓存 + 磁盘缓存
+/// 基于 [discourseImageProvider](内存缓存 + 磁盘缓存),支持:
 /// - SVG 图片渲染
 /// - upload:// 短链接解析
 /// - Cloudflare 鉴权
@@ -50,11 +49,13 @@ class DiscourseImage extends StatefulWidget {
 }
 
 class _DiscourseImageState extends State<DiscourseImage> {
+  /// 解码高度上限(物理像素):防长截图类窄高图按宽度解出超高位图
+  /// (与 LazyImage 同款,4096 是低端 GPU 的普遍纹理安全上限)。
+  static const int _kMaxDecodeHeight = 4096;
+
   String? _resolvedUrl;
   bool _isLoading = true;
   bool _hasError = false;
-
-  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
 
   @override
   void initState() {
@@ -171,41 +172,54 @@ class _DiscourseImageState extends State<DiscourseImage> {
   }
 
   Widget _buildCachedImage(ThemeData theme) {
-    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
 
-    // 优化内存占用：始终限制解码尺寸，避免原始分辨率图片占满内存缓存
-    // 有明确宽度时按宽度缩放；否则以屏幕宽度为上限
-    final int memCacheWidth;
-    if (widget.width != null) {
-      memCacheWidth = (widget.width! * dpr).toInt();
-    } else {
-      final screenWidth = MediaQuery.of(context).size.width;
-      memCacheWidth = (screenWidth * dpr).toInt();
-    }
+    // 优化内存占用:始终限制解码尺寸,避免原始分辨率图片占满内存缓存。
+    // 有明确宽度时按宽度缩放;否则以屏幕宽度为上限。高度必须同时 cap
+    // (fit 策略保持宽高比):只约束宽度时长截图类窄高图会按宽度解出
+    // 超高位图,超 GPU 纹理上限、上传瞬间 raster 冻结。
+    final logicalWidth = widget.width ?? MediaQuery.sizeOf(context).width;
+    final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
+    final cacheHeight = widget.height != null
+        ? (widget.height! * dpr).round().clamp(1, _kMaxDecodeHeight)
+        : _kMaxDecodeHeight;
 
-    return CachedNetworkImage(
-      imageUrl: _resolvedUrl!,
-      cacheManager: _cacheManager,
+    return Image(
+      image: ResizeImage(
+        discourseImageProvider(_resolvedUrl!),
+        width: cacheWidth,
+        height: cacheHeight,
+        policy: ResizeImagePolicy.fit,
+      ),
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
-      fadeInDuration: const Duration(milliseconds: 200),
-      fadeOutDuration: const Duration(milliseconds: 200),
-      placeholder: (context, url) => _buildPlaceholder(theme),
+      gaplessPlayback: true,
+      // 占位挂 frameBuilder(以"首帧是否到达"为准,覆盖所有 provider);
+      // AnimatedSwitcher 做占位→图片 200ms 交叉淡化,对齐原
+      // CachedNetworkImage 的 fadeIn/fadeOut 视觉。缓存同步命中直出。
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded) return child;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: frame == null
+              ? KeyedSubtree(
+                  key: const ValueKey('placeholder'),
+                  child: _buildPlaceholder(theme),
+                )
+              : KeyedSubtree(key: const ValueKey('image'), child: child),
+        );
+      },
       // 解码失败兜底:无 .svg 扩展名的 SVG(动态徽章服务等)按字节
       // 嗅探转入统一 SVG 管线;非 SVG 才显示破图。
-      errorWidget: (context, url, error) => SvgSniffFallback(
-        url: url,
+      errorBuilder: (context, error, stack) => SvgSniffFallback(
+        url: _resolvedUrl!,
         width: widget.width,
         height: widget.height,
         fit: widget.fit,
         placeholderBuilder: widget.placeholderBuilder,
         brokenBuilder: (_) => _buildErrorWidget(theme),
       ),
-      memCacheWidth: memCacheWidth,
-      memCacheHeight: widget.height != null
-          ? (widget.height! * dpr).toInt()
-          : null,
     );
   }
 
@@ -233,13 +247,9 @@ class _DiscourseImageState extends State<DiscourseImage> {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: theme.colorScheme.outline.withValues(alpha: 0.5),
-          ),
+        child: LoadingSpinner(
+          size: 20,
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
         ),
       ),
     );

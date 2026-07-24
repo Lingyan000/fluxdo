@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../services/discourse/discourse_service.dart';
@@ -117,7 +118,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
     if (_isLoading) {
       content = const Padding(
         padding: EdgeInsets.all(32),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: LoadingSpinner()),
       );
     } else if (_error != null) {
       content = Padding(

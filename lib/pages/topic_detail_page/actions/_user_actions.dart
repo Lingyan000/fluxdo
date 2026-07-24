@@ -185,21 +185,54 @@ extension _UserActions on _TopicDetailPageState {
       confirmLabel: S.current.review_withdraw,
     );
     if (withdrawn && mounted) {
+      PendingReplyTargetRegistry.remove(pending.id);
       ToastService.showSuccess(S.current.review_withdrawn);
     }
   }
 
   Future<void> _handleWithdrawAndEditPending(PendingPost pending) async {
+    // 回复目标只在送审当下的会话里可知(本人可见的服务端接口都不吐,
+    // 见 PendingReplyTargetRegistry);冷场景提示用户会退化为直接回复话题。
+    final targetKnown = PendingReplyTargetRegistry.contains(pending.id);
+    final replyToPostNumber = PendingReplyTargetRegistry.lookup(pending.id);
+    final confirmContent = targetKnown
+        ? S.current.review_withdrawAndEditConfirmContent
+        : '${S.current.review_withdrawAndEditConfirmContent}\n\n'
+              '${S.current.review_replyTargetUnknownHint}';
+
     final withdrawn = await _withdrawPendingPost(
       pending,
       confirmTitle: S.current.review_withdrawAndEdit,
-      confirmContent: S.current.review_withdrawAndEditConfirmContent,
+      confirmContent: confirmContent,
       confirmLabel: S.current.review_withdrawAndEdit,
     );
-    if (withdrawn && mounted) {
-      // 原文带回回复编辑器,重新提交后会再次进入审核队列
-      await _handleReply(null, initialContent: pending.raw);
+    if (!withdrawn || !mounted) return;
+    PendingReplyTargetRegistry.remove(pending.id);
+
+    // 恢复回复目标:优先用已加载楼层,未加载则按楼层号拉取
+    Post? replyToPost;
+    if (replyToPostNumber != null) {
+      final detail = ref.read(topicDetailProvider(_params)).value;
+      replyToPost = detail?.postStream.posts
+          .where((p) => p.postNumber == replyToPostNumber)
+          .firstOrNull;
+      if (replyToPost == null) {
+        try {
+          replyToPost = await DiscourseService().getPostByNumber(
+            widget.topicId,
+            replyToPostNumber,
+          );
+        } catch (_) {
+          // 目标楼层拉不到(已删除等):退化为直接回复话题并提示
+          if (mounted) {
+            ToastService.showInfo(S.current.review_replyTargetUnknownHint);
+          }
+        }
+      }
     }
+    if (!mounted) return;
+    // 原文带回回复编辑器,重新提交后会再次进入审核队列
+    await _handleReply(replyToPost, initialContent: pending.raw);
   }
 
   Future<void> _handleEdit(Post post) async {
@@ -476,10 +509,22 @@ extension _UserActions on _TopicDetailPageState {
       );
     } else {
       // 不在列表中 → 添加
+      // 摘录取当前阅读楼层的正文,不在已加载窗口内则退回首楼
+      final viewportPostNumber = _resolvedViewportPostNumber;
+      final posts = detail?.postStream.posts;
+      final anchorPost = posts == null || posts.isEmpty
+          ? null
+          : posts.firstWhere(
+              (p) => p.postNumber == viewportPostNumber,
+              orElse: () => posts.first,
+            );
       final item = ReadLaterItem(
         topicId: widget.topicId,
         title: detail?.title ?? widget.initialTitle ?? '',
-        scrollToPostNumber: _resolvedViewportPostNumber,
+        scrollToPostNumber: viewportPostNumber,
+        excerpt: anchorPost == null
+            ? null
+            : ReadLaterItem.excerptFromCooked(anchorPost.cooked),
         addedAt: DateTime.now(),
       );
       final success = notifier.add(item);

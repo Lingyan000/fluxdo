@@ -1,3 +1,5 @@
+import 'dart:convert' show utf8;
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
@@ -285,9 +287,12 @@ class _SvgFlairBadgeState extends State<_SvgFlairBadge> {
     });
 
     try {
-      final file = await DiscourseCacheManager().getSingleFile(widget.url);
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.avatarBucket,
+        widget.url,
+      );
       // 读取 SVG 内容并清理动画/不支持的元素
-      String content = await file.readAsString();
+      String content = utf8.decode(bytes, allowMalformed: true);
       content = SvgUtils.sanitize(content);
       
       if (mounted) {

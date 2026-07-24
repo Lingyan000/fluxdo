@@ -10,8 +10,7 @@ import '../../services/emoji_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
-import '../common/cached_image.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../../l10n/s.dart';
 
 /// 常用表情的 Key
@@ -448,14 +447,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
                             final groupIndex = hasRecent ? index - 1 : index;
                             final firstEmoji =
                                 emojiGroups[groupKeys[groupIndex]]!.first;
-                            icon = CachedImage(
-                              url: EmojiHandler().getEmojiUrl(firstEmoji.name),
+                            icon = _EmojiCell(
+                              name: firstEmoji.name,
                               width: 24,
                               height: 24,
-                              memCacheWidth: 48,
-                              memCacheHeight: 48,
-                              fit: BoxFit.contain,
-                              cacheManager: EmojiCacheManager(),
+                              decodeSize: 48,
                             );
                           }
                           return GestureDetector(
@@ -572,13 +568,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           message: ':${emoji.name}:',
           child: Padding(
             padding: const EdgeInsets.all(4.0),
-            child: CachedImage(
-              url: EmojiHandler().getEmojiUrl(emoji.name),
-              fit: BoxFit.contain,
-              memCacheWidth: 64,
-              memCacheHeight: 64,
-              cacheManager: EmojiCacheManager(),
-            ),
+            child: _EmojiCell(name: emoji.name, decodeSize: 64),
           ),
         ),
       ),
@@ -1011,13 +1001,7 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                           message: ':${emoji.name}:',
                           child: Padding(
                             padding: const EdgeInsets.all(4.0),
-                            child: CachedImage(
-                              url: EmojiHandler().getEmojiUrl(emoji.name),
-                              fit: BoxFit.contain,
-                              memCacheWidth: 80,
-                              memCacheHeight: 80,
-                              cacheManager: EmojiCacheManager(),
-                            ),
+                            child: _EmojiCell(name: emoji.name, decodeSize: 80),
                           ),
                         ),
                       );

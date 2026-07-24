@@ -44,6 +44,19 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   TopicDetailNotifier(this.arg);
   final TopicDetailParams arg;
 
+  /// 活跃实例注册表:topicId → 该话题当前存活的 provider 参数(后注册在后)。
+  ///
+  /// 页面实例的 params 携带 UUID instanceId,深层组件(帖脚的 boost/
+  /// reaction 本地操作落地)只知道 topicId —— 直接 new 一个空 instanceId
+  /// 的 params 与页面实例不相等,只会凭空创建并 fetch 一个孤儿实例,
+  /// 更新永远落不到在显示的那份数据上。经注册表找回真实实例。
+  static final Map<int, List<TopicDetailParams>> _activeParams = {};
+
+  /// 该话题最近激活的 provider 参数(同话题叠开多页时取最上层);无活跃
+  /// 实例(如个人页等无话题上下文)返回 null,调用方自行跳过同步。
+  static TopicDetailParams? activeParamsFor(int topicId) =>
+      _activeParams[topicId]?.lastOrNull;
+
   bool _hasMoreAfter = true;
   bool _hasMoreBefore = true;
 
@@ -135,6 +148,18 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   @override
   Future<TopicDetail> build() async {
     debugPrint('[TopicDetailNotifier] build called with topicId=${arg.topicId}, postNumber=${arg.postNumber}');
+
+    // 注册活跃实例(见 _activeParams);autoDispose 时反注册。
+    // build 重跑(refresh)会重复进入,先去重再追加保持"最近激活在尾"。
+    final registered = _activeParams.putIfAbsent(arg.topicId, () => []);
+    registered.remove(arg);
+    registered.add(arg);
+    ref.onDispose(() {
+      final list = _activeParams[arg.topicId];
+      if (list == null) return;
+      list.remove(arg);
+      if (list.isEmpty) _activeParams.remove(arg.topicId);
+    });
 
     // 保持存活，防止布局切换的短暂间隙被 autoDispose 清理
     // 使用 onCancel/onResume 模式：最后一个 watcher 移除后才开始倒计时

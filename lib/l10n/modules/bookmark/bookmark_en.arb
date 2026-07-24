@@ -43,5 +43,22 @@
   },
   "bookmarks_syncUpToDate": "Bookmarks are up to date",
   "bookmarks_syncFailed": "Sync failed, please try again later",
-  "readLater_title": "Read later"
+  "readLater_title": "Read later",
+  "readLater_continueReading": "Continue reading",
+  "readLater_readAt": "At #{postNumber}",
+  "@readLater_readAt": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "readLater_addedTime": "Added {time}",
+  "@readLater_addedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

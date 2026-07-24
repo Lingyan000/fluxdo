@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
@@ -263,11 +264,7 @@ class _BoostFlagSheetState extends State<BoostFlagSheet> {
                 ? null
                 : _submitFlag,
             child: _isSubmitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const LoadingSpinner(size: 20)
                 : Text(context.l10n.post_submitFlag),
           ),
         ),

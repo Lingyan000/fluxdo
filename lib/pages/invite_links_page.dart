@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../utils/share_utils.dart';
 
 import '../constants.dart';
@@ -578,11 +579,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                 child: FilledButton.icon(
                   onPressed: _isSubmitting ? null : () => _createInviteLink(),
                   icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const LoadingSpinner(size: 18)
                       : const Icon(Symbols.link_rounded),
                   label: Text(_isSubmitting ? context.l10n.invite_creating : context.l10n.invite_createLink),
                 ),
@@ -664,11 +661,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                     ? null
                     : () => _createInviteLink(useAdvancedOptions: true),
                 icon: _isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const LoadingSpinner(size: 18)
                     : const Icon(Symbols.link_rounded),
                 label: Text(_isSubmitting ? context.l10n.invite_creating : context.l10n.invite_createLink),
               ),

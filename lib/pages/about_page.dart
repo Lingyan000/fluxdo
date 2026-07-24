@@ -11,7 +11,7 @@ import '../services/update_checker_helper.dart';
 import '../services/update_service.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/update_dialog.dart';
 import 'app_logs_page.dart';
 import 'perf_diagnostics_page.dart';

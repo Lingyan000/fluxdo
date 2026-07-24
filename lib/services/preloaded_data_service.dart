@@ -12,7 +12,10 @@ import 'cf_challenge_service.dart';
 import 'cf_clearance_refresh_service.dart';
 
 /// 预加载数据服务
-/// 从首页 HTML 的 data-preloaded 属性中提取数据，避免额外 API 请求
+/// 从首页 HTML 中提取 Discourse 预加载数据，避免额外 API 请求。
+/// 新版站点为 `<script type="application/json" id="data-preloaded">` 标签
+/// （内容是原始 JSON），旧版为元素属性 `data-preloaded="..."`（HTML 实体转义），
+/// 两种形态都支持。
 class PreloadedDataService {
   static final PreloadedDataService _instance =
       PreloadedDataService._internal();
@@ -529,7 +532,7 @@ class PreloadedDataService {
     }
   }
 
-  /// 从 HTML 中解析 data-preloaded 属性
+  /// 从 HTML 中解析预加载数据（兼容新旧两种形态）
   Future<bool> _parsePreloadedDataFromHtml(String html) async {
     _extractCsrfTokenFromHtml(html);
     _extractSharedSessionKeyFromHtml(html);
@@ -537,24 +540,34 @@ class PreloadedDataService {
     _extractBaseUriFromHtml(html);
     _extractCdnUrlFromHtml(html);
     _extractPluginCandidatesInBackground(html);
-    // 提取预加载数据。Discourse 较早版本把数据放在 div 的
-    // `data-preloaded="..."` 属性里；现版本改成了
-    // `<script type="application/json" id="data-preloaded">{...}</script>`，
-    // 属性形态的正则永远匹配不上（真机抓包确认：html.contains('data-preloaded')
-    // 为 true 只是因为 script 标签里出现了这个 id 字符串，具体属性正则却
+
+    // 新版形态：<script type="application/json" id="data-preloaded">{...}</script>
+    // 内容是原始 JSON，不做 HTML 实体解码（否则正文中字面的 &quot; 会被误还原）
+    // Discourse 较早版本把数据放在 div 的 `data-preloaded="..."` 属性里；
+    // 现版本改成了上面这种 script 标签形态（真机抓包确认：旧的属性正则
     // 一次都没匹配到，导致 cook 引擎永远初始化不了）。两种形态都尝试。
-    final scriptMatch = RegExp(
-      r'<script[^>]*\bid="data-preloaded"[^>]*>(.*?)</script>',
-      dotAll: true,
+    final scriptTag = RegExp(
+      '''<script[^>]*id=["']data-preloaded["'][^>]*>''',
+      caseSensitive: false,
     ).firstMatch(html);
-    final match = scriptMatch ?? RegExp(r'data-preloaded="([^"]*)"').firstMatch(html);
+    if (scriptTag != null) {
+      final start = scriptTag.end;
+      final end = html.indexOf('</script>', start);
+      if (end > start) {
+        return _parsePreloadedDataString(
+          html.substring(start, end),
+          htmlEntityEncoded: false,
+        );
+      }
+    }
+
+    // 旧版形态：元素属性 data-preloaded="..."（HTML 实体转义，Isolate 中解码）
+    final match = RegExp(r'data-preloaded="([^"]*)"').firstMatch(html);
     if (match == null) {
       debugPrint('[PreloadedData] 未找到 data-preloaded 数据');
       return false;
     }
-
-    // HTML entity 解码已移入 Isolate 中统一处理
-    return _parsePreloadedDataString(match.group(1)!);
+    return _parsePreloadedDataString(match.group(1)!, htmlEntityEncoded: true);
   }
 
   void _extractCsrfTokenFromHtml(String html) {
@@ -691,13 +704,18 @@ class PreloadedDataService {
   }
 
   /// 解析预加载数据字符串
-  Future<bool> _parsePreloadedDataString(String dataString) async {
+  ///
+  /// [htmlEntityEncoded] 为 true 时（旧版属性形态）先做 HTML 实体解码。
+  Future<bool> _parsePreloadedDataString(
+    String dataString, {
+    required bool htmlEntityEncoded,
+  }) async {
     try {
-      // 在 Isolate 中完成 HTML entity 解码 + 外层/内层 JSON 解码
-      final preloaded = await compute(
-        _decodePreloadedJsonInIsolate,
+      // 在 Isolate 中完成（可选的）HTML entity 解码 + 外层/内层 JSON 解码
+      final preloaded = await compute(_decodePreloadedJsonInIsolate, [
         dataString,
-      );
+        if (htmlEntityEncoded) 'entity',
+      ]);
       if (preloaded == null) {
         debugPrint('[PreloadedData] 预加载 JSON 解析为空');
         return false;
@@ -912,14 +930,19 @@ List<Map<String, dynamic>>? _decodeTopicTrackingStatesInIsolate(
   return decoded.cast<Map<String, dynamic>>();
 }
 
-Map<String, dynamic>? _decodePreloadedJsonInIsolate(String rawJson) {
-  // HTML entity 解码
-  final unescaped = rawJson
-      .replaceAll('&quot;', '"')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&#39;', "'");
+Map<String, dynamic>? _decodePreloadedJsonInIsolate(List<String> input) {
+  final rawJson = input[0];
+  final htmlEntityEncoded = input.length > 1 && input[1] == 'entity';
+
+  // 旧版属性形态需要 HTML entity 解码；新版 script 标签形态是原始 JSON
+  final unescaped = htmlEntityEncoded
+      ? rawJson
+            .replaceAll('&quot;', '"')
+            .replaceAll('&amp;', '&')
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&#39;', "'")
+      : rawJson;
 
   final decoded = jsonDecode(unescaped);
   final Map<String, dynamic> result;

@@ -9,7 +9,7 @@ import '../providers/core_providers.dart';
 import '../providers/directory_providers.dart';
 import '../providers/profile_stats_provider.dart';
 import '../widgets/profile_stats_card.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 
 /// 统计卡片编辑页
@@ -315,26 +315,21 @@ class _LayoutSettings extends ConsumerWidget {
           children: [
             _SettingRow(
               label: S.current.profileStats_layoutMode,
-              child: SegmentedButton<StatsLayoutMode>(
-                segments: [
-                  ButtonSegment(
+              child: M3eButtonGroup<StatsLayoutMode>(
+                items: [
+                  M3eButtonGroupItem(
                     value: StatsLayoutMode.grid,
-                    icon: const Icon(Symbols.grid_view_rounded, size: 18),
+                    icon: const Icon(Symbols.grid_view_rounded),
                     label: Text(S.current.profileStats_layoutGrid),
                   ),
-                  ButtonSegment(
+                  M3eButtonGroupItem(
                     value: StatsLayoutMode.scroll,
-                    icon: const Icon(Symbols.view_column_rounded, size: 18),
+                    icon: const Icon(Symbols.view_column_rounded),
                     label: Text(S.current.profileStats_layoutScroll),
                   ),
                 ],
-                selected: {config.layoutMode},
-                onSelectionChanged: (set) => notifier.setLayoutMode(set.first),
-                showSelectedIcon: false,
-                style: SegmentedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  textStyle: theme.textTheme.labelMedium,
-                ),
+                selected: config.layoutMode,
+                onSelected: (mode) => notifier.setLayoutMode(mode),
               ),
             ),
             if (config.layoutMode == StatsLayoutMode.grid) ...[
@@ -342,19 +337,14 @@ class _LayoutSettings extends ConsumerWidget {
                 color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
               _SettingRow(
                 label: S.current.profileStats_columnsPerRow,
-                child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 2, label: Text('2')),
-                    ButtonSegment(value: 3, label: Text('3')),
-                    ButtonSegment(value: 4, label: Text('4')),
+                child: M3eButtonGroup<int>(
+                  items: const [
+                    M3eButtonGroupItem(value: 2, label: Text('2')),
+                    M3eButtonGroupItem(value: 3, label: Text('3')),
+                    M3eButtonGroupItem(value: 4, label: Text('4')),
                   ],
-                  selected: {config.columnsPerRow},
-                  onSelectionChanged: (set) => notifier.setColumnsPerRow(set.first),
-                  showSelectedIcon: false,
-                  style: SegmentedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: theme.textTheme.labelMedium,
-                  ),
+                  selected: config.columnsPerRow,
+                  onSelected: (n) => notifier.setColumnsPerRow(n),
                 ),
               ),
             ],
@@ -374,10 +364,12 @@ class _SettingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           fontWeight: FontWeight.w500,
-        ))),
-        child,
+        )),
+        const SizedBox(width: 16),
+        // M3eButtonGroup 内部 Expanded 布局需要有界宽度,child 占满剩余
+        Expanded(child: child),
       ],
     );
   }

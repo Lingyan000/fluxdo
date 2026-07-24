@@ -8,7 +8,7 @@ import '../providers/shortcut_provider.dart';
 import '../settings/search/settings_search_index.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/layout/master_detail_layout.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'about_page.dart';
 import 'appearance_page.dart';
 import 'bottom_nav_settings_page.dart';

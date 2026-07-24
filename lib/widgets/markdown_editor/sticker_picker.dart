@@ -11,7 +11,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/cached_image.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'sticker_market_sheet.dart';
 import '../../../../../l10n/s.dart';
 
@@ -486,7 +486,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           memCacheHeight: 48,
           thumbnailMode: true,
           fit: BoxFit.cover,
-          cacheManager: StickerCacheManager(),
+          bucket: BlobImageCache.stickerOriginalBucket,
           placeholder: (_) => _buildFallbackIcon(group.name),
           errorBuilder: (_, _, _) => _buildFallbackIcon(group.name),
         ),
@@ -720,7 +720,7 @@ class _StickerItemWidget extends StatelessWidget {
               memCacheWidth: 160,
               memCacheHeight: 160,
               thumbnailMode: true,
-              cacheManager: StickerCacheManager(),
+              bucket: BlobImageCache.stickerOriginalBucket,
               // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
               // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。
               placeholder: (ctx) => DecoratedBox(
@@ -844,7 +844,7 @@ class _StickerPreviewPopup extends StatelessWidget {
                       url: sticker.url,
                       fit: BoxFit.contain,
                       // 不传 memCacheWidth → AVIF 完整解码（含动画）
-                      cacheManager: StickerCacheManager(),
+                      bucket: BlobImageCache.stickerOriginalBucket,
                       errorBuilder: (_, _, _) => Icon(
                         Symbols.broken_image_rounded,
                         size: 48,

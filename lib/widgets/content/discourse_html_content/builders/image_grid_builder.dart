@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../services/discourse_cache_manager.dart';
+import '../../../../services/image_decode_spec_memo.dart';
 import '../../../../utils/url_helper.dart';
 import '../image_utils.dart';
 import '../../lazy_load_scope.dart';
@@ -260,6 +262,8 @@ class _GridImageTileState extends State<_GridImageTile> {
     final maxSide =
         widget.columnWidth > displayHeight ? widget.columnWidth : displayHeight;
     final cachePx = (maxSide * dpr).round();
+    // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
+    ImageDecodeSpecMemo.remember(displayUrl, cachePx, cachePx);
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,
@@ -285,21 +289,21 @@ class _GridImageTileState extends State<_GridImageTile> {
                 gaplessPlayback: true,
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
+                  final total = loadingProgress.expectedTotalBytes;
+                  // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
                   return Container(
                     color: widget.theme.colorScheme.surfaceContainerHighest,
                     child: Center(
                       child: RepaintBoundary(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
-                          ),
-                        ),
+                        child: total != null
+                            ? M3eCircularProgress(
+                                value:
+                                    loadingProgress.cumulativeBytesLoaded /
+                                        total,
+                                size: 24,
+                                strokeWidth: 2,
+                              )
+                            : const LoadingSpinner(size: 24),
                       ),
                     ),
                   );
@@ -341,6 +345,10 @@ class _GridImageTileState extends State<_GridImageTile> {
       heroTags: widget.heroTags,
       initialIndex: widget.index >= 0 ? widget.index : 0,
       filenames: widget.filenames,
+      // 网格瓦片是 cover 裁剪 + 圆角 4:启用飞行 crossfade,
+      // 消除起飞/落地瞬间「裁剪图↔完整图」跳变
+      heroSourceFit: BoxFit.cover,
+      heroSourceRadius: 4,
     );
   }
 
@@ -353,11 +361,7 @@ class _GridImageTileState extends State<_GridImageTile> {
         child: Container(
           color: widget.theme.colorScheme.surfaceContainerHighest,
           child: const Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            child: LoadingSpinner(size: 24),
           ),
         ),
       ),

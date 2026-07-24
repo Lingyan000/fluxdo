@@ -16,6 +16,7 @@
   },
   "review_withdrawAndEdit": "Withdraw & Edit",
   "review_withdrawAndEditConfirmContent": "This will withdraw the item from the review queue and bring the original text back into the editor. Resubmitting requires approval again. If you abandon editing, the content will not be restored automatically.",
+  "review_replyTargetUnknownHint": "Note: the original reply target of this item is unknown; after resubmitting it will become a direct reply to the topic.",
   "review_typeNewTopic": "New Topic",
   "review_typeReply": "Reply",
   "review_empty": "No content awaiting review",

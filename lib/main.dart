@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 import 'package:window_manager/window_manager.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 import 'pages/topics_page.dart';
 import 'pages/data_management_page.dart';
@@ -38,7 +37,7 @@ import 'services/local_notification_service.dart';
 import 'services/data_management/cache_size_service.dart';
 import 'services/discourse_cache_manager.dart';
 import 'services/toast_service.dart';
-import 'widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'l10n/s.dart';
 
 import 'services/network/doh/network_settings_service.dart';
@@ -53,6 +52,9 @@ import 'services/cf_challenge_logger.dart';
 import 'services/browser_trust_coordinator.dart';
 import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show FlattenCache, ParagraphLayoutCache;
+
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
 import 'services/windows_protocol_registrar_stub.dart'
@@ -76,6 +78,7 @@ import 'providers/connectivity_provider.dart';
 import 'utils/dialog_utils.dart';
 import 'utils/frame_jank_monitor.dart';
 import 'utils/image_decode_gate.dart';
+import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'utils/time_utils.dart';
 
@@ -153,6 +156,16 @@ Future<void> main() async {
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
   NativeAnimatedImageProvider.firstFrameGate = ImageDecodeGate.run;
 
+  // FlattenCache / ParagraphLayoutCache miss 的成本上报 span 账单
+  // (flat:/tlay: 前缀,与 parse:/lay:/pnt: 同一管道;监控关闭时
+  // noteSpan 空操作)。tlay:miss 大量出现 = 直绘布局缓存失效异常。
+  FlattenCache.profileHook = (micros) {
+    FrameJankMonitor.noteSpan('flat:miss', micros);
+  };
+  ParagraphLayoutCache.profileHook = (micros) {
+    FrameJankMonitor.noteSpan('tlay:miss', micros);
+  };
+
   // 触摸重采样已定案关闭(回归框架默认 false)。曾为治"120Hz 触摸 ×
   // 60Hz 显示"的滚动微抖开启(96a94f1),但 SDK 的重采样偏移是按 60Hz
   // 最坏情况校准的固定 -38ms(gestures/binding.dart _defaultSamplingOffset,
@@ -179,14 +192,6 @@ Future<void> main() async {
   );
   if (!kReleaseMode && profileWidgetBuilds) {
     debugProfileBuildsEnabled = true;
-  }
-
-  // 桌面端(Windows/Linux)图片缓存索引走 sqlite,需 FFI 提供 sqlite3;移动端 /
-  // macOS 用各自原生 sqflite(flutter_cache_manager 已带),无需处理。必须在任何
-  // 数据库操作(CacheManager / migration)之前设好 databaseFactory。
-  if (Platform.isWindows || Platform.isLinux) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
   }
 
   // Release 模式下禁用 debugPrint 输出：全项目有数百处 debugPrint 调试输出，
@@ -377,11 +382,9 @@ Future<void> main() async {
 
   // 冷启动自动清除图片缓存（如果用户开启了该选项）
   if (prefs.getBool('pref_clear_cache_on_exit') == true) {
-    Future.wait([
-      DiscourseCacheManager().emptyCache(),
-      EmojiCacheManager().emptyCache(),
-      ExternalImageCacheManager().emptyCache(),
-    ]).then((_) => CacheSizeService.deleteImageCacheDirs()).ignore();
+    BlobImageCache.clearAll()
+        .then((_) => CacheSizeService.deleteImageCacheDirs())
+        .ignore();
   }
 
   // 应用竖屏锁定设置（仅移动端）
@@ -417,6 +420,16 @@ Future<void> main() async {
     'event': 'app_start',
     'message': '应用启动',
   });
+
+  // 启动后台维护:迁移 trash 目录清扫(v7/v8 rename 出来的待删区)+
+  // blob 缓存过期扫描(24h 节流)。都在首帧渲染完 + 60s 空闲后跑,
+  // 重活全在 Isolate.run,不与启动/首屏抢资源。
+  unawaited(() async {
+    await WidgetsBinding.instance.waitUntilFirstFrameRasterized;
+    await Future.delayed(const Duration(seconds: 60));
+    await MigrationService.purgeTrash();
+    await BlobImageCache.sweep(prefs);
+  }());
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {
@@ -562,6 +575,87 @@ const _pageTransitionsTheme = PageTransitionsTheme(
   },
 );
 
+/// M3E 按钮按压形变,参数对照 Compose ButtonSmallTokens 标准:
+/// ContainerShapeRound = CornerFull(Stadium)→ PressedContainerShape =
+/// CornerSmall(8dp)。形状插值由 Material 内部 ImplicitlyAnimatedWidget
+/// 完成,theme 注入全局生效;时长对齐规格用的 DefaultEffects 弹簧
+/// (spring(1.0, 1600) 收敛 ≈180ms,规格注释明确"不允许过冲",
+/// Material 的 fastOutSlowIn 曲线正好同为无过冲缓动)。
+ButtonStyle _m3ePressedShapeStyle() => ButtonStyle(
+  animationDuration: const Duration(milliseconds: 180),
+  shape: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.pressed)
+        ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+        : const StadiumBorder(),
+  ),
+);
+
+/// IconButton 版本:在按压形变之上叠加 selected 态形状(Compose
+/// IconToggleButtonShapes 语义:pressed > checked > 默认)。选中的
+/// 切换图标按钮从全圆变小圆角方,给 36 处 isSelected 调用点免费的
+/// M3E 切换标志动效;时长同 DefaultEffects。
+ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
+  animationDuration: const Duration(milliseconds: 180),
+  shape: WidgetStateProperty.resolveWith((states) {
+    if (states.contains(WidgetState.pressed)) {
+      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
+    }
+    if (states.contains(WidgetState.selected)) {
+      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+    }
+    return const StadiumBorder();
+  }),
+);
+
+/// light/dark 共用的 ThemeData 装配(两侧必须对称,尤其 M3eFlags ——
+/// ThemeData.lerp 对单边缺失的 extension 不插值而是瞬时并入)。
+ThemeData _buildAppTheme(ColorScheme scheme, ThemeState themeState) {
+  final m3e = themeState.m3eEnabled;
+  final buttonStyle = m3e ? _m3ePressedShapeStyle() : null;
+  return ThemeData(
+    colorScheme: scheme,
+    useMaterial3: true,
+    fontFamily: themeState.fontFamilyName,
+    pageTransitionsTheme: _pageTransitionsTheme,
+    iconTheme: _appIconTheme(scheme.onSurface),
+    primaryIconTheme: _appIconTheme(scheme.onPrimary),
+    extensions: [M3eFlags(enabled: m3e)],
+    // year2023: false 启用进度条/滑块的 M3E 翻新(圆角端点/track gap/
+    // stop indicator/16dp 滑轨+竖条 thumb)。字段虽标记 deprecated,但
+    // trackGap 等新样式只由它驱动,官方 M3E 独立包落地前只能走这里。
+    // circularTrackPadding 归零:新样式默认 4dp 内边距会把存量
+    // SizedBox(20) 小圈的可画区吃掉 8dp。
+    // ignore: deprecated_member_use
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      // ignore: deprecated_member_use
+      year2023: !m3e,
+      circularTrackPadding: EdgeInsets.zero,
+    ),
+    // ignore: deprecated_member_use
+    sliderTheme: SliderThemeData(year2023: !m3e),
+    filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
+    textButtonTheme: TextButtonThemeData(style: buttonStyle),
+    iconButtonTheme: IconButtonThemeData(
+      style: m3e ? _m3eIconButtonShapeStyle() : null,
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: scheme.surfaceContainerLow,
+      margin: EdgeInsets.zero,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 3,
+      color: scheme.surfaceContainerLow,
+      surfaceTintColor: Colors.transparent,
+      menuPadding: const EdgeInsets.symmetric(vertical: 8),
+    ),
+  );
+}
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -583,32 +677,23 @@ class MainApp extends ConsumerWidget {
         ColorScheme lightScheme;
         ColorScheme darkScheme;
 
+        // 动态色路径只取系统动态色 primary 当种子,不用 OEM 原始 scheme。
+        ColorScheme buildScheme(Color seed, Brightness brightness) {
+          return ColorScheme.fromSeed(
+            seedColor: seed,
+            brightness: brightness,
+            dynamicSchemeVariant: themeState.schemeVariant,
+          );
+        }
+
         if (themeState.useDynamicColor &&
             lightDynamic != null &&
             darkDynamic != null) {
-          // Optimization: Use standard ColorScheme.fromSeed with the dynamic primary color
-          // This ensures better contrast and consistency than using the raw OEM scheme
-          lightScheme = ColorScheme.fromSeed(
-            seedColor: lightDynamic.primary,
-            brightness: Brightness.light,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
-          darkScheme = ColorScheme.fromSeed(
-            seedColor: darkDynamic.primary,
-            brightness: Brightness.dark,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
+          lightScheme = buildScheme(lightDynamic.primary, Brightness.light);
+          darkScheme = buildScheme(darkDynamic.primary, Brightness.dark);
         } else {
-          lightScheme = ColorScheme.fromSeed(
-            seedColor: themeState.seedColor,
-            brightness: Brightness.light,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
-          darkScheme = ColorScheme.fromSeed(
-            seedColor: themeState.seedColor,
-            brightness: Brightness.dark,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
+          lightScheme = buildScheme(themeState.seedColor, Brightness.light);
+          darkScheme = buildScheme(themeState.seedColor, Brightness.dark);
         }
 
         return TranslationProvider(
@@ -630,58 +715,10 @@ class MainApp extends ConsumerWidget {
               // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
               // 会强制改为 Roboto，导致字体显得比之前粗）。
               theme: _withChineseFallback(
-                ThemeData(
-                  colorScheme: lightScheme,
-                  useMaterial3: true,
-                  fontFamily: themeState.fontFamilyName,
-                  pageTransitionsTheme: _pageTransitionsTheme,
-                  iconTheme: _appIconTheme(lightScheme.onSurface),
-                  primaryIconTheme: _appIconTheme(lightScheme.onPrimary),
-                  cardTheme: CardThemeData(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: lightScheme.surfaceContainerLow,
-                    margin: EdgeInsets.zero,
-                  ),
-                  popupMenuTheme: PopupMenuThemeData(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 3,
-                    color: lightScheme.surfaceContainerLow,
-                    surfaceTintColor: Colors.transparent,
-                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
+                _buildAppTheme(lightScheme, themeState),
               ),
               darkTheme: _withChineseFallback(
-                ThemeData(
-                  colorScheme: darkScheme,
-                  useMaterial3: true,
-                  fontFamily: themeState.fontFamilyName,
-                  pageTransitionsTheme: _pageTransitionsTheme,
-                  iconTheme: _appIconTheme(darkScheme.onSurface),
-                  primaryIconTheme: _appIconTheme(darkScheme.onPrimary),
-                  cardTheme: CardThemeData(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: darkScheme.surfaceContainerLow,
-                    margin: EdgeInsets.zero,
-                  ),
-                  popupMenuTheme: PopupMenuThemeData(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 3,
-                    color: darkScheme.surfaceContainerLow,
-                    surfaceTintColor: Colors.transparent,
-                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
+                _buildAppTheme(darkScheme, themeState),
               ),
               builder: (context, child) {
                 final brightness = Theme.of(context).brightness;
@@ -1115,6 +1152,26 @@ class _MainPageState extends ConsumerState<MainPage>
         unawaited(_resumeFromBackground());
       });
     }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    // 系统内存压力统一入口:iOS 内存警告 / Android onTrimMemory /
+    // 金标联盟公平运行内存 TRIM 广播(FairMemoryReceiver 翻译成同一
+    // memoryPressure 通道)。imageCache(最大头,256MB 上限)由框架
+    // PaintingBinding.handleMemoryPressure 自清,这里补自建缓存:
+    // - RenderParseCache:纯数据,清空安全;
+    // - FlattenCache:引用计数设计,在用条目标 dead 延迟释放,安全;
+    // - ParagraphLayoutCache 刻意不清:evictAll 会 dispose 在屏
+    //   RenderObject 仍持有的 ui.Paragraph(paint 不重走 layout,
+    //   仅 reassemble 全量重建场景安全),且量级仅数 MB 不值得冒险。
+    RenderParseCache.clear();
+    FlattenCache.evictAll();
+    // 公平内存机制下持续增长会触达查杀线,先把监控现场落盘(未启用
+    // 或无记录时内部直接返回,静默失败)。
+    unawaited(FrameJankMonitor.persistSnapshot());
+    debugPrint('[MainPage] 内存压力:已清理解析/flatten 缓存');
   }
 
   Future<void> _resumeFromBackground() async {

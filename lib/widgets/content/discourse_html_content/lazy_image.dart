@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
+import '../../../services/blob_image_cache.dart';
+import '../../../services/image_decode_spec_memo.dart';
 import '../../../services/media_geometry_memo.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/image_paint_gate.dart';
 import '../../common/anchor_guard_sliver.dart';
+import '../../common/first_paint_probe.dart';
 import '../../common/hero_image.dart';
 import '../svg_view.dart';
 
@@ -57,6 +61,10 @@ class LazyImage extends StatefulWidget {
   /// 原始宽,三档共享同一缓存条目,切档 = 纯布局变化零解码。
   final double? decodeWidth;
 
+  /// 加载占位底色(Discourse `data-dominant-color` 主色,官方唯一占位
+  /// 语义 —— web 端加载中就是此纯色背景)。null = 默认灰底。
+  final Color? placeholderColor;
+
   const LazyImage({
     super.key,
     required this.imageProvider,
@@ -69,6 +77,7 @@ class LazyImage extends StatefulWidget {
     this.onSecondaryTapUp,
     this.cacheKey,
     this.decodeWidth,
+    this.placeholderColor,
   });
 
   @override
@@ -138,6 +147,12 @@ class _LazyImageState extends State<LazyImage> {
     _stopRatioResolve();
     _cancelGateWait();
     _scrollAwareContext.dispose();
+    // 滚出视口:仍在下载等待队列的请求沉回低优队尾,给新视野让路。
+    // 在途 HTTP 不取消 —— 下完写盘即缓存,滚回来直接命中。
+    final url = widget.cacheKey;
+    if (url != null && url.startsWith('http')) {
+      BlobImageCache.sink(BlobImageCache.contentBucket, url);
+    }
     super.dispose();
   }
 
@@ -231,6 +246,12 @@ class _LazyImageState extends State<LazyImage> {
     final logicalWidth =
         (widget.decodeWidth ?? widget.width ?? screenW).clamp(1.0, screenW);
     final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
+    // 登记解码参数:查看器缩略图占位按同参重建 provider → 同 key 命中
+    // ImageCache,Hero 转场帧零重解码。
+    final key = widget.cacheKey;
+    if (key != null && key.isNotEmpty) {
+      ImageDecodeSpecMemo.remember(key, cacheWidth, LazyImage._kMaxDecodeHeight);
+    }
     return ResizeImage(
       widget.imageProvider,
       width: cacheWidth,
@@ -264,25 +285,28 @@ class _LazyImageState extends State<LazyImage> {
     // 的层)会被每帧全量重栅格化 —— 实测就是"无动图页面 raster
     // 每帧 8ms 常驻、加载完自愈"的来源。
     Widget placeholderBox({double? progress}) {
+      // 主色占位(dominant-color)压到 0.35 alpha 叠在 surface 上:保留
+      // 色相提示又不刺眼;无主色回落原灰底。
+      final baseColor = widget.placeholderColor == null
+          ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2)
+          : widget.placeholderColor!.withValues(alpha: 0.35);
       return Container(
         width: width,
         height: height ?? 200,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.2,
-          ),
+          color: baseColor,
           borderRadius: BorderRadius.circular(8),
         ),
         child: RepaintBoundary(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              value: progress,
-            ),
-          ),
+          // 首字节前无进度 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
+          child: progress == null
+              ? const LoadingSpinner(size: 24)
+              : M3eCircularProgress(
+                  value: progress,
+                  size: 24,
+                  strokeWidth: 2,
+                ),
         ),
       );
     }
@@ -371,6 +395,18 @@ class _LazyImageState extends State<LazyImage> {
       onSecondaryTapUp: widget.onSecondaryTapUp,
       child: imageChild,
     );
+
+    // 视野优先级:cacheExtent 预建区的 cell 会 build/layout 但不 paint,
+    // 首帧 paint = 真进视口 —— 把还在下载等待队列的请求提到高优
+    // (Telegram 滚入视野 bumpPriority 同款语义,幂等零成本)。
+    final bumpUrl = widget.cacheKey;
+    if (bumpUrl != null && bumpUrl.startsWith('http')) {
+      imageWidget = FirstPaintProbe(
+        onFirstPaint: () =>
+            BlobImageCache.bump(BlobImageCache.contentBucket, bumpUrl),
+        child: imageWidget,
+      );
+    }
 
     // 重绘隔离:spinner/动图/首绘只重画图片区域,不连带整个帖子 segment
     imageWidget = RepaintBoundary(child: imageWidget);

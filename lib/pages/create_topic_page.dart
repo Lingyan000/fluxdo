@@ -4,7 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
-import 'package:fluxdo/widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
@@ -536,6 +536,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         },
         onTap: () {
           _editorKey.currentState?.closeEmojiPanel();
+          _richKey.currentState?.closeEmojiPanel();
         },
       ),
     );
@@ -608,6 +609,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         _editorKey.currentState?.closeEmojiPanel();
+        _richKey.currentState?.closeEmojiPanel();
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
@@ -661,13 +663,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                   onPressed: trigger,
                   tooltip: context.l10n.aiPostReview_button,
                   icon: isReviewing
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.primary,
-                          ),
+                      ? LoadingSpinner(
+                          size: 18,
+                          color: theme.colorScheme.primary,
                         )
                       : const Icon(Symbols.auto_awesome_rounded, size: 22),
                 );
@@ -715,6 +713,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                               if (_showPreview) {
                                 FocusScope.of(context).unfocus();
                                 _editorKey.currentState?.closeEmojiPanel();
+                                _richKey.currentState?.closeEmojiPanel();
                               }
                             },
                             children: [
