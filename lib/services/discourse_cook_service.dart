@@ -73,6 +73,22 @@ class DiscourseCookService {
         'assets/cook/discourse-cook.js',
       );
       final engine = CookJsEngine();
+      // Polyfill:部分平台(Windows/Android 的 QuickJS 版本)未实现
+      // Array.prototype.at(ES2022)。bundle 的 bbcode ruler 收尾逻辑
+      // (`tokens.at(-1)?.meta`)依赖它——BBCode 闭合标签([/spoiler]/
+      // [/color]/[/size]/[/u] 等)cook 时必经这条路径，缺了直接 TypeError:
+      // not a function，cook 整体失败。V8/JavaScriptCore 已原生支持，
+      // 这段判断为 no-op；只在缺失的 QuickJS 上补上。
+      engine.evaluate('''
+        if (!Array.prototype.at) {
+          Array.prototype.at = function(n) {
+            n = Math.trunc(n) || 0;
+            if (n < 0) n += this.length;
+            if (n < 0 || n >= this.length) return undefined;
+            return this[n];
+          };
+        }
+      ''');
       String? evalError;
       engine.evaluate(bundleJs, onError: (e) => evalError = e);
       if (evalError != null) {
