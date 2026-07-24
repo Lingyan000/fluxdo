@@ -603,7 +603,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ['spoiler', '剧透', 'jt'],
       '剧透遮罩',
       Icons.blur_on_rounded,
-      () async => insertMarkdownSnippet('[spoiler]\n剧透内容\n[/spoiler]'),
+      // 不带换行:cook 才会判成行内剧透(span.spoiler,mark 化,能跟其它
+      // 内容混排),带换行会被判成独立段落走块级剧透(div.spoiler,灰框
+      // + 眼睛图标,跟这次做的行内即打即渲染不是一回事,视觉不统一)。
+      () async => insertMarkdownSnippet('[spoiler]剧透内容[/spoiler]'),
     ),
     (
       ['date', '日期', '时间', 'rq', 'sj'],
