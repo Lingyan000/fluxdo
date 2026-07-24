@@ -269,6 +269,7 @@ class _PostRepliesSheetContentState
     // 构建 Discourse 引用格式
     final quote = QuoteBuilder.build(
       markdown: markdown,
+      displayName: (post.name?.isNotEmpty ?? false) ? post.name! : post.username,
       username: post.username,
       postNumber: post.postNumber,
       topicId: widget.topicId,

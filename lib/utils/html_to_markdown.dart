@@ -325,6 +325,13 @@ class _LinkTag extends _Tag {
               _extensionFromUrl(attr['href']) ??
               _extensionFromUrl(attr['data-download-href']);
           if (ext != null) href += '.$ext';
+        } else {
+          // 客户端 cook 预览形态(见 _ImageTag 同名注释):没有
+          // data-base62-sha1 时,真实短链在 img 的 data-orig-src。
+          final origSrc = img.attributes['data-orig-src'];
+          if (origSrc != null && origSrc.startsWith('upload://')) {
+            href = origSrc;
+          }
         }
 
         final width = img.attributes['width'];
@@ -372,6 +379,14 @@ class _ImageTag extends _Tag {
       final ext = _extensionFromUrl(attr['src'] ?? pAttr['src']) ??
           _extensionFromUrl(attr['data-orig-src']);
       if (ext != null) src = '$src.$ext';
+    } else {
+      // 刚发帖/编辑后本地乐观渲染的「客户端 cook 预览形态」:src 是占位图
+      // /images/transparent.png,没有 data-base62-sha1,真实短链在
+      // data-orig-src(等服务端返回真 cooked 前一直是这个形态)。
+      final origSrc = attr['data-orig-src'] ?? pAttr['data-orig-src'];
+      if (origSrc != null && origSrc.startsWith('upload://')) {
+        src = origSrc;
+      }
     }
 
     // emoji
@@ -421,6 +436,21 @@ class _BlockquoteTag extends _Tag {
   }
 }
 
+/// 递归找 aside.quote 里标题区(class 含 "title")下第一个 `<a>` 的文本
+/// (真实 cooked 结构标题是 `<a>显示名</a>`,取这个而不是 data-username
+/// 属性——参见 _AsideTag.toMarkdown 里的用法说明)。
+String? _findQuoteTitleLinkText(_MdElement el) {
+  final elClass = el.attributes['class'] ?? '';
+  for (final child in el.children) {
+    if (child.name == 'a' && elClass.contains('title')) {
+      return child.innerMarkdown();
+    }
+    final found = _findQuoteTitleLinkText(child);
+    if (found != null) return found;
+  }
+  return null;
+}
+
 /// Aside Tag (aside.quote)
 class _AsideTag extends _BlockTag {
   _AsideTag() : super('', '');
@@ -444,9 +474,17 @@ class _AsideTag extends _BlockTag {
     final username = element!.attributes['data-username'];
     final post = element!.attributes['data-post'];
     final topic = element!.attributes['data-topic'];
+    // 首字段官方语义是**显示名**(昵称),不是登录用户名——直接塞
+    // username 会导致引用发出后标题栏没有可点链接(服务端按首字段当纯
+    // 显示文本处理,查不到人)。真实用户名单独放 username: 参数。
+    final titleLinkText = _findQuoteTitleLinkText(element!)?.trim();
+    final displayName =
+        (titleLinkText != null && titleLinkText.isNotEmpty)
+            ? titleLinkText
+            : username;
 
     final quotePrefix = (username != null && post != null && topic != null)
-        ? '[quote="$username, post:$post, topic:$topic"]'
+        ? '[quote="$displayName, post:$post, topic:$topic, username:$username"]'
         : '[quote]';
 
     return '\n$quotePrefix\n$text\n[/quote]\n';
