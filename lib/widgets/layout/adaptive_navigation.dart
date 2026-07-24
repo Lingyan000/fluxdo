@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../navigation/nav_action_bus.dart';
@@ -360,9 +359,7 @@ class _AdaptiveBottomNavigationState
 
   @override
   Widget build(BuildContext context) {
-    // M3eNavigationBar:选中 pill 在 tab 间弹簧滑动(M3E 关闭时内部
-    // 自动回退原生 NavigationBar)。
-    return M3eNavigationBar(
+    return NavigationBar(
       selectedIndex: widget.selectedIndex,
       onDestinationSelected: _handleTap,
       destinations: widget.destinations.map((d) {

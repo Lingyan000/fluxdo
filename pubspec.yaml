@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.24+2026071622
+version: 0.2.25+2026072418
 
 environment:
   sdk: ^3.10.4
