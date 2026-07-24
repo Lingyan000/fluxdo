@@ -40,6 +40,10 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
     VoidCallback? onClose,
+    // 引用/复制引用用的 markdown(理想情况是 `![alt](upload://sha1.ext)`,
+    // 对齐 Web 端「复制引用」原样保留图片格式的行为)。为 null 时(如
+    // cooked 里找不到匹配 img)降级用 `![image](CDN 完整 URL)`。
+    String? quoteMarkdown,
   }) {
     final originalUrl = DiscourseImageUtils.getOriginalUrl(imageUrl);
 
@@ -54,6 +58,7 @@ class ImageContextMenu {
         onQuoteImage: onQuoteImage,
         position: position,
         onClose: onClose,
+        quoteMarkdown: quoteMarkdown,
       );
     } else {
       _showMobileMenu(
@@ -65,6 +70,7 @@ class ImageContextMenu {
         topicId: topicId,
         onQuoteImage: onQuoteImage,
         onClose: onClose,
+        quoteMarkdown: quoteMarkdown,
       );
     }
   }
@@ -80,6 +86,7 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     required Offset position,
     VoidCallback? onClose,
+    String? quoteMarkdown,
   }) {
     final overlayRenderObject = Overlay.of(context).context.findRenderObject();
     if (overlayRenderObject is! RenderBox || !overlayRenderObject.hasSize) {
@@ -92,6 +99,7 @@ class ImageContextMenu {
         post: post,
         topicId: topicId,
         onQuoteImage: onQuoteImage,
+        quoteMarkdown: quoteMarkdown,
       );
       return;
     }
@@ -165,6 +173,7 @@ class ImageContextMenu {
         topicId: topicId,
         onQuoteImage: onQuoteImage,
         onClose: onClose,
+        quoteMarkdown: quoteMarkdown,
       );
     });
   }
@@ -179,6 +188,7 @@ class ImageContextMenu {
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
     VoidCallback? onClose,
+    String? quoteMarkdown,
   }) {
     AppBottomSheet.show(
       context: context,
@@ -232,7 +242,7 @@ class ImageContextMenu {
                 onTap: () {
                   Navigator.pop(ctx);
                   final quote = QuoteBuilder.build(
-                    markdown: '![image]($originalUrl)',
+                    markdown: quoteMarkdown ?? '![image]($originalUrl)',
                     displayName: (post.name?.isNotEmpty ?? false)
                         ? post.name!
                         : post.username,
@@ -250,7 +260,7 @@ class ImageContextMenu {
                 onTap: () {
                   Navigator.pop(ctx);
                   final quote = QuoteBuilder.build(
-                    markdown: '![image]($originalUrl)',
+                    markdown: quoteMarkdown ?? '![image]($originalUrl)',
                     displayName: (post.name?.isNotEmpty ?? false)
                         ? post.name!
                         : post.username,
@@ -287,6 +297,7 @@ class ImageContextMenu {
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
     VoidCallback? onClose,
+    String? quoteMarkdown,
   }) {
     switch (action) {
       case 'viewFull':
@@ -301,7 +312,7 @@ class ImageContextMenu {
       case 'quote':
         if (post != null && topicId != null && onQuoteImage != null) {
           final quote = QuoteBuilder.build(
-            markdown: '![image]($originalUrl)',
+            markdown: quoteMarkdown ?? '![image]($originalUrl)',
             displayName: (post.name?.isNotEmpty ?? false)
                 ? post.name!
                 : post.username,
@@ -314,7 +325,7 @@ class ImageContextMenu {
       case 'copyQuote':
         if (post != null && topicId != null) {
           final quote = QuoteBuilder.build(
-            markdown: '![image]($originalUrl)',
+            markdown: quoteMarkdown ?? '![image]($originalUrl)',
             displayName: (post.name?.isNotEmpty ?? false)
                 ? post.name!
                 : post.username,

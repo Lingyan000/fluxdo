@@ -30,6 +30,7 @@ import '../services/highlighter_service.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
+import '../utils/html_to_markdown.dart';
 import '../utils/link_launcher.dart';
 import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
@@ -1340,7 +1341,30 @@ class FluxdoRenderCallbacks {
       topicId: topicId,
       onQuoteImage: liveQuoteHandler,
       position: position,
+      quoteMarkdown: post != null ? _uploadMarkdownForImage(post, image) : null,
     );
+  }
+
+  /// 引用/复制引用图片时,对齐 Web 端行为:用 `upload://sha1.ext` 短链而非
+  /// CDN 解析后的完整 URL(那样粘回聊天框/编辑器无法被识别为图片附件)。
+  ///
+  /// fluxdo_render 的 ImageRun 不携带 `data-base62-sha1`(解析器未提取),
+  /// 这里退回原始 post.cooked 按 src 精确匹配对应 `<img>`,复用
+  /// [HtmlToMarkdown] 里已有的 upload:// 短链构造逻辑。匹配失败(如
+  /// cooked 结构变化)返回 null,调用方降级用 `![image](CDN url)`。
+  static String? _uploadMarkdownForImage(Post post, ImageRun image) {
+    try {
+      final fragment = html_parser.parseFragment(post.cooked);
+      for (final img in fragment.querySelectorAll('img')) {
+        if (img.attributes['src'] == image.src) {
+          final markdown = HtmlToMarkdown.convert(img.outerHtml).trim();
+          return markdown.isEmpty ? null : markdown;
+        }
+      }
+    } catch (_) {
+      // 忽略,调用方降级处理。
+    }
+    return null;
   }
 
   /// 用 jovial_svg 把内容 svg 源串渲染成等比铺满列宽的 widget。
