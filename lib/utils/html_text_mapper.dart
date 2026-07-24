@@ -85,9 +85,15 @@ class HtmlTextMapper {
         }
 
         if (isFullySelected) {
-          // 完整选中：返回父元素 HTML（保留 <b>、<em> 等格式标记）
+          // 完整选中：返回父元素 HTML（保留 <b>、<em> 等格式标记）。
+          // 但前提是父元素的全部文本内容 == 本节点文本 —— 否则父元素是
+          // <p> 这类块级容器、内部还有其他 <br> 分隔的兄弟行/文本,
+          // outerHtml 会把没选中的兄弟内容也带出来(实测:只选中三行中
+          // 的一行,复制引用/引用出来变成整段三行)。这种情况没有格式
+          // 需要保留,退化成纯文本更安全。
           final parent = startNode.node.parentNode;
-          if (parent is dom.Element) {
+          if (parent is dom.Element &&
+              _normalize(parent.text) == _normalize(startNode.node.text ?? '')) {
             return parent.outerHtml;
           }
         }
