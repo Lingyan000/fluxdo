@@ -41,6 +41,10 @@ class EmojiStickerPanel extends StatefulWidget {
   /// 时先收弹层,否则 sheet 被 root overlay 的弹层压住)
   final VoidCallback? onDismissRequested;
 
+  /// 从编辑器 `:` 浮层的「更多」进来时带的搜索词:非空则自动弹出
+  /// 搜索面板并预填。
+  final String? initialSearch;
+
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
@@ -49,6 +53,7 @@ class EmojiStickerPanel extends StatefulWidget {
     this.inlineSearch = false,
     this.compact = false,
     this.onDismissRequested,
+    this.initialSearch,
   });
 
   @override
@@ -83,6 +88,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           bottomPadding: bottomPadding,
           inlineSearch: widget.inlineSearch,
           compact: widget.compact,
+          initialSearch: widget.initialSearch,
         ),
         StickerPicker(
           onStickerSelected: widget.onStickerSelected,

@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -13,6 +13,23 @@ import '../../utils/dialog_utils.dart';
 import 'image_compression_strategy.dart';
 import 'image_editor_i18n_zh.dart';
 import '../../../../../l10n/s.dart';
+
+/// 回车 = 按当前设置直接上传(桌面端一键确认;移动端软键盘回车不经这条
+/// 路径,不受影响)。
+///
+/// [onSubmit] 为 null(处理中)时不响应,避免重复提交。
+Widget _enterToSubmit({required VoidCallback? onSubmit, required Widget child}) {
+  return CallbackShortcuts(
+    bindings: {
+      if (onSubmit != null) ...{
+        const SingleActivator(LogicalKeyboardKey.enter): onSubmit,
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): onSubmit,
+      },
+    },
+    // autofocus:弹框刚出来焦点还没落到任何按钮上,不抢焦点就收不到按键
+    child: Focus(autofocus: true, child: child),
+  );
+}
 
 /// 图片上传确认弹框结果
 class ImageUploadResult {
@@ -174,7 +191,9 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return AlertDialog(
+    return _enterToSubmit(
+      onSubmit: _isProcessing ? null : _submit,
+      child: AlertDialog(
       title: Text(S.current.imageUpload_confirmTitle),
       content: SingleChildScrollView(
         child: Column(
@@ -325,6 +344,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
               : Text(S.current.common_upload),
         ),
       ],
+      ),
     );
   }
 }
@@ -482,7 +502,9 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return AlertDialog(
+    return _enterToSubmit(
+      onSubmit: _isProcessing ? null : _submit,
+      child: AlertDialog(
       title: Text(S.current.imageUpload_multiTitle(_items.length)),
       content: SizedBox(
         width: double.maxFinite,
@@ -691,6 +713,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
               : Text(S.current.imageUpload_uploadCount(_items.length)),
         ),
       ],
+      ),
     );
   }
 }

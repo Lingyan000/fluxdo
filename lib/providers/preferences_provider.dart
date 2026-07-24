@@ -150,6 +150,14 @@ class AppPreferences {
   /// 富文本编辑器(实验性,自研 WYSIWYG composer)
   final bool useRichComposer;
 
+  /// 回车插软换行(`<br>`)而非新建段落。
+  ///
+  /// 默认开:对齐 Discourse 网页版 composer —— 那边回车就是软换行,
+  /// 单个换行 cook 成 `<p>a<br>b</p>`(紧凑);我们此前每次回车都新建块,
+  /// 序列化时块间隔一个空行,cook 成两个 `<p>`,行距明显比别人大。
+  /// 关掉则回车新建段落,Shift+回车软换行(两者互换)。
+  final bool composerEnterSoftBreak;
+
   /// 发帖前 AI 审核
   final bool aiPostReviewEnabled;
 
@@ -247,6 +255,7 @@ class AppPreferences {
     required this.expandRelatedLinks,
     required this.aiSwipeEntry,
     this.useRichComposer = false,
+    this.composerEnterSoftBreak = true,
     this.aiPostReviewEnabled = false,
     this.aiPostReviewModelKey,
     this.hcaptchaCreateEndpoint,
@@ -294,6 +303,7 @@ class AppPreferences {
     bool? expandRelatedLinks,
     bool? aiSwipeEntry,
     bool? useRichComposer,
+    bool? composerEnterSoftBreak,
     bool? aiPostReviewEnabled,
     Object? aiPostReviewModelKey = _unset,
     Object? hcaptchaCreateEndpoint = _unset,
@@ -342,6 +352,8 @@ class AppPreferences {
       expandRelatedLinks: expandRelatedLinks ?? this.expandRelatedLinks,
       aiSwipeEntry: aiSwipeEntry ?? this.aiSwipeEntry,
       useRichComposer: useRichComposer ?? this.useRichComposer,
+      composerEnterSoftBreak:
+          composerEnterSoftBreak ?? this.composerEnterSoftBreak,
       aiPostReviewEnabled: aiPostReviewEnabled ?? this.aiPostReviewEnabled,
       aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
           ? this.aiPostReviewModelKey
@@ -407,6 +419,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _expandRelatedLinksKey = 'pref_expand_related_links';
   static const String _aiSwipeEntryKey = 'pref_ai_swipe_entry';
   static const String _useRichComposerKey = 'pref_use_rich_composer';
+  static const String _composerEnterSoftBreakKey =
+      'pref_composer_enter_soft_break';
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
   static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
   static const String _hcaptchaCreateEndpointKey =
@@ -474,6 +488,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           expandRelatedLinks: _prefs.getBool(_expandRelatedLinksKey) ?? false,
           aiSwipeEntry: _prefs.getBool(_aiSwipeEntryKey) ?? false,
           useRichComposer: _prefs.getBool(_useRichComposerKey) ?? false,
+          composerEnterSoftBreak:
+              _prefs.getBool(_composerEnterSoftBreakKey) ?? true,
           aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
           aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
@@ -669,6 +685,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setUseRichComposer(bool enabled) async {
     state = state.copyWith(useRichComposer: enabled);
     await _prefs.setBool(_useRichComposerKey, enabled);
+  }
+
+  Future<void> setComposerEnterSoftBreak(bool enabled) async {
+    state = state.copyWith(composerEnterSoftBreak: enabled);
+    await _prefs.setBool(_composerEnterSoftBreakKey, enabled);
   }
 
   Future<void> setAiPostReviewEnabled(bool enabled) async {
