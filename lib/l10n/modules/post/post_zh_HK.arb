@@ -79,6 +79,8 @@
   "post_noReactions": "暫無回應",
   "post_opBadge": "主",
   "post_pendingReview": "你的帖子已提交，正在等待審核",
+  "post_todayIsBirthday": "今天是我的生日！",
+  "post_todayIsCakeday": "今天是您加入我們社區的紀念日！",
   "post_reactions": "回應",
   "post_relatedLinks": "相關鏈接",
   "post_relatedRepliesCount": "相關回覆共 {count} 條",
