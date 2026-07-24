@@ -2,8 +2,13 @@ part of '../post_footer_section.dart';
 
 extension _PostFooterMenuActions on _PostFooterSectionState {
   Future<void> _sharePost() async {
-    final url =
-        '${AppConstants.baseUrl}/t/${widget.topicId}/${widget.post.postNumber}';
+    final username = ref.read(currentUserProvider).value?.username ?? '';
+    final anonymousShare = ref.read(preferencesProvider).anonymousShare;
+    final url = ShareUtils.buildShareUrl(
+      path: '/t/${widget.topicId}/${widget.post.postNumber}',
+      username: username,
+      anonymousShare: anonymousShare,
+    );
     await ShareUtils.shareLink(context, url: url);
   }
 

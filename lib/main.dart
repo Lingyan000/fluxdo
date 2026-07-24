@@ -800,6 +800,7 @@ class _MainPageState extends ConsumerState<MainPage>
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
   DateTime? _lastBackPressTime;
+  bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
 
@@ -1132,73 +1133,83 @@ class _MainPageState extends ConsumerState<MainPage>
   }
 
   Future<void> _checkClipboardTopicLink() async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
-    final candidate = await clipboardTopicLinkService.checkClipboard(
-      enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
-      lastPromptedHash: prefs.getInt(
-        ClipboardTopicLinkService.lastPromptedHashPrefsKey,
-      ),
-    );
-    if (!mounted || candidate == null) return;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-
-    var promptHandled = false;
-    void markPromptedOnce() {
-      if (promptHandled) return;
-      promptHandled = true;
-      unawaited(
-        clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
-      );
-    }
-
-    messenger.hideCurrentSnackBar();
-    final controller = messenger.showSnackBar(
-      SnackBar(
-        content: ClipboardTopicLinkSnackContent(
-          message: context.l10n.preferences_clipboardTopicLink_detected,
-          actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-          onOpen: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-            final topic = DiscourseUrlParser.parseTopic(
-              candidate.uri.toString(),
-            );
-            if (topic != null) {
-              ref
-                  .read(selectedTopicProvider.notifier)
-                  .select(
-                    topicId: topic.topicId,
-                    initialTitle: topic.slug,
-                    scrollToPostNumber: topic.postNumber,
-                  );
-              ref.requestNavDestination(NavEntryIds.home);
-            } else {
-              DeepLinkService.instance.handleUri(candidate.uri);
-            }
-          },
-          onDismiss: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-          },
+    // 重入防护:启动(_runStartupUiTasks)和「假 resume」(系统配置变更等
+    // 触发的 didChangeAppLifecycleState resumed)可能在短窗口内先后调用
+    // 本方法两次;不加锁会各自读到同一个 candidate、各弹一条 SnackBar
+    // (真机复现:设置页两条一模一样的"检测到剪贴板中的话题链接")。
+    if (_clipboardCheckInFlight) return;
+    _clipboardCheckInFlight = true;
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
+      final candidate = await clipboardTopicLinkService.checkClipboard(
+        enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
+        lastPromptedHash: prefs.getInt(
+          ClipboardTopicLinkService.lastPromptedHashPrefsKey,
         ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
-        duration: const Duration(seconds: 8),
-        elevation: 0,
-        padding: EdgeInsets.zero,
-        // 用 width 而不是 margin:margin 会让 SnackBar 自身的盒子撑满整宽,
-        // 而**吃点击的是 SnackBar 的 Material**(backgroundColor 透明只是
-        // 看不见,render box 照样 hit-test)—— 于是这 8 秒里右下角的悬浮
-        // 回复按钮点不动(它是手动 Positioned 的,拿不到 Scaffold FAB 的
-        // 自动避让)。改成只占卡片那么宽、居中,两侧就空出来了。
-        // 注意 width 与 margin 互斥,底部安全区由 floating 行为自行处理。
-        width: math.min(560, MediaQuery.sizeOf(context).width - 32),
-      ),
-    );
-    unawaited(controller.closed.then((_) => markPromptedOnce()));
+      );
+      if (!mounted || candidate == null) return;
+
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+
+      var promptHandled = false;
+      void markPromptedOnce() {
+        if (promptHandled) return;
+        promptHandled = true;
+        unawaited(
+          clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
+        );
+      }
+
+      messenger.hideCurrentSnackBar();
+      final controller = messenger.showSnackBar(
+        SnackBar(
+          content: ClipboardTopicLinkSnackContent(
+            message: context.l10n.preferences_clipboardTopicLink_detected,
+            actionLabel: context.l10n.preferences_clipboardTopicLink_open,
+            onOpen: () {
+              markPromptedOnce();
+              messenger.hideCurrentSnackBar();
+              final topic = DiscourseUrlParser.parseTopic(
+                candidate.uri.toString(),
+              );
+              if (topic != null) {
+                ref
+                    .read(selectedTopicProvider.notifier)
+                    .select(
+                      topicId: topic.topicId,
+                      initialTitle: topic.slug,
+                      scrollToPostNumber: topic.postNumber,
+                    );
+                ref.requestNavDestination(NavEntryIds.home);
+              } else {
+                DeepLinkService.instance.handleUri(candidate.uri);
+              }
+            },
+            onDismiss: () {
+              markPromptedOnce();
+              messenger.hideCurrentSnackBar();
+            },
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.transparent,
+          duration: const Duration(seconds: 8),
+          elevation: 0,
+          padding: EdgeInsets.zero,
+          // 用 width 而不是 margin:margin 会让 SnackBar 自身的盒子撑满整宽,
+          // 而**吃点击的是 SnackBar 的 Material**(backgroundColor 透明只是
+          // 看不见,render box 照样 hit-test)—— 于是这 8 秒里右下角的悬浮
+          // 回复按钮点不动(它是手动 Positioned 的,拿不到 Scaffold FAB 的
+          // 自动避让)。改成只占卡片那么宽、居中,两侧就空出来了。
+          // 注意 width 与 margin 互斥,底部安全区由 floating 行为自行处理。
+          width: math.min(560, MediaQuery.sizeOf(context).width - 32),
+        ),
+      );
+      unawaited(controller.closed.then((_) => markPromptedOnce()));
+    } finally {
+      _clipboardCheckInFlight = false;
+    }
   }
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
