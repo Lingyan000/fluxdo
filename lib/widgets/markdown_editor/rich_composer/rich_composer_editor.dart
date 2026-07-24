@@ -603,10 +603,36 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ['spoiler', '剧透', 'jt'],
       '剧透遮罩',
       Icons.blur_on_rounded,
-      // 不带换行:cook 才会判成行内剧透(span.spoiler,mark 化,能跟其它
-      // 内容混排),带换行会被判成独立段落走块级剧透(div.spoiler,灰框
-      // + 眼睛图标,跟这次做的行内即打即渲染不是一回事,视觉不统一)。
-      () async => insertMarkdownSnippet('[spoiler]剧透内容[/spoiler]'),
+      // insertMarkdownSnippet 走 cook+整段粘贴,天生块级插入(独立一段
+      // 没有前后文字撑着,cook 判定成 div.spoiler 块,不是 span.spoiler
+      // 行内)。真正的行内版本得走 mark 机制(同 _RichToolbar 的
+      // _toggleInlineSpoiler:有选区 toggle mark,折叠光标插占位文字 +
+      // 整选 + toggleMark,方便直接打字覆盖)。
+      () async {
+        final editor = _editor;
+        if (editor == null) return;
+        final sel = editor.selection;
+        if (sel != null && !sel.isCollapsed) {
+          editor.toggleMark(MarkKind.spoilerInline);
+          return;
+        }
+        if (sel == null) return;
+        final block = editor.textBlockById(sel.extent.blockId);
+        if (block == null) return;
+        const placeholder = '剧透内容';
+        final start = sel.extent.offset;
+        editor.insertText(placeholder);
+        editor.updateSelection(
+          EditorSelection(
+            base: EditorPosition(blockId: block.id, offset: start),
+            extent: EditorPosition(
+              blockId: block.id,
+              offset: start + placeholder.length,
+            ),
+          ),
+        );
+        editor.toggleMark(MarkKind.spoilerInline);
+      },
     ),
     (
       ['date', '日期', '时间', 'rq', 'sj'],
