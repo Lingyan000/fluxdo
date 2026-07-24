@@ -506,7 +506,17 @@ class PreloadedDataService {
       );
 
       final html = response.data as String;
-      await _parsePreloadedDataFromHtml(html);
+      final ok = await _parsePreloadedDataFromHtml(html);
+      if (!ok) {
+        // data-preloaded 属性没找到(异常响应/中间页):siteSettings/site
+        // 拿不到,cook 引擎永远初始化不了(真机复现:整个会话期间 cook
+        // 一直 "siteSettings/site 为空，暂不初始化",富文本插入的表格/
+        // callout/引用等块级内容全部退化成不认识这些语法的轻量兜底解析
+        // 器)。之前不检查这个返回值,无条件标 _loaded=true,导致
+        // _ensureLoaded 短路跳过、这次失败永远不会重试。
+        debugPrint('[PreloadedData] 未拿到有效数据,不标记已加载(允许重试)');
+        return;
+      }
       debugPrint('[PreloadedData] 数据加载成功');
       _loaded = true;
       // 预热完成后仅更新站点基础数据和 sitekey。cf_clearance 自动续期
@@ -527,10 +537,19 @@ class PreloadedDataService {
     _extractBaseUriFromHtml(html);
     _extractCdnUrlFromHtml(html);
     _extractPluginCandidatesInBackground(html);
-    // 提取 data-preloaded 属性内容
-    final match = RegExp(r'data-preloaded="([^"]*)"').firstMatch(html);
+    // 提取预加载数据。Discourse 较早版本把数据放在 div 的
+    // `data-preloaded="..."` 属性里；现版本改成了
+    // `<script type="application/json" id="data-preloaded">{...}</script>`，
+    // 属性形态的正则永远匹配不上（真机抓包确认：html.contains('data-preloaded')
+    // 为 true 只是因为 script 标签里出现了这个 id 字符串，具体属性正则却
+    // 一次都没匹配到，导致 cook 引擎永远初始化不了）。两种形态都尝试。
+    final scriptMatch = RegExp(
+      r'<script[^>]*\bid="data-preloaded"[^>]*>(.*?)</script>',
+      dotAll: true,
+    ).firstMatch(html);
+    final match = scriptMatch ?? RegExp(r'data-preloaded="([^"]*)"').firstMatch(html);
     if (match == null) {
-      debugPrint('[PreloadedData] 未找到 data-preloaded 属性');
+      debugPrint('[PreloadedData] 未找到 data-preloaded 数据');
       return false;
     }
 

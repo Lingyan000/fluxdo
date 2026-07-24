@@ -23,7 +23,6 @@ import 'services/auth_issue_notice_service.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
-import 'widgets/common/clipboard_topic_link_snack_content.dart';
 import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -229,8 +228,6 @@ Future<void> main() async {
     AppConstants.initUserAgent(),
     LogWriter.init(),
     ProxyCertificate.initialize(),
-    if (Platform.isWindows)
-      WindowsWebViewEnvironmentService.instance.initialize(),
     // Windows 深链协议注册(discourse:// / fluxdo://):写 HKCU 免管理员,
     // 幂等,失败不阻塞启动。其他平台由清单/plist 声明,此调用为 no-op。
     if (Platform.isWindows) ensureWindowsProtocolsRegistered(),
@@ -341,6 +338,17 @@ Future<void> main() async {
   }
 
   await NetworkSettingsService.instance.initialize(prefs);
+  // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
+  // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
+  // 并行初始化里,等的是"猜的"8s 超时——NetworkSettingsService 前面还排
+  // 着 rhttp(自己就留了最多 5s 预算)等好几个服务,8s 经常等不到真实端口
+  // 就用旧端口摆烂,导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
+  // 也过不去。现在严格排在 NetworkSettingsService 完全初始化(本地代理
+  // 已经启动、setProxy() 已经真正调用过)之后再建,proxyDecision 这时
+  // 早就 complete 了,创建时直接读到确定值,不用再赌超时。
+  if (Platform.isWindows) {
+    await WindowsWebViewEnvironmentService.instance.initialize();
+  }
   // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
   // 同一出口,cf_clearance 才对两侧同时有效。
   if (Platform.isWindows) {
@@ -805,6 +813,7 @@ class _MainPageState extends ConsumerState<MainPage>
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
   DateTime? _lastBackPressTime;
+  bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
 
@@ -1157,57 +1166,38 @@ class _MainPageState extends ConsumerState<MainPage>
   }
 
   Future<void> _checkClipboardTopicLink() async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
-    final candidate = await clipboardTopicLinkService.checkClipboard(
-      enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
-      lastPromptedHash: prefs.getInt(
-        ClipboardTopicLinkService.lastPromptedHashPrefsKey,
-      ),
-    );
-    if (!mounted || candidate == null) return;
+    // 重入防护:启动和「假 resume」(系统配置变更等触发的
+    // didChangeAppLifecycleState resumed)可能在短窗口内先后调用本方法
+    // 两次,不加锁会各自读到同一个 candidate、各弹一次提示。
+    if (_clipboardCheckInFlight) return;
+    _clipboardCheckInFlight = true;
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
+      final candidate = await clipboardTopicLinkService.checkClipboard(
+        enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
+        lastPromptedHash: prefs.getInt(
+          ClipboardTopicLinkService.lastPromptedHashPrefsKey,
+        ),
+      );
+      if (!mounted || candidate == null) return;
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-
-    var promptHandled = false;
-    void markPromptedOnce() {
-      if (promptHandled) return;
-      promptHandled = true;
+      // ToastService 而不是 ScaffoldMessenger:设置页宽屏下是主从双栏,
+      // 两侧各有一个独立 Scaffold,ScaffoldMessenger 在这种多 Scaffold
+      // 场景下会两边都弹一条——ToastService 是单例 OverlayEntry,不挂靠
+      // 任何 Scaffold,天然只有一份。
       unawaited(
         clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
       );
-    }
-
-    messenger.hideCurrentSnackBar();
-    final controller = messenger.showSnackBar(
-      SnackBar(
-        content: ClipboardTopicLinkSnackContent(
-          message: context.l10n.preferences_clipboardTopicLink_detected,
-          actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-          onOpen: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-            DeepLinkService.instance.handleUri(candidate.uri);
-          },
-          onDismiss: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-          },
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
+      ToastService.show(
+        context.l10n.preferences_clipboardTopicLink_detected,
         duration: const Duration(seconds: 8),
-        elevation: 0,
-        padding: EdgeInsets.zero,
-        margin: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: 16 + MediaQuery.paddingOf(context).bottom,
-        ),
-      ),
-    );
-    unawaited(controller.closed.then((_) => markPromptedOnce()));
+        actionLabel: context.l10n.preferences_clipboardTopicLink_open,
+        onAction: () => DeepLinkService.instance.handleUri(candidate.uri),
+      );
+    } finally {
+      _clipboardCheckInFlight = false;
+    }
   }
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
