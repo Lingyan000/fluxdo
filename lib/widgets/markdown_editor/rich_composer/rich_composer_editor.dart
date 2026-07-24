@@ -603,36 +603,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ['spoiler', '剧透', 'jt'],
       '剧透遮罩',
       Icons.blur_on_rounded,
-      // insertMarkdownSnippet 走 cook+整段粘贴,天生块级插入(独立一段
-      // 没有前后文字撑着,cook 判定成 div.spoiler 块,不是 span.spoiler
-      // 行内)。真正的行内版本得走 mark 机制(同 _RichToolbar 的
-      // _toggleInlineSpoiler:有选区 toggle mark,折叠光标插占位文字 +
-      // 整选 + toggleMark,方便直接打字覆盖)。
-      () async {
-        final editor = _editor;
-        if (editor == null) return;
-        final sel = editor.selection;
-        if (sel != null && !sel.isCollapsed) {
-          editor.toggleMark(MarkKind.spoilerInline);
-          return;
-        }
-        if (sel == null) return;
-        final block = editor.textBlockById(sel.extent.blockId);
-        if (block == null) return;
-        const placeholder = '剧透内容';
-        final start = sel.extent.offset;
-        editor.insertText(placeholder);
-        editor.updateSelection(
-          EditorSelection(
-            base: EditorPosition(blockId: block.id, offset: start),
-            extent: EditorPosition(
-              blockId: block.id,
-              offset: start + placeholder.length,
-            ),
-          ),
-        );
-        editor.toggleMark(MarkKind.spoilerInline);
-      },
+      () async => _insertInlineSpoiler(),
     ),
     (
       ['date', '日期', '时间', 'rq', 'sj'],
@@ -1590,6 +1561,38 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }());
   }
 
+  /// 行内剧透:有选区 → toggle mark;折叠光标 → 插占位文字并整选
+  /// (同 _RichToolbar._toggleInlineSpoiler)。
+  ///
+  /// **不能**走 insertMarkdownSnippet:那条路是 cook+整段粘贴,天生块级
+  /// 插入——`[spoiler]…[/spoiler]` 独立一段没有前后文字撑着,cook 判定
+  /// 成 div.spoiler 块(灰框+眼睛图标),不是 span.spoiler 行内。
+  void _insertInlineSpoiler() {
+    final editor = _editor;
+    if (editor == null) return;
+    final sel = editor.selection;
+    if (sel != null && !sel.isCollapsed) {
+      editor.toggleMark(MarkKind.spoilerInline);
+      return;
+    }
+    if (sel == null) return;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return;
+    const placeholder = '剧透内容';
+    final start = sel.extent.offset;
+    editor.insertText(placeholder);
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: start),
+        extent: EditorPosition(
+          blockId: block.id,
+          offset: start + placeholder.length,
+        ),
+      ),
+    );
+    editor.toggleMark(MarkKind.spoilerInline);
+  }
+
   Future<void> insertMarkdownSnippet(String markdown) async {
     final editor = _editor;
     if (editor == null || markdown.isEmpty) return;
@@ -1757,7 +1760,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         '[details="点开看"]\n折叠内容\n[/details]',
         Icons.expand_circle_down_outlined,
       ),
-      ('剧透遮罩', '[spoiler]\n剧透内容\n[/spoiler]', Icons.blur_on_rounded),
       ('引用卡', '[quote]\n引用内容\n[/quote]', Icons.format_quote_rounded),
     ];
 
@@ -1816,6 +1818,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         for (final (label, md, icon) in entries) item(md, icon, label),
         // 链接:与工具栏链接按钮同一流程(选区加 mark/对话框插入)
         item('__callout__', Icons.sticky_note_2_outlined, '标注 Callout'),
+        item('__spoiler__', Icons.blur_on_rounded, '剧透遮罩'),
         item('__link__', Icons.link_rounded, '插入链接'),
         // 日期时间:弹属性对话框选时间再插原子(不再是死模板)
         item('__date__', Icons.event_rounded, '日期时间'),
@@ -1840,6 +1843,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       await _recordAndInsertVoice();
     } else if (selected == '__callout__') {
       await _insertCallout();
+    } else if (selected == '__spoiler__') {
+      _insertInlineSpoiler();
     } else if (selected == '__link__') {
       await _insertLink();
     } else if (selected == '__template__') {
