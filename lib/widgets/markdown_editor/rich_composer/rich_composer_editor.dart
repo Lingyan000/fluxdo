@@ -2304,18 +2304,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                   // → markdown 清洗 → 同一条 cook 导入链;
                                   // 无 html/转换落空回落上面纯文本路径
                                   richPasteImporter: _importRichPaste,
-                                  // 手打 "[!type] " 触发:复用"+"菜单同一个
-                                  // 对话框收标题/正文/折叠态,一次性插完整
-                                  // callout(不能先插空壳等续行打字,岛不是
-                                  // 可续写容器)
-                                  onCalloutTypeTrigger: (type) async {
-                                    final spec = await showCalloutEditDialog(
-                                      context,
-                                      type: type,
-                                    );
-                                    if (spec == null) return null;
-                                    return '> ${spec.headerMarkdown}\n> 内容';
-                                  },
                                   // 双击岛 → 源码编辑对话框
                                   onIslandEditRequest: _editIsland,
                                   // 点 details/callout 壳标题 → 原位改标题
