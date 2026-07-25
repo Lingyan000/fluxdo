@@ -164,9 +164,27 @@ class _SidebarNotificationPanelState
     }
   }
 
+  /// 侧栏模式面板固定宽度(见 [_buildSidebarLayout])。
+  static const double _sidebarPanelWidth = 420.0;
+
+  /// 侧栏模式最小可用宽度:导航栏(72px)+ 面板本身宽度 + 面板右侧至少
+  /// 留出的可视内容宽度(否则侧滑出来的面板几乎糊住整个窗口,和"窄屏
+  /// 模式"没有区别观感,徒增一层 Positioned 定位逻辑不一致的风险)。
+  ///
+  /// 之前直接用 [Responsive.showNavigationRail](断点 600px,和"是否显示
+  /// 导航栏"这个更宽泛的判断复用同一个断点)来决定用侧栏面板还是底部面板
+  /// ——但侧栏面板的 [_buildSidebarLayout] 内部用 `MediaQuery.sizeOf`
+  /// (整窗宽度)而不是本地可用宽度算 actualPanelWidth,窗口刚过 600px
+  /// 断点、导航栏+面板加起来其实挤不下时,面板定位和视觉预期对不上,
+  /// 真机复现为"窄窗口下通知点不进去/点进了不该出现的侧栏面板"。这里
+  /// 单独给通知面板一条更保守的断点,不影响导航栏本身是否显示。
+  static const double _sidebarMinWidth = 900.0;
+
   @override
   Widget build(BuildContext context) {
     final showRail = Responsive.showNavigationRail(context);
+    final useSidebarLayout =
+        showRail && MediaQuery.sizeOf(context).width >= _sidebarMinWidth;
 
     // 用 GlobalKey 保持内容子树不重建，滚动位置自然保留
     final content = KeyedSubtree(
@@ -174,7 +192,7 @@ class _SidebarNotificationPanelState
       child: Column(
         children: [
           _NotificationHeader(
-            padding: EdgeInsets.fromLTRB(20, showRail ? 16 : 12, 12, 8),
+            padding: EdgeInsets.fromLTRB(20, useSidebarLayout ? 16 : 12, 12, 8),
           ),
           _NotificationBody(scrollController: _scrollController),
         ],
@@ -200,12 +218,12 @@ class _SidebarNotificationPanelState
           color: Theme.of(context).colorScheme.surface,
           clipBehavior: Clip.antiAlias,
           elevation: 8,
-          borderRadius: showRail
+          borderRadius: useSidebarLayout
               ? const BorderRadius.only(topRight: Radius.circular(20))
               : const BorderRadius.vertical(top: Radius.circular(20)),
           child: Column(
             children: [
-              if (!showRail)
+              if (!useSidebarLayout)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onVerticalDragUpdate: _handleMobileDragUpdate,
@@ -224,7 +242,7 @@ class _SidebarNotificationPanelState
           ),
         );
 
-        return showRail
+        return useSidebarLayout
             ? _buildSidebarLayout(panel, dialogBlur, barrierColor)
             : _buildMobileLayout(panel, dialogBlur, barrierColor);
       },
@@ -234,7 +252,7 @@ class _SidebarNotificationPanelState
   /// 侧栏模式：从左边缘滑出
   Widget _buildSidebarLayout(Widget child, bool blur, Color barrierColor) {
     final screenSize = MediaQuery.sizeOf(context);
-    const panelWidth = 420.0;
+    const panelWidth = _sidebarPanelWidth;
     final panelHeight = (screenSize.height * 0.9).clamp(0.0, 900.0);
     final actualPanelWidth = panelWidth.clamp(0.0, screenSize.width);
 

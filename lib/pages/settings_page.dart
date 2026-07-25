@@ -72,9 +72,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _route = route;
     _shortcutSurfaceBinding.registerDeferred(
       context,
-      onClose: () => Navigator.of(context).maybePop(),
+      onClose: _handleEscClose,
       onFocus: _revealSelf,
     );
+  }
+
+  /// ESC 关闭：平行视界模式下 detail 侧栏有独立 Navigator,先尝试收起它
+  /// (回到"请选择"占位态),detail 已经空了或不在平行视界模式再退外层。
+  /// 之前直接 Navigator.of(context).maybePop() 拿到的是宿主(外层)导航
+  /// 栈,与 detail 内部导航栈是两回事——平行视界下按 ESC 会"不生效"
+  /// (外层 maybePop 返回 false 却什么可见变化都没有),真机复现。
+  void _handleEscClose() {
+    final detailNavigator = _detailNavigatorKey.currentState;
+    if (detailNavigator != null && detailNavigator.canPop()) {
+      detailNavigator.popUntil((route) => route.isFirst);
+      return;
+    }
+    Navigator.of(context).maybePop();
   }
 
   void _revealSelf() {
