@@ -92,8 +92,10 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
+import 'pages/topic_detail_page/topic_detail_page.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
 import 'widgets/layout/adaptive_navigation.dart';
+import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
@@ -1240,14 +1242,32 @@ class _MainPageState extends ConsumerState<MainPage>
             candidate.uri.toString(),
           );
           if (topic != null) {
-            ref
-                .read(selectedTopicProvider.notifier)
-                .select(
-                  topicId: topic.topicId,
-                  initialTitle: topic.slug,
-                  scrollToPostNumber: topic.postNumber,
-                );
-            ref.requestNavDestination(NavEntryIds.home);
+            // 宽屏才写 provider 让平行视界栈接住；窄屏必须直接 push，
+            // 不能指望 TopicsScreen._maybePushDetail 的反应式兜底——那段
+            // 兜底只覆盖"双栏收窄到单栏"这一次性过渡，这里这种外部入口
+            // 在"本来就已经是单栏"时触发选中，落不进过渡窗口，会表现
+            // 成"点了但没反应"（同类修复见 notification_navigation.dart）。
+            if (MasterDetailLayout.canShowBothPanesFor(context)) {
+              ref
+                  .read(selectedTopicProvider.notifier)
+                  .select(
+                    topicId: topic.topicId,
+                    initialTitle: topic.slug,
+                    scrollToPostNumber: topic.postNumber,
+                  );
+              ref.requestNavDestination(NavEntryIds.home);
+            } else {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TopicDetailPage(
+                    topicId: topic.topicId,
+                    initialTitle: topic.slug,
+                    scrollToPostNumber: topic.postNumber,
+                    autoSwitchToMasterDetail: true,
+                  ),
+                ),
+              );
+            }
           } else {
             DeepLinkService.instance.handleUri(candidate.uri);
           }

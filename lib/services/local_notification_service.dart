@@ -5,6 +5,7 @@ import '../l10n/s.dart';
 import '../navigation/nav_action_bus.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../providers/selected_topic_provider.dart';
+import '../widgets/layout/master_detail_layout.dart';
 
 /// 全局 NavigatorKey，用于通知点击时导航
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -83,8 +84,17 @@ class LocalNotificationService {
     // 优先走平行视界(跟应用内点通知/点列表一致的左右栏表现);
     // 拿不到 context(比如冷启动时通知先于根 widget 树就绪)才退化成
     // 独立全屏路由——好过完全打不开。
+    //
+    // 宽屏才能写 provider 让平行视界栈接住;窄屏必须在这里直接 push,
+    // 不能指望 TopicsScreen/PrivateMessagesPage 的 _maybePushDetail
+    // 反应式兜底——那段兜底只覆盖"双栏收窄到单栏"这一次性过渡,系统
+    // 通知这种外部入口在"本来就已经是单栏"时触发选中，落不进过渡窗口，
+    // 真机表现为点了通知能切到对应 tab，但内容不显示(见
+    // notification_navigation.dart 同类修复)。
     final context = navigatorKey.currentContext;
-    if (context != null && context.mounted) {
+    if (context != null &&
+        context.mounted &&
+        MasterDetailLayout.canShowBothPanesFor(context)) {
       final container = ProviderScope.containerOf(context);
       if (isMessage) {
         container
@@ -108,11 +118,21 @@ class LocalNotificationService {
       return;
     }
 
+    if (context != null && context.mounted) {
+      final container = ProviderScope.containerOf(context);
+      container.read(navDestinationRequestProvider.notifier).state =
+          NavDestinationRequest(
+            targetId: isMessage ? NavEntryIds.messages : NavEntryIds.home,
+            nonce: DateTime.now().millisecondsSinceEpoch,
+          );
+    }
+
     navigatorKey.currentState?.push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topicId,
           scrollToPostNumber: postNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );
