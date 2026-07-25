@@ -88,6 +88,41 @@
   "reading_aiSwipeEntryDesc": "Swipe left in topic detail to open AI Assistant",
   "reading_boostDanmaku": "Boost as danmaku",
   "reading_boostDanmakuDesc": "Overlay Boosts on top of post content as scrolling danmaku. Pauses on touch.",
+  "ccswitch_fill": "Fill CC Switch",
+  "ccswitch_rescan": "Rescan",
+  "ccswitch_copy": "Copy",
+  "ccswitch_open": "Open CC Switch",
+  "ccswitch_app": "App",
+  "ccswitch_name": "Name",
+  "ccswitch_nameHint": "Optional, defaults to time + URL",
+  "ccswitch_importEnabled": "CC Switch import",
+  "ccswitch_importEnabledDesc": "Show Fill CC Switch on the OP post to detect BASE URL and API key",
+  "ccswitch_importApp": "CC Switch import app",
+  "ccswitch_importAppDesc": "Default target app when filling credentials from the OP post",
+  "ccswitch_appClaude": "Claude",
+  "ccswitch_appCodex": "Codex",
+  "ccswitch_appGemini": "Gemini",
+  "ccswitch_appAll": "All three",
+  "ccswitch_statusReady": "Ready",
+  "ccswitch_statusPartial": "Partial",
+  "ccswitch_notFound": "No URL or API key found in the OP post",
+  "ccswitch_partial": "Partial credentials found; fill URL and KEY",
+  "ccswitch_needUrlAndKey": "Please provide both URL and KEY",
+  "ccswitch_detected": "Detected: {url} / {key}",
+  "@ccswitch_detected": {
+    "placeholders": {
+      "url": { "type": "String" },
+      "key": { "type": "String" }
+    }
+  },
+  "ccswitch_opened": "Opened CC Switch ({count})",
+  "@ccswitch_opened": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ccswitch_openFailed": "Could not open CC Switch. Is it installed?",
+  "ccswitch_linkCopied": "Deeplink copied",
   "reading_expandRelatedLinks": "Expand related links by default",
   "reading_expandRelatedLinksDesc": "Show related links expanded in posts",
   "reading_showSignatures": "Show user signatures",

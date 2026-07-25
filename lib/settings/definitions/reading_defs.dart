@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../l10n/s.dart';
 import '../../pages/topic_detail_page/widgets/progress_gesture_action_meta.dart';
 import '../../pages/topic_detail_page/widgets/progress_gesture_menu_settings_page.dart';
 import '../../providers/preferences_provider.dart';
+import '../../utils/ccswitch/ccswitch_credentials.dart';
 import '../../services/preloaded_data_service.dart';
 import '../settings_model.dart';
 
@@ -51,6 +53,56 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           getValue: (ref) => ref.watch(preferencesProvider).boostDanmaku,
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setBoostDanmaku(v),
+        ),
+        // CC Switch 导入仅 Windows / macOS 有意义（桌面端 deeplink）
+        PlatformConditionalModel(
+          condition: () => !kIsWeb && (Platform.isWindows || Platform.isMacOS),
+          inner: SwitchModel(
+            id: 'ccswitchImportEnabled',
+            title: l10n.ccswitch_importEnabled,
+            subtitle: l10n.ccswitch_importEnabledDesc,
+            icon: Symbols.vpn_key_rounded,
+            getValue: (ref) =>
+                ref.watch(preferencesProvider).ccswitchImportEnabled,
+            onChanged: (ref, v) => ref
+                .read(preferencesProvider.notifier)
+                .setCcswitchImportEnabled(v),
+          ),
+        ),
+        PlatformConditionalModel(
+          condition: () => !kIsWeb && (Platform.isWindows || Platform.isMacOS),
+          inner: CustomModel(
+            id: 'ccswitchImportApp',
+            title: l10n.ccswitch_importApp,
+            builder: (context, ref) {
+              final prefs = ref.watch(preferencesProvider);
+              final enabled = prefs.ccswitchImportEnabled;
+              final current = prefs.ccswitchImportApp;
+              final l = context.l10n;
+              final theme = Theme.of(context);
+              String label(CcswitchImportApp app) => switch (app) {
+                CcswitchImportApp.claude => l.ccswitch_appClaude,
+                CcswitchImportApp.codex => l.ccswitch_appCodex,
+                CcswitchImportApp.gemini => l.ccswitch_appGemini,
+                CcswitchImportApp.all => l.ccswitch_appAll,
+              };
+              return ListTile(
+                enabled: enabled,
+                leading: Icon(
+                  Symbols.vpn_key_rounded,
+                  color: enabled
+                      ? theme.colorScheme.primary
+                      : theme.disabledColor,
+                ),
+                title: Text(l.ccswitch_importApp),
+                subtitle: Text(label(current)),
+                trailing: const Icon(Symbols.chevron_right_rounded),
+                onTap: enabled
+                    ? () => _showCcswitchImportAppPicker(context, ref, current)
+                    : null,
+              );
+            },
+          ),
         ),
       ],
     ),
@@ -560,3 +612,49 @@ void _showGestureActionPicker(
   });
 }
 
+
+void _showCcswitchImportAppPicker(
+  BuildContext context,
+  WidgetRef ref,
+  CcswitchImportApp current,
+) {
+  final l10n = context.l10n;
+  final options = [
+    (CcswitchImportApp.codex, l10n.ccswitch_appCodex),
+    (CcswitchImportApp.claude, l10n.ccswitch_appClaude),
+    (CcswitchImportApp.gemini, l10n.ccswitch_appGemini),
+    (CcswitchImportApp.all, l10n.ccswitch_appAll),
+  ];
+
+  showDialog<CcswitchImportApp>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: Text(l10n.ccswitch_importApp),
+      children: [
+        for (final (app, label) in options)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, app),
+            child: Row(
+              children: [
+                Icon(
+                  app == current
+                      ? Symbols.radio_button_checked_rounded
+                      : Symbols.radio_button_unchecked_rounded,
+                  color: app == current
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(label),
+              ],
+            ),
+          ),
+      ],
+    ),
+  ).then((selected) {
+    if (selected != null) {
+      ref.read(preferencesProvider.notifier).setCcswitchImportApp(selected);
+    }
+  });
+}

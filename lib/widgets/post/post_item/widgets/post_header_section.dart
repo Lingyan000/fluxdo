@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +19,7 @@ import '../../small_action_item.dart';
 import 'post_header.dart';
 import 'post_reply_history.dart';
 import 'post_stamp_painter.dart';
+import '../../ccswitch/ccswitch_import_bar.dart';
 
 class PostHeaderSection extends ConsumerStatefulWidget {
   final Post post;
@@ -330,6 +334,13 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                   ],
                 ),
               ),
+              if (!kIsWeb &&
+                  (Platform.isWindows || Platform.isMacOS) &&
+                  post.postNumber == 1 &&
+                  ref.watch(preferencesProvider).ccswitchImportEnabled) ...[
+                const SizedBox(height: 8),
+                CcswitchImportBar(post: post),
+              ],
               ValueListenableBuilder<bool>(
                 valueListenable: _showReplyHistoryNotifier,
                 builder: (context, showReplyHistory, _) {
