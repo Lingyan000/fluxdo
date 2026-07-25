@@ -7,7 +7,9 @@ import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/topic_detail_provider.dart';
 import '../pages/badge_page.dart';
+import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../services/local_notification_service.dart';
+import '../widgets/layout/master_detail_layout.dart';
 
 NavigatorState? _rootNavigator(BuildContext context) {
   return navigatorKey.currentState ??
@@ -37,6 +39,13 @@ void _showHomeWorkspace(BuildContext context, WidgetRef ref) {
 /// 并切到"私信" tab——不能像普通话题通知那样落进 [selectedTopicProvider]/
 /// 首页信息流栈，否则左栏会显示信息流而不是私信列表，跟从私信列表点进去
 /// 的表现不一致。
+///
+/// 窄屏必须在这里直接 push,不能只写 provider 指望
+/// PrivateMessagesPage._maybePushDetail 兜底——那个反应式自动切换只覆盖
+/// "从双栏收窄到单栏"这一次性过渡(previous==null/true),通知这种外部
+/// 入口在"本来就已经是单栏"时触发选中,不落在过渡窗口内,写了 provider
+/// 也不会有任何页面出现——真机复现为"点了通知,内容进了不存在的平行
+/// 视界,窄屏什么都看不到"。逻辑对齐 PrivateMessagesPage._onItemTap。
 void _openMessageInWorkspace(
   BuildContext context,
   WidgetRef ref, {
@@ -44,14 +53,26 @@ void _openMessageInWorkspace(
   int? postNumber,
   String? instanceId,
 }) {
-  ref
-      .read(selectedMessageProvider.notifier)
-      .select(
-        topicId: topicId,
-        scrollToPostNumber: postNumber,
-        instanceId: instanceId,
-      );
+  if (MasterDetailLayout.canShowBothPanesFor(context)) {
+    ref
+        .read(selectedMessageProvider.notifier)
+        .select(
+          topicId: topicId,
+          scrollToPostNumber: postNumber,
+          instanceId: instanceId,
+        );
+    _showWorkspace(context, ref, NavEntryIds.messages);
+    return;
+  }
   _showWorkspace(context, ref, NavEntryIds.messages);
+  _pushOnRootNavigator(
+    context,
+    TopicDetailPage(
+      topicId: topicId,
+      scrollToPostNumber: postNumber,
+      autoSwitchToMasterDetail: true,
+    ),
+  );
 }
 
 /// 通知类型本身（除 privateMessage/invitedToPrivateMessage 外）不带
@@ -97,17 +118,35 @@ Future<void> _openTopicOrMessageInWorkspace(
     return;
   }
 
-  ref
-      .read(selectedTopicProvider.notifier)
-      .select(
-        topicId: topicId,
-        scrollToPostNumber: postNumber,
-        instanceId: instanceId,
-        highlightBoostUsername: highlightBoostUsername,
-        initialRevisionPostNumber: initialRevisionPostNumber,
-        initialRevisionNumber: initialRevisionNumber,
-      );
+  // 窄屏同 _openMessageInWorkspace 的理由,直接 push,不依赖
+  // TopicsScreen._maybePushDetail 的一次性过渡兜底。逻辑对齐
+  // TopicsPage._openTopic。
+  if (MasterDetailLayout.canShowBothPanesFor(context)) {
+    ref
+        .read(selectedTopicProvider.notifier)
+        .select(
+          topicId: topicId,
+          scrollToPostNumber: postNumber,
+          instanceId: instanceId,
+          highlightBoostUsername: highlightBoostUsername,
+          initialRevisionPostNumber: initialRevisionPostNumber,
+          initialRevisionNumber: initialRevisionNumber,
+        );
+    _showHomeWorkspace(context, ref);
+    return;
+  }
   _showHomeWorkspace(context, ref);
+  _pushOnRootNavigator(
+    context,
+    TopicDetailPage(
+      topicId: topicId,
+      scrollToPostNumber: postNumber,
+      highlightBoostUsername: highlightBoostUsername,
+      initialRevisionPostNumber: initialRevisionPostNumber,
+      initialRevisionNumber: initialRevisionNumber,
+      autoSwitchToMasterDetail: true,
+    ),
+  );
 }
 
 /// 处理通知点击：标记已读 + 按类型跳转
