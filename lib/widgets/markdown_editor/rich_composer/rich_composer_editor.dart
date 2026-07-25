@@ -14,7 +14,8 @@ import 'dart:io' show File;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
-import 'package:flutter/foundation.dart' show Uint8List, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show Uint8List, debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -470,6 +471,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // Ctrl 弄成假的「已抬起」,两边口径不一致就会出现「Ctrl+Enter 换两行
     // 且发不出去」(内核分段 + 宿主软换行各插一次)。
     final primaryEnter = isEnterKey && primaryModifierHeld(event);
+    if (kDebugMode && isEnterKey) {
+      debugPrint(
+        '[RichComposer] enter primary=$primaryEnter shift=${shiftModifierHeld()} '
+        'sel=${_editor?.selection} blocks=${_editor?.blocks.length}',
+      );
+    }
     if (_mentionOverlay == null &&
         _slashOverlay == null &&
         _emojiOverlay == null &&
@@ -479,8 +486,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       // 左右方向键走到岛(分割线/表格/代码块…)上时,内核会把整个岛
       // 选中 —— 此时回车 = 进去改它的源码。岛是只读块,没有这条键盘
       // 路径就只剩双击一种入口,纯键盘操作根本改不了已插入的 `***`。
-      if (_tryEditSelectedIsland()) return true;
-      if (_tryBlockCompletion()) return true;
+      if (_tryEditSelectedIsland()) {
+        if (kDebugMode) debugPrint('[RichComposer] enter -> editIsland');
+        return true;
+      }
+      if (_tryBlockCompletion()) {
+        if (kDebugMode) debugPrint('[RichComposer] enter -> blockCompletion');
+        return true;
+      }
     }
     // 软换行:回车插 `\n`(cook 成 <br>,与 Discourse 网页版 composer 一致),
     // Shift+回车才新建段落;设置关掉时两者互换。块完成规则已在上面吃掉了
@@ -493,7 +506,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         // 用内核权威判定:直接读 HardwareKeyboard 时,输入法切中英文
         // 吞掉的 Shift key-up 会让「回车=软换行」被反转成分段。
         _handleEnterAsSoftBreak(shift: shiftModifierHeld())) {
+      if (kDebugMode) debugPrint('[RichComposer] enter -> softBreak');
       return true;
+    }
+    if (kDebugMode && isEnterKey) {
+      debugPrint('[RichComposer] enter -> fallthrough(kernel splitBlock?)');
     }
     if (_slashOverlay == null) return false;
     final items = _slashFiltered;
