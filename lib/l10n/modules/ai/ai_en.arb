@@ -13,6 +13,8 @@
   "ai_highlights": "What's worth noting",
   "ai_highlightsPrompt": "What notable information or highlights are in this topic?",
   "ai_inputHint": "Enter message...",
+  "ai_cameraPermissionDenied": "Camera permission denied. Enable it in system settings.",
+  "ai_photoPermissionDenied": "Photo library permission denied. Enable it in system settings.",
   "ai_likeInDev": "Like feature in development...",
   "ai_listViewpoints": "List main viewpoints",
   "ai_listViewpointsPrompt": "Please list the main viewpoints and positions from each post.",

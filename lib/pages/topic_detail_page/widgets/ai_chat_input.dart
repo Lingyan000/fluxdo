@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../l10n/s.dart';
+import '../../../services/toast_service.dart';
 
 /// 输入框 onSend 回调，携带文本和可选附件
 typedef AiChatInputSend = void Function(
@@ -124,8 +125,19 @@ class _AiChatInputState extends State<AiChatInput> {
           base64Data: base64Encode(bytes),
         ));
       });
+    } on PlatformException catch (e) {
+      // 权限被拒(含永久拒绝)不能和"用户取消"一起静默吞:iOS/Android 上
+      // 永久拒绝后点拍照/相册会完全无反应,用户以为功能坏了。
+      final code = e.code.toLowerCase();
+      if (code.contains('denied') || code.contains('restricted')) {
+        ToastService.showError(
+          source == ImageSource.camera
+              ? S.current.ai_cameraPermissionDenied
+              : S.current.ai_photoPermissionDenied,
+        );
+      }
     } catch (_) {
-      // 用户取消或权限被拒，静默处理
+      // 用户取消,静默处理
     }
   }
 

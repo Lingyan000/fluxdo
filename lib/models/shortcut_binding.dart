@@ -183,7 +183,12 @@ class ShortcutBinding {
     if (activator.control) parts.add(isMac ? '⌃' : 'Ctrl');
     if (activator.alt) parts.add(isMac ? '⌥' : 'Alt');
     if (activator.shift) parts.add(isMac ? '⇧' : 'Shift');
-    if (activator.meta) parts.add(isMac ? '⌘' : 'Super');
+    if (activator.meta) {
+      // Windows 上 meta = Win 键,显示 'Super' 不符习惯;Linux 保留 Super
+      parts.add(isMac
+          ? '⌘'
+          : (!kIsWeb && Platform.isWindows ? 'Win' : 'Super'));
+    }
 
     parts.add(_keyLabel(activator.trigger));
     return List.unmodifiable(parts);

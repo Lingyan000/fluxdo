@@ -13,6 +13,8 @@
   "ai_highlights": "有什么值得关注的",
   "ai_highlightsPrompt": "这个话题中有哪些值得关注的信息或亮点？",
   "ai_inputHint": "输入消息...",
+  "ai_cameraPermissionDenied": "相机权限被拒绝，请到系统设置中开启",
+  "ai_photoPermissionDenied": "相册权限被拒绝，请到系统设置中开启",
   "ai_likeInDev": "点赞功能开发中...",
   "ai_listViewpoints": "列出主要观点",
   "ai_listViewpointsPrompt": "请列出这个话题中各楼层的主要观点和立场。",

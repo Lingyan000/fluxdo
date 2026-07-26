@@ -339,7 +339,7 @@ class DohProxyFfi {
       } else if (Platform.isMacOS) {
         return _loadMacOSLibrary();
       } else if (Platform.isLinux) {
-        return DynamicLibrary.open('libdoh_proxy.so');
+        return _loadLinuxLibrary();
       }
     } catch (e) {
       lastInitError = '加载原生库失败: $e';
@@ -395,6 +395,37 @@ class DohProxyFfi {
     for (final path in candidates) {
       if (File(path).existsSync()) {
         debugPrint('[DOH FFI] 加载 macOS 库: $path');
+        return DynamicLibrary.open(path);
+      }
+    }
+    // 最后尝试系统搜索路径
+    return DynamicLibrary.open(libName);
+  }
+
+  DynamicLibrary? _loadLinuxLibrary() {
+    // Linux 的默认动态库搜索路径**不含可执行文件目录**:裸名 open 只查
+    // LD_LIBRARY_PATH/ldconfig,随包分发的 .so 必然找不到 → DoH 在
+    // Linux 上静默失效。比照 Windows/macOS 加载器,按 bundle 结构逐个
+    // 候选(Flutter Linux bundle 的 .so 在 exe 旁的 lib/ 目录)。
+    const libName = 'libdoh_proxy.so';
+    final execPath = Platform.resolvedExecutable;
+    final execDir = File(execPath).parent.path;
+    final projectRoot = _projectRootFromBuildPath(execPath);
+    final candidates = <String>[
+      '$execDir/lib/$libName',
+      '$execDir/$libName',
+      '$execDir/native/$libName',
+      if (projectRoot != null) '$projectRoot/linux/native/$libName',
+      if (projectRoot != null)
+        '$projectRoot/core/doh_proxy/target/release/$libName',
+      if (projectRoot != null)
+        '$projectRoot/core/doh_proxy/target/debug/$libName',
+      '${Directory.current.path}/core/doh_proxy/target/release/$libName',
+      '${Directory.current.path}/core/doh_proxy/target/debug/$libName',
+    ];
+    for (final path in candidates) {
+      if (File(path).existsSync()) {
+        debugPrint('[DOH FFI] 加载 Linux 库: $path');
         return DynamicLibrary.open(path);
       }
     }

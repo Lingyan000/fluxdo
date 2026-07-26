@@ -56,9 +56,46 @@ class LocalNotificationService {
     );
     _initialized = true;
     debugPrint('[LocalNotification] 初始化完成');
-    
+
     // 请求通知权限 (Android 13+)
     await _requestPermission();
+
+    // 冷启动兜底:应用是被点通知拉起的话,onDidReceiveNotificationResponse
+    // 不会补发(它只覆盖运行期点击),得主动读 launch details 重放同一套
+    // payload 解析,否则关着应用点通知只是把 App 打开,落不到目标话题。
+    await _handleColdStartLaunch();
+  }
+
+  Future<void> _handleColdStartLaunch() async {
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      final response = details?.notificationResponse;
+      if (details?.didNotificationLaunchApp != true || response == null) {
+        return;
+      }
+      debugPrint('[LocalNotification] 冷启动由通知拉起: ${response.payload}');
+      _replayWhenReady(response, attempts: 0);
+    } catch (e) {
+      debugPrint('[LocalNotification] 读取冷启动通知失败: $e');
+    }
+  }
+
+  /// initialize 在 main() 里先于根 widget 树,此刻 navigatorKey 还没
+  /// 挂上 —— 轮询等树就绪再重放(上限 5 秒,起不来就放弃)。
+  void _replayWhenReady(NotificationResponse response, {required int attempts}) {
+    final context = navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      _onNotificationTapped(response);
+      return;
+    }
+    if (attempts >= 20) {
+      debugPrint('[LocalNotification] 冷启动重放超时,放弃');
+      return;
+    }
+    Future.delayed(
+      const Duration(milliseconds: 250),
+      () => _replayWhenReady(response, attempts: attempts + 1),
+    );
   }
 
   /// 通知点击回调
