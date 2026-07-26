@@ -337,6 +337,11 @@ Future<void> main() async {
     await RhttpSettingsService.instance.forceDisable();
   }
 
+  // Windows 固定系统代理必须先于本地 DoH/WebView 网关读取，网关才能按
+  // 「应用代理 > 系统代理 > 直连」选择首次启动的上游出口。
+  if (Platform.isWindows) {
+    SystemProxyService.instance.start();
+  }
   await NetworkSettingsService.instance.initialize(prefs);
   // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
   // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
@@ -348,11 +353,6 @@ Future<void> main() async {
   // 早就 complete 了,创建时直接读到确定值,不用再赌超时。
   if (Platform.isWindows) {
     await WindowsWebViewEnvironmentService.instance.initialize();
-  }
-  // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
-  // 同一出口,cf_clearance 才对两侧同时有效。
-  if (Platform.isWindows) {
-    SystemProxyService.instance.start();
   }
   VpnAutoToggleService.instance.initialize(prefs);
   try {

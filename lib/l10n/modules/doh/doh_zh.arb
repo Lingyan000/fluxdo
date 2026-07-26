@@ -151,6 +151,7 @@
   "dohSettings_restarting": "正在重启...",
   "dohSettings_starting": "正在启动...",
   "dohSettings_suppressedByVpn": "已被 VPN 自动关闭，VPN 断开后将自动恢复",
+  "dohSettings_webViewRestartRequired": "WebView 代理变更将在重启应用后生效；当前会话会继续使用原来的 WebView 网络线路。",
   "doh_cannotConnect": "无法连接到 DOH 服务",
   "doh_executableNotFound": "找不到代理可执行文件",
   "doh_invalidHttpResponse": "无效的 HTTP 响应",

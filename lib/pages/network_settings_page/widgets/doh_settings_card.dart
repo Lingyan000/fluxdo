@@ -13,6 +13,7 @@ import '../../../services/network/doh_proxy/windows_cert_trust_service.dart';
 import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
+import '../../../services/windows_webview_environment_service.dart';
 import 'package:common_ui/common_ui.dart';
 import '../doh_detail_settings_page.dart';
 import 'ios_cert_install_dialog.dart';
@@ -34,6 +35,7 @@ class DohSettingsCard extends StatelessWidget {
         vpnService.vpnActiveNotifier,
         vpnService.suppressionNotifier,
         WebViewAdapterSettingsService.instance.notifier,
+        WindowsWebViewEnvironmentService.instance.proxyRestartRequiredNotifier,
       ]),
       builder: (context, _) {
         final settings = service.notifier.value;
@@ -122,6 +124,32 @@ class _DohSettingsCardInner extends StatelessWidget {
                   await service.setDohEnabled(value);
                 },
         ),
+
+        // Windows WebView2 的代理只能在 Environment 创建时确定。
+        if (Platform.isWindows &&
+            WindowsWebViewEnvironmentService.instance.proxyRestartRequired)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Symbols.restart_alt_rounded,
+                  size: 18,
+                  color: theme.colorScheme.tertiary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    context.l10n.dohSettings_webViewRestartRequired,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // 仅在开启 DOH 后显示以下内容
         if (settings.dohEnabled) ...[
