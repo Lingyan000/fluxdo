@@ -86,6 +86,7 @@ import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'services/audio/just_audio_gst.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
@@ -143,9 +144,16 @@ Future<void> main() async {
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
 
-  // just_audio 不自带 Windows/Linux 实现。必须在创建 AudioPlayer 前注册
-  // MediaKit 后端，否则会落回不存在的 MethodChannel 实现。
-  JustAudioMediaKit.ensureInitialized();
+  // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
+  // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
+  // - Windows: MediaKit(libmpv-2.dll 随 media_kit_libs_windows_audio 打包);
+  // - Linux: GStreamer 桥(见 just_audio_gst.dart 注释,flatpak 禁网沙箱
+  //   与 GNOME runtime 均不容纳 mpv 方案)。
+  if (!kIsWeb && Platform.isLinux) {
+    JustAudioGst.registerWith();
+  } else {
+    JustAudioMediaKit.ensureInitialized(linux: false);
+  }
 
   // Rust 动图管线的首帧(挂载瞬态的裸 RGBA 上传,不经 binding)注入
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
