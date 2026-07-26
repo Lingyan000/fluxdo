@@ -44,6 +44,19 @@ class NotificationCountNotifier extends Notifier<NotificationCountState> {
   void markAllRead() {
     state = const NotificationCountState();
   }
+
+  /// 标记单条通知已读后递减本地计数
+  void markRead({required bool highPriority}) {
+    state = state.copyWith(
+      allUnread: state.allUnread > 0 ? state.allUnread - 1 : 0,
+      unread: state.unread > 0 ? state.unread - 1 : 0,
+      highPriority: highPriority && state.highPriority > 0
+          ? state.highPriority - 1
+          : state.highPriority,
+    );
+    _hasLiveUpdate = true;
+    _lastState = state;
+  }
 }
 
 final notificationCountStateProvider =
