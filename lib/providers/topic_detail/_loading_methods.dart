@@ -164,7 +164,8 @@ extension LoadingMethods on TopicDetailNotifier {
   }
 
   /// 收到新回复通知（MessageBus created 消息）
-  /// 对齐 Discourse：不在底部时只更新 stream，在底部时批量加载帖子内容
+  /// 对齐 Discourse triggerNewPostsInStream：不在底部时只更新 stream，
+  /// 在底部时批量加载帖子内容
   void onNewPostCreated(int postId) {
     if (state.isLoading) return;
     if (_isFilteredMode) return;
@@ -174,29 +175,35 @@ extension LoadingMethods on TopicDetailNotifier {
 
     final currentStream = currentDetail.postStream.stream;
     if (currentStream.contains(postId)) return; // 已在 stream 中
+    if (_pendingNewPostIds.contains(postId)) return; // 已在待加载队列
 
-    // 对齐 Discourse triggerNewPostsInStream：先基于旧边界判断是否已加载到底部，
-    // 再更新 stream。否则新 postId 先进入 stream 后，_hasMoreAfter 会立即变成 true，
-    // 导致“本来在底部却不自动加载新帖内容”。
-    final wasLoadedAllPosts = !_hasMoreAfter;
-
-    // 将 post ID 加入 stream 并更新 postsCount（本地即时更新，无需请求）
-    final newStream = [...currentStream, postId];
-    state = AsyncValue.data(currentDetail.copyWith(
-      postsCount: currentDetail.postsCount + 1,
-      postStream: PostStream(
-        posts: currentDetail.postStream.posts,
-        stream: newStream,
-        gaps: currentDetail.postStream.gaps,
-      ),
-    ));
-    _updateBoundaryState(currentDetail.postStream.posts, newStream);
-
-    // 对齐 Discourse loadedAllPosts：收到新帖前已加载到底部时才批量拉取新帖子内容，
-    // 否则只更新 stream（用户滚到底部时通过 loadMore 自然加载）。
-    if (wasLoadedAllPosts) {
+    if (!_hasMoreAfter) {
+      // 已加载到底部:对齐网页版 loadedAllPosts 分支 —— 新 id **不先进
+      // stream**,只入待加载队列,内容拉到后与 posts 同帧落地(见
+      // _loadPendingNewPosts)。若 id 先行入 stream,"最后一帖是否为
+      // stream 末尾"的边界判定会出现幽灵窗口:_hasMoreAfter 瞬间翻
+      // true,挂在 !hasMoreAfter 下的底部 sliver(推荐区/typing/待审块)
+      // 被整段拆掉 → maxScrollExtent 骤减,正在看底部的视口被 clamp 到
+      // 最后一帖;内容到达后又装回,闪两次。同帧落地则边界判定全程
+      // 自洽,失败时 stream 也不留幽灵 id。
+      // postsCount 先行 +1:进度条分母即时反映新回复。
+      state = AsyncValue.data(
+        currentDetail.copyWith(postsCount: currentDetail.postsCount + 1),
+      );
       _pendingNewPostIds.add(postId);
       _loadPendingNewPosts();
+    } else {
+      // 未到底部:只把 id 记入 stream,内容等用户滚到底由 loadMore 拉
+      final newStream = [...currentStream, postId];
+      state = AsyncValue.data(currentDetail.copyWith(
+        postsCount: currentDetail.postsCount + 1,
+        postStream: PostStream(
+          posts: currentDetail.postStream.posts,
+          stream: newStream,
+          gaps: currentDetail.postStream.gaps,
+        ),
+      ));
+      _updateBoundaryState(currentDetail.postStream.posts, newStream);
     }
   }
 
@@ -243,23 +250,37 @@ extension LoadingMethods on TopicDetailNotifier {
       final mergedPosts = [...updatedCurrentPosts, ...newPosts];
       mergedPosts.sort((a, b) => a.postNumber.compareTo(b.postNumber));
 
-      _updateBoundaryState(mergedPosts, currentDetail.postStream.stream);
+      // 新帖 id 与内容**同帧**入 stream(onNewPostCreated 底部分支特意
+      // 未先入,避免边界判定的幽灵窗口);按楼层号顺序追加
+      newPosts.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      final mergedStream = [...currentDetail.postStream.stream];
+      for (final p in newPosts) {
+        if (!mergedStream.contains(p.id)) mergedStream.add(p.id);
+      }
+
+      _updateBoundaryState(mergedPosts, mergedStream);
+
+      // 新帖落地会在帖子流末尾长出新内容;用户视口停在其下方(推荐区/
+      // 待审块)时属于"锚上方高度变化",武装哨兵做同帧补偿,避免被推跳
+      AnchorGuardSliver.arm();
 
       state = AsyncValue.data(currentDetail.copyWith(
         postStream: PostStream(
           posts: mergedPosts,
-          stream: currentDetail.postStream.stream,
+          stream: mergedStream,
           gaps: currentDetail.postStream.gaps,
         ),
       ));
     } catch (e) {
-      // 失败时将 post IDs 放回队列
+      // 失败时将 post IDs 放回队列,退避后由 finally 重试(无退避会在
+      // 断网时立即重试打转)
       _pendingNewPostIds.insertAll(0, postIds);
       debugPrint('[TopicDetail] 加载新回复失败: $e');
+      await Future.delayed(const Duration(seconds: 3));
     } finally {
       _isLoadingNewPosts = false;
       // 如果在加载期间又有新帖子进入队列，继续加载
-      if (_pendingNewPostIds.isNotEmpty) {
+      if (ref.mounted && _pendingNewPostIds.isNotEmpty) {
         _loadPendingNewPosts();
       }
     }
