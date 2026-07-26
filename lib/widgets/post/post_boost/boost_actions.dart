@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
-import '../../../pages/user_profile_page.dart';
 import '../../../providers/discourse_providers.dart';
+import '../../../providers/selected_topic_provider.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../services/app_error_handler.dart';
 import '../../../services/toast_service.dart';
@@ -157,13 +157,7 @@ class BoostActions {
           postNumber: post.postNumber,
         );
       case BoostAuthorPopoverAction.profile:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                UserProfilePage(username: resolvedBoost.user.username),
-          ),
-        );
+        EmbeddedStackScope.openProfile(context, resolvedBoost.user.username);
       case BoostAuthorPopoverAction.flag:
         _showFlagSheet(
           context: context,

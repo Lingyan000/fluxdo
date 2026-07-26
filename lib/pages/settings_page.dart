@@ -10,6 +10,7 @@ import '../settings/search/settings_search_index.dart';
 import '../utils/appearance_warmup.dart';
 import '../utils/platform_utils.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import '../widgets/layout/master_detail_layout.dart';
 import 'about_page.dart';
 import 'appearance_page.dart';
 import 'bottom_nav_settings_page.dart';
@@ -21,7 +22,29 @@ import 'reading_settings_page.dart';
 import 'shortcut_settings_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
-  const SettingsPage({super.key});
+  static const double parallelMasterWidth = 380;
+  static const double parallelMinDetailWidth = 480;
+
+  /// 平行视界嵌入模式：AppBar 用 [onEmbeddedBack] 关闭当前层，而不是
+  /// Navigator pop（嵌入面板不在 Navigator 路由栈里）。页面自身宽度
+  /// 足够时，子设置页会进入右侧的独立 Navigator；窄屏仍全屏 push。
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
+
+  const SettingsPage({
+    super.key,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
+
+  @visibleForTesting
+  static bool canShowParallelFor(BuildContext context) {
+    return MasterDetailLayout.canShowBothPanesFor(
+      context,
+      masterWidth: parallelMasterWidth,
+      minDetailWidth: parallelMinDetailWidth,
+    );
+  }
 
   @override
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
@@ -30,6 +53,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
+  final _detailNavigatorKey = GlobalKey<NavigatorState>();
   late final ShortcutSurfaceBinding _shortcutSurfaceBinding =
       ShortcutSurfaceBinding(
         ref: ref,
@@ -82,8 +106,44 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final l10n = context.l10n;
     final isSearching = _query.isNotEmpty;
 
+    final master = _buildSettingsScaffold(theme, l10n, isSearching);
+    final canShowParallel = SettingsPage.canShowParallelFor(context);
+    if (!canShowParallel) return master;
+
+    return MasterDetailLayout(
+      masterWidth: SettingsPage.parallelMasterWidth,
+      minDetailWidth: SettingsPage.parallelMinDetailWidth,
+      minMasterRatio: 0.28,
+      maxMasterRatio: 0.48,
+      preferredMasterRatio: 0.34,
+      master: master,
+      detail: Navigator(
+        key: _detailNavigatorKey,
+        onGenerateRoute: (_) => MaterialPageRoute(
+          settings: const RouteSettings(name: 'settings-detail-empty'),
+          builder: (_) => _buildDetailEmptyState(theme),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsScaffold(
+    ThemeData theme,
+    AppLocalizations l10n,
+    bool isSearching,
+  ) {
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.settings_title)),
+      appBar: AppBar(
+        title: Text(l10n.settings_title),
+        // embeddedMode 但 onEmbeddedBack 为空（master 面板"上一层预览"，
+        // 非当前可交互栈顶）时不能塞 BackButton——BackButton(onPressed:
+        // null) 会退化成默认 Navigator.maybePop()，直接捅穿到应用根导航
+        // 栈（见 user_profile_page.dart 同类修复的注释）。
+        automaticallyImplyLeading: !widget.embeddedMode,
+        leading: widget.embeddedMode && widget.onEmbeddedBack != null
+            ? BackButton(onPressed: widget.onEmbeddedBack)
+            : null,
+      ),
       body: Column(
         children: [
           // 搜索栏
@@ -132,6 +192,55 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildDetailEmptyState(ThemeData theme) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Symbols.settings_rounded,
+              size: 56,
+              color: theme.colorScheme.outlineVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              context.l10n.settings_selectHint,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSettingsPage(WidgetBuilder builder) {
+    final canShowParallel = SettingsPage.canShowParallelFor(context);
+    if (!canShowParallel) {
+      Navigator.push(context, MaterialPageRoute(builder: builder));
+      return;
+    }
+
+    void pushIntoDetail() {
+      final navigator = _detailNavigatorKey.currentState;
+      if (navigator == null) return;
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: builder),
+        (route) => route.isFirst,
+      );
+    }
+
+    if (_detailNavigatorKey.currentState == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) pushIntoDetail();
+      });
+    } else {
+      pushIntoDetail();
+    }
   }
 
   /// 搜索结果（自动从数据声明派生）
@@ -203,12 +312,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               size: 18,
             ),
             dense: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    result.pageBuilder(highlightId: result.model.id),
-              ),
+            onTap: () => _openSettingsPage(
+              (_) => result.pageBuilder(highlightId: result.model.id),
             ),
           ),
         );
@@ -227,72 +332,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               icon: Symbols.color_lens_rounded,
               iconColor: Colors.teal,
               title: l10n.settings_appearance,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AppearancePage()),
-              ),
+              onTap: () => _openSettingsPage((_) => const AppearancePage()),
             ),
             _buildOptionTile(
               icon: Symbols.auto_stories_rounded,
               iconColor: Colors.deepOrange,
               title: l10n.settings_reading,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ReadingSettingsPage(),
-                ),
-              ),
+              onTap: () =>
+                  _openSettingsPage((_) => const ReadingSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.network_check_rounded,
               iconColor: Colors.blueGrey,
               title: l10n.settings_network,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const NetworkSettingsPage(),
-                ),
-              ),
+              onTap: () =>
+                  _openSettingsPage((_) => const NetworkSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.tune_rounded,
               iconColor: Colors.deepPurple,
               title: l10n.settings_preferences,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const PreferencesPage()),
-              ),
+              onTap: () => _openSettingsPage((_) => const PreferencesPage()),
             ),
             _buildOptionTile(
               icon: Symbols.view_day_rounded,
               iconColor: Colors.amber,
               title: l10n.settings_bottomNav,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const BottomNavSettingsPage(),
-                ),
-              ),
+              onTap: () =>
+                  _openSettingsPage((_) => const BottomNavSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.storage_rounded,
               iconColor: Colors.brown,
               title: l10n.settings_dataManagement,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const DataManagementPage()),
-              ),
+              onTap: () => _openSettingsPage((_) => const DataManagementPage()),
             ),
             _buildOptionTile(
               icon: Symbols.cloud_sync_rounded,
               iconColor: Colors.deepPurple,
               title: l10n.notion_title,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const NotionSettingsPage(),
-                ),
-              ),
+              onTap: () => _openSettingsPage((_) => const NotionSettingsPage()),
             ),
             // 快捷键（仅桌面端）
             if (PlatformUtils.isDesktop)
@@ -300,21 +379,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 icon: Symbols.keyboard_rounded,
                 iconColor: Colors.cyan,
                 title: l10n.settings_shortcuts,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ShortcutSettingsPage(),
-                  ),
-                ),
+                onTap: () =>
+                    _openSettingsPage((_) => const ShortcutSettingsPage()),
               ),
             _buildOptionTile(
               icon: Symbols.info_rounded,
               iconColor: Colors.indigo,
               title: l10n.settings_about,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AboutPage()),
-              ),
+              onTap: () => _openSettingsPage((_) => const AboutPage()),
             ),
           ],
         ),

@@ -269,17 +269,17 @@ class TopicDetailController extends ChangeNotifier {
     return 0;
   }
 
-  /// 滚动到指定帖子（近距跳转，目标已渲染）
+  /// 滚动到指定帖子（近距跳转，目标已渲染），返回是否收敛到布局范围。
   ///
   /// 用 jumpTo 而非 animateTo：动画窗口内维度收缩会留下越界位置，
   /// 触底回弹的成因见 [AutoScrollJump.jumpToRenderedScrollIndex]。
-  Future<void> scrollToPost(int postNumber, List<Post> posts) async {
+  Future<bool> scrollToPost(int postNumber, List<Post> posts) async {
     final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
-    if (postIndex == -1) return;
+    if (postIndex == -1) return false;
 
-    await scrollController.jumpToRenderedScrollIndex(
-      scrollIndexForPostIndex(postIndex),
-    );
+    final scrollIndex = scrollIndexForPostIndex(postIndex);
+    await scrollController.jumpToRenderedScrollIndex(scrollIndex);
+    return scrollController.isIndexStateInLayoutRange(scrollIndex);
   }
 
   /// 回到顶部

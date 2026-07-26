@@ -121,6 +121,20 @@ final _navActionNonceProvider = StateProvider<int>((ref) => 0);
 /// 动作事件总线。页面通过 `ref.listen(navActionBusProvider, ...)` 订阅。
 final navActionBusProvider = StateProvider<NavActionEvent?>((ref) => null);
 
+/// 外部入口请求切换到某个稳定导航项。
+///
+/// 不能复用按数字下标切换的 [switchTabProvider]：底栏允许用户重排，首页
+/// 并不永远是第 0 个 page。通知、深链等入口应按 [NavEntryIds] 请求。
+class NavDestinationRequest {
+  const NavDestinationRequest({required this.targetId, required this.nonce});
+
+  final String targetId;
+  final int nonce;
+}
+
+final navDestinationRequestProvider =
+    StateProvider<NavDestinationRequest?>((ref) => null);
+
 /// 派发入口
 extension NavActionDispatch on WidgetRef {
   void dispatchNavAction(String targetId, NavAction action) {
@@ -129,6 +143,15 @@ extension NavActionDispatch on WidgetRef {
     read(navActionBusProvider.notifier).state = NavActionEvent(
       targetId: targetId,
       action: action,
+      nonce: next,
+    );
+  }
+
+  void requestNavDestination(String targetId) {
+    final next = read(_navActionNonceProvider) + 1;
+    read(_navActionNonceProvider.notifier).state = next;
+    read(navDestinationRequestProvider.notifier).state = NavDestinationRequest(
+      targetId: targetId,
       nonce: next,
     );
   }
@@ -170,4 +193,5 @@ class NavEntryIds {
   static const String drafts = 'drafts';
   static const String notifications = 'notifications';
   static const String messages = 'messages';
+  static const String seeking = 'seeking';
 }

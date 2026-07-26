@@ -12,6 +12,7 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
     required this.activeTabId,
     required this.topicTabs,
     required this.bookmarksLabel,
+    this.onBack,
     this.onSearchTap,
     this.isSearchMode = false,
     required this.onBookmarksTap,
@@ -23,6 +24,10 @@ class BookmarksWorkspaceTabBar extends StatefulWidget {
   final String activeTabId;
   final List<BookmarkWorkspaceTopicTab> topicTabs;
   final String bookmarksLabel;
+
+  /// 退出书签工作区(pop 整个书签页路由)。桌面工作区模式下 AppBar 被
+  /// 标签栏取代,没有它用户会被困在本页。null 时不显示返回按钮。
+  final VoidCallback? onBack;
   final VoidCallback? onSearchTap;
   final bool isSearchMode;
   final VoidCallback onBookmarksTap;
@@ -116,6 +121,17 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
         height: 48,
         child: Row(
           children: [
+            if (widget.onBack != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: IconButton(
+                  key: const ValueKey('bookmark-workspace-back-button'),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: widget.onBack,
+                  icon: const Icon(Symbols.arrow_back_rounded),
+                ),
+              ),
             Expanded(
               child: Listener(
                 key: const ValueKey('bookmark-workspace-tabs-wheel-region'),

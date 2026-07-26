@@ -5,17 +5,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../models/topic.dart';
 import '../navigation/nav_action_bus.dart';
+import '../providers/selected_topic_provider.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../l10n/s.dart';
+import 'settings_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import 'topics_screen.dart' show PaneContentWidget;
+import 'user_profile_page.dart';
 
 /// 内部 tab 动作：外层根据当前激活 filter 派发给对应子 widget。
 /// 用 nonce 让连续同类事件也能触发 Riverpod 监听。
@@ -50,16 +56,112 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
+  /// 用持久化 GlobalKey 做 master/detail 槽位间的话题面板"挪动"已回退——
+  /// 实测多切换几个私信会命中 Flutter 框架级断言
+  /// `'_elements.contains(element)': is not true`（红屏崩溃），比原来要
+  /// 解决的销毁重建竞态更严重。理由详见 topics_screen.dart 同名注释。
+  Key _keyForTopic(int topicId) => ValueKey('topic_$topicId');
+
+  /// 平行视界压栈时：左侧显示栈里"上一层"内容而不是简单隐藏，右侧显示
+  /// 新顶替的内容；列表用 Offstage 保留，退回最底层时原样恢复。
+  Widget _buildMasterPane(SelectedTopicState selectedMessage, Widget list) {
+    if (!selectedMessage.isStacked) return list;
+    final previous = selectedMessage.stack[selectedMessage.stack.length - 2];
+    return Stack(
+      children: [
+        Offstage(offstage: true, child: list),
+        PaneContentWidget(
+          key: previous.kind == PaneKind.topic
+              ? _keyForTopic(previous.topicId!)
+              : ValueKey('master_${previous.kind}_${previous.username}'),
+          entry: previous,
+          stackProvider: selectedMessageProvider,
+          truncateOnPush: true,
+          parentActive: widget.isActive,
+        ),
+      ],
+    );
+  }
+
   static const _filters = [
     PrivateMessageFilter.inbox,
     PrivateMessageFilter.sent,
     PrivateMessageFilter.archive,
   ];
 
+  bool? _lastCanShowDetailPane;
+  bool _isAutoSwitching = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _filters.length, vsync: this);
+  }
+
+  /// 双栏→单栏（窗口缩小）时自动把当前栈顶层 push 成全屏详情页，而不是
+  /// 让选中状态"静默消失"、只剩下私信列表——之前这里完全没做，缩小窗口
+  /// 就直接掉回私信列表本身，而不是栈顶（最新压的那层，比如内部链接点
+  /// 开的话题）。逻辑对齐 topics_screen.dart 的 `_maybePushDetail`。
+  void _maybePushDetail(SelectedTopicState selectedMessage, bool canShowDetailPane) {
+    if (_isAutoSwitching) return;
+    if (!widget.isActive) {
+      _lastCanShowDetailPane = canShowDetailPane;
+      return;
+    }
+
+    final previous = _lastCanShowDetailPane;
+    _lastCanShowDetailPane = canShowDetailPane;
+
+    if (!canShowDetailPane &&
+        selectedMessage.hasSelection &&
+        (previous == null || previous == true)) {
+      final topicId = selectedMessage.topicId;
+      if (topicId == null) {
+        final username = selectedMessage.username;
+        final isSettings = selectedMessage.kind == PaneKind.settings;
+        if (username == null && !isSettings) return;
+        _isAutoSwitching = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final navigator = Navigator.of(context);
+          // 不清空栈状态，回宽屏时自动恢复（理由见 topics_screen.dart
+          // 同名方法的注释）。
+          navigator
+              .push(MaterialPageRoute(
+                builder: (_) => AutoRestoreMasterDetailRoute(
+                  child: isSettings
+                      ? const SettingsPage()
+                      : UserProfilePage(username: username!),
+                ),
+              ))
+              .whenComplete(() {
+            if (mounted) setState(() => _isAutoSwitching = false);
+          });
+        });
+        return;
+      }
+
+      _isAutoSwitching = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final navigator = Navigator.of(context);
+        // 同上：不清空栈状态。
+        navigator
+            .push(MaterialPageRoute(
+              builder: (_) => TopicDetailPage(
+                topicId: topicId,
+                initialTitle: selectedMessage.initialTitle,
+                scrollToPostNumber: selectedMessage.scrollToPostNumber,
+                autoSwitchToMasterDetail: true,
+                restoreExistingPaneStack: true,
+                stackProvider: selectedMessageProvider,
+              ),
+            ))
+            .whenComplete(() {
+          if (mounted) setState(() => _isAutoSwitching = false);
+        });
+      });
+    }
   }
 
   @override
@@ -114,7 +216,7 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
       );
     });
 
-    return NotificationListener<ScrollNotification>(
+    final listScaffold = NotificationListener<ScrollNotification>(
       onNotification: _onScrollNotification,
       child: Scaffold(
         appBar: AppBar(
@@ -144,6 +246,39 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
           child: const Icon(Icons.edit_rounded),
         ),
       ),
+    );
+
+    // 平行视界：宽屏双栏下私信列表跟话题列表一样，走独立的
+    // selectedMessageProvider 导航栈，不再单独弹全屏详情页。
+    final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+    final selectedMessage = ref.watch(selectedMessageProvider);
+    _maybePushDetail(selectedMessage, canShowDetailPane);
+    if (!canShowDetailPane) return listScaffold;
+
+    // 左栏本质是不是"列表"（私信列表 / 草稿处理栏）——决定给窄栏还是
+    // 对半分。草稿处理栏是列表，对半分会让它空得离谱。
+    final masterIsListLike = !selectedMessage.isStacked ||
+        selectedMessage.stack[selectedMessage.stack.length - 2].kind ==
+            PaneKind.drafts;
+    return MasterDetailLayout(
+      maxMasterRatio: masterIsListLike
+          ? MasterDetailLayout.defaultMaxMasterRatio
+          : 0.8,
+      preferredMasterRatio: masterIsListLike ? 0.25 : 0.5,
+      master: _buildMasterPane(selectedMessage, listScaffold),
+      detail: selectedMessage.hasSelection
+          ? PaneContentWidget(
+              key: selectedMessage.kind == PaneKind.topic
+                  ? _keyForTopic(selectedMessage.topicId!)
+                  : ValueKey('${selectedMessage.kind}_${selectedMessage.username}'),
+              entry: selectedMessage.topEntry!,
+              stackProvider: selectedMessageProvider,
+              parentActive: widget.isActive,
+              onBack: selectedMessage.isStacked
+                  ? () => ref.read(selectedMessageProvider.notifier).pop()
+                  : null,
+            )
+          : null,
     );
   }
 }
@@ -238,6 +373,15 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
   }
 
   void _onItemTap(Topic topic) {
+    final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+    if (canShowDetailPane) {
+      ref.read(selectedMessageProvider.notifier).select(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: topic.lastReadPostNumber,
+          );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -321,10 +465,11 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
               final enableLongPress = ref
                   .watch(preferencesProvider)
                   .longPressPreview;
+              final selectedTopicId = ref.watch(selectedMessageProvider).topicId;
               return buildTopicItem(
                 context: context,
                 topic: topic,
-                isSelected: false,
+                isSelected: selectedTopicId == topic.id,
                 onTap: () => _onItemTap(topic),
                 enableLongPress: enableLongPress,
                 // 私信语义同邮件:发件人优先的 Gmail 式布局

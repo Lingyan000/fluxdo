@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/s.dart';
 import '../../models/user.dart';
 import '../../providers/discourse_providers.dart';
-import '../../pages/user_profile_page.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/preloaded_data_service.dart';
@@ -495,9 +495,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   void _openProfile() {
     widget.onClose();
-    Navigator.of(widget.anchorContext).push(
-      MaterialPageRoute(builder: (_) => UserProfilePage(username: widget.username)),
-    );
+    EmbeddedStackScope.openProfile(widget.anchorContext, widget.username);
   }
 
   void _composeMessage() {

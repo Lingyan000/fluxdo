@@ -32,6 +32,7 @@ class AdaptiveScaffold extends ConsumerWidget {
     this.railLeading,
     this.railBottomLeading,
     this.extendedRail = false,
+    this.hideNavigationRail = false,
   });
 
   final int selectedIndex;
@@ -43,9 +44,14 @@ class AdaptiveScaffold extends ConsumerWidget {
   final Widget? railBottomLeading;
   final bool extendedRail;
 
+  /// 二级平行视界中两侧都属于内容页时隐藏最外层全局侧栏，释放横向空间。
+  /// 手机底栏不受影响。
+  final bool hideNavigationRail;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showRail = Responsive.showNavigationRail(context);
+    final showRail =
+        Responsive.showNavigationRail(context) && !hideNavigationRail;
     final sidebarCategoryController = ref.read(
       activeSidebarCategoryIdProvider.notifier,
     );
@@ -90,6 +96,14 @@ class AdaptiveScaffold extends ConsumerWidget {
                         extended: extendedRail,
                         onCategorySelected: (categoryId) {
                           sidebarCategoryController.state = categoryId;
+                          // 再次点击当前板块也必须形成一次明确导航事件（高亮
+                          // 状态 provider 同值会被去重），首页靠 tap 事件从
+                          // 深层平行视界退回板块列表。
+                          final tap = ref.read(sidebarCategoryTapProvider);
+                          ref.read(sidebarCategoryTapProvider.notifier).state = (
+                            categoryId: categoryId,
+                            nonce: (tap?.nonce ?? 0) + 1,
+                          );
                           if (selectedIndex != 0) {
                             onDestinationSelected(0);
                           }
@@ -137,7 +151,7 @@ class AdaptiveScaffold extends ConsumerWidget {
             ],
           ),
           floatingActionButton: floatingActionButton,
-          bottomNavigationBar: showRail
+          bottomNavigationBar: showRail || hideNavigationRail
               ? null
               : _AnimatedBottomNav(
                   selectedIndex: selectedIndex,
@@ -163,8 +177,7 @@ class AdaptiveScaffold extends ConsumerWidget {
             if (selectedIndex != 0) {
               onDestinationSelected(0);
             }
-            ref.read(currentTabCategoryIdProvider.notifier).state =
-                category.id;
+            ref.read(currentTabCategoryIdProvider.notifier).state = category.id;
           },
         ),
       ],

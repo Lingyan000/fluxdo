@@ -28,7 +28,7 @@ void main() {
     );
   }
 
-  testWidgets('desktop layout widens the master pane on wide windows', (
+  testWidgets('desktop layout uses the default 20% master ratio', (
     tester,
   ) async {
     await pumpLayout(tester, width: 1600);
@@ -40,12 +40,12 @@ void main() {
       find.byKey(const ValueKey('detail-content')),
     );
 
-    expect(masterSize.width, closeTo(448, 0.1));
+    expect(masterSize.width, closeTo(320, 0.1));
     expect(detailSize.width, greaterThanOrEqualTo(400));
   });
 
   testWidgets(
-    'desktop layout keeps the existing compact width near tablet size',
+    'desktop layout keeps the absolute minimum width near tablet size',
     (tester) async {
       await pumpLayout(tester, width: 1000);
 
@@ -56,7 +56,7 @@ void main() {
         find.byKey(const ValueKey('detail-content')),
       );
 
-      expect(masterSize.width, closeTo(380, 0.1));
+      expect(masterSize.width, closeTo(240, 0.1));
       expect(detailSize.width, greaterThanOrEqualTo(400));
     },
   );
@@ -71,33 +71,29 @@ void main() {
     expect(find.byKey(const ValueKey('detail-content')), findsNothing);
   });
 
-  testWidgets('user resize sticks across window width changes', (
-    tester,
-  ) async {
+  testWidgets('user resize sticks across window width changes', (tester) async {
     await pumpLayout(tester, width: 1600);
 
-    // 初始：1600 * 0.28 = 448
-    var masterSize = tester.getSize(
-      find.byKey(const ValueKey('master-pane')),
-    );
-    expect(masterSize.width, closeTo(448, 0.1));
+    // 初始：1600 * 0.2 = 320
+    var masterSize = tester.getSize(find.byKey(const ValueKey('master-pane')));
+    expect(masterSize.width, closeTo(320, 0.1));
 
-    // 用户向右拖动 52 像素，master 调整到约 500
+    // 用户向右拖动 24 像素，master 调整到 344
     await tester.timedDrag(
       find.byType(DraggableDivider),
-      const Offset(52, 0),
+      const Offset(24, 0),
       const Duration(milliseconds: 300),
     );
     await tester.pump();
 
     masterSize = tester.getSize(find.byKey(const ValueKey('master-pane')));
-    expect(masterSize.width, closeTo(500, 1));
+    expect(masterSize.width, closeTo(344, 1));
 
-    // 缩小窗口到 1200，用户设定的 500 仍在合法范围内，应当保持
+    // 缩小窗口到 1200，用户设定的 344 仍在合法范围内，应当保持
     tester.view.physicalSize = const Size(1200, 800);
     await tester.pump();
 
     masterSize = tester.getSize(find.byKey(const ValueKey('master-pane')));
-    expect(masterSize.width, closeTo(500, 1));
+    expect(masterSize.width, closeTo(344, 1));
   });
 }

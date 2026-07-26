@@ -16,6 +16,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 import 'pages/topics_page.dart';
 import 'pages/data_management_page.dart';
 import 'providers/discourse_providers.dart';
+import 'providers/selected_topic_provider.dart';
 import 'providers/locale_provider.dart';
 import 'widgets/ai/builtin_presets_factory.dart';
 import 'providers/message_bus_providers.dart';
@@ -95,6 +96,7 @@ import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
 import 'widgets/layout/adaptive_navigation.dart';
+import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
@@ -105,6 +107,7 @@ import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
 import 'utils/platform_utils.dart';
+import 'utils/discourse_url_parser.dart';
 
 /// 初始化 rhttp Rust runtime
 Future<bool> _initRhttp() async {
@@ -1231,7 +1234,27 @@ class _MainPageState extends ConsumerState<MainPage>
         context.l10n.preferences_clipboardTopicLink_detected,
         duration: const Duration(seconds: 8),
         actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-        onAction: () => DeepLinkService.instance.handleUri(candidate.uri),
+        // 宽屏且能解析成话题链接就进首页平行视界（选中 + 切 tab）；
+        // 窄屏没有「写栈 → 推详情」的桥（同通知入口的窄屏问题），
+        // 和解析失败一样退回深链通道全屏打开
+        onAction: () {
+          final topic = DiscourseUrlParser.parseTopic(
+            candidate.uri.toString(),
+          );
+          if (topic != null &&
+              MasterDetailLayout.canShowBothPanesFor(context)) {
+            ref
+                .read(selectedTopicProvider.notifier)
+                .select(
+                  topicId: topic.topicId,
+                  initialTitle: topic.slug,
+                  scrollToPostNumber: topic.postNumber,
+                );
+            ref.requestNavDestination(NavEntryIds.home);
+          } else {
+            DeepLinkService.instance.handleUri(candidate.uri);
+          }
+        },
       );
     } finally {
       _clipboardCheckInFlight = false;
@@ -1360,6 +1383,18 @@ class _MainPageState extends ConsumerState<MainPage>
       }
     });
 
+    // 通知、深链等外部入口按稳定 id 切换工作区，避免用户重排底栏后
+    // 数字下标指向错误页面。
+    ref.listen(navDestinationRequestProvider, (_, request) {
+      if (request == null) return;
+      final index = pageEntries.indexWhere(
+        (entry) => entry.id == request.targetId,
+      );
+      if (index < 0 || index == _currentIndex) return;
+      ref.read(barVisibilityProvider.notifier).state = 1.0;
+      setState(() => _currentIndex = index);
+    });
+
     final destinations = [
       for (final e in entries)
         AdaptiveDestination(
@@ -1382,6 +1417,14 @@ class _MainPageState extends ConsumerState<MainPage>
     final hasNotificationEntry = entries.any(
       (e) => e.id == NavEntryIds.notifications,
     );
+    final activeEntryId = pageEntries[safePageIndex].id;
+    final topicParallelStacked = ref.watch(selectedTopicProvider).isStacked;
+    final messageParallelStacked = ref.watch(selectedMessageProvider).isStacked;
+    final seekingParallelStacked = ref.watch(selectedSeekingProvider).isStacked;
+    final hideNavigationRail =
+        (activeEntryId == NavEntryIds.home && topicParallelStacked) ||
+        (activeEntryId == NavEntryIds.messages && messageParallelStacked) ||
+        (activeEntryId == NavEntryIds.seeking && seekingParallelStacked);
 
     // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁
     Widget page = PopScope(
@@ -1415,13 +1458,23 @@ class _MainPageState extends ConsumerState<MainPage>
         railBottomLeading: (user != null && !hasNotificationEntry)
             ? const NotificationIconButton()
             : null,
+        hideNavigationRail: hideNavigationRail,
         body: IndexedStack(
           index: safePageIndex,
           children: [
             for (int i = 0; i < pageEntries.length; i++)
               KeyedSubtree(
                 key: ValueKey('nav-entry-${pageEntries[i].id}'),
-                child: pageEntries[i].pageBuilder!(context, safePageIndex == i),
+                child: TickerMode(
+                  enabled: safePageIndex == i,
+                  child: ExcludeFocus(
+                    excluding: safePageIndex != i,
+                    child: pageEntries[i].pageBuilder!(
+                      context,
+                      safePageIndex == i,
+                    ),
+                  ),
+                ),
               ),
           ],
         ),

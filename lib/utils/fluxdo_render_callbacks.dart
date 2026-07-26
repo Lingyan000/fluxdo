@@ -20,10 +20,10 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
-import '../pages/user_profile_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../models/topic.dart' show Post, MentionedUser, LinkCount;
 import '../providers/download_provider.dart';
+import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
@@ -255,23 +255,33 @@ class FluxdoRenderCallbacks {
     DiscourseService().trackClick(url: url, postId: postId, topicId: topicId);
   }
 
-  /// 默认内部链接点击 —— push 一个新的 TopicDetailPage。
+  /// 默认内部链接点击。
   /// 供 [linkHandler] 在调用方未定制 onInternalLinkTap 时兜底。
+  ///
+  /// 平行视界中的正文链接进入当前面板栈；普通全屏页面维持 Navigator
+  /// 跳转。必须通过 [EmbeddedStackScope.maybePushTopic]，才能同时遵守
+  /// master 预览里的“截断并替换右栏”语义。
   static void _defaultInternalLinkTap(
     BuildContext ctx,
     int topicId,
     String? topicSlug,
     int? postNumber,
   ) {
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => TopicDetailPage(
-          topicId: topicId,
-          initialTitle: topicSlug,
-          scrollToPostNumber: postNumber,
-        ),
+    if (EmbeddedStackScope.maybePushTopic(
+      ctx,
+      topicId: topicId,
+      initialTitle: topicSlug,
+      scrollToPostNumber: postNumber,
+    )) {
+      return;
+    }
+    Navigator.of(ctx).push(MaterialPageRoute(
+      builder: (_) => TopicDetailPage(
+        topicId: topicId,
+        initialTitle: topicSlug,
+        scrollToPostNumber: postNumber,
       ),
-    );
+    ));
   }
 
   // ==========================================================================
@@ -311,15 +321,11 @@ class FluxdoRenderCallbacks {
     return RepaintBoundary(child: image);
   };
 
-  /// Mention chip 点击 → 跳用户资料页。
+  /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
     final user = DiscourseUrlParser.parseUser(href);
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfilePage(username: user?.username ?? username),
-      ),
-    );
+    EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
   };
 
   /// 代码块高亮:走 HighlighterService(mermaid 不会到这里 ——
