@@ -117,6 +117,7 @@ class _AiChatInputState extends State<AiChatInput> {
       );
       if (picked == null || !mounted) return;
       final bytes = await File(picked.path).readAsBytes();
+      if (!mounted) return;
       setState(() {
         _pendingAttachments.add(AiChatAttachment(
           mimeType: _inferMimeType(picked.path),

@@ -158,6 +158,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
       );
       await File(editedPath).writeAsBytes(result);
 
+      if (!mounted) return;
       setState(() {
         _currentImagePath = editedPath;
         _compressionStrategy = ImageCompressionStrategyFactory.fromPath(editedPath);

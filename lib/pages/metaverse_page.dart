@@ -81,14 +81,13 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     try {
       final result = await LdcOAuthService().authorize(context);
 
-      if (result && mounted) {
+      if (result) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_ldcEnabledKey, true);
+        if (!mounted) return;
         setState(() => _ldcEnabled = true);
         ref.read(ldcUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_ldcAuthSuccess);
-        }
+        ToastService.showSuccess(S.current.metaverse_ldcAuthSuccess);
       }
     } catch (e) {
       if (mounted) {
@@ -106,6 +105,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_ldcEnabledKey, false);
+    if (!mounted) return;
     setState(() => _ldcEnabled = false);
     ref.read(ldcUserInfoProvider.notifier).clear();
   }
@@ -131,14 +131,13 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
       final service = CdkOAuthService();
       final result = await service.authorize(context);
 
-      if (result && mounted) {
+      if (result) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_cdkEnabledKey, true);
+        if (!mounted) return;
         setState(() => _cdkEnabled = true);
         ref.read(cdkUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_cdkAuthSuccess);
-        }
+        ToastService.showSuccess(S.current.metaverse_cdkAuthSuccess);
       }
     } catch (e) {
       if (mounted) {
@@ -156,6 +155,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_cdkEnabledKey, false);
+    if (!mounted) return;
     setState(() => _cdkEnabled = false);
     ref.read(cdkUserInfoProvider.notifier).clear();
   }

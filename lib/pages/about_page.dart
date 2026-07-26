@@ -79,6 +79,7 @@ class _AboutPageState extends State<AboutPage> {
 
   Future<void> _loadVersion() async {
     final version = await _updateService.getCurrentVersion();
+    if (!mounted) return;
     setState(() {
       _version = version;
     });

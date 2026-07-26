@@ -82,8 +82,8 @@ class _AiTranslationSheetBodyState
   }
 
   Future<void> _start() async {
-    if (!mounted) return;
     await _subscription?.cancel();
+    if (!mounted) return;
     setState(() {
       _result.clear();
       _error = null;
