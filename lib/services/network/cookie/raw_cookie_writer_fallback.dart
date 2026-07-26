@@ -69,15 +69,13 @@ class RawCookieWriterFallback {
         name: canonical.name,
         value: canonical.value,
         path: canonical.path.isEmpty ? '/' : canonical.path,
-        // host-only 时不传 domain (CookieManager native 会用 host 作 host-only)
-        // 非 host-only 时传 Domain= 字符串——WebView2 的
-        // ICoreWebView2CookieManager 认"前导点"作为域 cookie(可匹配子域名)
-        // 的标记, 不带点会被当成 host-only 精确匹配写入(即使服务端 Set-Cookie
-        // 里 Domain= 没带点, 按 RFC 6265 仍应匹配所有子域名)。这里补上前导点,
-        // 否则 `Domain=linux.do`(无点)同步进 WebView 后, credit.linux.do /
-        // cdk.linux.do 等子域名读不到这条 cookie, 表现为子域名 WebView 里
-        // 显示未登录, 即使 Dio 侧 API 调用一切正常。
-        domain: canonical.hostOnly ? null : _domainCookieAttr(canonical.domain),
+        // 没有 Domain= 的 Cookie 必须保持 host-only。Windows 的 Chromium
+        // Network.setCookie 和 Linux 的 SoupCookie 都用前导点区分域 Cookie，
+        // 因此仅对服务端明确声明了 Domain= 的 Cookie 补点。
+        domain: resolveCookieDomain(
+          hostOnly: canonical.hostOnly,
+          domain: canonical.domain,
+        ),
         expiresDate: canonical.expiresAt?.millisecondsSinceEpoch,
         maxAge: canonical.maxAge,
         isSecure: canonical.secure,
@@ -203,9 +201,16 @@ class RawCookieWriterFallback {
     }
   }
 
-  /// 补上前导点, 让 WebView2 把它当域 cookie (匹配子域名) 写入。
-  String? _domainCookieAttr(String? domain) =>
-      domain == null || domain.startsWith('.') ? domain : '.$domain';
+  @visibleForTesting
+  static String? resolveCookieDomain({
+    required bool hostOnly,
+    required String? domain,
+  }) {
+    if (hostOnly) return null;
+    final value = domain?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value.startsWith('.') ? value : '.$value';
+  }
 
   HTTPCookieSameSitePolicy? _mapSameSite(CookieSameSite sameSite) {
     switch (sameSite) {

@@ -2443,34 +2443,62 @@ class _ChallengeFallbackOverlay extends StatefulWidget {
       _ChallengeFallbackOverlayState();
 }
 
-class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay> {
-  // 跳动圆点原来是 Ticker 驱动的 AnimationController(60fps 持续动画)。
-  // 这个弹窗初始阶段验证 WebView 正被挪到屏幕外(见 _buildVerifyPanel 的
-  // hiddenLeft)—— PlatformView 依然完整挂在合成树里持续同步,真机复现
-  // 每帧 build 40~60ms 的 JANK 风暴。已确认的 Flutter 3.44 引擎 bug:只要
-  // 页面有持续动画(transientCallbackCount>0)同时又有 idle 优先级任务排队,
-  // 事件循环会全速忙等(参考 idle_task.dart 那次修复)。Ticker 每帧都重新
-  // 排一次回调,正好满足"持续动画"这个必要条件。改成 Timer 低频驱动
-  // (~12fps,肉眼看跳动效果几乎无差别),每次只请求一帧、之间完全空闲，
-  // 从根上掐掉这个必要条件,同时也大幅减少了off屏 WebView 每帧被迫参与
-  // 合成同步的次数。
-  double _dotsPhase = 0;
-  Timer? _dotsTimer;
+class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final AnimationController _dotsController;
+  AppLifecycleState? _lifecycleState;
+  bool _tickerModeEnabled = false;
 
   @override
   void initState() {
     super.initState();
-    _dotsTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      if (!mounted) return;
-      setState(() {
-        _dotsPhase = (_dotsPhase + 80 / 1200) % 1.0;
-      });
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _lifecycleState = WidgetsBinding.instance.lifecycleState;
+    _dotsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _syncDotsAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChallengeFallbackOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state != widget.state) {
+      _syncDotsAnimation();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    _syncDotsAnimation();
+  }
+
+  void _syncDotsAnimation() {
+    final shouldAnimate =
+        _lifecycleState == AppLifecycleState.resumed &&
+        _tickerModeEnabled &&
+        widget.state != _FallbackState.noChallenge;
+    if (shouldAnimate) {
+      if (!_dotsController.isAnimating) {
+        _dotsController.repeat();
+      }
+    } else if (_dotsController.isAnimating) {
+      _dotsController.stop(canceled: false);
+    }
   }
 
   @override
   void dispose() {
-    _dotsTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _dotsController.dispose();
     super.dispose();
   }
 
@@ -2612,7 +2640,7 @@ class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay> {
         SizedBox(
           height: 24,
           child: _BouncingDots(
-            phase: _dotsPhase,
+            controller: _dotsController,
             color: colorScheme.primary,
           ),
         ),
@@ -2633,27 +2661,32 @@ class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay> {
 
 /// 三点波纹：每个点按相位轮流"亮起 + 略放大"
 class _BouncingDots extends StatelessWidget {
-  const _BouncingDots({required this.phase, required this.color});
+  const _BouncingDots({required this.controller, required this.color});
 
-  final double phase;
+  final AnimationController controller;
   final Color color;
 
   Widget _dot(double phaseOffset) {
-    final local = (phase + phaseOffset) % 1.0;
-    // sin(πx) 在 [0,1] 上是 0→1→0 的平滑波形
-    final wave = math.sin(local * math.pi);
-    final scale = 0.75 + 0.35 * wave;
-    final alpha = 0.3 + 0.7 * wave;
-    return Transform.scale(
-      scale: scale,
-      child: Container(
-        width: 9,
-        height: 9,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: alpha),
-        ),
-      ),
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final local = (controller.value + phaseOffset) % 1.0;
+        // sin(πx) 在 [0,1] 上是 0→1→0 的平滑波形
+        final wave = math.sin(local * math.pi);
+        final scale = 0.75 + 0.35 * wave;
+        final alpha = 0.3 + 0.7 * wave;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: alpha),
+            ),
+          ),
+        );
+      },
     );
   }
 
