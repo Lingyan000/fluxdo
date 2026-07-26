@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../settings/settings_model.dart';
 import '../../settings/settings_renderer.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 通用数据驱动设置页
 ///

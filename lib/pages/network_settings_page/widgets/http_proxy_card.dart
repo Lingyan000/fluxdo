@@ -8,7 +8,7 @@ import '../../../services/network/proxy/proxy_settings_service.dart';
 import '../../../services/network/proxy/shadowsocks_uri_parser.dart';
 import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/toast_service.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 class HttpProxyCard extends StatelessWidget {
   const HttpProxyCard({super.key});
@@ -164,11 +164,7 @@ class _HttpProxyCardInner extends StatelessWidget {
                       ),
                     ),
                     trailing: isTesting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                        ? const LoadingSpinner(size: 18)
                         : TextButton(
                             onPressed: () => _runProxyTest(showToast: true),
                             child: Text(context.l10n.common_test),

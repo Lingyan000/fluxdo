@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../services/blob_image_cache.dart';
 import '../../../services/image_decode_spec_memo.dart';
 import '../../../services/media_geometry_memo.dart';
@@ -298,14 +299,14 @@ class _LazyImageState extends State<LazyImage> {
           borderRadius: BorderRadius.circular(8),
         ),
         child: RepaintBoundary(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              value: progress,
-            ),
-          ),
+          // 首字节前无进度 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
+          child: progress == null
+              ? const LoadingSpinner(size: 24)
+              : M3eCircularProgress(
+                  value: progress,
+                  size: 24,
+                  strokeWidth: 2,
+                ),
         ),
       );
     }

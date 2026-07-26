@@ -14,7 +14,7 @@ import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../services/windows_webview_environment_service.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../doh_detail_settings_page.dart';
 import 'ios_cert_install_dialog.dart';
 
@@ -40,7 +40,8 @@ class DohSettingsCard extends StatelessWidget {
       builder: (context, _) {
         final settings = service.notifier.value;
         final isApplying = service.isApplying.value;
-        final isSuppressedByVpn = vpnService.enabled && vpnService.isDohSuppressed;
+        final isSuppressedByVpn =
+            vpnService.enabled && vpnService.isDohSuppressed;
         return _DohSettingsCardInner(
           settings: settings,
           isApplying: isApplying,
@@ -72,11 +73,13 @@ class _DohSettingsCardInner extends StatelessWidget {
     final proxyService = service.proxyService;
     final isRunning = proxyService.isRunning;
     final port = settings.proxyPort;
-    final showLoading = isApplying ||
+    final showLoading =
+        isApplying ||
         service.pendingStart ||
         (settings.dohEnabled && !isRunning && !service.lastStartFailed);
     // VPN 活跃 + 自动切换开启 = 接管期，DOH 开关在此期间一律锁定
-    final vpnLocked = VpnAutoToggleService.instance.enabled &&
+    final vpnLocked =
+        VpnAutoToggleService.instance.enabled &&
         VpnAutoToggleService.instance.vpnActive;
 
     return SegmentedCardGroup(
@@ -90,11 +93,11 @@ class _DohSettingsCardInner extends StatelessWidget {
           subtitle: Text(
             vpnLocked
                 ? (isSuppressedByVpn
-                    ? context.l10n.dohSettings_suppressedByVpn
-                    : context.l10n.vpnToggle_lockedHint)
+                      ? context.l10n.dohSettings_suppressedByVpn
+                      : context.l10n.vpnToggle_lockedHint)
                 : settings.dohEnabled
-                    ? context.l10n.dohSettings_enabledDesc
-                    : context.l10n.dohSettings_disabledDesc,
+                ? context.l10n.dohSettings_enabledDesc
+                : context.l10n.dohSettings_disabledDesc,
           ),
           secondary: Icon(
             (vpnLocked ? isSuppressedByVpn : settings.dohEnabled)
@@ -108,8 +111,7 @@ class _DohSettingsCardInner extends StatelessWidget {
           // 不立即生效（功能仍由自动切换接管，subtitle 说明当前状态）。
           value: vpnLocked ? isSuppressedByVpn : settings.dohEnabled,
           onChanged: vpnLocked
-              ? (value) =>
-                  VpnAutoToggleService.instance.setDohSuppressed(value)
+              ? (value) => VpnAutoToggleService.instance.setDohSuppressed(value)
               : (value) async {
                   final requiresCa = WebViewMitmPolicy.requiresTrustedCa(
                     isWindows: Platform.isWindows,
@@ -159,7 +161,15 @@ class _DohSettingsCardInner extends StatelessWidget {
           // 状态区域（含启动失败提示）
           Column(
             children: [
-              _buildStatusArea(context, theme, service, proxyService, isRunning, port, showLoading),
+              _buildStatusArea(
+                context,
+                theme,
+                service,
+                proxyService,
+                isRunning,
+                port,
+                showLoading,
+              ),
               if (!isRunning && !isApplying && service.lastStartFailed)
                 _buildFailureHint(context, theme, service, proxyService),
             ],
@@ -212,18 +222,24 @@ class _DohSettingsCardInner extends StatelessWidget {
                         color: theme.colorScheme.primary,
                       ),
                     ),
-                    label: service.wasRunningBeforeApply ? context.l10n.dohSettings_restarting : context.l10n.dohSettings_starting,
+                    label: service.wasRunningBeforeApply
+                        ? context.l10n.dohSettings_restarting
+                        : context.l10n.dohSettings_starting,
                     color: theme.colorScheme.primary,
                   )
                 : _buildStatusChip(
                     theme,
-                    key: ValueKey('status_${isRunning}_${service.lastStartFailed}'),
+                    key: ValueKey(
+                      'status_${isRunning}_${service.lastStartFailed}',
+                    ),
                     icon: isRunning
                         ? Symbols.check_circle_rounded
                         : service.lastStartFailed
-                            ? Symbols.error_rounded
-                            : Symbols.hourglass_top_rounded,
-                    label: isRunning ? context.l10n.dohSettings_proxyRunning : context.l10n.dohSettings_proxyNotStarted,
+                        ? Symbols.error_rounded
+                        : Symbols.hourglass_top_rounded,
+                    label: isRunning
+                        ? context.l10n.dohSettings_proxyRunning
+                        : context.l10n.dohSettings_proxyNotStarted,
                     color: isRunning ? Colors.green : theme.colorScheme.error,
                   ),
           ),
@@ -262,7 +278,11 @@ class _DohSettingsCardInner extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Symbols.warning_amber_rounded, size: 16, color: theme.colorScheme.error),
+              Icon(
+                Symbols.warning_amber_rounded,
+                size: 16,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -296,7 +316,9 @@ class _DohSettingsCardInner extends StatelessWidget {
                   const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: proxyService.lastError!));
+                      Clipboard.setData(
+                        ClipboardData(text: proxyService.lastError!),
+                      );
                       ToastService.showInfo(S.current.dohSettings_errorCopied);
                     },
                     child: Icon(
@@ -490,10 +512,19 @@ class _CertGuideState extends State<_CertGuide> {
           _installed ? Symbols.verified_user_rounded : Symbols.security_rounded,
           color: _installed ? Colors.green : theme.colorScheme.error,
         ),
-        title: Text(_installed ? l10n.dohSettings_certInstalled : l10n.dohSettings_certRequired),
+        title: Text(
+          _installed
+              ? l10n.dohSettings_certInstalled
+              : l10n.dohSettings_certRequired,
+        ),
         subtitle: Text(
-          _installed ? l10n.dohSettings_certReinstallHint : l10n.dohSettings_certInstallHint,
-          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+          _installed
+              ? l10n.dohSettings_certReinstallHint
+              : l10n.dohSettings_certInstallHint,
+          style: TextStyle(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
         ),
         trailing: _installed
             ? OutlinedButton(
@@ -513,9 +544,7 @@ class _CertGuideState extends State<_CertGuide> {
     if (Platform.isWindows) {
       return ListTile(
         leading: Icon(
-          _installed
-              ? Symbols.verified_user_rounded
-              : Symbols.security_rounded,
+          _installed ? Symbols.verified_user_rounded : Symbols.security_rounded,
           color: _installed ? Colors.green : theme.colorScheme.error,
         ),
         title: Text(
@@ -547,7 +576,9 @@ class _CertGuideState extends State<_CertGuide> {
     // 其他平台: per-device 证书开关
     return SwitchListTile(
       secondary: Icon(
-        _perDeviceEnabled ? Symbols.verified_user_rounded : Symbols.security_rounded,
+        _perDeviceEnabled
+            ? Symbols.verified_user_rounded
+            : Symbols.security_rounded,
         color: _perDeviceEnabled ? Colors.green : null,
       ),
       title: Text(l10n.dohSettings_perDeviceCert),
@@ -555,7 +586,10 @@ class _CertGuideState extends State<_CertGuide> {
         _perDeviceEnabled
             ? l10n.dohSettings_perDeviceCertEnabledDesc
             : l10n.dohSettings_perDeviceCertDisabledDesc,
-        style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+        style: TextStyle(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontSize: 12,
+        ),
       ),
       value: _perDeviceEnabled,
       onChanged: widget.isApplying ? null : _togglePerDevice,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../models/mention_user.dart';
 import '../../constants.dart';
@@ -370,9 +371,8 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
       children: [
         // 顶部 Loading 条 (保留旧数据时显示)
         if (_isLoading)
-          LinearProgressIndicator(
-            minHeight: 2,
-            backgroundColor: Colors.transparent,
+          M3eLinearProgress(
+            trackColor: Colors.transparent,
             color: theme.colorScheme.primary,
           ),
           

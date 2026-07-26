@@ -3,12 +3,14 @@ import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../models/category.dart';
 import '../../models/tag_search_result.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
 import '../../utils/font_awesome_helper.dart';
+import '../../utils/motion_springs.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/tag_icon_list.dart';
 import '../../utils/url_helper.dart';
@@ -75,11 +77,8 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
     vsync: this,
   )..addListener(_syncHistory);
 
-  /// 收尾弹簧（与首页头部运动系统同族：临界阻尼 ~250ms settle）
-  static final SpringDescription _spring = SpringDescription.withDampingRatio(
-    mass: 1.0,
-    stiffness: 500.0,
-  );
+  /// 收尾弹簧(与首页头部运动系统同族,见 [kHeaderMotionSpring])
+  static final SpringDescription _spring = kHeaderSpringDescription;
 
   LocalHistoryEntry? _history;
   bool _removingHistory = false;
@@ -506,7 +505,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     return categoriesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: LoadingSpinner()),
       error: (_, _) => Center(child: Text(S.current.common_loadFailed)),
       data: (categories) {
         final categoryMap = {for (final c in categories) c.id: c};
@@ -622,7 +621,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
     final colorScheme = Theme.of(context).colorScheme;
     final groupsAsync = ref.watch(siteTagGroupsProvider);
     return groupsAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: LoadingSpinner()),
       error: (_, _) => Center(child: Text(S.current.common_loadFailed)),
       data: (groups) {
         if (groups.isEmpty) {

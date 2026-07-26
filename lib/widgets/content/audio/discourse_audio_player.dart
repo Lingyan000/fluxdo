@@ -238,22 +238,15 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
                             return Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 2,
-                                    thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 6),
-                                    overlayShape: const RoundSliderOverlayShape(
-                                        overlayRadius: 12),
-                                  ),
-                                  child: Slider(
-                                    value: value,
-                                    max: maxMs,
-                                    onChanged: !_ready
-                                        ? null
-                                        : (v) => _player.seek(
-                                            Duration(milliseconds: v.round())),
-                                  ),
+                                // 进度条走全局滑块主题(M3E 开 =
+                                // year2023 新样式,媒体控件同款)
+                                Slider(
+                                  value: value,
+                                  max: maxMs,
+                                  onChanged: !_ready
+                                      ? null
+                                      : (v) => _player.seek(
+                                          Duration(milliseconds: v.round())),
                                 ),
                                 Padding(
                                   padding:

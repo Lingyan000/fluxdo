@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../services/eruda_settings_service.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// Eruda 设备内 DevTools 开关卡片（调试用）。
 ///

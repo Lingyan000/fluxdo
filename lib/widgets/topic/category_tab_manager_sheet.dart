@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
@@ -165,7 +166,7 @@ class CategoryTabManagerSheet extends ConsumerWidget {
             categoryMap: categoryMap,
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: LoadingSpinner()),
         error: (e, _) =>
             Center(child: Text(S.current.category_loadFailed(e.toString()))),
       ),
@@ -469,7 +470,7 @@ class PinnedCategoryEditPage extends ConsumerWidget {
             colorScheme: colorScheme,
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: LoadingSpinner()),
         error: (e, _) =>
             Center(child: Text(S.current.category_loadFailed(e.toString()))),
       ),

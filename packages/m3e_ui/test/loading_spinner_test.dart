@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
   testWidgets('LoadingSpinner 完整 morph 周期内正常绘制', (tester) async {

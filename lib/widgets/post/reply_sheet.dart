@@ -31,7 +31,7 @@ import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
 import '../ai/ai_post_review_button.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// Windows 平台视图从 Widget 树移除到 WebView2 Controller 真正析构存在
 /// 明显时间差。若立即弹出编辑器，旧 SVG WebView 的析构会和输入框首帧、
@@ -801,13 +801,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                       ? null
                                       : _submit,
                                   child: _isSubmitting
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
+                                      ? const LoadingSpinner(
+                                          size: 20,
+                                          color: Colors.white,
                                         )
                                       : Text(
                                           _isEditMode

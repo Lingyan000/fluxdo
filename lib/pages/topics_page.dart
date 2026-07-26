@@ -12,6 +12,7 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
@@ -37,6 +38,7 @@ import '../navigation/nav_action_bus.dart';
 import '../providers/app_state_refresher.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
+import '../utils/motion_springs.dart';
 import '../utils/topic_keyword_filter.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/responsive.dart';
@@ -88,14 +90,8 @@ const _capsuleRowHeight = 48.0;
 const _navRowHeight = 40.0;
 const _tagsRowHeight = 36.0;
 
-/// 首页运动系统统一弹簧（临界阻尼，settle ~250ms）：顶区列表吸附、
-/// 工具段吸附、抽屉 settle、胶囊 morph 全部同族 —— 且所有收尾动画
-/// **继承松手/上游速度**（此前全是零初速的罐头 easeOutCubic，跟手段
-/// 与动画段之间有速度断层，是"不够丝滑"的头号来源）。
-final SpringDescription _kHeaderSpring = SpringDescription.withDampingRatio(
-  mass: 1.0,
-  stiffness: 500.0,
-);
+/// 首页运动系统统一弹簧,定义与说明见 [kHeaderMotionSpring]。
+final SpringDescription _kHeaderSpring = kHeaderSpringDescription;
 
 /// 顶栏收放控制器。两种收放语义分治（iOS/Telegram 搜索栏范式）：
 ///
@@ -191,8 +187,8 @@ class _HeaderCollapseController extends ChangeNotifier {
             .clamp(0.0, 0.05);
     final target = _morphTarget;
     // 临界阻尼弹簧半隐式积分（ω=√(stiffness/mass)，与全局弹簧
-    // _kHeaderSpring 同参）：a = ω²·(target-x) − 2ω·v
-    const omega = 22.4; // sqrt(500/1)
+    // _kHeaderSpring 同参 kHeaderMotionSpring）：a = ω²·(target-x) − 2ω·v
+    const omega = 22.4; // sqrt(kHeaderMotionSpring.stiffness / 1)
     final accel =
         omega * omega * (target - _morph) - 2 * omega * _morphVelocity;
     _morphVelocity += accel * dt;
@@ -2452,7 +2448,7 @@ class _TopicList extends ConsumerStatefulWidget {
 
 class _TopicListState extends ConsumerState<_TopicList>
     with AutomaticKeepAliveClientMixin {
-  final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
+  final _refreshIndicatorKey = GlobalKey<M3eRefreshIndicatorState>();
 
   /// overlay 头部架构下无 NestedScrollView 注入的 PrimaryScrollController，
   /// 回顶/键盘导航都走页面下发的控制器
@@ -2874,7 +2870,7 @@ class _TopicListState extends ConsumerState<_TopicList>
               final visible = widget.headerController.visibleExtentFor(
                 widget.topInset,
               );
-              return RefreshIndicator(
+              return M3eRefreshIndicator(
                 edgeOffset: visible,
                 onRefresh: () async {
                   _loadMoreCoordinator.resetCooldown();

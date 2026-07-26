@@ -28,6 +28,8 @@
   "appearance_languageZhHK": "繁體中文（香港）",
   "appearance_languageZhTW": "繁體中文（台灣）",
   "appearance_large": "Large",
+  "appearance_m3eStyle": "M3E Component Style",
+  "appearance_m3eStyleDesc": "Loading animation, progress, button morph and pull-to-refresh",
   "appearance_modeAuto": "Auto",
   "appearance_modeDark": "Dark",
   "appearance_modeLight": "Light",

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../typedef.dart';
-import 'gesture.dart';
-import 'slide_page_handler.dart';
+import 'gesture_controller.dart';
 import 'utils.dart';
 
 enum SlideAxis { both, horizontal, vertical }
@@ -83,7 +82,6 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
   double _scale = 1.0;
   double get scale =>
       _backAnimationController.isAnimating ? backScaleAnimation!.value : _scale;
-  bool _popping = false;
 
   @override
   void initState() {
@@ -110,10 +108,9 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
     super.didUpdateWidget(oldWidget);
   }
 
-  ExtendedImageGestureState? _extendedImageGestureState;
-  ExtendedImageGestureState? get imageGestureState =>
-      _extendedImageGestureState;
-  ExtendedImageSlidePageHandlerState? _extendedImageSlidePageHandlerState;
+  /// 滑动驱动目标:每 tick 写入 controller,绘制层监听 controller
+  /// 重绘 —— 手势状态在 Widget 树之外,树切换不再中断滑动。
+  ImageGestureController? _gestureController;
 
   /// 回弹动画启动时记录的会话 ID
   int _backAnimationSessionId = -1;
@@ -130,8 +127,7 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
       });
     }
     if (widget.slideType == SlideType.onlyImage) {
-      _extendedImageGestureState?.slide();
-      _extendedImageSlidePageHandlerState?.slide();
+      _gestureController?.updateSlide(offset, scale);
     }
     widget.onSlidingPage?.call(this);
   }
@@ -143,22 +139,16 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
     super.dispose();
   }
 
-  void slide(
-    Offset value, {
-    ExtendedImageGestureState? extendedImageGestureState,
-    ExtendedImageSlidePageHandlerState? extendedImageSlidePageHandlerState,
-  }) {
+  void slide(Offset value, {ImageGestureController? controller}) {
     // 如果回弹动画正在播放，打断它并从当前动画位置开始新滑动
     if (_backAnimationController.isAnimating) {
       _offset = _backOffsetAnimation?.value ?? _offset;
       _scale = _backScaleAnimation?.value ?? _scale;
       _backAnimationController.stop();
     }
-    if (extendedImageGestureState != null) {
-      assert(extendedImageGestureState.mounted);
+    if (controller != null) {
+      _gestureController = controller;
     }
-    _extendedImageGestureState = extendedImageGestureState;
-    _extendedImageSlidePageHandlerState = extendedImageSlidePageHandlerState;
 
     if (widget.slideAxis == SlideAxis.horizontal) {
       _offset += Offset(value.dx, 0.0);
@@ -182,8 +172,7 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
     }
     _isSliding = true;
     if (widget.slideType == SlideType.onlyImage) {
-      _extendedImageGestureState?.slide();
-      _extendedImageSlidePageHandlerState?.slide();
+      _gestureController?.updateSlide(_offset, _scale);
     }
 
     if (mounted) {
@@ -208,9 +197,10 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
 
       if (popPage) {
         setState(() {
-          _popping = true;
           _isSliding = false;
         });
+        // 黑底不做瞬时透明:保持松手时的透明度,随路由反向过场
+        // (FadeTransition)渐隐 —— 与按钮/返回键关闭同一套视觉。
         Navigator.pop(context);
       } else {
         if (_offset != Offset.zero || _scale != 1.0) {
@@ -254,63 +244,8 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
       );
     }
 
-    result = Container(
-      color: _popping ? Colors.transparent : pageColor,
-      child: result,
-    );
+    result = Container(color: pageColor, child: result);
 
     return result;
-  }
-
-  /// 兜底重置：当手势结束但 isSliding 已为 false 时调用，
-  /// 确保不会因竞态导致页面卡在中间位置。
-  void resetIfNeeded() {
-    if (!_isSliding && !_popping && !_backAnimationController.isAnimating) {
-      if (_offset != Offset.zero || _scale != 1.0) {
-        _backOffsetAnimation = _backAnimationController.drive(
-          Tween<Offset>(begin: _offset, end: Offset.zero),
-        );
-        _backScaleAnimation = _backAnimationController.drive(
-          Tween<double>(begin: _scale, end: 1.0),
-        );
-        _offset = Offset.zero;
-        _scale = 1.0;
-        _backAnimationSessionId = _slideSessionId;
-        _isSliding = true;
-        _backAnimationController.reset();
-        _backAnimationController.forward();
-      }
-    }
-  }
-
-  /// 滑动/回弹进行中,滑动载体(图片 gesture 层 / loading-failed 的
-  /// handler 层)因树重建被更换时,新载体挂载后调用以重新接管驱动。
-  ///
-  /// 典型场景:滑动关闭进行中大图恰好加载完成,ExtendedImage 内部从
-  /// loading(handler 包裹)切到 gesture 树 —— 旧载体被 dispose,回弹/
-  /// 结算动画每 tick 只通知旧(已卸载)载体,新载体读过一次半路偏移后
-  /// 再无人触发它重绘,图片定格在切换瞬间的位置("滑动关闭停在某一帧,
-  /// 必须再滑一次")。重绑后动画驱动新载体,回弹/关闭正常完成。
-  void rebindSlideTarget({
-    ExtendedImageGestureState? gestureState,
-    ExtendedImageSlidePageHandlerState? handlerState,
-  }) {
-    if (!_isSliding && !_backAnimationController.isAnimating) {
-      return;
-    }
-    if (gestureState != null) {
-      _extendedImageGestureState = gestureState;
-    }
-    if (handlerState != null) {
-      _extendedImageSlidePageHandlerState = handlerState;
-    }
-  }
-
-  void popPage() {
-    if (mounted) {
-      setState(() {
-        _popping = true;
-      });
-    }
   }
 }

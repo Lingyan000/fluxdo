@@ -8,6 +8,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../constants.dart';
 import '../providers/preferences_provider.dart';
 import '../services/credential_store_service.dart';
@@ -143,7 +144,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       body: Column(
         children: [
           if (_isLoading || _isCompletingLogin)
-            LinearProgressIndicator(
+            M3eLinearProgress(
               value: _isCompletingLogin ? null : _progress,
             ),
           Container(
@@ -181,7 +182,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         UserScript(
                           source: '''
                           new MutationObserver(function(_, obs) {
-                            var el = document.querySelector('[data-preloaded]');
+                            var el = document.querySelector('#data-preloaded, [data-preloaded]');
                             if (!el) return;
                             obs.disconnect();
                             var parts = [el.outerHTML];

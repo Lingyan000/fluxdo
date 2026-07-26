@@ -6,7 +6,7 @@ import '../providers/ldc_providers.dart';
 import '../pages/webview_page.dart';
 import '../services/network/exceptions/oauth_exception.dart';
 import '../utils/number_utils.dart';
-import 'common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../l10n/s.dart';
 
 class LdcBalanceCard extends ConsumerWidget {

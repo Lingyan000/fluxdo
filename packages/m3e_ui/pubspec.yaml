@@ -1,0 +1,21 @@
+name: m3e_ui
+description: "Material 3 Expressive 组件库(motion token、加载器、分段卡片列表等)。"
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # androidx.graphics.shapes 的 Dart 移植(RoundedPolygon/Morph/MaterialShapes),
+  # 用于 1:1 复刻 M3 Expressive LoadingIndicator 的形状变形加载动画。
+  material_new_shapes: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

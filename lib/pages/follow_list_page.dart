@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../widgets/common/error_view.dart';
@@ -74,7 +75,7 @@ class _FollowListPageState extends ConsumerState<FollowListPage> {
         title: Text(widget.isFollowing ? context.l10n.followList_following : context.l10n.followList_followers),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: LoadingSpinner())
           : _error != null
               ? ErrorView(
                   error: _error!,
@@ -92,7 +93,7 @@ class _FollowListPageState extends ConsumerState<FollowListPage> {
                         ],
                       ),
                     )
-                  : RefreshIndicator(
+                  : M3eRefreshIndicator(
                       onRefresh: _loadUsers,
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
