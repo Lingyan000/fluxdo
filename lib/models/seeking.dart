@@ -79,7 +79,9 @@ class SeekingActivity {
       // boost 链接可能没有楼层段（只 boost 话题本身），回退首楼
       postNumber: boost.postNumber ?? 1,
       title: boost.topicTitle ?? '',
-      excerpt: boost.excerpt ?? boost.cooked,
+      // boost 自身的内容在 cooked(HTML);excerpt 是**被 boost 的帖子**
+      // 的摘要 —— 之前优先取 excerpt,追觅页把评论内容当 boost 内容显示。
+      excerpt: boost.cooked ?? boost.excerpt,
       createdAt: boost.createdAt,
     );
   }

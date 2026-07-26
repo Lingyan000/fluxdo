@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
-import '../providers/selected_topic_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
@@ -431,7 +430,6 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
 
     return Scaffold(
@@ -501,13 +499,13 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
                 : null,
           ),
           // 列表
-          Expanded(child: _buildBody(selectedTopicId)),
+          Expanded(child: _buildBody()),
         ],
       ),
     );
   }
 
-  Widget _buildBody(int? selectedTopicId) {
+  Widget _buildBody() {
     if (_isLoading) {
       return const TopicListSkeleton(padding: EdgeInsets.all(12));
     }
@@ -588,7 +586,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
           return buildTopicItem(
             context: context,
             topic: topic,
-            isSelected: topic.id == selectedTopicId,
+            // 本页详情是全屏 push,不进平行视界;不能按首页栈的
+            // selectedTopicProvider 渲染选中态(本页从不写它,只会误高亮)
+            isSelected: false,
             onTap: () => _openTopic(topic),
             enableLongPress: enableLongPress,
           );

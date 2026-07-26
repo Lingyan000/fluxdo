@@ -8,6 +8,7 @@ import '../providers/selected_topic_provider.dart';
 import '../providers/topic_detail_provider.dart';
 import '../pages/badge_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
+import '../pages/user_profile_page.dart';
 import '../services/local_notification_service.dart';
 import '../widgets/layout/master_detail_layout.dart';
 
@@ -174,11 +175,22 @@ void handleNotificationTap(
   switch (notification.notificationType) {
     case NotificationType.inviteeAccepted:
     case NotificationType.following:
+      // 窄屏必须直接 push,不能只写 provider —— 单栏下右栏不存在,
+      // selectProfile 写进去什么都不会出现(与 _openMessageInWorkspace
+      // 注释里说的是同一个坑)。
       if (notification.username != null) {
-        ref
-            .read(selectedTopicProvider.notifier)
-            .selectProfile(notification.username!);
-        _showHomeWorkspace(context, ref);
+        if (MasterDetailLayout.canShowBothPanesFor(context)) {
+          ref
+              .read(selectedTopicProvider.notifier)
+              .selectProfile(notification.username!);
+          _showHomeWorkspace(context, ref);
+        } else {
+          _showHomeWorkspace(context, ref);
+          _pushOnRootNavigator(
+            context,
+            UserProfilePage(username: notification.username!),
+          );
+        }
       }
       break;
 
