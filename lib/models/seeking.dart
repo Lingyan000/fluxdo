@@ -97,4 +97,16 @@ class SeekingUserProfile {
     if (template == null || template.isEmpty) return '';
     return template.replaceAll('{size}', '$size');
   }
+
+  /// 值相等：provider 靠它判断「资料没变就不重建状态」，
+  /// 避免每个轮询节拍都触发整页重建。
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SeekingUserProfile &&
+          other.lastSeenAt == lastSeenAt &&
+          other.avatarTemplate == avatarTemplate;
+
+  @override
+  int get hashCode => Object.hash(lastSeenAt, avatarTemplate);
 }

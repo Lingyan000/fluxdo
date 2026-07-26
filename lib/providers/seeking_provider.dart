@@ -140,6 +140,18 @@ class SeekingNotifier extends StateNotifier<SeekingState>
   final Map<String, DateTime> _lastFullFetchedAt = {};
   static const Duration _fullRefreshInterval = Duration(minutes: 5);
 
+  /// 实际生效的完整校验周期。
+  ///
+  /// 固定 5 分钟在名单一大（一轮遍历耗时 N × pace 超过 5 分钟，约 >10 人）
+  /// 时会让 fullRefreshDue 恒真——两段式省请求彻底失效，每人每轮都发满
+  /// 4 个请求。取「3 轮遍历」与 5 分钟的较大者：大名单下平均每 3 次访问
+  /// 才做 1 次全量（预算 ~2 请求/次），小名单仍保持 5 分钟的校验频率。
+  Duration get _effectiveFullRefreshInterval {
+    final cycle = Duration(seconds: state.users.length * state.paceSeconds);
+    final scaled = cycle * 3;
+    return scaled > _fullRefreshInterval ? scaled : _fullRefreshInterval;
+  }
+
   Timer? _timer;
   bool _busy = false;
   DateTime _lastFlowAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -234,8 +246,12 @@ class SeekingNotifier extends StateNotifier<SeekingState>
 
     // 添加前立即验证用户，避免把不存在的用户名静默放进轮询队列。
     // 同时复用这次请求得到的头像和在线时间，不额外浪费首轮请求。
+    //
+    // 不排 _pacedRequest：那是给后台轮询流的节拍，用户主动点「添加」
+    // 排在轮询后面，低速档（60s）下可能干等几分钟且毫无反馈。单次
+    // 用户交互请求与正常浏览页面无异，不构成 CF 行为检测风险。
     try {
-      final user = await _pacedRequest(() => _service.getUser(name));
+      final user = await _service.getUser(name);
       final profiles = Map<String, SeekingUserProfile>.of(state.profiles)
         ..[name] = SeekingUserProfile(
           lastSeenAt: user.lastSeenAt,
@@ -280,9 +296,8 @@ class SeekingNotifier extends StateNotifier<SeekingState>
     try {
       final username = await _service.getUsername();
       if (username == null) return -1;
-      final following = await _pacedRequest(
-        () => _service.getFollowing(username),
-      );
+      // 同 addUser：用户主动触发的同步不排后台轮询节拍队列
+      final following = await _service.getFollowing(username);
       var added = 0;
       final users = List<String>.of(state.users);
       for (final user in following) {
@@ -415,22 +430,30 @@ class SeekingNotifier extends StateNotifier<SeekingState>
     final user = await _pacedRequest(
       () => _service.getUser(username, isSilent: true),
     );
+    // 请求在途期间用户可能已被移出名单（或 notifier 已销毁）：此时任何
+    // state / _lastIds 写回都会让已删用户的数据复活并被持久化。
+    if (!mounted || !state.users.contains(username)) return;
     final old = state.profiles[username];
     final profile = SeekingUserProfile(
       lastSeenAt: user.lastSeenAt,
       avatarTemplate: user.avatarTemplate ?? old?.avatarTemplate,
     );
     final changed = old == null || old.lastSeenAt != user.lastSeenAt;
-    final profiles = Map<String, SeekingUserProfile>.of(state.profiles)
-      ..[username] = profile;
-    state = state.copyWith(profiles: profiles);
+    // 资料没变就别重建 map——state 一换整个页面跟着重建,timeline 还要
+    // 全量重排,轮询节拍下这是常态路径,省下来很可观。
+    if (old != profile) {
+      final profiles = Map<String, SeekingUserProfile>.of(state.profiles)
+        ..[username] = profile;
+      state = state.copyWith(profiles: profiles);
+    }
     _lastFetchedAt[username] = DateTime.now();
 
     final hasData = (state.data[username] ?? const []).isNotEmpty;
     final lastFullFetchedAt = _lastFullFetchedAt[username];
     final fullRefreshDue =
         lastFullFetchedAt == null ||
-        DateTime.now().difference(lastFullFetchedAt) >= _fullRefreshInterval;
+        DateTime.now().difference(lastFullFetchedAt) >=
+            _effectiveFullRefreshInterval;
     if (!changed && hasData && !fullRefreshDue) return;
 
     // 第二段：按节拍串行拉三路动态（个别失败不影响整体）
@@ -475,6 +498,8 @@ class SeekingNotifier extends StateNotifier<SeekingState>
             .map((b) => SeekingActivity.fromBoost(username, b)),
       );
     }
+    // 三路请求在途期间同样可能被移出名单，写回前再验一次
+    if (!mounted || !state.users.contains(username)) return;
     _lastFullFetchedAt[username] = DateTime.now();
     if (merged.isEmpty) return;
 
