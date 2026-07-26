@@ -90,6 +90,26 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     return _activeInstanceId!;
   }
 
+  /// 侧栏板块导航（切换或重选）时收起深层平行视界与嵌入态，退回列表。
+  void _collapseParallelForSidebarNav() {
+    final state = ref.read(selectedTopicProvider);
+    if (!state.isStacked &&
+        !_showEmbeddedSearch &&
+        _leftCategory == null &&
+        _leftTag == null) {
+      return;
+    }
+    ref.read(selectedTopicProvider.notifier).collapseToTop();
+    if (mounted) {
+      setState(() {
+        _showEmbeddedSearch = false;
+        _embeddedSearchFilter = null;
+        _leftCategory = null;
+        _leftTag = null;
+      });
+    }
+  }
+
   void _maybePushDetail(
     SelectedTopicState selectedTopic,
     bool canShowDetailPane,
@@ -205,23 +225,15 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让
     // TopicsPage 换 Tab，还必须收起“上一层内容”左栏，否则列表虽然已在
     // 后台切换，界面仍被旧话题覆盖，看起来就像点击无响应。
+    //
+    // 两个来源都要听：高亮状态变化（含置 null 的路径，如打开板块管理），
+    // 以及 tap 事件——后者覆盖「重选当前板块」（状态同值被去重，只有
+    // tap 事件会到）。普通切换两个都触发，处理器有早退保护，跑两遍无害。
     ref.listen(activeSidebarCategoryIdProvider, (_, _) {
-      final state = ref.read(selectedTopicProvider);
-      if (!state.isStacked &&
-          !_showEmbeddedSearch &&
-          _leftCategory == null &&
-          _leftTag == null) {
-        return;
-      }
-      ref.read(selectedTopicProvider.notifier).collapseToTop();
-      if (mounted) {
-        setState(() {
-          _showEmbeddedSearch = false;
-          _embeddedSearchFilter = null;
-          _leftCategory = null;
-          _leftTag = null;
-        });
-      }
+      _collapseParallelForSidebarNav();
+    });
+    ref.listen(sidebarCategoryTapProvider, (_, _) {
+      _collapseParallelForSidebarNav();
     });
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）

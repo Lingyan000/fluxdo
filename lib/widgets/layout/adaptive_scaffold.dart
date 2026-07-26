@@ -95,12 +95,15 @@ class AdaptiveScaffold extends ConsumerWidget {
                       CategoryShortcuts(
                         extended: extendedRail,
                         onCategorySelected: (categoryId) {
-                          // 再次点击当前板块也必须形成一次明确导航事件，让
-                          // 首页有机会从深层平行视界退回板块列表。
-                          if (sidebarCategoryController.state == categoryId) {
-                            sidebarCategoryController.state = null;
-                          }
                           sidebarCategoryController.state = categoryId;
+                          // 再次点击当前板块也必须形成一次明确导航事件（高亮
+                          // 状态 provider 同值会被去重），首页靠 tap 事件从
+                          // 深层平行视界退回板块列表。
+                          final tap = ref.read(sidebarCategoryTapProvider);
+                          ref.read(sidebarCategoryTapProvider.notifier).state = (
+                            categoryId: categoryId,
+                            nonce: (tap?.nonce ?? 0) + 1,
+                          );
                           if (selectedIndex != 0) {
                             onDestinationSelected(0);
                           }
