@@ -12,6 +12,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../pages/image_viewer_page.dart';
 import '../../../services/toast_service.dart';
+import '../../../widgets/common/cached_image.dart';
 
 import '../../../widgets/markdown_editor/markdown_renderer.dart';
 
@@ -992,8 +993,9 @@ class _AttachmentThumbnails extends StatelessWidget {
   Widget _attachmentImage(AiChatAttachment att, {required double size}) {
     final remote = att.remoteUrl;
     if (remote != null && remote.isNotEmpty) {
-      return Image.network(
-        remote,
+      // 走统一磁盘缓存(裸 Image.network 每次重建都重新下载)
+      return CachedImage(
+        url: remote,
         width: size,
         height: size,
         fit: BoxFit.cover,

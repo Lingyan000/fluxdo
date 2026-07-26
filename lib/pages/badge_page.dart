@@ -62,11 +62,14 @@ class _BadgePageState extends ConsumerState<BadgePage> {
     });
 
     try {
-      final badge = await _service.getBadge(badgeId: widget.badgeId);
-      final usersResponse = await _service.getBadgeUsers(
-        badgeId: widget.badgeId,
-        username: widget.username,
-      );
+      // 两个请求互不依赖,并发省一个 RTT
+      final (badge, usersResponse) = await (
+        _service.getBadge(badgeId: widget.badgeId),
+        _service.getBadgeUsers(
+          badgeId: widget.badgeId,
+          username: widget.username,
+        ),
+      ).wait;
 
       if (mounted) {
         setState(() {

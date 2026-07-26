@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import '../../../../services/blob_image_cache.dart';
 import '../../../../utils/time_utils.dart';
+import '../../../common/cached_image.dart';
 import '../../../common/smart_avatar.dart';
 import '../../../../l10n/s.dart';
 
@@ -196,10 +198,12 @@ Widget _buildReactionChip(ThemeData theme, _ChatReaction reaction) {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Image.network(
-          reaction.emojiUrl,
+        // 走统一磁盘缓存(裸 Image.network 每次滚回都重新下载)
+        CachedImage(
+          url: reaction.emojiUrl,
           width: 16,
           height: 16,
+          bucket: BlobImageCache.emojiBucket,
           errorBuilder: (_, _, _) => const SizedBox(width: 16, height: 16),
         ),
         if (reaction.count > 1) ...[

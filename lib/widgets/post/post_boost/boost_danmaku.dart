@@ -223,6 +223,29 @@ class _BoostDanmakuState extends State<BoostDanmaku>
     _syncTicker();
   }
 
+  Widget _contentOf(_FlyingDanmaku item) {
+    if (item.cachedWidget == null ||
+        item.cachedTrackHeight != widget.trackHeight) {
+      item.cachedTrackHeight = widget.trackHeight;
+      item.cachedWidget = _DanmakuItem(
+        item: item,
+        trackHeight: widget.trackHeight,
+        onTap: widget.onBoostTap == null
+            ? null
+            : (itemContext) => widget.onBoostTap!(
+                item.group.boosts.first,
+                _globalRectOf(itemContext),
+              ),
+        onSize: (size) {
+          if ((size.width - item.width).abs() > 0.5) {
+            item.width = size.width;
+          }
+        },
+      );
+    }
+    return item.cachedWidget!;
+  }
+
   void _tryLaunchNext() {
     if (_pendingKeys.isEmpty) return;
     var bestTrack = -1;
@@ -309,21 +332,9 @@ class _BoostDanmakuState extends State<BoostDanmaku>
                           left: item.x,
                           top: item.track * widget.trackHeight,
                           // 不设固定 height —— 让弹幕条按内容自适应，避免阴影/头像被裁
-                          child: _DanmakuItem(
-                            item: item,
-                            trackHeight: widget.trackHeight,
-                            onTap: widget.onBoostTap == null
-                                ? null
-                                : (itemContext) => widget.onBoostTap!(
-                                    item.group.boosts.first,
-                                    _globalRectOf(itemContext),
-                                  ),
-                            onSize: (size) {
-                              if ((size.width - item.width).abs() > 0.5) {
-                                item.width = size.width;
-                              }
-                            },
-                          ),
+                          // child 走 _FlyingDanmaku.cachedWidget:每帧只有
+                          // 坐标变,同一 widget 实例让子树重建被短路。
+                          child: _contentOf(item),
                         ),
                     ],
                   ),
@@ -343,6 +354,15 @@ class _FlyingDanmaku {
   double x;
   double width;
   final bool isHighlighted;
+
+  /// 内容子树缓存:弹幕飞行时每帧只有 x 变,内容不变。缓存住
+  /// _DanmakuItem 实例,Positioned 每帧重建但 child 是同一个 widget
+  /// 实例 → element 短路跳过整棵子树重建(否则每帧重跑 build:
+  /// TextStyle+5 层阴影分配、_uniqueUsers、Theme.of 全套,是弹幕
+  /// 动画期最大的逐帧 CPU/GC 开销)。主题/字体变化走 InheritedWidget
+  /// 依赖通知,不受 widget 实例复用影响。
+  Widget? cachedWidget;
+  double? cachedTrackHeight;
 
   _FlyingDanmaku({
     required this.group,

@@ -124,26 +124,28 @@ class _AnimatedBlob extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // child 只建一次:100px 高斯模糊的大光斑重栅格化很贵,每帧只平移
+    // 位置;RepaintBoundary 把光斑隔离成独立图层,平移不触发重绘。
     return AnimatedBuilder(
       animation: controller,
+      child: RepaintBoundary(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [
+              BoxShadow(color: color, blurRadius: 100, spreadRadius: 50),
+            ],
+          ),
+        ),
+      ),
       builder: (context, child) {
         final angle = controller.value * 2 * math.pi + offset;
         final x = 30 * math.cos(angle);
         final y = 30 * math.sin(angle);
-        return Transform.translate(
-          offset: Offset(x, y),
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-              boxShadow: [
-                BoxShadow(color: color, blurRadius: 100, spreadRadius: 50),
-              ],
-            ),
-          ),
-        );
+        return Transform.translate(offset: Offset(x, y), child: child);
       },
     );
   }

@@ -2,6 +2,22 @@ part of 'discourse_service.dart';
 
 /// 分类和标签相关
 mixin _CategoriesMixin on _DiscourseServiceBase {
+  /// /site.json 的 in-flight 复用:getCategories/getTags/canTagTopics 在
+  /// 预加载数据缺失时(冷启动)会被并发调用,各拉一次同一份 site.json
+  /// 纯属浪费 —— 同一时刻只发一次,大家共享结果。
+  Future<Map<String, dynamic>>? _siteJsonInflight;
+
+  Future<Map<String, dynamic>> _fetchSiteJson() {
+    return _siteJsonInflight ??= () async {
+      try {
+        final response = await _dio.get('/site.json');
+        return response.data as Map<String, dynamic>;
+      } finally {
+        _siteJsonInflight = null;
+      }
+    }();
+  }
+
   /// 获取站点信息（包含所有分类）
   Future<List<Category>> getCategories() async {
     final preloaded = PreloadedDataService();
@@ -10,8 +26,7 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
       return preloadedCategories;
     }
 
-    final response = await _dio.get('/site.json');
-    final site = SiteResponse.fromJson(response.data);
+    final site = SiteResponse.fromJson(await _fetchSiteJson());
     return site.categories;
   }
 
@@ -24,8 +39,7 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
     }
 
     try {
-      final response = await _dio.get('/site.json');
-      final data = response.data as Map<String, dynamic>;
+      final data = await _fetchSiteJson();
 
       final canTagTopics = data['can_tag_topics'] as bool? ?? false;
       if (!canTagTopics) return [];
@@ -105,8 +119,7 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
     }
 
     try {
-      final response = await _dio.get('/site.json');
-      final data = response.data as Map<String, dynamic>;
+      final data = await _fetchSiteJson();
       return data['can_tag_topics'] as bool? ?? false;
     } catch (e) {
       return false;

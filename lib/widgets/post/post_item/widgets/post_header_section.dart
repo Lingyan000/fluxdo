@@ -338,7 +338,9 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                     replyHistory: _replyHistory,
                     showReplyHistoryNotifier: _showReplyHistoryNotifier,
                     onJumpToPost: widget.onJumpToPost,
-                    contentFontScale: ref.watch(preferencesProvider).contentFontScale,
+                    contentFontScale: ref.watch(
+                      preferencesProvider.select((p) => p.contentFontScale),
+                    ),
                   );
                 },
               ),
