@@ -968,12 +968,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     // Cmd/Ctrl+Enter 发布(对齐 Discourse composer):包整页,焦点在
     // 标题/标签输入框时同样生效;守卫与发布按钮一致。
-    return CallbackShortcuts(
-      bindings: {
-        for (final activator in composerSubmitActivators())
-          activator: () {
-            if (!_isSubmitting) _submit();
-          },
+    return ComposerSubmitShortcut(
+      onSubmit: () {
+        if (!_isSubmitting) _submit();
       },
       child: page,
     );

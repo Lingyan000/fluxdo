@@ -438,12 +438,9 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
 
     // Cmd/Ctrl+Enter 保存(对齐 Discourse composer):包整页,焦点在
     // 标题/标签输入框时同样生效;守卫与保存按钮一致。
-    return CallbackShortcuts(
-      bindings: {
-        for (final activator in composerSubmitActivators())
-          activator: () {
-            if (!_isSubmitting && !_isLoadingContent) _submit();
-          },
+    return ComposerSubmitShortcut(
+      onSubmit: () {
+        if (!_isSubmitting && !_isLoadingContent) _submit();
       },
       child: page,
     );

@@ -8,7 +8,9 @@ import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/markdown_editor.dart';
 import '../markdown_editor/rich_composer/rich_composer_editor.dart';
+import 'dart:async' show unawaited;
 import '../../providers/preferences_provider.dart';
+import '../../providers/user_content_providers.dart';
 import '../../models/topic.dart';
 import '../../models/draft.dart';
 import '../../models/pending_post.dart';
@@ -483,6 +485,29 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     );
   }
 
+  /// 发送成功后刷新私信列表(发件人侧)。
+  ///
+  /// `/private-message-topic-tracking-state` 频道只对**收件人**推送,
+  /// 自己发出的私信/回复不会推给自己(网页版是发送动作本身带跳转与
+  /// 重拉)。这里在私信语境发送成功后主动刷新还存活的列表 provider,
+  /// 让私信页的"最后活动时间/排序"立即更新。
+  void _refreshPmListsAfterSend() {
+    if (kDebugMode) {
+      debugPrint(
+        '[ReplySheet] afterSend pmCtx=$_isInPrivateMessageContext '
+        'inboxAlive=${ref.exists(pmInboxProvider)} '
+        'sentAlive=${ref.exists(pmSentProvider)}',
+      );
+    }
+    if (!_isInPrivateMessageContext) return;
+    if (ref.exists(pmInboxProvider)) {
+      unawaited(ref.read(pmInboxProvider.notifier).refresh());
+    }
+    if (ref.exists(pmSentProvider)) {
+      unawaited(ref.read(pmSentProvider.notifier).refresh());
+    }
+  }
+
   Future<void> _submit() async {
     // 富文本模式:镜像 debounce 窗口内提交也不丢内容,先强制序列化
     _richKey.currentState?.flushToController();
@@ -541,6 +566,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         await _draftController?.deleteDraft();
         _submitted = true;
         if (!mounted) return;
+        _refreshPmListsAfterSend();
         Navigator.of(context).pop(null); // 私信模式不返回 Post
       } else {
         // 回复模式：返回创建的 Post 对象
@@ -555,6 +581,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         await _draftController?.deleteDraft();
         _submitted = true;
         if (!mounted) return;
+        _refreshPmListsAfterSend();
         Navigator.of(context).pop(newPost);
       }
     } on PostEnqueuedException catch (e) {
@@ -639,7 +666,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     // 使用 FractionallySizedBox 固定 0.95 高度
     // SafeArea(bottom: false)：顶部安全区域由 SafeArea 处理，
     // 底部安全区域由 ChatBottomPanelContainer 内部管理，避免双重底部间距
-    // CallbackShortcuts 包整个弹层:Cmd/Ctrl+Enter 提交(对齐 Discourse
+    // ComposerSubmitShortcut 包整个弹层:Cmd/Ctrl+Enter 提交(对齐 Discourse
     // composer),焦点在标题输入框时同样生效;守卫与发送按钮一致。
     final sheet = SafeArea(
       bottom: false,
@@ -973,12 +1000,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       ),
     );
 
-    return CallbackShortcuts(
-      bindings: {
-        for (final activator in composerSubmitActivators())
-          activator: () {
-            if (!_isSubmitting && !_isLoadingRaw) _submit();
-          },
+    return ComposerSubmitShortcut(
+      onSubmit: () {
+        if (!_isSubmitting && !_isLoadingRaw) _submit();
       },
       child: sheet,
     );

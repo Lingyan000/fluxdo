@@ -482,6 +482,51 @@ abstract class PrivateMessagesNotifier extends AsyncNotifier<List<Topic>>
   Future<void> retryLoadMore() {
     return retryPagedLoadMore(loadMore);
   }
+
+  // ---- MessageBus 增量口径(对齐网页版 pm-topic-tracking-state:改内存
+  // 状态重渲染,不重拉列表;硬刷新实测会把接口打到 429)----
+
+  /// `read`:本地清未读徽章。
+  void applyTrackingRead(int topicId, {int? lastRead, int? highest}) {
+    final list = state.value;
+    if (list == null) return;
+    final i = list.indexWhere((t) => t.id == topicId);
+    if (i < 0) return;
+    final t = list[i];
+    if (t.unread == 0 && !t.unseen && t.newPosts == 0) return;
+    final updated = [...list];
+    updated[i] = t.copyWith(
+      unseen: false,
+      unread: 0,
+      newPosts: 0,
+      lastReadPostNumber: lastRead ?? highest ?? t.highestPostNumber,
+      highestPostNumber: highest,
+    );
+    state = AsyncData(updated);
+  }
+
+  /// `unread`(已有会话来新消息):本地加未读徽章并置顶。
+  /// 话题不在当前列表(翻页外/新会话)时返回 false,调用方兜底刷新。
+  bool applyTrackingUnread(int topicId, {int? highest, DateTime? postedAt}) {
+    final list = state.value;
+    if (list == null) return true; // 列表还没加载,build 时自然是新数据
+    final i = list.indexWhere((t) => t.id == topicId);
+    if (i < 0) return false;
+    final t = list[i];
+    final newHighest = highest ?? (t.highestPostNumber + 1);
+    final unreadCount = newHighest - (t.lastReadPostNumber ?? 0);
+    final updated = [...list]..removeAt(i);
+    updated.insert(
+      0,
+      t.copyWith(
+        unread: unreadCount < 1 ? 1 : unreadCount,
+        highestPostNumber: newHighest,
+        lastPostedAt: postedAt ?? DateTime.now(),
+      ),
+    );
+    state = AsyncData(updated);
+    return true;
+  }
 }
 
 class _PmInboxNotifier extends PrivateMessagesNotifier {

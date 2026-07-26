@@ -4,6 +4,9 @@ import 'package:flutter/widgets.dart';
 
 import 'dart:io';
 
+import 'package:fluxdo_render/editor.dart'
+    show observeModifierKeyEvent, primaryModifierHeld;
+
 import '../../l10n/s.dart';
 import '../../models/shortcut_binding.dart';
 import 'markdown_toolbar.dart';
@@ -54,11 +57,74 @@ SingleActivator _primary(
       : SingleActivator(key, control: true, shift: shift, alt: alt);
 }
 
-/// 提交快捷键(Cmd/Ctrl+Enter,含小键盘 Enter;宿主页绑定用)
+/// 提交快捷键(Cmd/Ctrl+Enter,含小键盘 Enter;帮助浮层展示用)
 List<SingleActivator> composerSubmitActivators() => [
       _primary(LogicalKeyboardKey.enter),
       _primary(LogicalKeyboardKey.numpadEnter),
     ];
+
+/// Cmd/Ctrl+Enter 提交的拦截层(替代 CallbackShortcuts + SingleActivator)。
+///
+/// SingleActivator 直接读 `HardwareKeyboard` 的逻辑修饰键状态,而该状态在
+/// Windows 上会随使用时间失同步(IME/平台注入把 Ctrl 弄成假的「已抬起」)。
+/// 失同步后的表现:编辑器内核用自己的权威判定认出 primaryEnter 主动让路,
+/// 外层 SingleActivator 却因逻辑状态不匹配不触发 —— 回车穿透给 IME,
+/// Ctrl+Enter 变成插换行(实测两行)且发不出去。
+///
+/// 修法是全链路只认一个权威:内核的 [primaryModifierHeld](含 Ctrl 按下的
+/// 补偿窗口)。同时把每个按键事件喂给 [observeModifierKeyEvent],让补偿
+/// 窗口在焦点落在标题输入框等纯 TextField 上时同样有效。
+bool _physicalPrimaryHeld(HardwareKeyboard pressed) {
+  final keys = pressed.physicalKeysPressed;
+  return _isMac
+      ? keys.contains(PhysicalKeyboardKey.metaLeft) ||
+          keys.contains(PhysicalKeyboardKey.metaRight)
+      : keys.contains(PhysicalKeyboardKey.controlLeft) ||
+          keys.contains(PhysicalKeyboardKey.controlRight);
+}
+
+class ComposerSubmitShortcut extends StatelessWidget {
+  const ComposerSubmitShortcut({
+    super.key,
+    required this.onSubmit,
+    required this.child,
+  });
+
+  final VoidCallback onSubmit;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (node, event) {
+        observeModifierKeyEvent(event);
+        // 只认第一次按下,KeyRepeat 会连发提交
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final k = event.logicalKey;
+        if (k != LogicalKeyboardKey.enter &&
+            k != LogicalKeyboardKey.numpadEnter) {
+          return KeyEventResult.ignored;
+        }
+        // 提交是**不可逆动作**(发帖),判据比编辑器内部更严:逻辑状态
+        // 直接认;补偿窗口(兜逻辑状态失同步)必须再与「物理 Ctrl/Cmd
+        // 确实按着」取合取 —— 真按着时物理集合一定包含它,窗口单独成立
+        // 而物理键不在,说明是残留窗口,宁可漏认也不误发。
+        final pressed = HardwareKeyboard.instance;
+        final logicalHeld =
+            _isMac ? pressed.isMetaPressed : pressed.isControlPressed;
+        if (!logicalHeld &&
+            !(primaryModifierHeld(event) && _physicalPrimaryHeld(pressed))) {
+          return KeyEventResult.ignored;
+        }
+        onSubmit();
+        return KeyEventResult.handled;
+      },
+      child: child,
+    );
+  }
+}
 
 /// 全部撰写格式化快捷键(顺序即帮助浮层「撰写」分区展示顺序)
 List<ComposerShortcutSpec> buildComposerShortcutSpecs() {

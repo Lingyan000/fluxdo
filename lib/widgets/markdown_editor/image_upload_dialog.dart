@@ -18,16 +18,28 @@ import '../../../../../l10n/s.dart';
 /// 路径,不受影响)。
 ///
 /// [onSubmit] 为 null(处理中)时不响应,避免重复提交。
+///
+/// 不用 CallbackShortcuts + SingleActivator:后者要求修饰键**全部松开**
+/// 才匹配,而 Windows 上 HardwareKeyboard 的逻辑修饰键状态会随使用时间
+/// 失同步(IME 吞 Shift key-up、平台注入等把 Ctrl/Shift 卡在「按下」),
+/// 卡住后回车永远匹配不上 —— 实测「用久了图片回车上传失效」。这里直接
+/// 判键、无视修饰键状态:弹框里回车没有第二种语义,不存在误触发面。
 Widget _enterToSubmit({required VoidCallback? onSubmit, required Widget child}) {
-  return CallbackShortcuts(
-    bindings: {
-      if (onSubmit != null) ...{
-        const SingleActivator(LogicalKeyboardKey.enter): onSubmit,
-        const SingleActivator(LogicalKeyboardKey.numpadEnter): onSubmit,
-      },
-    },
+  return Focus(
     // autofocus:弹框刚出来焦点还没落到任何按钮上,不抢焦点就收不到按键
-    child: Focus(autofocus: true, child: child),
+    autofocus: true,
+    onKeyEvent: (node, event) {
+      if (onSubmit == null || event is! KeyDownEvent) {
+        return KeyEventResult.ignored;
+      }
+      final k = event.logicalKey;
+      if (k != LogicalKeyboardKey.enter && k != LogicalKeyboardKey.numpadEnter) {
+        return KeyEventResult.ignored;
+      }
+      onSubmit();
+      return KeyEventResult.handled;
+    },
+    child: child,
   );
 }
 

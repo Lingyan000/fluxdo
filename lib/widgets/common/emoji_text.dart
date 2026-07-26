@@ -66,22 +66,29 @@ class EmojiText extends StatelessWidget {
     TextStyle? style, {
     bool preserveSourceLength = false,
   }) {
-    if (!text.contains(':')) {
-      return [TextSpan(text: text)];
-    }
-    final matches = emojiRegex.allMatches(text);
-
-    if (matches.isEmpty) {
-      return [TextSpan(text: text)];
-    }
+    // 同时处理两种形态,统一换成站内 emoji 图片:
+    // - `:shortcode:` 文本;
+    // - 裸 Unicode emoji 字符 —— Windows 系统字体缺新版 emoji 会渲染成
+    //   方块(tofu),经 Discourse 官方对照表转成 shortcode 后走图片。
+    EmojiHandler().ensureUnicodeMapLoaded();
 
     final spans = <InlineSpan>[];
     int lastEnd = 0;
 
-    for (final match in matches) {
+    void addPlainText(String segment) {
+      _addTextScanningUnicodeEmoji(
+        context,
+        spans,
+        segment,
+        style,
+        preserveSourceLength: preserveSourceLength,
+      );
+    }
+
+    for (final match in emojiRegex.allMatches(text)) {
       // 添加 emoji 前的文本
       if (match.start > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
+        addPlainText(text.substring(lastEnd, match.start));
       }
 
       final emojiName = match.group(1)!;
@@ -101,10 +108,53 @@ class EmojiText extends StatelessWidget {
 
     // 添加剩余文本
     if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd)));
+      addPlainText(text.substring(lastEnd));
     }
 
+    if (spans.isEmpty) return [TextSpan(text: text)];
     return spans;
+  }
+
+  /// 把纯文本段落追加进 [spans],其中的裸 Unicode emoji 替换为站内图片。
+  static void _addTextScanningUnicodeEmoji(
+    BuildContext context,
+    List<InlineSpan> spans,
+    String segment,
+    TextStyle? style, {
+    required bool preserveSourceLength,
+  }) {
+    final handler = EmojiHandler();
+    int plainStart = 0;
+    int i = 0;
+    while (i < segment.length) {
+      if (!EmojiHandler.maybeEmojiStart(segment.codeUnitAt(i))) {
+        i++;
+        continue;
+      }
+      final matched = handler.matchUnicodeEmoji(segment, i);
+      if (matched == null) {
+        i++;
+        continue;
+      }
+      final (name, units) = matched;
+      if (plainStart < i) {
+        spans.add(TextSpan(text: segment.substring(plainStart, i)));
+      }
+      spans.add(_buildEmojiWidgetSpan(context, name, style));
+      if (preserveSourceLength && units > 1) {
+        spans.add(
+          TextSpan(
+            text: '⁠' * (units - 1),
+            style: style?.copyWith(color: Colors.transparent),
+          ),
+        );
+      }
+      i += units;
+      plainStart = i;
+    }
+    if (plainStart < segment.length) {
+      spans.add(TextSpan(text: segment.substring(plainStart)));
+    }
   }
 
   static WidgetSpan _buildEmojiWidgetSpan(
