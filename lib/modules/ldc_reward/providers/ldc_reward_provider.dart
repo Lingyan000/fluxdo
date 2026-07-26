@@ -83,7 +83,11 @@ class _RewardCooldown {
   }
 
   static void mark(int topicId, int postId, int userId) {
-    _pending[_key(topicId, postId, userId)] = DateTime.now().add(_cooldown);
+    // 顺带清一遍已过期项:过期键此前只在"再次 check 同 key"时才删,
+    // 打赏不同帖会留下永不被复查的死键(缓慢累积)。
+    final now = DateTime.now();
+    _pending.removeWhere((_, expireAt) => expireAt.isBefore(now));
+    _pending[_key(topicId, postId, userId)] = now.add(_cooldown);
   }
 }
 

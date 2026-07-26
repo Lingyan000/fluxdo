@@ -337,6 +337,16 @@ class TopicCardImages {
     return null;
   }
 
+  /// 内存压力入口:全清(400 张解码位图是自建缓存里的大头)。在屏卡片
+  /// 下一次 paint 时 lookup miss,从 BlobImageCache(磁盘)重新加载,
+  /// 代价只是短暂占位。ui.Image 底层引用计数,已录入 Picture 的帧安全。
+  static void evictAll() {
+    for (final img in _images.values) {
+      img.dispose();
+    }
+    _images.clear();
+  }
+
   static Future<void> _load(String url, String bucket) async {
     try {
       final bytes = await BlobImageCache.fetch(bucket, url);

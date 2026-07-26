@@ -34,6 +34,18 @@ class _SvgContentCache {
       _bytes -= _entries.remove(k)!.cost;
     }
   }
+
+  static void clear() {
+    _entries.clear();
+    _bytes = 0;
+  }
+}
+
+/// 内存压力入口:清 SVG 会话级缓存(解析产物最高 12MB + 嗅探结论表)。
+/// 在屏 SVG 下次重挂载会重新走磁盘/解析,代价可接受。
+void evictSvgSessionCaches() {
+  _SvgContentCache.clear();
+  _SvgSniffFallbackState._verdicts.clear();
 }
 
 class _SvgEntry {
@@ -345,6 +357,12 @@ class _SvgSniffFallbackState extends State<SvgSniffFallback> {
     } catch (_) {
       _verdicts[url] = false;
       if (mounted && widget.url == url) setState(() => _isSvg = false);
+    }
+    // 会话级结论表加 cap:长会话滚过大量图片时只增不减
+    if (_verdicts.length > 512) {
+      for (final k in _verdicts.keys.take(128).toList()) {
+        _verdicts.remove(k);
+      }
     }
   }
 

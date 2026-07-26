@@ -366,6 +366,14 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     if (!widget.autoResize || !mounted) return;
     final real = _vpc?.value.aspectRatio;
     if (real == null || real <= 0) return;
+    // 记忆表 cap:长会话只增不减,FIFO 驱逐最老一批(重访退化为一次
+    // 占位比→真实比的跳变,可接受)
+    if (_knownAspectRatios.length >= 512 &&
+        !_knownAspectRatios.containsKey(widget.url)) {
+      for (final k in _knownAspectRatios.keys.take(128).toList()) {
+        _knownAspectRatios.remove(k);
+      }
+    }
     _knownAspectRatios[widget.url] = real;
     if ((real - _displayAspectRatio).abs() < 0.01) return;
 

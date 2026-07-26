@@ -107,6 +107,9 @@ import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
 import 'utils/platform_utils.dart';
 import 'services/app_startup.dart';
+import 'services/discourse_cook_service.dart';
+import 'widgets/content/svg_view.dart' show evictSvgSessionCaches;
+import 'widgets/topic/painted_topic_card.dart' show TopicCardImages;
 import 'utils/discourse_url_parser.dart';
 
 /// 初始化 rhttp Rust runtime
@@ -1199,6 +1202,15 @@ class _MainPageState extends ConsumerState<MainPage>
     //   仅 reassemble 全量重建场景安全),且量级仅数 MB 不值得冒险。
     RenderParseCache.clear();
     FlattenCache.evictAll();
+    // 自建位图/解析产物缓存(此前只清纯数据,真正的内存大头纹丝不动):
+    // - TopicCardImages:400 张解码位图(头像/emoji 96px);
+    // - SVG 会话缓存:解析产物最高 12MB + 嗅探结论表。
+    // 在屏内容下一帧重新走磁盘缓存加载,代价是短暂占位。
+    TopicCardImages.evictAll();
+    evictSvgSessionCaches();
+    // cook JS runtime(551K bundle eval 后的常驻堆):销毁,下次 cook
+    // 惰性重建(重付一次 eval,压力场景可接受)。
+    DiscourseCookService().evictEngine();
     // 公平内存机制下持续增长会触达查杀线,先把监控现场落盘(未启用
     // 或无记录时内部直接返回,静默失败)。
     unawaited(FrameJankMonitor.persistSnapshot());

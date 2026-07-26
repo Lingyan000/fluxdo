@@ -95,6 +95,19 @@ class _LazyImageState extends State<LazyImage> {
   /// DiscourseVideoPlayer 的比例记忆同款策略。
   static final Map<String, double> _knownAspectRatios = {};
 
+  /// 记忆表 cap:长会话滚过数千张图后只增不减(条目小但无界)。
+  /// FIFO 驱逐最老的 1/4 —— 被驱逐的只是"很久没路过"的图,重访时
+  /// 退化为一次 200px 占位→真实高度的跳变,可接受。
+  static void _memoRatio(String key, double ratio) {
+    if (_knownAspectRatios.length >= 2048 &&
+        !_knownAspectRatios.containsKey(key)) {
+      for (final k in _knownAspectRatios.keys.take(512).toList()) {
+        _knownAspectRatios.remove(k);
+      }
+    }
+    _knownAspectRatios[key] = ratio;
+  }
+
   /// 本次会话解析到的实测比例(优先于静态记忆,驱动 AspectRatio)
   double? _resolvedRatio;
 
@@ -179,7 +192,7 @@ class _LazyImageState extends State<LazyImage> {
       if (ratio == null) return;
       final key = widget.cacheKey;
       if (key != null && key.isNotEmpty) {
-        _knownAspectRatios[key] = ratio;
+        _memoRatio(key, ratio);
         // 持久备忘:冷启动后首次挂载也能加载前预留精确高度
         MediaGeometryMemo.remember(key, imgW, imgH);
       }
@@ -429,7 +442,7 @@ class _LazyImageState extends State<LazyImage> {
         final memo = MediaGeometryMemo.peek(memoKey);
         if (memo != null && memo.$2 > 0) {
           knownRatio = memo.$1 / memo.$2;
-          _knownAspectRatios[memoKey] = knownRatio;
+          _memoRatio(memoKey, knownRatio);
         }
       }
     }

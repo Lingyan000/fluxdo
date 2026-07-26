@@ -37,4 +37,14 @@ class CookJsEngine {
       return null;
     }
   }
+
+  /// 销毁底层 JS runtime,释放其堆(551K bundle eval 后常驻数 MB~数十 MB)。
+  /// 销毁后本实例不可再用,调用方须丢弃引用重建。
+  void dispose() {
+    try {
+      _runtime.dispose();
+    } catch (_) {
+      // 引擎实现差异,失败不致命
+    }
+  }
 }

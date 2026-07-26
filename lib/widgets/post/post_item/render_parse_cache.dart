@@ -77,11 +77,6 @@ class RenderParseCache {
     );
   }
 
-  /// 短帖是否已有可用解析产物(只查表,不触发解析)。
-  /// fling 分帧预算用:已解析的帖子构建零成本,不占预算。
-  static bool hasShort(Post post) =>
-      _short[post.id]?.signature == signatureOf(post);
-
   /// 短帖解析产物(preprocessed + nodes),命中签名直接复用。
   static ({String preprocessed, List<BlockNode> nodes}) shortPost(Post post) {
     final signature = signatureOf(post);

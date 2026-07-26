@@ -203,6 +203,13 @@ class _SilentlyCollapsingImageState extends State<_SilentlyCollapsingImage> {
       // 加载阶段没有占位 spinner,失败后仅剩分隔线:成功才发生落位。
       placeholderBuilder: (_) => const SizedBox.shrink(),
       errorBuilder: (_) {
+        // 会话级失败表加 cap:长会话缓慢累积,FIFO 掉最老一批即可
+        if (_knownBroken.length > 256) {
+          final keep = _knownBroken.skip(64).toList();
+          _knownBroken
+            ..clear()
+            ..addAll(keep);
+        }
         _knownBroken.add(widget.url);
         return const SizedBox.shrink();
       },

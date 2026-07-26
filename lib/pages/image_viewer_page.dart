@@ -1272,7 +1272,8 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
           return;
         }
         final svgString = SvgUtils.sanitize(raw);
-        final si = ScalableImage.fromSvgString(svgString, warnF: (_) {});
+        // 只为验证可解析性(失败会抛,进下方 catch 判定非 SVG),产物不用
+        ScalableImage.fromSvgString(svgString, warnF: (_) {});
         if (mounted) {
           setState(() {
             _isSvg = true;

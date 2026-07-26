@@ -77,6 +77,7 @@ class VpnAutoToggleService {
     if (_windowsSignalWatchStarted || !Platform.isWindows) return;
     _windowsSignalWatchStarted = true;
     SystemProxyService.instance.version.addListener(_redetectWindows);
+    _windowsFallbackTimer?.cancel();
     _windowsFallbackTimer = Timer.periodic(
       _windowsFallbackInterval,
       (_) => _redetectWindows(),

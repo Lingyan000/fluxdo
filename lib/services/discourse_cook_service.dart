@@ -34,6 +34,19 @@ class DiscourseCookService {
     unawaited(ensureInitialized());
   }
 
+  /// 内存压力入口:销毁常驻 JS runtime(eval 完 551K bundle 后的堆是
+  /// 进程内最后一块可释放的大常驻)。下次 cook/warmUp 惰性重建 ——
+  /// 重付一次 eval,内存压力场景可接受。正在编辑时压力到来也安全:
+  /// 下一次 cook 调用会经 ensureInitialized 重新初始化。
+  void evictEngine() {
+    final engine = _engine;
+    if (engine == null) return;
+    _engine = null;
+    _initFuture = null;
+    engine.dispose();
+    debugPrint('[DiscourseCook] 内存压力:JS runtime 已释放');
+  }
+
   /// 幂等初始化。失败后置为不可用（本次进程内不再重试 eval 大 bundle，
   /// 站点数据缺失导致的失败除外——那种情况保留重试机会）。
   Future<bool> ensureInitialized() {

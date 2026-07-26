@@ -81,7 +81,7 @@ class SeekingActivity {
       title: boost.topicTitle ?? '',
       // boost 自身的内容在 cooked(HTML);excerpt 是**被 boost 的帖子**
       // 的摘要 —— 之前优先取 excerpt,追觅页把评论内容当 boost 内容显示。
-      excerpt: boost.cooked ?? boost.excerpt,
+      excerpt: boost.cooked,
       createdAt: boost.createdAt,
     );
   }

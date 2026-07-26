@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../utils/share_utils.dart';
 import 'dart:async';
 import '../../../../../l10n/s.dart';
-import '../../../../../constants.dart';
 import '../../../../../models/topic.dart';
 import '../../../../../modules/ldc_reward/ldc_reward.dart';
 import '../../../../../providers/discourse_providers.dart';

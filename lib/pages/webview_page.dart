@@ -95,7 +95,11 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     );
 
     return PopScope(
-      canPop: false,
+      // 动态返回语义:页内没有历史可退时交还系统 pop —— Android 14+ 的
+      // 预测性返回手势才能播放动画(canPop 恒 false 会让手势"点一下没
+      // 动静")。有历史时仍拦截转成 webview goBack;_canGoBack 状态与
+      // 工具栏后退按钮同源,异步兜底路径保留(状态偶尔滞后时行为不变)。
+      canPop: !_canGoBack,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         await _handleBackNavigation();

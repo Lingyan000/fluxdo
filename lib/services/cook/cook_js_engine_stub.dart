@@ -14,4 +14,6 @@ class CookJsEngine {
     onError?.call('cook JS engine is not supported on this platform');
     return null;
   }
+
+  void dispose() {}
 }

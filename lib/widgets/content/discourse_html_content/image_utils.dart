@@ -149,6 +149,22 @@ class DiscourseImageUtils {
   /// 服务端确认不存在的短链记入 [_missingUploads] 负缓存（见下）。
   static final Map<String, String> _uploadUrlCache = {};
 
+  /// 两个会话级表的 cap:跨大量话题浏览只增不减。FIFO 驱逐最老一批,
+  /// 被驱逐的短链重访时重新走一次 lookup-urls,可接受。
+  static void _capSessionTables() {
+    if (_uploadUrlCache.length > 2048) {
+      for (final k in _uploadUrlCache.keys.take(512).toList()) {
+        _uploadUrlCache.remove(k);
+      }
+    }
+    if (_missingUploads.length > 512) {
+      final keep = _missingUploads.skip(128).toList();
+      _missingUploads
+        ..clear()
+        ..addAll(keep);
+    }
+  }
+
   /// 负缓存：lookup-urls 请求成功但服务端未返回的短链（上传已删除/失效）。
   /// 会话内不再发起解析（对齐官方 upload-short-url.js 的 MISSING 语义），
   /// 否则失效短链在预览持续重建场景下每次都重发请求 → 429 连坐拖垮
@@ -229,10 +245,12 @@ class DiscourseImageUtils {
       if (resolved == null) return null; // 网络失败,可重试
       if (resolved.isMissing) {
         _missingUploads.add(shortUrl);
+        _capSessionTables();
         return null;
       }
       final url = resolved.mediaUrl();
       _uploadUrlCache[shortUrl] = url;
+      _capSessionTables();
       return url;
     } catch (e) {
       debugPrint('[DiscourseImageUtils] Failed to resolve upload url: $shortUrl, error: $e');
