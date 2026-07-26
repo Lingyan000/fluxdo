@@ -20,6 +20,7 @@ import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
+import 'package:fluxdo/widgets/topic/topic_item_builder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../storage/bookmark_hive_test_support.dart';
@@ -185,6 +186,14 @@ Finder _findWorkspaceTab(String title) {
 }
 
 void main() {
+  setUpAll(() {
+    // 自绘卡是 canvas 画字,find.text 不可见;测试走 widget 卡路径
+    kUsePaintedTopicCard = false;
+  });
+  tearDownAll(() {
+    kUsePaintedTopicCard = true;
+  });
+
   testWidgets('工作区会复用同一话题标签并在关闭后回到书签页', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);

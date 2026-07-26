@@ -10,6 +10,7 @@ import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
+import 'package:fluxdo/widgets/topic/topic_item_builder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Topic _topic({required int id, required String title, String? bookmarkName}) {
@@ -33,6 +34,12 @@ void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
+    // 自绘卡是 canvas 画字,find.text 不可见;测试走 widget 卡路径
+    kUsePaintedTopicCard = false;
+  });
+
+  tearDownAll(() {
+    kUsePaintedTopicCard = true;
   });
 
   testWidgets('汇总条只统计非空名称并按数量降序展示', (tester) async {

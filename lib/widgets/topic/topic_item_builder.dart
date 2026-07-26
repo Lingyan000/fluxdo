@@ -8,8 +8,11 @@ import 'topic_card_layout.dart';
 import 'topic_preview_dialog.dart';
 
 /// 话题卡自绘路径总开关:false 一键回退 widget 版 TopicCard
-/// (验收期保险丝;稳定后与 widget 分支一并清理)
-const bool kUsePaintedTopicCard = true;
+/// (验收期保险丝;稳定后与 widget 分支一并清理)。
+/// 非 const:widget 测试用 find.text 断言标题/筛选结果,自绘卡是
+/// canvas 画字对 finder 不可见 —— 测试 setUp 置 false 走 widget 路径
+/// (tearDown 还原),生产代码不改这个值。
+bool kUsePaintedTopicCard = true;
 
 /// 话题卡片渲染公共函数
 ///

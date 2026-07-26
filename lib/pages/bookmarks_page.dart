@@ -66,18 +66,23 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   /// 桌面端 Esc 退出书签页(maybePop 会依次经过 PopScope:搜索模式先退
   /// 搜索、手机工作区先回书签标签,最后才真正 pop 路由)。
-  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
-    ref: ref,
-    scope: ShortcutScope.context,
-  );
+  ///
+  /// 不能用 late final 惰性构造:移动端 initState 从不触碰它,首次触碰
+  /// 会发生在 dispose() —— 惰性构造里的 ref.read 在 State 已失效后执行,
+  /// 抛 StateError(移动端每次退出书签页都触发)。桌面 initState 显式建。
+  ShortcutScopeBinding? _shortcutScopeBinding;
 
   @override
   void initState() {
     super.initState();
     if (PlatformUtils.isDesktop) {
+      _shortcutScopeBinding = ShortcutScopeBinding(
+        ref: ref,
+        scope: ShortcutScope.context,
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _shortcutScopeBinding.register(context, {
+        _shortcutScopeBinding?.register(context, {
           ShortcutAction.closeOverlay: () {
             if (mounted) Navigator.of(context).maybePop();
           },
@@ -107,7 +112,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   @override
   void dispose() {
-    _shortcutScopeBinding.disposeDeferred();
+    _shortcutScopeBinding?.disposeDeferred();
     _setMobileBottomBarHidden(false);
     _scrollController.dispose();
     Future.microtask(_searchNotifier.exitSearchMode);

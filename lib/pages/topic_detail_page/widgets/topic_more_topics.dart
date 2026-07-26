@@ -6,6 +6,7 @@ import '../../../l10n/s.dart';
 import '../../../models/category.dart';
 import '../../../models/topic.dart';
 import '../../../providers/category_provider.dart';
+import '../../../providers/selected_topic_provider.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../utils/number_utils.dart';
 import '../../../utils/time_utils.dart';
@@ -105,14 +106,27 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
           _MoreTopicTile(
             topic: topic,
             category: categoryMap?[int.tryParse(topic.categoryId)],
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => TopicDetailPage(
-                  topicId: topic.id,
-                  initialTitle: topic.title,
+            onTap: () {
+              // 平行视界支持:详情页在嵌入面板里时,推荐话题压入当前
+              // 面板栈(与帖内链接同一语义,可返回上一层);不在嵌入
+              // 面板(全屏路由)才回退全屏 push。
+              if (EmbeddedStackScope.maybePushTopic(
+                context,
+                topicId: topic.id,
+                initialTitle: topic.title,
+              )) {
+                return;
+              }
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TopicDetailPage(
+                    topicId: topic.id,
+                    initialTitle: topic.title,
+                    autoSwitchToMasterDetail: true,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         _BrowseMoreLine(category: categoryMap?[detail.categoryId]),
       ],

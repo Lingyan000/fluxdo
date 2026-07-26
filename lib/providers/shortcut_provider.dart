@@ -1,3 +1,4 @@
+import 'dart:async' show scheduleMicrotask;
 import 'dart:convert';
 
 // ignore: depend_on_referenced_packages
@@ -349,7 +350,11 @@ class ShortcutScopeBinding {
   void disposeDeferred() {
     if (_disposed) return;
     final disposeNow = dispose;
-    Future(disposeNow);
+    // microtask 而非 Future()(=Timer(0)):同样把注销推迟到本轮
+    // build/dispose 之后(绕开树锁定期改 provider 的限制),但不产生
+    // pending Timer —— widget 测试在 pump 结束即校验无挂起 Timer,
+    // Timer(0) 版本让所有卸载含快捷键 surface 页面的测试必挂。
+    scheduleMicrotask(disposeNow);
   }
 }
 

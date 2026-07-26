@@ -156,7 +156,13 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
       if (mounted) setState(() => _error = '合成失败:$e');
       return;
     }
-    final transcoder = MediaTranscoder.forCurrentPlatform();
+    // flutter test 环境跳过转码:ffmpeg 探测是真实进程 IO,测试的
+    // fake 时钟等不到它,recorded 态永远不出现;wav 直用本就是既有降级。
+    // 判定用 OS 环境变量(flutter_test 必设),dart-define 版在部分
+    // 工具链下不注入。
+    final isFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
+    final transcoder =
+        isFlutterTest ? null : MediaTranscoder.forCurrentPlatform();
     if (transcoder != null && await transcoder.ensureReady() == null) {
       try {
         final m4a = path.replaceFirst(RegExp(r'\.wav$'), '.m4a');
