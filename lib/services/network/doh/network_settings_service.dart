@@ -502,26 +502,7 @@ class NetworkSettingsService {
     }
     if (!shouldRunLocalProxy) {
       try {
-        var retainForWindowsWebView = false;
-        if (Platform.isWindows) {
-          final activePort = _rustProxyService.port;
-          final released = await _clearWebViewProxy();
-          retainForWindowsWebView =
-              WindowsWebViewEnvironmentService.shouldRetainLocalProxy(
-                clearApplied: released,
-                activeEnvironmentPort: WindowsWebViewEnvironmentService
-                    .instance
-                    .activeLocalProxyPort,
-                runningProxyPort: activePort,
-              );
-        } else {
-          await _clearWebViewProxy();
-        }
-        if (retainForWindowsWebView) {
-          debugPrint('[DOH] WebView2 当前仍使用本地代理，保留端口直到应用重启');
-        } else {
-          await _rustProxyService.stop();
-        }
+        await _stopLocalProxyUnlessRequiredByWebView();
         if (_pendingStart) {
           _setPendingStart(false);
         }
@@ -657,9 +638,8 @@ class NetworkSettingsService {
       // (如 VPN 自动压制关闭了 DoH 与上游代理)。此时并发的 stop 分支先于
       // start 完成,会留下"开关已关、代理仍在跑"的孤儿网关,这里必须复查。
       if (!shouldRunLocalProxy) {
-        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,立即停止');
-        await _rustProxyService.stop();
-        await _clearWebViewProxy();
+        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,重新核对 WebView 路由');
+        await _stopLocalProxyUnlessRequiredByWebView();
         _setPendingStart(false);
         return;
       }
@@ -753,6 +733,29 @@ class NetworkSettingsService {
   int? get _activeProxyPort => _rustProxyService.port;
 
   bool _webViewProxySet = false;
+
+  Future<void> _stopLocalProxyUnlessRequiredByWebView() async {
+    var retainForWindowsWebView = false;
+    if (Platform.isWindows) {
+      final runningPort = _rustProxyService.port;
+      final clearApplied = await _clearWebViewProxy();
+      retainForWindowsWebView =
+          WindowsWebViewEnvironmentService.shouldRetainLocalProxy(
+            clearApplied: clearApplied,
+            activeEnvironmentPort:
+                WindowsWebViewEnvironmentService.instance.activeLocalProxyPort,
+            runningProxyPort: runningPort,
+          );
+    } else {
+      await _clearWebViewProxy();
+    }
+
+    if (retainForWindowsWebView) {
+      debugPrint('[DOH] WebView2 当前仍使用本地代理，保留端口直到应用重启');
+      return;
+    }
+    await _rustProxyService.stop();
+  }
 
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
