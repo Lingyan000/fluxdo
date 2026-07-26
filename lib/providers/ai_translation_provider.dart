@@ -1,5 +1,4 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/ai_translation_service.dart';
@@ -40,31 +39,14 @@ final aiTranslationTargetLanguageProvider = Provider<String>((ref) {
 String aiTranslationLanguageLabel(String code) =>
     aiTranslationLanguages[code] ?? code;
 
-/// 偏好指定模型优先，否则使用默认文本模型或首个可用文本模型。
+/// 偏好指定模型优先，否则使用默认文本模型或首个可用文本模型
+/// （回退逻辑与 AI 审核共用 [resolveSelectedTextAiModel]）。
 final aiTranslationSelectedModelProvider =
     Provider<({AiProvider provider, AiModel model})?>((ref) {
       final selectedKey = ref.watch(
         preferencesProvider.select((prefs) => prefs.aiTranslationModelKey),
       );
-      final available = ref.watch(aiPostReviewAvailableModelsProvider);
-      if (available.isEmpty) return null;
-
-      final parsed = parseAiModelKey(selectedKey);
-      if (parsed != null) {
-        final selected = available.firstWhereOrNull(
-          (item) =>
-              item.provider.id == parsed.providerId &&
-              item.model.id == parsed.modelId,
-        );
-        if (selected != null) return selected;
-      }
-
-      final defaultTextModel = ref.watch(defaultTextAiModelProvider);
-      if (defaultTextModel != null &&
-          defaultTextModel.model.output.contains(Modality.text)) {
-        return defaultTextModel;
-      }
-      return available.first;
+      return resolveSelectedTextAiModel(ref, selectedKey);
     });
 
 final aiTranslationServiceProvider = Provider<AiTranslationService>((ref) {

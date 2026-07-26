@@ -11,6 +11,28 @@ void main() {
     expect(text, contains(':wave:'));
   });
 
+  test('超长内容截断到段落边界并标记 truncated', () {
+    final paragraph = '${'字' * 799}\n';
+    final long = paragraph * 25; // 20000 字符,超过 16000 上限
+
+    final clamped = AiTranslationService.clampForTranslation(long);
+
+    expect(clamped.truncated, isTrue);
+    expect(
+      clamped.text.length,
+      lessThanOrEqualTo(AiTranslationService.maxTranslateChars),
+    );
+    // 截在换行处,不劈开句子
+    expect(clamped.text, endsWith('字'));
+    expect(long.substring(clamped.text.length, clamped.text.length + 1), '\n');
+  });
+
+  test('未超限内容原样返回', () {
+    final clamped = AiTranslationService.clampForTranslation('短内容');
+    expect(clamped.truncated, isFalse);
+    expect(clamped.text, '短内容');
+  });
+
   test('系统提示包含目标语言和只输出译文约束', () {
     final prompt = AiTranslationService.buildSystemPrompt('日本語');
 

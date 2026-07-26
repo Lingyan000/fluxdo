@@ -15,30 +15,40 @@ final aiPostReviewAvailableModelsProvider =
           .toList(growable: false);
     });
 
+/// 解析「providerId:modelId」偏好并回退到默认文本模型的公共逻辑。
+/// AI 审核与 AI 翻译共用,仅偏好 key 不同:显式选择优先,失效(模型被
+/// 删除等)时依次回退到默认文本模型、首个可用文本模型。
+({AiProvider provider, AiModel model})? resolveSelectedTextAiModel(
+  Ref ref,
+  String? selectedKey,
+) {
+  final available = ref.watch(aiPostReviewAvailableModelsProvider);
+  if (available.isEmpty) return null;
+
+  final parsed = parseAiModelKey(selectedKey);
+  if (parsed != null) {
+    final selected = available.firstWhereOrNull(
+      (item) =>
+          item.provider.id == parsed.providerId &&
+          item.model.id == parsed.modelId,
+    );
+    if (selected != null) return selected;
+  }
+
+  final defaultTextModel = ref.watch(defaultTextAiModelProvider);
+  if (defaultTextModel != null &&
+      defaultTextModel.model.output.contains(Modality.text)) {
+    return defaultTextModel;
+  }
+  return available.first;
+}
+
 final aiPostReviewSelectedModelProvider =
     Provider<({AiProvider provider, AiModel model})?>((ref) {
       final selectedKey = ref.watch(
         preferencesProvider.select((prefs) => prefs.aiPostReviewModelKey),
       );
-      final available = ref.watch(aiPostReviewAvailableModelsProvider);
-      if (available.isEmpty) return null;
-
-      final parsed = parseAiModelKey(selectedKey);
-      if (parsed != null) {
-        final selected = available.firstWhereOrNull(
-          (item) =>
-              item.provider.id == parsed.providerId &&
-              item.model.id == parsed.modelId,
-        );
-        if (selected != null) return selected;
-      }
-
-      final defaultTextModel = ref.watch(defaultTextAiModelProvider);
-      if (defaultTextModel != null &&
-          defaultTextModel.model.output.contains(Modality.text)) {
-        return defaultTextModel;
-      }
-      return available.first;
+      return resolveSelectedTextAiModel(ref, selectedKey);
     });
 
 final aiPostReviewServiceProvider = Provider<AiPostReviewService>((ref) {

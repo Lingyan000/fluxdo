@@ -47,6 +47,7 @@ class _AiTranslationSheetBodyState
   bool _dirty = false;
   bool _firstDeltaShown = false;
   bool _streaming = false;
+  bool _truncated = false;
   String? _error;
 
   /// 高频 token 合并为约 12 FPS 的 UI 更新，避免长译文逐 token 重建。
@@ -88,6 +89,7 @@ class _AiTranslationSheetBodyState
       _result.clear();
       _error = null;
       _firstDeltaShown = false;
+      _truncated = false;
       _streaming = true;
     });
 
@@ -117,6 +119,10 @@ class _AiTranslationSheetBodyState
       });
       return;
     }
+    final clamped = AiTranslationService.clampForTranslation(text);
+    if (clamped.truncated) {
+      setState(() => _truncated = true);
+    }
 
     final target = ref.read(aiTranslationTargetLanguageProvider);
     final service = ref.read(aiTranslationServiceProvider);
@@ -125,7 +131,7 @@ class _AiTranslationSheetBodyState
           provider: selected.provider,
           model: selected.model,
           apiKey: apiKey.trim(),
-          text: text,
+          text: clamped.text,
           targetLanguage: aiTranslationLanguageLabel(target),
         )
         .listen(
@@ -150,9 +156,31 @@ class _AiTranslationSheetBodyState
             _flushTimer?.cancel();
             _flushTimer = null;
             _dirty = false;
-            setState(() => _streaming = false);
+            setState(() {
+              _streaming = false;
+              // 流正常结束却一个 TextDelta 都没有:推理模型把预算烧在
+              // thinking 上导致正文被截断、内容策略拦截、provider 返回空
+              // SSE body 都会走到这里。不置错误的话 build 会落进
+              // `_result.isEmpty` 的 spinner 分支且永不退出 —— 既没有提示
+              // 也没有重试入口。对齐 AiPostReviewService 的空结果保护。
+              if (_result.isEmpty) _error = S.current.ai_translationFailed;
+            });
           },
         );
+  }
+
+  /// 中途停止:保留已生成的部分译文;一个字都没出时落进错误分支
+  /// 给出「已停止」+ 重试,避免停在永久 spinner。
+  void _stop() {
+    _subscription?.cancel();
+    _subscription = null;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _dirty = false;
+    setState(() {
+      _streaming = false;
+      if (_result.isEmpty) _error = S.current.ai_translationStopped;
+    });
   }
 
   Future<void> _copy() async {
@@ -204,6 +232,16 @@ class _AiTranslationSheetBodyState
               ),
             ),
           ),
+        if (_truncated)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              l10n.ai_translationTruncated,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.tertiary,
+              ),
+            ),
+          ),
         const SizedBox(height: 12),
         Flexible(
           child: SingleChildScrollView(
@@ -248,7 +286,7 @@ class _AiTranslationSheetBodyState
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (_streaming)
+            if (_streaming) ...[
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: SizedBox(
@@ -260,6 +298,12 @@ class _AiTranslationSheetBodyState
                   ),
                 ),
               ),
+              TextButton.icon(
+                onPressed: _stop,
+                icon: const Icon(Symbols.stop_rounded, size: 18),
+                label: Text(l10n.ai_stopGenerate),
+              ),
+            ],
             TextButton.icon(
               onPressed: _result.isEmpty ? null : _copy,
               icon: const Icon(Symbols.content_copy_rounded, size: 18),

@@ -49,6 +49,21 @@ class AiTranslationService {
 ''';
   }
 
+  /// 单次送翻的字符上限。超长帖(转录、日志贴)整篇塞给模型会超出上下文
+  /// 或烧掉大量 token(用的是用户自己的 API Key),超限截到段落边界,
+  /// UI 侧注明只翻译了开头部分。
+  static const int maxTranslateChars = 16000;
+
+  /// 超过 [maxTranslateChars] 时截断,尽量截在换行处避免劈开句子。
+  static ({String text, bool truncated}) clampForTranslation(String text) {
+    if (text.length <= maxTranslateChars) {
+      return (text: text, truncated: false);
+    }
+    var cut = text.lastIndexOf('\n', maxTranslateChars);
+    if (cut < maxTranslateChars ~/ 2) cut = maxTranslateChars;
+    return (text: text.substring(0, cut).trimRight(), truncated: true);
+  }
+
   /// cooked HTML 转为供翻译的纯文本。
   static String extractPlainText(String cookedHtml) {
     final document = html_parser.parse(cookedHtml);

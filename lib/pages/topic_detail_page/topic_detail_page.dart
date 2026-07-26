@@ -522,6 +522,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     if (widget.embeddedMode) {
+      // 嵌入模式只有书签页移动端 chrome 会传 onEmbeddedBack;桌面双栏
+      // 下它是 null,此时 Esc 落到这里是刻意的空操作:scope 回调没有
+      // 「未处理」语义(分发端 containsKey 即消费),又不能不注册 ——
+      // 上面退搜索/回正文正是嵌入模式需要的。也不能落到 maybePop:
+      // 嵌入面板不是独立路由,pop 的会是宿主页面(如整个书签页)。
       widget.onEmbeddedBack?.call();
       return;
     }

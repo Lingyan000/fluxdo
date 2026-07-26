@@ -221,6 +221,8 @@
   "ai_translationModelNotSelected": "Not selected (default text model will be used)",
   "ai_translationEnabled": "AI translation",
   "ai_translationEnabledDesc": "Show a Translate entry in the post menu, translating post content with the selected AI model",
+  "ai_translationTruncated": "Content is too long; only the beginning was translated",
+  "ai_translationStopped": "Translation stopped",
   "ai_tokenUsage": "Input {prompt} · Output {response}",
   "@ai_tokenUsage": {
     "placeholders": {
