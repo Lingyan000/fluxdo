@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/seeking.dart';
 import '../models/user_action.dart';
 import '../services/discourse/discourse_service.dart';
+import '../services/network/exceptions/api_exception.dart';
 import 'discourse_providers.dart';
 import 'theme_provider.dart';
 
@@ -372,7 +373,11 @@ class SeekingNotifier extends StateNotifier<SeekingState>
       await _fetchUser(target);
     } on DioException catch (e) {
       final status = e.response?.statusCode ?? 0;
-      if (status == 429 || status == 403) {
+      // CF 拦截器对静默请求直接 reject 一个**没有 response** 的
+      // DioException（error 里才是 CfChallengeException），只看
+      // statusCode 会把撞盾当普通失败、按原节拍继续轰——持续给 CF
+      // 行为检测喂数据，盾更难消，还连累前台请求。
+      if (status == 429 || status == 403 || e.error is CfChallengeException) {
         _holdToNextMinute();
         _lastFetchedAt[target] = DateTime.now();
       } else if (status == 404) {
@@ -505,11 +510,13 @@ class SeekingNotifier extends StateNotifier<SeekingState>
     await _save();
   }
 
-  /// 三路并发里出现限流必须冒泡给 _tick 的挂起逻辑，其余错误各自吞掉
+  /// 三路并发里出现限流/CF 盾必须冒泡给 _tick 的挂起逻辑，其余错误各自吞掉
   void _rethrowIfRateLimited(Object e) {
     if (e is DioException) {
       final status = e.response?.statusCode ?? 0;
-      if (status == 429 || status == 403) throw e;
+      if (status == 429 || status == 403 || e.error is CfChallengeException) {
+        throw e;
+      }
     }
   }
 
