@@ -106,13 +106,18 @@ class SeekingNotifier extends StateNotifier<SeekingState>
     _load();
   }
 
-  /// 应用是否在前台。后台/最小化时暂停轮询：省电、省限流额度，
-  /// 也避免多窗口/多实例场景下不可见实例白白抢请求。
+  /// 应用是否在前台。真正退到后台/最小化（hidden/paused）时暂停轮询：
+  /// 省电、省限流额度，也避免多窗口/多实例场景下不可见实例白白抢请求。
   bool _appActive = true;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _appActive = state == AppLifecycleState.resumed;
+    // inactive 不算离开：桌面端窗口失焦（仍可见）就是 inactive——追觅的
+    // 意义恰恰是「一边干别的一边盯着」，失焦即停等于桌面上基本不工作。
+    // 移动端 inactive 只是权限弹窗/任务切换器等瞬态，放行无妨。
+    _appActive =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
   }
 
   static const int maxUsers = 50;
