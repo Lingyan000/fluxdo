@@ -145,7 +145,8 @@ class RichComposerEditor extends StatefulWidget {
   State<RichComposerEditor> createState() => RichComposerEditorState();
 }
 
-class RichComposerEditorState extends State<RichComposerEditor> {
+class RichComposerEditorState extends State<RichComposerEditor>
+    with WidgetsBindingObserver {
   EditorState? _editor;
   bool _importing = true;
 
@@ -223,6 +224,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 预热 cook 引擎:551K JS bundle 的同步 eval 挪到打开编辑器时,
     // 否则落在首次序列化触发预览 cook 的时刻 —— 表现为"打第一个字超卡"。
     DiscourseCookService().warmUp();
@@ -274,8 +276,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     });
   }
 
+  /// 窗口尺寸剧变(折叠屏折叠/展开、拖动窗口):所有 localToGlobal 锚定
+  /// 的浮层重排,否则悬在旧坐标甚至飘出屏幕(emoji_popover 早已这么做,
+  /// 这里此前是口径缺口)。等一帧:metrics 变化时新布局还没完成。
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _mentionOverlay?.markNeedsBuild();
+      _emojiOverlay?.markNeedsBuild();
+      _slashOverlay?.markNeedsBuild();
+      _linkToolbarOverlay?.markNeedsBuild();
+      _oneboxToolbarOverlay?.markNeedsBuild();
+      _imageOverlay?.markNeedsBuild();
+    });
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // 镜像 debounce(800ms)窗口内的最后编辑先落盘到 controller ——
     // unmount 后序遍历,子先于宿主 dispose,此刻 controller 还活着、
     // 宿主的草稿监听也还挂着;不 flush 的话宿主 dispose 里的兜底草稿
@@ -1611,6 +1630,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ),
     );
     editor.toggleMark(MarkKind.spoilerInline);
+    // 插入来自弹出菜单,焦点在菜单上 —— 显式拉回编辑器并亮 IME,
+    // 让「点完插入直接打字」立刻替换整选的占位文字(替换文本保留
+    // spoiler mark,见内核 EditableTextContent.replace 的延续语义)。
+    _editorFocus.requestFocus();
+    SystemChannels.textInput.invokeMethod('TextInput.show');
   }
 
   Future<void> insertMarkdownSnippet(String markdown) async {
