@@ -1,6 +1,7 @@
 import 'dart:async' show Timer;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../../utils/idle_task.dart';
@@ -162,7 +163,61 @@ class TopicPostList extends StatefulWidget {
 
 class _TopicPostListState extends State<TopicPostList> {
   int? _lastReportedPostNumber;
-  bool _isThrottled = false;
+  /// eyeline 检测调度状态(替代旧的 16ms Timer 节流:每次滚动帧 new 一个
+  /// Timer 纯属分配浪费,且检测落在帧中间而非布局完成后)。
+  bool _eyelineScheduled = false;
+  int _lastEyelineMs = 0;
+
+  // ---- fling 中短帖 parse 的单帧预算 ----
+  //
+  // 快滚时未解析短帖 mount 会同步跑 preprocess+DOM parse(1~5ms),多帖
+  // 同帧首建就落帧。每帧只放行 1 帖同步解析,超预算的先出占位骨架,
+  // idle 时逐帖补解析再 setState 换真身(高度跳变发生在 fling 中,center
+  // 之前的基线变化由锚定哨兵修正)。
+  Duration _shortParseBudgetFrame = const Duration(days: -1);
+  int _shortParseBudgetUsed = 0;
+  final Map<int, Post> _pendingShortParse = {};
+  bool _shortParseFlushScheduled = false;
+
+  bool _takeShortParseBudget() {
+    final ts = SchedulerBinding.instance.currentFrameTimeStamp;
+    if (ts != _shortParseBudgetFrame) {
+      _shortParseBudgetFrame = ts;
+      _shortParseBudgetUsed = 0;
+    }
+    if (_shortParseBudgetUsed >= 1) return false;
+    _shortParseBudgetUsed++;
+    return true;
+  }
+
+  void _deferShortParse(Post post) {
+    _pendingShortParse[post.id] = post;
+    if (_shortParseFlushScheduled) return;
+    _shortParseFlushScheduled = true;
+    void step() {
+      scheduleIdleTask(() {
+        if (!mounted) {
+          _shortParseFlushScheduled = false;
+          return;
+        }
+        if (_pendingShortParse.isEmpty) {
+          _shortParseFlushScheduled = false;
+          return;
+        }
+        final post = _pendingShortParse.values.first;
+        _pendingShortParse.remove(post.id);
+        RenderParseCache.shortPost(post);
+        setState(() {}); // 占位换真身
+        if (_pendingShortParse.isNotEmpty) {
+          step();
+        } else {
+          _shortParseFlushScheduled = false;
+        }
+      });
+    }
+
+    step();
+  }
 
   /// TYPING 诊断日志去重:上次记录的 typing 人数(见 build 内 Consumer)
   int? _lastLoggedTypingCount;
@@ -509,15 +564,27 @@ class _TopicPostListState extends State<TopicPostList> {
     // 先调用原有的滚动通知处理
     final result = onScrollNotification(notification);
 
-    // 在滚动更新时检测可见帖子（节流 16ms）
-    if (notification is ScrollUpdateNotification && !_isThrottled) {
-      _isThrottled = true;
-      Future.delayed(const Duration(milliseconds: 16), () {
-        if (mounted) {
-          _isThrottled = false;
-          _updateFirstVisiblePost();
+    // 在滚动更新时检测可见帖子。三重降本(旧实现是 16ms Timer):
+    // - 快速 fling(单帧位移 > 80px)直接跳过 —— 检测里每个可见 tag 要
+    //   findRenderObject + localToGlobal 全链上溯,fling 中结果毫无意义,
+    //   ScrollEnd 会兜底一次;
+    // - 慢滚时用 postFrameCallback 对齐布局完成后执行,且按时间戳节流
+    //   到 ~30ms 一次(阅读进度不需要 60Hz);
+    // - 不再每帧 new Timer。
+    if (notification is ScrollUpdateNotification) {
+      final delta = notification.scrollDelta ?? 0;
+      if (delta.abs() <= 80 && !_eyelineScheduled) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastEyelineMs >= 30) {
+          _eyelineScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _eyelineScheduled = false;
+            if (!mounted) return;
+            _lastEyelineMs = DateTime.now().millisecondsSinceEpoch;
+            _updateFirstVisiblePost();
+          });
         }
-      });
+      }
     } else if (notification is ScrollEndNotification) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -1385,6 +1452,16 @@ class _TopicPostListState extends State<TopicPostList> {
           break;
         }
 
+        // fling 分帧预算:滚动繁忙 + 该帖未解析 + 本帧同步 parse 配额
+        // 已用 → 先出占位骨架(不进实例缓存),idle 解析完成后换真身。
+        if (ScrollBusySignal.isBusy &&
+            !RenderParseCache.hasShort(post) &&
+            !_takeShortParseBudget()) {
+          _deferShortParse(post);
+          child = _ShortPostParsePlaceholder(cookedLength: post.cooked.length);
+          break;
+        }
+
         // 实例缓存:输入未变时复用同一 widget 实例,让整页 rebuild 时
         // 未变化的楼层在框架层短路(闭包回调经 State 转发,行为始终
         // 跟随最新 widget,复用实例不会捕获旧数据)
@@ -1584,6 +1661,62 @@ enum _PostRenderSegmentType {
   longFooter,
   gapBefore,
   gapAfter,
+}
+
+/// fling 分帧预算下的短帖占位骨架:高度按正文长度粗估,idle 解析完成后
+/// setState 换真身(高度跳变在 fling 中,由锚定哨兵修正 center 前基线)。
+class _ShortPostParsePlaceholder extends StatelessWidget {
+  const _ShortPostParsePlaceholder({required this.cookedLength});
+
+  final int cookedLength;
+
+  @override
+  Widget build(BuildContext context) {
+    final height =
+        (90 + cookedLength / 38 * 24).clamp(120, 560).toDouble();
+    final barColor = Theme.of(context)
+        .colorScheme
+        .surfaceContainerHighest
+        .withValues(alpha: 0.6);
+    Widget bar(double widthFactor) => FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: widthFactor,
+          child: Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: barColor,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        );
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration:
+                      BoxDecoration(color: barColor, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: bar(0.3)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            bar(0.9),
+            const SizedBox(height: 8),
+            bar(0.75),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// shortPost 段的实例缓存条目:signature 是构建输入的具名 record,

@@ -35,9 +35,23 @@ class RenderParseCache {
   /// 长帖:post.id → (签名, LongPostParseData)
   static final _long = <int, _LongEntry>{};
 
+  /// 按 Post **实例**记忆化的签名。Post 是不可变模型(编辑/状态变化走
+  /// copyWith 产生新实例),同一实例的签名恒定 —— 此前每次 item mount
+  /// 都重算(两个惰性 iterable 分配 + 全量哈希遍历),缓存命中路径也在
+  /// 白付,滚动中每个可见楼层每次 rebuild 各付一份,纯 GC/CPU 浪费。
+  static final Expando<int> _signatureByPost = Expando('renderSignature');
+
   /// 帖子渲染内容签名:cooked + mention 状态 + 链接点击数
   /// (preprocessCookedForRender 的全部输入)。
   static int signatureOf(Post post) {
+    final memo = _signatureByPost[post];
+    if (memo != null) return memo;
+    final sig = _computeSignature(post);
+    _signatureByPost[post] = sig;
+    return sig;
+  }
+
+  static int _computeSignature(Post post) {
     final mentionedUsers = post.mentionedUsers;
     final linkCounts = post.linkCounts;
     return Object.hash(
@@ -62,6 +76,11 @@ class RenderParseCache {
               ))),
     );
   }
+
+  /// 短帖是否已有可用解析产物(只查表,不触发解析)。
+  /// fling 分帧预算用:已解析的帖子构建零成本,不占预算。
+  static bool hasShort(Post post) =>
+      _short[post.id]?.signature == signatureOf(post);
 
   /// 短帖解析产物(preprocessed + nodes),命中签名直接复用。
   static ({String preprocessed, List<BlockNode> nodes}) shortPost(Post post) {

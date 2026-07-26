@@ -2270,9 +2270,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       );
     }
 
-    // 进入转场未完成:先骨架(缓存命中时首帧物化真实列表会把大 build 帧
-    // 砸进转场动画,见 _routeTransitionDone),completed 后下一帧再物化。
-    if (!_routeTransitionDone) {
+    // 进入转场未完成且数据还没到:先骨架。数据已就绪(点击预取命中/
+    // 快网)时**不再干等动画完成**——渐进物化的起步 cap(2)把首帧
+    // 构建限制在 header + center±2 段,不会像当年全量物化那样把大
+    // build 帧砸进转场动画;快路径的"正文可读"由此提前最多一个转场
+    // 时长(~300ms)。
+    if (!_routeTransitionDone && detail == null) {
       final showHeaderSkeleton =
           widget.scrollToPostNumber == null || widget.scrollToPostNumber == 0;
       return _wrapWithConstraint(

@@ -6,6 +6,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/s.dart';
+import '../services/app_startup.dart';
 import '../pages/about_page.dart';
 import '../pages/network_settings_page/network_settings_page.dart';
 import '../providers/app_icon_provider.dart';
@@ -56,7 +57,12 @@ class _PreheatGateState extends State<PreheatGate> {
 
   Future<bool> _preload() async {
     try {
-      // 迁移已在 main() 中执行完毕，这里展示提示
+      // 等网络栈(迁移/代理/rhttp/DoH/WebView2 环境)就绪 —— 它已从
+      // runApp 之前后移到异步执行,首个网络请求必须在代理/DoH 落定后
+      // 发出(时序契约见 AppStartup.networkReady 注释)。
+      await AppStartup.networkReady;
+
+      // 迁移已在 networkReady 里执行完毕,这里展示提示
       if (MigrationService.requiresRelogin && mounted) {
         await _showReloginDialog();
       }

@@ -106,12 +106,116 @@ import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
 import 'utils/platform_utils.dart';
+import 'services/app_startup.dart';
 import 'utils/discourse_url_parser.dart';
 
 /// 初始化 rhttp Rust runtime
 Future<bool> _initRhttp() async {
   await rhttp.Rhttp.init();
   return true;
+}
+
+/// 阶段 2:数据迁移 + 网络栈初始化。
+///
+/// 从「runApp 之前串行 await」整体后移到 runApp 之后异步执行(赋给
+/// [AppStartup.networkReady]),splash 首帧不再等它 —— 此前 rhttp(最多
+/// 5s 超时)/本地 DoH 代理/WebView2 环境/连通性检查全部压在首帧前。
+/// **内部顺序一字未动**(rhttp→NetworkSettings→WebView2 Env→系统代理→
+/// VPN→Cookie 预热的时序契约见各步注释);PreheatGate 在发预加载请求前
+/// await networkReady,保证首个网络请求仍在代理/DoH 落定之后发出。
+Future<void> _initNetworkPhase(SharedPreferences prefs) async {
+  try {
+    // 数据迁移：在所有依赖 prefs 的网络相关服务启动之前执行
+    await MigrationService.runAll(prefs);
+
+    final crashlyticsEnabled = prefs.getBool('pref_crashlytics') ?? true;
+    final developerMode = prefs.getBool('developer_mode') ?? false;
+    CfChallengeLogger.setEnabled(developerMode);
+    // 开发者模式下 debug 级日志落盘（高频追踪信息）
+    AppLogger.setVerbose(developerMode);
+    await Future.wait([
+      CronetFallbackService.instance.initialize(prefs),
+      ProxySettingsService.instance.initialize(prefs),
+      if (Platform.isAndroid)
+        MethodChannel(
+          'com.github.lingyan000.fluxdo/crashlytics',
+        ).invokeMethod('setCrashlyticsEnabled', {
+          'enabled': crashlyticsEnabled,
+        }),
+    ]);
+    // 三个纯读 prefs 的设置服务互不依赖,并行;整体仍在 _initRhttp 之前
+    // (rhttp 初始化要读 RhttpSettingsService 的开关)。
+    await Future.wait([
+      RhttpSettingsService.instance.initialize(prefs),
+      WebViewAdapterSettingsService.instance.initialize(prefs),
+      ErudaSettingsService.instance.initialize(prefs),
+    ]);
+    try {
+      final rhttp = await Future.any([
+        _initRhttp(),
+        Future.delayed(const Duration(seconds: 5), () => false),
+      ]);
+      if (rhttp != true) {
+        debugPrint('[rhttp] 初始化超时或失败');
+        await RhttpSettingsService.instance.forceDisable();
+      }
+    } catch (e) {
+      debugPrint('[rhttp] 初始化异常: $e');
+      await RhttpSettingsService.instance.forceDisable();
+    }
+
+    await NetworkSettingsService.instance.initialize(prefs);
+    // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
+    // 会话真正要用的代理端口定下来之后再创建 Environment(历史教训:等
+    // "猜的"8s 超时经常拿旧端口,WebView2 连着不存在的代理,CF 验证永远
+    // 过不去)。WebView2 Environment 不会在启动最初几百毫秒被用到。
+    if (Platform.isWindows) {
+      await WindowsWebViewEnvironmentService.instance.initialize();
+    }
+    // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
+    // 同一出口,cf_clearance 才对两侧同时有效。
+    if (Platform.isWindows) {
+      SystemProxyService.instance.start();
+    }
+    VpnAutoToggleService.instance.initialize(prefs);
+    try {
+      final initialConnectivity =
+          await ConnectivityService.safeCheckConnectivity();
+      await VpnAutoToggleService.instance.syncInitialState(
+        initialConnectivity,
+      );
+    } catch (e) {
+      debugPrint('[Main] 初始 VPN 状态同步失败: $e');
+    }
+
+    // 必须等 DoH / 系统代理 / VPN 自动切换全部落定后再预热 Cookie。
+    // Windows 设置本地代理会销毁并重建 WebView2 Environment；若提前预热，
+    // 任务会继续操作已销毁的旧环境并反复重试，显著拉长开屏时间。
+    BrowserTrustCoordinator.instance.prepareStartup(reason: 'startup');
+
+    // 初始化下载服务（依赖网络栈已就绪）
+    DownloadService().initialize();
+
+    // 冷启动自动清除图片缓存（如果用户开启了该选项）
+    if (prefs.getBool('pref_clear_cache_on_exit') == true) {
+      BlobImageCache.clearAll()
+          .then((_) => CacheSizeService.deleteImageCacheDirs())
+          .ignore();
+    }
+
+    // 提前触发预加载数据请求(与 PreheatGate 的 await 并行,后者复用
+    // 这个已在进行的请求)。
+    unawaited(
+      BrowserTrustCoordinator.instance
+          .ensurePreloaded(reason: 'startup')
+          .catchError((Object _) {}),
+    );
+  } catch (e, s) {
+    // 网络栈初始化失败不再是"启动失败":降级放行,PreheatGate 的
+    // ensurePreloaded 会以自己的错误/重试 UI 兜底。
+    debugPrint('[Main] 网络栈初始化异常: $e');
+    AppLogger.error('网络栈初始化异常: $e\n$s', tag: 'Startup');
+  }
 }
 
 /// 应用 Android 屏幕刷新率偏好。
@@ -220,11 +324,18 @@ Future<void> main() async {
   // 启用 Edge-to-Edge 模式（小白条沉浸式）
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  // 初始化语法高亮服务（预热 Isolate Worker 和字体）
-  HighlighterService.instance.initialize(); // 不需要 await，后台初始化
-
-  // 初始化本地通知服务（请求权限）
-  LocalNotificationService().initialize(); // 不需要 await，后台初始化
+  // 语法高亮预热(Isolate spawn + 字体查找)与通知初始化(权限请求
+  // channel 往返)都不是首帧依赖,挪到首帧光栅化之后 —— 冷启动窗口的
+  // CPU/channel 争用留给首屏。高亮真正被用到(打开含代码的话题)前
+  // ensureInitialized 也有惰性兜底;通知冷启动重放本就等根树就绪。
+  unawaited(() async {
+    await Future.any([
+      WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+      Future.delayed(const Duration(seconds: 3)),
+    ]);
+    HighlighterService.instance.initialize();
+    LocalNotificationService().initialize();
+  }());
 
   // Android：临时关闭 WebView DevTools 调试，停用原生 CDP 链路
   if (Platform.isAndroid) {
@@ -309,87 +420,13 @@ Future<void> main() async {
     }
   }
 
-  // 数据迁移：在所有依赖 prefs 的网络相关服务启动之前执行
-  await MigrationService.runAll(prefs);
+  // 阶段 2(迁移 + 网络栈)整体后移到 runApp 之后异步执行:此前这段
+  // 串行瀑布(rhttp 最多 5s、本地 DoH 代理、WebView2 环境、连通性检查)
+  // 全部压在首帧之前,splash 都要等它。PreheatGate 在发预加载请求前
+  // await AppStartup.networkReady,顺序契约不变,只是不再挡首帧。
+  AppStartup.networkReady = _initNetworkPhase(prefs);
 
-  // 阶段 2：依赖 prefs 的步骤并行
-  final crashlyticsEnabled = prefs.getBool('pref_crashlytics') ?? true;
-  final developerMode = prefs.getBool('developer_mode') ?? false;
-  CfChallengeLogger.setEnabled(developerMode);
-  // 开发者模式下 debug 级日志落盘（高频追踪信息）
-  AppLogger.setVerbose(developerMode);
-  await Future.wait([
-    CronetFallbackService.instance.initialize(prefs),
-    ProxySettingsService.instance.initialize(prefs),
-    if (Platform.isAndroid)
-      MethodChannel(
-        'com.github.lingyan000.fluxdo/crashlytics',
-      ).invokeMethod('setCrashlyticsEnabled', {'enabled': crashlyticsEnabled}),
-  ]);
-  // rhttp (Rust reqwest) 初始化：在 ProxySettingsService 之后、NetworkSettingsService 之前
-  await RhttpSettingsService.instance.initialize(prefs);
-  // WebView 适配器设置
-  await WebViewAdapterSettingsService.instance.initialize(prefs);
-  // Eruda 调试控制台开关 (默认关)
-  await ErudaSettingsService.instance.initialize(prefs);
-  try {
-    final rhttp = await Future.any([
-      _initRhttp(),
-      Future.delayed(const Duration(seconds: 5), () => false),
-    ]);
-    if (rhttp != true) {
-      debugPrint('[rhttp] 初始化超时或失败');
-      await RhttpSettingsService.instance.forceDisable();
-    }
-  } catch (e) {
-    debugPrint('[rhttp] 初始化异常: $e');
-    await RhttpSettingsService.instance.forceDisable();
-  }
-
-  await NetworkSettingsService.instance.initialize(prefs);
-  // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
-  // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
-  // 并行初始化里，等的是"猜的"8s 超时——NetworkSettingsService 前面还排
-  // 着 rhttp(自己就留了最多 5s 预算)等好几个服务，8s 经常等不到真实端口
-  // 就用旧端口摆烂，导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
-  // 也过不去。现在严格排在 NetworkSettingsService 完全初始化（本地代理
-  // 已经启动、setProxy() 已经真正调用过）之后再建，proxyDecision 这时
-  // 早就 complete 了，创建时直接读到确定值，不用再赌超时。
-  // WebView2 Environment 本来也不会在启动最初几百毫秒内被用到（没有
-  // WebView 会那么早创建），稍晚一点创建不影响体感。
-  if (Platform.isWindows) {
-    await WindowsWebViewEnvironmentService.instance.initialize();
-  }
-  // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
-  // 同一出口,cf_clearance 才对两侧同时有效。
-  if (Platform.isWindows) {
-    SystemProxyService.instance.start();
-  }
-  VpnAutoToggleService.instance.initialize(prefs);
-  try {
-    final initialConnectivity =
-        await ConnectivityService.safeCheckConnectivity();
-    await VpnAutoToggleService.instance.syncInitialState(initialConnectivity);
-  } catch (e) {
-    debugPrint('[Main] 初始 VPN 状态同步失败: $e');
-  }
-
-  // 必须等 DoH / 系统代理 / VPN 自动切换全部落定后再预热 Cookie。
-  // Windows 设置本地代理会销毁并重建 WebView2 Environment；若提前预热，
-  // 任务会继续操作已销毁的旧环境并反复重试，显著拉长开屏时间。
-  BrowserTrustCoordinator.instance.prepareStartup(reason: 'startup');
-
-  // 初始化下载服务（依赖网络栈已就绪）
-  DownloadService().initialize();
-
-  // 冷启动自动清除图片缓存（如果用户开启了该选项）
-  if (prefs.getBool('pref_clear_cache_on_exit') == true) {
-    BlobImageCache.clearAll()
-        .then((_) => CacheSizeService.deleteImageCacheDirs())
-        .ignore();
-  }
-
-  // 应用竖屏锁定设置（仅移动端）
+  // 应用竖屏锁定设置(仅移动端;纯 UI 配置,保留在首帧前避免闪转向)
   if (Platform.isIOS || Platform.isAndroid) {
     final portraitLock = prefs.getBool('pref_portrait_lock') ?? false;
     if (portraitLock) {
@@ -405,14 +442,6 @@ Future<void> main() async {
   if (Platform.isAndroid) {
     unawaited(_applyAndroidDisplayMode(prefs));
   }
-
-  // 提前触发预加载数据请求，与 runApp 并行执行。
-  // PreheatGate 中的 ensurePreloaded() 会复用这个已在进行的请求。
-  unawaited(
-    BrowserTrustCoordinator.instance
-        .ensurePreloaded(reason: 'startup')
-        .catchError((Object _) {}),
-  );
 
   // 记录应用启动日志
   LogWriter.instance.write({

@@ -138,9 +138,10 @@ class _SmartAvatarState extends State<SmartAvatar> {
     // 返回的头像位图可能远大于显示尺寸,不约束就按原图解码上传 —— 快滚
     // 多头像同帧首绘时纹理上传叠加成 raster 尖峰(书签/话题列表 raster
     // 大帧的头像份额)。按显示直径 × dpr 解码,单张纹理量降一到两个
-    // 数量级;× 2 留一档清晰度余量,cover 裁切不糊。
+    // 数量级;× 1.5 留清晰度余量(此前 × 2:首屏一二十个头像的解码/
+    // 纹理量按面积算是 1.78 倍差距,cover 裁切在 1.5× 已无可见发糊)。
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
+    final decodeSide = (innerSize * dpr * 1.5).round().clamp(1, 512);
     return Image(
       image: ResizeImage(
         BlobImageProvider(

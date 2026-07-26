@@ -298,7 +298,9 @@ extension LoadingMethods on TopicDetailNotifier {
     _isLoadMoreFailed = false;
     _isLoadPreviousFailed = false;
 
-    await Future.delayed(Duration.zero);
+    // 注:此前这里有一个 `await Future.delayed(Duration.zero)`(为了先
+    // emit loading 再发请求)。state 赋值本身是同步通知,不需要让出一帧;
+    // 从通知/内链跳楼层时白等一帧,已删。
 
     final result = await AsyncValue.guard(() async {
       final service = ref.read(discourseServiceProvider);

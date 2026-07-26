@@ -9,7 +9,6 @@ import '../../models/topic.dart';
 import '../../models/topic_card_style.dart';
 import '../../utils/color_utils.dart';
 import '../../utils/number_utils.dart';
-import '../../utils/relative_time_clock.dart';
 import '../../utils/time_utils.dart';
 
 /// 话题自绘卡的排版产物:一张卡全部文本的 [ui.Paragraph] 成品 + 几何。
@@ -129,20 +128,10 @@ class TopicCardLayout {
   static final Map<String, TopicCardLayout> _cache = {};
   static const int cacheCap = 500;
 
-  /// 相对时间的分钟代:全局心跳每跳一次 +1,进 stamp —— 含时间的
-  /// 排版跨分钟自动失效,下次 build 惰性重排(消灭"自绘卡时间是
-  /// 排版快照不自刷"与 widget 路径的行为差异)。渲染对象侧由
-  /// PaintedTopicCard 订阅心跳触发 rebuild,失效与重建同源同帧。
-  static int _minuteEpoch = 0;
-  static bool _clockHooked = false;
-
-  static int _currentMinuteEpoch() {
-    if (!_clockHooked) {
-      _clockHooked = true;
-      RelativeTimeClock.instance.addListener(() => _minuteEpoch++);
-    }
-    return _minuteEpoch;
-  }
+  // 注:相对时间的失效已从"全局分钟代进 stamp"改为"本卡时间串进
+  // stamp"(见 obtain 内注释)—— 分钟代方案会让全部可见卡在分钟翻页
+  // 时同帧失效、成批重排版。PaintedTopicCard 的心跳订阅仍然驱动在屏
+  // rebuild,rebuild 里 obtain 时按各卡时间串独立判定要不要重排。
 
   /// 存入缓存(替换旧实例)并按需 LRU。**内容变化必产出新实例**:
   /// PaintedTopicCard 的渲染对象用 identical 判断是否重绘,若复用同一
@@ -192,7 +181,11 @@ class TopicCardLayout {
       messageStyle,
       bandExpired,
       identityHashCode(category),
-      _currentMinuteEpoch(),
+      // 用**这张卡的时间串**而非全局分钟代:分钟代跨界会让全部可见卡
+      // stamp 同帧失效 → 成批重排版(滚动中恰逢分钟翻页 = 偶发大帧)。
+      // 时间串只有"刚刚/N分钟前"这类新帖会逐分钟变化,老帖("3天前")
+      // 完全不失效;变化的卡也是零散的,不再同帧扎堆。
+      TimeUtils.formatRelativeTime(topic.lastPostedAt),
       effStyle, // 值语义 ==:改样式设置即重排
     );
     final cached = _cache[identity];
@@ -284,7 +277,8 @@ class TopicCardLayout {
       identityHashCode(theme),
       statsAvailableWidth,
       identityHashCode(category),
-      _currentMinuteEpoch(),
+      // 同上:按本卡时间串失效,不用全局分钟代
+      TimeUtils.formatRelativeTime(post.createdAt),
     );
     final cached = _cache[identity];
     if (cached != null && cached._stamp == stamp) return cached;

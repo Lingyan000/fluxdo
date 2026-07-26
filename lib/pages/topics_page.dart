@@ -17,7 +17,9 @@ import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/message_bus_providers.dart';
+import 'package:uuid/uuid.dart';
 import '../providers/selected_topic_provider.dart';
+import '../providers/topic_detail_provider.dart';
 import '../providers/pinned_categories_provider.dart';
 import 'login_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
@@ -2757,6 +2759,21 @@ class _TopicListState extends ConsumerState<_TopicList>
   void _openTopic(Topic topic) {
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
+    // 预取:点击瞬间就发详情请求,网络 RTT 与转场动画/页面挂载并行 ——
+    // 之前请求要等 TopicDetailPage 挂载后 provider.build 才发出,整个
+    // RTT 都排在转场之后。详情页携带同一 instanceId 命中同一 provider
+    // 实例(build 里 keepAlive + 30s 缓存),零重复请求。
+    final instanceId = const Uuid().v4();
+    ref.read(
+      topicDetailProvider(
+        TopicDetailParams(
+          topic.id,
+          postNumber: topic.lastReadPostNumber,
+          instanceId: instanceId,
+        ),
+      ),
+    );
+
     if (canShowDetailPane) {
       ref
           .read(selectedTopicProvider.notifier)
@@ -2764,6 +2781,7 @@ class _TopicListState extends ConsumerState<_TopicList>
             topicId: topic.id,
             initialTitle: topic.title,
             scrollToPostNumber: topic.lastReadPostNumber,
+            instanceId: instanceId,
           );
       return;
     }
@@ -2774,6 +2792,7 @@ class _TopicListState extends ConsumerState<_TopicList>
           topicId: topic.id,
           initialTitle: topic.title,
           scrollToPostNumber: topic.lastReadPostNumber,
+          instanceId: instanceId,
           autoSwitchToMasterDetail: true,
         ),
       ),

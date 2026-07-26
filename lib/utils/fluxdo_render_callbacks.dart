@@ -2101,10 +2101,18 @@ String _injectMentionStatusEmoji(
   List<MentionedUser>? mentionedUsers,
 ) {
   if (mentionedUsers == null || mentionedUsers.isEmpty) return html;
+  // 廉价早退:正文里根本没有 mention 链接时(绝大多数楼层),不进
+  // 逐用户正则全文扫描 —— 这是短帖 parse miss 成本里的大头之一。
+  if (!html.contains('mention')) return html;
+  // 大小写口径对齐下面的 caseInsensitive 正则;lower 只做一次,
+  // 注入只追加内容不动 mention 链接,后续判定用它仍然成立。
+  final lowerHtml = html.toLowerCase();
   var result = html;
   for (final user in mentionedUsers) {
     final emoji = user.statusEmoji;
     if (emoji == null || emoji.isEmpty) continue;
+    // 该用户的 mention 不在正文里(常见:引用了但没 @)→ 跳过正则
+    if (!lowerHtml.contains('/u/${user.username.toLowerCase()}')) continue;
     final emojiUrl = EmojiHandler().getEmojiUrl(emoji);
     final escapedUsername = RegExp.escape(user.username);
     final pattern = RegExp(
@@ -2129,9 +2137,13 @@ String _injectMentionStatusEmoji(
 /// `<a>` 后追加 `<span class="click-count">`,用 data-clicks 防重复。
 String _injectClickCounts(String html, List<LinkCount>? linkCounts) {
   if (linkCounts == null || linkCounts.isEmpty) return html;
+  // 廉价早退:正文没有任何链接就不用逐条正则全文扫描
+  if (!html.contains('<a')) return html;
   var result = html;
   for (final lc in linkCounts) {
     if (lc.clicks <= 0) continue;
+    // 该 URL 不在正文里(linkCounts 含头图/onebox 等非正文链接)→ 跳过
+    if (!result.contains(lc.url)) continue;
     final escapedUrl = RegExp.escape(lc.url);
     final pattern = RegExp(
       '(<a(?![^>]*data-clicks)[^>]*href="[^"]*$escapedUrl[^"]*"[^>]*>)'

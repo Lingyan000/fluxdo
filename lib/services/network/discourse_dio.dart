@@ -3,6 +3,7 @@ import 'package:dio_smart_retry/dio_smart_retry.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../constants.dart';
+import '../app_startup.dart';
 import 'adapters/platform_adapter.dart';
 import 'cookie/app_cookie_manager.dart';
 import 'cookie/cookie_jar_service.dart';
@@ -60,6 +61,24 @@ class DiscourseDio {
     } else {
       configurePlatformAdapter(dio);
     }
+
+    // 1.5 网络栈就绪门:任何请求发出前等 AppStartup.networkReady。
+    // 网络栈初始化已后移到 runApp 之后(首帧提速),没有这道门,启动
+    // 早期的请求(草稿保存/用户操作等)会在代理/DoH/cf_clearance 落定
+    // 前发出 —— 出口不一致直接触发 CF 过盾(实测:重构后过盾变多,
+    // POST /drafts.json 403)。就绪后 await 已完成的 Future 零开销。
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          try {
+            await AppStartup.networkReady;
+          } catch (_) {
+            // 网络栈初始化失败已在别处降级,不拦请求
+          }
+          handler.next(options);
+        },
+      ),
+    );
 
     // 2. 会话代守卫（最先执行，确保过期请求不进入后续拦截器）
     dio.interceptors.add(SessionGuardInterceptor());
