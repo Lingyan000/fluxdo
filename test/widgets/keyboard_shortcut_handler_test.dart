@@ -132,6 +132,43 @@ void main() {
     expect(closeCalls, 1);
   });
 
+  testWidgets('IME 组字期间 Esc 不关闭界面，组字结束后恢复关闭语义', (tester) async {
+    var closeCalls = 0;
+    await _pumpShortcutHost(
+      tester,
+      kind: _RegistrationKind.searchSurface,
+      onClose: () => closeCalls++,
+    );
+
+    // 模拟不合规输入法:组字中（composing 区间有效）Esc 被原样放行到框架
+    await tester.showKeyboard(find.byType(TextField));
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'nihao',
+        selection: TextSelection.collapsed(offset: 5),
+        composing: TextRange(start: 0, end: 5),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(closeCalls, 0, reason: '组字中 Esc 的语义是取消候选,不能关闭界面');
+
+    // 组字结束（候选上屏/取消,composing 清空）后 Esc 恢复关闭语义
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '你好',
+        selection: TextSelection.collapsed(offset: 2),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(closeCalls, 1);
+  });
+
   testWidgets('详情文本框只放行 Esc，不抢占可打印字符快捷键', (tester) async {
     var closeCalls = 0;
     var nextCalls = 0;

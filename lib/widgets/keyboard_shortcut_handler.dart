@@ -63,10 +63,13 @@ class _KeyboardShortcutHandlerState
       if (!matchKeyEvent(event, binding.activator)) continue;
       // 文本输入期间仍允许单次 Esc 关闭当前页内状态；其余快捷键继续
       // 让给输入法，避免 J/K 等可打印字符被全局动作抢走。
+      // IME 组字中（拼音候选未上屏）Esc 的语义是"取消候选"，必须放行
+      // 给输入法，绝不能当 closeOverlay 消费。
       if (focusInTextInput &&
           (event is! KeyDownEvent ||
               event.logicalKey != LogicalKeyboardKey.escape ||
-              binding.action != ShortcutAction.closeOverlay)) {
+              binding.action != ShortcutAction.closeOverlay ||
+              _isImeComposingAtFocus())) {
         continue;
       }
 
@@ -352,6 +355,33 @@ class _KeyboardShortcutHandlerState
   }
 
   /// 检查焦点是否在文本输入框中
+  /// 焦点编辑器是否正处于 IME 组字（候选词未上屏）。
+  ///
+  /// Windows 引擎会把合规 IME 组字期间消费的按键标成 VK_PROCESSKEY 并
+  /// 直接吞掉（engine keyboard_key_embedder_handler.cc），这类 Esc 根本
+  /// 到不了框架层；这里兜的是不合规输入法把组字中的 Esc 原样放行的
+  /// 场景。组字取消后（composing 区间清空）下一次 Esc 才恢复关闭语义。
+  bool _isImeComposingAtFocus() {
+    final focus = FocusManager.instance.primaryFocus;
+    final context = focus?.context;
+    if (context == null) return false;
+    var composing = false;
+    (context as Element).visitAncestorElements((ancestor) {
+      final w = ancestor.widget;
+      if (w is EditableText) {
+        final range = w.controller.value.composing;
+        composing = range.isValid && !range.isCollapsed;
+        return false;
+      }
+      if (w is FluxdoEditor) {
+        composing = w.state.hasComposing;
+        return false;
+      }
+      return true;
+    });
+    return composing;
+  }
+
   bool _isFocusInTextInput() {
     final focus = FocusManager.instance.primaryFocus;
     if (focus?.context == null) return false;
