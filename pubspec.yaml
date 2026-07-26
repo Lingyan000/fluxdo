@@ -159,10 +159,19 @@ dependencies:
   chewie: any
   video_player: any
   just_audio: ^0.10.6 # 原生上传音频播放(FluxdoRender audioBuilder)
-  # just_audio 本身不包含 Windows/Linux 实现；桌面端使用 media_kit 后端。
+  # just_audio 本身不包含 Windows/Linux 实现。
+  # - Windows: media_kit 后端(自带 libmpv-2.dll)。
+  # - Linux: 自写 GStreamer 桥(services/audio/just_audio_gst.dart),经
+  #   audioplayers_linux 走 GNOME runtime 自带的 GStreamer。不用 media_kit:
+  #   media_kit_libs_linux 不打包 libmpv(指望系统已装),且其 CMake 会在
+  #   configure 期联网下载 mimalloc —— flatpak 禁网沙箱里直接 FATAL_ERROR。
+  #   只依赖 audioplayers_linux + platform_interface,不拉 audioplayers 主包,
+  #   避免给 Android/iOS 等平台塞进用不到的实现插件。
   just_audio_media_kit: ^2.1.0
   media_kit_libs_windows_audio: ^1.0.9
-  media_kit_libs_linux: ^1.2.1
+  just_audio_platform_interface: ^4.6.0 # JustAudioGst 实现平台接口
+  audioplayers_linux: ^4.3.0
+  audioplayers_platform_interface: ^7.2.0
   rhttp:
     git:
       url: https://github.com/Lingyan000/rhttp_plus.git

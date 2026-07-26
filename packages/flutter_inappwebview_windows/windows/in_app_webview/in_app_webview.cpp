@@ -2771,21 +2771,21 @@ namespace flutter_inappwebview_plugin
 
     // Check if showUI is true - use ShowPrintUI instead of Print
     bool showUI = settings && settings->showUI.value_or(true);
-    
+
     if (showUI) {
       // Use ShowPrintUI to display the print dialog
       COREWEBVIEW2_PRINT_DIALOG_KIND dialogKind = COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER;
       if (settings && settings->printDialogKind.has_value()) {
         dialogKind = static_cast<COREWEBVIEW2_PRINT_DIALOG_KIND>(settings->printDialogKind.value());
       }
-      
+
       if (failedAndLog(webView16->ShowPrintUI(dialogKind))) {
         if (completionHandler) {
           completionHandler(std::nullopt);
         }
         return;
       }
-      
+
       // ShowPrintUI is fire-and-forget, return immediately with no job ID
       if (completionHandler) {
         completionHandler(std::nullopt);

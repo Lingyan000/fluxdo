@@ -276,15 +276,13 @@ class FluxdoRenderCallbacks {
     )) {
       return;
     }
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => TopicDetailPage(
-          topicId: topicId,
-          initialTitle: topicSlug,
-          scrollToPostNumber: postNumber,
-        ),
+    Navigator.of(ctx).push(MaterialPageRoute(
+      builder: (_) => TopicDetailPage(
+        topicId: topicId,
+        initialTitle: topicSlug,
+        scrollToPostNumber: postNumber,
       ),
-    );
+    ));
   }
 
   // ==========================================================================

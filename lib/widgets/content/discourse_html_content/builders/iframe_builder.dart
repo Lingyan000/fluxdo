@@ -228,6 +228,9 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
 
   void _deactivateWindowsWebView() {
     if (!mounted || !_webViewActivated) return;
+    // release() 幂等:onRevoked 路径 pool 已释放,重复调用无害;
+    // 挂起路径(_handleDynamicContentSuspension)必须在此归还,否则槽位泄漏。
+    _browserLease?.release();
     _browserLease = null;
     setState(() {
       _webViewActivated = false;

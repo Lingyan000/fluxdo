@@ -47,7 +47,10 @@ const Set<String> _squareAvatarUsernames = {'neo'};
 
 bool isSquareAvatarUrl(String? url) {
   if (url == null || url.isEmpty) return false;
-  final username = _avatarUsernamePattern.firstMatch(url)?.group(1)?.toLowerCase();
+  final username = _avatarUsernamePattern
+      .firstMatch(url)
+      ?.group(1)
+      ?.toLowerCase();
   return username != null && _squareAvatarUsernames.contains(username);
 }
 

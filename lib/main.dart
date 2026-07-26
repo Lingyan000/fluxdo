@@ -80,6 +80,7 @@ import 'utils/frame_jank_monitor.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
+import 'utils/seed_color_scheme.dart';
 import 'utils/time_utils.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -90,6 +91,7 @@ import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'services/audio/just_audio_gst.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'pages/topic_detail_page/topic_detail_page.dart';
@@ -167,6 +169,13 @@ Future<void> _initNetworkPhase(SharedPreferences prefs) async {
       await RhttpSettingsService.instance.forceDisable();
     }
 
+    // Windows 固定系统代理必须先于本地 DoH/WebView 网关读取，网关才能按
+    // 「应用代理 > 系统代理 > 直连」选择首次启动的上游出口。
+    // (系统代理跟随周期读取注册表,让 Dio 与 WebView2 保持同一出口,
+    // cf_clearance 才对两侧同时有效。)
+    if (Platform.isWindows) {
+      SystemProxyService.instance.start();
+    }
     await NetworkSettingsService.instance.initialize(prefs);
     // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
     // 会话真正要用的代理端口定下来之后再创建 Environment(历史教训:等
@@ -174,11 +183,6 @@ Future<void> _initNetworkPhase(SharedPreferences prefs) async {
     // 过不去)。WebView2 Environment 不会在启动最初几百毫秒被用到。
     if (Platform.isWindows) {
       await WindowsWebViewEnvironmentService.instance.initialize();
-    }
-    // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
-    // 同一出口,cf_clearance 才对两侧同时有效。
-    if (Platform.isWindows) {
-      SystemProxyService.instance.start();
     }
     VpnAutoToggleService.instance.initialize(prefs);
     try {
@@ -257,9 +261,16 @@ Future<void> main() async {
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
 
-  // just_audio 不自带 Windows/Linux 实现。必须在创建 AudioPlayer 前注册
-  // MediaKit 后端，否则会落回不存在的 MethodChannel 实现。
-  JustAudioMediaKit.ensureInitialized();
+  // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
+  // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
+  // - Windows: MediaKit(libmpv-2.dll 随 media_kit_libs_windows_audio 打包);
+  // - Linux: GStreamer 桥(见 just_audio_gst.dart 注释,flatpak 禁网沙箱
+  //   与 GNOME runtime 均不容纳 mpv 方案)。
+  if (!kIsWeb && Platform.isLinux) {
+    JustAudioGst.registerWith();
+  } else {
+    JustAudioMediaKit.ensureInitialized(linux: false);
+  }
 
   // Rust 动图管线的首帧(挂载瞬态的裸 RGBA 上传,不经 binding)注入
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
@@ -713,10 +724,10 @@ class MainApp extends ConsumerWidget {
 
         // 动态色路径只取系统动态色 primary 当种子,不用 OEM 原始 scheme。
         ColorScheme buildScheme(Color seed, Brightness brightness) {
-          return ColorScheme.fromSeed(
+          return SeedColorScheme.from(
             seedColor: seed,
             brightness: brightness,
-            dynamicSchemeVariant: themeState.schemeVariant,
+            variant: themeState.schemeVariant,
           );
         }
 
@@ -1249,10 +1260,9 @@ class _MainPageState extends ConsumerState<MainPage>
   }
 
   Future<void> _checkClipboardTopicLink() async {
-    // 重入防护:启动(_runStartupUiTasks)和「假 resume」(系统配置变更等
-    // 触发的 didChangeAppLifecycleState resumed)可能在短窗口内先后调用
-    // 本方法两次;不加锁会各自读到同一个 candidate、各弹一条提示
-    // (真机复现:设置页两条一模一样的"检测到剪贴板中的话题链接")。
+    // 重入防护:启动和「假 resume」(系统配置变更等触发的
+    // didChangeAppLifecycleState resumed)可能在短窗口内先后调用本方法
+    // 两次,不加锁会各自读到同一个 candidate、各弹一次提示。
     if (_clipboardCheckInFlight) return;
     _clipboardCheckInFlight = true;
     try {
@@ -1266,11 +1276,10 @@ class _MainPageState extends ConsumerState<MainPage>
       );
       if (!mounted || candidate == null) return;
 
-      // ToastService 而不是 ScaffoldMessenger:设置页宽屏下是主从双栏
-      // (master_detail_layout.dart),两侧各有一个独立 Scaffold，
-      // ScaffoldMessenger 在这种多 Scaffold 场景下会两边都弹一条——
-      // ToastService 是单例 OverlayEntry，不挂靠任何 Scaffold，天然只有
-      // 一份，也就不需要再靠一把跨调用的锁去防重复展示了。
+      // ToastService 而不是 ScaffoldMessenger:设置页宽屏下是主从双栏,
+      // 两侧各有一个独立 Scaffold,ScaffoldMessenger 在这种多 Scaffold
+      // 场景下会两边都弹一条——ToastService 是单例 OverlayEntry,不挂靠
+      // 任何 Scaffold,天然只有一份。
       unawaited(
         clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
       );

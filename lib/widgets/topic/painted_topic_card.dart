@@ -222,12 +222,13 @@ class _RenderTopicCard extends RenderBox
       // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
       // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
       final clipPath = isSquareAvatarUrl(l.avatarUrl)
-          ? (Path()..addRRect(
-              RRect.fromRectAndRadius(
-                avatarRect,
-                Radius.circular(avatarRect.shortestSide * 0.1),
-              ),
-            ))
+          ? (Path()
+              ..addRRect(
+                RRect.fromRectAndRadius(
+                  avatarRect,
+                  Radius.circular(avatarRect.shortestSide * 0.1),
+                ),
+              ))
           : (Path()..addOval(avatarRect));
       canvas.clipPath(clipPath);
       canvas.drawImageRect(

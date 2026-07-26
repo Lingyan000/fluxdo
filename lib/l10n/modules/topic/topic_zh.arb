@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "已加入浮窗",
   "topicDetail_aiAssistant": "AI 助手",
   "topicDetail_authorOnly": "只看题主",
+  "topicDetail_browseMoreInCategory": "想阅读更多？浏览 {category} 分类",
+  "@topicDetail_browseMoreInCategory": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_cannotOpenBrowser": "无法打开浏览器",
   "topicDetail_editBookmark": "编辑书签",
   "topicDetail_editTopic": "编辑话题",
@@ -23,6 +31,7 @@
       }
     }
   },
+  "topicDetail_relatedTopics": "相关话题",
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已从浮窗移除",
   "topicDetail_replyLabel": "回复",
@@ -46,6 +55,7 @@
       }
     }
   },
+  "topicDetail_suggestedTopics": "建议话题",
   "topicDetail_topLevelOnly": "只看顶层",
   "topicDetail_viewAll": "查看全部",
   "topicDetail_viewsLabel": "浏览",

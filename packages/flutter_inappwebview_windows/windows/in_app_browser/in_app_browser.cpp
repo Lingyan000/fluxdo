@@ -55,7 +55,7 @@ namespace flutter_inappwebview_plugin
       // Size
       width, height,
 
-      settings->windowType == InAppBrowserWindowType::window ? nullptr : parentWindow, // Parent window    
+      settings->windowType == InAppBrowserWindowType::window ? nullptr : parentWindow, // Parent window
       nullptr,             // Menu
       wndClass.hInstance,  // Instance handle
       this                 // Additional application data

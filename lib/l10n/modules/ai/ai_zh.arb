@@ -244,6 +244,8 @@
   "ai_translationModelNotSelected": "未选择（将使用默认文本模型）",
   "ai_translationEnabled": "AI 翻译",
   "ai_translationEnabledDesc": "在帖子菜单中显示「翻译」入口，使用所选 AI 模型翻译帖子内容",
+  "ai_translationTruncated": "内容过长，仅翻译开头部分",
+  "ai_translationStopped": "已停止翻译",
   "ai_tokenUsage": "输入 {prompt} · 输出 {response}",
   "@ai_tokenUsage": {
     "placeholders": {

@@ -78,6 +78,12 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   bool get _isLoadPreviousFailed => loadPreviousFailedListenable.value;
   set _isLoadPreviousFailed(bool v) => loadPreviousFailedListenable.value = v;
 
+  /// 推荐话题缓存(对齐网页版 post-stream `_setSuggestedTopics`:响应没带
+  /// 这两组就保留旧值)。服务端只在"帖子流已到末尾"的请求里下发,过滤模式
+  /// 切换、跳楼层重载都拿不到 —— 不缓存的话底部推荐会莫名其妙消失。
+  List<Topic> _cachedSuggestedTopics = const [];
+  List<Topic> _cachedRelatedTopics = const [];
+
   String? _filter;  // 当前过滤模式（如 'summary' 表示热门回复）
   String? _usernameFilter;  // 当前用户名过滤（如只看题主）
   bool _filterTopLevelReplies = false;  // 只看顶层回复
@@ -114,6 +120,25 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     final lastPostId = posts.last.id;
     final lastIndex = stream.indexOf(lastPostId);
     _hasMoreAfter = lastIndex != -1 && lastIndex < stream.length - 1;
+  }
+
+  /// 用缓存补齐详情里的推荐话题(新响应带了就刷新缓存,没带就回填)
+  TopicDetail _withSuggestedCache(TopicDetail detail) {
+    if (detail.suggestedTopics.isNotEmpty) {
+      _cachedSuggestedTopics = detail.suggestedTopics;
+    }
+    if (detail.relatedTopics.isNotEmpty) {
+      _cachedRelatedTopics = detail.relatedTopics;
+    }
+    final needSuggested =
+        detail.suggestedTopics.isEmpty && _cachedSuggestedTopics.isNotEmpty;
+    final needRelated =
+        detail.relatedTopics.isEmpty && _cachedRelatedTopics.isNotEmpty;
+    if (!needSuggested && !needRelated) return detail;
+    return detail.copyWith(
+      suggestedTopics: needSuggested ? _cachedSuggestedTopics : null,
+      relatedTopics: needRelated ? _cachedRelatedTopics : null,
+    );
   }
 
   /// 更新单个帖子的辅助方法
@@ -186,7 +211,7 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
 
     _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
 
-    return detail;
+    return _withSuggestedCache(detail);
   }
 }
 

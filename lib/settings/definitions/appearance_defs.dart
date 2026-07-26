@@ -19,6 +19,7 @@ import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../utils/platform_utils.dart';
+import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
 /// 外观设置数据声明
@@ -70,15 +71,15 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
 
             // 为每种模式生成预览配色
             final variant = themeState.schemeVariant;
-            final lightScheme = ColorScheme.fromSeed(
+            final lightScheme = SeedColorScheme.from(
               seedColor: effectiveSeed,
               brightness: Brightness.light,
-              dynamicSchemeVariant: variant,
+              variant: variant,
             );
-            final darkScheme = ColorScheme.fromSeed(
+            final darkScheme = SeedColorScheme.from(
               seedColor: effectiveSeed,
               brightness: Brightness.dark,
-              dynamicSchemeVariant: variant,
+              variant: variant,
             );
 
             final modes = [
@@ -1353,6 +1354,8 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
               value,
             ).toColor();
             final variant = ref.read(themeProvider).schemeVariant;
+            // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
+            // 免得把色卡网格常用的那些配色挤出去。
             final scheme = ColorScheme.fromSeed(
               seedColor: color,
               dynamicSchemeVariant: variant,
@@ -1603,9 +1606,9 @@ class _VariantChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final scheme = ColorScheme.fromSeed(
+    final scheme = SeedColorScheme.from(
       seedColor: seedColor,
-      dynamicSchemeVariant: variant,
+      variant: variant,
       brightness: Theme.of(context).brightness,
     );
 
@@ -1706,9 +1709,9 @@ class _ColorSwatchCard extends StatelessWidget {
     final effectiveSeed = isDynamic
         ? (dynamicPrimary ?? Theme.of(context).colorScheme.primary)
         : seedColor!;
-    final tileScheme = ColorScheme.fromSeed(
+    final tileScheme = SeedColorScheme.from(
       seedColor: effectiveSeed,
-      dynamicSchemeVariant: variant,
+      variant: variant,
       brightness: Theme.of(context).brightness,
     );
 

@@ -186,9 +186,14 @@ class AppPreferences {
   /// 且第三方签名图成本高、良莠不齐,默认关对齐网页更稳妥。
   final bool showSignatures;
 
+  /// 小尾巴动画 SVG 自适应帧率
+  final bool adaptiveSignatureFrameRate;
 
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
+
+  /// 帖子流末尾显示推荐话题（相关话题 / 建议话题），默认开启，对齐网页版
+  final bool showSuggestedTopics;
 
   /// 默认使用树形视图
   final bool defaultNestedView;
@@ -274,7 +279,9 @@ class AppPreferences {
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
     this.showSignatures = false,
+    this.adaptiveSignatureFrameRate = true,
     this.boostDanmaku = false,
+    this.showSuggestedTopics = true,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
     this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
@@ -325,7 +332,9 @@ class AppPreferences {
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
     bool? showSignatures,
+    bool? adaptiveSignatureFrameRate,
     bool? boostDanmaku,
+    bool? showSuggestedTopics,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
     BookmarksOpenMode? bookmarksOpenMode,
@@ -388,7 +397,10 @@ class AppPreferences {
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
+      adaptiveSignatureFrameRate:
+          adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
+      showSuggestedTopics: showSuggestedTopics ?? this.showSuggestedTopics,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
       bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
@@ -456,7 +468,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
+  static const String _adaptiveSignatureFrameRateKey =
+      'pref_adaptive_signature_frame_rate';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
+  static const String _showSuggestedTopicsKey = 'pref_show_suggested_topics';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
   static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
@@ -530,7 +545,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
+          adaptiveSignatureFrameRate:
+              _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
+          showSuggestedTopics:
+              _prefs.getBool(_showSuggestedTopicsKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
@@ -787,11 +806,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setBool(_showSignaturesKey, enabled);
   }
 
+  Future<void> setAdaptiveSignatureFrameRate(bool enabled) async {
+    state = state.copyWith(adaptiveSignatureFrameRate: enabled);
+    await _prefs.setBool(_adaptiveSignatureFrameRateKey, enabled);
+  }
 
   Future<void> setBoostDanmaku(bool enabled) async {
     if (state.boostDanmaku == enabled) return;
     state = state.copyWith(boostDanmaku: enabled);
     await _prefs.setBool(_boostDanmakuKey, enabled);
+  }
+
+  Future<void> setShowSuggestedTopics(bool enabled) async {
+    if (state.showSuggestedTopics == enabled) return;
+    state = state.copyWith(showSuggestedTopics: enabled);
+    await _prefs.setBool(_showSuggestedTopicsKey, enabled);
   }
 
   Future<void> setDefaultNestedView(bool enabled) async {

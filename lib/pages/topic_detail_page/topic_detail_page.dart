@@ -17,6 +17,7 @@ import '../../utils/html_to_markdown.dart';
 import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
+import '../../utils/scroll_jump.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show SelectionCoordinator;
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -337,6 +338,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         // 重复写一次，还会因为 ref.read(notifier) 初始化从未打开过的
         // provider，导致一次阅读上报并发加载全部置顶分类。
         scheduleIdleTask(() {
+          if (!mounted) return;
           final tracked = container.read(topicTrackingStateProvider)[topicId];
           if (tracked != null) {
             container
@@ -576,6 +578,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       },
     };
     // Esc 优先退出页内搜索/AI，再按当前布局执行嵌入返回或路由返回。
+    // （_handleCloseShortcut 的嵌入分支会调 onEmbeddedBack——平行视界
+    // 栈深度 > 1 时非空,Esc 退回上一层,与返回按钮一致;为 null 时
+    // 刻意空操作,不会误 pop 宿主路由。）
     final registeredShortcuts = {
       ...shortcuts,
       ShortcutAction.closeOverlay: _handleCloseShortcut,
@@ -607,6 +612,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     if (widget.embeddedMode) {
+      // 嵌入模式只有书签页移动端 chrome 会传 onEmbeddedBack;桌面双栏
+      // 下它是 null,此时 Esc 落到这里是刻意的空操作:scope 回调没有
+      // 「未处理」语义(分发端 containsKey 即消费),又不能不注册 ——
+      // 上面退搜索/回正文正是嵌入模式需要的。也不能落到 maybePop:
+      // 嵌入面板不是独立路由,pop 的会是宿主页面(如整个书签页)。
       widget.onEmbeddedBack?.call();
       return;
     }

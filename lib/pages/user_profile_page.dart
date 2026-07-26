@@ -1520,8 +1520,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                     shape: isSquare
                                         ? BoxShape.rectangle
                                         : BoxShape.circle,
-                                    borderRadius:
-                                        isSquare ? BorderRadius.circular(8) : null,
+                                    borderRadius: isSquare
+                                        ? BorderRadius.circular(8)
+                                        : null,
                                     border: Border.all(
                                       color: Colors.white,
                                       width: 2,

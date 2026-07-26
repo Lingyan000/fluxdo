@@ -2884,13 +2884,13 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
   var metaTagNodes = document.head.getElementsByTagName('meta');
   for (var i = 0; i < metaTagNodes.length; i++) {
     var metaTagNode = metaTagNodes[i];
-    
+
     var otherAttributes = metaTagNode.getAttributeNames();
     var nameIndex = otherAttributes.indexOf("name");
     if (nameIndex !== -1) otherAttributes.splice(nameIndex, 1);
     var contentIndex = otherAttributes.indexOf("content");
     if (contentIndex !== -1) otherAttributes.splice(contentIndex, 1);
-    
+
     var attrs = [];
     for (var j = 0; j < otherAttributes.length; j++) {
       var otherAttribute = otherAttributes[j];

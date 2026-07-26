@@ -11,6 +11,7 @@ import '../../../widgets/nested/nested_post_card.dart';
 import '../../../widgets/post/post_item/post_item.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
+import 'topic_more_topics.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
 class NestedPostList extends ConsumerStatefulWidget {
@@ -263,6 +264,12 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
               );
             },
           ),
+
+          // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现)
+          if (!ns.hasMoreRoots)
+            SliverToBoxAdapter(
+              child: MoreTopicsSection(detail: widget.detail),
+            ),
 
           SliverToBoxAdapter(
             child: SizedBox(

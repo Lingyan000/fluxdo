@@ -28,6 +28,7 @@ import '../../../widgets/post/post_item/widgets/post_segment_frame.dart';
 import '../../../widgets/post/quote_image_scope.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
+import 'topic_more_topics.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
 
@@ -1282,6 +1283,17 @@ class _TopicPostListState extends State<TopicPostList> {
                   return const SliverToBoxAdapter(child: SizedBox.shrink());
                 },
               ),
+
+            // 帖子流末尾的推荐区(相关话题 / 建议话题),对齐网页版
+            // more-topics:只在已加载到话题末尾时出现
+            if (!hasMoreAfter)
+              SliverToBoxAdapter(
+                child: _wrapContent(
+                  context,
+                  MoreTopicsSection(detail: detail),
+                ),
+              ),
+
             SliverPadding(
               padding: EdgeInsets.only(
                 bottom: 80 + MediaQuery.of(context).padding.bottom,

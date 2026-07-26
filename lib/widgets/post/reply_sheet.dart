@@ -900,11 +900,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                         child: ComposerSwitchFade(
                           child:
                               (ref.watch(
-                                    preferencesProvider.select(
-                                      (p) => p.useRichComposer,
-                                    ),
-                                  ) &&
-                                  !_richFallback)
+                                  preferencesProvider.select(
+                                    (p) => p.useRichComposer,
+                                  ),
+                                ) &&
+                                !_richFallback)
                             // 富文本的初始导入是一次性的(不监听 controller
                             // 后续变化)——编辑原帖 raw / 草稿加载完成前挂载
                             // 会用空 controller 建空文档,之后镜像回写覆盖

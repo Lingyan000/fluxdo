@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
+import '../providers/theme_provider.dart';
 import '../settings/search/settings_search_index.dart';
+import '../utils/appearance_warmup.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
@@ -98,6 +100,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // 趁界面静止把外观页首帧的一次性开销（MiSans 字体懒加载、种子配色计算）
+    // 提前做掉，否则首次进入外观页会明显顿一下。
+    AppearanceWarmup.schedule(
+      themeState: ref.read(themeProvider),
+      brightness: Theme.of(context).brightness,
+    );
     final route = ModalRoute.of(context);
     if (route == null || identical(route, _route)) return;
     _route = route;

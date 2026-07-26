@@ -329,9 +329,9 @@ class _MyAppState extends State<MyApp> {
                                 console.log('Notifications not supported');
                                 return;
                               }
-                              
+
                               console.log('Current Notification permission: ' + Notification.permission);
-                              
+
                               // Request notification permission and create a test notification
                               Notification.requestPermission().then(function(permission) {
                                 console.log('Notification permission result: ' + permission);
@@ -342,15 +342,15 @@ class _MyAppState extends State<MyApp> {
                                     icon: 'https://flutter.dev/favicon.ico',
                                     tag: 'test-notification-1'
                                   });
-                                  
+
                                   notification.onclick = function() {
                                     console.log('Notification clicked!');
                                   };
-                                  
+
                                   notification.onclose = function() {
                                     console.log('Notification closed!');
                                   };
-                                  
+
                                   console.log('Notification created successfully');
                                 }
                               });

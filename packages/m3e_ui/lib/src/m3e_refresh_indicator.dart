@@ -100,6 +100,13 @@ const Duration _kIndicatorScaleDuration = Duration(milliseconds: 200);
 /// 指示器圆片直径。
 const double _kBadgeSize = 44;
 
+/// 圆片四周的阴影留白。elevation 阴影画在布局边界之外,而入场用的
+/// SizeTransition 内部是 ClipRect,按布局尺寸硬裁——悬停态 sizeFactor
+/// 恰好为 1.0,裁剪框底边压在圆片底边上,不留白阴影会被切出一条直线。
+/// 同原生 RefreshProgressIndicator.indicatorMargin(4dp)的用途,
+/// 这里 elevation 3 阴影更重,留 6dp。
+const double _kBadgeShadowMargin = 6;
+
 class _M3eRefreshCore extends StatefulWidget {
   final Widget child;
   final RefreshCallback onRefresh;
@@ -385,9 +392,17 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
               ),
               sizeFactor: _positionFactor,
               child: Padding(
+                // 扣掉圆片自带的阴影留白,保持"圆片顶边距 edgeOffset 为
+                // displacement"的语义不变。
                 padding: _isIndicatorAtTop!
-                    ? EdgeInsets.only(top: widget.displacement)
-                    : EdgeInsets.only(bottom: widget.displacement),
+                    ? EdgeInsets.only(
+                        top: (widget.displacement - _kBadgeShadowMargin)
+                            .clamp(0.0, double.infinity),
+                      )
+                    : EdgeInsets.only(
+                        bottom: (widget.displacement - _kBadgeShadowMargin)
+                            .clamp(0.0, double.infinity),
+                      ),
                 child: Align(
                   alignment: _isIndicatorAtTop!
                       ? Alignment.topCenter
@@ -409,6 +424,8 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
 }
 
 /// 加载器托底容器:surfaceContainerHigh 圆片 + 阴影,任意内容上可读。
+/// 四周留 [_kBadgeShadowMargin] 吸收阴影,布局尺寸为
+/// size + 2 × [_kBadgeShadowMargin]。
 class _SpinnerBadge extends StatelessWidget {
   final double size;
 
@@ -417,15 +434,18 @@ class _SpinnerBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      elevation: 3,
-      shape: const CircleBorder(),
-      color: scheme.surfaceContainerHigh,
-      shadowColor: scheme.shadow.withValues(alpha: 0.6),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Center(child: LoadingSpinner(size: size - 18)),
+    return Padding(
+      padding: const EdgeInsets.all(_kBadgeShadowMargin),
+      child: Material(
+        elevation: 3,
+        shape: const CircleBorder(),
+        color: scheme.surfaceContainerHigh,
+        shadowColor: scheme.shadow.withValues(alpha: 0.6),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Center(child: LoadingSpinner(size: size - 18)),
+        ),
       ),
     );
   }

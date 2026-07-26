@@ -15,8 +15,10 @@ import '../doh_proxy/doh_proxy_service.dart';
 import '../doh_proxy/per_device_cert_service.dart';
 import '../doh_proxy/proxy_certificate.dart';
 import '../doh_proxy/windows_cert_trust_service.dart';
+import '../proxy/gateway_upstream.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
+import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
@@ -187,6 +189,7 @@ class NetworkSettingsService {
     WebViewAdapterSettingsService.instance.notifier.addListener(
       _handleWebViewAdapterSettingsChanged,
     );
+    SystemProxyService.instance.version.addListener(_handleSystemProxyChanged);
   }
 
   static final NetworkSettingsService instance =
@@ -499,8 +502,7 @@ class NetworkSettingsService {
     }
     if (!shouldRunLocalProxy) {
       try {
-        await _rustProxyService.stop();
-        await _clearWebViewProxy();
+        await _stopLocalProxyUnlessRequiredByWebView();
         if (_pendingStart) {
           _setPendingStart(false);
         }
@@ -549,7 +551,12 @@ class NetworkSettingsService {
         return;
       }
 
-      final upstream = _proxyService.current;
+      final upstream = GatewayUpstream.resolve(
+        applicationProxy: _proxyService.current,
+        systemProxyUrl: Platform.isWindows
+            ? SystemProxyService.instance.effectiveProxyUrl
+            : null,
+      );
       final effectiveEchServer = _effectiveEchServerUrl;
       final mitmConnect = WebViewMitmPolicy.useMitmConnect(
         isWindows: Platform.isWindows,
@@ -596,21 +603,23 @@ class NetworkSettingsService {
 
       // Rust 代理始终为 WebView 提供 DOH/代理支持，enableDoh 不受 rhttp 影响
       final success = await _rustProxyService.start(
-        preferredPort: current.proxyPort ?? 0,
+        preferredPort:
+            WindowsWebViewEnvironmentService.instance.activeLocalProxyPort ??
+            _activeProxyPort ??
+            current.proxyPort ??
+            0,
         enableDoh: current.dohEnabled,
         gatewayMode: useGateway,
         preferIPv6: current.preferIPv6,
         dohServer: current.dohEnabled ? current.selectedServerUrl : null,
         dohServerEch: current.dohEnabled ? current.echServerUrl : null,
         serverIp: current.serverIp,
-        upstreamProtocol: upstream.isValid
-            ? upstream.protocol.storageValue
-            : null,
-        upstreamHost: upstream.isValid ? upstream.host : null,
-        upstreamPort: upstream.isValid ? upstream.port : null,
-        upstreamUsername: upstream.isValid ? upstream.username : null,
-        upstreamPassword: upstream.isValid ? upstream.password : null,
-        upstreamCipher: upstream.isValid ? upstream.cipher : null,
+        upstreamProtocol: upstream?.protocol,
+        upstreamHost: upstream?.host,
+        upstreamPort: upstream?.port,
+        upstreamUsername: upstream?.username,
+        upstreamPassword: upstream?.password,
+        upstreamCipher: upstream?.cipher,
         caCertPem: caCertPem,
         caKeyPem: caKeyPem,
         mitmConnect: mitmConnect,
@@ -629,9 +638,8 @@ class NetworkSettingsService {
       // (如 VPN 自动压制关闭了 DoH 与上游代理)。此时并发的 stop 分支先于
       // start 完成,会留下"开关已关、代理仍在跑"的孤儿网关,这里必须复查。
       if (!shouldRunLocalProxy) {
-        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,立即停止');
-        await _rustProxyService.stop();
-        await _clearWebViewProxy();
+        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,重新核对 WebView 路由');
+        await _stopLocalProxyUnlessRequiredByWebView();
         _setPendingStart(false);
         return;
       }
@@ -726,6 +734,29 @@ class NetworkSettingsService {
 
   bool _webViewProxySet = false;
 
+  Future<void> _stopLocalProxyUnlessRequiredByWebView() async {
+    var retainForWindowsWebView = false;
+    if (Platform.isWindows) {
+      final runningPort = _rustProxyService.port;
+      final clearApplied = await _clearWebViewProxy();
+      retainForWindowsWebView =
+          WindowsWebViewEnvironmentService.shouldRetainLocalProxy(
+            clearApplied: clearApplied,
+            activeEnvironmentPort:
+                WindowsWebViewEnvironmentService.instance.activeLocalProxyPort,
+            runningProxyPort: runningPort,
+          );
+    } else {
+      await _clearWebViewProxy();
+    }
+
+    if (retainForWindowsWebView) {
+      debugPrint('[DOH] WebView2 当前仍使用本地代理，保留端口直到应用重启');
+      return;
+    }
+    await _rustProxyService.stop();
+  }
+
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
     final port = _activeProxyPort;
@@ -768,9 +799,7 @@ class NetworkSettingsService {
     }
   }
 
-  Future<void> _clearWebViewProxy() async {
-    if (!_webViewProxySet) return;
-
+  Future<bool> _clearWebViewProxy() async {
     if (Platform.isWindows) {
       try {
         final applied = await WindowsWebViewEnvironmentService.instance
@@ -779,23 +808,28 @@ class NetworkSettingsService {
         debugPrint(
           applied ? '[DOH] WebView2 代理已清除' : '[DOH] WebView2 代理清除已登记，重启应用后生效',
         );
+        return applied;
       } catch (e) {
         debugPrint('[DOH] WebView2 代理清除失败: $e');
+        return false;
       }
-      return;
     }
+
+    if (!_webViewProxySet) return true;
 
     if (!Platform.isAndroid &&
         !await _isMacOS14OrAbove() &&
         !await _isiOS17OrAbove()) {
-      return;
+      return true;
     }
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
       _webViewProxySet = false;
       debugPrint('[DOH] WebView 代理已清除');
+      return true;
     } catch (e) {
       debugPrint('[DOH] WebView 代理清除失败: $e');
+      return false;
     }
   }
 
@@ -838,6 +872,13 @@ class NetworkSettingsService {
     if (_prefs == null || !shouldRunLocalProxy) return;
     _scheduleApplyProxyState();
     _touch();
+  }
+
+  void _handleSystemProxyChanged() {
+    if (_prefs == null || !Platform.isWindows) return;
+    // 应用内代理拥有更高优先级；只有走系统代理回退时才需要重启网关。
+    if (_proxyService.current.isValid || !shouldRunLocalProxy) return;
+    _scheduleApplyProxyState();
   }
 
   Future<ResolvedHostConfig> resolveHostForRequest(

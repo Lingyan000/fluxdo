@@ -118,16 +118,12 @@ class LocalNotificationService {
       '[LocalNotification] 跳转到${isMessage ? "私信" : "话题"}: $topicId, 帖子: $postNumber',
     );
 
-    // 优先走平行视界(跟应用内点通知/点列表一致的左右栏表现);
-    // 拿不到 context(比如冷启动时通知先于根 widget 树就绪)才退化成
-    // 独立全屏路由——好过完全打不开。
-    //
-    // 宽屏才能写 provider 让平行视界栈接住;窄屏必须在这里直接 push,
-    // 不能指望 TopicsScreen/PrivateMessagesPage 的 _maybePushDetail
-    // 反应式兜底——那段兜底只覆盖"双栏收窄到单栏"这一次性过渡,系统
-    // 通知这种外部入口在"本来就已经是单栏"时触发选中，落不进过渡窗口，
-    // 真机表现为点了通知能切到对应 tab，但内容不显示(见
-    // notification_navigation.dart 同类修复)。
+    // 宽屏走平行视界(跟应用内点通知/点列表一致的左右栏表现)。
+    // 两种情况退化成独立全屏路由:
+    // - 拿不到 context(冷启动时通知先于根 widget 树就绪);
+    // - 窄屏单栏——select() 写栈后没有任何东西会推出详情页
+    //   (TopicsScreen 只在宽→窄切换/tab 重新激活时补 push,已在目标
+    //   tab 上时 requestNavDestination 又是 no-op),必须直接开全屏页。
     final context = navigatorKey.currentContext;
     if (context != null &&
         context.mounted &&
@@ -169,7 +165,11 @@ class LocalNotificationService {
         builder: (_) => TopicDetailPage(
           topicId: topicId,
           scrollToPostNumber: postNumber,
+          // 中途拉宽窗口时自动收回对应的平行视界栈,私信必须回私信栏
           autoSwitchToMasterDetail: true,
+          stackProvider: isMessage
+              ? selectedMessageProvider
+              : selectedTopicProvider,
         ),
       ),
     );

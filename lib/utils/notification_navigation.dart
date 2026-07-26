@@ -36,17 +36,18 @@ void _showHomeWorkspace(BuildContext context, WidgetRef ref) {
   _showWorkspace(context, ref, NavEntryIds.home);
 }
 
+/// 窄屏（单栏）没有「工作区栈写入 → 打开全屏详情」这座桥：TopicsScreen
+/// 只在宽→窄布局切换或 tab 重新激活时才补 push 全屏路由，而已经在目标
+/// tab 上时 [NavActionDispatch.requestNavDestination] 是 no-op——select()
+/// 只会静默写栈，用户看不到任何跳转。所以窄屏必须走全屏路由入口，
+/// 只有真能同屏摆下双栏时才交给平行视界栈。
+bool _useWorkspaceNavigation(BuildContext context) =>
+    MasterDetailLayout.canShowBothPanesFor(context);
+
 /// 私信类通知专用:走 [selectedMessageProvider]（私信栏自己的平行视界栈），
 /// 并切到"私信" tab——不能像普通话题通知那样落进 [selectedTopicProvider]/
 /// 首页信息流栈，否则左栏会显示信息流而不是私信列表，跟从私信列表点进去
 /// 的表现不一致。
-///
-/// 窄屏必须在这里直接 push,不能只写 provider 指望
-/// PrivateMessagesPage._maybePushDetail 兜底——那个反应式自动切换只覆盖
-/// "从双栏收窄到单栏"这一次性过渡(previous==null/true),通知这种外部
-/// 入口在"本来就已经是单栏"时触发选中,不落在过渡窗口内,写了 provider
-/// 也不会有任何页面出现——真机复现为"点了通知,内容进了不存在的平行
-/// 视界,窄屏什么都看不到"。逻辑对齐 PrivateMessagesPage._onItemTap。
 void _openMessageInWorkspace(
   BuildContext context,
   WidgetRef ref, {
@@ -54,26 +55,28 @@ void _openMessageInWorkspace(
   int? postNumber,
   String? instanceId,
 }) {
-  if (MasterDetailLayout.canShowBothPanesFor(context)) {
-    ref
-        .read(selectedMessageProvider.notifier)
-        .select(
-          topicId: topicId,
-          scrollToPostNumber: postNumber,
-          instanceId: instanceId,
-        );
-    _showWorkspace(context, ref, NavEntryIds.messages);
+  if (!_useWorkspaceNavigation(context)) {
+    _pushOnRootNavigator(
+      context,
+      TopicDetailPage(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId,
+        // 中途拉宽窗口时自动收回私信栏的平行视界，而不是留在全屏页
+        autoSwitchToMasterDetail: true,
+        stackProvider: selectedMessageProvider,
+      ),
+    );
     return;
   }
+  ref
+      .read(selectedMessageProvider.notifier)
+      .select(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId,
+      );
   _showWorkspace(context, ref, NavEntryIds.messages);
-  _pushOnRootNavigator(
-    context,
-    TopicDetailPage(
-      topicId: topicId,
-      scrollToPostNumber: postNumber,
-      autoSwitchToMasterDetail: true,
-    ),
-  );
 }
 
 /// 通知类型本身（除 privateMessage/invitedToPrivateMessage 外）不带
@@ -119,35 +122,33 @@ Future<void> _openTopicOrMessageInWorkspace(
     return;
   }
 
-  // 窄屏同 _openMessageInWorkspace 的理由,直接 push,不依赖
-  // TopicsScreen._maybePushDetail 的一次性过渡兜底。逻辑对齐
-  // TopicsPage._openTopic。
-  if (MasterDetailLayout.canShowBothPanesFor(context)) {
-    ref
-        .read(selectedTopicProvider.notifier)
-        .select(
-          topicId: topicId,
-          scrollToPostNumber: postNumber,
-          instanceId: instanceId,
-          highlightBoostUsername: highlightBoostUsername,
-          initialRevisionPostNumber: initialRevisionPostNumber,
-          initialRevisionNumber: initialRevisionNumber,
-        );
-    _showHomeWorkspace(context, ref);
+  if (!_useWorkspaceNavigation(context)) {
+    _pushOnRootNavigator(
+      context,
+      TopicDetailPage(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId, // 命中上面预取的 topicDetailProvider 缓存
+        highlightBoostUsername: highlightBoostUsername,
+        initialRevisionPostNumber: initialRevisionPostNumber,
+        initialRevisionNumber: initialRevisionNumber,
+        autoSwitchToMasterDetail: true,
+      ),
+    );
     return;
   }
+
+  ref
+      .read(selectedTopicProvider.notifier)
+      .select(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId,
+        highlightBoostUsername: highlightBoostUsername,
+        initialRevisionPostNumber: initialRevisionPostNumber,
+        initialRevisionNumber: initialRevisionNumber,
+      );
   _showHomeWorkspace(context, ref);
-  _pushOnRootNavigator(
-    context,
-    TopicDetailPage(
-      topicId: topicId,
-      scrollToPostNumber: postNumber,
-      highlightBoostUsername: highlightBoostUsername,
-      initialRevisionPostNumber: initialRevisionPostNumber,
-      initialRevisionNumber: initialRevisionNumber,
-      autoSwitchToMasterDetail: true,
-    ),
-  );
 }
 
 /// 处理通知点击：标记已读 + 按类型跳转
@@ -179,18 +180,17 @@ void handleNotificationTap(
       // selectProfile 写进去什么都不会出现(与 _openMessageInWorkspace
       // 注释里说的是同一个坑)。
       if (notification.username != null) {
-        if (MasterDetailLayout.canShowBothPanesFor(context)) {
-          ref
-              .read(selectedTopicProvider.notifier)
-              .selectProfile(notification.username!);
-          _showHomeWorkspace(context, ref);
-        } else {
-          _showHomeWorkspace(context, ref);
+        if (!_useWorkspaceNavigation(context)) {
           _pushOnRootNavigator(
             context,
             UserProfilePage(username: notification.username!),
           );
+          break;
         }
+        ref
+            .read(selectedTopicProvider.notifier)
+            .selectProfile(notification.username!);
+        _showHomeWorkspace(context, ref);
       }
       break;
 
