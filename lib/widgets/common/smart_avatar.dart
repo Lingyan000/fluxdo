@@ -32,6 +32,28 @@ class SmartAvatar extends StatefulWidget {
   State<SmartAvatar> createState() => _SmartAvatarState();
 }
 
+/// linux.do 站点定制:该账号头像方形化(站点主题 CSS 规则:
+/// `img.avatar[src^=".../user_avatar/linux.do/neo/"]{border-radius:10% !important}`,
+/// 只精确针对这一个用户名,不是站点级/AI persona 通用规则)。
+/// 头像 URL 路径本身带用户名(`/user_avatar/<site>/<username>/...`),
+/// 不需要额外传 username 参数,直接从 URL 判断即可对齐。
+///
+/// 公开(而非 [SmartAvatar] 内部私有判断):凡是自己另起炉灶画头像、不走
+/// [SmartAvatar] 的地方(画布直绘的话题卡片、头像外层单独套边框/背景的
+/// 容器)都得调这个同一份判断，不然会出现"图是方的、外层裁切/边框还是圆
+/// 的"这种两层对不上的错位。
+final RegExp _avatarUsernamePattern = RegExp(r'/user_avatar/[^/]+/([^/]+)/');
+const Set<String> _squareAvatarUsernames = {'neo'};
+
+bool isSquareAvatarUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  final username = _avatarUsernamePattern
+      .firstMatch(url)
+      ?.group(1)
+      ?.toLowerCase();
+  return username != null && _squareAvatarUsernames.contains(username);
+}
+
 class _SmartAvatarState extends State<SmartAvatar> {
   /// SVG 探测结果的全局记忆(URL → svg 内容,null = 已确认非 SVG)。
   ///
@@ -229,25 +251,36 @@ class _SmartAvatarState extends State<SmartAvatar> {
       );
     }
 
+    final isSquare = isSquareAvatarUrl(widget.imageUrl);
+    final innerDecoration = isSquare
+        ? BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(innerRadius * 0.2),
+          )
+        : BoxDecoration(color: bgColor, shape: BoxShape.circle);
+
     // 使用 BoxDecoration + shape: circle 确保 Hero 动画时保持圆形
     // ClipOval 在 Hero 飞行时不会被正确应用
     Widget avatar = Container(
       width: innerRadius * 2,
       height: innerRadius * 2,
-      decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+      decoration: innerDecoration,
       clipBehavior: Clip.antiAlias,
       child: child,
     );
 
     // 如果有边框，在外层添加，总尺寸保持 radius * 2
     if (widget.border != null) {
+      final outerDecoration = isSquare
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.radius * 0.2),
+              border: widget.border,
+            )
+          : BoxDecoration(shape: BoxShape.circle, border: widget.border);
       avatar = Container(
         width: widget.radius * 2,
         height: widget.radius * 2,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: widget.border,
-        ),
+        decoration: outerDecoration,
         alignment: Alignment.center,
         child: avatar,
       );
@@ -273,12 +306,9 @@ class _SmartAvatarState extends State<SmartAvatar> {
     // 静态灰底占位 — 头像 loading 时间极短,
     // 用 CircularProgressIndicator 会带来 60fps 自转 + InheritedTheme 查询,
     // 在列表多头像同时占位时是热点开销。
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: fgColor.withValues(alpha: 0.08),
-      ),
-    );
+    // 不在这里加自己的 shape:外层 Container 已经按圆形/方形裁切,这里
+    // 铺满矩形即可,否则方形头像 loading 时会露出"圆形补丁"的错位。
+    return Container(color: fgColor.withValues(alpha: 0.08));
   }
 
   Widget _buildFallback(Color fgColor, double radius) {
