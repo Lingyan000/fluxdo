@@ -13,7 +13,7 @@ import '../../../utils/dialog_utils.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/time_utils.dart';
-import '../../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import '../../common/smart_avatar.dart';
 

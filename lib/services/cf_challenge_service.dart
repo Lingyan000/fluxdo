@@ -1970,7 +1970,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
             _handlePageReady(controller, reason: 'onLoadStop');
           },
           onReceivedError: (controller, request, error) {
-            if (_finishingFromVerifyResponse) return;
+            // _hasPopped:验证已收场,但 Windows 上 PlatformView 延迟 1.2s
+            // 才销毁(见 _postCleanupCooldown)。这段窗口里 WebView2 掐掉
+            // 在途主文档导航会上报 CONNECTION_ABORTED,不能再弹「加载失败」
+            // ——用户看到的将是验证成功后凭空冒出的错误 toast。
+            if (_hasPopped || _finishingFromVerifyResponse) return;
 
             final uri = Uri.tryParse(request.url.toString());
             final isMainFrame = request.isForMainFrame == true;
@@ -2440,20 +2444,60 @@ class _ChallengeFallbackOverlay extends StatefulWidget {
 }
 
 class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _dotsController;
+  AppLifecycleState? _lifecycleState;
+  bool _tickerModeEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _lifecycleState = WidgetsBinding.instance.lifecycleState;
     _dotsController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _syncDotsAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChallengeFallbackOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state != widget.state) {
+      _syncDotsAnimation();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    _syncDotsAnimation();
+  }
+
+  void _syncDotsAnimation() {
+    final shouldAnimate =
+        _lifecycleState == AppLifecycleState.resumed &&
+        _tickerModeEnabled &&
+        widget.state != _FallbackState.noChallenge;
+    if (shouldAnimate) {
+      if (!_dotsController.isAnimating) {
+        _dotsController.repeat();
+      }
+    } else if (_dotsController.isAnimating) {
+      _dotsController.stop(canceled: false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _dotsController.dispose();
     super.dispose();
   }

@@ -194,7 +194,8 @@ class _RenderTopicCard extends RenderBox
       canvas.drawParagraph(icon, rect.topLeft + offset + l.titleOffset);
     }
     for (final (rect, url) in l.titleEmojis) {
-      final img = TopicCardImages.lookup(url, this);
+      final img = TopicCardImages.lookup(url, this,
+          bucket: BlobImageCache.emojiBucket);
       if (img != null) {
         canvas.drawImageRect(
           img,
@@ -214,18 +215,20 @@ class _RenderTopicCard extends RenderBox
     final avatarRect = l.avatarRect.shift(offset);
     final avatar = l.avatarUrl == null
         ? null
-        : TopicCardImages.lookup(l.avatarUrl!, this);
+        : TopicCardImages.lookup(l.avatarUrl!, this,
+            bucket: BlobImageCache.avatarBucket);
     if (avatar != null) {
       canvas.save();
       // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
       // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
       final clipPath = isSquareAvatarUrl(l.avatarUrl)
-          ? (Path()..addRRect(
-              RRect.fromRectAndRadius(
-                avatarRect,
-                Radius.circular(avatarRect.shortestSide * 0.1),
-              ),
-            ))
+          ? (Path()
+              ..addRRect(
+                RRect.fromRectAndRadius(
+                  avatarRect,
+                  Radius.circular(avatarRect.shortestSide * 0.1),
+                ),
+              ))
           : (Path()..addOval(avatarRect));
       canvas.clipPath(clipPath);
       canvas.drawImageRect(
@@ -314,12 +317,15 @@ class _RenderTopicCard extends RenderBox
 class TopicCardImages {
   TopicCardImages._();
 
-  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
   static final Map<String, ui.Image> _images = {};
   static final Map<String, Set<RenderObject>> _waiters = {};
   static const int _cap = 400;
 
-  static ui.Image? lookup(String url, RenderObject requester) {
+  static ui.Image? lookup(
+    String url,
+    RenderObject requester, {
+    String bucket = BlobImageCache.avatarBucket,
+  }) {
     final hit = _images[url];
     if (hit != null) return hit;
     final waiters = _waiters[url];
@@ -328,14 +334,13 @@ class TopicCardImages {
       return null;
     }
     _waiters[url] = {requester};
-    unawaited(_load(url));
+    unawaited(_load(url, bucket));
     return null;
   }
 
-  static Future<void> _load(String url) async {
+  static Future<void> _load(String url, String bucket) async {
     try {
-      final file = await _cacheManager.getSingleFile(url);
-      final bytes = await file.readAsBytes();
+      final bytes = await BlobImageCache.fetch(bucket, url);
       if (bytes.isEmpty) {
         _waiters.remove(url);
         return;

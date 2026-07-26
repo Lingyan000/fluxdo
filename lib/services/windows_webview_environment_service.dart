@@ -30,6 +30,10 @@ class WindowsWebViewEnvironmentService {
   String? _activeProxyUrl;
   String? _desiredProxyUrl;
 
+  /// WebView2 Environment 的代理参数只能在创建时确定。运行中修改代理时，
+  /// 由设置页持续提示用户重启，避免仅写日志后让用户误以为已经生效。
+  final ValueNotifier<bool> proxyRestartRequiredNotifier = ValueNotifier(false);
+
   static const String _desiredProxyPrefKey =
       'windows_webview_desired_proxy_url';
 
@@ -39,9 +43,16 @@ class WindowsWebViewEnvironmentService {
   /// 重建,拿着上次的旧端口创建会让整个会话的 WebView 全部断网。
   final Completer<void> _proxyDecision = Completer<void>();
 
-  /// 代理决策的最长等待。代理启动实测约 0.5s;超时兜底用上次持久化的
-  /// 期望值,避免代理启动失败时卡死 Environment 创建。
-  static const _proxyDecisionTimeout = Duration(seconds: 8);
+  /// 代理决策的最长等待。超时兜底用上次持久化的期望值,避免代理启动
+  /// 失败时卡死 Environment 创建。
+  ///
+  /// 8s 曾经不够用:本次调用排在 main.dart 启动链路里 rhttp 初始化
+  /// 之后,而 rhttp 自己就留了最多 5s 超时预算,后面还有好几个服务
+  /// 初始化——真机复现 8s 内等不到本次会话的真实代理端口,回退用了
+  /// 上次持久化的旧端口(端口早已随 TIME_WAIT 漂移到别处),导致
+  /// WebView2 在这次会话里全程连着一个不存在的代理，验证怎么也过不去。
+  /// 放宽到 15s，盖过 rhttp 5s 预算 + 本地代理实际启动耗时的合理上限。
+  static const _proxyDecisionTimeout = Duration(seconds: 15);
 
   bool get _isSupported => !kIsWeb && Platform.isWindows;
 
@@ -51,6 +62,35 @@ class WindowsWebViewEnvironmentService {
   String? get activeProxyUrl => _activeProxyUrl;
   String? get desiredProxyUrl => _desiredProxyUrl;
   bool get proxyRestartRequired => _activeProxyUrl != _desiredProxyUrl;
+  int? get activeLocalProxyPort => parseLocalProxyPort(_activeProxyUrl);
+
+  @visibleForTesting
+  static int? parseLocalProxyPort(String? proxyUrl) {
+    final uri = proxyUrl == null ? null : Uri.tryParse(proxyUrl);
+    if (uri == null || uri.scheme != 'http' || !uri.hasPort) return null;
+    final host = uri.host.toLowerCase();
+    if (host != '127.0.0.1' && host != 'localhost' && host != '::1') {
+      return null;
+    }
+    return uri.port;
+  }
+
+  static bool shouldRetainLocalProxy({
+    required bool clearApplied,
+    required int? activeEnvironmentPort,
+    required int? runningProxyPort,
+  }) {
+    return !clearApplied &&
+        activeEnvironmentPort != null &&
+        activeEnvironmentPort == runningProxyPort;
+  }
+
+  void _syncProxyRestartRequired() {
+    final value = proxyRestartRequired;
+    if (proxyRestartRequiredNotifier.value != value) {
+      proxyRestartRequiredNotifier.value = value;
+    }
+  }
 
   CookieManager get cookieManager {
     if (_isSupported && _environment != null) {
@@ -93,6 +133,7 @@ class WindowsWebViewEnvironmentService {
       await _initializeFuture;
     }
     final applied = _environment != null && _activeProxyUrl == proxyUrl;
+    _syncProxyRestartRequired();
     if (!applied) {
       debugPrint(
         '[WebViewEnv] proxy change deferred until restart: '
@@ -146,6 +187,7 @@ class WindowsWebViewEnvironmentService {
         ),
       );
       _activeProxyUrl = _desiredProxyUrl;
+      _syncProxyRestartRequired();
       _cookieManager = CookieManager.instance(webViewEnvironment: _environment);
 
       debugPrint(
@@ -163,6 +205,7 @@ class WindowsWebViewEnvironmentService {
       _environment = null;
       _cookieManager = null;
       _activeProxyUrl = null;
+      _syncProxyRestartRequired();
       _initializeFuture = null;
     }
   }

@@ -156,6 +156,15 @@ class AppPreferences {
   /// 发帖前 AI 审核使用的模型 key（providerId:modelId）
   final String? aiPostReviewModelKey;
 
+  /// AI 翻译功能开关。关闭时帖子菜单不显示翻译入口。
+  final bool aiTranslationEnabled;
+
+  /// AI 翻译目标语言。null 表示跟随应用语言。
+  final String? aiTranslationTargetLanguage;
+
+  /// AI 翻译使用的模型 key（providerId:modelId）。
+  final String? aiTranslationModelKey;
+
   /// hcaptcha 验证 POST endpoint 覆盖。null = 用内置 fallback 列表 (尝试
   /// `/captcha/hcaptcha/create.json` → `/hcaptcha/create.json`)。
   /// 站长改 mount path 时不发版即可改这里。
@@ -169,8 +178,14 @@ class AppPreferences {
   /// 且第三方签名图成本高、良莠不齐,默认关对齐网页更稳妥。
   final bool showSignatures;
 
+  /// 小尾巴动画 SVG 自适应帧率
+  final bool adaptiveSignatureFrameRate;
+
   /// Boost 弹幕化（默认关闭）
   final bool boostDanmaku;
+
+  /// 帖子流末尾显示推荐话题（相关话题 / 建议话题），默认开启，对齐网页版
+  final bool showSuggestedTopics;
 
   /// 默认使用树形视图
   final bool defaultNestedView;
@@ -249,10 +264,15 @@ class AppPreferences {
     this.useRichComposer = false,
     this.aiPostReviewEnabled = false,
     this.aiPostReviewModelKey,
+    this.aiTranslationEnabled = false,
+    this.aiTranslationTargetLanguage,
+    this.aiTranslationModelKey,
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
     this.showSignatures = false,
+    this.adaptiveSignatureFrameRate = true,
     this.boostDanmaku = false,
+    this.showSuggestedTopics = true,
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
     this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
@@ -296,10 +316,15 @@ class AppPreferences {
     bool? useRichComposer,
     bool? aiPostReviewEnabled,
     Object? aiPostReviewModelKey = _unset,
+    bool? aiTranslationEnabled,
+    Object? aiTranslationTargetLanguage = _unset,
+    Object? aiTranslationModelKey = _unset,
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
     bool? showSignatures,
+    bool? adaptiveSignatureFrameRate,
     bool? boostDanmaku,
+    bool? showSuggestedTopics,
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
     BookmarksOpenMode? bookmarksOpenMode,
@@ -346,12 +371,24 @@ class AppPreferences {
       aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
           ? this.aiPostReviewModelKey
           : aiPostReviewModelKey as String?,
+      aiTranslationEnabled:
+          aiTranslationEnabled ?? this.aiTranslationEnabled,
+      aiTranslationTargetLanguage:
+          identical(aiTranslationTargetLanguage, _unset)
+          ? this.aiTranslationTargetLanguage
+          : aiTranslationTargetLanguage as String?,
+      aiTranslationModelKey: identical(aiTranslationModelKey, _unset)
+          ? this.aiTranslationModelKey
+          : aiTranslationModelKey as String?,
       hcaptchaCreateEndpoint: identical(hcaptchaCreateEndpoint, _unset)
           ? this.hcaptchaCreateEndpoint
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
       showSignatures: showSignatures ?? this.showSignatures,
+      adaptiveSignatureFrameRate:
+          adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
       boostDanmaku: boostDanmaku ?? this.boostDanmaku,
+      showSuggestedTopics: showSuggestedTopics ?? this.showSuggestedTopics,
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
       bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
@@ -409,11 +446,18 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _useRichComposerKey = 'pref_use_rich_composer';
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
   static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
+  static const String _aiTranslationEnabledKey = 'pref_ai_translation_enabled';
+  static const String _aiTranslationTargetLanguageKey =
+      'pref_ai_translation_target_language';
+  static const String _aiTranslationModelPrefKey = 'pref_ai_translation_model';
   static const String _hcaptchaCreateEndpointKey =
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
   static const String _showSignaturesKey = 'pref_show_signatures';
+  static const String _adaptiveSignatureFrameRateKey =
+      'pref_adaptive_signature_frame_rate';
   static const String _boostDanmakuKey = 'pref_boost_danmaku';
+  static const String _showSuggestedTopicsKey = 'pref_show_suggested_topics';
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
   static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
@@ -476,10 +520,20 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           useRichComposer: _prefs.getBool(_useRichComposerKey) ?? false,
           aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
           aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
+          aiTranslationEnabled:
+              _prefs.getBool(_aiTranslationEnabledKey) ?? false,
+          aiTranslationTargetLanguage: _prefs.getString(
+            _aiTranslationTargetLanguageKey,
+          ),
+          aiTranslationModelKey: _prefs.getString(_aiTranslationModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
+          adaptiveSignatureFrameRate:
+              _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
+          showSuggestedTopics:
+              _prefs.getBool(_showSuggestedTopicsKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
@@ -685,6 +739,32 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     }
   }
 
+  Future<void> setAiTranslationEnabled(bool enabled) async {
+    if (state.aiTranslationEnabled == enabled) return;
+    state = state.copyWith(aiTranslationEnabled: enabled);
+    await _prefs.setBool(_aiTranslationEnabledKey, enabled);
+  }
+
+  Future<void> setAiTranslationTargetLanguage(String? language) async {
+    if (state.aiTranslationTargetLanguage == language) return;
+    state = state.copyWith(aiTranslationTargetLanguage: language);
+    if (language == null || language.isEmpty) {
+      await _prefs.remove(_aiTranslationTargetLanguageKey);
+    } else {
+      await _prefs.setString(_aiTranslationTargetLanguageKey, language);
+    }
+  }
+
+  Future<void> setAiTranslationModelKey(String? key) async {
+    if (state.aiTranslationModelKey == key) return;
+    state = state.copyWith(aiTranslationModelKey: key);
+    if (key == null || key.isEmpty) {
+      await _prefs.remove(_aiTranslationModelPrefKey);
+    } else {
+      await _prefs.setString(_aiTranslationModelPrefKey, key);
+    }
+  }
+
   Future<void> setDialogBlur(bool enabled) async {
     state = state.copyWith(dialogBlur: enabled);
     await _prefs.setBool(_dialogBlurKey, enabled);
@@ -705,10 +785,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setBool(_showSignaturesKey, enabled);
   }
 
+  Future<void> setAdaptiveSignatureFrameRate(bool enabled) async {
+    state = state.copyWith(adaptiveSignatureFrameRate: enabled);
+    await _prefs.setBool(_adaptiveSignatureFrameRateKey, enabled);
+  }
+
   Future<void> setBoostDanmaku(bool enabled) async {
     if (state.boostDanmaku == enabled) return;
     state = state.copyWith(boostDanmaku: enabled);
     await _prefs.setBool(_boostDanmakuKey, enabled);
+  }
+
+  Future<void> setShowSuggestedTopics(bool enabled) async {
+    if (state.showSuggestedTopics == enabled) return;
+    state = state.copyWith(showSuggestedTopics: enabled);
+    await _prefs.setBool(_showSuggestedTopicsKey, enabled);
   }
 
   Future<void> setDefaultNestedView(bool enabled) async {

@@ -18,7 +18,7 @@ import '../../../utils/responsive.dart';
 import '../../../utils/scroll_busy_signal.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/anchor_guard_sliver.dart';
-import '../../../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show BlockNode, HtmlChunk, ParagraphWarmup, ParagraphWarmupProbe;
 import '../../../widgets/post/post_item/post_item.dart';
@@ -27,6 +27,7 @@ import '../../../widgets/post/post_item/segmented_long_post.dart';
 import '../../../widgets/post/quote_image_scope.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
+import 'topic_more_topics.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
 
@@ -1266,6 +1267,17 @@ class _TopicPostListState extends State<TopicPostList> {
                   return const SliverToBoxAdapter(child: SizedBox.shrink());
                 },
               ),
+
+            // 帖子流末尾的推荐区(相关话题 / 建议话题),对齐网页版
+            // more-topics:只在已加载到话题末尾时出现
+            if (!hasMoreAfter)
+              SliverToBoxAdapter(
+                child: _wrapContent(
+                  context,
+                  MoreTopicsSection(detail: detail),
+                ),
+              ),
+
             SliverPadding(
               padding: EdgeInsets.only(
                 bottom: 80 + MediaQuery.of(context).padding.bottom,

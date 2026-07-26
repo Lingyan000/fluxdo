@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../models/user.dart';
 import '../providers/core_providers.dart';
@@ -433,7 +434,7 @@ class _TrustLevelRequirementsPageState
           ? _buildEmpty(theme)
           : _data!.isEmptyState
           ? _buildTrustLevelEmptyState(theme)
-          : RefreshIndicator(
+          : M3eRefreshIndicator(
               onRefresh: _fetchData,
               child: CustomScrollView(
                 slivers: [
@@ -659,25 +660,13 @@ class _TrustLevelRequirementsPageState
         Stack(
           alignment: Alignment.center,
           children: [
-            SizedBox(
-              width: 80,
-              height: 80,
-              child: CircularProgressIndicator(
-                value: 1.0,
-                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                strokeWidth: 8,
-                strokeCap: StrokeCap.round,
-              ),
-            ),
-            SizedBox(
-              width: 80,
-              height: 80,
-              child: CircularProgressIndicator(
-                value: progress,
-                color: color,
-                strokeWidth: 8,
-                strokeCap: StrokeCap.round,
-              ),
+            // M3eCircularProgress 自带 track,底轨+进度合一
+            M3eCircularProgress(
+              value: progress,
+              size: 80,
+              strokeWidth: 8,
+              color: color,
+              trackColor: colorScheme.secondaryContainer.withValues(alpha: 0.5),
             ),
             Column(
               mainAxisSize: MainAxisSize.min,
@@ -1048,7 +1037,7 @@ class _TrustLevelRequirementsPageState
   Widget _buildTrustLevelEmptyState(ThemeData theme) {
     final colorScheme = theme.colorScheme;
 
-    return RefreshIndicator(
+    return M3eRefreshIndicator(
       onRefresh: _fetchData,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1233,15 +1222,11 @@ class _TrustLevelRequirementsPageState
               ],
             ),
             const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                minHeight: 7,
-                value: progress,
-                backgroundColor: colorScheme.secondaryContainer.withValues(
-                  alpha: 0.5,
-                ),
-                valueColor: AlwaysStoppedAnimation<Color>(color),
+            M3eLinearProgress(
+              value: progress,
+              color: color,
+              trackColor: colorScheme.secondaryContainer.withValues(
+                alpha: 0.5,
               ),
             ),
           ],

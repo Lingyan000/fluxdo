@@ -513,11 +513,11 @@ extension _ScrollActions on _TopicDetailPageState {
       }
 
       if (!forceLocalJump && _controller.isPostRendered(postIndex)) {
+        // 同 _scrollToPost：走 jumpTo 而非 animateTo，避免触底回弹；
+        // jumpTo 后仍复查是否收敛，未收敛降级本地锚点（SCROLL-FUSE）
         final scrollIndex = _controller.scrollIndexForPostIndex(postIndex);
-        await _controller.scrollController.scrollToIndex(
+        await _controller.scrollController.jumpToRenderedScrollIndex(
           scrollIndex,
-          preferPosition: AutoScrollPosition.begin,
-          duration: const Duration(milliseconds: 1),
         );
         forceLocalJump = !_controller.scrollController
             .isIndexStateInLayoutRange(scrollIndex);

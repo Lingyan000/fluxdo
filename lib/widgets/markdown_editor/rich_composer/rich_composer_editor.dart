@@ -38,6 +38,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../constants.dart';
 import '../../../models/mention_user.dart';
@@ -2280,11 +2281,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: LoadingSpinner(size: 24),
         ),
       );
     }

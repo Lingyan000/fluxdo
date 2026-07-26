@@ -209,13 +209,20 @@ class TopicPoster {
     Map<String, dynamic> json,
     Map<int, TopicUser> userMap,
   ) {
-    final userId = json['user_id'] as int;
+    // 推荐话题(suggested_topics/related_topics)的 poster 走
+    // SuggestedPosterSerializer:has_one :user, embed: :objects —— 用户对象
+    // 内嵌在 poster 里,没有 user_id,也没有顶层 users 表。列表接口则相反
+    // (user_id + 顶层 users)。两种形状都要吃下。
+    final embeddedUser = json['user'] as Map<String, dynamic>?;
+    final userId =
+        json['user_id'] as int? ?? embeddedUser?['id'] as int? ?? 0;
     return TopicPoster(
       userId: userId,
       description: json['description'] as String? ?? '',
       extras: json['extras'] as String? ?? '',
       user:
           userMap[userId] ??
+          (embeddedUser != null ? TopicUser.fromJson(embeddedUser) : null) ??
           // 从本地缓存反序列化时没有 userMap；fallback 到嵌入在
           // poster entry 里的用户字段（normalizeBookmarkListEntry 写入）。
           (json['_avatar_template'] != null || json['_username'] != null
@@ -354,6 +361,25 @@ class Topic {
       canHaveAnswer: json['can_have_answer'] as bool? ?? false,
     );
   }
+}
+
+/// 解析话题详情响应里的推荐话题数组(suggested_topics / related_topics)
+///
+/// 这两组走 SuggestedTopicSerializer,字段比列表接口稀疏且随站点设置浮动
+/// (excerpt/tags/posters 都可能缺席),用户对象内嵌在 poster 里而非顶层
+/// users 表。单条解析失败只跳过该条,不能让整个话题详情解析失败。
+List<Topic> parseSuggestedTopicList(dynamic raw) {
+  if (raw is! List || raw.isEmpty) return const [];
+  final result = <Topic>[];
+  for (final item in raw) {
+    if (item is! Map<String, dynamic>) continue;
+    try {
+      result.add(Topic.fromJson(item));
+    } catch (_) {
+      // 单条字段异常不影响其余条目
+    }
+  }
+  return result;
 }
 
 /// 链接点击统计
@@ -1309,7 +1335,19 @@ class PostStream {
   final List<int> stream; // 所有 post_id 的列表
   final PostStreamGaps? gaps; // 拉黑用户帖子的 gaps 数据
 
-  PostStream({required this.posts, required this.stream, this.gaps});
+  /// 翻页响应(`/t/{id}/posts.json?include_suggested=true`)顶层带回的推荐
+  /// 话题。大话题首屏 `/t/{id}.json` 不返回这两组(服务端见 next_page 有值
+  /// 就关掉 include_suggested),只能靠翻页请求补,这里是回填通道。
+  final List<Topic> suggestedTopics;
+  final List<Topic> relatedTopics;
+
+  PostStream({
+    required this.posts,
+    required this.stream,
+    this.gaps,
+    this.suggestedTopics = const [],
+    this.relatedTopics = const [],
+  });
 
   factory PostStream.fromJson(Map<String, dynamic> json) {
     final gapsJson = json['gaps'] as Map<String, dynamic>?;
@@ -1558,6 +1596,14 @@ class TopicDetail {
   // 当前用户在本主题下的待审核回复(仅认证 + 站点启用审核队列时返回)
   final List<PendingPost> pendingPosts;
 
+  /// 帖子流末尾的推荐话题(对齐网页版 more-topics 区)
+  ///
+  /// suggested = 服务端 TopicQuery 给的「建议话题」;related = discourse-ai
+  /// 语义相关的「相关话题」(站点未开该插件时恒为空)。首屏未到话题末尾时
+  /// 服务端不下发,由翻页请求补回,见 [PostStream.suggestedTopics]。
+  final List<Topic> suggestedTopics;
+  final List<Topic> relatedTopics;
+
   bool get hasAcceptedAnswer => acceptedAnswers.isNotEmpty;
   int? get acceptedAnswerPostNumber =>
       acceptedAnswers.isEmpty ? null : acceptedAnswers.first.postNumber;
@@ -1603,6 +1649,8 @@ class TopicDetail {
     this.bookmarkReminderAt,
     this.acceptedAnswers = const [],
     this.pendingPosts = const [],
+    this.suggestedTopics = const [],
+    this.relatedTopics = const [],
   });
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
@@ -1782,6 +1830,8 @@ class TopicDetail {
           .whereType<Map>()
           .map((e) => PendingPost.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      suggestedTopics: parseSuggestedTopicList(json['suggested_topics']),
+      relatedTopics: parseSuggestedTopicList(json['related_topics']),
     );
   }
 
@@ -1825,6 +1875,8 @@ class TopicDetail {
     bool clearBookmarkReminderAt = false,
     List<AcceptedAnswer>? acceptedAnswers,
     List<PendingPost>? pendingPosts,
+    List<Topic>? suggestedTopics,
+    List<Topic>? relatedTopics,
   }) {
     return TopicDetail(
       id: id ?? this.id,
@@ -1867,6 +1919,8 @@ class TopicDetail {
           : (bookmarkReminderAt ?? this.bookmarkReminderAt),
       acceptedAnswers: acceptedAnswers ?? this.acceptedAnswers,
       pendingPosts: pendingPosts ?? this.pendingPosts,
+      suggestedTopics: suggestedTopics ?? this.suggestedTopics,
+      relatedTopics: relatedTopics ?? this.relatedTopics,
     );
   }
 }

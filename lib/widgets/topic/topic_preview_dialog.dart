@@ -13,7 +13,7 @@ import '../../utils/share_utils.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../common/relative_time_text.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';

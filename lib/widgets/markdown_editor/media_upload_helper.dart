@@ -14,6 +14,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mime/mime.dart' show lookupMimeType;
 import 'package:path_provider/path_provider.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/app_error_handler.dart';
 import '../../services/discourse/discourse_service.dart';
@@ -218,7 +219,7 @@ class _CompressProgressDialogState extends State<_CompressProgressDialog> {
             ),
           ),
           const SizedBox(height: 12),
-          LinearProgressIndicator(
+          M3eLinearProgress(
             value: _progress <= 0 ? null : _progress.clamp(0.0, 1.0),
           ),
         ],

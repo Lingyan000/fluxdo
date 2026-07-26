@@ -151,6 +151,7 @@
   "dohSettings_restarting": "Restarting...",
   "dohSettings_starting": "Starting...",
   "dohSettings_suppressedByVpn": "Auto-disabled by VPN, will restore when VPN disconnects",
+  "dohSettings_webViewRestartRequired": "The WebView proxy change will take effect after restarting the app. This session will keep using the previous WebView network route.",
   "doh_cannotConnect": "Cannot connect to DOH service",
   "doh_executableNotFound": "Proxy executable not found",
   "doh_invalidHttpResponse": "Invalid HTTP response",

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'local_notification_service.dart';
 
@@ -511,8 +512,11 @@ class _DownloadToastWidgetState extends State<_DownloadToastWidget>
                                 child: SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(
+                                  // 无进度=不定态波浪弧追逐,有进度=波浪环;
+                                  // 同一组件连续过渡,无形态跳变
+                                  child: M3eCircularProgress(
                                     value: hasProgress ? progress : null,
+                                    size: 22,
                                     strokeWidth: 2.5,
                                     color: progressColor,
                                   ),

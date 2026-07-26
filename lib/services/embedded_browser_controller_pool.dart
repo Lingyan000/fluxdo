@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 
-enum EmbeddedBrowserPriority { signature, video, iframe }
+enum EmbeddedBrowserPriority { video, iframe }
 
 /// 帖子内嵌入式浏览器 Controller 的全局槽位。
 class EmbeddedBrowserLease {
@@ -17,33 +16,8 @@ class EmbeddedBrowserLease {
   final EmbeddedBrowserPriority priority;
   final VoidCallback onRevoked;
   bool _released = false;
-  Future<void>? _deferredReleaseFuture;
 
   void release() {
-    if (_released) return;
-    _released = true;
-    _owner._release(this);
-  }
-
-  /// 等 Flutter 至少提交一帧、再经过短冷却后归还槽位。
-  ///
-  /// 平台视图从 Widget 树移除和 WebView2 CompositionController 真正析构
-  /// 不是同一个时刻；小尾巴必须用此入口，避免旧 Controller 尚未销毁时
-  /// 池已经把槽位交给新的平台视图。
-  Future<void> releaseAfterPlatformViewTeardown({
-    Duration cooldown = const Duration(milliseconds: 160),
-  }) {
-    if (_released) return Future<void>.value();
-    return _deferredReleaseFuture ??= _releaseAfterPlatformViewTeardown(
-      cooldown,
-    );
-  }
-
-  Future<void> _releaseAfterPlatformViewTeardown(Duration cooldown) async {
-    await SchedulerBinding.instance.endOfFrame;
-    if (cooldown > Duration.zero) {
-      await Future<void>.delayed(cooldown);
-    }
     if (_released) return;
     _released = true;
     _owner._release(this);
@@ -58,10 +32,9 @@ class EmbeddedBrowserLease {
 
 /// Windows WebView2 嵌入视图限流。
 ///
-/// 长话题中每个动态 SVG/视频都拥有独立 CompositionController；
+/// 长话题中每个视频/iframe 都拥有独立 CompositionController；
 /// 不设上限会让 Controller 创建/销毁风暴与主 Win32 消息泵互相影响。
-/// 这里将帖子内 Controller 总数限制为 3，并限制动态小尾巴最多占 2 个，
-/// 永久为用户主动打开的视频/iframe 留出至少一个槽位。
+/// 这里将帖子内 Controller 总数限制为 3。
 ///
 /// 不能通过“先异步销毁旧 Controller、同时立即创建新 Controller”抢占：
 /// WebView2 原生销毁并非同步完成，那样会在短时间内超过上限，重新制造
@@ -71,7 +44,6 @@ class EmbeddedBrowserControllerPool {
 
   static final instance = EmbeddedBrowserControllerPool._();
   static const int maxControllers = 3;
-  static const int maxSignatureControllers = 2;
 
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
   final List<EmbeddedBrowserLease> _leases = [];
@@ -85,12 +57,6 @@ class EmbeddedBrowserControllerPool {
   }) {
     if (_suspended) return null;
     if (_leases.length >= maxControllers) return null;
-    if (priority == EmbeddedBrowserPriority.signature) {
-      final signatureCount = _leases
-          .where((lease) => lease.priority == EmbeddedBrowserPriority.signature)
-          .length;
-      if (signatureCount >= maxSignatureControllers) return null;
-    }
 
     final lease = EmbeddedBrowserLease._(
       this,

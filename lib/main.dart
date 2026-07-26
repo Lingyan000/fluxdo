@@ -24,7 +24,6 @@ import 'services/auth_issue_notice_service.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
-import 'widgets/common/clipboard_topic_link_snack_content.dart';
 import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -38,7 +37,7 @@ import 'services/local_notification_service.dart';
 import 'services/data_management/cache_size_service.dart';
 import 'services/discourse_cache_manager.dart';
 import 'services/toast_service.dart';
-import 'widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'l10n/s.dart';
 
 import 'services/network/doh/network_settings_service.dart';
@@ -81,6 +80,7 @@ import 'utils/frame_jank_monitor.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
+import 'utils/seed_color_scheme.dart';
 import 'utils/time_utils.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -90,10 +90,13 @@ import 'services/network/adapters/platform_adapter.dart';
 import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'services/audio/just_audio_gst.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
 import 'widgets/layout/adaptive_navigation.dart';
+import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
@@ -147,6 +150,17 @@ Future<void> main() async {
   // Impeller 纹理上传并发,图密话题快滚 raster 尖峰的对症闸门,
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
+
+  // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
+  // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
+  // - Windows: MediaKit(libmpv-2.dll 随 media_kit_libs_windows_audio 打包);
+  // - Linux: GStreamer 桥(见 just_audio_gst.dart 注释,flatpak 禁网沙箱
+  //   与 GNOME runtime 均不容纳 mpv 方案)。
+  if (!kIsWeb && Platform.isLinux) {
+    JustAudioGst.registerWith();
+  } else {
+    JustAudioMediaKit.ensureInitialized(linux: false);
+  }
 
   // Rust 动图管线的首帧(挂载瞬态的裸 RGBA 上传,不经 binding)注入
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
@@ -231,8 +245,6 @@ Future<void> main() async {
     AppConstants.initUserAgent(),
     LogWriter.init(),
     ProxyCertificate.initialize(),
-    if (Platform.isWindows)
-      WindowsWebViewEnvironmentService.instance.initialize(),
     // Windows 深链协议注册(discourse:// / fluxdo://):写 HKCU 免管理员,
     // 幂等,失败不阻塞启动。其他平台由清单/plist 声明,此调用为 no-op。
     if (Platform.isWindows) ensureWindowsProtocolsRegistered(),
@@ -342,11 +354,22 @@ Future<void> main() async {
     await RhttpSettingsService.instance.forceDisable();
   }
 
-  await NetworkSettingsService.instance.initialize(prefs);
-  // Windows:启动系统代理跟随(周期读取注册表),让 Dio 与 WebView2 保持
-  // 同一出口,cf_clearance 才对两侧同时有效。
+  // Windows 固定系统代理必须先于本地 DoH/WebView 网关读取，网关才能按
+  // 「应用代理 > 系统代理 > 直连」选择首次启动的上游出口。
   if (Platform.isWindows) {
     SystemProxyService.instance.start();
+  }
+  await NetworkSettingsService.instance.initialize(prefs);
+  // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
+  // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
+  // 并行初始化里,等的是"猜的"8s 超时——NetworkSettingsService 前面还排
+  // 着 rhttp(自己就留了最多 5s 预算)等好几个服务,8s 经常等不到真实端口
+  // 就用旧端口摆烂,导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
+  // 也过不去。现在严格排在 NetworkSettingsService 完全初始化(本地代理
+  // 已经启动、setProxy() 已经真正调用过)之后再建,proxyDecision 这时
+  // 早就 complete 了,创建时直接读到确定值,不用再赌超时。
+  if (Platform.isWindows) {
+    await WindowsWebViewEnvironmentService.instance.initialize();
   }
   VpnAutoToggleService.instance.initialize(prefs);
   try {
@@ -560,6 +583,87 @@ const _pageTransitionsTheme = PageTransitionsTheme(
   },
 );
 
+/// M3E 按钮按压形变,参数对照 Compose ButtonSmallTokens 标准:
+/// ContainerShapeRound = CornerFull(Stadium)→ PressedContainerShape =
+/// CornerSmall(8dp)。形状插值由 Material 内部 ImplicitlyAnimatedWidget
+/// 完成,theme 注入全局生效;时长对齐规格用的 DefaultEffects 弹簧
+/// (spring(1.0, 1600) 收敛 ≈180ms,规格注释明确"不允许过冲",
+/// Material 的 fastOutSlowIn 曲线正好同为无过冲缓动)。
+ButtonStyle _m3ePressedShapeStyle() => ButtonStyle(
+  animationDuration: const Duration(milliseconds: 180),
+  shape: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.pressed)
+        ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+        : const StadiumBorder(),
+  ),
+);
+
+/// IconButton 版本:在按压形变之上叠加 selected 态形状(Compose
+/// IconToggleButtonShapes 语义:pressed > checked > 默认)。选中的
+/// 切换图标按钮从全圆变小圆角方,给 36 处 isSelected 调用点免费的
+/// M3E 切换标志动效;时长同 DefaultEffects。
+ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
+  animationDuration: const Duration(milliseconds: 180),
+  shape: WidgetStateProperty.resolveWith((states) {
+    if (states.contains(WidgetState.pressed)) {
+      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
+    }
+    if (states.contains(WidgetState.selected)) {
+      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+    }
+    return const StadiumBorder();
+  }),
+);
+
+/// light/dark 共用的 ThemeData 装配(两侧必须对称,尤其 M3eFlags ——
+/// ThemeData.lerp 对单边缺失的 extension 不插值而是瞬时并入)。
+ThemeData _buildAppTheme(ColorScheme scheme, ThemeState themeState) {
+  final m3e = themeState.m3eEnabled;
+  final buttonStyle = m3e ? _m3ePressedShapeStyle() : null;
+  return ThemeData(
+    colorScheme: scheme,
+    useMaterial3: true,
+    fontFamily: themeState.fontFamilyName,
+    pageTransitionsTheme: _pageTransitionsTheme,
+    iconTheme: _appIconTheme(scheme.onSurface),
+    primaryIconTheme: _appIconTheme(scheme.onPrimary),
+    extensions: [M3eFlags(enabled: m3e)],
+    // year2023: false 启用进度条/滑块的 M3E 翻新(圆角端点/track gap/
+    // stop indicator/16dp 滑轨+竖条 thumb)。字段虽标记 deprecated,但
+    // trackGap 等新样式只由它驱动,官方 M3E 独立包落地前只能走这里。
+    // circularTrackPadding 归零:新样式默认 4dp 内边距会把存量
+    // SizedBox(20) 小圈的可画区吃掉 8dp。
+    // ignore: deprecated_member_use
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      // ignore: deprecated_member_use
+      year2023: !m3e,
+      circularTrackPadding: EdgeInsets.zero,
+    ),
+    // ignore: deprecated_member_use
+    sliderTheme: SliderThemeData(year2023: !m3e),
+    filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
+    textButtonTheme: TextButtonThemeData(style: buttonStyle),
+    iconButtonTheme: IconButtonThemeData(
+      style: m3e ? _m3eIconButtonShapeStyle() : null,
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: scheme.surfaceContainerLow,
+      margin: EdgeInsets.zero,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 3,
+      color: scheme.surfaceContainerLow,
+      surfaceTintColor: Colors.transparent,
+      menuPadding: const EdgeInsets.symmetric(vertical: 8),
+    ),
+  );
+}
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -581,32 +685,23 @@ class MainApp extends ConsumerWidget {
         ColorScheme lightScheme;
         ColorScheme darkScheme;
 
+        // 动态色路径只取系统动态色 primary 当种子,不用 OEM 原始 scheme。
+        ColorScheme buildScheme(Color seed, Brightness brightness) {
+          return SeedColorScheme.from(
+            seedColor: seed,
+            brightness: brightness,
+            variant: themeState.schemeVariant,
+          );
+        }
+
         if (themeState.useDynamicColor &&
             lightDynamic != null &&
             darkDynamic != null) {
-          // Optimization: Use standard ColorScheme.fromSeed with the dynamic primary color
-          // This ensures better contrast and consistency than using the raw OEM scheme
-          lightScheme = ColorScheme.fromSeed(
-            seedColor: lightDynamic.primary,
-            brightness: Brightness.light,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
-          darkScheme = ColorScheme.fromSeed(
-            seedColor: darkDynamic.primary,
-            brightness: Brightness.dark,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
+          lightScheme = buildScheme(lightDynamic.primary, Brightness.light);
+          darkScheme = buildScheme(darkDynamic.primary, Brightness.dark);
         } else {
-          lightScheme = ColorScheme.fromSeed(
-            seedColor: themeState.seedColor,
-            brightness: Brightness.light,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
-          darkScheme = ColorScheme.fromSeed(
-            seedColor: themeState.seedColor,
-            brightness: Brightness.dark,
-            dynamicSchemeVariant: themeState.schemeVariant,
-          );
+          lightScheme = buildScheme(themeState.seedColor, Brightness.light);
+          darkScheme = buildScheme(themeState.seedColor, Brightness.dark);
         }
 
         return TranslationProvider(
@@ -628,58 +723,10 @@ class MainApp extends ConsumerWidget {
               // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
               // 会强制改为 Roboto，导致字体显得比之前粗）。
               theme: _withChineseFallback(
-                ThemeData(
-                  colorScheme: lightScheme,
-                  useMaterial3: true,
-                  fontFamily: themeState.fontFamilyName,
-                  pageTransitionsTheme: _pageTransitionsTheme,
-                  iconTheme: _appIconTheme(lightScheme.onSurface),
-                  primaryIconTheme: _appIconTheme(lightScheme.onPrimary),
-                  cardTheme: CardThemeData(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: lightScheme.surfaceContainerLow,
-                    margin: EdgeInsets.zero,
-                  ),
-                  popupMenuTheme: PopupMenuThemeData(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 3,
-                    color: lightScheme.surfaceContainerLow,
-                    surfaceTintColor: Colors.transparent,
-                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
+                _buildAppTheme(lightScheme, themeState),
               ),
               darkTheme: _withChineseFallback(
-                ThemeData(
-                  colorScheme: darkScheme,
-                  useMaterial3: true,
-                  fontFamily: themeState.fontFamilyName,
-                  pageTransitionsTheme: _pageTransitionsTheme,
-                  iconTheme: _appIconTheme(darkScheme.onSurface),
-                  primaryIconTheme: _appIconTheme(darkScheme.onPrimary),
-                  cardTheme: CardThemeData(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: darkScheme.surfaceContainerLow,
-                    margin: EdgeInsets.zero,
-                  ),
-                  popupMenuTheme: PopupMenuThemeData(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 3,
-                    color: darkScheme.surfaceContainerLow,
-                    surfaceTintColor: Colors.transparent,
-                    menuPadding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
+                _buildAppTheme(darkScheme, themeState),
               ),
               builder: (context, child) {
                 final brightness = Theme.of(context).brightness;
@@ -807,6 +854,7 @@ class _MainPageState extends ConsumerState<MainPage>
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
   DateTime? _lastBackPressTime;
+  bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
 
@@ -1159,71 +1207,58 @@ class _MainPageState extends ConsumerState<MainPage>
   }
 
   Future<void> _checkClipboardTopicLink() async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
-    final candidate = await clipboardTopicLinkService.checkClipboard(
-      enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
-      lastPromptedHash: prefs.getInt(
-        ClipboardTopicLinkService.lastPromptedHashPrefsKey,
-      ),
-    );
-    if (!mounted || candidate == null) return;
+    // 重入防护:启动和「假 resume」(系统配置变更等触发的
+    // didChangeAppLifecycleState resumed)可能在短窗口内先后调用本方法
+    // 两次,不加锁会各自读到同一个 candidate、各弹一次提示。
+    if (_clipboardCheckInFlight) return;
+    _clipboardCheckInFlight = true;
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      final clipboardTopicLinkService = ClipboardTopicLinkService.instance;
+      final candidate = await clipboardTopicLinkService.checkClipboard(
+        enabled: ref.read(preferencesProvider).clipboardTopicLinkDetection,
+        lastPromptedHash: prefs.getInt(
+          ClipboardTopicLinkService.lastPromptedHashPrefsKey,
+        ),
+      );
+      if (!mounted || candidate == null) return;
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-
-    var promptHandled = false;
-    void markPromptedOnce() {
-      if (promptHandled) return;
-      promptHandled = true;
+      // ToastService 而不是 ScaffoldMessenger:设置页宽屏下是主从双栏,
+      // 两侧各有一个独立 Scaffold,ScaffoldMessenger 在这种多 Scaffold
+      // 场景下会两边都弹一条——ToastService 是单例 OverlayEntry,不挂靠
+      // 任何 Scaffold,天然只有一份。
       unawaited(
         clipboardTopicLinkService.markPrompted(candidate, prefs: prefs),
       );
-    }
-
-    messenger.hideCurrentSnackBar();
-    final controller = messenger.showSnackBar(
-      SnackBar(
-        content: ClipboardTopicLinkSnackContent(
-          message: context.l10n.preferences_clipboardTopicLink_detected,
-          actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-          onOpen: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-            final topic = DiscourseUrlParser.parseTopic(
-              candidate.uri.toString(),
-            );
-            if (topic != null) {
-              ref
-                  .read(selectedTopicProvider.notifier)
-                  .select(
-                    topicId: topic.topicId,
-                    initialTitle: topic.slug,
-                    scrollToPostNumber: topic.postNumber,
-                  );
-              ref.requestNavDestination(NavEntryIds.home);
-            } else {
-              DeepLinkService.instance.handleUri(candidate.uri);
-            }
-          },
-          onDismiss: () {
-            markPromptedOnce();
-            messenger.hideCurrentSnackBar();
-          },
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
+      ToastService.show(
+        context.l10n.preferences_clipboardTopicLink_detected,
         duration: const Duration(seconds: 8),
-        elevation: 0,
-        padding: EdgeInsets.zero,
-        margin: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: 16 + MediaQuery.paddingOf(context).bottom,
-        ),
-      ),
-    );
-    unawaited(controller.closed.then((_) => markPromptedOnce()));
+        actionLabel: context.l10n.preferences_clipboardTopicLink_open,
+        // 宽屏且能解析成话题链接就进首页平行视界（选中 + 切 tab）；
+        // 窄屏没有「写栈 → 推详情」的桥（同通知入口的窄屏问题），
+        // 和解析失败一样退回深链通道全屏打开
+        onAction: () {
+          final topic = DiscourseUrlParser.parseTopic(
+            candidate.uri.toString(),
+          );
+          if (topic != null &&
+              MasterDetailLayout.canShowBothPanesFor(context)) {
+            ref
+                .read(selectedTopicProvider.notifier)
+                .select(
+                  topicId: topic.topicId,
+                  initialTitle: topic.slug,
+                  scrollToPostNumber: topic.postNumber,
+                );
+            ref.requestNavDestination(NavEntryIds.home);
+          } else {
+            DeepLinkService.instance.handleUri(candidate.uri);
+          }
+        },
+      );
+    } finally {
+      _clipboardCheckInFlight = false;
+    }
   }
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道

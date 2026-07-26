@@ -52,6 +52,15 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setBoostDanmaku(v),
         ),
+        SwitchModel(
+          id: 'showSuggestedTopics',
+          title: l10n.reading_showSuggestedTopics,
+          subtitle: l10n.reading_showSuggestedTopicsDesc,
+          icon: Symbols.forum_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).showSuggestedTopics,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setShowSuggestedTopics(v),
+        ),
       ],
     ),
     SettingsGroup(
@@ -106,6 +115,18 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             getValue: (ref) => ref.watch(preferencesProvider).showSignatures,
             onChanged: (ref, v) =>
                 ref.read(preferencesProvider.notifier).setShowSignatures(v),
+          ),
+        if (PreloadedDataService().signaturesEnabled)
+          SwitchModel(
+            id: 'adaptiveSignatureFrameRate',
+            title: l10n.reading_adaptiveSignatureFrameRate,
+            subtitle: l10n.reading_adaptiveSignatureFrameRateDesc,
+            icon: Symbols.speed_rounded,
+            getValue: (ref) =>
+                ref.watch(preferencesProvider).adaptiveSignatureFrameRate,
+            onChanged: (ref, v) => ref
+                .read(preferencesProvider.notifier)
+                .setAdaptiveSignatureFrameRate(v),
           ),
         CustomModel(
           id: 'bookmarksOpenMode',
@@ -559,4 +580,3 @@ void _showGestureActionPicker(
     if (selected != null) onPicked(selected);
   });
 }
-

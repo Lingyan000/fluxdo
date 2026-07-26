@@ -16,7 +16,7 @@ import '../services/data_management/cache_size_service.dart';
 import '../services/data_management/data_backup_service.dart';
 import '../services/toast_service.dart';
 import '../settings/definitions/data_management_defs.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/settings/settings_group_page.dart';
 
 /// 数据管理页面（数据驱动版）
@@ -312,11 +312,7 @@ class _CacheManagementSectionState
                       ? null
                       : _clearSelected,
                   child: _isClearing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const LoadingSpinner(size: 18)
                       : Text(
                           S.current.dataManagement_clearSelected(
                             CacheSizeService.formatSize(_selectedSize),

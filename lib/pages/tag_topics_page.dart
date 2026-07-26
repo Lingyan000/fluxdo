@@ -159,8 +159,10 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
     }
   }
 
-  /// 静默刷新（不显示 loading）
-  Future<void> _silentRefresh() async {
+  /// 静默同步已加载话题的状态(已读进度、回帖数等):拉第一页后按 id
+  /// 原地合并,不整表替换。整表替换会把已 load more 的多页数据截断回
+  /// 第一页,列表变短后滚动位置被 clamp 到第一页底部。
+  Future<void> _silentSyncTopics() async {
     try {
       final service = ref.read(discourseServiceProvider);
       final response = await service.getFilteredTopics(
@@ -177,21 +179,11 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             : null,
       );
 
-      final result = _paginationHelper.processRefresh(
-        PaginationResult(
-          items: response.topics,
-          moreUrl: response.moreTopicsUrl,
-        ),
-      );
-
-      if (mounted) {
-        setState(() {
-          _topics = result.items;
-          _hasMore = result.hasMore;
-          _page = 0;
-        });
-        _loadMoreCoordinator.resetCooldown();
-      }
+      if (!mounted) return;
+      final updates = {for (final t in response.topics) t.id: t};
+      setState(() {
+        _topics = [for (final t in _topics) updates[t.id] ?? t];
+      });
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
@@ -311,9 +303,10 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
       ),
     );
 
-    // 从话题详情返回后，静默刷新
+    // 从话题详情返回后,静默同步已读状态等。按 id 原地合并而非整表
+    // 刷新,保住已 load more 的数据和滚动位置
     if (mounted) {
-      _silentRefresh();
+      _silentSyncTopics();
     }
   }
 

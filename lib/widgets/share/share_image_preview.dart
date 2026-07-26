@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../models/topic.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse/discourse_service.dart';
@@ -503,11 +504,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
                   child: OutlinedButton.icon(
                     onPressed: (_isSaving || _targetPost == null) ? null : _saveImage,
                     icon: _isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                        ? const LoadingSpinner(size: 18)
                         : const Icon(Symbols.save_alt_rounded),
                     label: Text(context.l10n.share_saveToGallery),
                     style: OutlinedButton.styleFrom(
@@ -521,14 +518,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
                   child: FilledButton.icon(
                     onPressed: (_isSharing || _targetPost == null) ? null : _shareImage,
                     icon: _isSharing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                        ? const LoadingSpinner(size: 18, color: Colors.white)
                         : const Icon(Symbols.share_rounded),
                     label: Text(context.l10n.common_share),
                     style: FilledButton.styleFrom(

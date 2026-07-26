@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/user.dart';
@@ -1520,8 +1521,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                     shape: isSquare
                                         ? BoxShape.rectangle
                                         : BoxShape.circle,
-                                    borderRadius:
-                                        isSquare ? BorderRadius.circular(8) : null,
+                                    borderRadius: isSquare
+                                        ? BorderRadius.circular(8)
+                                        : null,
                                     border: Border.all(
                                       color: Colors.white,
                                       width: 2,
@@ -2159,7 +2161,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: M3eRefreshIndicator(
         onRefresh: () => _loadActions(filter),
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2705,7 +2707,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: M3eRefreshIndicator(
         onRefresh: () => _loadReactions(),
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2771,7 +2773,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: M3eRefreshIndicator(
         onRefresh: () => _loadBoosts(),
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2841,7 +2843,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: M3eRefreshIndicator(
         onRefresh: () => _loadVotes(),
         child: ListView.builder(
           padding: const EdgeInsets.all(12),
@@ -2917,7 +2919,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: M3eRefreshIndicator(
         onRefresh: () => _loadSolved(),
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

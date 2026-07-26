@@ -13,6 +13,7 @@ import '../../services/network/doh_proxy/doh_proxy_ffi.dart';
 import '../../services/toast_service.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// DOH 详细设置页面（服务器列表、IPv6、服务端 IP、ECH）
 class DohDetailSettingsPage extends StatefulWidget {
@@ -967,7 +968,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
       future: _recordsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: LoadingSpinner());
         }
         if (snapshot.hasError) {
           return Padding(

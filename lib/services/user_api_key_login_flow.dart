@@ -9,7 +9,7 @@ import 'local_notification_service.dart' show navigatorKey;
 import 'network/cookie/cookie_jar_service.dart';
 import 'toast_service.dart';
 import 'user_api_key_service.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 浏览器授权登录流程编排
 ///

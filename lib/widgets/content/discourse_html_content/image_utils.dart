@@ -370,6 +370,8 @@ class DiscourseImageUtils {
     int initialIndex = 0,
     bool enableShare = true,
     List<String?>? filenames,
+    BoxFit? heroSourceFit,
+    double heroSourceRadius = 0,
   }) {
     return ImageViewerPage.open(
       context,
@@ -382,6 +384,8 @@ class DiscourseImageUtils {
       thumbnailUrl: thumbnailUrl,
       thumbnailUrls: thumbnailUrls,
       filenames: filenames,
+      heroSourceFit: heroSourceFit,
+      heroSourceRadius: heroSourceRadius,
     );
   }
 

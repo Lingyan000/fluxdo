@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.24+2026071622
+version: 0.2.25+2026072418
 
 environment:
   sdk: ^3.10.4
@@ -22,6 +22,7 @@ workspace:
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/fluxdo_render
+  - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
 
@@ -86,6 +87,8 @@ dependencies:
     path: packages/ai_model_manager
   common_ui:
     path: packages/common_ui
+  m3e_ui:
+    path: packages/m3e_ui
   paper_shaders:
     path: packages/paper_shaders
   fluxdo_render:
@@ -144,9 +147,6 @@ dependencies:
   # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
   # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
   chinese_font_library: ^1.2.0
-  # androidx.graphics.shapes 的 Dart 移植(RoundedPolygon/Morph/MaterialShapes),
-  # 用于 1:1 复刻 M3 Expressive LoadingIndicator 的形状变形加载动画。
-  material_new_shapes: ^1.0.0
 
   window_manager: ^0.5.1
   screen_retriever: ^0.2.1
@@ -159,6 +159,19 @@ dependencies:
   chewie: any
   video_player: any
   just_audio: ^0.10.6 # 原生上传音频播放(FluxdoRender audioBuilder)
+  # just_audio 本身不包含 Windows/Linux 实现。
+  # - Windows: media_kit 后端(自带 libmpv-2.dll)。
+  # - Linux: 自写 GStreamer 桥(services/audio/just_audio_gst.dart),经
+  #   audioplayers_linux 走 GNOME runtime 自带的 GStreamer。不用 media_kit:
+  #   media_kit_libs_linux 不打包 libmpv(指望系统已装),且其 CMake 会在
+  #   configure 期联网下载 mimalloc —— flatpak 禁网沙箱里直接 FATAL_ERROR。
+  #   只依赖 audioplayers_linux + platform_interface,不拉 audioplayers 主包,
+  #   避免给 Android/iOS 等平台塞进用不到的实现插件。
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.9
+  just_audio_platform_interface: ^4.6.0 # JustAudioGst 实现平台接口
+  audioplayers_linux: ^4.3.0
+  audioplayers_platform_interface: ^7.2.0
   rhttp:
     git:
       url: https://github.com/Lingyan000/rhttp_plus.git

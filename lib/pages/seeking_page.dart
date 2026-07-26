@@ -41,20 +41,12 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
   bool _isAutoSwitching = false;
 
   @override
-  void initState() {
-    super.initState();
-    // PageView 可能提前构建本页，只有用户真正切到追觅时才清零。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.isActive) {
-        unawaited(ref.read(seekingProvider.notifier).markAllRead());
-      }
-    });
-  }
-
-  @override
   void didUpdateWidget(covariant SeekingPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isActive && widget.isActive) {
+    // 未读清零推迟到**离开**页面时：进入页面就清零会让用户徽标
+    // （_UserChip 的 99+ 角标）永远只存在一帧，谁有新动态根本看不见。
+    // 停留期间徽标保持累积，离开时视为已阅、下次进入从零计。
+    if (oldWidget.isActive && !widget.isActive) {
       unawaited(ref.read(seekingProvider.notifier).markAllRead());
     }
   }
@@ -229,14 +221,6 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       return const SizedBox.shrink();
     }
 
-    ref.listen<int>(seekingProvider.select((value) => value.totalUnread), (
-      _,
-      unread,
-    ) {
-      if (widget.isActive && unread > 0) {
-        unawaited(ref.read(seekingProvider.notifier).markAllRead());
-      }
-    });
     final enabled = ref.watch(seekingProvider.select((value) => value.enabled));
     final users = ref.watch(seekingProvider.select((value) => value.users));
     final holdUntil = ref.watch(

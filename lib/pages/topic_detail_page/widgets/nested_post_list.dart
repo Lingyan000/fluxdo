@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../models/nested_topic.dart';
 import '../../../models/topic.dart';
@@ -10,6 +11,7 @@ import '../../../widgets/nested/nested_post_card.dart';
 import '../../../widgets/post/post_item/post_item.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
+import 'topic_more_topics.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
 class NestedPostList extends ConsumerStatefulWidget {
@@ -263,6 +265,12 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             },
           ),
 
+          // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现)
+          if (!ns.hasMoreRoots)
+            SliverToBoxAdapter(
+              child: MoreTopicsSection(detail: widget.detail),
+            ),
+
           SliverToBoxAdapter(
             child: SizedBox(
               height: MediaQuery.of(context).padding.bottom + 100,
@@ -279,7 +287,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ns.isLoadingMore
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: LoadingSpinner())
           : Center(
               child: TextButton(
                 onPressed: () =>

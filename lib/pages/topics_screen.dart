@@ -48,6 +48,10 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   bool? _lastCanShowDetailPane;
   bool _isAutoSwitching = false;
 
+  /// 左栏是不是"列表形态"（信息流 / 草稿列表）。列表给窄栏，内容预览
+  /// 才对半分。build 里按当前栈算。
+  bool _masterIsListLike = true;
+
   /// 当前活跃的 provider 实例 ID，布局切换时复用
   String? _activeInstanceId;
   int? _activeTopicId;
@@ -84,6 +88,26 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       _activeInstanceId = const Uuid().v4();
     }
     return _activeInstanceId!;
+  }
+
+  /// 侧栏板块导航（切换或重选）时收起深层平行视界与嵌入态，退回列表。
+  void _collapseParallelForSidebarNav() {
+    final state = ref.read(selectedTopicProvider);
+    if (!state.isStacked &&
+        !_showEmbeddedSearch &&
+        _leftCategory == null &&
+        _leftTag == null) {
+      return;
+    }
+    ref.read(selectedTopicProvider.notifier).collapseToTop();
+    if (mounted) {
+      setState(() {
+        _showEmbeddedSearch = false;
+        _embeddedSearchFilter = null;
+        _leftCategory = null;
+        _leftTag = null;
+      });
+    }
   }
 
   void _maybePushDetail(
@@ -192,28 +216,24 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   Widget build(BuildContext context) {
     final selectedTopic = ref.watch(selectedTopicProvider);
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+    // 左栏本质是不是"列表"（信息流 / 草稿列表）——决定给窄栏还是对半分
+    _masterIsListLike = !selectedTopic.isStacked ||
+        selectedTopic.stack[selectedTopic.stack.length - 2].kind ==
+            PaneKind.drafts;
     final user = ref.watch(currentUserProvider).value;
 
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让
     // TopicsPage 换 Tab，还必须收起“上一层内容”左栏，否则列表虽然已在
     // 后台切换，界面仍被旧话题覆盖，看起来就像点击无响应。
+    //
+    // 两个来源都要听：高亮状态变化（含置 null 的路径，如打开板块管理），
+    // 以及 tap 事件——后者覆盖「重选当前板块」（状态同值被去重，只有
+    // tap 事件会到）。普通切换两个都触发，处理器有早退保护，跑两遍无害。
     ref.listen(activeSidebarCategoryIdProvider, (_, _) {
-      final state = ref.read(selectedTopicProvider);
-      if (!state.isStacked &&
-          !_showEmbeddedSearch &&
-          _leftCategory == null &&
-          _leftTag == null) {
-        return;
-      }
-      ref.read(selectedTopicProvider.notifier).collapseToTop();
-      if (mounted) {
-        setState(() {
-          _showEmbeddedSearch = false;
-          _embeddedSearchFilter = null;
-          _leftCategory = null;
-          _leftTag = null;
-        });
-      }
+      _collapseParallelForSidebarNav();
+    });
+    ref.listen(sidebarCategoryTapProvider, (_, _) {
+      _collapseParallelForSidebarNav();
     });
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）
@@ -254,10 +274,14 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       child: MasterDetailLayout(
         // 压栈时 master 显示的是"上一层"内容而不是列表，才是真正的平行
         // 视界——放宽到接近对半分；master 还是列表时维持列表该有的窄栏。
-        maxMasterRatio: selectedTopic.isStacked
+        //
+        // 例外：上一层是**草稿列表**时它本质仍是列表（一列卡片），
+        // 对半分太宽、右边话题被挤扁 —— 按列表口径给窄栏。
+        maxMasterRatio: selectedTopic.isStacked && !_masterIsListLike
             ? 0.8
             : MasterDetailLayout.defaultMaxMasterRatio,
-        preferredMasterRatio: selectedTopic.isStacked ? 0.5 : 0.25,
+        preferredMasterRatio:
+            selectedTopic.isStacked && !_masterIsListLike ? 0.5 : 0.25,
         master: _wrapPaneTap(
           ActivePane.master,
           _buildMasterPane(selectedTopic),
@@ -286,6 +310,12 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                               selectedTopic.initialRevisionPostNumber,
                           initialRevisionNumber:
                               selectedTopic.initialRevisionNumber,
+                          // 这里是**重建** entry，漏一个字段就等于把它吞掉：
+                          // 之前漏了这两个，话题草稿点进来回复框根本不弹。
+                          autoOpenReply:
+                              selectedTopic.topEntry!.autoOpenReply,
+                          autoReplyToPostNumber:
+                              selectedTopic.topEntry!.autoReplyToPostNumber,
                         )
                       : selectedTopic.topEntry!,
                   stackProvider: selectedTopicProvider,
@@ -388,6 +418,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
           entry: previous,
           stackProvider: selectedTopicProvider,
           truncateOnPush: true,
+          // 左栏预览位也要跟随 tab 活跃态（草稿列表靠它决定何时重拉）
+          parentActive: widget.isActive,
         ),
       ],
     );
@@ -409,6 +441,15 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   }
 
   void _openDrafts(BuildContext context) {
+    // 首页信息流**自己**就是平行视界宿主（左列表 + 右 detail），但这里的
+    // context 在栈外（FAB/菜单），拿不到 EmbeddedStackScope —— 之前靠
+    // scope 查找必然落空、每次都全屏。直接压首页栈：草稿列表进右栏，
+    // 左边信息流不动。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ref.read(selectedTopicProvider.notifier).pushDrafts();
+      return;
+    }
+    // 窄屏没有右栏可承载，照旧全屏
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const DraftsPage()),
@@ -901,6 +942,8 @@ class TopicDetailPane extends ConsumerWidget {
     this.onBack,
     this.stackProvider,
     this.truncateOnPush = false,
+    this.autoOpenReply = false,
+    this.autoReplyToPostNumber,
   });
 
   final int topicId;
@@ -923,6 +966,10 @@ class TopicDetailPane extends ConsumerWidget {
   /// 的栈顶——内部链接点击应该截断栈顶后压入（替换右侧正显示的那层），
   /// 见 [TopicDetailPage.truncateOnPush] 注释。
   final bool truncateOnPush;
+
+  /// 进入即弹回复框(草稿续写)。
+  final bool autoOpenReply;
+  final int? autoReplyToPostNumber;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -949,6 +996,12 @@ class TopicDetailPane extends ConsumerWidget {
       truncateOnPush: truncateOnPush,
       onEmbeddedBack: onBack,
       parentActive: parentActive,
+      autoOpenReply: autoOpenReply,
+      // 弹过一次就把意图从栈里清掉，否则面板每次重建都会再弹
+      onAutoReplyConsumed: () => ref
+          .read((stackProvider ?? selectedTopicProvider).notifier)
+          .consumeAutoOpenReply(),
+      autoReplyToPostNumber: autoReplyToPostNumber,
     );
   }
 }
@@ -991,6 +1044,8 @@ class PaneContentWidget extends StatelessWidget {
           onBack: onBack,
           stackProvider: stackProvider,
           truncateOnPush: truncateOnPush,
+          autoOpenReply: entry.autoOpenReply,
+          autoReplyToPostNumber: entry.autoReplyToPostNumber,
         );
       case PaneKind.profile:
         return EmbeddedStackScope(
@@ -1007,6 +1062,27 @@ class PaneContentWidget extends StatelessWidget {
           stackProvider: stackProvider,
           truncateOnPush: truncateOnPush,
           child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
+        );
+      case PaneKind.drafts:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          // 草稿处理完 → 把草稿这一层从栈里抽掉（不是 pop：pop 会连右边
+          // 的话题一起关掉）。master 预览位的 onBack 本来就是 null，所以
+          // 这条必须独立接线，否则草稿栏永远赖着不走。
+          child: Consumer(
+            builder: (context, ref, _) => DraftsPage(
+              embeddedMode: true,
+              // 跟随宿主 tab 的活跃状态：切走再切回来要重新拉一次草稿
+              isActive: parentActive,
+              // truncateOnPush = 我在左栏预览位 = 我是"处理栏"，空了该撤
+              autoCloseWhenEmpty: truncateOnPush,
+              onEmbeddedBack: onBack,
+              onAllHandled: () => ref
+                  .read(stackProvider.notifier)
+                  .removeEntriesOfKind(PaneKind.drafts),
+            ),
+          ),
         );
     }
   }

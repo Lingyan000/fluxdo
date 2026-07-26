@@ -5,6 +5,7 @@ import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
+import 'package:flutter/services.dart';
 import '../../utils/idle_task.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +18,7 @@ import '../../utils/html_to_markdown.dart';
 import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
+import '../../utils/scroll_jump.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show SelectionCoordinator;
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -40,6 +42,7 @@ import '../../services/toast_service.dart';
 import '../../services/log/log_writer.dart';
 import '../../services/log/bookmark_edit_trace.dart';
 import '../../services/navigation/app_route_observer.dart';
+import '../../utils/hero_visibility_controller.dart';
 import '../../widgets/content/lazy_load_scope.dart';
 import '../../widgets/post/post_item_skeleton.dart';
 import '../../widgets/post/post_item/widgets/post_flag_sheet.dart';
@@ -49,6 +52,7 @@ import '../../widgets/post/reply_sheet.dart';
 import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
@@ -93,6 +97,12 @@ class TopicDetailPage extends ConsumerStatefulWidget {
   final bool restoreExistingPaneStack; // 宽屏缩窄产生的临时路由，恢复时保留原栈
   final VoidCallback? restoreParentPaneStack; // 恢复前先还原下层临时路由的平行视界栈
   final bool autoOpenReply; // 自动打开回复框（从草稿进入时使用）
+
+  /// 自动回复意图**已消费**：调用方应把它从状态源头清掉。
+  ///
+  /// [_autoOpenReplyHandled] 只是 State 字段，面板一重建就重置，拦不住
+  /// 重复弹出（实测发完私信回复框又弹一次）。
+  final VoidCallback? onAutoReplyConsumed;
   final int? autoReplyToPostNumber; // 自动回复的帖子编号（从草稿进入时使用）
   final String? instanceId; // 外部指定的 provider 实例 ID（布局切换时复用）
   final bool autoOpenAiChat; // 自动打开 AI 聊天面板
@@ -136,6 +146,7 @@ class TopicDetailPage extends ConsumerStatefulWidget {
     this.restoreExistingPaneStack = false,
     this.restoreParentPaneStack,
     this.autoOpenReply = false,
+    this.onAutoReplyConsumed,
     this.autoReplyToPostNumber,
     this.instanceId,
     this.stackProvider,
@@ -214,7 +225,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _defaultNestedViewApplied = false; // 默认嵌套视图配置是否已应用（依赖 detail 加载后判定）
   // 搜索相关
   final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+  late final FocusNode _searchFocusNode;
   late final AnimationController _expandController;
   late final Animation<Offset> _animation;
   Set<int> _lastReadPostNumbers = {};
@@ -278,6 +289,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
+    _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
 
     _expandController = AnimationController(
       vsync: this,
@@ -372,6 +384,38 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       toggleAiPanelNotifier.addListener(_onToggleAiPanel);
       _schedulePostShortcutRegistration();
     }
+
+    // 注册"按 heroTag 段级滚动"能力:图片查看器翻页时把源缩略图所在
+    // 楼层滚进可视区,保证关闭时 Hero 能飞回原位(缩略图被列表回收时
+    // 的粗定位,精确化由 HeroVisibilityController 二次 ensureVisible)
+    _heroScrollResolver = _scrollToHeroTagSource;
+    HeroVisibilityController.instance.sourceScrollResolver =
+        _heroScrollResolver;
+  }
+
+  /// 本实例注册的 resolver(dispose 时按 identity 注销,避免叠栈的
+  /// 详情页互相覆盖后误清)
+  Future<void> Function(String heroTag)? _heroScrollResolver;
+
+  /// 解析 heroTag(`post_<postId>_img_<idx>`)→ 滚动到对应楼层。
+  Future<void> _scrollToHeroTagSource(String heroTag) async {
+    if (!mounted) return;
+    final match = RegExp(r'^post_(\d+)_img_\d+$').firstMatch(heroTag);
+    if (match == null) return;
+    final postId = int.tryParse(match.group(1)!);
+    if (postId == null) return;
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    final posts = detail?.postStream.posts;
+    if (posts == null) return;
+    final post = posts.where((p) => p.id == postId).firstOrNull;
+    if (post == null) return;
+
+    await _controller.scrollToPost(post.postNumber, posts);
+    // 等两帧:让目标段构建、其中的 HeroImage 完成注册,
+    // 调用方随后二次 ensureVisible 精确到图片
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   bool _isAiSheetOpen = false;
@@ -526,23 +570,59 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         unawaited(_handleDeletePost(post));
       },
     };
-    final registeredShortcuts = switch (widget.embeddedMode) {
-      // 平行视界导航栈：栈深度 > 1 时 onEmbeddedBack 非空，Esc 退回上一层，
-      // 跟返回按钮的行为一致。栈深度 == 1（普通双栏选中态）没有"关闭"
-      // 概念，维持原来不注册 closeOverlay 的行为。
-      true when widget.onEmbeddedBack != null => {
-        ...shortcuts,
-        ShortcutAction.closeOverlay: widget.onEmbeddedBack!,
-      },
-      true => shortcuts,
-      false => {
-        ...shortcuts,
-        ShortcutAction.closeOverlay: () {
-          if (mounted) Navigator.of(context).maybePop();
-        },
-      },
+    // Esc 优先退出页内搜索/AI，再按当前布局执行嵌入返回或路由返回。
+    // （_handleCloseShortcut 的嵌入分支会调 onEmbeddedBack——平行视界
+    // 栈深度 > 1 时非空,Esc 退回上一层,与返回按钮一致;为 null 时
+    // 刻意空操作,不会误 pop 宿主路由。）
+    final registeredShortcuts = {
+      ...shortcuts,
+      ShortcutAction.closeOverlay: _handleCloseShortcut,
     };
     _shortcutScopeBinding.registerForRoute(_route, registeredShortcuts);
+  }
+
+  void _exitSearchMode() {
+    _searchController.clear();
+    ref.read(topicSearchProvider(widget.topicId).notifier).exitSearchMode();
+  }
+
+  void _returnFromAiPage() {
+    _pageController.animateToPage(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleCloseShortcut() {
+    if (!mounted) return;
+    if (ref.read(topicSearchProvider(widget.topicId)).isSearchMode) {
+      _exitSearchMode();
+      return;
+    }
+    if (_currentPageNotifier.value != 0) {
+      _returnFromAiPage();
+      return;
+    }
+    if (widget.embeddedMode) {
+      // 嵌入模式只有书签页移动端 chrome 会传 onEmbeddedBack;桌面双栏
+      // 下它是 null,此时 Esc 落到这里是刻意的空操作:scope 回调没有
+      // 「未处理」语义(分发端 containsKey 即消费),又不能不注册 ——
+      // 上面退搜索/回正文正是嵌入模式需要的。也不能落到 maybePop:
+      // 嵌入面板不是独立路由,pop 的会是宿主页面(如整个书签页)。
+      widget.onEmbeddedBack?.call();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return KeyEventResult.ignored;
+    }
+    _exitSearchMode();
+    return KeyEventResult.handled;
   }
 
   void _schedulePostShortcutRegistration() {
@@ -624,6 +704,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void dispose() {
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
+    // 按 identity 注销:叠栈的详情页可能已覆盖注册,只清自己那份
+    if (identical(
+      HeroVisibilityController.instance.sourceScrollResolver,
+      _heroScrollResolver,
+    )) {
+      HeroVisibilityController.instance.sourceScrollResolver = null;
+    }
     _route?.animation?.removeStatusListener(_onRouteEnterAnimStatus);
     if (_route != null) {
       appRouteObserver.unsubscribe(this);
@@ -665,6 +752,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void didPopNext() {
     _setRouteVisible(true, 'did_pop_next');
     _schedulePostShortcutRegistration();
+    // 叠栈的详情页 pop 后,恢复本页的 heroTag 滚动能力
+    HeroVisibilityController.instance.sourceScrollResolver =
+        _heroScrollResolver;
   }
 
   @override
@@ -925,12 +1015,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         actions: [
           IconButton(
             icon: const Icon(Symbols.close_rounded),
-            onPressed: () {
-              _searchController.clear();
-              ref
-                  .read(topicSearchProvider(widget.topicId).notifier)
-                  .exitSearchMode();
-            },
+            onPressed: _exitSearchMode,
           ),
         ],
       );
@@ -1889,6 +1974,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           _autoOpenReplyHandled = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
+              // 先从状态源头清掉意图,再弹框:清晚了这一帧的重建又会命中
+              widget.onAutoReplyConsumed?.call();
               // 如果指定了回复帖子编号，找到对应的帖子
               Post? replyToPost;
               if (widget.autoReplyToPostNumber != null) {
@@ -2022,10 +2109,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             canPop: !isSearchMode,
             onPopInvokedWithResult: (bool didPop, dynamic result) {
               if (!didPop) {
-                _searchController.clear();
-                ref
-                    .read(topicSearchProvider(widget.topicId).notifier)
-                    .exitSearchMode();
+                _exitSearchMode();
               }
             },
             child: topicScaffold,
@@ -2045,16 +2129,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             onPopInvokedWithResult: (bool didPop, dynamic result) {
               if (!didPop) {
                 if (isOnAiPage) {
-                  _pageController.animateToPage(
-                    0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                  );
+                  _returnFromAiPage();
                 } else {
-                  _searchController.clear();
-                  ref
-                      .read(topicSearchProvider(widget.topicId).notifier)
-                      .exitSearchMode();
+                  _exitSearchMode();
                 }
               }
             },
@@ -2081,6 +2158,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                         topicId: widget.topicId,
                         detail: detail,
                         embedded: true,
+                        onEscape: _returnFromAiPage,
                         onReplyToTopic: detail == null
                             ? null
                             : (imageMarkdown) {
@@ -2594,11 +2672,7 @@ class _AiAssistantActionIcon extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2, color: color),
-          ),
+          LoadingSpinner(size: 22, color: color),
           Icon(Symbols.auto_awesome_rounded, size: 13, color: color),
         ],
       ),

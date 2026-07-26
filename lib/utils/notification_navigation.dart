@@ -7,7 +7,10 @@ import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/topic_detail_provider.dart';
 import '../pages/badge_page.dart';
+import '../pages/topic_detail_page/topic_detail_page.dart';
+import '../pages/user_profile_page.dart';
 import '../services/local_notification_service.dart';
+import '../widgets/layout/master_detail_layout.dart';
 
 NavigatorState? _rootNavigator(BuildContext context) {
   return navigatorKey.currentState ??
@@ -33,6 +36,14 @@ void _showHomeWorkspace(BuildContext context, WidgetRef ref) {
   _showWorkspace(context, ref, NavEntryIds.home);
 }
 
+/// 窄屏（单栏）没有「工作区栈写入 → 打开全屏详情」这座桥：TopicsScreen
+/// 只在宽→窄布局切换或 tab 重新激活时才补 push 全屏路由，而已经在目标
+/// tab 上时 [NavActionDispatch.requestNavDestination] 是 no-op——select()
+/// 只会静默写栈，用户看不到任何跳转。所以窄屏必须走全屏路由入口，
+/// 只有真能同屏摆下双栏时才交给平行视界栈。
+bool _useWorkspaceNavigation(BuildContext context) =>
+    MasterDetailLayout.canShowBothPanesFor(context);
+
 /// 私信类通知专用:走 [selectedMessageProvider]（私信栏自己的平行视界栈），
 /// 并切到"私信" tab——不能像普通话题通知那样落进 [selectedTopicProvider]/
 /// 首页信息流栈，否则左栏会显示信息流而不是私信列表，跟从私信列表点进去
@@ -44,6 +55,20 @@ void _openMessageInWorkspace(
   int? postNumber,
   String? instanceId,
 }) {
+  if (!_useWorkspaceNavigation(context)) {
+    _pushOnRootNavigator(
+      context,
+      TopicDetailPage(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId,
+        // 中途拉宽窗口时自动收回私信栏的平行视界，而不是留在全屏页
+        autoSwitchToMasterDetail: true,
+        stackProvider: selectedMessageProvider,
+      ),
+    );
+    return;
+  }
   ref
       .read(selectedMessageProvider.notifier)
       .select(
@@ -97,6 +122,22 @@ Future<void> _openTopicOrMessageInWorkspace(
     return;
   }
 
+  if (!_useWorkspaceNavigation(context)) {
+    _pushOnRootNavigator(
+      context,
+      TopicDetailPage(
+        topicId: topicId,
+        scrollToPostNumber: postNumber,
+        instanceId: instanceId, // 命中上面预取的 topicDetailProvider 缓存
+        highlightBoostUsername: highlightBoostUsername,
+        initialRevisionPostNumber: initialRevisionPostNumber,
+        initialRevisionNumber: initialRevisionNumber,
+        autoSwitchToMasterDetail: true,
+      ),
+    );
+    return;
+  }
+
   ref
       .read(selectedTopicProvider.notifier)
       .select(
@@ -136,6 +177,13 @@ void handleNotificationTap(
     case NotificationType.inviteeAccepted:
     case NotificationType.following:
       if (notification.username != null) {
+        if (!_useWorkspaceNavigation(context)) {
+          _pushOnRootNavigator(
+            context,
+            UserProfilePage(username: notification.username!),
+          );
+          break;
+        }
         ref
             .read(selectedTopicProvider.notifier)
             .selectProfile(notification.username!);

@@ -8,7 +8,7 @@ import '../utils/font_awesome_helper.dart';
 import '../services/discourse_cache_manager.dart';
 import '../utils/url_helper.dart';
 import '../widgets/common/error_view.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import '../utils/fluxdo_render_callbacks.dart';
@@ -100,7 +100,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
               stackTrace: _errorStack,
               onRetry: _onRefresh,
             )
-          : RefreshIndicator(
+          : M3eRefreshIndicator(
               onRefresh: _onRefresh,
               child: CustomScrollView(
                 slivers: [

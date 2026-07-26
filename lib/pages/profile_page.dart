@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
@@ -19,12 +20,11 @@ import 'my_topics_page.dart';
 import 'my_badges_page.dart';
 import 'user_profile_page.dart';
 import 'trust_level_requirements_page.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/smart_avatar.dart';
-import 'package:common_ui/common_ui.dart';
 import '../providers/app_state_refresher.dart';
 import 'metaverse_page.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -67,6 +67,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _showTitle = false;
   bool _isRefreshing = false;
 
+  /// build 里存下的宽屏判定,供点击回调读(不能在回调里读 MediaQuery)。
+  bool _showWideLayout = false;
+
   // 余额卡片(CDK/LDC)是否已可渲染:仅在本页首次成为活跃 tab 后置 true。
   // 避免 IndexedStack 冷启动预构建本页时,balance card 的 watch 就触发
   // cdk/ldc user-info 请求(撞上 cdk 子域冷启动的 CF 挑战窗口)。
@@ -103,10 +106,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
   }
 
-  /// 下拉刷新
-  Future<void> _refreshData() async {
+  /// 刷新页面数据。
+  ///
+  /// [showAppBarIndicator] 为 false 时不点亮 AppBar 的刷新指示:
+  /// 下拉/快捷键刷新自带圆片 spinner,再亮 AppBar 就是同屏双 loading;
+  /// AppBar 指示只留给无下拉指示器的静默刷新(tab 切回等)。
+  Future<void> _refreshData({bool showAppBarIndicator = true}) async {
     if (!mounted) return;
-    setState(() => _isRefreshing = true);
+    if (showAppBarIndicator) setState(() => _isRefreshing = true);
     try {
       // LDC/CDK provider 现在只 watch currentUser.username，
       // refreshSilently 不会再连带触发它们 rebuild，需要显式刷新
@@ -120,7 +127,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         if (cdkEnabled) ref.read(cdkUserInfoProvider.notifier).refresh(),
       ]);
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (mounted && showAppBarIndicator) {
+        setState(() => _isRefreshing = false);
+      }
     }
   }
 
@@ -335,6 +344,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
     final isOffline = userState.hasError && userState.hasValue && userState.value != null;
     final showWideLayout = MasterDetailLayout.canShowBothPanesFor(context);
+    _showWideLayout = showWideLayout; // 供点击回调用，见 [_openDrafts]
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -401,11 +411,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     width: 48,
                     height: 48,
                     child: Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      child: LoadingSpinner(size: 18),
                     ),
                   )
                 : isOffline
@@ -430,7 +436,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
         ] : null,
       ),
-      body: showWideLayout ? _buildWideBody(theme) : _buildMobileBody(theme),
+      // 宽屏才提供平行视界栈：窄屏没有右栏可承载，openDrafts/openSettings
+      // 必须走全屏 push（有 scope 却没人渲染 = 点了没反应）。
+      body: showWideLayout
+          ? EmbeddedStackScope(
+              stackProvider: selectedProfilePaneProvider,
+              child: _buildWideBody(theme),
+            )
+          : _buildMobileBody(theme),
     );
   }
 
@@ -446,7 +459,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return DesktopRefreshIndicator(
       refreshNotifier: masterRefreshNotifier,
       shouldRefresh: () => widget.isActive,
-      onRefresh: _refreshData,
+      onRefresh: () => _refreshData(showAppBarIndicator: false),
       child: ListView(
         controller: _scrollController,
         // 底部让出 extendBody 注入的底栏高度
@@ -493,6 +506,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   /// 平板/桌面端：左右双栏布局
   Widget _buildWideBody(ThemeData theme) {
+    // 右半边：栈为空时是原来的卡片列表，压了内容（草稿/设置）就顶替掉。
+    final selected = ref.watch(selectedProfilePaneProvider);
+    final entry = selected.topEntry;
+    final notifier = ref.read(selectedProfilePaneProvider.notifier);
     return Row(
       children: [
         SizedBox(
@@ -501,7 +518,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         VerticalDivider(width: 1, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
         Expanded(
-          child: _buildRightPanel(theme),
+          child: entry == null
+              ? _buildRightPanel(theme)
+              : PaneContentWidget(
+                  key: ValueKey(
+                    'profile_pane_${entry.kind}_'
+                    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                  ),
+                  entry: entry,
+                  stackProvider: selectedProfilePaneProvider,
+                  parentActive: widget.isActive,
+                  onBack: () =>
+                      selected.isStacked ? notifier.pop() : notifier.clear(),
+                ),
         ),
       ],
     );
@@ -562,7 +591,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return DesktopRefreshIndicator(
       refreshNotifier: masterRefreshNotifier,
       shouldRefresh: () => widget.isActive,
-      onRefresh: _refreshData,
+      onRefresh: () => _refreshData(showAppBarIndicator: false),
       child: ListView(
         controller: _rightScrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -656,6 +685,30 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
+  /// 打开草稿：走**和信息流 + 号完全同一条路径**（切到首页栈、草稿进右栏）。
+  ///
+  /// 点某条草稿后草稿自己会挪到左栏当处理栏、内容进右栏，处理完草稿层被
+  /// 抽掉，左栏退回对应的信息流/私信列表 —— 所以这里不需要另造一个页面。
+  ///
+  /// 不用 `EmbeddedStackScope.openDrafts(context)`：这里的 `context` 是
+  /// ProfilePage 自己的 State context，而 EmbeddedStackScope 是它的
+  /// **后代**——`dependOnInheritedWidgetOfExactType` 只往上找，必然落空，
+  /// 于是每次都退化成全屏。（topics_screen 的 FAB 踩过同一个坑。）
+  void _openDrafts() {
+    // 用 build 里存下的值：`canShowBothPanesFor` 内部读 MediaQuery，在
+    // 点击回调里调用等于在 build 之外注册 InheritedWidget 依赖（drafts_page
+    // 那边踩过，红屏 `check that it really is our descendant`）。
+    if (_showWideLayout) {
+      ref.requestNavDestination(NavEntryIds.home);
+      ref.read(selectedTopicProvider.notifier).pushDrafts();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DraftsPage()),
+    );
+  }
+
   Widget _buildContentCard(ThemeData theme) {
     final actions = [
       (
@@ -680,10 +733,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         icon: Symbols.drafts_rounded,
         iconColor: Colors.teal,
         title: context.l10n.profile_myDrafts,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DraftsPage()),
-        ),
+        onTap: _openDrafts,
       ),
       (
         icon: Symbols.history_rounded,
