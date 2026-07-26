@@ -284,6 +284,12 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
+                      // 本页内部"名单栏|动态流"的分栏阈值,与外层选中
+                      // 内容的平行视界阈值(_parallelMasterWidth+
+                      // _parallelMinDetailWidth=920)是两套语义:
+                      // 780–920 区间 = 页内分栏、选中仍走全屏。有选中时
+                      // 外层直接返回顶层 MasterDetailLayout,不会同时
+                      // 落进本分支 —— 改任一阈值前先确认这个互斥仍成立。
                       final wide = constraints.maxWidth >= 780;
                       final activityPane = _SeekingActivityPane(
                         focusUser: _focusUser,

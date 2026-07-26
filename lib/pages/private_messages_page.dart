@@ -13,6 +13,7 @@ import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_empty_state.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/post/reply_sheet.dart';
@@ -106,6 +107,15 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
   void _maybePushDetail(SelectedTopicState selectedMessage, bool canShowDetailPane) {
     if (_isAutoSwitching) return;
     if (!widget.isActive) {
+      _lastCanShowDetailPane = canShowDetailPane;
+      return;
+    }
+    // 本页被别的全屏页覆盖(在详情里又 push 了话题/资料)时不迁移:
+    // offstage 状态仍会随 MediaQuery 重建,这里若继续走会把详情 push
+    // 到用户当前页之上劫持栈顶。对齐 topics_screen 同名方法的守卫
+    // (此前注释自称"逻辑对齐"却漏抄了这段)。
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
       _lastCanShowDetailPane = canShowDetailPane;
       return;
     }
@@ -284,6 +294,11 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
                   : null,
             )
           : null,
+      // 私信语义的空态(默认空态是"文章图标+选择话题",放在私信页很怪)
+      emptyDetail: PaneEmptyState(
+        icon: Symbols.mail_outline_rounded,
+        hint: context.l10n.privateMessages_selectHint,
+      ),
     );
   }
 }

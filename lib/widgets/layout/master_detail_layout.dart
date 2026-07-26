@@ -91,7 +91,10 @@ class MasterDetailLayout extends StatefulWidget {
     final computed =
         screenWidth >= masterWidth + minDetailWidth &&
         !Responsive.isMobile(context);
-    return LayoutLock.resolveCanShowBoth(computed: computed);
+    return LayoutLock.resolveCanShowBoth(
+      computed: computed,
+      threshold: masterWidth + minDetailWidth,
+    );
   }
 
   /// 是否显示双栏布局

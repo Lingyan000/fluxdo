@@ -94,8 +94,20 @@ mixin FloatingWidgetMixin<T extends StatefulWidget> on State<T>, TickerProviderS
       return;
     }
 
-    if (sizeChanged && floatingIsAdsorbed) {
-      floatingOffset = _absoluteFromRelative();
+    if (sizeChanged) {
+      if (floatingIsAdsorbed) {
+        floatingOffset = _absoluteFromRelative();
+      } else {
+        // 非吸附态(拖拽刚松手/吸附动画途中)撞上尺寸剧变(折叠屏
+        // 折叠):无条件把当前位置 clamp 进新屏幕范围,否则浮球可能
+        // 停在屏外够不着。
+        final maxX = newSize.width - _getFloatingWidth();
+        final maxY = newSize.height - newPadding.bottom - 50;
+        floatingOffset = Offset(
+          floatingOffset.dx.clamp(0.0, maxX < 0 ? 0.0 : maxX),
+          floatingOffset.dy.clamp(newPadding.top, maxY < newPadding.top ? newPadding.top : maxY),
+        );
+      }
     }
   }
 

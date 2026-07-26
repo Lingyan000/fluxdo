@@ -39,6 +39,8 @@ class SpotlightOverlay {
     _entry = OverlayEntry(
       builder: (context) => _SpotlightWidget(
         targetRect: targetRect,
+        targetKey: targetKey,
+        padding: padding,
         borderRadius: borderRadius,
         message: message,
         onDismiss: dismiss,
@@ -56,12 +58,16 @@ class SpotlightOverlay {
 
 class _SpotlightWidget extends StatefulWidget {
   final Rect targetRect;
+  final GlobalKey targetKey;
+  final EdgeInsets padding;
   final double borderRadius;
   final String message;
   final VoidCallback onDismiss;
 
   const _SpotlightWidget({
     required this.targetRect,
+    required this.targetKey,
+    required this.padding,
     required this.borderRadius,
     required this.message,
     required this.onDismiss,
@@ -72,13 +78,19 @@ class _SpotlightWidget extends StatefulWidget {
 }
 
 class _SpotlightWidgetState extends State<_SpotlightWidget>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
+
+  /// 当前镂空位置。初值是 show() 时算好的;窗口尺寸剧变(折叠屏折叠/
+  /// 展开、拖动窗口)时经 [didChangeMetrics] 按 targetKey 重算 ——
+  /// 之前是一次性算死,折叠后高亮框停在旧坐标框到空白。
+  late Rect _rect = widget.targetRect;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -91,7 +103,32 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
   }
 
   @override
+  void didChangeMetrics() {
+    // 等一帧:metrics 变化时目标还没完成新布局,立刻取是旧坐标
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final renderBox =
+          widget.targetKey.currentContext?.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.hasSize || !renderBox.attached) {
+        // 目标随布局切换消失(如折叠后组件不在树上)→ 引导直接收场
+        widget.onDismiss();
+        return;
+      }
+      final position = renderBox.localToGlobal(Offset.zero);
+      setState(() {
+        _rect = Rect.fromLTWH(
+          position.dx - widget.padding.left,
+          position.dy - widget.padding.top,
+          renderBox.size.width + widget.padding.horizontal,
+          renderBox.size.height + widget.padding.vertical,
+        );
+      });
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }
@@ -107,7 +144,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
     final theme = Theme.of(context);
 
     // 判断提示文字放在高亮区域上方还是下方
-    final spaceBelow = screenSize.height - widget.targetRect.bottom;
+    final spaceBelow = screenSize.height - _rect.bottom;
     final showBelow = spaceBelow > 120;
 
     return FadeTransition(
@@ -121,7 +158,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
             Positioned.fill(
               child: CustomPaint(
                 painter: _SpotlightPainter(
-                  targetRect: widget.targetRect,
+                  targetRect: _rect,
                   borderRadius: widget.borderRadius,
                 ),
               ),
@@ -129,7 +166,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
 
             // 高亮边框（呼吸动画）
             Positioned.fromRect(
-              rect: widget.targetRect,
+              rect: _rect,
               child: IgnorePointer(
                 child: _PulsingBorder(
                   borderRadius: widget.borderRadius,
@@ -142,10 +179,10 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
             Positioned(
               left: 24,
               right: 24,
-              top: showBelow ? widget.targetRect.bottom + 16 : null,
+              top: showBelow ? _rect.bottom + 16 : null,
               bottom: showBelow
                   ? null
-                  : screenSize.height - widget.targetRect.top + 16,
+                  : screenSize.height - _rect.top + 16,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

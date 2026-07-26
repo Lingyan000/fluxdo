@@ -13,6 +13,7 @@ import '../utils/font_awesome_helper.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import 'badge_page.dart';
 import '../l10n/s.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
 
 /// 我的徽章页面
@@ -141,35 +142,61 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
               );
 
     if (!_showWideLayout) {
+      // 宽 → 窄迁移:右栏正开着详情时拖窄窗口,把它转成一次全屏 push,
+      // 不让已选中的内容静默消失(对齐话题列表 _maybePushDetail 的兜底)。
+      // 本页被别的全屏页覆盖时不迁移(offstage 重建会把 BadgePage 推到
+      // 用户当前页之上劫持栈顶);保留选中,等回到本页再按当时宽窄处理。
+      final currentRoute = ModalRoute.of(context);
+      final covered = currentRoute != null && !currentRoute.isCurrent;
+      final migrate = covered ? null : _selectedBadge;
+      if (migrate != null) {
+        _selectedBadge = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          // 一帧内又变宽(折叠屏铰链抖动):不迁移,直接恢复选中
+          if (MasterDetailLayout.canShowBothPanesFor(context)) {
+            setState(() => _selectedBadge = migrate);
+            return;
+          }
+          final user = ref.read(currentUserProvider).value;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              // AutoRestore:折叠屏折来折去的工况 —— 展开(变宽)时自动
+              // 收回双栏并恢复网格选中,再折(变窄)又会走到这里转全屏。
+              builder: (_) => AutoRestoreMasterDetailRoute(
+                onRestore: () {
+                  if (mounted) setState(() => _selectedBadge = migrate);
+                },
+                child: BadgePage(
+                  badgeId: migrate.badge!.id,
+                  badgeSlug: migrate.badge!.slug,
+                  username: user?.username,
+                ),
+              ),
+            ),
+          );
+        });
+      }
       return Scaffold(body: listBody);
     }
 
-    // 宽屏：左侧勋章网格（跟窄屏同一份内容），右侧点中的徽章详情——
-    // 平级铺开，不走 Navigator push，点另一枚直接替换右栏。
+    // 宽屏:标准平行视界(与全站一致:可拖拽分隔线、统一阈值与空态形态),
+    // 点另一枚直接替换右栏,不走 Navigator push。
     return Scaffold(
-      body: Row(
-        children: [
-          Expanded(child: listBody),
-          VerticalDivider(
-            width: 1,
-            thickness: 0.5,
-            color: Theme.of(context)
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.3),
-          ),
-          Expanded(
-            child: _selectedBadge == null
-                ? _buildDetailEmptyState(context)
-                : BadgePage(
-                    key: ValueKey('badge_detail_${_selectedBadge!.badge!.id}'),
-                    badgeId: _selectedBadge!.badge!.id,
-                    badgeSlug: _selectedBadge!.badge!.slug,
-                    username: ref.read(currentUserProvider).value?.username,
-                    embeddedMode: true,
-                  ),
-          ),
-        ],
+      body: MasterDetailLayout(
+        master: listBody,
+        preferredMasterRatio: 0.5,
+        maxMasterRatio: 0.65,
+        detail: _selectedBadge == null
+            ? null
+            : BadgePage(
+                key: ValueKey('badge_detail_${_selectedBadge!.badge!.id}'),
+                badgeId: _selectedBadge!.badge!.id,
+                badgeSlug: _selectedBadge!.badge!.slug,
+                username: ref.read(currentUserProvider).value?.username,
+                embeddedMode: true,
+              ),
+        emptyDetail: _buildDetailEmptyState(context),
       ),
     );
   }
@@ -361,6 +388,17 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
       borderRadius: BorderRadius.circular(20),
       child: Container(
         decoration: BadgeUIUtils.getCardDecoration(context, type),
+        // 宽屏右栏开着谁,网格上就框谁(此前没有任何选中反馈)
+        foregroundDecoration:
+            _showWideLayout && identical(_selectedBadge, userBadge)
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  )
+                : null,
         child: Stack(
           alignment: Alignment.center,
           children: [

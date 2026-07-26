@@ -30,6 +30,7 @@
   "seeking_paceLow": "低",
   "seeking_emptyHint": "新增想要關注動態的使用者，\n開啟開關後將自動輪詢其發文 / 回覆 / 按讚 / 回應 / Boost",
   "seeking_waitingData": "等待第一輪資料…",
+  "seeking_selectHint": "選擇一條動態，在這裡查看詳情",
   "seeking_disabledHint": "監控已關閉，打開右上角開關開始追覓",
   "seeking_rateLimited": "觸發限流，已暫停到下一分鐘自動恢復",
   "seeking_typePost": "發佈了話題",

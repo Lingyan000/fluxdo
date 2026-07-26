@@ -7,6 +7,7 @@
   "privateMessages_sent": "已发送",
   "privateMessages_archive": "归档",
   "privateMessages_empty": "暂无私信",
+  "privateMessages_selectHint": "选择一条私信，在这里查看对话",
   "profileStats_addItems": "点击添加统计项",
   "profileStats_allItemsAdded": "所有统计项已添加",
   "profileStats_availableItems": "可添加项目",

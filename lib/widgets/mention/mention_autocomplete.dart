@@ -48,7 +48,8 @@ class MentionAutocomplete extends StatefulWidget {
   State<MentionAutocomplete> createState() => _MentionAutocompleteState();
 }
 
-class _MentionAutocompleteState extends State<MentionAutocomplete> {
+class _MentionAutocompleteState extends State<MentionAutocomplete>
+    with WidgetsBindingObserver {
   OverlayEntry? _overlayEntry;
   final LayerLink _layerLink = LayerLink();
 
@@ -68,12 +69,22 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onTextChanged);
     widget.focusNode?.addListener(_onFocusChanged);
   }
 
+  /// 窗口尺寸剧变(折叠屏折叠/展开):浮层按新布局重排,不悬在旧坐标
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _overlayEntry?.markNeedsBuild();
+    });
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onTextChanged);
     widget.focusNode?.removeListener(_onFocusChanged);
     _debounceTimer?.cancel();

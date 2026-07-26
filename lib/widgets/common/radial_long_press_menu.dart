@@ -259,7 +259,7 @@ class RadialMenuOverlay extends StatefulWidget {
 }
 
 class _RadialMenuOverlayState extends State<RadialMenuOverlay>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // 菜单整体衍生 / 收回动画时长（出场略快、收回略慢以表达"被吸回去"）
   static const Duration _enterDuration = Duration(milliseconds: 220);
   static const Duration _exitDuration = Duration(milliseconds: 180);
@@ -283,6 +283,21 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
   bool _closeDispatched = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// 窗口尺寸剧变(折叠屏折叠):锚点坐标已失效,长按菜单是瞬态交互,
+  /// 直接收场,不做重排。
+  @override
+  void didChangeMetrics() {
+    if (_closeDispatched || !mounted) return;
+    _closeDispatched = true;
+    widget.onClosed();
+  }
+
+  @override
   void didUpdateWidget(covariant RadialMenuOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.closing && !oldWidget.closing) {
@@ -296,6 +311,7 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }

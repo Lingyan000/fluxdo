@@ -7,6 +7,7 @@ import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../settings/search/settings_search_index.dart';
 import '../utils/platform_utils.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'about_page.dart';
@@ -48,6 +49,20 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
+/// 观察设置页 detail 内嵌 Navigator:pop 回空态路由时通知宿主清迁移凭据。
+class _DetailPopObserver extends NavigatorObserver {
+  _DetailPopObserver({required this.onEmptied});
+
+  final VoidCallback onEmptied;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute?.settings.name == 'settings-detail-empty') {
+      onEmptied();
+    }
+  }
+}
+
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
@@ -63,6 +78,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
   ModalRoute<dynamic>? _route;
   String _query = '';
+
+  /// detail 侧栏当前打开的一级子设置页(宽窄迁移的凭据)。
+  ///
+  /// detail 是内嵌 Navigator,之前窗口变窄时整个导航栈直接被丢弃 ——
+  /// 折叠屏"折起来"就等于内容凭空消失。记录 builder 后:变窄转成一次
+  /// 全屏 push(AutoRestore 包裹),展开时自动收回并重新推进 detail;
+  /// 折来折去每一轮都走同一套往返。二级以深的内部路由不保(通用机制
+  /// 拿不到),迁移保住一级页已覆盖绝大多数场景。
+  WidgetBuilder? _detailBuilder;
+  bool _detailMigrating = false;
+
+  /// detail 内嵌 Navigator 回到空态(ESC/返回收起)时清掉迁移凭据,
+  /// 否则窄下来会把早已关掉的页面又弹出来。
+  late final _DetailPopObserver _detailPopObserver = _DetailPopObserver(
+    onEmptied: () => _detailBuilder = null,
+  );
 
   @override
   void didChangeDependencies() {
@@ -114,7 +145,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     final master = _buildSettingsScaffold(theme, l10n, isSearching);
     final canShowParallel = SettingsPage.canShowParallelFor(context);
-    if (!canShowParallel) return master;
+    if (!canShowParallel) {
+      _maybeMigrateDetailToFullScreen();
+      return master;
+    }
 
     return MasterDetailLayout(
       masterWidth: SettingsPage.parallelMasterWidth,
@@ -125,12 +159,54 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       master: master,
       detail: Navigator(
         key: _detailNavigatorKey,
+        observers: [_detailPopObserver],
         onGenerateRoute: (_) => MaterialPageRoute(
           settings: const RouteSettings(name: 'settings-detail-empty'),
           builder: (_) => _buildDetailEmptyState(theme),
         ),
       ),
     );
+  }
+
+  void _maybeMigrateDetailToFullScreen() {
+    // 嵌入模式(设置页本身在别人的右栏里)不自行迁移:宿主面板的迁移
+    // 会连同整个嵌入设置页一起转全屏,这里再推一层就双开了。
+    if (widget.embeddedMode) return;
+    final migrate = _detailBuilder;
+    if (migrate == null || _detailMigrating) return;
+    final route = _route;
+    if (route != null && !route.isCurrent) return;
+    _detailMigrating = true;
+    _detailBuilder = null; // 所有权交给全屏路由,恢复时经 onRestore 传回
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _detailMigrating = false;
+        return;
+      }
+      // 一帧内又变宽(折叠屏铰链抖动):不推全屏,把子页重推回 detail
+      if (SettingsPage.canShowParallelFor(context)) {
+        _detailMigrating = false;
+        _openSettingsPage(migrate);
+        return;
+      }
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => AutoRestoreMasterDetailRoute(
+                masterWidth: SettingsPage.parallelMasterWidth,
+                minDetailWidth: SettingsPage.parallelMinDetailWidth,
+                onRestore: () {
+                  // 展开(变宽):路由被自动移除,把子页重新推进 detail 侧栏
+                  if (mounted) _openSettingsPage(migrate);
+                },
+                child: Builder(builder: migrate),
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) _detailMigrating = false;
+          });
+    });
   }
 
   Widget _buildSettingsScaffold(
@@ -230,6 +306,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       Navigator.push(context, MaterialPageRoute(builder: builder));
       return;
     }
+    _detailBuilder = builder; // 宽窄迁移凭据(见字段注释)
 
     void pushIntoDetail() {
       final navigator = _detailNavigatorKey.currentState;

@@ -30,6 +30,7 @@
   "seeking_paceLow": "Low",
   "seeking_emptyHint": "Add users whose activity you want to watch.\nOnce enabled, their posts / replies / likes / reactions / boosts are polled automatically",
   "seeking_waitingData": "Waiting for the first round of data…",
+  "seeking_selectHint": "Select an activity to view details here",
   "seeking_disabledHint": "Watching is off. Toggle the switch in the top right to start",
   "seeking_rateLimited": "Rate limited. Paused until the next minute, then resumes automatically",
   "seeking_typePost": "posted",

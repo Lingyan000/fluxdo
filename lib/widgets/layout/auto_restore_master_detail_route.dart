@@ -52,8 +52,11 @@ class _AutoRestoreMasterDetailRouteState
           return;
         }
         final navigator = Navigator.of(context);
-        widget.onRestore?.call();
+        // 先移除再 onRestore:反过来的话 onRestore 里 setState/push 的
+        // 内容会与还在栈顶的本全屏路由同一帧重叠渲染(闪一下)。移除后
+        // 本 State 已 unmount,回调闭包不依赖本 context,安全。
         if (route.isActive) navigator.removeRoute(route);
+        widget.onRestore?.call();
       });
     }
 

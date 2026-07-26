@@ -30,6 +30,7 @@
   "seeking_paceLow": "低",
   "seeking_emptyHint": "添加想要关注动态的用户，\n开启开关后将自动轮询其发帖 / 回复 / 点赞 / 回应 / Boost",
   "seeking_waitingData": "等待第一轮数据…",
+  "seeking_selectHint": "选择一条动态，在这里查看详情",
   "seeking_disabledHint": "监控已关闭，打开右上角开关开始追觅",
   "seeking_rateLimited": "触发限流，已暂停到下一分钟自动恢复",
   "seeking_typePost": "发布了话题",

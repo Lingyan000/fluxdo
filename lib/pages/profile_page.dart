@@ -50,6 +50,8 @@ import '../utils/responsive.dart';
 import '../services/emoji_handler.dart';
 import '../services/log/log_writer.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/full_screen_pane_stack.dart';
 import '../widgets/layout/master_detail_layout.dart';
 
 /// 个人页面
@@ -437,7 +439,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               stackProvider: selectedProfilePaneProvider,
               child: _buildWideBody(theme),
             )
-          : _buildMobileBody(theme),
+          : Builder(
+              builder: (context) {
+                _maybeMigratePaneToFullScreen();
+                return _buildMobileBody(theme);
+              },
+            ),
     );
   }
 
@@ -504,30 +511,75 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final selected = ref.watch(selectedProfilePaneProvider);
     final entry = selected.topEntry;
     final notifier = ref.read(selectedProfilePaneProvider.notifier);
-    return Row(
-      children: [
-        SizedBox(
-          width: 360,
-          child: _buildLeftPanel(theme),
-        ),
-        VerticalDivider(width: 1, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
-        Expanded(
-          child: entry == null
-              ? _buildRightPanel(theme)
-              : PaneContentWidget(
-                  key: ValueKey(
-                    'profile_pane_${entry.kind}_'
-                    '${entry.instanceId ?? entry.username ?? entry.topicId}',
-                  ),
-                  entry: entry,
-                  stackProvider: selectedProfilePaneProvider,
-                  parentActive: widget.isActive,
-                  onBack: () =>
-                      selected.isStacked ? notifier.pop() : notifier.clear(),
-                ),
-        ),
-      ],
+    // 标准平行视界(此前是手写 Row + 硬编码 360px:分隔线不可拖、
+    // 观感与全站其它双栏页不一致)。
+    return MasterDetailLayout(
+      masterWidth: 360,
+      preferredMasterRatio: 0.32,
+      master: _buildLeftPanel(theme),
+      detail: entry == null
+          ? _buildRightPanel(theme)
+          : PaneContentWidget(
+              key: ValueKey(
+                'profile_pane_${entry.kind}_'
+                '${entry.instanceId ?? entry.username ?? entry.topicId}',
+              ),
+              entry: entry,
+              stackProvider: selectedProfilePaneProvider,
+              parentActive: widget.isActive,
+              onBack: () =>
+                  selected.isStacked ? notifier.pop() : notifier.clear(),
+            ),
     );
+  }
+
+  /// 宽 → 窄迁移:右栏压着草稿/设置等内容时拖窄窗口,转成一次全屏
+  /// push(AutoRestore 包裹,再拖宽会自动收回双栏),不让内容静默丢失。
+  bool _paneAutoSwitching = false;
+
+  void _maybeMigratePaneToFullScreen() {
+    if (_paneAutoSwitching) return;
+    final selected = ref.read(selectedProfilePaneProvider);
+    if (!selected.hasSelection) return;
+    if (!widget.isActive) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    _paneAutoSwitching = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      // 一帧内又变宽(折叠屏铰链抖动):provider 里的 pane 会由宽屏
+      // build 直接渲染,不用迁移
+      if (MasterDetailLayout.canShowBothPanesFor(context)) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => AutoRestoreMasterDetailRoute(
+                child: FullScreenPaneStack(
+                  stackProvider: selectedProfilePaneProvider,
+                  builder: (_, entry, onBack) => PaneContentWidget(
+                    key: ValueKey(
+                      'profile_fullscreen_${entry.kind}_'
+                      '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                    ),
+                    entry: entry,
+                    stackProvider: selectedProfilePaneProvider,
+                    parentActive: true,
+                    onBack: onBack,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) _paneAutoSwitching = false;
+          });
+    });
   }
 
   /// 左面板：资料卡 + 统计 + 余额卡片 + 登录/退出按钮固定底部

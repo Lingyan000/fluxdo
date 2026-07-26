@@ -18,6 +18,7 @@ import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_empty_state.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'package:dio/dio.dart';
 import '../services/app_error_handler.dart';
@@ -987,29 +988,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   Widget _buildParallelEmptyState(ThemeData theme) {
-    // 右侧空详情没有 Scaffold，若不显式铺底会透出 MaterialApp 默认
-    // canvasColor，和左侧搜索 Scaffold 的主题背景形成灰蓝/暖色断层。
-    return ColoredBox(
-      color: theme.scaffoldBackgroundColor,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Symbols.preview_rounded,
-              size: 56,
-              color: theme.colorScheme.outlineVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              context.l10n.search_selectResultHint,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return PaneEmptyState(
+      icon: Symbols.preview_rounded,
+      hint: context.l10n.search_selectResultHint,
     );
   }
 
