@@ -290,7 +290,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
-    _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
+    // 注:不要在这个 FocusNode 上挂 ESC 处理。全局快捷键(HardwareKeyboard
+    // handler)与焦点级 onKeyEvent 是两套派发,同一次 ESC 会各跑一遍 ——
+    // 焦点级先 _exitSearchMode 后,全局 _handleCloseShortcut 再进来时
+    // isSearchMode 已清,落到 maybePop 把整页也弹了(实测:搜索框按 ESC
+    // 退出搜索的同时弹出页面)。退搜索唯一由 _handleCloseShortcut 负责。
+    _searchFocusNode = FocusNode();
 
     _expandController = AnimationController(
       vsync: this,
@@ -606,15 +611,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     Navigator.of(context).maybePop();
-  }
-
-  KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
-    if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.escape) {
-      return KeyEventResult.ignored;
-    }
-    _exitSearchMode();
-    return KeyEventResult.handled;
   }
 
   void _schedulePostShortcutRegistration() {

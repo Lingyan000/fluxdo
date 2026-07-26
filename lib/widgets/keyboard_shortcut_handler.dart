@@ -287,6 +287,26 @@ class _KeyboardShortcutHandlerState
           ),
         );
       case ShortcutAction.closeOverlay:
+        // ESC 全局兜底:没有更具体的 surface/scope 回调接手时,对根
+        // Navigator 栈顶做一次受 canPop 保护的 maybePop。覆盖 drafts/
+        // login/设置子页(窄屏全屏态)这类"普通全屏路由没自注册 ESC"
+        // 的死角,一处兜底优于逐页补注册(新页漏注册就复发)。
+        // 安全边界:
+        // - canPop 守卫必不可省 —— home 根路由挂着 PopScope(canPop:false,
+        //   双击退出),无脑 maybePop 会让 ESC 弹"再按一次退出"甚至退 App;
+        //   home 是 isFirst,canPop()==false,直接跳过;
+        // - 嵌入页结构上不可能是"可 pop 的根栈顶"(widget 级嵌入时根栈
+        //   顶是 home;嵌套 Navigator 嵌入时 settings 路由带 surface,在
+        //   _handleSurfaceBeforeDispatch 已被拦下),不会捅穿;
+        // - maybePop 尊重 PopScope,webview 等 canPop:false 页不受影响;
+        // - 已自注册 closeOverlay 的页(topic_detail/user_profile/书签)
+        //   在派发顺序上先于这里,兜底只兜"没人管"的页。
+        final nav = Navigator.maybeOf(navContext, rootNavigator: true);
+        if (nav != null && nav.canPop()) {
+          nav.maybePop();
+          return true;
+        }
+        return false;
       case ShortcutAction.nextItem:
       case ShortcutAction.previousItem:
       case ShortcutAction.openItem:
