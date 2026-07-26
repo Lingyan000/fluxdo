@@ -1,3 +1,8 @@
+import 'package:flutter/gestures.dart'
+    show
+        DelayedMultiDragGestureRecognizer,
+        ImmediateMultiDragGestureRecognizer,
+        PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -451,8 +456,9 @@ class _PreviewItem extends StatelessWidget {
     );
 
     if (canDrag) {
-      // 直接响应鼠标和触控拖动；只有首页固定在第一位。
-      return ReorderableDragStartListener(
+      // 按指针类型分流手感（见 _PointerAwareDragStartListener）；
+      // 只有首页固定在第一位。
+      return _PointerAwareDragStartListener(
         key: key,
         index: index,
         child: core,
@@ -460,6 +466,43 @@ class _PreviewItem extends StatelessWidget {
     }
     // 首页固定项：不包拖动监听，但仍需要有 Key
     return KeyedSubtree(key: key, child: core);
+  }
+}
+
+/// 按指针类型分流的拖拽监听：鼠标/触控板按下即拖（桌面手感），触屏
+/// 长按进入拖拽。触屏若也即按即拖，手指落在预览条上就无法滚动页面
+/// （拖拽识别器会立刻抢占滚动手势）。
+class _PointerAwareDragStartListener extends StatelessWidget {
+  const _PointerAwareDragStartListener({
+    super.key,
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (event) {
+        final list = SliverReorderableList.maybeOf(context);
+        if (list == null) return;
+        final recognizer = switch (event.kind) {
+          PointerDeviceKind.mouse ||
+          PointerDeviceKind.trackpad =>
+            ImmediateMultiDragGestureRecognizer(debugOwner: this),
+          _ => DelayedMultiDragGestureRecognizer(debugOwner: this),
+        };
+        list.startItemDragReorder(
+          index: index,
+          event: event,
+          recognizer: recognizer
+            ..gestureSettings = MediaQuery.maybeGestureSettingsOf(context),
+        );
+      },
+      child: child,
+    );
   }
 }
 
