@@ -96,6 +96,7 @@ import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
 import 'widgets/layout/adaptive_navigation.dart';
+import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
@@ -1233,13 +1234,15 @@ class _MainPageState extends ConsumerState<MainPage>
         context.l10n.preferences_clipboardTopicLink_detected,
         duration: const Duration(seconds: 8),
         actionLabel: context.l10n.preferences_clipboardTopicLink_open,
-        // 能解析成话题链接就进首页平行视界（选中 + 切 tab），解析不了
-        // 再退回深链通道
+        // 宽屏且能解析成话题链接就进首页平行视界（选中 + 切 tab）；
+        // 窄屏没有「写栈 → 推详情」的桥（同通知入口的窄屏问题），
+        // 和解析失败一样退回深链通道全屏打开
         onAction: () {
           final topic = DiscourseUrlParser.parseTopic(
             candidate.uri.toString(),
           );
-          if (topic != null) {
+          if (topic != null &&
+              MasterDetailLayout.canShowBothPanesFor(context)) {
             ref
                 .read(selectedTopicProvider.notifier)
                 .select(
