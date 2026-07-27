@@ -18,16 +18,31 @@ import '../../../../../l10n/s.dart';
 /// 路径,不受影响)。
 ///
 /// [onSubmit] 为 null(处理中)时不响应,避免重复提交。
+///
+/// 用 Focus.onKeyEvent 而不是 CallbackShortcuts:后者包住整个弹框时,
+/// Tab 把焦点移到「取消」等按钮上后回车仍会被截走触发上传 —— 这里只在
+/// 焦点还停留在弹框级节点(没 Tab 到任何按钮)时才吃回车,焦点在按钮上
+/// 时放行给按钮自己的激活动作。
 Widget _enterToSubmit({required VoidCallback? onSubmit, required Widget child}) {
-  return CallbackShortcuts(
-    bindings: {
-      if (onSubmit != null) ...{
-        const SingleActivator(LogicalKeyboardKey.enter): onSubmit,
-        const SingleActivator(LogicalKeyboardKey.numpadEnter): onSubmit,
-      },
-    },
+  return Focus(
     // autofocus:弹框刚出来焦点还没落到任何按钮上,不抢焦点就收不到按键
-    child: Focus(autofocus: true, child: child),
+    autofocus: true,
+    onKeyEvent: (node, event) {
+      if (onSubmit == null) return KeyEventResult.ignored;
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key != LogicalKeyboardKey.enter &&
+          key != LogicalKeyboardKey.numpadEnter) {
+        return KeyEventResult.ignored;
+      }
+      // 焦点已在按钮等子节点上 → 回车属于那个控件,不做一键上传
+      if (FocusManager.instance.primaryFocus != node) {
+        return KeyEventResult.ignored;
+      }
+      onSubmit();
+      return KeyEventResult.handled;
+    },
+    child: child,
   );
 }
 
