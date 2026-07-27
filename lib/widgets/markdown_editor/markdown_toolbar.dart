@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fluxdo_render/editor.dart' show primaryModifierHeld, shiftModifierHeld;
+import 'package:fluxdo_render/editor.dart'
+    show primaryModifierHeldForReversibleAction, shiftModifierHeld;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -129,7 +130,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         event.logicalKey == LogicalKeyboardKey.keyV &&
         !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
-        primaryModifierHeld(event)) {
+        // 粘贴是**可逆**动作,用吃补偿窗口的那版判定:Win+V 注入的 `V`
+        // 不带 Ctrl 修饰位,只认真实状态会让整条粘图路径失效。
+        primaryModifierHeldForReversibleAction(event)) {
       _handlePasteImage();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理
