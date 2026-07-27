@@ -357,14 +357,20 @@ class HtmlTextMapper {
     List<_TextNodeInfo> result,
     StringBuffer buffer,
   ) {
-    // lightbox 图片的悬浮遮罩层(`<div class="meta">` 内的文件名/尺寸信息):
-    // 纯 CSS hover 展示,渲染引擎的选区投影里根本不存在这段文字。当年不
-    // 排除会在这里重复贡献一份文本(常与 img 的 alt 撞车),把后续偏移量
-    // 全部对齐错位,导致选区跨过图片时反查失败、退化成裸文本。
+    // lightbox 锚点整体视为一张图,只收集内部 <img>(title/alt 投影文本),
+    // 其余子节点全部吞掉——对齐官方 parseDOM 的 `a.lightbox` 规则
+    // (prosemirror extensions/image.js 只从锚点里取 img)。悬浮遮罩层
+    // `<div class="meta">` 的文件名/尺寸是纯 CSS hover 内容,渲染选区投影
+    // 里不存在,计入缓冲区会与 img 的 title/alt 撞车,把后续偏移量全部
+    // 错位,导致选区跨过图片时反查失败、退化成裸文本。
     if (node is dom.Element &&
-        node.localName == 'div' &&
-        (node.attributes['class'] ?? '').split(' ').contains('meta') &&
-        node.parent?.localName == 'a') {
+        node.localName == 'a' &&
+        (node.classes.contains('lightbox') ||
+            node.classes.contains('d-lazyload'))) {
+      final img = node.querySelector('img');
+      if (img != null) {
+        _collectTextNodes(img, result, buffer);
+      }
       return;
     }
 

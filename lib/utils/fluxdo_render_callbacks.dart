@@ -1335,31 +1335,38 @@ class FluxdoRenderCallbacks {
       topicId: topicId,
       onQuoteImage: liveQuoteHandler,
       position: position,
-      quoteMarkdown: post != null ? _uploadMarkdownForImage(post, image) : null,
+      quoteMarkdown: _uploadMarkdownForImage(image),
       heroTag: heroTag,
     );
   }
 
-  /// 引用/复制引用图片时,对齐 Web 端行为:用 `upload://sha1.ext` 短链而非
-  /// CDN 解析后的完整 URL(那样粘回聊天框/编辑器无法被识别为图片附件)。
+  /// 引用/复制引用图片时,对齐官方 lightbox/quote-image.js 的行为:直接用
+  /// [ImageRun] 自带的 cooked 契约字段构建 markdown,`base62Sha1 →
+  /// origSrc → src` 三级回退,用 `upload://sha1.ext` 短链而非 CDN 解析后
+  /// 的完整 URL(那样粘回聊天框/编辑器无法被识别为图片附件)。
   ///
-  /// fluxdo_render 的 ImageRun 不携带 `data-base62-sha1`(解析器未提取),
-  /// 这里退回原始 post.cooked 按 src 精确匹配对应 `<img>`,复用
-  /// [HtmlToMarkdown] 里已有的 upload:// 短链构造逻辑。匹配失败(如
-  /// cooked 结构变化)返回 null,调用方降级用 `![image](CDN url)`。
-  static String? _uploadMarkdownForImage(Post post, ImageRun image) {
-    try {
-      final fragment = html_parser.parseFragment(post.cooked);
-      for (final img in fragment.querySelectorAll('img')) {
-        if (img.attributes['src'] == image.src) {
-          final markdown = HtmlToMarkdown.convert(img.outerHtml).trim();
-          return markdown.isEmpty ? null : markdown;
-        }
-      }
-    } catch (_) {
-      // 忽略,调用方降级处理。
+  /// 无上传短链信息的外链图退回 src 本身,同样对齐官方;返回 null 仅在
+  /// src 为空时发生,调用方降级用 `![image](CDN url)`。
+  static String? _uploadMarkdownForImage(ImageRun image) {
+    String src;
+    final base62Sha1 = image.base62Sha1;
+    if (base62Sha1 != null && base62Sha1.isNotEmpty) {
+      src = 'upload://$base62Sha1';
+      final ext = HtmlToMarkdown.extensionFromUrl(image.src) ??
+          HtmlToMarkdown.extensionFromUrl(image.lightboxUrl) ??
+          HtmlToMarkdown.extensionFromUrl(image.origSrc);
+      if (ext != null) src = '$src.$ext';
+    } else {
+      final origSrc = image.origSrc;
+      src = (origSrc != null && origSrc.isNotEmpty) ? origSrc : image.src;
     }
-    return null;
+    if (src.isEmpty) return null;
+    return HtmlToMarkdown.buildImageMarkdown(
+      src: src,
+      alt: image.alt.isNotEmpty ? image.alt : 'image',
+      width: image.width?.round().toString(),
+      height: image.height?.round().toString(),
+    );
   }
 
   /// 用 jovial_svg 把内容 svg 源串渲染成等比铺满列宽的 widget。

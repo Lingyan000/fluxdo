@@ -42,6 +42,30 @@ class HtmlToMarkdown {
     }
   }
 
+  /// 从 URL 提取扩展名（公开复用版）。
+  ///
+  /// 对齐官方把 extensionFromUrl/buildImageMarkdown 抽进共享模块
+  /// markdown-image-builder.js 的做法：引用图片(quote-image)等
+  /// HtmlToMarkdown 之外的场景也要构造同格式的图片 markdown。
+  static String? extensionFromUrl(String? url) => _extensionFromUrl(url);
+
+  /// 构建图片 Markdown（公开复用版，见 [extensionFromUrl] 说明）。
+  static String buildImageMarkdown({
+    required String src,
+    String? alt,
+    String? width,
+    String? height,
+    String? title,
+  }) {
+    return _buildImageMarkdown(
+      src: src,
+      alt: alt,
+      width: width,
+      height: height,
+      title: title,
+    );
+  }
+
   /// 预处理：移除 body 标签、&nbsp; 等
   static String _trimUnwanted(String html) {
     final body = RegExp(r'<body[^>]*>([\s\S]*?)<\/body>').firstMatch(html);
