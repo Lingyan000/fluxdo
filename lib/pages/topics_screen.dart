@@ -228,9 +228,12 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     final selectedTopic = ref.watch(selectedTopicProvider);
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
     // 左栏本质是不是"列表"（信息流 / 草稿列表）——决定给窄栏还是对半分
-    _masterIsListLike = !selectedTopic.isStacked ||
-        selectedTopic.stack[selectedTopic.stack.length - 2].kind ==
-            PaneKind.drafts;
+    final masterKind = selectedTopic.isStacked
+        ? selectedTopic.stack[selectedTopic.stack.length - 2].kind
+        : null;
+    _masterIsListLike = masterKind == null ||
+        masterKind == PaneKind.drafts ||
+        masterKind == PaneKind.category;
     final user = ref.watch(currentUserProvider).value;
 
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让

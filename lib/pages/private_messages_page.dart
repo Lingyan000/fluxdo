@@ -274,9 +274,12 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
 
     // 左栏本质是不是"列表"（私信列表 / 草稿处理栏）——决定给窄栏还是
     // 对半分。草稿处理栏是列表，对半分会让它空得离谱。
-    final masterIsListLike = !selectedMessage.isStacked ||
-        selectedMessage.stack[selectedMessage.stack.length - 2].kind ==
-            PaneKind.drafts;
+    final masterKind = selectedMessage.isStacked
+        ? selectedMessage.stack[selectedMessage.stack.length - 2].kind
+        : null;
+    final masterIsListLike = masterKind == null ||
+        masterKind == PaneKind.drafts ||
+        masterKind == PaneKind.category;
     return MasterDetailLayout(
       maxMasterRatio: masterIsListLike
           ? MasterDetailLayout.defaultMaxMasterRatio

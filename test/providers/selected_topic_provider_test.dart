@@ -86,49 +86,64 @@ void main() {
     expect(container.read(selectedSearchProvider).hasSelection, isFalse);
   });
 
-  group('分类层(PaneKind.category)', () {
-    test('pushCategory 在栈上叠加分类层', () {
+  group('分类层(PaneKind.category)——列表态,插到栈顶下面当左栏信息流', () {
+    test('单层话题时打开分类:分类垫底、话题留在栈顶(右栏不动)', () {
       final notifier = SelectedTopicNotifier()
         ..select(topicId: 1)
-        ..pushCategory(14);
+        ..openCategoryAsMaster(14);
 
       expect(notifier.state.stack, hasLength(2));
-      expect(notifier.state.topEntry?.kind, PaneKind.category);
-      expect(notifier.state.topEntry?.categoryId, 14);
-      // 分类层不是话题层,topicId 口径必须为 null
-      expect(notifier.state.topicId, isNull);
+      expect(notifier.state.stack[0].kind, PaneKind.category);
+      expect(notifier.state.stack[0].categoryId, 14);
+      // 栈顶仍是原话题,右栏保住正在看的内容
+      expect(notifier.state.topicId, 1);
     });
 
-    test('pushCategoryTruncating 替换栈顶而不是继续叠层', () {
+    test('深栈时插到栈顶下面,左栏预览位变成分类', () {
       final notifier = SelectedTopicNotifier()
         ..select(topicId: 1)
         ..push(topicId: 2)
-        ..pushCategoryTruncating(14);
+        ..openCategoryAsMaster(14);
+
+      expect(notifier.state.stack, hasLength(3));
+      expect(notifier.state.stack[1].kind, PaneKind.category);
+      expect(notifier.state.topicId, 2);
+    });
+
+    test('分类层唯一:再开新分类时旧分类层被清掉', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..openCategoryAsMaster(14)
+        ..openCategoryAsMaster(99);
 
       expect(notifier.state.stack, hasLength(2));
-      expect(notifier.state.stack[0].topicId, 1);
+      expect(notifier.state.stack[0].categoryId, 99);
+      expect(notifier.state.topicId, 1);
+    });
+
+    test('栈顶本身是分类时直接替换,不往下插', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..openCategoryAsMaster(14)
+        ..pop(); // 弹掉话题,分类成为栈顶
+
       expect(notifier.state.topEntry?.kind, PaneKind.category);
-      expect(notifier.state.topEntry?.categoryId, 14);
+
+      notifier.openCategoryAsMaster(99);
+
+      expect(notifier.state.stack, hasLength(1));
+      expect(notifier.state.topEntry?.categoryId, 99);
     });
 
-    test('栈深不足 2 时 pushCategoryTruncating 退化为普通压栈', () {
+    test('pop 栈顶话题后分类层仍在,topicId 口径为 null', () {
       final notifier = SelectedTopicNotifier()
         ..select(topicId: 1)
-        ..pushCategoryTruncating(14);
-
-      expect(notifier.state.stack, hasLength(2));
-      expect(notifier.state.stack[0].topicId, 1);
-      expect(notifier.state.topEntry?.categoryId, 14);
-    });
-
-    test('pop 分类层后回到底下的话题层', () {
-      final notifier = SelectedTopicNotifier()
-        ..select(topicId: 1)
-        ..pushCategory(14)
+        ..openCategoryAsMaster(14)
         ..pop();
 
       expect(notifier.state.stack, hasLength(1));
-      expect(notifier.state.topicId, 1);
+      expect(notifier.state.topEntry?.categoryId, 14);
+      expect(notifier.state.topicId, isNull);
     });
   });
 

@@ -396,25 +396,30 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
   }
 
-  /// 压入分类话题列表(话题详情底部「浏览更多分类」等入口)。
-  void pushCategory(int categoryId) {
-    state = SelectedTopicState(
-      stack: [...state.stack, PaneEntry.category(categoryId: categoryId)],
-    );
-  }
-
-  /// master「上一层预览」里打开分类:截断栈顶后压入(语义同 pushTruncating)。
-  void pushCategoryTruncating(int categoryId) {
-    if (state.stack.length < 2) {
-      pushCategory(categoryId);
+  /// 打开分类话题列表(话题详情底部「浏览更多分类」等入口)。
+  ///
+  /// 分类是"列表态"内容,语义上属于左栏信息流——插到当前栈顶**下面**:
+  /// 左栏换成分类列表,右栏保住正在看的话题;在分类列表里点话题走
+  /// master 预览位的 truncateOnPush 替换右栏。栈里旧的分类层先清掉
+  /// (分类层唯一,不摞多个);栈顶本身是分类时直接替换。
+  void openCategoryAsMaster(int categoryId) {
+    final entry = PaneEntry.category(categoryId: categoryId);
+    if (state.stack.isEmpty || state.stack.last.kind == PaneKind.category) {
+      state = SelectedTopicState(
+        stack: [
+          ...state.stack.take(
+            state.stack.isEmpty ? 0 : state.stack.length - 1,
+          ),
+          entry,
+        ],
+      );
       return;
     }
-    state = SelectedTopicState(
-      stack: [
-        ...state.stack.take(state.stack.length - 1),
-        PaneEntry.category(categoryId: categoryId),
-      ],
-    );
+    final top = state.stack.last;
+    final kept = state.stack
+        .take(state.stack.length - 1)
+        .where((e) => e.kind != PaneKind.category);
+    state = SelectedTopicState(stack: [...kept, entry, top]);
   }
 
   /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
@@ -831,11 +836,8 @@ class EmbeddedStackScope extends InheritedWidget {
     if (scope != null) {
       final container = ProviderScope.containerOf(context, listen: false);
       final notifier = container.read(scope.stackProvider.notifier);
-      if (scope.truncateOnPush) {
-        notifier.pushCategoryTruncating(category.id);
-      } else {
-        notifier.pushCategory(category.id);
-      }
+      // 分类永远去左栏当信息流,不管从栈顶详情还是 master 预览位发起
+      notifier.openCategoryAsMaster(category.id);
       return;
     }
     Navigator.of(context).push(
