@@ -13,7 +13,6 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/category_tags_line.dart';
 import '../../../widgets/common/icon_glyph_span.dart';
 import '../../../widgets/common/smart_avatar.dart';
-import '../../category_topics_page.dart';
 import '../topic_detail_page.dart';
 
 /// 帖子流末尾的推荐区(对齐网页版 more-topics)
@@ -393,11 +392,8 @@ class _BrowseMoreLine extends StatelessWidget {
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => CategoryTopicsPage(category: category),
-            ),
-          ),
+          // 嵌入平行视界时在右栏压分类列表层,否则回退全屏 push
+          onTap: () => EmbeddedStackScope.openCategory(context, category),
           borderRadius: BorderRadius.circular(6),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),

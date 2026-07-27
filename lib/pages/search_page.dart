@@ -30,11 +30,7 @@ import '../utils/blocked_user_filter.dart';
 import '../utils/discourse_url_parser.dart';
 import '../widgets/common/search_capsule.dart';
 import '../utils/link_launcher.dart';
-import 'drafts_page.dart';
-import 'settings_page.dart';
-import 'trust_level_requirements_page.dart';
-import 'metaverse_page.dart';
-import 'invite_links_page.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 
 /// 搜索框中的站内直达链接标准化。支持完整 URL、`linux.do/...` 和相对路径；
 /// 普通关键词原样返回，后续由 [isInternalUrlString] 判定后继续普通搜索。
@@ -309,6 +305,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               topicId: topic.topicId,
               initialTitle: topic.slug,
               scrollToPostNumber: topic.postNumber,
+              autoSwitchToMasterDetail: true,
             ),
           ),
         );
@@ -697,6 +694,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: searchPost.postNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );
@@ -919,72 +917,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     VoidCallback? onBack,
     bool truncateOnPush = false,
   }) {
-    switch (entry.kind) {
-      case PaneKind.topic:
-        return TopicDetailPage(
-          key: ValueKey('search_topic_${entry.instanceId}'),
-          topicId: entry.topicId!,
-          instanceId: entry.instanceId,
-          initialTitle: entry.initialTitle,
-          scrollToPostNumber: entry.scrollToPostNumber,
-          embeddedMode: true,
-          truncateOnPush: truncateOnPush,
-          onEmbeddedBack: onBack,
-          parentActive: true,
-          stackProvider: _stackProvider,
-        );
-      case PaneKind.profile:
-        return EmbeddedStackScope(
-          stackProvider: _stackProvider,
-          truncateOnPush: truncateOnPush,
-          child: UserProfilePage(
-            key: ValueKey('search_profile_${entry.username}'),
-            username: entry.username!,
-            embeddedMode: true,
-            onEmbeddedBack: onBack,
-          ),
-        );
-      case PaneKind.settings:
-        return EmbeddedStackScope(
-          stackProvider: _stackProvider,
-          truncateOnPush: truncateOnPush,
-          child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
-        );
-      case PaneKind.drafts:
-        return EmbeddedStackScope(
-          stackProvider: _stackProvider,
-          truncateOnPush: truncateOnPush,
-          child: Consumer(
-            builder: (context, ref, _) => DraftsPage(
-              embeddedMode: true,
-              autoCloseWhenEmpty: truncateOnPush,
-              onEmbeddedBack: onBack,
-              // 草稿处理完 → 抽掉草稿这一层（不是 pop，右边的话题要留着）
-              onAllHandled: () => ref
-                  .read(_stackProvider.notifier)
-                  .removeEntriesOfKind(PaneKind.drafts),
-            ),
-          ),
-        );
-      case PaneKind.trustLevelRequirements:
-        return TrustLevelRequirementsPage(
-          key: const ValueKey('search_trust_level_requirements'),
-          embeddedMode: true,
-          onEmbeddedBack: onBack,
-        );
-      case PaneKind.metaverse:
-        return MetaversePage(
-          key: const ValueKey('search_metaverse'),
-          embeddedMode: true,
-          onEmbeddedBack: onBack,
-        );
-      case PaneKind.inviteLinks:
-        return InviteLinksPage(
-          key: const ValueKey('search_invite_links'),
-          embeddedMode: true,
-          onEmbeddedBack: onBack,
-        );
-    }
+    // 复用 PaneContentWidget 统一分发,不再维护第二份手抄 switch
+    // (新增 PaneKind 时这里漏过 case);topic 层还因此获得槽位搬动时
+    // 的滚动位置恢复(TopicDetailPane 内建)。
+    return PaneContentWidget(
+      key: ValueKey(
+        'search_pane_${entry.kind}_'
+        '${entry.instanceId ?? entry.username ?? entry.topicId ?? entry.categoryId}',
+      ),
+      entry: entry,
+      stackProvider: _stackProvider,
+      onBack: onBack,
+      parentActive: true,
+      truncateOnPush: truncateOnPush,
+    );
   }
 
   Widget _buildParallelEmptyState(ThemeData theme) {

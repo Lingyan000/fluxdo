@@ -98,6 +98,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: topic.lastReadPostNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/selected_topic_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
@@ -31,7 +32,16 @@ import '../utils/dialog_utils.dart';
 class CategoryTopicsPage extends ConsumerStatefulWidget {
   final Category category;
 
-  const CategoryTopicsPage({super.key, required this.category});
+  /// 嵌入平行视界右栏时为 true:不显示系统返回键,返回走 [onEmbeddedBack]
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
+
+  const CategoryTopicsPage({
+    super.key,
+    required this.category,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
 
   @override
   ConsumerState<CategoryTopicsPage> createState() => _CategoryTopicsPageState();
@@ -445,8 +455,17 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   }
 
   Future<void> _openTopic(Topic topic) async {
-    // 分类详情页是独立 push 的页面，不在首页 MasterDetailLayout 内，
-    // 始终 push 全屏详情页，禁用 autoSwitchToMasterDetail 防止双栏模式下自动 pop。
+    // 嵌入平行视界时在本栈内继续压话题层
+    if (EmbeddedStackScope.maybePushTopic(
+      context,
+      topicId: topic.id,
+      initialTitle: topic.title,
+      scrollToPostNumber: topic.lastReadPostNumber,
+    )) {
+      return;
+    }
+    // 独立 push 的全屏形态:始终 push 全屏详情页,
+    // 禁用 autoSwitchToMasterDetail 防止双栏模式下自动 pop。
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
@@ -472,6 +491,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
       appBar: AppBar(
         title: Text(widget.category.name),
         centerTitle: false,
+        automaticallyImplyLeading: !widget.embeddedMode,
+        leading: widget.embeddedMode && widget.onEmbeddedBack != null
+            ? BackButton(onPressed: widget.onEmbeddedBack)
+            : null,
         actions: [
           IconButton(
             icon: const Icon(Symbols.search_rounded),

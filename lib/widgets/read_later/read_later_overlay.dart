@@ -64,6 +64,7 @@ class _ReadLaterOverlayState extends ConsumerState<ReadLaterOverlay> {
           topicId: item.topicId,
           initialTitle: item.title,
           scrollToPostNumber: item.scrollToPostNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );

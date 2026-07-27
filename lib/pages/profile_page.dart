@@ -18,7 +18,6 @@ import 'export_history_page.dart';
 import 'my_browser_page.dart';
 import 'my_topics_page.dart';
 import 'my_badges_page.dart';
-import 'user_profile_page.dart';
 import 'trust_level_requirements_page.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/common/loading_dialog.dart';
@@ -528,7 +527,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           : PaneContentWidget(
               key: ValueKey(
                 'profile_pane_${entry.kind}_'
-                '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                '${entry.instanceId ?? entry.username ?? entry.topicId ?? entry.categoryId}',
               ),
               entry: entry,
               stackProvider: selectedProfilePaneProvider,
@@ -571,7 +570,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   builder: (_, entry, onBack) => PaneContentWidget(
                     key: ValueKey(
                       'profile_fullscreen_${entry.kind}_'
-                      '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                      '${entry.instanceId ?? entry.username ?? entry.topicId ?? entry.categoryId}',
                     ),
                     entry: entry,
                     stackProvider: selectedProfilePaneProvider,
@@ -1092,12 +1091,8 @@ class _ProfileHeader extends ConsumerWidget {
 
     return GestureDetector(
       onTap: canNavigate
-          ? () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
-              );
-            }
+          // 统一入口:嵌入面板里压栈显示平行视界,否则内部回退全屏 push
+          ? () => EmbeddedStackScope.openProfile(context, username)
           : null,
       child: Container(
         color: Colors.transparent,

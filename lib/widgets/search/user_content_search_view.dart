@@ -13,6 +13,7 @@ import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
 import 'search_preview_dialog.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/selected_topic_provider.dart';
 
 /// 用户内容搜索结果视图
 /// 封装通用的搜索结果展示逻辑，避免在各个页面中重复代码
@@ -148,6 +149,15 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
       );
       return;
     }
+    // 嵌入平行视界时原地压栈,否则全屏 push(宽屏下自动切回双栏)
+    if (EmbeddedStackScope.maybePushTopic(
+      context,
+      topicId: topicId,
+      initialTitle: title,
+      scrollToPostNumber: scrollToPostNumber,
+    )) {
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -155,6 +165,7 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
           topicId: topicId,
           initialTitle: title,
           scrollToPostNumber: scrollToPostNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );

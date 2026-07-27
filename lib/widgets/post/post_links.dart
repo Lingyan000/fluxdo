@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import '../../l10n/s.dart';
 import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../utils/discourse_url_parser.dart';
 
 /// 帖子相关链接组件
@@ -72,11 +73,21 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
   void _onLinkTap(LinkCount link) {
     final topicInfo = DiscourseUrlParser.parseTopic(link.url);
     if (topicInfo != null) {
+      // 平行视界:详情页在嵌入面板里时压入面板栈(与帖内链接同语义),
+      // 否则全屏 push(带宽屏自愈)。对齐 topic_more_topics 先例。
+      if (EmbeddedStackScope.maybePushTopic(
+        context,
+        topicId: topicInfo.topicId,
+        initialTitle: link.title,
+      )) {
+        return;
+      }
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicInfo.topicId,
             initialTitle: link.title,
+            autoSwitchToMasterDetail: true,
           ),
         ),
       );

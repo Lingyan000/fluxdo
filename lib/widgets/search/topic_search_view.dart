@@ -209,6 +209,7 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
                           builder: (_) => TopicDetailPage(
                             topicId: topic.id,
                             scrollToPostNumber: post.postNumber,
+                            autoSwitchToMasterDetail: true,
                           ),
                         ),
                       );

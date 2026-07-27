@@ -207,7 +207,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   Key _paneKey(PaneEntry entry, String slot) => ValueKey(
     'seeking_${slot}_${entry.kind}_'
-    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+    '${entry.instanceId ?? entry.username ?? entry.topicId ?? entry.categoryId}',
   );
 
   @override

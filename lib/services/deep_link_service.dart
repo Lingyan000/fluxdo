@@ -132,6 +132,7 @@ class DeepLinkService {
           builder: (_) => TopicDetailPage(
             topicId: topicInfo.topicId,
             scrollToPostNumber: topicInfo.postNumber,
+            autoSwitchToMasterDetail: true,
           ),
         ),
       );
@@ -188,6 +189,7 @@ class DeepLinkService {
                 builder: (_) => TopicDetailPage(
                   topicId: topicId,
                   scrollToPostNumber: postNumber,
+                  autoSwitchToMasterDetail: true,
                 ),
               ),
             );
@@ -235,8 +237,11 @@ class DeepLinkService {
       if (context.mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) =>
-                TopicDetailPage(topicId: detail.id, initialTitle: detail.title),
+            builder: (_) => TopicDetailPage(
+              topicId: detail.id,
+              initialTitle: detail.title,
+              autoSwitchToMasterDetail: true,
+            ),
           ),
         );
       }

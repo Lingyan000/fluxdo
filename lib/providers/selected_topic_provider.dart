@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
+import '../models/category.dart';
+import '../pages/category_topics_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
@@ -19,6 +21,7 @@ enum PaneKind {
   trustLevelRequirements,
   metaverse,
   inviteLinks,
+  category,
 }
 
 /// 平行视界导航栈里的一层。
@@ -34,7 +37,8 @@ class PaneEntry {
     this.autoOpenReply = false,
     this.autoReplyToPostNumber,
   }) : kind = PaneKind.topic,
-       username = null;
+       username = null,
+       categoryId = null;
 
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
@@ -46,7 +50,8 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      categoryId = null;
 
   const PaneEntry.drafts()
     : kind = PaneKind.drafts,
@@ -59,7 +64,8 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      categoryId = null;
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
@@ -72,7 +78,8 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      categoryId = null;
 
   const PaneEntry.trustLevelRequirements()
     : kind = PaneKind.trustLevelRequirements,
@@ -85,7 +92,8 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      categoryId = null;
 
   const PaneEntry.metaverse()
     : kind = PaneKind.metaverse,
@@ -98,10 +106,25 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      categoryId = null;
 
   const PaneEntry.inviteLinks()
     : kind = PaneKind.inviteLinks,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      categoryId = null;
+
+  const PaneEntry.category({required int this.categoryId})
+    : kind = PaneKind.category,
       topicId = null,
       username = null,
       initialTitle = null,
@@ -115,6 +138,9 @@ class PaneEntry {
 
   final PaneKind kind;
   final int? topicId;
+
+  /// kind == category 时的分类 id(面板栈承载分类话题列表)
+  final int? categoryId;
   final String? username;
   final String? initialTitle;
   final int? scrollToPostNumber;
@@ -368,6 +394,27 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
   /// 从搜索结果直接选择用户资料：清空旧搜索详情栈，以该资料作为第一层。
   void selectProfile(String username) {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
+  }
+
+  /// 压入分类话题列表(话题详情底部「浏览更多分类」等入口)。
+  void pushCategory(int categoryId) {
+    state = SelectedTopicState(
+      stack: [...state.stack, PaneEntry.category(categoryId: categoryId)],
+    );
+  }
+
+  /// master「上一层预览」里打开分类:截断栈顶后压入(语义同 pushTruncating)。
+  void pushCategoryTruncating(int categoryId) {
+    if (state.stack.length < 2) {
+      pushCategory(categoryId);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.category(categoryId: categoryId),
+      ],
+    );
   }
 
   /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
@@ -775,6 +822,25 @@ class EmbeddedStackScope extends InheritedWidget {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+  }
+
+  /// 打开分类话题列表的统一入口:嵌入面板里压入面板栈(右栏原地显示
+  /// 分类列表,可返回),不在嵌入面板才全屏 push。
+  static void openCategory(BuildContext context, Category category) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushCategoryTruncating(category.id);
+      } else {
+        notifier.pushCategory(category.id);
+      }
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: category)),
+    );
   }
 }
 

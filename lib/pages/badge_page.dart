@@ -13,8 +13,8 @@ import '../widgets/common/smart_avatar.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import '../utils/fluxdo_render_callbacks.dart';
 import '../services/emoji_handler.dart';
+import '../providers/selected_topic_provider.dart';
 import 'topic_detail_page/topic_detail_page.dart';
-import 'user_profile_page.dart';
 import '../l10n/s.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -537,12 +537,9 @@ class _UserBadgeItem extends StatelessWidget {
   }
 
   void _navigateToUser(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => UserProfilePage(username: user.username),
-      ),
-    );
+    // 统一入口:嵌入面板(勋章页可嵌入「勋章」双栏右栏)里压栈,
+    // 否则内部回退全屏 push
+    EmbeddedStackScope.openProfile(context, user.username);
   }
 
   void _navigateToTopic(BuildContext context) {
@@ -553,6 +550,7 @@ class _UserBadgeItem extends StatelessWidget {
           builder: (_) => TopicDetailPage(
             topicId: userBadge.topicId!,
             scrollToPostNumber: userBadge.postNumber,
+            autoSwitchToMasterDetail: true,
           ),
         ),
       );

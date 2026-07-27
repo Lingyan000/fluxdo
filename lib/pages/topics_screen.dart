@@ -30,6 +30,7 @@ import 'drafts_page.dart';
 import 'trust_level_requirements_page.dart';
 import 'metaverse_page.dart';
 import 'invite_links_page.dart';
+import 'category_topics_page.dart';
 
 /// 话题屏幕
 /// 在手机上显示单栏列表，平板上显示 Master-Detail 双栏
@@ -304,7 +305,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                   key: selectedTopic.kind == PaneKind.topic
                       ? _keyForTopic(selectedTopic.topicId!)
                       : ValueKey(
-                          '${selectedTopic.kind}_${selectedTopic.username}',
+                          '${selectedTopic.kind}_${selectedTopic.username ?? selectedTopic.topEntry?.categoryId}',
                         ),
                   entry: selectedTopic.topEntry!.kind == PaneKind.topic
                       ? PaneEntry.topic(
@@ -425,7 +426,9 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
         PaneContentWidget(
           key: previous.kind == PaneKind.topic
               ? _keyForTopic(previous.topicId!)
-              : ValueKey('master_${previous.kind}_${previous.username}'),
+              : ValueKey(
+                  'master_${previous.kind}_${previous.username ?? previous.categoryId}',
+                ),
           entry: previous,
           stackProvider: selectedTopicProvider,
           truncateOnPush: true,
@@ -1104,6 +1107,28 @@ class PaneContentWidget extends StatelessWidget {
         return MetaversePage(embeddedMode: true, onEmbeddedBack: onBack);
       case PaneKind.inviteLinks:
         return InviteLinksPage(embeddedMode: true, onEmbeddedBack: onBack);
+      case PaneKind.category:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: Consumer(
+            builder: (context, ref, _) {
+              final category = ref
+                  .watch(categoryMapProvider)
+                  .value?[entry.categoryId];
+              if (category == null) {
+                // 分类表还没加载好(冷启动恢复栈时可能出现),先占位
+                return const Center(child: CircularProgressIndicator());
+              }
+              return CategoryTopicsPage(
+                key: ValueKey('pane_category_${entry.categoryId}'),
+                category: category,
+                embeddedMode: true,
+                onEmbeddedBack: onBack,
+              );
+            },
+          ),
+        );
     }
   }
 }

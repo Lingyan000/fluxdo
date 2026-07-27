@@ -78,6 +78,7 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: topic.lastReadPostNumber,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );

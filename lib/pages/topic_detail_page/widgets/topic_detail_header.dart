@@ -16,7 +16,7 @@ import '../../../widgets/layout/home_workspace_scope.dart';
 import '../../../navigation/nav_action_bus.dart';
 import 'topic_vote_button.dart';
 import '../../../widgets/common/topic_badges.dart';
-import '../../category_topics_page.dart';
+import '../../../providers/selected_topic_provider.dart';
 
 /// 话题详情页头部组件
 class TopicDetailHeader extends ConsumerWidget {
@@ -160,13 +160,8 @@ class TopicDetailHeader extends ConsumerWidget {
                         workspace.onShowCategory(category);
                         return;
                       }
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              CategoryTopicsPage(category: category),
-                        ),
-                      );
+                      // 嵌入平行视界时在栈内压分类层,否则内部回退全屏 push
+                      EmbeddedStackScope.openCategory(context, category);
                     },
                   ),
 

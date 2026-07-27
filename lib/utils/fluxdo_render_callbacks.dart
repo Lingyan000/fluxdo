@@ -281,6 +281,7 @@ class FluxdoRenderCallbacks {
         topicId: topicId,
         initialTitle: topicSlug,
         scrollToPostNumber: postNumber,
+        autoSwitchToMasterDetail: true,
       ),
     ));
   }

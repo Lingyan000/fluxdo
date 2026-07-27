@@ -75,7 +75,9 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
         PaneContentWidget(
           key: previous.kind == PaneKind.topic
               ? _keyForTopic(previous.topicId!)
-              : ValueKey('master_${previous.kind}_${previous.username}'),
+              : ValueKey(
+                  'master_${previous.kind}_${previous.username ?? previous.categoryId}',
+                ),
           entry: previous,
           stackProvider: selectedMessageProvider,
           truncateOnPush: true,
@@ -285,7 +287,9 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
           ? PaneContentWidget(
               key: selectedMessage.kind == PaneKind.topic
                   ? _keyForTopic(selectedMessage.topicId!)
-                  : ValueKey('${selectedMessage.kind}_${selectedMessage.username}'),
+                  : ValueKey(
+                      '${selectedMessage.kind}_${selectedMessage.username ?? selectedMessage.topEntry?.categoryId}',
+                    ),
               entry: selectedMessage.topEntry!,
               stackProvider: selectedMessageProvider,
               parentActive: widget.isActive,
@@ -407,7 +411,13 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
+          initialTitle: topic.title,
           scrollToPostNumber: topic.lastReadPostNumber,
+          // 窄→宽自愈必须落回**私信栈**:不带 stackProvider 会落进首页
+          // 话题栈,左栏变信息流(对齐 notification_navigation 的
+          // _openMessageInWorkspace)
+          autoSwitchToMasterDetail: true,
+          stackProvider: selectedMessageProvider,
         ),
       ),
     );

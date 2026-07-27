@@ -106,6 +106,7 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
         builder: (_) => TopicDetailPage(
           topicId: pending.topicId!,
           initialTitle: pending.title,
+          autoSwitchToMasterDetail: true,
         ),
       ),
     );

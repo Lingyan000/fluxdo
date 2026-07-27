@@ -6,7 +6,7 @@ import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/smart_avatar.dart';
-import 'user_profile_page.dart';
+import '../providers/selected_topic_provider.dart';
 import '../l10n/s.dart';
 
 /// 关注/粉丝列表页面
@@ -124,14 +124,12 @@ class _FollowListPageState extends ConsumerState<FollowListPage> {
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => UserProfilePage(username: user.username),
-                                  ),
-                                );
-                              },
+                              // 统一入口:嵌入面板里压栈显示平行视界,
+                              // 否则内部自动回退全屏 push
+                              onTap: () => EmbeddedStackScope.openProfile(
+                                context,
+                                user.username,
+                              ),
                             ),
                           );
                         },
