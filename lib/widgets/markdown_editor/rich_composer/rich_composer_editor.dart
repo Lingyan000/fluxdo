@@ -22,7 +22,6 @@ import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
-        applyArrowLigatures,
         CalloutKind,
         CodeBlockNode,
         OneboxNode,
@@ -342,7 +341,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         );
       }
     });
-    _tryArrowLigature();
     _updateMentionQuery();
     _updateEmojiQuery();
     _updateSlashQuery();
@@ -365,10 +363,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _serializeDebounce?.cancel();
     final editor = _editor;
     if (editor == null) return;
-    // 先收口显形:光标停在格式边界时(如 `**内容|**`)mark 被摘掉、`**`
-    // 是**普通文本**,直接序列化会把星号当字面量转义成 `\*\*`,发出去就
-    // 不渲染了。显形只是编辑期的可视化,落盘前必须装回结构。
-    editor.commitReveals();
     final raw = docToRaw(editor.blocks);
     if (raw != widget.controller.text) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
@@ -1128,46 +1122,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     );
     editor.deleteSelection();
     _insertEmoji(name);
-    return true;
-  }
-
-  /// 光标前刚打完的 ASCII 箭头 → 单字形(`->` → `→`)。
-  ///
-  /// 与渲染侧(ParagraphParser 的连字)同一张表:帖子里看到的是 `→`,
-  /// 编辑器里打出来也得当场变成 `→`,否则"一体"只在只读态成立。
-  ///
-  /// 替换成**真字符**而不是显示层障眼法 —— 单字形本来就是一个 code
-  /// unit,光标偏移天然对得上,也不用给序列化器加特例。
-  /// 定型时机是**打完那个空格**,不是打完箭头本身:
-  /// - 与渲染侧"前后要有空白"的规则同口径(紧贴单词的 `a->b` 不算箭头);
-  /// - 顺带解决边打边替换的歧义 —— `<->` 打到一半时 `<-` 后面还没空格,
-  ///   不会被提前吃掉,双向箭头打得出来。
-  static final _arrowTailRe = RegExp(r'(?<=^|\s)(<-+>|-+>|<-+)(\s)$');
-
-  bool _tryArrowLigature() {
-    final editor = _editor;
-    if (editor == null || editor.hasComposing) return false;
-    final sel = editor.selection;
-    if (sel == null || !sel.isCollapsed) return false;
-    final block = editor.textBlockById(sel.extent.blockId);
-    if (block == null) return false;
-    final before = block.content.text.substring(0, sel.extent.offset);
-    final m = _arrowTailRe.firstMatch(before);
-    if (m == null) return false;
-    final arrow = m.group(1)!;
-    final space = m.group(2)!;
-    final glyph = applyArrowLigatures('$arrow$space').trimRight();
-    if (glyph == arrow) return false;
-    // 只吃掉箭头本身,刚打的空格原样留下
-    final start = sel.extent.offset - arrow.length - space.length;
-    editor.updateSelection(
-      EditorSelection(
-        base: EditorPosition(blockId: block.id, offset: start),
-        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
-      ),
-    );
-    editor.deleteSelection();
-    editor.insertText('$glyph$space');
     return true;
   }
 
