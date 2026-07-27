@@ -62,6 +62,8 @@ import '../../../utils/url_helper.dart';
 import '../../common/fading_edge_scroll_view.dart';
 import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
+import '../../../models/hashtag_item.dart';
+import '../../mention/hashtag_item_tile.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../emoji_popover.dart';
 import '../emoji_sticker_panel.dart';
@@ -110,6 +112,7 @@ class RichComposerEditor extends StatefulWidget {
     this.emojiPanelHeight = 280.0,
     this.onEmojiPanelChanged,
     this.mentionDataSource,
+    this.hashtagDataSource,
     this.onFallbackToPlain,
     this.onSwitchToSource,
   });
@@ -131,6 +134,9 @@ class RichComposerEditor extends StatefulWidget {
   final double emojiPanelHeight;
   final ValueChanged<bool>? onEmojiPanelChanged;
   final MentionDataSource? mentionDataSource;
+
+  /// 分类/标签补全数据源(不传则不启用 `#`)
+  final HashtagDataSource? hashtagDataSource;
 
   /// 初始导入失败(cook 不可用/草稿含不可解析内容)时回调 —— 宿主应
   /// 切回纯文本 MarkdownEditor。
@@ -201,6 +207,13 @@ class RichComposerEditorState extends State<RichComposerEditor>
   int _mentionSelected = 0;
   String _mentionQuery = '';
   Timer? _mentionDebounce;
+
+  // `#` 分类/标签补全状态(与 mention 同构,共用一套锚定/键盘导航口径)
+  OverlayEntry? _hashOverlay;
+  List<HashtagItem> _hashCandidates = const [];
+  int _hashSelected = 0;
+  String? _hashQuery;
+  Timer? _hashDebounce;
 
   // `:` emoji 补全状态(与 mention 同构,但候选来自本地别名索引,不防抖 ——
   // 索引在会话开始时一次性拉好,之后每次按键都是内存里过滤)
@@ -284,6 +297,7 @@ class RichComposerEditorState extends State<RichComposerEditor>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _mentionOverlay?.markNeedsBuild();
+      _hashOverlay?.markNeedsBuild();
       _emojiOverlay?.markNeedsBuild();
       _slashOverlay?.markNeedsBuild();
       _linkToolbarOverlay?.markNeedsBuild();
@@ -303,6 +317,8 @@ class RichComposerEditorState extends State<RichComposerEditor>
     _emojiPopover?.dispose();
     _serializeDebounce?.cancel();
     _mentionDebounce?.cancel();
+    _hashDebounce?.cancel();
+    _removeHashOverlay();
     _removeMentionOverlay();
     _removeEmojiOverlay();
     EmojiAliasService().invalidate();
@@ -363,6 +379,7 @@ class RichComposerEditorState extends State<RichComposerEditor>
     });
     _tryArrowLigature();
     _updateMentionQuery();
+    _updateHashtagQuery();
     _updateEmojiQuery();
     _updateSlashQuery();
   }
@@ -450,6 +467,28 @@ class RichComposerEditorState extends State<RichComposerEditor>
           return true;
       }
     }
+    // `#` 浮层键盘导航(与 mention 同构;两者触发符互斥不会同时开)
+    if (_hashOverlay != null && _hashCandidates.isNotEmpty) {
+      final n = _hashCandidates.length;
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.arrowDown:
+          setState(() => _hashSelected = (_hashSelected + 1) % n);
+          _hashOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.arrowUp:
+          setState(() => _hashSelected = (_hashSelected - 1 + n) % n);
+          _hashOverlay!.markNeedsBuild();
+          return true;
+        case LogicalKeyboardKey.enter:
+        case LogicalKeyboardKey.numpadEnter:
+        case LogicalKeyboardKey.tab:
+          _insertHashtag(_hashCandidates[_hashSelected.clamp(0, n - 1)]);
+          return true;
+        case LogicalKeyboardKey.escape:
+          _dismissHashtag();
+          return true;
+      }
+    }
     // emoji 浮层键盘导航。可选项 = 候选数 + 1(末行「更多」)。
     if (_emojiOverlay != null && _emojiCandidates.isNotEmpty) {
       final n = _emojiCandidates.length + 1;
@@ -497,6 +536,7 @@ class RichComposerEditorState extends State<RichComposerEditor>
       );
     }
     if (_mentionOverlay == null &&
+        _hashOverlay == null &&
         _slashOverlay == null &&
         _emojiOverlay == null &&
         !primaryEnter &&
@@ -518,6 +558,7 @@ class RichComposerEditorState extends State<RichComposerEditor>
     // Shift+回车才新建段落;设置关掉时两者互换。块完成规则已在上面吃掉了
     // 它该吃的回车,走到这里的就是纯粹的换行意图。
     if (_mentionOverlay == null &&
+        _hashOverlay == null &&
         _slashOverlay == null &&
         _emojiOverlay == null &&
         !primaryEnter &&
@@ -1034,6 +1075,162 @@ class RichComposerEditorState extends State<RichComposerEditor>
   void _removeMentionOverlay() {
     _mentionOverlay?.remove();
     _mentionOverlay = null;
+  }
+
+  // -----------------------------------------------------------------
+  // `#` 分类/标签补全(监听光标前缀 #word)
+  // -----------------------------------------------------------------
+
+  /// `#查询` 正则。中文分类/标签名也要能搜,放开到 Unicode 字母;
+  /// `:` 允许出现是因为子分类引用形如 `父:子`。
+  static final _hashQueryRe = RegExp(
+    r'(?:^|[\s(\[])#([\p{L}\p{N}_:-]*)$',
+    unicode: true,
+  );
+
+  void _updateHashtagQuery() {
+    final dataSource = widget.hashtagDataSource;
+    final editor = _editor;
+    if (dataSource == null || editor == null) return;
+    final sel = editor.selection;
+    if (sel == null || !sel.isCollapsed) {
+      _dismissHashtag();
+      return;
+    }
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) {
+      _dismissHashtag();
+      return;
+    }
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = _hashQueryRe.firstMatch(before);
+    if (m == null) {
+      _dismissHashtag();
+      return;
+    }
+    final query = m.group(1)!;
+    if (query == _hashQuery && _hashOverlay != null) return;
+    _hashQuery = query;
+    _hashDebounce?.cancel();
+    _hashDebounce = Timer(const Duration(milliseconds: 250), () async {
+      if (!mounted) return;
+      try {
+        final items = await dataSource(query);
+        if (!mounted || _hashQuery != query) return;
+        _hashCandidates = items;
+        _hashSelected = 0;
+        if (_hashCandidates.isEmpty) {
+          _dismissHashtag();
+        } else {
+          _showHashOverlay();
+        }
+      } catch (_) {
+        _dismissHashtag();
+      }
+    });
+  }
+
+  void _showHashOverlay() {
+    _removeHashOverlay();
+    _hashOverlay = OverlayEntry(
+      builder: (context) {
+        // 锚定光标,与 mention 浮层同一套上下翻算法
+        final caret = _caretGlobalRect;
+        final screen = MediaQuery.sizeOf(context);
+        final safeTop = MediaQuery.viewPaddingOf(context).top + 8;
+        final safeBottom =
+            screen.height - MediaQuery.viewInsetsOf(context).bottom - 8;
+        const menuWidth = 260.0;
+        var menuMaxHeight = 220.0;
+        double left;
+        double? top;
+        double? bottom;
+        if (caret != null) {
+          left = caret.left.clamp(8.0, screen.width - menuWidth - 8);
+          final below = safeBottom - caret.bottom;
+          final above = caret.top - safeTop;
+          if (below >= menuMaxHeight + 16 || below >= above) {
+            top = caret.bottom + 4;
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (below - 12).clamp(120.0, 220.0),
+            );
+          } else {
+            bottom = screen.height - caret.top + 4;
+            menuMaxHeight = menuMaxHeight.clamp(
+              120.0,
+              (above - 12).clamp(120.0, 220.0),
+            );
+          }
+        } else {
+          left = 16;
+          bottom = screen.height - safeBottom + 80;
+        }
+        return Positioned(
+          left: left,
+          top: top,
+          bottom: bottom,
+          width: menuWidth,
+          child: _FloatingPanel(
+            maxHeight: menuMaxHeight,
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(4),
+              itemCount: _hashCandidates.length,
+              itemBuilder: (context, i) {
+                final item = _hashCandidates[i];
+                return HashtagItemTile(
+                  item: item,
+                  isSelected: i == _hashSelected,
+                  onTap: () => _insertHashtag(item),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+    Overlay.of(context).insert(_hashOverlay!);
+  }
+
+  /// 插入 `#ref `。这里插的是**纯文本**而不是原子:hashtag 的最终形态由
+  /// 服务端 cook 决定(分类/标签是否存在、有没有权限看),编辑器里固化成
+  /// 原子反而会在往返后骗人。
+  void _insertHashtag(HashtagItem item) {
+    final editor = _editor;
+    if (editor == null) return;
+    final sel = editor.selection;
+    if (sel == null) return;
+    final block = editor.textBlockById(sel.extent.blockId);
+    if (block == null) return;
+    final before = block.content.text.substring(0, sel.extent.offset);
+    final m = _hashQueryRe.firstMatch(before);
+    if (m == null) return;
+    // m.start 可能落在前导空白/括号上,`#` 的真实位置按匹配长度倒推
+    final hashStart = sel.extent.offset - (m.group(1)!.length + 1);
+    editor.updateSelection(
+      EditorSelection(
+        base: EditorPosition(blockId: block.id, offset: hashStart),
+        extent: EditorPosition(blockId: block.id, offset: sel.extent.offset),
+      ),
+    );
+    editor.deleteSelection();
+    editor.insertText('#${item.ref} ');
+    _dismissHashtag();
+  }
+
+  void _dismissHashtag() {
+    if (_hashQuery == null && _hashOverlay == null) return;
+    _hashQuery = null;
+    _hashSelected = 0;
+    _hashCandidates = const [];
+    _hashDebounce?.cancel();
+    _removeHashOverlay();
+  }
+
+  void _removeHashOverlay() {
+    _hashOverlay?.remove();
+    _hashOverlay = null;
   }
 
   /// 回车软换行偏好。本 State 不是 ConsumerState(改继承会牵动整个

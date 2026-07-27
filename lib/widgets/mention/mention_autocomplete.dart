@@ -3,13 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
+import '../../models/hashtag_item.dart';
 import '../../models/mention_user.dart';
 import '../../constants.dart';
 import '../common/smart_avatar.dart';
+import 'hashtag_item_tile.dart';
 import '../../../../../l10n/s.dart';
 
 /// 搜索用户的数据源类型
 typedef MentionDataSource = Future<MentionSearchResult> Function(String term);
+
+/// 搜索分类/标签的数据源类型(`#` 补全)
+typedef HashtagDataSource = Future<List<HashtagItem>> Function(String term);
 
 /// 用户提及自动补全组件
 /// 
@@ -24,6 +29,9 @@ class MentionAutocomplete extends StatefulWidget {
 
   /// 数据源（由外部注入，解耦 API 调用）
   final MentionDataSource dataSource;
+
+  /// 分类/标签数据源(注入才启用 `#` 补全)
+  final HashtagDataSource? hashtagDataSource;
 
   /// 选中后的回调（返回完整用户名）
   final ValueChanged<String>? onMentionInserted;
@@ -40,6 +48,7 @@ class MentionAutocomplete extends StatefulWidget {
     required this.dataSource,
     required this.child,
     this.focusNode,
+    this.hashtagDataSource,
     this.onMentionInserted,
     this.debounceMs = 300,
   });
@@ -54,6 +63,10 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
   final LayerLink _layerLink = LayerLink();
 
   List<MentionItem> _results = [];
+
+  /// `#` 补全的候选(与 [_results] 互斥,由 [_hashMode] 决定当前哪一路)
+  List<HashtagItem> _hashResults = [];
+  bool _hashMode = false;
   bool _isLoading = false;
   int _selectedIndex = 0;
   String _currentSearchTerm = '';
@@ -131,7 +144,17 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
     final textBeforeCursor = text.substring(0, cursorPos);
 
     // 使用正则匹配 @用户名 模式（@ 后面跟字母数字下划线）
-    final match = RegExp(r'@([\w_-]*)$').firstMatch(textBeforeCursor);
+    var hashMode = false;
+    var match = RegExp(r'@([\w_-]*)$').firstMatch(textBeforeCursor);
+
+    // @ 不匹配再试 `#` 分类/标签(中文名也要能搜,放开到 Unicode 字母)
+    if (match == null && widget.hashtagDataSource != null) {
+      match = RegExp(
+        r'#([\p{L}\p{N}_:-]*)$',
+        unicode: true,
+      ).firstMatch(textBeforeCursor);
+      hashMode = match != null;
+    }
 
     if (match == null) {
       _removeOverlay();
@@ -151,6 +174,12 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
     _mentionStartIndex = atIndex;
     final searchTerm = match.group(1) ?? '';
     _currentSearchTerm = searchTerm;
+    if (_hashMode != hashMode) {
+      // 换了触发符:旧候选立刻作废,别让 @ 的结果闪在 # 的列表里
+      _results = [];
+      _hashResults = [];
+      _hashMode = hashMode;
+    }
 
     // 防抖搜索（空字符串也会触发请求，与官方行为一致）
     _debounceTimer?.cancel();
@@ -166,8 +195,19 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
     _showOverlay();
 
     try {
+      if (_hashMode) {
+        final items = await widget.hashtagDataSource!(term);
+        if (!mounted || !_hashMode) return;
+        setState(() {
+          _hashResults = items;
+          _isLoading = false;
+          _selectedIndex = 0;
+        });
+        _updateOverlay();
+        return;
+      }
       final result = await widget.dataSource(term);
-      if (!mounted) return;
+      if (!mounted || _hashMode) return;
 
       setState(() {
         _results = result.items;
@@ -180,6 +220,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
       if (!mounted) return;
       setState(() {
         _results = [];
+        _hashResults = [];
         _isLoading = false;
       });
       _updateOverlay();
@@ -202,8 +243,37 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
     _overlayEntry?.remove();
     _overlayEntry = null;
     _results = [];
+    _hashResults = [];
+    _hashMode = false;
     _mentionStartIndex = null;
     _currentSearchTerm = '';
+  }
+
+  /// 当前模式下的候选条数(键盘导航用)
+  int get _itemCount => _hashMode ? _hashResults.length : _results.length;
+
+  /// 把光标前的 `@xxx` / `#xxx` 替换成 [replacement] + 空格。
+  void _replaceTrigger(String replacement) {
+    if (_mentionStartIndex == null) return;
+    final text = widget.controller.text;
+    final selection = widget.controller.selection;
+    final cursorPos = selection.isValid ? selection.baseOffset : text.length;
+    final newText = text.replaceRange(
+      _mentionStartIndex!,
+      cursorPos,
+      replacement,
+    );
+    widget.controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(
+        offset: _mentionStartIndex! + replacement.length,
+      ),
+    );
+  }
+
+  void _selectHashtag(HashtagItem item) {
+    _replaceTrigger('#${item.ref} ');
+    _removeOverlay();
   }
 
   void _selectItem(MentionItem item) {
@@ -228,22 +298,28 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
   }
 
   void _handleKeyEvent(KeyEvent event) {
-    if (_overlayEntry == null || _results.isEmpty) return;
+    final count = _itemCount;
+    if (_overlayEntry == null || count == 0) return;
 
     if (event is KeyDownEvent) {
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
         setState(() {
-          _selectedIndex = (_selectedIndex + 1) % _results.length;
+          _selectedIndex = (_selectedIndex + 1) % count;
         });
         _updateOverlay();
       } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
         setState(() {
-          _selectedIndex = (_selectedIndex - 1 + _results.length) % _results.length;
+          _selectedIndex = (_selectedIndex - 1 + count) % count;
         });
         _updateOverlay();
       } else if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.tab) {
-        _selectItem(_results[_selectedIndex]);
+        final index = _selectedIndex.clamp(0, count - 1);
+        if (_hashMode) {
+          _selectHashtag(_hashResults[index]);
+        } else {
+          _selectItem(_results[index]);
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         _removeOverlay();
       }
@@ -393,25 +469,35 @@ class _MentionAutocompleteState extends State<MentionAutocomplete>
             color: theme.colorScheme.primary,
           ),
           
-        if (_results.isEmpty && !_isLoading)
+        if (_itemCount == 0 && !_isLoading)
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              _currentSearchTerm.isEmpty ? S.current.mention_searchHint : S.current.mention_noUserFound,
+              _currentSearchTerm.isEmpty
+                  ? S.current.mention_searchHint
+                  : S.current.mention_noUserFound,
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             ),
           )
-        else if (_results.isNotEmpty)
+        else if (_itemCount > 0)
           Flexible(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
-                itemCount: _results.length,
+                itemCount: _itemCount,
                 itemBuilder: (context, index) {
-                  final item = _results[index];
                   final isSelected = index == _selectedIndex;
+                  if (_hashMode) {
+                    final item = _hashResults[index];
+                    return HashtagItemTile(
+                      item: item,
+                      isSelected: isSelected,
+                      onTap: () => _selectHashtag(item),
+                    );
+                  }
+                  final item = _results[index];
 
                   return _MentionItemTile(
                     item: item,

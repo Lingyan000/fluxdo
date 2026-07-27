@@ -14,6 +14,7 @@ import 'package:fluxdo/models/topic.dart';
 
 import 'package:dio/dio.dart';
 import 'package:fluxdo/providers/discourse_providers.dart';
+import 'package:fluxdo/providers/hashtag_search.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/services/app_error_handler.dart';
 import 'package:fluxdo/services/toast_service.dart';
@@ -657,6 +658,11 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                                           categoryId: _selectedCategory?.id,
                                           includeGroups: !_isPrivateMessage,
                                         ),
+                                    hashtagDataSource: (term) => searchHashtags(
+                                      ref,
+                                      term,
+                                      categoryId: _selectedCategory?.id,
+                                    ),
                                     onFallbackToPlain: () {
                                       if (mounted) {
                                         setState(() => _richFallback = true);
@@ -697,6 +703,11 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                                     categoryId: _selectedCategory?.id,
                                     includeGroups: !_isPrivateMessage,
                                   ),
+                              hashtagDataSource: (term) => searchHashtags(
+                                ref,
+                                term,
+                                categoryId: _selectedCategory?.id,
+                              ),
                             ),
                     ),
                   ),

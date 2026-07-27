@@ -55,6 +55,9 @@ class MarkdownEditor extends ConsumerStatefulWidget {
   /// 用户提及数据源（可选，不传则不启用 @用户 功能）
   final MentionDataSource? mentionDataSource;
 
+  /// 分类/标签数据源（可选，不传则不启用 #板块/标签 补全）
+  final HashtagDataSource? hashtagDataSource;
+
   /// 是否显示预览按钮
   final bool showPreviewButton;
 
@@ -90,6 +93,7 @@ class MarkdownEditor extends ConsumerStatefulWidget {
     this.emojiPanelHeight = 280.0,
     this.onEmojiPanelChanged,
     this.mentionDataSource,
+    this.hashtagDataSource,
     this.showPreviewButton = true,
     this.onTogglePreview,
     this.isPreview,
@@ -681,11 +685,13 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     );
 
     // 如果提供了 mentionDataSource，则包裹 MentionAutocomplete
+    // （同一个浮层顺带承载 # 分类/标签补全，两者触发符互斥）
     if (widget.mentionDataSource != null) {
       return MentionAutocomplete(
         controller: widget.controller,
         focusNode: _focusNode,
         dataSource: widget.mentionDataSource!,
+        hashtagDataSource: widget.hashtagDataSource,
         child: wrappedField,
       );
     }

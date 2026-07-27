@@ -15,6 +15,7 @@ import 'package:fluxdo/models/draft.dart';
 import 'package:fluxdo/models/shortcut_binding.dart';
 
 import 'package:fluxdo/providers/discourse_providers.dart';
+import 'package:fluxdo/providers/hashtag_search.dart';
 import 'package:fluxdo/services/toast_service.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxdo/services/ai_post_review_service.dart';
@@ -775,6 +776,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                                                           _selectedCategory?.id,
                                                       includeGroups: true,
                                                     ),
+                                                hashtagDataSource: (term) =>
+                                                    searchHashtags(
+                                                      ref,
+                                                      term,
+                                                      categoryId:
+                                                          _selectedCategory?.id,
+                                                    ),
                                                 onFallbackToPlain: () {
                                                   if (mounted) {
                                                     setState(
@@ -841,6 +849,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                                                 categoryId:
                                                     _selectedCategory?.id,
                                                 includeGroups: true,
+                                              ),
+                                          hashtagDataSource: (term) =>
+                                              searchHashtags(
+                                                ref,
+                                                term,
+                                                categoryId:
+                                                    _selectedCategory?.id,
                                               ),
                                         ),
                                 ),

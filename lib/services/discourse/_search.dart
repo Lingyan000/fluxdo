@@ -82,6 +82,36 @@ mixin _SearchMixin on _DiscourseServiceBase {
     }
   }
 
+  /// 搜索 hashtag 候选（编辑器 `#` 补全）
+  ///
+  /// 走官方 `HashtagAutocompleteService` 的接口，与网页版 composer 同源：
+  /// [order] 决定各类型的排列顺序（站点 `site.hashtag_configurations`
+  /// 里 `topic-composer` 的值，默认 category 在前、tag 在后）。
+  ///
+  /// 失败返回空列表，由调用方决定要不要退回本地兜底。
+  Future<List<HashtagItem>> searchHashtags({
+    required String term,
+    List<String> order = const ['category', 'tag'],
+    int limit = 10,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/hashtags/search.json',
+        queryParameters: {'term': term, 'order[]': order, 'limit': limit},
+      );
+      final results = (response.data as Map<String, dynamic>)['results'];
+      if (results is! List) return const [];
+      return results
+          .whereType<Map<String, dynamic>>()
+          .map(HashtagItem.fromJson)
+          .where((e) => e.ref.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[DiscourseService] searchHashtags failed: $e');
+      return const [];
+    }
+  }
+
   /// 搜索用户（用于 @提及自动补全 / 私信收件人选择）
   ///
   /// [includeMessageableGroups]：只返回**当前用户能发私信**的群组

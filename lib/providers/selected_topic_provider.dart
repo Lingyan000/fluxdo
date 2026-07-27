@@ -10,6 +10,7 @@ import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/home_workspace_scope.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
@@ -396,30 +397,27 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
   }
 
-  /// 打开分类话题列表(话题详情底部「浏览更多分类」等入口)。
-  ///
-  /// 分类是"列表态"内容,语义上属于左栏信息流——插到当前栈顶**下面**:
-  /// 左栏换成分类列表,右栏保住正在看的话题;在分类列表里点话题走
-  /// master 预览位的 truncateOnPush 替换右栏。栈里旧的分类层先清掉
-  /// (分类层唯一,不摞多个);栈顶本身是分类时直接替换。
-  void openCategoryAsMaster(int categoryId) {
-    final entry = PaneEntry.category(categoryId: categoryId);
-    if (state.stack.isEmpty || state.stack.last.kind == PaneKind.category) {
-      state = SelectedTopicState(
-        stack: [
-          ...state.stack.take(
-            state.stack.isEmpty ? 0 : state.stack.length - 1,
-          ),
-          entry,
-        ],
-      );
+  /// 打开分类话题列表——**兜底路径**,只在信息流展示不出来时用(多层平行
+  /// 视界、非首页宿主)。首选永远是把分类接到左栏信息流,见
+  /// [EmbeddedStackScope.openCategory]。
+  void pushCategory(int categoryId) {
+    state = SelectedTopicState(
+      stack: [...state.stack, PaneEntry.category(categoryId: categoryId)],
+    );
+  }
+
+  /// master 预览位里打开分类:截断栈顶后压入(顶替右栏)。
+  void pushCategoryTruncating(int categoryId) {
+    if (state.stack.length < 2) {
+      pushCategory(categoryId);
       return;
     }
-    final top = state.stack.last;
-    final kept = state.stack
-        .take(state.stack.length - 1)
-        .where((e) => e.kind != PaneKind.category);
-    state = SelectedTopicState(stack: [...kept, entry, top]);
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.category(categoryId: categoryId),
+      ],
+    );
   }
 
   /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
@@ -829,15 +827,33 @@ class EmbeddedStackScope extends InheritedWidget {
     ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
   }
 
-  /// 打开分类话题列表的统一入口:嵌入面板里压入面板栈(右栏原地显示
-  /// 分类列表,可返回),不在嵌入面板才全屏 push。
+  /// 打开分类的统一入口。分类是**信息流**语义(跟标签同一档),优先级:
+  ///
+  /// 1. 能拿到首页左栏控制器、且当前不是多层平行视界 → 直接把左栏信息流
+  ///    切成该分类(右栏正在看的话题原样保留)。这是绝大多数情况。
+  /// 2. 多层平行视界 / 非首页宿主(私信、搜索栈…)展示不了信息流 →
+  ///    退化成右栏面板层。
+  /// 3. 完全不在平行视界里 → 全屏 push。
   static void openCategory(BuildContext context, Category category) {
     final scope = _maybeScopeOf(context);
+    final workspace = HomeWorkspaceScope.maybeOf(context);
     if (scope != null) {
       final container = ProviderScope.containerOf(context, listen: false);
+      final stacked = container.read(scope.stackProvider).isStacked;
+      if (workspace != null && !stacked) {
+        workspace.onShowCategory(category);
+        return;
+      }
       final notifier = container.read(scope.stackProvider.notifier);
-      // 分类永远去左栏当信息流,不管从栈顶详情还是 master 预览位发起
-      notifier.openCategoryAsMaster(category.id);
+      if (scope.truncateOnPush) {
+        notifier.pushCategoryTruncating(category.id);
+      } else {
+        notifier.pushCategory(category.id);
+      }
+      return;
+    }
+    if (workspace != null) {
+      workspace.onShowCategory(category);
       return;
     }
     Navigator.of(context).push(
