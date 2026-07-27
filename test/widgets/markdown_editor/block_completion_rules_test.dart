@@ -156,23 +156,16 @@ void main() {
     // 白名单曾经凭印象写,放进了一堆 cook 引擎不认的标签 —— 检测命中但
     // cook 原样吐回字面量,表现为"回车分了段却没渲染"(实测复现:
     // `[color=#FF0000]a[/color]` 回车后纹丝不动)。这些必须不触发。
-    // color/bgcolor:cook bundle 里没有 discourse-bbcode-color,但宿主
-    // 在 cook 之后补 span(DiscourseCookService.applyBbcodeColor),整条
-    // 链路能渲染出来,所以属于支持。
-    test('[color] / [bgcolor] 靠宿主后置转换支持', () {
-      final hit = at(['这是[color=#FF0000]红字[/color]哦'])!;
-      expect(hit.splitAfter, isTrue, reason: '行内,回车仍要换行');
-      expect(at(['[bgcolor=#fff]底色[/bgcolor]']), isNotNull);
+    // color/bgcolor/size:由内核 input rules 即打即渲染(打完闭标记当场
+    // 转换),不走块完成 —— 这里必须不触发,否则与 input rules 撞车。
+    test('[color] / [bgcolor] 由内核 input rules 处理,不触发块完成', () {
+      expect(at(['这是[color=#FF0000]红字[/color]哦']), isNull);
+      expect(at(['[bgcolor=#fff]底色[/bgcolor]']), isNull);
     });
 
-    // size 与 color 同理:宿主在 cook 之后补 font-size span
-    // (DiscourseCookService.applyBbcodeSize),阅读端解析成 SizedRun。
-    // 此前这条断言写在"不支持"那组里 —— 那是后置转换尚未存在时的正确
-    // 结论,补上转换后前提已变。回归:手打 [size=…] 回车不渲染。
-    test('[size] 靠宿主后置转换支持', () {
-      final hit = at(['这是[size=150]大字[/size]哦'])!;
-      expect(hit.splitAfter, isTrue, reason: '行内,回车仍要换行');
-      expect(at(['[size=0]隐藏[/size]']), isNotNull);
+    test('[size] 由内核 input rules 处理,不触发块完成', () {
+      expect(at(['这是[size=150]大字[/size]哦']), isNull);
+      expect(at(['[size=0]隐藏[/size]']), isNull);
     });
 
     test('引擎不支持的 BBCode 一律不触发', () {

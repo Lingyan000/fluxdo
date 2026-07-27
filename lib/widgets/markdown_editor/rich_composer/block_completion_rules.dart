@@ -114,17 +114,14 @@ const bbcodeBlockTags = {
 
 /// 行内 BBCode:只把本段送 cook,不变岛。
 ///
-/// 只列**最终能渲染出来**的 —— 判据不是"cook bundle 认不认",而是
-/// "整条链路(cook + 宿主后置转换)出不出效果":
-/// - `color`/`bgcolor`:bundle 里没有 discourse-bbcode-color,但
-///   [DiscourseCookService.applyBbcodeColor] 在 cook 之后补 span,所以算支持;
-/// - `size`:同理 —— [DiscourseCookService.applyBbcodeSize] 在 cook 之后补
-///   `font-size` span,阅读端解析成 SizedRun,算支持;
-/// - `font`:没有对应后置转换,仍不支持;
+/// 只列**最终能渲染出来**的 —— 判据是 cook 引擎真认得。
+/// - `color`/`bgcolor`/`size`:由内核 input rules 即打即渲染(打完闭
+///   标记当场转换,attr 原样保留),不走块完成;
+/// - `font`:引擎不认,不支持;
 /// - `sup`/`sub`/`highlight`/`mark`:**BBCode 形式**引擎不认(HTML 形式
 ///   `<sup>` 才认,见 [htmlInlineTags])。
 const bbcodeInlineTags = {
-  'b', 'i', 'u', 's', 'url', 'email', 'img', 'color', 'bgcolor', 'size',
+  'b', 'i', 'u', 's', 'url', 'email', 'img',
 };
 
 /// `[tag]` / `[tag=值]` / `[tag 属性=值]` 开标签。
