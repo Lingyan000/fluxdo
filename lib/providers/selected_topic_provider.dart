@@ -974,24 +974,9 @@ typedef DetailScrollPositionKey = ({int topicId, String instanceId});
 final detailScrollPositionProvider =
     StateProvider.family<int?, DetailScrollPositionKey>((ref, key) => null);
 
-/// 视口位置的**像素微调量**:锚点楼层顶边相对**视口顶边**的偏移
-/// (负 = 该楼已经滚过去一部分)。
-///
-/// 只记楼层号的话,恢复出来永远是"该楼顶边贴视口顶边"(初始定位是
-/// center 锚点构造性完成的,`_finalizeInitialPosition` 还会把 pixels
-/// 归零)—— 楼层只露一点点时,面板在 master/detail 槽位间搬一次,画面
-/// 就跳一大截。配合楼层号用:先定位到楼层,再补这个量。
-///
-/// **基准必须是视口的 RenderBox,不能用 `kToolbarHeight + padding.top`
-/// 那种整屏坐标**:平行视界右栏的视口顶边不在屏幕顶部,用错基准会让
-/// 补偿量整体偏一大截,比不补更糟(实测踩过)。
-/// 与楼层号绑在一起存:只有「这次落点正好是当初存锚点的那一楼」才补,
-/// 不依赖"走的是哪条定位分支"—— 恢复位置是经 `scrollToPostNumber` 传进
-/// 页面的,在里面会被当成跳转目标,按分支判会永远判不中(探针实锤:
-/// restore 一条日志都不出)。
-typedef DetailScrollAnchor = ({int postNumber, double delta});
-
-final detailScrollAnchorProvider =
-    StateProvider.family<DetailScrollAnchor?, DetailScrollPositionKey>(
-  (ref, key) => null,
-);
+// 注:试过再记一个"楼内像素偏移",定位完成后补上,想把位置还原得更准。
+// 探针实测补偿量算对、也执行了(delta=-187.5 → target=+187.5),但**画面
+// 照样跳** —— 残余跳动来自面板在 master/detail 槽位间搬动时**宽度变化**
+// 导致的正文重排(楼高全变,"楼内 187.5px"在新宽度下已指向别的内容)。
+// 补偿只是给结果再加一个偏移,治不了重排,反而让落点更飘。已撤除。
+// 真要修得从「宽度变化时按内容比例重定位」入手,不是加偏移量能解决的。

@@ -267,13 +267,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 初始定位期间被抑制的 eyeline 上报楼层（定位完成后回放）
   int? _suppressedEyelinePostNumber;
 
-  /// 本次初始定位的落点是不是来自「恢复视口位置」(而非跳楼层/未读
-  /// 分割线)。只有这条路才该补楼内偏移,见 `_restoreAnchorOffset`。
-  /// 注:不能用 shouldHighlight 判 —— 视口恢复这条路它也是 true。
-  bool _initialTargetFromViewport = false;
 
-  /// 楼内偏移锚点上次落盘时间(滚动中节流用)
-  DateTime? _lastAnchorSaveAt;
 
   bool get _usesEmbeddedMobileWorkspaceChrome {
     return widget.embeddedMode &&
