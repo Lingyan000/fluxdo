@@ -461,9 +461,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // Cmd/Ctrl+Enter 是宿主的**发送**快捷键,这里一个字节都不能碰 ——
     // 内核的回车分支本来就有 `when !primary` 放行它冒泡,宿主拦截层
     // 漏掉同一守卫会把发送吞掉(实测回归:加软换行后 Ctrl+Enter 失灵)。
-    // 用内核的权威判定,**不要**直接读 HardwareKeyboard:平台/IME 会把
-    // Ctrl 弄成假的「已抬起」,两边口径不一致就会出现「Ctrl+Enter 换两行
-    // 且发不出去」(内核分段 + 宿主软换行各插一次)。
+    // 用内核的 primaryModifierHeld:发送类判定只认 HardwareKeyboard
+    // 真实状态(不吃补偿窗口,杜绝 Ctrl 假抬起后纯回车误发帖);内核
+    // Enter 路由等可逆操作才吃补偿。两边口径由内核统一拆分。
     final primaryEnter = isEnterKey && primaryModifierHeld(event);
     if (kDebugMode && isEnterKey) {
       debugPrint(
@@ -2568,8 +2568,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                           // Enter 保存收起(官方 keydown Enter → onClose);
                           // Shift+Enter 留给换行。多行 TextField 的 Enter
                           // 默认换行、onSubmitted 不触发,必须在这拦。
+                          // Shift 直读 HardwareKeyboard:焦点在 alt 浮层
+                          // (普通 TextField)时内核的本地跟踪收不到按键
+                          // 会冻结,合取语义的 shiftModifierHeld 恒 false,
+                          // Shift+Enter 会被当纯 Enter 直接保存;alt 框
+                          // 场景不涉及发送等不可逆动作,直读安全。
                           if (event.logicalKey == LogicalKeyboardKey.enter &&
-                              !shiftModifierHeld()) {
+                              !HardwareKeyboard.instance.isShiftPressed) {
                             _saveAlt(_altController?.text ?? '');
                             return KeyEventResult.handled;
                           }
