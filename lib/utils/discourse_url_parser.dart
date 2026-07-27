@@ -51,7 +51,14 @@ class DiscourseUrlParser {
     caseSensitive: false,
   );
 
-  static final _tagRegex = RegExp(r'/tag/([^/?#]+)', caseSensitive: false);
+  /// 标签链接:`/tag/<名字>`,数字型名字的标签 Discourse 会带上 id 段
+  /// (`/tag/1534-tag/1534`,跟分类 `/c/slug/id` 同形态)。**id 段必须
+  /// 一起截下来** —— 只取第一段拼出的 `/tag/1534-tag/l/latest.json`
+  /// 服务端 404(实测)。
+  static final _tagRegex = RegExp(
+    r'/tag/([^/?#]+(?:/\d+)?)',
+    caseSensitive: false,
+  );
 
   /// 解析话题链接，返回 [TopicLinkInfo] 或 null
   ///
@@ -112,6 +119,15 @@ class DiscourseUrlParser {
     final match = _tagRegex.firstMatch(url);
     final encoded = match?.group(1);
     return encoded == null ? null : Uri.decodeComponent(encoded);
+  }
+
+  /// 标签的展示名:去掉 [parseTag] 保留的 id 段(`1534-tag/1534` →
+  /// `1534-tag`)。只用于显示,请求路径必须用带 id 的原串。
+  static String tagDisplayName(String tag) {
+    final slash = tag.lastIndexOf('/');
+    if (slash <= 0) return tag;
+    final tail = tag.substring(slash + 1);
+    return int.tryParse(tail) == null ? tag : tag.substring(0, slash);
   }
 
   static bool isHomepage(String url) {

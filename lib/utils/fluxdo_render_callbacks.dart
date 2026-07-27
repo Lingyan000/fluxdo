@@ -37,6 +37,7 @@ import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
 import '../widgets/common/image_context_menu.dart';
 import '../widgets/common/smart_avatar.dart';
+import '../widgets/user/user_card.dart';
 import '../widgets/post/quote_image_scope.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/content/audio/discourse_audio_player.dart';
@@ -323,11 +324,33 @@ class FluxdoRenderCallbacks {
     return RepaintBoundary(child: image);
   };
 
-  /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
+  /// Mention 点击 → 弹用户卡片(与点头像同一套浮层),卡片里再点才进
+  /// 资料页。浮层不可用时(偏好关掉 / 拿不到锚点几何)退回直接开资料页。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
     final user = DiscourseUrlParser.parseUser(href);
-    EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
+    final name = user?.username ?? username;
+
+    if (canShowUserCardPreview(ctx)) {
+      // 锚点用**点击点**:mention 是 TextSpan 没有自己的 RenderBox,拿
+      // 整个段落的 rect 当锚点会让卡片飘到段落角上(实测)。拿不到点击
+      // 坐标才退回段落 rect。
+      final tap = lastInlineTapGlobalPosition;
+      Rect? anchor;
+      if (tap != null) {
+        anchor = Rect.fromCenter(center: tap, width: 8, height: 20);
+      } else {
+        final box = ctx.findRenderObject();
+        if (box is RenderBox && box.hasSize && box.attached) {
+          anchor = box.localToGlobal(Offset.zero) & box.size;
+        }
+      }
+      if (anchor != null) {
+        showUserCard(context: ctx, anchorRect: anchor, username: name);
+        return;
+      }
+    }
+    EmbeddedStackScope.openProfile(ctx, name);
   };
 
   /// 代码块高亮:走 HighlighterService(mermaid 不会到这里 ——

@@ -21,6 +21,7 @@ class HashtagItem {
     this.secondaryText,
     this.relativeUrl,
     this.description,
+    this.icon,
     this.id,
   });
 
@@ -36,6 +37,7 @@ class HashtagItem {
       secondaryText: (json['secondary_text'] as String?)?.trim(),
       relativeUrl: json['relative_url'] as String?,
       description: json['description'] as String?,
+      icon: (json['icon'] as String?)?.trim(),
       id: json['id'] is int ? json['id'] as int : null,
     );
   }
@@ -58,6 +60,10 @@ class HashtagItem {
 
   final String? relativeUrl;
   final String? description;
+
+  /// 服务端给的 Font Awesome 图标名(站点 `hashtag_icons`,分类默认
+  /// `folder`、标签默认 `tag`;分类自定义了图标就是那个)
+  final String? icon;
   final int? id;
 }
 

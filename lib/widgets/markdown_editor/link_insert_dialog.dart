@@ -40,11 +40,32 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
   bool _searching = false;
   int _searchSeq = 0;
 
+  /// 文本与 URL **双向**联动。粘贴进来的裸链接两部分本来就相等,编辑
+  /// 时要一直保持相等 —— 改哪一边另一边都跟着走,否则改完就成了
+  /// 「显示旧地址、跳新地址」(实测:在文本框删掉 `?u=xxx`,URL 没跟着
+  /// 改,切到源码看见 `[无参数地址](带参数地址)`)。
+  ///
+  /// 只在**进来时两边相等**(或文本为空)才开;本来就不相等的链接是
+  /// 「自定义文案」,只改文本,不联动。
+  bool _textMirrorsUrl = false;
+  bool _syncing = false;
+
+  /// 上一次两个框的值。联动判据用**改动前那一刻是否相等**,不看初始
+  /// 状态 —— 进来时锚文本可能是被截断显示的 URL,按初始状态判会直接
+  /// 不联动(实测:在文本框删掉 `?u=xxx`,URL 纹丝不动)。
+  late String _prevText;
+  late String _prevUrl;
+
   @override
   void initState() {
     super.initState();
     _textController = TextEditingController(text: widget.initialText);
     _urlController = TextEditingController(text: widget.initialUrl);
+    _prevText = widget.initialText ?? '';
+    _prevUrl = widget.initialUrl ?? '';
+    final text = _prevText.trim();
+    final url = _prevUrl.trim();
+    _textMirrorsUrl = text.isEmpty || (url.isNotEmpty && text == url);
   }
 
   @override
@@ -64,7 +85,42 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
     return 'https://$u';
   }
 
+  /// 把 [value] 同步到另一个框(光标落末尾;_syncing 防两个 onChanged
+  /// 互相递归)。
+  void _mirrorTo(TextEditingController target, String value) {
+    if (_syncing || target.text == value) return;
+    _syncing = true;
+    target.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    _syncing = false;
+  }
+
+  /// 改动前两边就相等(或文本为空)→ 这是"文本即链接"的裸链接,保持相等。
+  bool get _shouldMirror =>
+      _textMirrorsUrl || _prevText.trim().isEmpty || _prevText == _prevUrl;
+
+  void _onTextChanged(String value) {
+    final mirror = _shouldMirror;
+    _prevText = value;
+    if (mirror) {
+      _mirrorTo(_urlController, value);
+      _prevUrl = value;
+      _textMirrorsUrl = true;
+    } else {
+      _textMirrorsUrl = false;
+    }
+  }
+
   void _onUrlChanged(String value) {
+    final mirror = _shouldMirror;
+    _prevUrl = value;
+    if (mirror) {
+      _mirrorTo(_textController, value);
+      _prevText = value;
+      _textMirrorsUrl = true;
+    }
     _searchDebounce?.cancel();
     final q = value.trim();
     // 官方口径:<4 字符或 http 开头不搜(已是 URL)
@@ -105,8 +161,12 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
     _searchDebounce?.cancel();
     _searchSeq++; // 作废在途搜索
     _urlController.text = UrlHelper.resolveUrl('/t/${t.slug}/${t.id}');
-    if (_textController.text.trim().isEmpty) {
+    // 选了站内话题就是"要显示标题",这属于自定义文案,断开联动
+    if (_textController.text.trim().isEmpty || _textMirrorsUrl) {
       _textController.text = t.title;
+      _textMirrorsUrl = false;
+      _prevText = t.title;
+      _prevUrl = _urlController.text;
     }
     setState(() {
       _results = const [];
@@ -216,6 +276,7 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                   border: const OutlineInputBorder(),
                 ),
                 textInputAction: TextInputAction.done,
+                onChanged: _onTextChanged,
                 onFieldSubmitted: (_) => _submit(),
               ),
             ],

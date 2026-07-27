@@ -147,11 +147,12 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 首页平行视界中的站点首页、分类和标签链接直接替换左栏，不再打开
-  // WebView。正文链接与话题头部 Badge 使用同一套行为。
+  // 站点首页 / 分类 / 标签链接(含正文里的 #hashtag)一律回到应用界面,
+  // 不开 WebView。分类和标签走 EmbeddedStackScope 的统一入口 —— 由它按
+  // 当前平行视界深度决定是"换左栏信息流"还是退化成面板层/全屏页。
   final workspace = HomeWorkspaceScope.maybeOf(context);
-  if (workspace != null && isInternalUrlString(url)) {
-    if (DiscourseUrlParser.isHomepage(url)) {
+  if (isInternalUrlString(url)) {
+    if (workspace != null && DiscourseUrlParser.isHomepage(url)) {
       workspace.onShowFeed();
       return;
     }
@@ -162,13 +163,13 @@ Future<void> launchContentLink(
           .read(categoryMapProvider)
           .value?[categoryInfo.categoryId];
       if (category != null) {
-        workspace.onShowCategory(category);
+        EmbeddedStackScope.openCategory(context, category);
         return;
       }
     }
     final tag = DiscourseUrlParser.parseTag(url);
     if (tag != null && tag.isNotEmpty) {
-      workspace.onShowTag(tag);
+      EmbeddedStackScope.openTag(context, tag);
       return;
     }
   }

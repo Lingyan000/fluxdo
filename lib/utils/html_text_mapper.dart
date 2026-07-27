@@ -84,6 +84,21 @@ class HtmlTextMapper {
           return _buildPartialCodeHtml(codeContainer, selectedCode);
         }
 
+        // 单独选中一张图片:节点本身就是 <img>(它在文本流里贡献的是
+        // alt/title)。不特判的话会走下面的父元素比对 —— lightbox 的
+        // <a> 里还挂着 .meta 悬浮层文字,parent.text 与 img.text('')
+        // 对不上,于是退化成纯文本,引用出来只剩一个图片名(实测)。
+        if (isFullySelected &&
+            startNode.node is dom.Element &&
+            (startNode.node as dom.Element).localName == 'img') {
+          final img = startNode.node as dom.Element;
+          // lightbox 形态优先给 <a>:html_to_markdown 的 lightbox 分支
+          // 能从 data-base62-sha1 还原 `upload://` 短链,只给 <img>
+          // 拿到的是缩略图 URL。
+          final anchor = _findLightboxAnchor(img);
+          return (anchor ?? img).outerHtml;
+        }
+
         if (isFullySelected) {
           // 完整选中：返回父元素 HTML（保留 <b>、<em> 等格式标记）。
           // 但前提是父元素的全部文本内容 == 本节点文本 —— 否则父元素是
@@ -112,6 +127,16 @@ class HtmlTextMapper {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 图片外面那层 lightbox/d-lazyload 锚点(没有则 null)。
+  static dom.Element? _findLightboxAnchor(dom.Element img) {
+    final parent = img.parent;
+    if (parent == null || parent.localName != 'a') return null;
+    final classes = parent.classes;
+    return classes.contains('lightbox') || classes.contains('d-lazyload')
+        ? parent
+        : null;
   }
 
   /// 如果节点位于代码块中，返回最外层的代码块容器（优先 pre，其次 code）

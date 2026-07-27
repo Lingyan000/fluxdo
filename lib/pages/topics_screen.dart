@@ -31,6 +31,7 @@ import 'trust_level_requirements_page.dart';
 import 'metaverse_page.dart';
 import 'invite_links_page.dart';
 import 'category_topics_page.dart';
+import 'tag_topics_page.dart';
 
 /// 话题屏幕
 /// 在手机上显示单栏列表，平板上显示 Master-Detail 双栏
@@ -233,7 +234,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
         : null;
     _masterIsListLike = masterKind == null ||
         masterKind == PaneKind.drafts ||
-        masterKind == PaneKind.category;
+        masterKind == PaneKind.category ||
+        masterKind == PaneKind.tag;
     final user = ref.watch(currentUserProvider).value;
 
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让
@@ -243,7 +245,13 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     // 两个来源都要听：高亮状态变化（含置 null 的路径，如打开板块管理），
     // 以及 tap 事件——后者覆盖「重选当前板块」（状态同值被去重，只有
     // tap 事件会到）。普通切换两个都触发，处理器有早退保护，跑两遍无害。
-    ref.listen(activeSidebarCategoryIdProvider, (_, _) {
+    ref.listen(activeSidebarCategoryIdProvider, (_, next) {
+      // 左栏自己切成分类/标签时,TopicsPage 会跟着 animateTo 对应 tab、
+      // 进而回写侧栏高亮 —— 那是本页面驱动的回声,不是"用户点了侧栏"。
+      // 不滤掉的话:话题里点分类 → 信息流切过去 → 回声把 _leftCategory
+      // 清成 null → 又弹回信息流(真机症状:切一下就回弹)。
+      if (next == _leftCategory?.id) return;
+      if (next == null && _leftTag != null) return;
       _collapseParallelForSidebarNav();
     });
     ref.listen(sidebarCategoryTapProvider, (_, _) {
@@ -342,9 +350,16 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                       : selectedTopic.topEntry!,
                   stackProvider: selectedTopicProvider,
                   parentActive: widget.isActive,
-                  onBack: selectedTopic.isStacked
-                      ? () => ref.read(selectedTopicProvider.notifier).pop()
-                      : null,
+                  // 深层 → 退一层;只有一层 → 关掉右栏(回到纯信息流)。
+                  // 不能在单层时给 null:onBack 同时是 Esc 的落点,给
+                  // null 等于"右栏第一层按 Esc 没反应"(seeking/profile
+                  // 两个宿主本来就是这个口径,这里之前是漏的)。
+                  onBack: () {
+                    final notifier = ref.read(selectedTopicProvider.notifier);
+                    selectedTopic.isStacked
+                        ? notifier.pop()
+                        : notifier.clear();
+                  },
                 ),
               )
             : null,
@@ -1117,6 +1132,18 @@ class PaneContentWidget extends StatelessWidget {
         return MetaversePage(embeddedMode: true, onEmbeddedBack: onBack);
       case PaneKind.inviteLinks:
         return InviteLinksPage(embeddedMode: true, onEmbeddedBack: onBack);
+      case PaneKind.tag:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: TagTopicsPage(
+            key: ValueKey('pane_tag_${entry.tagName}'),
+            tagName: entry.tagName!,
+            displayName: entry.tagDisplayName,
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
+          ),
+        );
       case PaneKind.category:
         return EmbeddedStackScope(
           stackProvider: stackProvider,

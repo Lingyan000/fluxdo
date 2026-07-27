@@ -30,9 +30,11 @@ import 'package:fluxdo_render/fluxdo_render.dart'
         EmojiRun,
         ImageRun,
         InlineNode,
+        LinkRun,
         LocalDateRun,
         MentionRun,
-        NodeFactory;
+        NodeFactory,
+        TextRun;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
@@ -401,10 +403,8 @@ class RichComposerEditorState extends State<RichComposerEditor>
     _serializeDebounce?.cancel();
     final editor = _editor;
     if (editor == null) return;
-    // 先收口显形:光标停在格式边界时(如 `**内容|**`)mark 被摘掉、`**`
-    // 是**普通文本**,直接序列化会把星号当字面量转义成 `\*\*`,发出去就
-    // 不渲染了。显形只是编辑期的可视化,落盘前必须装回结构。
-    editor.commitReveals();
+    // 注:此处原本要先 commitReveals() 收口「标记显形」。该特性上游评审
+    // 判定架构性缺陷、已撤除(改走渲染层投影路线),序列化不再需要收口。
     final raw = docToRaw(editor.blocks);
     if (raw != widget.controller.text) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
@@ -1193,9 +1193,9 @@ class RichComposerEditorState extends State<RichComposerEditor>
     Overlay.of(context).insert(_hashOverlay!);
   }
 
-  /// 插入 `#ref `。这里插的是**纯文本**而不是原子:hashtag 的最终形态由
-  /// 服务端 cook 决定(分类/标签是否存在、有没有权限看),编辑器里固化成
-  /// 原子反而会在往返后骗人。
+  /// 插入 hashtag 原子(mention 同机制):编辑态就是发出去的那颗药丸,
+  /// 序列化写回 `#ref`。候选是服务端给的,分类/标签的存在性和可见性
+  /// 在这一刻已经确定,固化成原子不会骗人。
   void _insertHashtag(HashtagItem item) {
     final editor = _editor;
     if (editor == null) return;
@@ -1215,7 +1215,22 @@ class RichComposerEditorState extends State<RichComposerEditor>
       ),
     );
     editor.deleteSelection();
-    editor.insertText('#${item.ref} ');
+    // href 只用于渲染(药丸图标按 /tag/ 还是 /c/ 判)和点击跳转,
+    // 序列化不看它 —— 走 hashtagRef 写 `#ref`。
+    final href = item.relativeUrl?.isNotEmpty == true
+        ? item.relativeUrl!
+        : item.kind == HashtagKind.tag
+            ? '/tag/${item.slug ?? item.label}'
+            : '/c/${item.slug ?? item.ref}';
+    editor.insertAtom(
+      LinkRun(
+        href: href,
+        hashtagRef: item.ref,
+        hashtagIcon: item.icon,
+        children: [TextRun('#${item.label}')],
+      ),
+    );
+    editor.insertText(' ');
     _dismissHashtag();
   }
 
@@ -2594,7 +2609,11 @@ class RichComposerEditorState extends State<RichComposerEditor>
         extent: EditorPosition(blockId: info.blockId, offset: info.end),
       ),
     );
-    await insertMarkdownSnippet('[${text.isEmpty ? url : text}]($url)');
+    // 文本==URL(粘贴进来的裸链接,对话框里两个框联动改)→ 写回裸 URL
+    // 而不是 `[url](url)`:保住 raw 原样,onebox 预览也不会被写没。
+    await insertMarkdownSnippet(
+      text.isEmpty || text == url ? url : '[$text]($url)',
+    );
   }
 
   /// 取消链接:对链接区间 removeLink(文字保留)。

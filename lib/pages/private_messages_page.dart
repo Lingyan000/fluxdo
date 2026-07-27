@@ -296,9 +296,14 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
               entry: selectedMessage.topEntry!,
               stackProvider: selectedMessageProvider,
               parentActive: widget.isActive,
-              onBack: selectedMessage.isStacked
-                  ? () => ref.read(selectedMessageProvider.notifier).pop()
-                  : null,
+              // 同 topics_screen:onBack 也是 Esc 的落点,单层时给 null
+              // 等于第一层按 Esc 没反应 —— 单层就关掉右栏。
+              onBack: () {
+                final notifier = ref.read(selectedMessageProvider.notifier);
+                selectedMessage.isStacked
+                    ? notifier.pop()
+                    : notifier.clear();
+              },
             )
           : null,
       // 私信语义的空态(默认空态是"文章图标+选择话题",放在私信页很怪)

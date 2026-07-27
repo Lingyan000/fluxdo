@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 import '../models/category.dart';
 import '../pages/category_topics_page.dart';
+import '../pages/tag_topics_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
@@ -23,6 +24,7 @@ enum PaneKind {
   metaverse,
   inviteLinks,
   category,
+  tag,
 }
 
 /// 平行视界导航栈里的一层。
@@ -39,7 +41,9 @@ class PaneEntry {
     this.autoReplyToPostNumber,
   }) : kind = PaneKind.topic,
        username = null,
-       categoryId = null;
+       tagName = null,
+      tagDisplayName = null,
+      categoryId = null;
 
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
@@ -52,6 +56,8 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
       categoryId = null;
 
   const PaneEntry.drafts()
@@ -66,6 +72,8 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
       categoryId = null;
 
   const PaneEntry.settings()
@@ -80,6 +88,8 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
       categoryId = null;
 
   const PaneEntry.trustLevelRequirements()
@@ -94,6 +104,8 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
       categoryId = null;
 
   const PaneEntry.metaverse()
@@ -108,6 +120,8 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
       categoryId = null;
 
   const PaneEntry.inviteLinks()
@@ -122,10 +136,30 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null;
+
+  /// 标签层。[tagName] 是**带 id 段的原串**(`1534-tag/1534`),请求路径
+  /// 直接用它,显示时经 `DiscourseUrlParser.tagDisplayName` 去掉 id。
+  const PaneEntry.tag({required String this.tagName, this.tagDisplayName})
+    : kind = PaneKind.tag,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
       categoryId = null;
 
   const PaneEntry.category({required int this.categoryId})
     : kind = PaneKind.category,
+      tagName = null,
+      tagDisplayName = null,
       topicId = null,
       username = null,
       initialTitle = null,
@@ -142,6 +176,13 @@ class PaneEntry {
 
   /// kind == category 时的分类 id(面板栈承载分类话题列表)
   final int? categoryId;
+
+  /// kind == tag 时的标签(带 id 段的原串,请求路径用它)
+  final String? tagName;
+
+  /// 标签的显示名。中文标签的 URL 段是 Discourse 生成的 `<id>-tag`
+  /// slug,推不回真名 —— 从药丸锚文本带过来,只用于标题。
+  final String? tagDisplayName;
   final String? username;
   final String? initialTitle;
   final int? scrollToPostNumber;
@@ -403,6 +444,29 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
   void pushCategory(int categoryId) {
     state = SelectedTopicState(
       stack: [...state.stack, PaneEntry.category(categoryId: categoryId)],
+    );
+  }
+
+  /// 打开标签话题列表——同 [pushCategory],兜底路径。
+  void pushTag(String tagName, {String? displayName}) {
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack,
+        PaneEntry.tag(tagName: tagName, tagDisplayName: displayName),
+      ],
+    );
+  }
+
+  void pushTagTruncating(String tagName, {String? displayName}) {
+    if (state.stack.length < 2) {
+      pushTag(tagName, displayName: displayName);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.tag(tagName: tagName, tagDisplayName: displayName),
+      ],
     );
   }
 
@@ -860,6 +924,45 @@ class EmbeddedStackScope extends InheritedWidget {
       MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: category)),
     );
   }
+
+  /// 打开标签的统一入口,与 [openCategory] 同一档语义(标签也是信息流):
+  ///
+  /// 1. 拿得到首页左栏控制器、且不是多层平行视界 → 左栏信息流切成该标签。
+  /// 2. 多层平行视界 / 非首页宿主 → 退化成右栏面板层(同分类)。
+  /// 3. 完全不在平行视界里 → 全屏 push。
+  static void openTag(
+    BuildContext context,
+    String tag, {
+    String? displayName,
+  }) {
+    if (tag.isEmpty) return;
+    final scope = _maybeScopeOf(context);
+    final workspace = HomeWorkspaceScope.maybeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final stacked = container.read(scope.stackProvider).isStacked;
+      if (workspace != null && !stacked) {
+        workspace.onShowTag(tag);
+        return;
+      }
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushTagTruncating(tag, displayName: displayName);
+      } else {
+        notifier.pushTag(tag, displayName: displayName);
+      }
+      return;
+    }
+    if (workspace != null) {
+      workspace.onShowTag(tag);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TagTopicsPage(tagName: tag, displayName: displayName),
+      ),
+    );
+  }
 }
 
 typedef DetailScrollPositionKey = ({int topicId, String instanceId});
@@ -870,3 +973,25 @@ typedef DetailScrollPositionKey = ({int topicId, String instanceId});
 /// topicId 会让同一话题的不同平行视界层互相覆盖位置。
 final detailScrollPositionProvider =
     StateProvider.family<int?, DetailScrollPositionKey>((ref, key) => null);
+
+/// 视口位置的**像素微调量**:锚点楼层顶边相对**视口顶边**的偏移
+/// (负 = 该楼已经滚过去一部分)。
+///
+/// 只记楼层号的话,恢复出来永远是"该楼顶边贴视口顶边"(初始定位是
+/// center 锚点构造性完成的,`_finalizeInitialPosition` 还会把 pixels
+/// 归零)—— 楼层只露一点点时,面板在 master/detail 槽位间搬一次,画面
+/// 就跳一大截。配合楼层号用:先定位到楼层,再补这个量。
+///
+/// **基准必须是视口的 RenderBox,不能用 `kToolbarHeight + padding.top`
+/// 那种整屏坐标**:平行视界右栏的视口顶边不在屏幕顶部,用错基准会让
+/// 补偿量整体偏一大截,比不补更糟(实测踩过)。
+/// 与楼层号绑在一起存:只有「这次落点正好是当初存锚点的那一楼」才补,
+/// 不依赖"走的是哪条定位分支"—— 恢复位置是经 `scrollToPostNumber` 传进
+/// 页面的,在里面会被当成跳转目标,按分支判会永远判不中(探针实锤:
+/// restore 一条日志都不出)。
+typedef DetailScrollAnchor = ({int postNumber, double delta});
+
+final detailScrollAnchorProvider =
+    StateProvider.family<DetailScrollAnchor?, DetailScrollPositionKey>(
+  (ref, key) => null,
+);

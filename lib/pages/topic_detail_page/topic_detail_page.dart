@@ -267,6 +267,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 初始定位期间被抑制的 eyeline 上报楼层（定位完成后回放）
   int? _suppressedEyelinePostNumber;
 
+  /// 本次初始定位的落点是不是来自「恢复视口位置」(而非跳楼层/未读
+  /// 分割线)。只有这条路才该补楼内偏移,见 `_restoreAnchorOffset`。
+  /// 注:不能用 shouldHighlight 判 —— 视口恢复这条路它也是 true。
+  bool _initialTargetFromViewport = false;
+
+  /// 楼内偏移锚点上次落盘时间(滚动中节流用)
+  DateTime? _lastAnchorSaveAt;
+
   bool get _usesEmbeddedMobileWorkspaceChrome {
     return widget.embeddedMode &&
         PlatformUtils.isMobile &&
@@ -612,15 +620,31 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     if (widget.embeddedMode) {
-      // 嵌入模式只有书签页移动端 chrome 会传 onEmbeddedBack;桌面双栏
-      // 下它是 null,此时 Esc 落到这里是刻意的空操作:scope 回调没有
-      // 「未处理」语义(分发端 containsKey 即消费),又不能不注册 ——
-      // 上面退搜索/回正文正是嵌入模式需要的。也不能落到 maybePop:
-      // 嵌入面板不是独立路由,pop 的会是宿主页面(如整个书签页)。
-      widget.onEmbeddedBack?.call();
+      // scope 回调没有「未处理」语义(分发端 containsKey 即消费),所以
+      // 这里必须自己把「退一层」做完 —— 早先版本在 onEmbeddedBack 为
+      // null 时直接 return,Esc 就被吃掉了(真机症状:平行视界里按 Esc
+      // 毫无反应,连左话题右资料这种明显有层级的也一样)。
+      final back = widget.onEmbeddedBack;
+      if (back != null) {
+        back();
+        return;
+      }
+      // 宿主没给返回回调(master 预览位等)→ 直接对自己所在的那个栈
+      // 退层。不能落到 maybePop:嵌入面板不是独立路由,pop 的会是宿主
+      // 页面(如整个书签页)。
+      _popOwnPane();
       return;
     }
     Navigator.of(context).maybePop();
+  }
+
+  /// 对本面板所在的平行视界栈退一层(深层 pop、单层 clear)。
+  void _popOwnPane() {
+    final provider = widget.stackProvider ?? selectedTopicProvider;
+    final state = ref.read(provider);
+    if (!state.hasSelection) return;
+    final notifier = ref.read(provider.notifier);
+    state.isStacked ? notifier.pop() : notifier.clear();
   }
 
   void _schedulePostShortcutRegistration() {

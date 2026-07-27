@@ -36,6 +36,17 @@ void main() {
       expect(item.colorHex, isNull);
     });
 
+    test('icon 字段透传(站点 hashtag_icons,分类可自定义)', () {
+      final item = HashtagItem.fromJson({
+        'text': '搞七捻三',
+        'ref': 'gossip',
+        'type': 'category',
+        'icon': 'shield-halved',
+      });
+
+      expect(item.icon, 'shield-halved');
+    });
+
     test('缺 ref 时退回 slug(过滤空 ref 的判据靠它)', () {
       final item = HashtagItem.fromJson({
         'text': '资源荟萃',

@@ -191,6 +191,23 @@ class _KeyboardShortcutHandlerState
       return activeCallbacks[action];
     }
 
+    // 3. 「关闭/返回」再兜另一侧面板:平行视界的层级是**全局**的,不该
+    //    取决于用户点没点过右栏。只有点开话题、没点过右栏(activePane
+    //    仍是 master)时按 Esc 毫无反应,就是漏了这一步。
+    //    只对关闭类动作放开 —— J/K/回复这类必须严格跟随活跃面板。
+    if (_isCloseSurfaceAction(action)) {
+      final otherCallbacks = resolveShortcutScopeCallbacks(
+        registry: registry,
+        scope: activePane == ActivePane.master
+            ? ShortcutScope.detail
+            : ShortcutScope.master,
+        route: currentRoute,
+      );
+      if (otherCallbacks.containsKey(action)) {
+        return otherCallbacks[action];
+      }
+    }
+
     return null;
   }
 

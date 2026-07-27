@@ -101,10 +101,14 @@ mixin _SearchMixin on _DiscourseServiceBase {
       );
       final results = (response.data as Map<String, dynamic>)['results'];
       if (results is! List) return const [];
+      // 接口会把「精确命中」那条额外置顶一份，和普通结果里的同一条重复
+      // （网页版 composer 也要自己去重）。按 类型+ref 去重，保留先出现的。
+      final seen = <String>{};
       return results
           .whereType<Map<String, dynamic>>()
           .map(HashtagItem.fromJson)
           .where((e) => e.ref.isNotEmpty)
+          .where((e) => seen.add('${e.kind.name}:${e.ref.toLowerCase()}'))
           .toList();
     } catch (e) {
       debugPrint('[DiscourseService] searchHashtags failed: $e');

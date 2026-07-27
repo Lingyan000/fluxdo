@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/topic.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/selected_topic_provider.dart';
+import '../utils/discourse_url_parser.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
 import '../utils/topic_keyword_filter.dart';
@@ -26,7 +28,21 @@ import '../widgets/desktop_refresh_indicator.dart';
 class TagTopicsPage extends ConsumerStatefulWidget {
   final String tagName;
 
-  const TagTopicsPage({super.key, required this.tagName});
+  /// 嵌入平行视界右栏时为 true:不显示系统返回键,返回走 [onEmbeddedBack]
+  final bool embeddedMode;
+  final VoidCallback? onEmbeddedBack;
+
+  /// 标题用的显示名。中文标签的 URL 段是 Discourse 生成的 `<id>-tag`
+  /// slug,推不回真名 —— 由调用方(药丸锚文本)带过来。
+  final String? displayName;
+
+  const TagTopicsPage({
+    super.key,
+    required this.tagName,
+    this.displayName,
+    this.embeddedMode = false,
+    this.onEmbeddedBack,
+  });
 
   @override
   ConsumerState<TagTopicsPage> createState() => _TagTopicsPageState();
@@ -37,6 +53,9 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   final TopicLoadMoreCoordinator _loadMoreCoordinator =
       TopicLoadMoreCoordinator();
   List<Topic> _topics = [];
+
+  /// 服务端返回的当前标签名(`topic_list.tags[].name`)
+  String? _resolvedName;
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _isLoadMoreFailed = false;
@@ -145,6 +164,9 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
           _hasMore = result.hasMore;
           _page = 0;
           _isLoading = false;
+          // 服务端此刻的标签名(改名后立刻是新名),优先于调用方传来的
+          // 快照名和 URL slug
+          _resolvedName = response.tagName ?? _resolvedName;
         });
         _loadMoreCoordinator.resetCooldown();
       }
@@ -290,8 +312,19 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   }
 
   Future<void> _openTopic(Topic topic) async {
-    // 标签详情页是独立 push 的页面，不在首页 MasterDetailLayout 内，
-    // 始终 push 全屏详情页，禁用 autoSwitchToMasterDetail 防止双栏模式下自动 pop。
+    // 嵌入平行视界时在**本栈**内继续压话题层(同 CategoryTopicsPage)。
+    // 漏了这一步的后果不只是"全屏打开":全屏页拿不到 EmbeddedStackScope,
+    // 它里面再点推荐话题就会落到首页那个栈上 —— 用户看着像点不动。
+    if (EmbeddedStackScope.maybePushTopic(
+      context,
+      topicId: topic.id,
+      initialTitle: topic.title,
+      scrollToPostNumber: topic.lastReadPostNumber,
+    )) {
+      return;
+    }
+    // 独立全屏形态:始终 push 全屏详情页，禁用 autoSwitchToMasterDetail
+    // 防止双栏模式下自动 pop。
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
@@ -315,8 +348,16 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('#${widget.tagName}'),
+        // 标题优先级:服务端数据推出来的真名 > 调用方带来的锚文本(首帧
+        // 占位,可能因改名过期)> URL 段
+        title: Text(
+          '#${_resolvedName ?? widget.displayName ?? DiscourseUrlParser.tagDisplayName(widget.tagName)}',
+        ),
         centerTitle: false,
+        automaticallyImplyLeading: !widget.embeddedMode,
+        leading: widget.embeddedMode && widget.onEmbeddedBack != null
+            ? BackButton(onPressed: widget.onEmbeddedBack)
+            : null,
         actions: [
           IconButton(
             icon: const Icon(Symbols.search_rounded),

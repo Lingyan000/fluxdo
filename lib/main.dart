@@ -53,7 +53,14 @@ import 'services/browser_trust_coordinator.dart';
 import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, ParagraphLayoutCache;
+    show
+        FlattenCache,
+        ParagraphLayoutCache,
+        hashtagIconResolver,
+        hashtagTapHandler;
+
+import 'utils/font_awesome_name_mapping.dart';
+import 'providers/category_provider.dart';
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -275,6 +282,53 @@ Future<void> main() async {
   // Rust 动图管线的首帧(挂载瞬态的裸 RGBA 上传,不经 binding)注入
   // 同一个闸门,与标准路径统一错峰;播放中的后续帧不过闸。
   NativeAnimatedImageProvider.firstFrameGate = ImageDecodeGate.run;
+
+  // hashtag 药丸的图标(站点 hashtag_icons,分类可自定义):子包不依赖
+  // Font Awesome,名字→字形的表在这边,注册成解析器给它用。
+  // hashtag 药丸的图标。优先用**分类自己配的**图标(与编辑器 `#` 补全
+  // 下拉同源);cooked 里给的默认是个色块(square-full),拿它当图标就是
+  // 一个方块。都没有 → 返回 null 让子包按分类/标签兜底。
+  //
+  // FaIconData 是 IconData 的**包装**不是子类,必须取 `.data`;写成
+  // `as IconData?` 编译期过得去、运行期每颗药丸抛一次。
+  hashtagIconResolver = (context, iconName, href) {
+    IconData? byName(String? n) =>
+        (n == null || n.isEmpty) ? null : faIconNameMapping['solid $n']?.data;
+
+    final categoryId = DiscourseUrlParser.parseCategory(href)?.categoryId;
+    if (categoryId != null) {
+      final category = ProviderScope.containerOf(context, listen: false)
+          .read(categoryMapProvider)
+          .value?[categoryId];
+      final fromCategory = byName(category?.icon);
+      if (fromCategory != null) return fromCategory;
+    }
+    // 色块不是图标,别拿它当图标画
+    if (iconName == 'square-full' || iconName == 'square') return null;
+    return byName(iconName);
+  };
+
+  // 点 hashtag 药丸:标签要把药丸上的显示名一起带过去当标题(URL 段是
+  // Discourse 给中文标签生成的 `<id>-tag` slug,推不回真名)。分类没这个
+  // 问题,交回普通链接分发。
+  hashtagTapHandler = (context, href, ref, label) {
+    // 请求路径用 URL 里的 `<slug>/<id>` 原样(实测
+    // /tag/1667-tag/1667/l/latest.json 通;只取 slug 段的
+    // /tag/1667-tag/l/latest.json 404)—— 带 id 所以改名也不失效。
+    final tag = DiscourseUrlParser.parseTag(href);
+    if (tag == null || tag.isEmpty) return false;
+    // 标题只是首帧占位:ref(cooked 快照)> 锚文本;真名由列表响应的
+    // `topic_list.tags[].name` 覆盖,那才是服务端此刻的答案。
+    final placeholder = (ref == null || ref.isEmpty)
+        ? label
+        : (ref.endsWith('::tag') ? ref.substring(0, ref.length - 5) : ref);
+    EmbeddedStackScope.openTag(
+      context,
+      tag,
+      displayName: placeholder.isEmpty ? null : placeholder,
+    );
+    return true;
+  };
 
   // FlattenCache / ParagraphLayoutCache miss 的成本上报 span 账单
   // (flat:/tlay: 前缀,与 parse:/lay:/pnt: 同一管道;监控关闭时

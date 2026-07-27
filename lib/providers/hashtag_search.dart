@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category.dart';
@@ -23,6 +24,7 @@ Future<List<HashtagItem>> searchHashtags(
     term: term,
     limit: categoryLimit + tagLimit,
   );
+  debugPrint('[hashtag] term="$term" 官方接口返回 ${official.length} 条');
   if (official.isNotEmpty) return official;
 
   final categories = ref.read(categoryMapProvider).value ?? const {};

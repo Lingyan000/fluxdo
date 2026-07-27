@@ -30,6 +30,33 @@ extension _ScrollActions on _TopicDetailPageState {
     )) {
       notifier.loadMore();
     }
+
+    _saveAnchorForCurrentPost();
+  }
+
+  /// 跟着滚动更新楼内偏移锚点(节流 ~80ms)。
+  ///
+  /// **不能只在 eyeline 换楼时存**:那个回调对同一楼是去重的,在一条长
+  /// 回复内部继续滚时根本不触发,存下来的还是"这一楼刚进视口"的值
+  /// (探针实锤:delta=0 却照样跳)。
+  void _saveAnchorForCurrentPost() {
+    final postNumber = _controller.viewportPostNumber;
+    if (postNumber == null) return;
+    final now = DateTime.now();
+    final last = _lastAnchorSaveAt;
+    if (last != null && now.difference(last).inMilliseconds < 80) return;
+    _lastAnchorSaveAt = now;
+
+    final delta = _anchorOffsetForPost(postNumber);
+    if (delta == null) return;
+    ref
+        .read(
+          detailScrollAnchorProvider((
+            topicId: widget.topicId,
+            instanceId: _instanceId,
+          )).notifier,
+        )
+        .state = (postNumber: postNumber, delta: delta);
   }
 
   void _updateStreamIndexForPostNumber(int postNumber) {
@@ -53,6 +80,19 @@ extension _ScrollActions on _TopicDetailPageState {
       )).notifier,
     );
     positionNotifier.state = postNumber;
+    // 连同楼内偏移一起记(见 detailScrollAnchorProvider):只记楼层号的话
+    // 恢复出来永远是"该楼顶边贴视口顶边",只露一点点时画面会跳一大截。
+    ref
+        .read(
+          detailScrollAnchorProvider((
+            topicId: widget.topicId,
+            instanceId: _instanceId,
+          )).notifier,
+        )
+        .state = switch (_anchorOffsetForPost(postNumber)) {
+      final double d => (postNumber: postNumber, delta: d),
+      _ => null,
+    };
 
     final params = _params;
     final detail = ref.read(topicDetailProvider(params)).value;
@@ -86,6 +126,7 @@ extension _ScrollActions on _TopicDetailPageState {
     final jumpTarget = _controller.jumpTargetPostNumber;
     final initialPostNumber = _resolvedViewportPostNumber;
 
+    _initialTargetFromViewport = false;
     final gate = jumpTarget ?? initialPostNumber;
     if (gate == null || gate == 0) return null;
 
@@ -103,6 +144,7 @@ extension _ScrollActions on _TopicDetailPageState {
     } else if (initialPostNumber != null && initialPostNumber > 0) {
       for (int i = 0; i < posts.length; i++) {
         if (posts[i].postNumber >= initialPostNumber) {
+          _initialTargetFromViewport = true;
           return (index: i, shouldHighlight: true);
         }
       }
@@ -309,6 +351,55 @@ extension _ScrollActions on _TopicDetailPageState {
     if (streamIndex != -1) {
       _controller.updateStreamIndex(streamIndex + 1);
     }
+  }
+
+  /// 滚动视口顶边的全局 y(平行视界右栏不在屏幕顶部,不能拿
+  /// `kToolbarHeight + padding.top` 当基准)。
+  double? _viewportTopGlobal() {
+    final ctx = _controller.scrollController.position.context.notificationContext;
+    if (ctx == null || !ctx.mounted) return null;
+    final RenderObject? ro;
+    try {
+      ro = ctx.findRenderObject();
+    } catch (_) {
+      return null;
+    }
+    if (ro is! RenderBox || !ro.hasSize || !ro.attached) return null;
+    return ro.localToGlobal(Offset.zero).dy;
+  }
+
+  /// [postNumber] 顶边相对视口顶边的偏移;测不到返回 null。
+  double? _anchorOffsetForPost(int postNumber) {
+    if (!mounted) return null;
+    final scrollController = _controller.scrollController;
+    if (!scrollController.hasClients) return null;
+    final viewportTop = _viewportTopGlobal();
+    if (viewportTop == null) return null;
+
+    double? renderedTop;
+    for (final entry in scrollController.tagMap.entries) {
+      if (_controller.postNumberForScrollIndex(entry.key) != postNumber) {
+        continue;
+      }
+      final ctx = entry.value.context;
+      if (!ctx.mounted) continue;
+      final RenderBox? box;
+      try {
+        box = ctx.findRenderObject() as RenderBox?;
+      } catch (_) {
+        continue;
+      }
+      if (box == null || !box.hasSize || !box.attached) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      renderedTop = renderedTop == null ? top : math.min(renderedTop, top);
+    }
+    if (renderedTop == null) return null;
+    final delta = renderedTop - viewportTop;
+    if (kDebugMode) {
+      debugPrint('[AnchorProbe] save post=$postNumber delta=$delta '
+          'inst=$_instanceId');
+    }
+    return delta;
   }
 
   bool _tryScrollWithinCurrentPost(int delta, int postNumber) {
@@ -652,6 +743,7 @@ extension _ScrollActions on _TopicDetailPageState {
 
     if (_controller.isPositioned) return;
     _controller.markPositioned();
+    _restoreAnchorOffset();
 
     if (_controller.pendingHighlightPostNumber != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -670,6 +762,51 @@ extension _ScrollActions on _TopicDetailPageState {
         }
       });
     }
+  }
+
+  /// 定位落点是"锚点楼顶边贴视口顶边",这里把离开时的楼内偏移补回去,
+  /// 还原成"当时那一眼"(见 [detailScrollAnchorProvider])。
+  ///
+  /// 只在**恢复视口位置**这条路上补:显式跳楼层(jumpTarget)、点未读
+  /// 分割线都有自己的落点语义,补偏移只会让它们错位。用一次就清。
+  void _restoreAnchorOffset() {
+    final key = (topicId: widget.topicId, instanceId: _instanceId);
+    final notifier = ref.read(detailScrollAnchorProvider(key).notifier);
+    final anchor = notifier.state;
+    notifier.state = null;
+    final landed = _controller.viewportPostNumber;
+    if (kDebugMode) {
+      debugPrint('[AnchorProbe] restore? anchor=$anchor landed=$landed '
+          'inst=$_instanceId savedPost=${ref.read(detailScrollPositionProvider(key))}');
+    }
+    if (anchor == null || anchor.delta.abs() < 1) return;
+    // 落点必须就是当初存锚点的那一楼(用户主动跳到别的楼时不能乱补)
+    if (landed != null && landed != anchor.postNumber) return;
+    final delta = anchor.delta;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final scrollController = _controller.scrollController;
+      if (!scrollController.hasClients) return;
+      final position = scrollController.position;
+      // 兜底:补偿量不该超过一屏,超了说明测量基准不对(宁可不补)
+      if (delta.abs() > position.viewportDimension) return;
+      // 符号:delta = 锚点楼顶边 - 视口顶边。落点已经是"楼顶贴视口顶",
+      // 要还原成离开时那一眼,得往**相反**方向滚 —— delta 为负(已滚进
+      // 该楼 N px)就要再往下滚 N。写成 offset + delta 会朝反方向走,
+      // 误差翻倍(实测:比不补更跳)。
+      final target = (scrollController.offset - delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if (kDebugMode) {
+        debugPrint('[AnchorProbe] restore delta=$delta '
+            'offset=${scrollController.offset} target=$target '
+            'viewport=${position.viewportDimension}');
+      }
+      if ((target - scrollController.offset).abs() < 1) return;
+      scrollController.jumpTo(target);
+    });
   }
 
   /// 目标下方内容不足一屏时，按真实几何抬高视口 anchor；返回是否发生变更

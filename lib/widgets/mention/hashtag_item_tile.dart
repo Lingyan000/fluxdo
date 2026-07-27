@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../models/hashtag_item.dart';
+import '../../utils/font_awesome_name_mapping.dart';
 
 /// `#` 补全浮层里的一行候选(分类带色块、标签带话题数)。
 ///
@@ -31,21 +33,7 @@ class HashtagItemTile extends StatelessWidget {
             : null,
         child: Row(
           children: [
-            if (isCategory)
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: _parseColor(item.colorHex, theme),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              )
-            else
-              Icon(
-                Icons.sell_outlined,
-                size: 14,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            _buildIcon(theme, isCategory),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -65,6 +53,27 @@ class HashtagItemTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// 图标口径对齐网页端:用服务端给的 `icon`(站点 hashtag_icons,分类
+  /// 默认 folder、标签默认 tag,分类可自定义)映射到 Font Awesome;
+  /// 认不出来的名字按类型兜底。分类的图标用分类色,标签用次要色。
+  Widget _buildIcon(ThemeData theme, bool isCategory) {
+    final name = item.icon;
+    final fa = name == null || name.isEmpty
+        ? null
+        : faIconNameMapping['solid $name'];
+    final color = isCategory
+        ? _parseColor(item.colorHex, theme)
+        : theme.colorScheme.onSurfaceVariant;
+    if (fa != null) {
+      return FaIcon(fa, size: 14, color: color);
+    }
+    return Icon(
+      isCategory ? Icons.folder : Icons.sell_outlined,
+      size: 14,
+      color: color,
     );
   }
 

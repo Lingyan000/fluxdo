@@ -2143,7 +2143,18 @@ class TopicListResponse {
   final List<Topic> topics;
   final String? moreTopicsUrl;
 
-  TopicListResponse({required this.topics, this.moreTopicsUrl});
+  /// 标签页返回的**当前**标签名(`topic_list.tags[].name`)。
+  ///
+  /// 标签 URL 段对中文名是 Discourse 生成的 `<id>-tag` slug,推不回真名;
+  /// cooked 里的 `data-ref` 又是 cook 时刻的快照(改名后过期)。这里是
+  /// 服务端此刻的答案,标题以它为准。
+  final String? tagName;
+
+  TopicListResponse({
+    required this.topics,
+    this.moreTopicsUrl,
+    this.tagName,
+  });
 
   factory TopicListResponse.fromJson(Map<String, dynamic> json) {
     // Parse users map
@@ -2197,6 +2208,16 @@ class TopicListResponse {
           )
           .toList(),
       moreTopicsUrl: moreTopicsUrl,
+      // 标签页:`topic_list.tags` 只有当前这一个标签(实测
+      // /tag/1667-tag/1667/l/latest.json → tags:[{id,name,slug}])
+      tagName: () {
+        final tags = topicList?['tags'];
+        if (tags is! List || tags.length != 1) return null;
+        final first = tags.first;
+        if (first is! Map) return null;
+        final name = first['name'];
+        return name is String && name.isNotEmpty ? name : null;
+      }(),
     );
   }
 }

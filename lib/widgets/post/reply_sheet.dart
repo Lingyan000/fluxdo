@@ -10,6 +10,7 @@ import '../markdown_editor/markdown_editor.dart';
 import '../markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'dart:async' show unawaited;
 import '../../providers/preferences_provider.dart';
+import '../../providers/hashtag_search.dart';
 import '../../providers/user_content_providers.dart';
 import '../../models/topic.dart';
 import '../../models/draft.dart';
@@ -207,6 +208,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   final _editorKey = GlobalKey<MarkdownEditorState>();
 
   bool _isSubmitting = false;
+  String? _originalRaw; // 编辑模式载入的原文,取消时比对是否改过
   bool _submitted = false; // 提交成功标志，防止 dispose 重新保存草稿
   bool _discarded = false; // 用户明确舍弃，防止 dispose 重新保存草稿
   bool _showEmojiPanel = false;
@@ -365,6 +367,32 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     }
   }
 
+  /// 取消编辑:改过内容先确认再关(编辑模式不存草稿,关掉就是丢弃)。
+  Future<void> _cancelEdit() async {
+    final dirty = _contentController.text.trim() != _originalRaw?.trim();
+    if (dirty) {
+      final confirm = await showAppDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.post_discardTitle),
+          content: Text(context.l10n.post_discardConfirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(context.l10n.common_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(context.l10n.common_discard),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
   /// 恢复草稿内容
   void _restoreDraft(Draft draft) {
     if (draft.data.reply != null) {
@@ -410,6 +438,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       final raw = await DiscourseService().getPostRaw(widget.editPost!.id);
       if (mounted && raw != null) {
         _contentController.text = raw;
+        // 记下原文,取消时据此判断改没改过
+        _originalRaw = raw;
         // 加载完成后聚焦并将光标移到末尾
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _contentFocusNode.requestFocus();
@@ -811,6 +841,19 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                   const SizedBox(width: 8),
                                 ],
 
+                                // 取消:编辑模式没有草稿(也就没有"舍弃"
+                                // 按钮),此前整行只剩一个「保存」,除了
+                                // 手势下滑没有别的退路。
+                                if (_isEditMode) ...[
+                                  TextButton(
+                                    onPressed: _isSubmitting
+                                        ? null
+                                        : _cancelEdit,
+                                    child: Text(context.l10n.common_cancel),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+
                                 if (_canReviewPost) ...[
                                   AiPostReviewButton(
                                     titleBuilder: () => widget.topicTitle,
@@ -930,6 +973,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                             includeGroups:
                                                 !_isInPrivateMessageContext,
                                           ),
+                                      hashtagDataSource: (term) =>
+                                          searchHashtags(
+                                            ref,
+                                            term,
+                                            categoryId: widget.categoryId,
+                                          ),
                                       onFallbackToPlain: () {
                                         if (mounted) {
                                           setState(() => _richFallback = true);
@@ -974,6 +1023,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                       includeGroups:
                                           !_isInPrivateMessageContext, // 私信不允许提及群组
                                     ),
+                                hashtagDataSource: (term) => searchHashtags(
+                                  ref,
+                                  term,
+                                  categoryId: widget.categoryId,
+                                ),
                               ),
                         ),
                       ),
