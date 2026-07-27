@@ -41,25 +41,7 @@ class QuoteSelectionHelper {
     final codeContext = codePayload?.context ?? fallbackCodeContext;
     String markdown;
 
-    if (codeContext == null &&
-        HtmlTextMapper.isFullSelection(post.cooked, plainSelectedText)) {
-      // 全选整帖:直接转换完整 cooked,绕开子串反查(反查对图片等占位符
-      // 文本的还原不完全可靠,失败会退化成裸文件名,见 image_context_menu
-      // 那次的复制引用问题)。
-      markdown = HtmlToMarkdown.convert(post.cooked);
-      if (markdown.trim().isEmpty) markdown = plainSelectedText;
-      final quote = QuoteBuilder.build(
-        markdown: markdown,
-        displayName: (post.name?.isNotEmpty ?? false) ? post.name! : post.username,
-        username: post.username,
-        postNumber: post.postNumber,
-        topicId: topicId,
-      );
-      Clipboard.setData(ClipboardData(text: quote));
-      ToastService.showSuccess(S.current.common_quoteCopied);
-      return;
-    }
-
+    // extractHtml 内置全选快路径:选中内容等于整帖时直接返回完整 cooked。
     final htmlFragment = HtmlTextMapper.extractHtml(post.cooked, plainSelectedText);
     if (htmlFragment != null) {
       markdown = HtmlToMarkdown.convert(htmlFragment);
@@ -82,7 +64,7 @@ class QuoteSelectionHelper {
 
     final quote = QuoteBuilder.build(
       markdown: markdown,
-      displayName: (post.name?.isNotEmpty ?? false) ? post.name! : post.username,
+      displayName: post.name,
       username: post.username,
       postNumber: post.postNumber,
       topicId: topicId,

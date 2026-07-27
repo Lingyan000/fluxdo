@@ -6,24 +6,14 @@ import 'package:html/dom.dart' as dom;
 /// 根据选中的纯文本反查原始 HTML 片段，用于划词引用功能。
 /// 核心思路：DFS 遍历 DOM 文本节点，构建偏移映射，子串匹配定位对应 HTML。
 class HtmlTextMapper {
-  /// 判断选中的纯文本是否等于整帖内容(全选场景)。
-  ///
-  /// 全选时没有必要走子串反查(那套算法对图片等占位符文本的还原本就不完全
-  /// 可靠,详见 [extractHtml] 里 img 分支的已知局限),调用方应直接对整个
-  /// [cooked] 做转换,绕开反查失败退化成纯文本(如图片被复制成裸文件名)。
-  static bool isFullSelection(String cooked, String selectedPlainText) {
-    if (cooked.isEmpty || selectedPlainText.isEmpty) return false;
-    final fragment = html_parser.parseFragment(cooked);
-    final textNodes = <_TextNodeInfo>[];
-    final buffer = StringBuffer();
-    _collectTextNodes(fragment, textNodes, buffer);
-    return _normalize(buffer.toString()) == _normalize(selectedPlainText);
-  }
-
   /// 从 cooked HTML 中提取与选中纯文本对应的 HTML 片段
   ///
   /// [cooked] 帖子的 HTML 内容 (post.cooked)
   /// [selectedPlainText] 用户选中的纯文本
+  ///
+  /// 全选整帖时直接返回完整 [cooked]（子串反查对图片等占位符文本的还原
+  /// 不完全可靠，全选场景没必要冒这个险；放在这里而不是调用方，是让
+  /// 划词引用/复制引用/回复弹层等所有入口统一受益）。
   ///
   /// 返回对应的 HTML 片段，如果无法匹配则返回 null
   static String? extractHtml(String cooked, String selectedPlainText) {
@@ -44,6 +34,9 @@ class HtmlTextMapper {
       final normalizedFull = _normalize(fullText);
       final normalizedSelected = _normalize(selectedPlainText);
       if (normalizedSelected.isEmpty) return null;
+
+      // 全选：整帖即"对应片段"
+      if (normalizedFull == normalizedSelected) return cooked;
 
       final matchStart = normalizedFull.indexOf(normalizedSelected);
       if (matchStart == -1) return null;
