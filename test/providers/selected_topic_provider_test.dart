@@ -86,6 +86,52 @@ void main() {
     expect(container.read(selectedSearchProvider).hasSelection, isFalse);
   });
 
+  group('分类层(PaneKind.category)', () {
+    test('pushCategory 在栈上叠加分类层', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..pushCategory(14);
+
+      expect(notifier.state.stack, hasLength(2));
+      expect(notifier.state.topEntry?.kind, PaneKind.category);
+      expect(notifier.state.topEntry?.categoryId, 14);
+      // 分类层不是话题层,topicId 口径必须为 null
+      expect(notifier.state.topicId, isNull);
+    });
+
+    test('pushCategoryTruncating 替换栈顶而不是继续叠层', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..push(topicId: 2)
+        ..pushCategoryTruncating(14);
+
+      expect(notifier.state.stack, hasLength(2));
+      expect(notifier.state.stack[0].topicId, 1);
+      expect(notifier.state.topEntry?.kind, PaneKind.category);
+      expect(notifier.state.topEntry?.categoryId, 14);
+    });
+
+    test('栈深不足 2 时 pushCategoryTruncating 退化为普通压栈', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..pushCategoryTruncating(14);
+
+      expect(notifier.state.stack, hasLength(2));
+      expect(notifier.state.stack[0].topicId, 1);
+      expect(notifier.state.topEntry?.categoryId, 14);
+    });
+
+    test('pop 分类层后回到底下的话题层', () {
+      final notifier = SelectedTopicNotifier()
+        ..select(topicId: 1)
+        ..pushCategory(14)
+        ..pop();
+
+      expect(notifier.state.stack, hasLength(1));
+      expect(notifier.state.topicId, 1);
+    });
+  });
+
   testWidgets('EmbeddedStackScope 将资料页话题入口压入当前面板栈', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
