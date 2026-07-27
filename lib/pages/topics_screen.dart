@@ -145,10 +145,15 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
         (previous == null || previous == true)) {
       final topicId = selectedTopic.topicId;
       if (topicId == null) {
-        // 个人资料/设置层：没有可复用的 instanceId/滚动位置，直接全屏 push。
+        // 个人资料/设置/分类层：没有可复用的 instanceId/滚动位置，直接全屏 push。
         final username = selectedTopic.username;
         final isSettings = selectedTopic.kind == PaneKind.settings;
-        if (username == null && !isSettings) return;
+        final category = selectedTopic.kind == PaneKind.category
+            ? (ref
+                  .read(categoryMapProvider)
+                  .value?[selectedTopic.topEntry?.categoryId])
+            : null;
+        if (username == null && !isSettings && category == null) return;
         _isAutoSwitching = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -164,6 +169,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                   builder: (_) => AutoRestoreMasterDetailRoute(
                     child: isSettings
                         ? const SettingsPage()
+                        : category != null
+                        ? CategoryTopicsPage(category: category)
                         : UserProfilePage(username: username!),
                   ),
                 ),
