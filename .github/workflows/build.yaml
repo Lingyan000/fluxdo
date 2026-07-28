@@ -8,6 +8,9 @@ on:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
+  FLUTTER_LINUX_VERSION: '3.44.0'
+  # 与 Flutter 3.44 默认 NDK 对齐，避免 CI 重复下载多个 side-by-side NDK
+  ANDROID_NDK_VERSION: '28.2.13676358'
 
 jobs:
   build:
