@@ -101,6 +101,7 @@ import 'widgets/layout/adaptive_navigation.dart';
 import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
+import 'widgets/render_signet/render_signet_layer.dart';
 import 'widgets/read_later/read_later_bubble.dart';
 import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
@@ -808,7 +809,12 @@ class MainApp extends ConsumerWidget {
                   ),
                   child: Stack(
                     fit: StackFit.passthrough,
-                    children: [child!, const ReadLaterBubble()],
+                    children: [
+                      child!,
+                      const ReadLaterBubble(),
+                      // 渲染帧标识印记:置于最顶层保证捕获帧必含点阵
+                      const RenderSignetLayer(),
+                    ],
                   ),
                 );
 
