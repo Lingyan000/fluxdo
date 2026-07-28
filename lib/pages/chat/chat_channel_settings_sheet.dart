@@ -596,9 +596,11 @@ class _ChatChannelSettingsSheetState
     return l10n.chat_leave_confirm_channel;
   }
 
-  /// 对齐 Discourse：
-  /// - 群组 DM + 设置页：破坏性 `leave`（删除 membership）
-  /// - 1:1 私聊 / 公开频道：非破坏性 `unfollow`（following=false）
+  /// 对齐 Discourse 设置页 `leaveDestructive=true`：
+  /// 统一走 `Chat::LeaveChannel`（`DELETE .../memberships/me`）。
+  /// 服务端按频道类型分流：
+  /// - 群组 DM：删除 membership + 从 DM 用户列表移除
+  /// - 1:1 私聊 / 公开频道：等价于 unfollow（following=false）
   Future<void> _confirmAndLeave(ChatChannel channel) async {
     final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
@@ -626,13 +628,8 @@ class _ChatChannelSettingsSheetState
 
     setState(() => _isSaving = true);
     try {
-      final useDestructiveLeave =
-          channel.isDirectMessage && channel.isGroupDm;
-      if (useDestructiveLeave) {
-        await ref.read(leaveChannelProvider(widget.channelId).future);
-      } else {
-        await ref.read(unfollowChannelProvider(widget.channelId).future);
-      }
+      // 设置页始终 destructive leave API（与 channel-info-settings 一致）
+      await ref.read(leaveChannelProvider(widget.channelId).future);
 
       if (!mounted) return;
       final title = channel.title ?? widget.channelTitle;
