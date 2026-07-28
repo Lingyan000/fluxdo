@@ -9,12 +9,18 @@ import '../../../../services/discourse/discourse_service.dart';
 import '../../../../services/toast_service.dart';
 import '../../../common/app_bottom_sheet.dart';
 
-/// 举报底部弹窗
+/// 举报底部弹窗(帖子/私信帖子通用;传 [chatChannelId]+[chatMessageId]
+/// 时切换为举报聊天消息,理由列表按 applies_to 里的 Chat::Message 过滤,
+/// 提交走 chat 插件的 flags 接口)。
 class PostFlagSheet extends StatefulWidget {
   final int postId;
   final String postUsername;
   final DiscourseService service;
   final VoidCallback? onSuccess;
+
+  /// 聊天消息举报模式:两者同时非空生效
+  final int? chatChannelId;
+  final int? chatMessageId;
 
   const PostFlagSheet({
     super.key,
@@ -22,7 +28,11 @@ class PostFlagSheet extends StatefulWidget {
     required this.postUsername,
     required this.service,
     this.onSuccess,
+    this.chatChannelId,
+    this.chatMessageId,
   });
+
+  bool get isChatMode => chatChannelId != null && chatMessageId != null;
 
   @override
   State<PostFlagSheet> createState() => _PostFlagSheetState();
@@ -64,7 +74,12 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
           _flagTypes =
               types
                   .map((t) => FlagType.fromJson(t))
-                  .where((f) => f.isFlag && f.enabled && f.appliesToPost)
+                  .where((f) =>
+                      f.isFlag &&
+                      f.enabled &&
+                      (widget.isChatMode
+                          ? f.appliesToChatMessage
+                          : f.appliesToPost))
                   .toList()
                 ..sort((a, b) => a.position.compareTo(b.position));
         } else {
@@ -88,13 +103,24 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
     setState(() => _isSubmitting = true);
 
     try {
-      await widget.service.flagPost(
-        widget.postId,
-        _selectedType!.id,
-        message: _messageController.text.isNotEmpty
-            ? _messageController.text
-            : null,
-      );
+      if (widget.isChatMode) {
+        await widget.service.flagChatMessage(
+          widget.chatChannelId!,
+          widget.chatMessageId!,
+          _selectedType!.id,
+          message: _messageController.text.isNotEmpty
+              ? _messageController.text
+              : null,
+        );
+      } else {
+        await widget.service.flagPost(
+          widget.postId,
+          _selectedType!.id,
+          message: _messageController.text.isNotEmpty
+              ? _messageController.text
+              : null,
+        );
+      }
 
       if (mounted) {
         Navigator.pop(context);
@@ -250,7 +276,26 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
                   : theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(width: 12),
-            Expanded(child: _buildDescriptionText(description, theme)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 举报项标题(之前只渲染了描述,标题一直缺失)
+                  if (type.name.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        // 标题同样可能带 %{username} 占位符,和描述走同一套替换
+                        _replaceDescription(type.name),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  _buildDescriptionText(description, theme),
+                ],
+              ),
+            ),
           ],
         ),
       ),

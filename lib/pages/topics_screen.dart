@@ -27,6 +27,12 @@ import 'topic_detail_page/topic_detail_page.dart';
 import 'user_profile_page.dart';
 import 'create_topic_page.dart';
 import 'drafts_page.dart';
+import 'trust_level_requirements_page.dart';
+import 'metaverse_page.dart';
+import 'invite_links_page.dart';
+import 'category_topics_page.dart';
+import 'chat/dm_channel_detail_page.dart';
+import 'tag_topics_page.dart';
 
 /// 话题屏幕
 /// 在手机上显示单栏列表，平板上显示 Master-Detail 双栏
@@ -1084,6 +1090,18 @@ class PaneContentWidget extends StatelessWidget {
             embeddedMode: true,
             onEmbeddedBack: onBack,
             parentActive: parentActive,
+          ),
+        );
+      case PaneKind.chat:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: DmChannelDetailPage(
+            key: ValueKey('pane_chat_${entry.chatChannelId}'),
+            channelId: entry.chatChannelId!,
+            title: entry.chatTitle,
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
           ),
         );
     }

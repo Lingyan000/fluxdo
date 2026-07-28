@@ -19,6 +19,7 @@ import '../settings/definitions/bottom_nav_defs.dart';
 import '../settings/settings_model.dart';
 import '../settings/settings_renderer.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/responsive.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 底栏设置页
@@ -28,7 +29,11 @@ import 'package:m3e_ui/m3e_ui.dart';
 /// - 中部：可添加的候选池（点 + 加入）
 /// - 底部：手势分组（复用 [SettingsRenderer] 渲染 bottom_nav_defs 的 ActionModel）
 ///
-/// 约束：2 ≤ 已启用数量 ≤ 5；locked entry（home、profile）不可移除。
+/// 约束：2 ≤ 已启用数量 ≤ 上限；locked entry（home、profile）不可移除。
+///
+/// 上限按屏幕宽度自适应,不再是写死的 5——手机底栏是横向 `NavigationBar`,
+/// 塞太多图标会被越挤越窄;平板/桌面走的是竖排 `NavigationRail`,横向
+/// 空间宽裕,没必要卡在手机的上限,直接放开到全部已注册入口数。
 class BottomNavSettingsPage extends ConsumerStatefulWidget {
   final String? highlightId;
 
@@ -42,7 +47,19 @@ class BottomNavSettingsPage extends ConsumerStatefulWidget {
 class _BottomNavSettingsPageState
     extends ConsumerState<BottomNavSettingsPage> {
   static const int _minCount = 2;
-  static const int _maxCount = 5;
+
+  /// 手机横向底栏容易被挤,上限保守;平板竖排 rail 空间宽裕给到 7;
+  /// 桌面宽屏干脆不设人为上限,放开到当前全部已注册入口数。
+  int get _maxCount {
+    switch (Responsive.getDeviceType(context)) {
+      case DeviceType.mobile:
+        return 5;
+      case DeviceType.tablet:
+        return 7;
+      case DeviceType.desktop:
+        return NavEntryRegistry.buildAll().length;
+    }
+  }
 
   late List<String> _enabledIds;
 

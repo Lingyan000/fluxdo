@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/s.dart';
+import '../navigation/nav_action_bus.dart';
+import '../pages/chat/dm_channel_detail_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../utils/notification_navigation.dart';
 
@@ -65,8 +67,21 @@ class LocalNotificationService {
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
 
-    // payload 格式: "topic:{topicId}[:{postNumber}]" 或
-    // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈)。
+    // payload 格式: "topic:{topicId}[:{postNumber}]" /
+    // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈) /
+    // "chat:{channelId}"(Chat 插件 DM,跟前两者是完全不同的实体,单独处理)。
+    if (payload.startsWith('chat:')) {
+      final channelId = int.tryParse(payload.substring(5));
+      if (channelId == null) return;
+      debugPrint('[LocalNotification] 跳转到 DM 频道: $channelId');
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => DmChannelDetailPage(channelId: channelId),
+        ),
+      );
+      return;
+    }
+
     final isMessage = payload.startsWith('message:');
     if (!isMessage && !payload.startsWith('topic:')) return;
     final parts = payload.substring(isMessage ? 8 : 6).split(':');
@@ -118,6 +133,7 @@ class LocalNotificationService {
     int? topicId,
     int? postNumber,
     bool isPrivateMessage = false,
+    int? chatChannelId,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -150,7 +166,9 @@ class LocalNotificationService {
     // 构建 payload 用于点击回调:私信用 message: 前缀,走私信自己的
     // 平行视界栈,不能跟普通话题共用 topic: 前缀(否则左栏会显示信息流)。
     String? payload;
-    if (topicId != null) {
+    if (chatChannelId != null) {
+      payload = 'chat:$chatChannelId';
+    } else if (topicId != null) {
       final prefix = isPrivateMessage ? 'message' : 'topic';
       payload = postNumber != null
           ? '$prefix:$topicId:$postNumber'

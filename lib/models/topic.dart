@@ -2169,6 +2169,9 @@ class FlagType {
   /// 是否适用于帖子
   bool get appliesToPost => appliesTo.contains('Post');
 
+  /// 是否适用于聊天消息(Chat 插件)
+  bool get appliesToChatMessage => appliesTo.contains('Chat::Message');
+
   /// 默认的举报类型列表（作为后备）
   static List<FlagType> get defaultTypes => [
     FlagType(

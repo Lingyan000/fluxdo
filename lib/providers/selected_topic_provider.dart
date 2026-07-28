@@ -4,13 +4,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
+import '../models/category.dart';
+import '../pages/category_topics_page.dart';
+import '../pages/chat/dm_channel_detail_page.dart';
+import '../pages/tag_topics_page.dart';
+import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/home_workspace_scope.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
-enum PaneKind { topic, profile, settings }
+enum PaneKind {
+  topic,
+  profile,
+  settings,
+  drafts,
+  trustLevelRequirements,
+  metaverse,
+  inviteLinks,
+  category,
+  tag,
+  chat,
+}
 
 /// 平行视界导航栈里的一层。
 class PaneEntry {
@@ -25,7 +42,12 @@ class PaneEntry {
     this.autoOpenReply = false,
     this.autoReplyToPostNumber,
   }) : kind = PaneKind.topic,
-       username = null;
+       username = null,
+       tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
@@ -37,10 +59,144 @@ class PaneEntry {
       initialRevisionPostNumber = null,
       initialRevisionNumber = null,
       autoOpenReply = false,
-      autoReplyToPostNumber = null;
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  const PaneEntry.drafts()
+    : kind = PaneKind.drafts,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  const PaneEntry.trustLevelRequirements()
+    : kind = PaneKind.trustLevelRequirements,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  const PaneEntry.metaverse()
+    : kind = PaneKind.metaverse,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  const PaneEntry.inviteLinks()
+    : kind = PaneKind.inviteLinks,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  /// 标签层。[tagName] 是**带 id 段的原串**(`1534-tag/1534`),请求路径
+  /// 直接用它,显示时经 `DiscourseUrlParser.tagDisplayName` 去掉 id。
+  const PaneEntry.tag({required String this.tagName, this.tagDisplayName})
+    : kind = PaneKind.tag,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  const PaneEntry.category({required int this.categoryId})
+    : kind = PaneKind.category,
+      tagName = null,
+      tagDisplayName = null,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  /// Chat 插件 DM 频道层。
+  const PaneEntry.chat({required int this.chatChannelId, this.chatTitle})
+    : kind = PaneKind.chat,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
       topicId = null,
       username = null,
       initialTitle = null,
@@ -54,6 +210,22 @@ class PaneEntry {
 
   final PaneKind kind;
   final int? topicId;
+
+  /// kind == category 时的分类 id(面板栈承载分类话题列表)
+  final int? categoryId;
+
+  /// kind == tag 时的标签(带 id 段的原串,请求路径用它)
+  final String? tagName;
+
+  /// 标签的显示名。中文标签的 URL 段是 Discourse 生成的 `<id>-tag`
+  /// slug,推不回真名 —— 从药丸锚文本带过来,只用于标题。
+  final String? tagDisplayName;
+
+  /// kind == chat 时的 DM 频道 id。
+  final int? chatChannelId;
+
+  /// DM 频道的显示名(对方昵称/用户名,或群聊标题)。
+  final String? chatTitle;
   final String? username;
   final String? initialTitle;
   final int? scrollToPostNumber;
@@ -309,10 +481,139 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
   }
 
+  /// 在 DM 频道列表里点开(切换)一个频道:清空栈重新开始,不是压栈。
+  /// 用户心智是"看列表里的另一项",跟 [select] 对话题列表的语义一致——
+  /// 每点一次列表项就多叠一层的话,栈会无限增长,`_buildMasterPane` 只
+  /// 处理得了"上一层"这一档,栈深超过 2 层后右栏该显示哪层就会错乱
+  /// (表现为标题跟高亮的列表项对不上、甚至右栏加载不出来)。
+  void selectChat(int channelId, {String? title}) {
+    state = SelectedTopicState(
+      stack: [PaneEntry.chat(chatChannelId: channelId, chatTitle: title)],
+    );
+  }
+
+  /// 打开分类话题列表——**兜底路径**,只在信息流展示不出来时用(多层平行
+  /// 视界、非首页宿主)。首选永远是把分类接到左栏信息流,见
+  /// [EmbeddedStackScope.openCategory]。
+  void pushCategory(int categoryId) {
+    state = SelectedTopicState(
+      stack: [...state.stack, PaneEntry.category(categoryId: categoryId)],
+    );
+  }
+
+  /// 打开标签话题列表——同 [pushCategory],兜底路径。
+  void pushTag(String tagName, {String? displayName}) {
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack,
+        PaneEntry.tag(tagName: tagName, tagDisplayName: displayName),
+      ],
+    );
+  }
+
+  /// 打开 DM 频道详情:压栈显示在右栏。
+  void pushChat(int channelId, {String? title}) {
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack,
+        PaneEntry.chat(chatChannelId: channelId, chatTitle: title),
+      ],
+    );
+  }
+
+  /// master 预览位里打开 DM 频道:截断栈顶后压入(顶替右栏)。
+  void pushChatTruncating(int channelId, {String? title}) {
+    if (state.stack.length < 2) {
+      pushChat(channelId, title: title);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.chat(chatChannelId: channelId, chatTitle: title),
+      ],
+    );
+  }
+
+  void pushTagTruncating(String tagName, {String? displayName}) {
+    if (state.stack.length < 2) {
+      pushTag(tagName, displayName: displayName);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.tag(tagName: tagName, tagDisplayName: displayName),
+      ],
+    );
+  }
+
+  /// master 预览位里打开分类:截断栈顶后压入(顶替右栏)。
+  void pushCategoryTruncating(int categoryId) {
+    if (state.stack.length < 2) {
+      pushCategory(categoryId);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.category(categoryId: categoryId),
+      ],
+    );
+  }
+
+  /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
+  /// 草稿页是平行视界的一层内容，不是自成一套分栏。
+  void pushDrafts() {
+    // 草稿**占据**右栏，不是叠在别人上面：右边已经有话题时顶替掉它，
+    // 左边保持信息流/私信列表。所以整栈重置成单层草稿，而不是 append
+    // —— append 会让"栈里两个草稿"和"草稿压在话题上"两种烂状态都成立。
+    if (state.stack.length == 1 && state.stack.single.kind == PaneKind.drafts) {
+      return; // 已经就是它，别白重建一次状态
+    }
+    state = const SelectedTopicState(stack: [PaneEntry.drafts()]);
+  }
+
+  /// master 面板"上一层预览"里打开草稿：截断栈顶后压入。
+  void pushDraftsTruncating() {
+    if (state.stack.length < 2) {
+      pushDrafts();
+      return;
+    }
+    // 同 [pushDrafts]：草稿层唯一，截断后若下面还压着一个草稿就别再加
+    final kept = state.stack
+        .take(state.stack.length - 1)
+        .where((e) => e.kind != PaneKind.drafts);
+    state = SelectedTopicState(
+      stack: [...kept, const PaneEntry.drafts()],
+    );
+  }
+
   /// 打开设置：压栈，保留之前的层。
   void pushSettings() {
     state = SelectedTopicState(
       stack: [...state.stack, const PaneEntry.settings()],
+    );
+  }
+
+  /// 打开信任等级要求：压栈，保留之前的层。
+  void pushTrustLevelRequirements() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.trustLevelRequirements()],
+    );
+  }
+
+  /// 打开元宇宙：压栈，保留之前的层。
+  void pushMetaverse() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.metaverse()],
+    );
+  }
+
+  /// 打开邀请链接：压栈，保留之前的层。
+  void pushInviteLinks() {
+    state = SelectedTopicState(
+      stack: [...state.stack, const PaneEntry.inviteLinks()],
     );
   }
 
@@ -391,6 +692,18 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     );
   }
 
+  /// 抽掉栈中某一类层，其余层保持相对顺序。
+  ///
+  /// 草稿栏用:草稿全部处理完之后，草稿这一层要从栈里消失，但**右边的
+  /// 话题/私信必须留着** —— 所以不能用 pop(那会关掉栈顶的话题)。
+  /// 抽掉后 `[草稿, 话题]` 变成 `[话题]`，左栏自然退回信息流/私信列表。
+  void removeEntriesOfKind(PaneKind kind) {
+    if (!state.stack.any((e) => e.kind == kind)) return;
+    state = SelectedTopicState(
+      stack: state.stack.where((e) => e.kind != kind).toList(),
+    );
+  }
+
   void clear() {
     state = const SelectedTopicState();
   }
@@ -404,11 +717,39 @@ final selectedTopicProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
+/// DM 聊天列表的导航栈——跟私信各自独立(两套完全不同的后端体系),
+/// 语义同 [selectedMessageProvider]。
+final selectedChatProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
 /// 私信列表的导航栈——跟首页话题列表各自独立一份状态，切 tab 互不干扰，
 /// 但复用同一套 push/pop/select/clear 语义。
 final selectedMessageProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
+
+/// 把草稿和某条话题/私信一起放进栈：`[草稿, 内容]`。
+///
+/// 这是"处理草稿"的标准形态 —— 左栏草稿处理栏、右栏正在处理的那条。
+/// 处理完最后一条时 [SelectedTopicNotifier.removeEntriesOfKind] 抽掉草稿
+/// 层，栈剩 `[内容]`，左栏自然退回该内容对应的列表（信息流 / 私信列表）。
+extension DraftHandoff on SelectedTopicNotifier {
+  void openDraftTarget({
+    required int topicId,
+    int? scrollToPostNumber,
+    bool autoOpenReply = true,
+    int? autoReplyToPostNumber,
+  }) {
+    pushDrafts(); // 栈重置成 [草稿]
+    push(
+      topicId: topicId,
+      scrollToPostNumber: scrollToPostNumber,
+      autoOpenReply: autoOpenReply,
+      autoReplyToPostNumber: autoReplyToPostNumber,
+    ); // → [草稿, 内容]
+  }
+}
 
 /// 「我的」页右栏的平行视界栈。
 ///
@@ -597,6 +938,47 @@ class EmbeddedStackScope extends InheritedWidget {
     );
   }
 
+  /// 打开草稿列表的统一入口：嵌入面板里压栈（右栏显示草稿列表），
+  /// 不在就全屏 push。
+  static void openDrafts(BuildContext context) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushDraftsTruncating();
+      } else {
+        notifier.pushDrafts();
+      }
+      return;
+    }
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DraftsPage()));
+  }
+
+  /// 打开 DM 频道详情的统一入口:嵌入面板里压栈显示平行视界(不在就全屏
+  /// push)。DM 详情不是信息流,没有 [openCategory]/[openTag] 那套"切换
+  /// 左栏"的窗口恢复复杂度,语义同 [openDrafts]/[openSettings]。
+  static void openChat(BuildContext context, int channelId, {String? title}) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushChatTruncating(channelId, title: title);
+      } else {
+        notifier.pushChat(channelId, title: title);
+      }
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DmChannelDetailPage(channelId: channelId, title: title),
+      ),
+    );
+  }
+
   /// 打开设置的统一入口：嵌入面板里压栈显示平行视界，不在就全屏 push。
   static void openSettings(BuildContext context) {
     final scope = _maybeScopeOf(context);
@@ -614,6 +996,79 @@ class EmbeddedStackScope extends InheritedWidget {
       context,
     ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
   }
+
+  /// 打开分类的统一入口。分类是**信息流**语义(跟标签同一档),优先级:
+  ///
+  /// 1. 能拿到首页左栏控制器、且当前不是多层平行视界 → 直接把左栏信息流
+  ///    切成该分类(右栏正在看的话题原样保留)。这是绝大多数情况。
+  /// 2. 多层平行视界 / 非首页宿主(私信、搜索栈…)展示不了信息流 →
+  ///    退化成右栏面板层。
+  /// 3. 完全不在平行视界里 → 全屏 push。
+  static void openCategory(BuildContext context, Category category) {
+    final scope = _maybeScopeOf(context);
+    final workspace = HomeWorkspaceScope.maybeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final stacked = container.read(scope.stackProvider).isStacked;
+      if (workspace != null && !stacked) {
+        workspace.onShowCategory(category);
+        return;
+      }
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushCategoryTruncating(category.id);
+      } else {
+        notifier.pushCategory(category.id);
+      }
+      return;
+    }
+    if (workspace != null) {
+      workspace.onShowCategory(category);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: category)),
+    );
+  }
+
+  /// 打开标签的统一入口,与 [openCategory] 同一档语义(标签也是信息流):
+  ///
+  /// 1. 拿得到首页左栏控制器、且不是多层平行视界 → 左栏信息流切成该标签。
+  /// 2. 多层平行视界 / 非首页宿主 → 退化成右栏面板层(同分类)。
+  /// 3. 完全不在平行视界里 → 全屏 push。
+  static void openTag(
+    BuildContext context,
+    String tag, {
+    String? displayName,
+  }) {
+    if (tag.isEmpty) return;
+    final scope = _maybeScopeOf(context);
+    final workspace = HomeWorkspaceScope.maybeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final stacked = container.read(scope.stackProvider).isStacked;
+      if (workspace != null && !stacked) {
+        workspace.onShowTag(tag);
+        return;
+      }
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushTagTruncating(tag, displayName: displayName);
+      } else {
+        notifier.pushTag(tag, displayName: displayName);
+      }
+      return;
+    }
+    if (workspace != null) {
+      workspace.onShowTag(tag);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TagTopicsPage(tagName: tag, displayName: displayName),
+      ),
+    );
+  }
 }
 
 typedef DetailScrollPositionKey = ({int topicId, String instanceId});
@@ -624,3 +1079,10 @@ typedef DetailScrollPositionKey = ({int topicId, String instanceId});
 /// topicId 会让同一话题的不同平行视界层互相覆盖位置。
 final detailScrollPositionProvider =
     StateProvider.family<int?, DetailScrollPositionKey>((ref, key) => null);
+
+// 注:试过再记一个"楼内像素偏移",定位完成后补上,想把位置还原得更准。
+// 探针实测补偿量算对、也执行了(delta=-187.5 → target=+187.5),但**画面
+// 照样跳** —— 残余跳动来自面板在 master/detail 槽位间搬动时**宽度变化**
+// 导致的正文重排(楼高全变,"楼内 187.5px"在新宽度下已指向别的内容)。
+// 补偿只是给结果再加一个偏移,治不了重排,反而让落点更飘。已撤除。
+// 真要修得从「宽度变化时按内容比例重定位」入手,不是加偏移量能解决的。
