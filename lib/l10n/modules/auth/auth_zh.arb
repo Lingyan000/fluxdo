@@ -35,6 +35,9 @@
   "login_qrDisplayHint": "请用另一台未登录的设备打开 FluxDO，扫描此二维码完成登录。",
   "login_qrDisplayTitle": "登录二维码",
   "login_qrExpired": "登录凭证已过期",
+  "login_qrExpiryCustomHint": "可组合填写天、小时、分钟，至少一项大于 0。站点可能限制最长有效期。",
+  "login_qrExpiryCustomInvalid": "请输入大于 0 的有效时长（小时 0–23，分钟 0–59）",
+  "login_qrExpiryCustomTitle": "自定义有效期",
   "login_qrExpiryDays": "{days} 天",
   "@login_qrExpiryDays": {
     "placeholders": {
@@ -43,7 +46,9 @@
       }
     }
   },
-  "login_qrExpiryHint": "有效期作用于分享的 API Key；默认不过期。OTP 登录令牌约 10 分钟内有效。",
+  "login_qrExpiryDeadlineHint": "选择 API Key 失效的本地日期与时间。生成二维码时会换算为相对时长提交给服务端。",
+  "login_qrExpiryDeadlinePast": "截止时间必须晚于当前时间",
+  "login_qrExpiryHint": "有效期作用于分享的 API Key；默认不过期。也可自定义固定时长或截止日期。OTP 登录令牌约 10 分钟内有效。",
   "login_qrExpiryHours": "{hours} 小时",
   "@login_qrExpiryHours": {
     "placeholders": {
@@ -61,7 +66,21 @@
       }
     }
   },
+  "login_qrExpiryModeDeadline": "截止日期",
+  "login_qrExpiryModeDuration": "固定时长",
   "login_qrExpiryNever": "不过期",
+  "login_qrExpiryPickDeadline": "选择日期与时间",
+  "login_qrExpiryUnitDay": "天",
+  "login_qrExpiryUnitHour": "小时",
+  "login_qrExpiryUnitMinute": "分钟",
+  "login_qrExpiryUntil": "至 {time}",
+  "@login_qrExpiryUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "login_qrExpiresIn": "有效期剩余 {time}",
   "@login_qrExpiresIn": {
     "placeholders": {
