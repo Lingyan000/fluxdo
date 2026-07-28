@@ -200,6 +200,16 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
       icon: Symbols.psychology_rounded,
       items: [
         SwitchModel(
+          id: 'composerLiveRender',
+          title: l10n.preferences_composerLiveRender,
+          subtitle: l10n.preferences_composerLiveRenderDesc,
+          icon: Symbols.preview_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).composerLiveRender,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setComposerLiveRender(v),
+        ),
+        SwitchModel(
           id: 'aiPostReview',
           title: l10n.preferences_aiPostReview,
           subtitle: l10n.preferences_aiPostReviewDesc,
