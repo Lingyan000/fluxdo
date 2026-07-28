@@ -250,7 +250,26 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
                   : theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(width: 12),
-            Expanded(child: _buildDescriptionText(description, theme)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 举报项标题(之前只渲染了描述,标题一直缺失)
+                  if (type.name.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        // 标题同样可能带 %{username} 占位符,和描述走同一套替换
+                        _replaceDescription(type.name),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  _buildDescriptionText(description, theme),
+                ],
+              ),
+            ),
           ],
         ),
       ),
