@@ -161,6 +161,9 @@ class AppPreferences {
   /// 关掉则回车新建段落,Shift+回车软换行(两者互换)。
   final bool composerEnterSoftBreak;
 
+  /// 即时渲染(ir):光标处显示 Markdown 格式符并可直接编辑;关闭为纯所见即所得
+  final bool composerLiveRender;
+
   /// 发帖前 AI 审核
   final bool aiPostReviewEnabled;
 
@@ -275,6 +278,7 @@ class AppPreferences {
     required this.aiSwipeEntry,
     this.useRichComposer = false,
     this.composerEnterSoftBreak = true,
+    this.composerLiveRender = false,
     this.aiPostReviewEnabled = false,
     this.aiPostReviewModelKey,
     this.aiTranslationEnabled = false,
@@ -329,6 +333,7 @@ class AppPreferences {
     bool? aiSwipeEntry,
     bool? useRichComposer,
     bool? composerEnterSoftBreak,
+    bool? composerLiveRender,
     bool? aiPostReviewEnabled,
     Object? aiPostReviewModelKey = _unset,
     bool? aiTranslationEnabled,
@@ -385,6 +390,7 @@ class AppPreferences {
       useRichComposer: useRichComposer ?? this.useRichComposer,
       composerEnterSoftBreak:
           composerEnterSoftBreak ?? this.composerEnterSoftBreak,
+      composerLiveRender: composerLiveRender ?? this.composerLiveRender,
       aiPostReviewEnabled: aiPostReviewEnabled ?? this.aiPostReviewEnabled,
       aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
           ? this.aiPostReviewModelKey
@@ -465,6 +471,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _useRichComposerKey = 'pref_use_rich_composer';
   static const String _composerEnterSoftBreakKey =
       'pref_composer_enter_soft_break';
+  static const String _composerLiveRenderKey = 'pref_composer_live_render';
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
   static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
   static const String _aiTranslationEnabledKey = 'pref_ai_translation_enabled';
@@ -543,6 +550,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           useRichComposer: _prefs.getBool(_useRichComposerKey) ?? false,
           composerEnterSoftBreak:
               _prefs.getBool(_composerEnterSoftBreakKey) ?? true,
+          composerLiveRender: _prefs.getBool(_composerLiveRenderKey) ?? false,
           aiPostReviewEnabled: _prefs.getBool(_aiPostReviewEnabledKey) ?? false,
           aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
           aiTranslationEnabled:
@@ -758,6 +766,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setComposerEnterSoftBreak(bool enabled) async {
     state = state.copyWith(composerEnterSoftBreak: enabled);
     await _prefs.setBool(_composerEnterSoftBreakKey, enabled);
+  }
+
+  Future<void> setComposerLiveRender(bool enabled) async {
+    state = state.copyWith(composerLiveRender: enabled);
+    await _prefs.setBool(_composerLiveRenderKey, enabled);
   }
 
   Future<void> setAiPostReviewEnabled(bool enabled) async {

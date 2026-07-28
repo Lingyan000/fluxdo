@@ -66,6 +66,8 @@
   "preferences_useRichComposerDesc": "WYSIWYG editor for replies/posts; switch back anytime",
   "preferences_composerEnterSoftBreak": "Enter without blank line",
   "preferences_composerEnterSoftBreakDesc": "Enter inserts a line break (matching the web composer); Shift+Enter starts a new paragraph. Off reverses this",
+  "preferences_composerLiveRender": "Live rendering",
+  "preferences_composerLiveRenderDesc": "Show Markdown syntax markers at the caret for direct editing; off for pure WYSIWYG",
   "preferences_aiPostReview": "AI review before posting",
   "preferences_aiPostReviewDesc": "Ask AI for opinions and edit directions based on the community guidelines before publishing. It will not block posting.",
   "preferences_aiPostReviewModel": "Review model",

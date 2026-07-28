@@ -266,6 +266,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 回车语义(软换行 / 分段)。硬件按键链在 _interceptKeyEvent 里按
     // Shift 临时反转,IME 路径直接读这个值。
     editor.enterInsertsSoftBreak = _enterSoftBreakPref;
+    // 编辑器模式:即时渲染(ir,光标处显形格式符)/ 纯所见即所得。
+    // 非响应式直读,开关切换后下次打开 composer 生效。
+    editor.mode = _liveRenderPref ? EditorMode.ir : EditorMode.wysiwyg;
     editor.addListener(_onDocChanged);
     setState(() {
       _editor = editor;
@@ -1018,6 +1021,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           listen: false)
       .read(preferencesProvider)
       .composerEnterSoftBreak;
+
+  /// 即时渲染偏好。与 [_enterSoftBreakPref] 同理非响应式直读:只在建
+  /// EditorState 时用一次,切换开关后下次打开 composer 生效。
+  bool get _liveRenderPref => ProviderScope.containerOf(context, listen: false)
+      .read(preferencesProvider)
+      .composerLiveRender;
 
   /// 回车键的换行语义。返回 true = 已接管。
   ///

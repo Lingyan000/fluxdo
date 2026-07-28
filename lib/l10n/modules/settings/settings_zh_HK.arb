@@ -66,6 +66,8 @@
   "preferences_useRichComposerDesc": "回帖/發帖使用所見即所得編輯器,可隨時關閉回到純文字",
   "preferences_composerEnterSoftBreak": "回車不空行",
   "preferences_composerEnterSoftBreakDesc": "回車插軟換行(與網頁版一致),Shift+回車才另起段落;關閉則相反",
+  "preferences_composerLiveRender": "即時渲染",
+  "preferences_composerLiveRenderDesc": "游標處顯示 Markdown 格式符號,可直接編輯;關閉則為純所見即所得",
   "preferences_aiPostReview": "發帖前 AI 審核",
   "preferences_aiPostReviewDesc": "發佈前讓 AI 根據社區準則給出意見和修改方向，不會阻止發佈",
   "preferences_aiPostReviewModel": "審核模型",
