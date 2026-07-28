@@ -37,20 +37,26 @@ class SettingsRenderer extends ConsumerWidget {
     // 依赖的前置开关关闭时整行隐藏(展示无意义;前置开启当场出现)
     if (!(m.enabledWhen?.call(ref) ?? true)) return const SizedBox.shrink();
     final value = m.getValue(ref);
+    final enabled = m.enabledWhen?.call(ref) ?? true;
     return SwitchListTile(
       title: Text(m.title),
       subtitle: m.subtitle != null ? Text(m.subtitle!) : null,
       secondary: Icon(
         m.icon,
-        color: value
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+        color: !enabled
+            ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.38)
+            : value
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
       ),
       value: value,
-      onChanged: (v) {
-        HapticFeedback.selectionClick();
-        m.onChanged(ref, v);
-      },
+      // 依赖的前置开关关闭时禁灰(SwitchListTile 的 onChanged null 即禁用态)
+      onChanged: !enabled
+          ? null
+          : (v) {
+              HapticFeedback.selectionClick();
+              m.onChanged(ref, v);
+            },
     );
   }
 
