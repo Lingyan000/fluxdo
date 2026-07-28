@@ -31,6 +31,7 @@ import 'trust_level_requirements_page.dart';
 import 'metaverse_page.dart';
 import 'invite_links_page.dart';
 import 'category_topics_page.dart';
+import 'chat/dm_channel_detail_page.dart';
 import 'tag_topics_page.dart';
 
 /// 话题屏幕
@@ -1164,6 +1165,18 @@ class PaneContentWidget extends StatelessWidget {
                 onEmbeddedBack: onBack,
               );
             },
+          ),
+        );
+      case PaneKind.chat:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: DmChannelDetailPage(
+            key: ValueKey('pane_chat_${entry.chatChannelId}'),
+            channelId: entry.chatChannelId!,
+            title: entry.chatTitle,
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
           ),
         );
     }

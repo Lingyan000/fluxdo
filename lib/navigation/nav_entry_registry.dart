@@ -7,6 +7,7 @@ import '../models/user.dart';
 import '../pages/bookmarks_page.dart';
 import '../pages/browsing_history_page.dart';
 import '../pages/drafts_page.dart';
+import '../pages/chat/dm_channel_list_page.dart';
 import '../pages/private_messages_page.dart';
 import '../pages/profile_page.dart';
 import '../pages/seeking_page.dart';
@@ -88,6 +89,15 @@ class NavEntryRegistry {
         label: (ctx) => ctx.l10n.nav_messages,
         pageBuilder: (ctx, isActive) =>
             PrivateMessagesPage(isActive: isActive),
+        requiresLogin: true,
+      ),
+      NavEntry(
+        id: NavEntryIds.chat,
+        kind: NavEntryKind.page,
+        iconData: Symbols.chat_rounded,
+        selectedIconData: Symbols.chat_rounded,
+        label: (ctx) => '聊天',
+        pageBuilder: (ctx, isActive) => DmChannelListPage(isActive: isActive),
         requiresLogin: true,
       ),
       NavEntry(

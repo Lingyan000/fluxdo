@@ -462,6 +462,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   bool _isFollowed = false;
   bool _followLoading = false;
+  bool _chatLoading = false;
 
   // normal / mute / ignore
   String _notificationLevel = 'normal';
@@ -507,6 +508,31 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       postNumber: widget.postNumber,
       topicTitle: widget.topicTitle,
     );
+  }
+
+  /// 与"发消息"(传统 PM)是两套独立体系:这里对接 Chat 插件的 DM 频道,
+  /// 不复用 composeMessageToUser。发起/获取频道后直接进详情页。
+  Future<void> _openChat() async {
+    if (_chatLoading) return;
+    setState(() => _chatLoading = true);
+    final service = ref.read(discourseServiceProvider);
+    try {
+      final channel = await service.createOrGetDirectMessageChannel([widget.username]);
+      final anchorContext = widget.anchorContext;
+      if (!mounted || !anchorContext.mounted) return;
+      widget.onClose();
+      // 走统一入口:在平行视界嵌入面板里(卡片是从话题正文/信息流弹出的)
+      // 就压栈显示右栏,不在就全屏 push——跟点头像开资料卡同一套语义。
+      EmbeddedStackScope.openChat(
+        anchorContext,
+        channel.id,
+        title: _user?.name ?? widget.username,
+      );
+    } catch (e, s) {
+      if (mounted) AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      if (mounted) setState(() => _chatLoading = false);
+    }
   }
 
   Future<void> _toggleFollow() async {
@@ -956,6 +982,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       currentUserProvider.select((value) => value.value != null),
     );
     final canMessage = isLoggedIn && user?.canSendPrivateMessageToUser == true;
+    final currentUsername = ref.watch(
+      currentUserProvider.select((value) => value.value?.username),
+    );
+    final canChat = isLoggedIn && currentUsername != null && currentUsername != widget.username;
     final canFollow = isLoggedIn && user?.canFollow == true;
     final canMute = isLoggedIn && user?.canMuteUser == true;
     final canIgnore = isLoggedIn && user?.canIgnoreUser == true;
@@ -1009,6 +1039,20 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
                 label: Text(S.current.userCard_viewProfile),
               ),
             ),
+            if (canChat) ...[
+              const SizedBox(width: 8),
+              IconButton.outlined(
+                onPressed: _chatLoading ? null : _openChat,
+                tooltip: '聊天',
+                icon: _chatLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Symbols.chat_rounded, size: 18),
+              ),
+            ],
             if (canMute || canIgnore) ...[
               const SizedBox(width: 8),
               _buildMoreMenu(theme, canMute, canIgnore),
