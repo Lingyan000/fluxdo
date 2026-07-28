@@ -1186,6 +1186,21 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
               ),
       ));
     }
+    if (canMessage) {
+      primary.add(Expanded(
+        child: canChat
+            ? FilledButton.tonalIcon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              )
+            : FilledButton.icon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              ),
+      ));
+    }
     if (canFollow) {
       primary.add(
         Expanded(
@@ -1202,6 +1217,15 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
                 ),
         ),
       );
+    }
+
+    // 主操作可能有 3 个（聊天/私信/关注）：两行排布，避免窄卡挤爆。
+    final primaryRows = <List<Widget>>[];
+    if (primary.length <= 2) {
+      if (primary.isNotEmpty) primaryRows.add(primary);
+    } else {
+      primaryRows.add(primary.sublist(0, 2));
+      primaryRows.add(primary.sublist(2));
     }
 
     // 主操作可能有 3 个（聊天/私信/关注）：两行排布，避免窄卡挤爆。
