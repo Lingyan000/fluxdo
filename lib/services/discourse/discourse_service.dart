@@ -12,6 +12,8 @@ import '../../models/shared_issue.dart';
 import '../../models/user.dart';
 import '../../models/user_action.dart';
 import '../../models/notification.dart';
+import '../../models/chat/chat_channel.dart';
+import '../../models/chat/chat_message.dart';
 import '../../models/category.dart';
 import '../../models/search_result.dart';
 import '../../models/emoji.dart';
@@ -60,6 +62,7 @@ part '_posts.dart';
 part '_users.dart';
 part '_search.dart';
 part '_notifications.dart';
+part '_chat.dart';
 part '_uploads.dart';
 part '_voting.dart';
 part '_presence.dart';
@@ -125,6 +128,7 @@ class DiscourseService extends _DiscourseServiceBase
         _UsersMixin,
         _SearchMixin,
         _NotificationsMixin,
+        _ChatMixin,
         _UploadsMixin,
         _VotingMixin,
         _PresenceMixin,

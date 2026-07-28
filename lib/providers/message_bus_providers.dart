@@ -18,3 +18,6 @@ export 'message_bus/topic_tracking_providers.dart';
 
 // 导出话题频道 provider
 export 'message_bus/topic_channel_provider.dart';
+
+// 导出 Chat 插件 DM 相关 providers
+export 'message_bus/chat_providers.dart';

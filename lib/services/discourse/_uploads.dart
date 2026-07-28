@@ -36,6 +36,9 @@ class ResolvedUploadUrl {
 
 /// 上传结果
 class UploadResult {
+  /// 上传记录主键。发帖走 Markdown 短链引用不需要它;Chat 插件发消息
+  /// 走 `upload_ids` 数组关联附件,只能靠这个 id,不认短链。
+  final int? id;
   final String shortUrl;
   final String? url;
   final String originalFilename;
@@ -48,6 +51,7 @@ class UploadResult {
   final String? extension;
 
   UploadResult({
+    this.id,
     required this.shortUrl,
     this.url,
     required this.originalFilename,
@@ -292,6 +296,7 @@ mixin _UploadsMixin on _DiscourseServiceBase {
           final shortUrl = data['short_url'] as String?;
           if (shortUrl != null) {
             return UploadResult(
+              id: data['id'] as int?,
               shortUrl: shortUrl,
               url: data['url'] as String?,
               originalFilename:
@@ -309,6 +314,7 @@ mixin _UploadsMixin on _DiscourseServiceBase {
           final url = data['url'] as String?;
           if (url != null) {
             return UploadResult(
+              id: data['id'] as int?,
               shortUrl: url,
               url: url,
               originalFilename:

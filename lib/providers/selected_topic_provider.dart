@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 import '../models/category.dart';
 import '../pages/category_topics_page.dart';
+import '../pages/chat/dm_channel_detail_page.dart';
 import '../pages/tag_topics_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
@@ -25,6 +26,7 @@ enum PaneKind {
   inviteLinks,
   category,
   tag,
+  chat,
 }
 
 /// 平行视界导航栈里的一层。
@@ -43,7 +45,9 @@ class PaneEntry {
        username = null,
        tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
@@ -58,7 +62,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.drafts()
     : kind = PaneKind.drafts,
@@ -74,7 +80,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
@@ -90,7 +98,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.trustLevelRequirements()
     : kind = PaneKind.trustLevelRequirements,
@@ -106,7 +116,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.metaverse()
     : kind = PaneKind.metaverse,
@@ -122,7 +134,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.inviteLinks()
     : kind = PaneKind.inviteLinks,
@@ -138,7 +152,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       tagName = null,
       tagDisplayName = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   /// 标签层。[tagName] 是**带 id 段的原串**(`1534-tag/1534`),请求路径
   /// 直接用它,显示时经 `DiscourseUrlParser.tagDisplayName` 去掉 id。
@@ -154,12 +170,33 @@ class PaneEntry {
       initialRevisionNumber = null,
       autoOpenReply = false,
       autoReplyToPostNumber = null,
-      categoryId = null;
+      categoryId = null,
+      chatChannelId = null,
+      chatTitle = null;
 
   const PaneEntry.category({required int this.categoryId})
     : kind = PaneKind.category,
       tagName = null,
       tagDisplayName = null,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      chatChannelId = null,
+      chatTitle = null;
+
+  /// Chat 插件 DM 频道层。
+  const PaneEntry.chat({required int this.chatChannelId, this.chatTitle})
+    : kind = PaneKind.chat,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
       topicId = null,
       username = null,
       initialTitle = null,
@@ -183,6 +220,12 @@ class PaneEntry {
   /// 标签的显示名。中文标签的 URL 段是 Discourse 生成的 `<id>-tag`
   /// slug,推不回真名 —— 从药丸锚文本带过来,只用于标题。
   final String? tagDisplayName;
+
+  /// kind == chat 时的 DM 频道 id。
+  final int? chatChannelId;
+
+  /// DM 频道的显示名(对方昵称/用户名,或群聊标题)。
+  final String? chatTitle;
   final String? username;
   final String? initialTitle;
   final int? scrollToPostNumber;
@@ -438,6 +481,17 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
   }
 
+  /// 在 DM 频道列表里点开(切换)一个频道:清空栈重新开始,不是压栈。
+  /// 用户心智是"看列表里的另一项",跟 [select] 对话题列表的语义一致——
+  /// 每点一次列表项就多叠一层的话,栈会无限增长,`_buildMasterPane` 只
+  /// 处理得了"上一层"这一档,栈深超过 2 层后右栏该显示哪层就会错乱
+  /// (表现为标题跟高亮的列表项对不上、甚至右栏加载不出来)。
+  void selectChat(int channelId, {String? title}) {
+    state = SelectedTopicState(
+      stack: [PaneEntry.chat(chatChannelId: channelId, chatTitle: title)],
+    );
+  }
+
   /// 打开分类话题列表——**兜底路径**,只在信息流展示不出来时用(多层平行
   /// 视界、非首页宿主)。首选永远是把分类接到左栏信息流,见
   /// [EmbeddedStackScope.openCategory]。
@@ -453,6 +507,30 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
       stack: [
         ...state.stack,
         PaneEntry.tag(tagName: tagName, tagDisplayName: displayName),
+      ],
+    );
+  }
+
+  /// 打开 DM 频道详情:压栈显示在右栏。
+  void pushChat(int channelId, {String? title}) {
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack,
+        PaneEntry.chat(chatChannelId: channelId, chatTitle: title),
+      ],
+    );
+  }
+
+  /// master 预览位里打开 DM 频道:截断栈顶后压入(顶替右栏)。
+  void pushChatTruncating(int channelId, {String? title}) {
+    if (state.stack.length < 2) {
+      pushChat(channelId, title: title);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.chat(chatChannelId: channelId, chatTitle: title),
       ],
     );
   }
@@ -636,6 +714,12 @@ typedef SelectedTopicProvider =
 
 /// 首页话题列表的导航栈。
 final selectedTopicProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// DM 聊天列表的导航栈——跟私信各自独立(两套完全不同的后端体系),
+/// 语义同 [selectedMessageProvider]。
+final selectedChatProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
@@ -871,6 +955,28 @@ class EmbeddedStackScope extends InheritedWidget {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const DraftsPage()));
+  }
+
+  /// 打开 DM 频道详情的统一入口:嵌入面板里压栈显示平行视界(不在就全屏
+  /// push)。DM 详情不是信息流,没有 [openCategory]/[openTag] 那套"切换
+  /// 左栏"的窗口恢复复杂度,语义同 [openDrafts]/[openSettings]。
+  static void openChat(BuildContext context, int channelId, {String? title}) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushChatTruncating(channelId, title: title);
+      } else {
+        notifier.pushChat(channelId, title: title);
+      }
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DmChannelDetailPage(channelId: channelId, title: title),
+      ),
+    );
   }
 
   /// 打开设置的统一入口：嵌入面板里压栈显示平行视界，不在就全屏 push。

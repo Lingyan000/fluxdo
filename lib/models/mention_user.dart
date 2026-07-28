@@ -15,18 +15,36 @@ List<String> extractMentionNames(String text) {
   return names.toList();
 }
 
+/// 用户自定义状态(站点开启 enable_user_status 时序列化端附带的
+/// `status: {emoji, description, ends_at}`)。
+class UserCustomStatus {
+  final String? emoji;
+  final String? description;
+
+  const UserCustomStatus({this.emoji, this.description});
+
+  factory UserCustomStatus.fromJson(Map<String, dynamic> json) {
+    return UserCustomStatus(
+      emoji: json['emoji'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+}
+
 /// 用户提及搜索结果中的用户
 class MentionUser {
   final String username;
   final String? name;
   final String? avatarTemplate;
   final int? priorityGroup;
+  final UserCustomStatus? status;
 
   const MentionUser({
     required this.username,
     this.name,
     this.avatarTemplate,
     this.priorityGroup,
+    this.status,
   });
 
   factory MentionUser.fromJson(Map<String, dynamic> json) {
@@ -35,6 +53,9 @@ class MentionUser {
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
       priorityGroup: json['priority_group'] as int?,
+      status: json['status'] is Map<String, dynamic>
+          ? UserCustomStatus.fromJson(json['status'] as Map<String, dynamic>)
+          : null,
     );
   }
 
