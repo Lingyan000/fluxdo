@@ -35,20 +35,26 @@ class SettingsRenderer extends ConsumerWidget {
     SwitchModel m,
   ) {
     final value = m.getValue(ref);
+    final enabled = m.enabledWhen?.call(ref) ?? true;
     return SwitchListTile(
       title: Text(m.title),
       subtitle: m.subtitle != null ? Text(m.subtitle!) : null,
       secondary: Icon(
         m.icon,
-        color: value
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+        color: !enabled
+            ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.38)
+            : value
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
       ),
       value: value,
-      onChanged: (v) {
-        HapticFeedback.selectionClick();
-        m.onChanged(ref, v);
-      },
+      // 依赖的前置开关关闭时禁灰(SwitchListTile 的 onChanged null 即禁用态)
+      onChanged: !enabled
+          ? null
+          : (v) {
+              HapticFeedback.selectionClick();
+              m.onChanged(ref, v);
+            },
     );
   }
 
