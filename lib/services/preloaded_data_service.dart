@@ -284,6 +284,26 @@ class PreloadedDataService {
     return chatEnabled;
   }
 
+  /// 创建直接消息时「除自己以外」可添加的用户上限。
+  ///
+  /// 对齐 `SiteSetting.chat_max_direct_message_users`（client:true，默认 20）。
+  /// - `0`：只允许给自己发（禁止选他人）
+  /// - staff 在服务端豁免此限制；客户端仍用该值做 UX 提示
+  ///
+  /// 注意：服务端计数不含当前用户，故选 20 人 + 自己 ≈ 频道内 21 人；
+  /// system 用户一般不会出现在 chatables 搜索结果中。
+  int get chatMaxDirectMessageUsers {
+    final raw = _siteSettings?['chat_max_direct_message_users'];
+    if (raw is num) return raw.toInt().clamp(0, 100);
+    if (raw is String) return int.tryParse(raw)?.clamp(0, 100) ?? 20;
+    return 20;
+  }
+
+  Future<int> getChatMaxDirectMessageUsers() async {
+    await _ensureLoaded();
+    return chatMaxDirectMessageUsers;
+  }
+
   // ---- discourse-signatures 插件开关（均为 client:true，preload 可读）----
   // 同步读取：签名渲染在 build 中门禁，preload 未就绪时按插件未启用处理。
 
