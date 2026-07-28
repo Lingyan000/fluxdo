@@ -4,11 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
-  FLUTTER_LINUX_VERSION: '3.44.8'
-  ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
   build:
@@ -50,21 +49,30 @@ jobs:
             arch: x86_64
 
     steps:
-      # ubuntu-latest 可用空间仅 ~14GB,Flutter+NDK+Rust 缓存+Gradle 产物会把盘写满,
-      # 先删掉本构建用不到的预装组件,约可腾出 25GB+
+      # ubuntu-latest 可用空间仅 ~14GB；腾出空间，但保留目标 NDK，避免每次重装
       - name: Free disk space
         if: startsWith(matrix.platform, 'android')
         run: |
           echo "清理前:" && df -h /
           sudo rm -rf \
             /usr/share/dotnet \
-            /usr/local/lib/android/sdk/ndk \
             /opt/ghc \
             /usr/local/.ghcup \
             /opt/hostedtoolcache/CodeQL \
             /usr/share/swift \
             /usr/local/share/powershell \
-            /usr/local/share/chromium
+            /usr/local/share/chromium \
+            /usr/local/lib/android/sdk/ndk-bundle \
+            /usr/local/lib/android/sdk/system-images \
+            /usr/local/lib/android/sdk/emulator \
+            /usr/local/lib/android/sdk/platforms/android-30 \
+            /usr/local/lib/android/sdk/platforms/android-32 \
+            /usr/local/lib/android/sdk/platforms/android-33 \
+            /usr/local/lib/android/sdk/platforms/android-34
+          if [ -d /usr/local/lib/android/sdk/ndk ]; then
+            find /usr/local/lib/android/sdk/ndk -mindepth 1 -maxdepth 1 \
+              ! -name "${ANDROID_NDK_VERSION}" -exec sudo rm -rf {} +
+          fi
           sudo docker image prune --all --force > /dev/null 2>&1 || true
           echo "清理后:" && df -h /
 
@@ -78,7 +86,15 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
+          # Gradle 缓存交给 setup-gradle，避免双重缓存互相踩
           java-version: '17'
+
+      - name: Setup Gradle Cache
+        if: startsWith(matrix.platform, 'android')
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -95,7 +111,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: core/doh_proxy
-          key: ${{ matrix.platform }}-${{ matrix.arch || matrix.flutter-target }}
+          cache-bin: true
+          key: ${{ matrix.platform }}-${{ matrix.arch || matrix.flutter-target }}-${{ startsWith(matrix.platform, 'android') && env.ANDROID_NDK_VERSION || 'host' }}
 
       - name: Setup iOS Rust targets
         if: matrix.platform == 'ios'
@@ -108,30 +125,111 @@ jobs:
       - name: Setup Android build environment
         if: startsWith(matrix.platform, 'android')
         run: |
+          set -euo pipefail
           rustup target add ${{ matrix.rust-target }}
-          cargo install cargo-ndk
-          sudo apt-get update && sudo apt-get install -y cmake
+          if ! command -v cargo-ndk >/dev/null 2>&1; then
+            cargo install cargo-ndk
+          else
+            echo "cargo-ndk 已存在"
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake
+          fi
 
-      - name: Setup Android NDK
+      - name: Setup Android SDK packages
         if: startsWith(matrix.platform, 'android')
         uses: android-actions/setup-android@v3
         with:
-          packages: 'ndk;${{ env.ANDROID_NDK_VERSION }}'
+          packages: >-
+            ndk;${{ env.ANDROID_NDK_VERSION }}
+            platforms;android-36
+            platforms;android-31
+            cmake;3.22.1
+          log-accepted-android-sdk-licenses: false
 
       - name: Configure Android NDK path
         if: startsWith(matrix.platform, 'android')
         run: |
+          set -euo pipefail
           ndk_path="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           test -d "${ndk_path}"
           echo "ANDROID_NDK_HOME=${ndk_path}" >> "${GITHUB_ENV}"
           echo "ANDROID_NDK_ROOT=${ndk_path}" >> "${GITHUB_ENV}"
+          props="android/local.properties"
+          touch "$props"
+          for key_val in \
+            "sdk.dir=${ANDROID_HOME}" \
+            "ndk.dir=${ndk_path}" \
+            "flutter.ndkVersion=${ANDROID_NDK_VERSION}"; do
+            key="${key_val%%=*}"
+            if grep -q "^${key}=" "$props" 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key_val}|" "$props"
+            else
+              echo "${key_val}" >> "$props"
+            fi
+          done
 
       - name: Setup Android Signing
         if: startsWith(matrix.platform, 'android')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          FALLBACK_KEYSTORE_BASE64: "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"
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
-          echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > android/key.properties
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "使用 Repository Secret 中的签名证书"
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          else
+            echo "未配置 ANDROID_KEYSTORE_BASE64，写入统一固定兜底签名证书"
+            echo "$FALLBACK_KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          fi
+
+          if [ -n "$KEY_PROPERTIES" ]; then
+            echo "使用 Repository Secret 中的 key.properties"
+            echo "$KEY_PROPERTIES" > android/key.properties
+          else
+            echo "未配置 ANDROID_KEY_PROPERTIES，写入统一固定签名配置"
+            printf "storePassword=fluxdokey\nkeyPassword=fluxdokey\nkeyAlias=fluxdodebugkey\nstoreFile=upload-keystore.jks\n" > android/key.properties
+          fi
+
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          else
+            echo "GOOGLE_SERVICES_JSON 未配置，写入默认 Google Services 配置模版"
+            cat << 'EOF' > android/app/google-services.json
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "fluxdo-dummy",
+              "storage_bucket": "fluxdo-dummy.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.github.lingyan000.fluxdo"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyDummyKeyForBuildWithoutSecrets0000"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
 
       - name: Configure Git for CocoaPods
         if: matrix.platform == 'ios' || matrix.platform == 'macos'
@@ -148,14 +246,20 @@ jobs:
           mv build/app/outputs/flutter-apk/app-release.apk dist/fluxdo-${{ matrix.arch }}.apk
 
       - name: Authenticate to Google Cloud
-        if: startsWith(matrix.platform, 'android')
+        if: startsWith(matrix.platform, 'android') && env.GCP_WIF != '' && env.GCP_SA != ''
+        env:
+          GCP_WIF: ${{ secrets.GCP_WIF_PROVIDER }}
+          GCP_SA: ${{ secrets.GCP_SA_EMAIL }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - name: Upload Dart symbols to Crashlytics
-        if: startsWith(matrix.platform, 'android')
+        if: startsWith(matrix.platform, 'android') && env.GCP_WIF != '' && env.GCP_SA != ''
+        env:
+          GCP_WIF: ${{ secrets.GCP_WIF_PROVIDER }}
+          GCP_SA: ${{ secrets.GCP_SA_EMAIL }}
         run: |
           npx -y firebase-tools@latest crashlytics:symbols:upload \
             --app=1:98542877021:android:e555169791c86bb9c950b4 \

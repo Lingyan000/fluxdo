@@ -36,6 +36,16 @@ subprojects {
             } catch (_: Exception) {
                 // 非 Android 子项目，跳过
             }
+
+            // 统一 NDK 到 Flutter 3.44 默认版本，避免插件各装一份 side-by-side NDK
+            // （CI 日志曾出现 28.2 + 27.0 双下载，白白多出数分钟）
+            try {
+                androidExt.javaClass
+                    .getMethod("setNdkVersion", String::class.java)
+                    .invoke(androidExt, "28.2.13676358")
+            } catch (_: Exception) {
+                // AGP API 不可用时跳过
+            }
         }
         // 2. 兜底：直接覆盖 JavaCompile task 的 target
         tasks.withType<JavaCompile>().configureEach {

@@ -1,0 +1,363 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    paths:
+      - 'lib/**'
+      - 'android/**'
+      - 'core/doh_proxy/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/build-apk.yaml'
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target Architecture (default: arm64-v8a)'
+        required: true
+        default: 'arm64-v8a'
+        type: choice
+        options:
+          - 'arm64-v8a'
+          - 'armeabi-v7a'
+          - 'x86_64'
+          - 'universal'
+          - 'all'
+
+# 同分支新 push 取消旧构建，避免排队浪费 runner 分钟
+concurrency:
+  group: build-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+  # 与 Flutter 3.44 默认 NDK 对齐（flutter.ndkVersion = 28.2.13676358）
+  # 旧值 27.3 会导致：先装 27.3，Gradle 再装 28.2，甚至再装 27.0
+  ANDROID_NDK_VERSION: '28.2.13676358'
+
+jobs:
+  # 根据触发方式动态决定要构建的架构，避免拉起无用的 matrix runner
+  prepare:
+    name: prepare-matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Resolve target architectures
+        id: set
+        run: |
+          target="${{ inputs.arch || 'arm64-v8a' }}"
+
+          arm64='{"arch":"arm64-v8a","rust-target":"aarch64-linux-android","flutter-target":"android-arm64"}'
+          armv7='{"arch":"armeabi-v7a","rust-target":"armv7-linux-androideabi","flutter-target":"android-arm"}'
+          x64='{"arch":"x86_64","rust-target":"x86_64-linux-android","flutter-target":"android-x64"}'
+          universal='{"arch":"universal","rust-target":"all","flutter-target":"universal"}'
+
+          case "$target" in
+            all)
+              matrix="[$arm64,$armv7,$x64,$universal]"
+              ;;
+            arm64-v8a)
+              matrix="[$arm64]"
+              ;;
+            armeabi-v7a)
+              matrix="[$armv7]"
+              ;;
+            x86_64)
+              matrix="[$x64]"
+              ;;
+            universal)
+              matrix="[$universal]"
+              ;;
+            *)
+              echo "未知架构: $target，回退到 arm64-v8a"
+              matrix="[$arm64]"
+              ;;
+          esac
+
+          echo "目标架构: $target"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "生成 matrix: $matrix"
+
+  build-apk:
+    name: build-apk (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    steps:
+      # 实测 ubuntu-latest 起始可用 ~88GB，足够 Flutter/Gradle/Rust/NDK。
+      # 旧 Free disk 步骤固定 ~36s（含 docker prune），还会清掉非目标 NDK。
+      # 仅在可用空间不足时做轻量清理，且不碰 NDK、不做 docker prune。
+      - name: Free disk space (if needed)
+        run: |
+          set -euo pipefail
+          avail_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "可用空间: ${avail_gb}G"
+          if [ "${avail_gb}" -ge 40 ]; then
+            echo "空间充足，跳过清理"
+            exit 0
+          fi
+          echo "空间紧张，执行轻量清理..."
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift \
+            /usr/local/share/powershell \
+            /usr/local/share/chromium \
+            /usr/local/lib/android/sdk/ndk-bundle \
+            /usr/local/lib/android/sdk/system-images \
+            /usr/local/lib/android/sdk/emulator \
+            /usr/local/lib/android/sdk/platforms/android-30 \
+            /usr/local/lib/android/sdk/platforms/android-32 \
+            /usr/local/lib/android/sdk/platforms/android-33 \
+            /usr/local/lib/android/sdk/platforms/android-34 || true
+          # 只保留目标 NDK，删掉 runner 预装的其它版本
+          if [ -d /usr/local/lib/android/sdk/ndk ]; then
+            find /usr/local/lib/android/sdk/ndk -mindepth 1 -maxdepth 1 \
+              ! -name "${ANDROID_NDK_VERSION}" -exec sudo rm -rf {} +
+          fi
+          echo "清理后:" && df -h /
+          echo "保留的 NDK:" && ls -la /usr/local/lib/android/sdk/ndk 2>/dev/null || echo "(尚无 NDK)"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # Gradle 缓存交给 setup-gradle，避免双重缓存互相踩
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          # on-success 会在 post 阶段再起 Gradle daemon 做 cache cleanup，
+          # 实测额外 ~60s；缓存体积由 GitHub cache 限额约束，日常 APK 构建不需要每次清理。
+          cache-cleanup: never
+          # build scan 对加速无帮助，且注入 Develocity 增加配置开销
+          build-scan-publish: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/doh_proxy
+          # 缓存 cargo-ndk 等全局二进制，避免每次 crates.io 探测
+          cache-bin: true
+          key: android-apk-${{ matrix.arch }}-${{ env.ANDROID_NDK_VERSION }}
+
+      - name: Setup Android build environment
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.arch }}" = "universal" ]; then
+            rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          else
+            rustup target add ${{ matrix.rust-target }}
+          fi
+          # 已安装则跳过，避免每次 crates.io 查询
+          if ! command -v cargo-ndk >/dev/null 2>&1; then
+            cargo install cargo-ndk --locked
+          else
+            echo "cargo-ndk 已存在: $(cargo ndk --version 2>/dev/null || echo ok)"
+          fi
+          # aws-lc / ech 编译需要 cmake；优先复用系统包
+          if ! command -v cmake >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake
+          else
+            echo "cmake 已存在: $(cmake --version | head -1)"
+          fi
+
+      # 缓存 NDK / platform / cmake，避免每次 sdkmanager 下载。
+      # 路径写死为 ubuntu runner 预装 SDK 根目录，不依赖 ANDROID_HOME 是否已 export。
+      - name: Cache Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk/${{ env.ANDROID_NDK_VERSION }}
+            /usr/local/lib/android/sdk/platforms/android-36
+            /usr/local/lib/android/sdk/platforms/android-31
+            /usr/local/lib/android/sdk/cmake/3.22.1
+          key: android-sdk-${{ runner.os }}-${{ env.ANDROID_NDK_VERSION }}-p36-p31-cmake3221-v1
+
+      # 一次性预装 Gradle 构建会用到的 SDK 组件，避免 assembleRelease 中途 sdkmanager 下载
+      - name: Setup Android SDK packages
+        uses: android-actions/setup-android@v3
+        with:
+          # 日志实测 assembleRelease 会临时装: NDK 28.2 / platform-31 / cmake 3.22.1
+          # 有 cache hit 时 sdkmanager 会快速跳过已安装组件
+          packages: >-
+            ndk;${{ env.ANDROID_NDK_VERSION }}
+            platforms;android-36
+            platforms;android-31
+            cmake;3.22.1
+          log-accepted-android-sdk-licenses: false
+
+      - name: Configure Android NDK path
+        run: |
+          set -euo pipefail
+          ndk_path="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          test -d "${ndk_path}"
+          echo "ANDROID_NDK_HOME=${ndk_path}" >> "${GITHUB_ENV}"
+          echo "ANDROID_NDK_ROOT=${ndk_path}" >> "${GITHUB_ENV}"
+          # 合并写入 local.properties（保留 flutter-action 可能写入的 flutter.sdk）
+          props="android/local.properties"
+          touch "$props"
+          for key_val in \
+            "sdk.dir=${ANDROID_HOME}" \
+            "ndk.dir=${ndk_path}" \
+            "flutter.ndkVersion=${ANDROID_NDK_VERSION}"; do
+            key="${key_val%%=*}"
+            if grep -q "^${key}=" "$props" 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key_val}|" "$props"
+            else
+              echo "${key_val}" >> "$props"
+            fi
+          done
+          echo "NDK ready: ${ndk_path}"
+          cat "$props"
+
+      - name: Setup Android Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          FALLBACK_KEYSTORE_BASE64: "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"
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "使用 Repository Secret 中的签名证书"
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          else
+            echo "未配置 ANDROID_KEYSTORE_BASE64，写入统一固定兜底签名证书"
+            echo "$FALLBACK_KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          fi
+
+          if [ -n "$KEY_PROPERTIES" ]; then
+            echo "使用 Repository Secret 中的 key.properties"
+            echo "$KEY_PROPERTIES" > android/key.properties
+          else
+            echo "未配置 ANDROID_KEY_PROPERTIES，写入统一固定签名配置"
+            printf "storePassword=fluxdokey\nkeyPassword=fluxdokey\nkeyAlias=fluxdodebugkey\nstoreFile=upload-keystore.jks\n" > android/key.properties
+          fi
+
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          else
+            echo "GOOGLE_SERVICES_JSON 未配置，写入默认 Google Services 配置模版"
+            cat << 'EOF' > android/app/google-services.json
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "fluxdo-dummy",
+              "storage_bucket": "fluxdo-dummy.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.github.lingyan000.fluxdo"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyDummyKeyForBuildWithoutSecrets0000"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
+
+      # certs/ 在 submodule 中被 gitignore；project_prep 缺证书时会 cargo run gen_ca（冷编译 ~17s）。
+      # 用 openssl 预生成（与 build.rs / gen_ca 用途一致：CI 构建用占位 CA），跳过 cargo 编译。
+      - name: Pre-generate DOH proxy CA certs
+        run: |
+          set -euo pipefail
+          cert_dir="core/doh_proxy/certs"
+          mkdir -p "$cert_dir" assets/certs android/app/src/main/res/raw
+          if [ -f "$cert_dir/ca.crt" ] && [ -f "$cert_dir/ca.key" ] && [ -f "$cert_dir/ca.der" ]; then
+            echo "证书已存在，跳过生成"
+          else
+            openssl req -x509 -newkey ec \
+              -pkeyopt ec_paramgen_curve:prime256v1 \
+              -keyout "$cert_dir/ca.key" \
+              -out "$cert_dir/ca.crt" \
+              -days 3650 -nodes \
+              -subj "/CN=DOH Proxy CA/O=DOH Proxy/C=CN"
+            openssl x509 -in "$cert_dir/ca.crt" -outform DER -out "$cert_dir/ca.der"
+            echo "已用 openssl 生成 DOH 代理 CA"
+          fi
+          cp -f "$cert_dir/ca.crt" assets/certs/proxy_ca.pem
+          cp -f "$cert_dir/ca.der" android/app/src/main/res/raw/proxy_ca.der
+
+      - name: Build Android APK
+        run: |
+          set -euo pipefail
+          # 限制 Gradle/原生编译可见 NDK，避免 side-by-side 探测
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+
+          # 提取版本号（pubspec.yaml version: 行）
+          version=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | tr -d '\r')
+          # 提取短 commit SHA（前 7 位）
+          commit_sha=$(echo "${{ github.sha }}" | cut -c1-7)
+          # 构建时间戳（UTC）
+          timestamp=$(date -u +%Y%m%d-%H%M%S)
+
+          if [ "${{ matrix.arch }}" = "universal" ]; then
+            dart tool/flutterw.dart build apk --release --dart-define=cronetHttpNoPlay=true
+            mkdir -p dist
+            # fluxdo-v1.2.3-abc1234-20260726-123456-universal.apk
+            mv build/app/outputs/flutter-apk/app-release.apk \
+              "dist/fluxdo-v${version}-${commit_sha}-${timestamp}-universal.apk"
+          else
+            dart tool/flutterw.dart build apk --release --target-platform ${{ matrix.flutter-target }} --dart-define=cronetHttpNoPlay=true
+            mkdir -p dist
+            # fluxdo-v1.2.3-abc1234-20260726-123456-arm64-v8a.apk
+            mv build/app/outputs/flutter-apk/app-release.apk \
+              "dist/fluxdo-v${version}-${commit_sha}-${timestamp}-${{ matrix.arch }}.apk"
+          fi
+          ls -lh dist/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxdo-apk-${{ matrix.arch }}-${{ github.run_number }}
+          path: dist/*.apk
+          retention-days: 90
+          if-no-files-found: error
+          # APK 已是压缩格式，artifact 再压缩收益极小且浪费 CPU
+          compression-level: 0

@@ -25,4 +25,14 @@ plugins {
     id("com.google.firebase.crashlytics") version "3.0.3" apply false
 }
 
+// 启用 Gradle 构建缓存（本地 + CI 远程）
+buildCache {
+    local {
+        isEnabled = true
+        directory = file("${System.getProperty("user.home")}/.gradle/caches/build-cache")
+        // 限制缓存大小，防止无限增长
+        removeUnusedEntriesAfterDays = 7
+    }
+}
+
 include(":app")

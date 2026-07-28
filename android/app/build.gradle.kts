@@ -42,7 +42,8 @@ val hasReleaseSigning =
     releaseKeyAlias != null &&
     releaseKeyPassword != null &&
     releaseStorePassword != null &&
-    releaseStoreFile?.exists() == true
+    releaseStoreFile?.exists() == true &&
+    (releaseStoreFile?.length() ?: 0L) > 0L
 val releaseBuildSigningName = if (hasReleaseSigning) "release" else "debug"
 
 println(
@@ -56,7 +57,9 @@ println(
 android {
     namespace = "com.github.lingyan000.fluxdo"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // 显式锁定 Flutter 3.44 默认 NDK，配合 CI 预装与 subprojects 强制统一，
+    // 避免插件 side-by-side 再拉 27.x 导致重复下载。
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -82,6 +85,14 @@ android {
                 keyPassword = releaseKeyPassword
                 storeFile = releaseStoreFile
                 storePassword = releaseStorePassword
+                // 启用 V1 (JAR signing) + V2 (APK Signature Scheme v2) + V3 (APK Signature Scheme v3)
+                // V1: 兼容 Android 6.x 及以下
+                // V2: Android 7.0+ 快速校验
+                // V3: Android 9.0+ 支持密钥轮转
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true  // Android 11+ 增量更新优化（可选）
             }
         }
     }
@@ -89,6 +100,10 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName(releaseBuildSigningName)
+            // 关闭 R8 代码压缩与资源压缩：开启后 Release 包运行时闪退，
+            // 在定位到具体被裁剪的类之前保持禁用状态。
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
 
         debug {
