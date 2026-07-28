@@ -841,7 +841,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       // header 不在视图中（未加载或滚动到了远处）
       // 如果滚动位置在顶部附近（比如刚切换视图模式），header 很快就会出现，
       // 先设为不可见状态，等 header 渲染后由滚动事件再次触发更新
+      //
+      // 注意:列表是 center 锚定的(进入点楼层 offset = 0,向上为负),
+      // 第一页未加载时 header 不存在且上方必有更早楼层,offset≈0 并不
+      // 代表真的在话题顶部,此时应恒定视为 scrolled under
       final atTop =
+          _hasFirstPost &&
           _controller.scrollController.hasClients &&
           _controller.scrollController.offset <= barHeight;
       if (atTop) {
@@ -1981,6 +1986,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               _scheduleCheckTitleVisibility();
             }
           });
+        } else if (!hasFirstPost) {
+          // 中途楼层进入(第一页未加载):_hasFirstPost false→false 不触发
+          // 上面的分支,但首帧内容已压在 AppBar 下,需要主动跑一次检查
+          // 让 scrolled-under 态就位(检查内部有 ctx==null + !_hasFirstPost
+          // 的兜底判定)
+          _scheduleCheckTitleVisibility();
         }
 
         // 自动打开回复框（从草稿进入时）
