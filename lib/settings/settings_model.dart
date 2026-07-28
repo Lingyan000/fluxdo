@@ -58,8 +58,7 @@ final class SwitchModel extends SettingsModel {
   final void Function(WidgetRef ref, bool value) onChanged;
 
   /// 依赖前置开关:返回 false 时本项整行隐藏(如「即时渲染」依赖
-  /// 「富文本编辑器」开启才有意义,前置关闭时展示无意义)。null = 恒显示。
-  final bool Function(WidgetRef ref)? enabledWhen;
+  /// 「富文本编辑器」开启才有意义,前置关闭时展示无意义)。null = 恒显示。  final bool Function(WidgetRef ref)? enabledWhen;
 
   const SwitchModel({
     required super.id,
