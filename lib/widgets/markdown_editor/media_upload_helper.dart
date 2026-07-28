@@ -21,6 +21,14 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/media_transcoder/media_compressor.dart';
 import '../../services/media_transcoder/media_transcoder.dart';
 
+/// 站点 `authorized_extensions` 白名单(不含音视频——那条走 `.xz` 改名
+/// 绕过白名单,见文件头注释)。选择器只给用户看站点实际会接受的扩展名,
+/// 而不是"选完了才 422"。
+const kAttachmentAllowedExtensions = [
+  'jpg', 'jpeg', 'png', 'gif', 'heic', 'heif', 'webp', 'avif', 'svg',
+  'txt', 'pdf', 'doc', 'docx', 'csv', 'zip', '7z', 'gz', 'xz', 'jxl',
+];
+
 /// `upload://<base62>.<ext>` → `/uploads/short-url/<base62>.xz` 播放路径。
 String mediaShortUrlToXzPath(String shortUrl) {
   if (shortUrl.startsWith('upload://')) {

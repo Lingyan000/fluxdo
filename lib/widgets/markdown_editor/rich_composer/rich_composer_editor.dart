@@ -80,6 +80,7 @@ import 'composer_doc_codec.dart';
 import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
 import '../media_upload_helper.dart';
+import '../../../services/toast_service.dart';
 import '../cursor_swipe_control.dart';
 import '../voice_recorder_sheet.dart';
 
@@ -1950,7 +1951,10 @@ class RichComposerEditorState extends State<RichComposerEditor>
   /// 语法 `[文件名|attachment](upload://...) (大小)`,cook 后渲染成
   /// 网页端同款的附件下载条。
   Future<void> _pickAndInsertFile() async {
-    final picked = await FilePicker.platform.pickFiles();
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: kAttachmentAllowedExtensions,
+    );
     final file = picked?.files.single;
     final path = file?.path;
     if (file == null || path == null || !mounted) return;
@@ -1968,8 +1972,7 @@ class RichComposerEditorState extends State<RichComposerEditor>
         final msg = e is Exception
             ? e.toString().replaceFirst('Exception: ', '')
             : '文件上传失败';
-        ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(SnackBar(content: Text(msg)));
+        ToastService.showError(msg);
       } else {
         AppErrorHandler.handleUnexpected(e, s);
       }
