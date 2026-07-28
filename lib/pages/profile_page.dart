@@ -12,6 +12,7 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
 import 'webview_page.dart';
 import 'login_page.dart';
+import 'qr_login_display_page.dart';
 import 'browsing_history_page.dart';
 import 'bookmarks_page.dart';
 import 'export_history_page.dart';
@@ -806,8 +807,20 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   Widget _buildCommunityCard(ThemeData theme, {required bool canAccessInviteLinks}) {
+    final username = ref.read(currentUserProvider).value?.username;
     return SegmentedCardGroup(
       children: [
+        _buildOptionTile(
+          icon: Symbols.qr_code_rounded,
+          iconColor: Colors.teal,
+          title: context.l10n.login_qrShowCode,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => QrLoginDisplayPage(username: username),
+            ),
+          ),
+        ),
         _buildOptionTile(
           icon: Symbols.mail_rounded,
           iconColor: Colors.indigo,

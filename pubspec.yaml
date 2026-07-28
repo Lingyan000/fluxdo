@@ -36,7 +36,9 @@ dependencies:
   slang_flutter: 4.14.0
   collection: ^1.19.1
   synchronized: ^3.4.0+1
-  dio: ^5.9.0
+  # 钉在 5.9.x:5.11 新增 DioExceptionType.transformTimeout,全量抬升会连带改多处
+  # exhaustive switch;扫码登录引入新依赖时避免解析到 5.11。
+  dio: ">=5.9.0 <5.10.0"
   http: ^1.6.0
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
@@ -78,6 +80,11 @@ dependencies:
   markdown: ^7.3.1
   emoji_extension: ^1.3.0
   image_picker: ^1.2.1
+  # 扫码登录:已登录设备展示二维码(qr_flutter),待登录设备相机扫码
+  # (mobile_scanner: Android/iOS/macOS) 或从相册解码(zxing2,全平台兜底)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.0
+  zxing2: ^0.2.4
   super_clipboard: ^0.9.1
   html2md: ^1.3.2  # 剪贴板 HTML → markdown(富粘贴清洗层)
   gal: ^2.3.2

@@ -19,6 +19,72 @@
     }
   },
   "login_browserHint": "将在浏览器中打开登录页面",
+  "login_qrAccount": "账号：{username}",
+  "@login_qrAccount": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "login_qrCameraUnavailable": "无法使用相机",
+  "login_qrDecodingImage": "正在识别图片中的二维码…",
+  "login_qrConfirmAction": "确认生成",
+  "login_qrConfirmMessage": "将为另一台设备创建一枚 User API Key 并生成登录二维码。对方扫码后可使用你的账号登录。请确认这是你本人操作，且周围没有他人窥视。",
+  "login_qrConfirmTitle": "确认生成登录二维码？",
+  "login_qrDisplayHint": "请用另一台未登录的设备打开 FluxDO，扫描此二维码完成登录。",
+  "login_qrDisplayTitle": "登录二维码",
+  "login_qrExpired": "登录凭证已过期",
+  "login_qrExpiryDays": "{days} 天",
+  "@login_qrExpiryDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "login_qrExpiryHint": "有效期作用于分享的 API Key；默认不过期。OTP 登录令牌约 10 分钟内有效。",
+  "login_qrExpiryHours": "{hours} 小时",
+  "@login_qrExpiryHours": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "login_qrExpiryLabel": "API Key 有效期",
+  "login_qrExpiryMinutes": "{minutes} 分钟",
+  "@login_qrExpiryMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "login_qrExpiryNever": "不过期",
+  "login_qrExpiresIn": "有效期剩余 {time}",
+  "@login_qrExpiresIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "login_qrGalleryOnlyHint": "当前平台不支持实时扫码，请从相册选择包含登录二维码的图片。",
+  "login_qrGenerateAction": "生成登录二维码",
+  "login_qrGenerateFailed": "生成登录二维码失败",
+  "login_qrLoggingIn": "正在完成登录…",
+  "login_qrNeverExpires": "API Key 不过期",
+  "login_qrNoCodeInImage": "图片中未识别到登录二维码",
+  "login_qrPickImage": "从相册选择",
+  "login_qrRefresh": "重新生成",
+  "login_qrScanFailed": "扫码登录失败，请重试",
+  "login_qrScanHint": "将镜头对准另一台设备上的登录二维码",
+  "login_qrScanTitle": "扫码登录",
+  "login_qrSecurityWarning": "二维码含有 User API Key 与一次性登录令牌，请勿分享给他人或在公共场合长时间展示。可设置 API Key 过期时间以降低风险。",
+  "login_qrShowCode": "显示登录二维码",
+  "login_qrSuccess": "扫码登录成功",
+  "login_scanToLogin": "扫码登录",
   "login_slogan": "真诚、友善、团结、专业",
   "migration_cookieUpgrade": "正在升级 Cookie 存储...",
   "migration_reloginRequired": "本次版本升级优化了 Cookie 存储机制，已清除旧的登录状态。请重新登录。",
