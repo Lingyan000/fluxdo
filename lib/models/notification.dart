@@ -145,6 +145,8 @@ class NotificationData {
   final String? username2;
   final String? avatarTemplate;
   final String? boostRaw;
+  final int? chatChannelId;
+  final int? chatMessageId;
 
   /// Chat 通知(chat_mention/chat_message 等)落点
   final int? chatChannelId;
