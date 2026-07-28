@@ -11,6 +11,7 @@ import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/url_helper.dart';
 import '../../utils/time_utils.dart';
 import '../common/emoji_text.dart';
+import '../render_signet/render_signet_layer.dart';
 import 'share_image_preview.dart';
 
 /// AI 分享图片 Widget
@@ -60,55 +61,64 @@ class AiShareImageWidget extends StatelessWidget {
 
     return RepaintBoundary(
       key: repaintBoundaryKey,
-      child: Container(
-        width: 375,
-        padding: const EdgeInsets.all(20),
-        color: bgColor,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Logo + AI 助手标识
-            _buildHeader(textColor),
-            const SizedBox(height: 16),
+      child: Stack(
+        children: [
+          Container(
+            width: 375,
+            padding: const EdgeInsets.all(20),
+            color: bgColor,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Logo + AI 助手标识
+                _buildHeader(textColor),
+                const SizedBox(height: 16),
 
-            // 话题标题
-            _buildTitle(context, textColor),
-            const SizedBox(height: 12),
+                // 话题标题
+                _buildTitle(context, textColor),
+                const SizedBox(height: 12),
 
-            // 分隔线
-            Container(height: 1, color: borderColor),
-            const SizedBox(height: 12),
+                // 分隔线
+                Container(height: 1, color: borderColor),
+                const SizedBox(height: 12),
 
-            // 消息内容
-            ...messages.asMap().entries.map((entry) {
-              final index = entry.key;
-              final message = entry.value;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (messages.length > 1)
-                    _buildMessageRoleLabel(message, textColor, secondaryTextColor),
-                  if (messages.length > 1)
-                    const SizedBox(height: 6),
-                  _buildContent(context, message, cardColor, textColor),
-                  if (index < messages.length - 1)
-                    const SizedBox(height: 12),
-                ],
-              );
-            }),
+                // 消息内容
+                ...messages.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final message = entry.value;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (messages.length > 1)
+                        _buildMessageRoleLabel(
+                          message,
+                          textColor,
+                          secondaryTextColor,
+                        ),
+                      if (messages.length > 1) const SizedBox(height: 6),
+                      _buildContent(context, message, cardColor, textColor),
+                      if (index < messages.length - 1)
+                        const SizedBox(height: 12),
+                    ],
+                  );
+                }),
 
-            const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-            // 分隔线
-            Container(height: 1, color: borderColor),
-            const SizedBox(height: 12),
+                // 分隔线
+                Container(height: 1, color: borderColor),
+                const SizedBox(height: 12),
 
-            // 底部链接/时间
-            _buildFooter(secondaryTextColor),
-          ],
-        ),
+                // 底部链接/时间
+                _buildFooter(secondaryTextColor),
+              ],
+            ),
+          ),
+          // 分享图标识印记:混合笔逐像素自适应底色,无需传入主题明暗
+          const Positioned.fill(child: RenderSignetLayer()),
+        ],
       ),
     );
   }
@@ -213,8 +223,19 @@ class AiShareImageWidget extends StatelessWidget {
         color: cardColor,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: FluxdoRenderCallbacks.generic(heroTagNamespace: 'ai_share_${message.hashCode}')
-          .render(cookedHtml: html, baseTextStyle: TextStyle(fontSize: 14, height: 1.6, color: textColor.withValues(alpha: 0.85)), selectionEnabled: false, screenshotMode: true),
+      child:
+          FluxdoRenderCallbacks.generic(
+            heroTagNamespace: 'ai_share_${message.hashCode}',
+          ).render(
+            cookedHtml: html,
+            baseTextStyle: TextStyle(
+              fontSize: 14,
+              height: 1.6,
+              color: textColor.withValues(alpha: 0.85),
+            ),
+            selectionEnabled: false,
+            screenshotMode: true,
+          ),
     );
   }
 
@@ -284,19 +305,13 @@ class AiShareImageWidget extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               S.current.share_generatedByAi,
-              style: TextStyle(
-                fontSize: 11,
-                color: secondaryTextColor,
-              ),
+              style: TextStyle(fontSize: 11, color: secondaryTextColor),
             ),
             if (time.isNotEmpty) ...[
               const Spacer(),
               Text(
                 time,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: secondaryTextColor,
-                ),
+                style: TextStyle(fontSize: 11, color: secondaryTextColor),
               ),
             ],
           ],
@@ -305,19 +320,12 @@ class AiShareImageWidget extends StatelessWidget {
         // 链接
         Row(
           children: [
-            Icon(
-              Symbols.link_rounded,
-              size: 12,
-              color: secondaryTextColor,
-            ),
+            Icon(Symbols.link_rounded, size: 12, color: secondaryTextColor),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
                 url,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: secondaryTextColor,
-                ),
+                style: TextStyle(fontSize: 10, color: secondaryTextColor),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
