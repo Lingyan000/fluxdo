@@ -116,8 +116,8 @@ class AiShareImageWidget extends StatelessWidget {
               ],
             ),
           ),
-          // 分享图标识印记:混合笔逐像素自适应底色,无需传入主题明暗
-          const Positioned.fill(child: RenderSignetLayer()),
+          // 分享图标识印记:离屏截图,原生窗口层盖不到,必须内联绘制
+          const Positioned.fill(child: RenderSignetLayer.inline()),
         ],
       ),
     );

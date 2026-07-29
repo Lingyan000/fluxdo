@@ -22,6 +22,13 @@ import workmanager_apple
       MediaTranscodeHandler.shared.register(
         messenger: controller.binaryMessenger
       )
+      // 渲染帧标识印记(窗口级原生层,机制见 RenderSignetHandler)
+      if let window = window {
+        RenderSignetHandler.shared.register(
+          messenger: controller.binaryMessenger,
+          window: window
+        )
+      }
       // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
       let proxyCertChannel = FlutterMethodChannel(
         name: "com.fluxdo/proxy_cert",
