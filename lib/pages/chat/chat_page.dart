@@ -939,9 +939,6 @@ class _NewDmDialogState extends ConsumerState<_NewDmDialog> {
   bool _isSearching = false;
   bool _isCreating = false;
 
-  /// Discourse 默认 20：可选「除自己以外」的人数上限。
-  static const int _kDefaultMaxOthers = 20;
-
   @override
   void dispose() {
     _searchController.dispose();

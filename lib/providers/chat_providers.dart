@@ -23,14 +23,6 @@ final forumChatEnabledProvider = FutureProvider<bool>((ref) async {
   return PreloadedDataService().isChatEnabled();
 });
 
-/// 创建直接消息时「除自己外」可选人数上限。
-///
-/// 对齐 `SiteSetting.chat_max_direct_message_users`（默认 20）。
-/// `0` 表示禁止选他人（仅可与自己会话）。
-final chatMaxDirectMessageUsersProvider = FutureProvider<int>((ref) async {
-  return PreloadedDataService().getChatMaxDirectMessageUsers();
-});
-
 /// ============================================================================
 /// 1. Chat 频道列表
 /// ============================================================================
