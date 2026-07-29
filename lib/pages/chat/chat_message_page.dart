@@ -1237,7 +1237,6 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
-
   /// 对齐 Discourse 侧栏 leave：
   /// - DM（含群组）：unfollow
   /// - 公开频道：leaveChannel API
@@ -1285,14 +1284,14 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
       }
       if (!mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chat_leave_success(title))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.chat_leave_success(title))));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chat_leave_failed('$e'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.chat_leave_failed('$e'))));
     }
   }
 
