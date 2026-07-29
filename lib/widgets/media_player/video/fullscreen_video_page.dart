@@ -17,20 +17,27 @@ class FullscreenVideoPage extends StatefulWidget {
 
   final VideoPlayerSession session;
 
+  /// 全屏切换互斥门:快速连点全屏钮/双击会在 push 动画期间重入,
+  /// 叠两个全屏路由(session retain 翻倍、Coordinator 时序错乱)。
+  static bool _opening = false;
+
   /// 进入全屏。方向按视频比例决定(横视频转横屏,竖视频不动);
   /// LayoutLock / 系统全屏时序由 [FullscreenMediaCoordinator] 治理。
   static Future<void> open(
     BuildContext context,
     VideoPlayerSession session,
   ) async {
+    if (_opening || session.isFullscreen) return;
+    _opening = true;
     final navigator = Navigator.of(context, rootNavigator: true);
     session.retain();
     session.isFullscreen = true;
     final aspectRatio = session.controller.value.aspectRatio;
-    await FullscreenMediaCoordinator.instance.enter(
-      landscape: aspectRatio > 1,
-    );
     try {
+      await FullscreenMediaCoordinator.instance.enter(
+        landscape: aspectRatio > 1,
+      );
+      _opening = false; // 路由已在推,后续重入被 isFullscreen 挡
       await navigator.push(
         PageRouteBuilder(
           opaque: true,
@@ -43,6 +50,7 @@ class FullscreenVideoPage extends StatefulWidget {
         ),
       );
     } finally {
+      _opening = false;
       session.isFullscreen = false;
       await FullscreenMediaCoordinator.instance.exit();
       session.release();

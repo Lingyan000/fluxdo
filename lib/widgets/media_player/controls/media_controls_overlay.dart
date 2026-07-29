@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../l10n/s.dart';
@@ -60,6 +61,19 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
   bool _draggingProgress = false;
   bool _longPressBoost = false;
   bool _volumeExpanded = false;
+
+  /// 全屏锁定:锁住后手势/控制条全部失效,只留解锁钮(防误触)。
+  bool _locked = false;
+  bool _lockButtonVisible = true;
+  Timer? _lockButtonHideTimer;
+
+  /// 双击侧区 seek 的累加窗口:连点期间只累加不真 seek,静默 400ms
+  /// 才提交一次(每击立即 seek 会连环触发缓冲)。
+  Duration? _doubleTapSeekBase;
+  Duration _doubleTapSeekAccum = Duration.zero;
+  bool _doubleTapSeekForward = true;
+  Timer? _doubleTapSeekCommitTimer;
+
   Timer? _hideTimer;
   Timer? _volumeCollapseTimer;
 
@@ -75,6 +89,11 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
   bool _hudIsVolume = true;
   double _hudValue = 0;
   Timer? _hudHideTimer;
+
+  // 横滑 seek 预览(顶部中央「目标 / 总长」胶囊);null = 未在横滑
+  Duration? _seekPreviewTarget;
+  bool _seekPreviewForward = true;
+  bool _seekPreviewCancelArmed = false;
 
   // 续播提示胶囊(「已从 xx:xx 继续播放」)
   Duration? _resumedHint;
@@ -92,6 +111,12 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     _hudHideTimer?.cancel();
     _resumedHintTimer?.cancel();
     _volumeCollapseTimer?.cancel();
+    _lockButtonHideTimer?.cancel();
+    // 有未提交的双击累加 seek,收尾提交(不能丢用户的操作)
+    if (_doubleTapSeekCommitTimer?.isActive ?? false) {
+      _doubleTapSeekCommitTimer!.cancel();
+      _commitDoubleTapSeek();
+    }
     _playPauseIcon.dispose();
     super.dispose();
   }
@@ -165,17 +190,72 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     });
   }
 
+  /// 双击侧区 seek:累加窗口内只更新指示器与累计值,静默 400ms 后
+  /// 一次性提交 —— 连点 3 下是一次 ±30s seek,不是三轮缓冲。
   void _seekRelative({required bool forward}) {
     final value = _controller.value;
     if (!value.isInitialized) return;
-    final delta =
-        Duration(seconds: forward ? _seekStepSeconds : -_seekStepSeconds);
-    var target = value.position + delta;
-    if (target < Duration.zero) target = Duration.zero;
-    if (target > value.duration) target = value.duration;
-    _controller.seekTo(target);
+    // 换向:立即提交已累计的,重新开窗
+    if (_doubleTapSeekBase != null && forward != _doubleTapSeekForward) {
+      _doubleTapSeekCommitTimer?.cancel();
+      _commitDoubleTapSeek();
+    }
+    _doubleTapSeekBase ??= value.position;
+    _doubleTapSeekForward = forward;
+    _doubleTapSeekAccum += Duration(
+        seconds: forward ? _seekStepSeconds : -_seekStepSeconds);
     _seekIndicatorKey.currentState
         ?.show(forward: forward, seconds: _seekStepSeconds);
+    _doubleTapSeekCommitTimer?.cancel();
+    _doubleTapSeekCommitTimer = Timer(
+        const Duration(milliseconds: 400), _commitDoubleTapSeek);
+  }
+
+  void _commitDoubleTapSeek() {
+    final base = _doubleTapSeekBase;
+    if (base == null) return;
+    final duration = _controller.value.duration;
+    var target = base + _doubleTapSeekAccum;
+    if (target < Duration.zero) target = Duration.zero;
+    if (target > duration) target = duration;
+    _doubleTapSeekBase = null;
+    _doubleTapSeekAccum = Duration.zero;
+    widget.session.resumedPosition = null;
+    _controller.seekTo(target);
+  }
+
+  // ---- 全屏锁定 ----
+
+  void _toggleLock() {
+    setState(() {
+      _locked = !_locked;
+      if (_locked) {
+        // 锁定:收起控制条,锁钮短暂可见后隐藏
+        _hideTimer?.cancel();
+        _controlsVisible = false;
+        _lockButtonVisible = true;
+        _scheduleLockButtonHide();
+      } else {
+        _lockButtonHideTimer?.cancel();
+        _lockButtonVisible = true;
+        _showControls();
+      }
+    });
+  }
+
+  void _scheduleLockButtonHide() {
+    _lockButtonHideTimer?.cancel();
+    _lockButtonHideTimer = Timer(_autoHideDelay, () {
+      if (mounted && _locked) {
+        setState(() => _lockButtonVisible = false);
+      }
+    });
+  }
+
+  /// 锁定态下单击画面:只唤出/隐藏锁钮。
+  void _onLockedTap() {
+    setState(() => _lockButtonVisible = !_lockButtonVisible);
+    if (_lockButtonVisible) _scheduleLockButtonHide();
   }
 
   void _onLongPressSpeed(bool active) {
@@ -280,6 +360,21 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
         final showLoading = !value.isInitialized ||
             (value.isBuffering && value.isPlaying);
 
+        // 全屏锁定态:整层只剩「单击唤锁钮 + 解锁钮 + 迷你进度条」
+        if (_locked) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _onLockedTap,
+              ),
+              _buildLockButton(),
+              _buildMiniProgress(value, visible: true),
+            ],
+          );
+        }
+
         Widget overlay = Stack(
           fit: StackFit.expand,
           children: [
@@ -291,6 +386,20 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
               onLongPressSpeedChanged: _onLongPressSpeed,
               onDesktopDoubleTapFullscreen: widget.onFullscreenToggle,
               enableVerticalGestures: widget.isFullscreen,
+              positionProvider: () => _controller.value.position,
+              durationProvider: () => _controller.value.duration,
+              onSeekPreview: (target, {required forward, required cancelArmed}) {
+                if (!mounted) return;
+                setState(() {
+                  _seekPreviewTarget = target;
+                  _seekPreviewForward = forward;
+                  _seekPreviewCancelArmed = cancelArmed;
+                });
+              },
+              onSeekCommit: (target) {
+                widget.session.resumedPosition = null;
+                _controller.seekTo(target);
+              },
               onVerticalAdjust: (isVolume, v, visible) {
                 if (!mounted) return;
                 _hudHideTimer?.cancel();
@@ -308,6 +417,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
             if (!showLoading && !value.isPlaying)
               _CenterPlayButton(
                 isCompleted: value.isCompleted,
+                expressive: M3eFlags.of(context).enabled,
                 onTap: _togglePlay,
               ),
             // 竖滑/滚轮 HUD
@@ -316,6 +426,75 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
               isVolume: _hudIsVolume,
               value: _hudValue,
             ),
+            // 横滑 seek 预览:上部中央「→ 目标 / 总长」胶囊;
+            // 拖入顶部取消区变为「松开取消」
+            if (_seekPreviewTarget != null)
+              Align(
+                alignment: const Alignment(0, -0.5),
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: MediaOverlayStyle.pill(radius: 10),
+                    child: _seekPreviewCancelArmed
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.close_rounded,
+                                  color: MediaOverlayStyle.foreground,
+                                  size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                S.current.mediaPlayer_releaseToCancel,
+                                style: const TextStyle(
+                                  color: MediaOverlayStyle.foreground,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _seekPreviewForward
+                                    ? Icons.fast_forward_rounded
+                                    : Icons.fast_rewind_rounded,
+                                color: MediaOverlayStyle.foreground,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text.rich(
+                                TextSpan(
+                                  text: _fmt(_seekPreviewTarget!),
+                                  style: const TextStyle(
+                                    color: MediaOverlayStyle.foreground,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    fontFeatures: [
+                                      FontFeature.tabularFigures()
+                                    ],
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text:
+                                          ' / ${_fmt(_controller.value.duration)}',
+                                      style: const TextStyle(
+                                        color: MediaOverlayStyle
+                                            .foregroundDim,
+                                        fontWeight: FontWeight.w400,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
             // 长按 2x 角标
             _FastForwardBadge(
               visible: _longPressBoost,
@@ -362,7 +541,9 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
                   ),
                 ),
               ),
-            // 加载中转圈(圆底衬,初始化后 buffering 也显示)
+            // 加载中指示(圆底衬,初始化后 buffering 也显示)。
+            // LoadingSpinner 自适应 M3E 开关,与帖内其他加载态同款,
+            // 避免同一次加载先后出现两种风格的指示器
             if (showLoading)
               IgnorePointer(
                 child: Center(
@@ -373,9 +554,9 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
                       color: Color(0x66000000),
                       shape: BoxShape.circle,
                     ),
-                    padding: const EdgeInsets.all(14),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2.5,
+                    padding: const EdgeInsets.all(12),
+                    child: const LoadingSpinner(
+                      size: 28,
                       color: Colors.white,
                     ),
                   ),
@@ -394,6 +575,11 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
               alignment: Alignment.bottomCenter,
               child: _buildBottomBar(value),
             ),
+            // 贴底迷你进度条:控制条隐藏时的常驻进度指示,不可交互
+            _buildMiniProgress(value,
+                visible: !_controlsVisible && value.isInitialized),
+            // 全屏锁定钮(仅移动端全屏;锁定态在上方 early-return 分支)
+            if (widget.isFullscreen && !_isDesktop) _buildLockButton(),
           ],
         );
         // 桌面端:控制条纯悬停驱动(移动显示/静止 3s 隐藏/移出即隐藏);
@@ -416,6 +602,88 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
         }
         return overlay;
       },
+    );
+  }
+
+  /// 贴底迷你进度条:控制条隐藏时保留 3px 细进度线(含缓冲段),
+  /// 不可交互 —— 播放中扫一眼即知进度,不必唤出控制条。
+  Widget _buildMiniProgress(VideoPlayerValue value,
+      {required bool visible}) {
+    final totalMs = value.duration.inMilliseconds;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: MediaOverlayStyle.barDuration,
+          child: SizedBox(
+            height: 3,
+            width: double.infinity,
+            child: totalMs <= 0
+                ? const SizedBox.shrink()
+                : Stack(
+                    children: [
+                      const ColoredBox(color: Color(0x33FFFFFF)),
+                      for (final range in value.buffered)
+                        FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: (range.end.inMilliseconds / totalMs)
+                              .clamp(0.0, 1.0),
+                          child: const ColoredBox(color: Color(0x4DFFFFFF)),
+                        ),
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor:
+                            (value.position.inMilliseconds / totalMs)
+                                .clamp(0.0, 1.0),
+                        child: const ColoredBox(color: Color(0xCCFFFFFF)),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 全屏锁定/解锁钮:左缘垂直居中的圆钮。
+  Widget _buildLockButton() {
+    final visible = _locked ? _lockButtonVisible : _controlsVisible;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: MediaOverlayStyle.barDuration,
+            child: Material(
+              color: const Color(0x8A000000),
+              shape: const CircleBorder(
+                side: BorderSide(color: Color(0x24FFFFFF)),
+              ),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _toggleLock,
+                child: Padding(
+                  padding: const EdgeInsets.all(11),
+                  child: Icon(
+                    _locked
+                        ? Icons.lock_rounded
+                        : Icons.lock_open_rounded,
+                    color: MediaOverlayStyle.foreground,
+                    size: 22,
+                    semanticLabel: _locked
+                        ? S.current.mediaPlayer_unlockControls
+                        : S.current.mediaPlayer_lockControls,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -445,173 +713,224 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
           const BoxDecoration(gradient: MediaOverlayStyle.bottomScrim),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        child: widget.isFullscreen
+            ? _buildFullscreenBar(value)
+            : _buildInlineBar(value),
+      ),
+    );
+  }
+
+  /// inline 单行(B 站内嵌样式):[▶] 00:41 ──进度── 02:31 (倍速|音量) [⛶]
+  /// 倍速/音量只在桌面 inline 摆(移动端窄,倍速走全屏或长按)。
+  Widget _buildInlineBar(VideoPlayerValue value) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
+      child: Row(
+        children: [
+          _buildPlayButton(value, iconSize: 24),
+          Text(
+            _fmt(value.position),
+            style: const TextStyle(
+              color: MediaOverlayStyle.foreground,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: _buildProgressBar(value)),
+          const SizedBox(width: 8),
+          Text(
+            _fmt(value.duration),
+            style: const TextStyle(
+              color: MediaOverlayStyle.foregroundDim,
+              fontSize: 11.5,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          if (_isDesktop) ...[
+            _buildSpeedButton(value),
+            _buildMuteAndVolume(value),
+          ],
+          _buildFullscreenButton(iconSize: 22),
+        ],
+      ),
+    );
+  }
+
+  /// 全屏两行(B 站全屏样式):独立进度行 + 按钮行。
+  Widget _buildFullscreenBar(VideoPlayerValue value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: _buildProgressBar(value),
+          ),
+          Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: MediaProgressBar(
-                  value: value,
-                  // 控制条隐藏时禁用悬停预览,并让进度条清掉悬停残留
-                  // (IgnorePointer 下 onExit 不会派发,否则气泡卡死)
-                  hoverPreviewEnabled: _controlsVisible,
-                  onSeek: (target) {
-                    // 手动 seek 视为用户已知位置,静默消费续播提示
-                    widget.session.resumedPosition = null;
-                    _controller.seekTo(target);
-                  },
-                  onDragActive: (active) {
-                    _draggingProgress = active;
-                    if (active) {
-                      _hideTimer?.cancel();
-                    } else {
-                      _scheduleHide();
-                    }
-                  },
+              _buildPlayButton(value, iconSize: 26),
+              // 当前时间强、总时长弱,信息分层
+              Text.rich(
+                TextSpan(
+                  text: _fmt(value.position),
+                  style: const TextStyle(
+                    color: MediaOverlayStyle.foreground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                  children: [
+                    TextSpan(
+                      text: '  /  ${_fmt(value.duration)}',
+                      style: const TextStyle(
+                        color: MediaOverlayStyle.foregroundDim,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: value.isCompleted && !value.isPlaying
-                        ? const Icon(Icons.replay_rounded)
-                        : AnimatedIcon(
-                            icon: AnimatedIcons.play_pause,
-                            progress: _playPauseIcon,
-                          ),
-                    color: MediaOverlayStyle.foreground,
-                    iconSize: 26,
-                    visualDensity: VisualDensity.compact,
-                    tooltip: value.isPlaying
-                        ? S.current.mediaPlayer_pause
-                        : S.current.mediaPlayer_play,
-                    onPressed: _togglePlay,
-                  ),
-                  // 当前时间强、总时长弱,信息分层
-                  Text.rich(
-                    TextSpan(
-                      text: _fmt(value.position),
-                      style: const TextStyle(
-                        color: MediaOverlayStyle.foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                      children: [
-                        TextSpan(
-                          text: '  /  ${_fmt(value.duration)}',
-                          style: const TextStyle(
-                            color: MediaOverlayStyle.foregroundDim,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Spacer(),
-                  // 倍速
-                  Builder(
-                    builder: (buttonContext) => TextButton(
-                      onPressed: () => _pickSpeed(buttonContext),
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(40, 32),
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 6),
-                      ),
-                      child: Text(
-                        formatPlaybackSpeed(value.playbackSpeed),
-                        style: TextStyle(
-                          color: value.playbackSpeed == 1.0
-                              ? MediaOverlayStyle.foreground
-                              : MediaOverlayStyle.accent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // 静音 + 桌面端悬停展开音量滑条
-                  MouseRegion(
-                    onEnter:
-                        _isDesktop ? (_) => _setVolumeHover(true) : null,
-                    onExit:
-                        _isDesktop ? (_) => _setVolumeHover(false) : null,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            value.volume > 0
-                                ? Icons.volume_up_rounded
-                                : Icons.volume_off_rounded,
-                          ),
-                          color: MediaOverlayStyle.foreground,
-                          iconSize: 22,
-                          visualDensity: VisualDensity.compact,
-                          tooltip: value.volume > 0
-                              ? S.current.mediaPlayer_mute
-                              : S.current.mediaPlayer_unmute,
-                          onPressed: _toggleMute,
-                        ),
-                        if (_isDesktop)
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutCubic,
-                            alignment: Alignment.centerLeft,
-                            child: SizedBox(
-                              width: _volumeExpanded ? 76 : 0,
-                              child: _volumeExpanded
-                                  ? SliderTheme(
-                                      data: SliderThemeData(
-                                        trackHeight: 3,
-                                        activeTrackColor:
-                                            MediaOverlayStyle.foreground,
-                                        inactiveTrackColor: Colors.white
-                                            .withValues(alpha: 0.3),
-                                        thumbColor:
-                                            MediaOverlayStyle.foreground,
-                                        thumbShape:
-                                            const RoundSliderThumbShape(
-                                                enabledThumbRadius: 5),
-                                        overlayShape:
-                                            const RoundSliderOverlayShape(
-                                                overlayRadius: 10),
-                                      ),
-                                      child: Slider(
-                                        value:
-                                            value.volume.clamp(0.0, 1.0),
-                                        onChanged: _setPlayerVolume,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  // 全屏
-                  IconButton(
-                    icon: Icon(
-                      widget.isFullscreen
-                          ? Icons.fullscreen_exit_rounded
-                          : Icons.fullscreen_rounded,
-                    ),
-                    color: MediaOverlayStyle.foreground,
-                    iconSize: 24,
-                    visualDensity: VisualDensity.compact,
-                    tooltip: widget.isFullscreen
-                        ? S.current.mediaPlayer_exitFullscreen
-                        : S.current.mediaPlayer_fullscreen,
-                    onPressed: widget.onFullscreenToggle,
-                  ),
-                ],
-              ),
+              const Spacer(),
+              _buildSpeedButton(value),
+              _buildMuteAndVolume(value),
+              _buildFullscreenButton(iconSize: 24),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressBar(VideoPlayerValue value) {
+    return MediaProgressBar(
+      value: value,
+      // 控制条隐藏时禁用悬停预览,并让进度条清掉悬停残留
+      // (IgnorePointer 下 onExit 不会派发,否则气泡卡死)
+      hoverPreviewEnabled: _controlsVisible,
+      // M3E 开启时进度条走 Expressive 媒体形态(波浪已播段+竖条把手)
+      expressive: M3eFlags.of(context).enabled,
+      onSeek: (target) {
+        // 手动 seek 视为用户已知位置,静默消费续播提示
+        widget.session.resumedPosition = null;
+        _controller.seekTo(target);
+      },
+      onDragActive: (active) {
+        _draggingProgress = active;
+        if (active) {
+          _hideTimer?.cancel();
+        } else {
+          _scheduleHide();
+        }
+      },
+    );
+  }
+
+  Widget _buildPlayButton(VideoPlayerValue value,
+      {required double iconSize}) {
+    return IconButton(
+      icon: value.isCompleted && !value.isPlaying
+          ? const Icon(Icons.replay_rounded)
+          : AnimatedIcon(
+              icon: AnimatedIcons.play_pause,
+              progress: _playPauseIcon,
+            ),
+      color: MediaOverlayStyle.foreground,
+      iconSize: iconSize,
+      visualDensity: VisualDensity.compact,
+      tooltip: value.isPlaying
+          ? S.current.mediaPlayer_pause
+          : S.current.mediaPlayer_play,
+      onPressed: _togglePlay,
+    );
+  }
+
+  Widget _buildSpeedButton(VideoPlayerValue value) {
+    return Builder(
+      builder: (buttonContext) => TextButton(
+        onPressed: () => _pickSpeed(buttonContext),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(40, 32),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+        ),
+        child: Text(
+          formatPlaybackSpeed(value.playbackSpeed),
+          style: TextStyle(
+            color: value.playbackSpeed == 1.0
+                ? MediaOverlayStyle.foreground
+                : MediaOverlayStyle.accent,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMuteAndVolume(VideoPlayerValue value) {
+    return MouseRegion(
+      onEnter: _isDesktop ? (_) => _setVolumeHover(true) : null,
+      onExit: _isDesktop ? (_) => _setVolumeHover(false) : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              value.volume > 0
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
+            ),
+            color: MediaOverlayStyle.foreground,
+            iconSize: 22,
+            visualDensity: VisualDensity.compact,
+            tooltip: value.volume > 0
+                ? S.current.mediaPlayer_mute
+                : S.current.mediaPlayer_unmute,
+            onPressed: _toggleMute,
+          ),
+          if (_isDesktop)
+            AnimatedSize(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: _volumeExpanded ? 84 : 0,
+                child: _volumeExpanded
+                    // 自绘音量条:不用 Material Slider —— 全局 M3E
+                    // year2023 新滑块(粗轨+竖条把手)会无视这里的
+                    // SliderTheme 覆盖,黑底控制条上是一根粗白棒;
+                    // 自绘与进度条同一视觉语言
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _MiniVolumeSlider(
+                          value: value.volume.clamp(0.0, 1.0),
+                          onChanged: _setPlayerVolume,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullscreenButton({required double iconSize}) {
+    return IconButton(
+      icon: Icon(
+        widget.isFullscreen
+            ? Icons.fullscreen_exit_rounded
+            : Icons.fullscreen_rounded,
+      ),
+      color: MediaOverlayStyle.foreground,
+      iconSize: iconSize,
+      visualDensity: VisualDensity.compact,
+      tooltip: widget.isFullscreen
+          ? S.current.mediaPlayer_exitFullscreen
+          : S.current.mediaPlayer_fullscreen,
+      onPressed: widget.onFullscreenToggle,
     );
   }
 }
@@ -653,16 +972,23 @@ class _SlidingBar extends StatelessWidget {
   }
 }
 
-/// 中央播放大按钮:圆形 scrim 底 + 播放/重播图标 + 出入场缩放 + 按压反馈。
-/// 仅在暂停/播完时挂载(播放中不遮挡画面),入场自带缩放淡入。
+/// 中央播放大按钮:出入场缩放 + 按压反馈。
+/// 仅在暂停/播完时挂载(播放中不遮挡画面)。
+///
+/// 形态两档:
+/// - expressive(M3E):圆角方钮,按压时圆角收紧 + 缩放 —— M3
+///   Expressive 媒体控件的 shape-morph 签名;
+/// - 经典:圆形 scrim 钮。
 class _CenterPlayButton extends StatefulWidget {
   const _CenterPlayButton({
     required this.isCompleted,
     required this.onTap,
+    this.expressive = false,
   });
 
   final bool isCompleted;
   final VoidCallback onTap;
+  final bool expressive;
 
   @override
   State<_CenterPlayButton> createState() => _CenterPlayButtonState();
@@ -673,6 +999,10 @@ class _CenterPlayButtonState extends State<_CenterPlayButton> {
 
   @override
   Widget build(BuildContext context) {
+    // M3E:56dp 圆角方(radius 18↔12 按压形变);经典:64dp 圆
+    final expressive = widget.expressive;
+    final radius = expressive ? (_pressed ? 12.0 : 18.0) : 32.0;
+    final side = expressive ? 56.0 : 64.0;
     return Center(
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: 1),
@@ -692,12 +1022,14 @@ class _CenterPlayButtonState extends State<_CenterPlayButton> {
               widget.onTap();
             },
             onTapCancel: () => setState(() => _pressed = false),
-            child: Container(
-              width: 64,
-              height: 64,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+              width: side,
+              height: side,
               decoration: BoxDecoration(
                 color: const Color(0x8A000000),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(radius),
                 border: Border.all(color: const Color(0x24FFFFFF)),
               ),
               child: Icon(
@@ -705,7 +1037,7 @@ class _CenterPlayButtonState extends State<_CenterPlayButton> {
                     ? Icons.replay_rounded
                     : Icons.play_arrow_rounded,
                 color: MediaOverlayStyle.foreground,
-                size: 36,
+                size: expressive ? 32 : 36,
               ),
             ),
           ),
@@ -713,6 +1045,95 @@ class _CenterPlayButtonState extends State<_CenterPlayButton> {
       ),
     );
   }
+}
+
+/// 桌面控制条内嵌迷你音量条:自绘轨道+把手(悬停/拖动变粗放大),
+/// 视觉与 MediaProgressBar 同一语言。
+class _MiniVolumeSlider extends StatefulWidget {
+  const _MiniVolumeSlider({required this.value, required this.onChanged});
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_MiniVolumeSlider> createState() => _MiniVolumeSliderState();
+}
+
+class _MiniVolumeSliderState extends State<_MiniVolumeSlider> {
+  bool _active = false;
+
+  void _setFromDx(double dx, double width) {
+    widget.onChanged((dx / width).clamp(0.0, 1.0));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _active = true),
+          onExit: (_) => setState(() => _active = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => _setFromDx(d.localPosition.dx, width),
+            onHorizontalDragStart: (d) =>
+                _setFromDx(d.localPosition.dx, width),
+            onHorizontalDragUpdate: (d) =>
+                _setFromDx(d.localPosition.dx, width),
+            child: SizedBox(
+              height: 28,
+              child: CustomPaint(
+                size: Size(width, 28),
+                painter: _MiniSliderPainter(
+                  fraction: widget.value,
+                  active: _active,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MiniSliderPainter extends CustomPainter {
+  const _MiniSliderPainter({required this.fraction, required this.active});
+
+  final double fraction;
+  final bool active;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final trackHeight = active ? 4.0 : 3.0;
+    final centerY = size.height / 2;
+    final radius = Radius.circular(trackHeight / 2);
+    final paint = Paint();
+
+    RRect track(double start, double end) => RRect.fromLTRBR(
+          size.width * start,
+          centerY - trackHeight / 2,
+          size.width * end,
+          centerY + trackHeight / 2,
+          radius,
+        );
+
+    paint.color = const Color(0x4DFFFFFF);
+    canvas.drawRRect(track(0, 1), paint);
+    paint.color = Colors.white;
+    canvas.drawRRect(track(0, fraction), paint);
+    canvas.drawCircle(
+      Offset(size.width * fraction, centerY),
+      active ? 6.5 : 5,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MiniSliderPainter old) =>
+      old.fraction != fraction || old.active != active;
 }
 
 /// 长按 2x 角标(带缩放淡入)。

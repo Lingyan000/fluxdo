@@ -28,6 +28,9 @@
   },
   "mediaPlayer_volume": "音量",
   "mediaPlayer_brightness": "亮度",
+  "mediaPlayer_lockControls": "锁定",
+  "mediaPlayer_unlockControls": "解锁",
+  "mediaPlayer_releaseToCancel": "松开取消",
   "mediaPlayer_resumedFrom": "已从 {position} 继续播放",
   "@mediaPlayer_resumedFrom": {
     "placeholders": {

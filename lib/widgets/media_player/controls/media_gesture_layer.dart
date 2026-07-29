@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 
@@ -10,9 +11,13 @@ import '../../../utils/platform_utils.dart';
 ///
 /// **移动端(触摸)**:
 /// - 单击:toggle 控制条
-/// - 双击 左/中/右 1/3:-10s / 播放暂停 / +10s
-/// - 长按:2x 快进(松手恢复)
-/// - 竖滑:右半屏系统音量,左半屏 app 亮度
+/// - 双击 左 1/4 / 中 1/2 / 右 1/4:-10s / 播放暂停 / +10s
+///   (中央占半宽 —— 三等分时中央太窄,瞄准中央双击暂停常落到侧区
+///   变成 seek,观感是「暂停无效」;主流播放器同型分区)
+/// - 横滑:调进度(滑满一屏宽 = ±90s,松手提交;inline 与全屏都开;
+///   左右 24px 边缘让给系统返回手势)
+/// - 长按:2x 快进(松手恢复)+ 触觉反馈
+/// - 竖滑(仅全屏):右半屏系统音量,左半屏 app 亮度
 ///
 /// **桌面端(鼠标)**:
 /// - 单击:播放/暂停(立即生效,无双击消歧延迟)
@@ -31,6 +36,10 @@ class MediaGestureLayer extends StatefulWidget {
     this.onDesktopDoubleTapFullscreen,
     this.onVerticalAdjust,
     this.enableVerticalGestures = false,
+    this.positionProvider,
+    this.durationProvider,
+    this.onSeekPreview,
+    this.onSeekCommit,
     this.child,
   });
 
@@ -51,8 +60,20 @@ class MediaGestureLayer extends StatefulWidget {
   final void Function(bool isVolume, double value, bool visible)?
       onVerticalAdjust;
 
-  /// 竖滑调音量/亮度,仅移动端开。
+  /// 竖滑调音量/亮度,仅移动端全屏开。
   final bool enableVerticalGestures;
+
+  /// 横滑 seek 的数据源(当前位置/总时长),null = 禁用横滑 seek。
+  final Duration Function()? positionProvider;
+  final Duration Function()? durationProvider;
+
+  /// 横滑中的目标位置预览(null = 拖动结束,HUD 应隐藏)。
+  /// [cancelArmed]:手指已拖入顶部取消区,松开将不提交。
+  final void Function(Duration? target,
+      {required bool forward, required bool cancelArmed})? onSeekPreview;
+
+  /// 横滑松手提交。
+  final ValueChanged<Duration>? onSeekCommit;
 
   final Widget? child;
 
@@ -63,12 +84,29 @@ class MediaGestureLayer extends StatefulWidget {
 class _MediaGestureLayerState extends State<MediaGestureLayer> {
   static final bool _isMobile = !PlatformUtils.isDesktop;
 
+  /// 横滑映射:滑满一屏(播放器)宽 = 90 秒(绝对映射,
+  /// 比按视频长度等比映射稳定 —— 长视频不会一碰就飞几分钟)。
+  static const Duration _fullWidthSeek = Duration(seconds: 90);
+
+  /// 左右边缘豁免区:iOS 系统返回手势从屏缘起手,inline 播放器通常
+  /// 全宽贴屏,这里不抢。
+  static const double _edgeExclusion = 24;
+
   Offset? _doubleTapPosition;
   bool _longPressActive = false;
 
   /// 桌面端双击判定窗口:第一击已立即执行播/停,窗口内第二击到来
   /// 则撤销(再 toggle 一次)并切全屏。
   Timer? _desktopTapWindow;
+
+  // 横滑 seek 状态
+  Duration? _seekBase;
+  Duration? _seekTarget;
+  double _seekAccumDx = 0;
+  bool _seekForward = true;
+
+  /// 手指当前是否在顶部取消区(屏高上部 1/8),松手即放弃本次 seek。
+  bool _seekCancelArmed = false;
 
   // 竖滑状态
   bool? _verticalIsVolume;
@@ -78,6 +116,11 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
 
   bool get _verticalEnabled =>
       widget.enableVerticalGestures && _isMobile;
+
+  bool get _seekGestureEnabled =>
+      _isMobile &&
+      widget.positionProvider != null &&
+      widget.onSeekCommit != null;
 
   @override
   void dispose() {
@@ -107,15 +150,70 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
     if (position == null) return;
     final width = context.size?.width ?? 0;
     if (width <= 0) return;
-    final third = position.dx / width;
-    if (third < 1 / 3) {
+    // 左 1/4 | 中 1/2 | 右 1/4
+    final quarter = width / 4;
+    if (position.dx < quarter) {
       widget.onSeekRelative(forward: false);
-    } else if (third > 2 / 3) {
+    } else if (position.dx > quarter * 3) {
       widget.onSeekRelative(forward: true);
     } else {
       widget.onTogglePlay();
     }
   }
+
+  // ---- 横滑 seek ----
+
+  void _startSeekDrag(DragStartDetails details) {
+    final width = context.size?.width ?? 0;
+    if (width <= 0) return;
+    final x = details.localPosition.dx;
+    if (x < _edgeExclusion || x > width - _edgeExclusion) return;
+    final duration = widget.durationProvider?.call() ?? Duration.zero;
+    if (duration == Duration.zero) return; // 未初始化不响应
+    _seekBase = widget.positionProvider?.call();
+    _seekTarget = _seekBase;
+    _seekAccumDx = 0;
+    _seekCancelArmed = false;
+  }
+
+  void _updateSeekDrag(DragUpdateDetails details) {
+    final base = _seekBase;
+    if (base == null) return;
+    final size = context.size;
+    if (size == null || size.width <= 0) return;
+    _seekAccumDx += details.delta.dx;
+    final duration = widget.durationProvider!.call();
+    var target = base + _fullWidthSeek * (_seekAccumDx / size.width);
+    if (target < Duration.zero) target = Duration.zero;
+    if (target > duration) target = duration;
+    _seekForward = target >= base;
+    _seekTarget = target;
+    // 取消区:拖入播放器上部 1/8 视为要放弃(主流播放器同型交互);
+    // 进出取消区给触觉反馈
+    final cancelArmed = details.localPosition.dy < size.height / 8;
+    if (cancelArmed != _seekCancelArmed) {
+      _seekCancelArmed = cancelArmed;
+      HapticFeedback.selectionClick();
+    }
+    widget.onSeekPreview
+        ?.call(target, forward: _seekForward, cancelArmed: cancelArmed);
+  }
+
+  void _endSeekDrag({required bool commit}) {
+    if (_seekBase == null) return;
+    final target = _seekTarget;
+    final cancelled = _seekCancelArmed;
+    _seekBase = null;
+    _seekTarget = null;
+    _seekCancelArmed = false;
+    widget.onSeekPreview
+        ?.call(null, forward: _seekForward, cancelArmed: false);
+    if (commit && !cancelled && target != null) {
+      widget.onSeekCommit?.call(target);
+    }
+  }
+
+  // ---- 竖滑音量/亮度 ----
 
   Future<void> _startVertical(DragStartDetails details) async {
     final width = context.size?.width ?? 0;
@@ -198,6 +296,7 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
       onDoubleTap: _handleDoubleTap,
       onLongPressStart: (_) {
         _longPressActive = true;
+        HapticFeedback.lightImpact();
         widget.onLongPressSpeedChanged(true);
       },
       onLongPressEnd: (_) {
@@ -209,6 +308,14 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
         _longPressActive = false;
         widget.onLongPressSpeedChanged(false);
       },
+      onHorizontalDragStart:
+          _seekGestureEnabled ? _startSeekDrag : null,
+      onHorizontalDragUpdate:
+          _seekGestureEnabled ? _updateSeekDrag : null,
+      onHorizontalDragEnd:
+          _seekGestureEnabled ? (_) => _endSeekDrag(commit: true) : null,
+      onHorizontalDragCancel:
+          _seekGestureEnabled ? () => _endSeekDrag(commit: false) : null,
       onVerticalDragStart:
           _verticalEnabled ? (d) => unawaited(_startVertical(d)) : null,
       onVerticalDragUpdate: _verticalEnabled ? _updateVertical : null,

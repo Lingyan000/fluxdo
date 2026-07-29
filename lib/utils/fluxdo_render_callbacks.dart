@@ -486,7 +486,9 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        // 与后续初始化段的 loadingBuilder 同款(LoadingSpinner 自适应
+        // M3E 开关),两段加载不换样式
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) =>
@@ -518,7 +520,7 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
         height: 56,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) => _withPlayableUrl(

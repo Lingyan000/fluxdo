@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../providers/preferences_provider.dart';
@@ -72,6 +73,23 @@ class FullscreenMediaCoordinator with WidgetsBindingObserver, WindowListener {
     if (_isDesktop) {
       windowManager.setFullScreen(false);
     } else {
+      // 竖滑亮度手势改的是 app 级亮度,不随全屏退出自动复原,必须
+      // 显式 reset 回系统值 —— 否则整个 app 都停留在调过的亮度
+      unawaited(
+        ScreenBrightness()
+            .resetApplicationScreenBrightness()
+            .catchError((_) {}),
+      );
+      // 状态栏恢复不能直接切 edgeToEdge:Flutter 3.41+ 引擎在
+      // EDGE_TO_EDGE 分支不清除 immersiveSticky 设置的
+      // SYSTEM_UI_FLAG_FULLSCREEN/HIDE_NAVIGATION,bars 回不来。
+      // 先 manual+all overlays 显式清 immersive flags 并显示 bars,
+      // 再切回 edgeToEdge 恢复全局 edge-to-edge 布局
+      // (同 ImageViewerPage._restoreSystemUI 的实测结论)。
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       // 先放开全方向,再由 restoreOrientationLock 按用户设置收回竖屏
       await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
