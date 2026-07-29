@@ -111,6 +111,15 @@ VERIFY_RATIO_WEAK = 1.45   # 复核:与 margin 联合判定的 ratio 下限
 VERIFY_MIN_MARGIN = 0.05   # 复核:联合判定的最弱格净票强度下限
 PEAK_MASK_RADIUS = 3       # 求次峰时屏蔽主峰邻域的半径(环绕距离)
 
+# 小截图共识复核:块数少时 ratio/margin 统计力不足(6 块的裁剪图
+# 文字占比高,margin 常年 ~0),但真印记有个负对照拿不出的特征:
+# 解码模板对**每一个块**的加权得分全部同号且显著为正(实测真信号
+# 6/6 块 min≥0.12;无印记 UI/照片纹理最高 86% 同号、min 恒 <0)。
+# 全块共识 + 最小得分下限 = 小样本下的独立判别维度。
+CONSENSUS_MAX_BLOCKS = 16   # 仅小图保留逐块票(内存换判别力)
+CONSENSUS_MIN_BLOCKS = 3    # 2 块共识判别力不足,3 块起步
+CONSENSUS_MIN_SCORE = 0.1   # 每块模板得分下限(真信号实测 ≥0.12)
+
 BLIND_SEED_MIN_Z = 4.0     # 盲搜:梳状周期峰的最低显著性
 BLIND_METRIC_BLOCKS = 12   # 盲搜:爬山度量参与投票的块数上限
 BLIND_HILL_STEPS = (0.02, 0.01, 0.005)  # 盲搜:爬山相对步长序列
@@ -176,32 +185,50 @@ def split_blocks(gray: np.ndarray) -> np.ndarray | None:
     )
 
 
-def diff_fields(tile: np.ndarray) -> np.ndarray:
+def diff_fields(tile: np.ndarray, with_var: bool = False):
     """84x84 折叠瓦片 → diff[cell, py, px]:每格"左点均值-右点均值"
-    在全部 PERIOD² 个相位下的取值(2x2 平铺 + 积分图向量化)。"""
+    在全部 PERIOD² 个相位下的取值(2x2 平铺 + 积分图向量化)。
+
+    with_var=True 时同时返回 var[cell, py, px]:左右两采样区的像素
+    方差之和,用作内容活跃度——文字/图片边缘穿过采样区时方差飙升,
+    聚合端以 1/(var+ε) 加权,把票权集中到平坦干净的块。"""
     t = np.tile(tile, (2, 2))
     s = np.zeros((t.shape[0] + 1, t.shape[1] + 1))
     s[1:, 1:] = t.cumsum(0).cumsum(1)
+    if with_var:
+        t2 = t * t
+        s2 = np.zeros((t2.shape[0] + 1, t2.shape[1] + 1))
+        s2[1:, 1:] = t2.cumsum(0).cumsum(1)
     p = PERIOD
 
-    def region(y0, y1, x0, x1):
-        total = (
-            s[y1 : y1 + p, x1 : x1 + p]
-            - s[y0 : y0 + p, x1 : x1 + p]
-            - s[y1 : y1 + p, x0 : x0 + p]
-            + s[y0 : y0 + p, x0 : x0 + p]
+    def rect(src, y0, y1, x0, x1):
+        return (
+            src[y1 : y1 + p, x1 : x1 + p]
+            - src[y0 : y0 + p, x1 : x1 + p]
+            - src[y1 : y1 + p, x0 : x0 + p]
+            + src[y0 : y0 + p, x0 : x0 + p]
         )
-        return total / ((y1 - y0) * (x1 - x0))
+
+    def region_stats(y0, y1, x0, x1):
+        area = (y1 - y0) * (x1 - x0)
+        mean = rect(s, y0, y1, x0, x1) / area
+        if not with_var:
+            return mean, None
+        var = rect(s2, y0, y1, x0, x1) / area - mean * mean
+        return mean, var
 
     diff = np.empty((GRID * GRID, p, p))
+    var_sum = np.empty((GRID * GRID, p, p)) if with_var else None
     for row in range(GRID):
         for col in range(GRID):
             dy = row * CELL + dot_y(row, col)
             y0, y1 = dy, dy + DOT_H
-            left = region(y0, y1, col * CELL + LEFT_COLS[0], col * CELL + LEFT_COLS[1])
-            right = region(y0, y1, col * CELL + RIGHT_COLS[0], col * CELL + RIGHT_COLS[1])
-            diff[row * GRID + col] = left - right
-    return diff
+            ml, vl = region_stats(y0, y1, col * CELL + LEFT_COLS[0], col * CELL + LEFT_COLS[1])
+            mr, vr = region_stats(y0, y1, col * CELL + RIGHT_COLS[0], col * CELL + RIGHT_COLS[1])
+            diff[row * GRID + col] = ml - mr
+            if with_var:
+                var_sum[row * GRID + col] = vl + vr
+    return (diff, var_sum) if with_var else diff
 
 
 def soft_decode(v: np.ndarray) -> tuple[int, np.ndarray] | None:
@@ -259,18 +286,32 @@ def try_extract(chan_logical: np.ndarray, dpr: float) -> Hit | None:
         return None
     n = len(blocks)
 
-    # 逐块差分、限幅后累计(限幅=软投票:保留弱信号方向,压制 JPEG
-    # 块效应重尾)
-    v_all = np.zeros((GRID * GRID, PERIOD, PERIOD))
+    # 内容自适应加权投票:每格每块的票以 w=1/(var+ε) 加权(var=左右
+    # 采样区像素方差和,文字/图片边缘穿过时飙升)。等权方案下小截图
+    # (几块)只要某格恰好每块都压在文字上,margin 即归零、复核必挂;
+    # 加权后干净块的票主导,margin 反映的是"最干净证据"而非"最差
+    # 块拖后腿"。v 归一到 [-1,1] 量纲(权重和为分母),margin 直接
+    # 可比;CLIP 限幅逻辑由权重取代——大方差票权重自然趋零。
+    VAR_EPS = 1.0
+    v_num = np.zeros((GRID * GRID, PERIOD, PERIOD))
+    v_den = np.zeros((GRID * GRID, PERIOD, PERIOD))
+    # 小图保留逐块 (diff, w),供共识复核逐块打分
+    per_block = [] if n <= CONSENSUS_MAX_BLOCKS else None
     for block in blocks:
-        v_all += np.clip(diff_fields(block), -CLIP, CLIP)
+        diff, var = diff_fields(block, with_var=True)
+        w = 1.0 / (var + VAR_EPS)
+        v_num += np.clip(diff, -CLIP, CLIP) * w
+        v_den += w
+        if per_block is not None:
+            per_block.append((np.clip(diff, -CLIP, CLIP), w))
+    v_all = v_num / v_den
 
     # 候选相位:同步行精确匹配,按最弱格净票强度排序。(不容错:
     # 软翻转已大幅放宽 CRC,同步行是剩余的强判别项,放宽会引入
     # 系统性色度纹理的假阳性)
     sync_sign = np.where(np.array(SYNC_ROW) == 1, 1, -1)
     cand = (np.sign(v_all[:GRID]) == sync_sign[:, None, None]).all(axis=0)
-    margin_all = np.abs(v_all).min(axis=0) / (n * CLIP)
+    margin_all = np.abs(v_all).min(axis=0) / CLIP
     ys, xs = np.nonzero(cand)
     if len(ys) == 0:
         return None
@@ -300,10 +341,21 @@ def try_extract(chan_logical: np.ndarray, dpr: float) -> Hit | None:
         second = float(masked.max())
         ratio = (peak - med) / (second - med + 1e-12)
         margin = float(margin_all[py, px])
-        verified = n >= 4 and (
+        # 块数下限 2:单块无跨块投票,任何纹理都可能自洽,不可复核;
+        # ≥2 块起匹配滤波 ratio + margin 双条件已有判别力(加权投票
+        # 后 margin 反映最干净证据,小截图不再被文字块拖垮)
+        verified = n >= 2 and (
             (ratio >= VERIFY_RATIO_STRONG and margin >= VERIFY_STRONG_MIN_MARGIN)
             or (ratio >= VERIFY_RATIO_WEAK and margin >= VERIFY_MIN_MARGIN)
         )
+        # 小截图共识复核:ratio/margin 不足时的独立判别维度(见常量注释)
+        if not verified and per_block is not None and n >= CONSENSUS_MIN_BLOCKS:
+            block_scores = [
+                float((template * d[:, py, px] * w[:, py, px]).sum()
+                      / w[:, py, px].sum())
+                for d, w in per_block
+            ]
+            verified = min(block_scores) >= CONSENSUS_MIN_SCORE
         hit = Hit(uid, dpr, (py, px), margin, n, verified, ratio)
         if best is None or (hit.verified, hit.ratio) > (best.verified, best.ratio):
             best = hit
