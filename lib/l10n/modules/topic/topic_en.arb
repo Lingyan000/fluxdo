@@ -31,6 +31,7 @@
   "topicDetail_tocExpand": "Expand TOC",
   "topicDetail_sortByActivity": "Sort by activity",
   "topicDetail_hotOnly": "Hot only",
+  "topicDetail_leavePrivateMessageConfirm": "Are you sure you want to leave this private message? You will no longer be able to view or reply to it.",
   "topicDetail_loadFailedTapRetry": "Failed to load, tap to retry",
   "topicDetail_loading": "Loading...",
   "topicDetail_moreOptions": "More options",
@@ -43,6 +44,22 @@
   "topicDetail_openInBrowser": "Open in browser",
   "topicDetail_readLaterFull": "Float is full (max {max})",
   "topicDetail_relatedTopics": "Related Topics",
+  "topicDetail_removePrivateMessageParticipantConfirm": "Remove @{username} from this private message?",
+  "@topicDetail_removePrivateMessageParticipantConfirm": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removedPrivateMessageParticipant": "Removed @{username} from the private message",
+  "@topicDetail_removedPrivateMessageParticipant": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_removeFromReadLater": "Remove from float",
   "topicDetail_removeFromReadLaterSuccess": "Removed from float",
   "topicDetail_replyLabel": "Replies",

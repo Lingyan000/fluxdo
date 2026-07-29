@@ -157,6 +157,7 @@ class TopicChannelNotifier extends Notifier<TopicChannelState> {
 
         case 'remove_allowed_user':
           debugPrint('[TopicChannel] 用户被移出私信');
+          state = state.copyWith(removedFromPrivateMessage: true);
           break;
 
         case 'boost_added':

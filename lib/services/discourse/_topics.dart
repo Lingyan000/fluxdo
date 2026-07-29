@@ -385,6 +385,22 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     );
   }
 
+  /// 将用户移出私信；移除自己时等价于退出该私信。
+  Future<void> removePrivateMessageParticipant(
+    int topicId,
+    String username,
+  ) async {
+    try {
+      await _dio.put(
+        '/t/$topicId/remove-allowed-user.json',
+        data: {'username': username},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
   /// 更新话题元数据
   Future<void> updateTopic({
     required int topicId,

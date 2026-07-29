@@ -960,6 +960,86 @@ extension _UserActions on _TopicDetailPageState {
     );
   }
 
+  Future<void> _handleRemovePrivateMessageParticipant(
+    TopicUser participant,
+  ) async {
+    if (_removingPrivateMessageParticipantId != null) return;
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    final currentUser = ref.read(currentUserProvider).value;
+    if (detail == null || !detail.isPrivateMessage || currentUser == null) {
+      return;
+    }
+
+    final isSelf = participant.id == currentUser.id;
+    final canRemove = isSelf
+        ? detail.canRemoveSelfId == participant.id
+        : currentUser.admin && detail.canRemoveAllowedUsers;
+    if (!canRemove) return;
+
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isSelf ? context.l10n.common_exit : context.l10n.common_remove,
+        ),
+        content: Text(
+          isSelf
+              ? context.l10n.topicDetail_leavePrivateMessageConfirm
+              : context.l10n.topicDetail_removePrivateMessageParticipantConfirm(
+                  participant.username,
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.l10n.common_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('pm-participant-confirm'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              isSelf ? context.l10n.common_exit : context.l10n.common_remove,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _removingPrivateMessageParticipantId = participant.id);
+    try {
+      await ref
+          .read(topicDetailProvider(_params).notifier)
+          .removePrivateMessageParticipant(participant);
+      if (!mounted) return;
+
+      if (isSelf) {
+        _closeRemovedPrivateMessage();
+      } else {
+        ToastService.showSuccess(
+          context.l10n.topicDetail_removedPrivateMessageParticipant(
+            participant.username,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(
+          context.l10n.common_operationFailed('$error'),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _removingPrivateMessageParticipantId = null);
+      }
+    }
+  }
+
   Future<void> _handleDeletePost(Post post) async {
     final confirmed = await showAppDialog<bool>(
       context: context,

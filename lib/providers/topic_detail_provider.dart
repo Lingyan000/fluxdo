@@ -175,6 +175,34 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     ));
   }
 
+  /// 将成员移出当前私信，并同步首楼与底部的成员面板。
+  Future<void> removePrivateMessageParticipant(TopicUser participant) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) return;
+
+    final service = ref.read(discourseServiceProvider);
+    await service.removePrivateMessageParticipant(
+      currentDetail.id,
+      participant.username,
+    );
+
+    // 请求期间可能收到新回复或其他 MessageBus 更新，必须基于
+    // 最新 detail 删成员，否则会用请求前的快照把新状态整体覆盖掉。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) return;
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedUsers: latestDetail.allowedUsers
+            .where((user) => user.id != participant.id)
+            .toList(growable: false),
+        clearCanRemoveSelfId:
+            latestDetail.canRemoveSelfId == participant.id,
+      ),
+    );
+  }
+
   @override
   Future<TopicDetail> build() async {
     debugPrint('[TopicDetailNotifier] build called with topicId=${arg.topicId}, postNumber=${arg.postNumber}');
