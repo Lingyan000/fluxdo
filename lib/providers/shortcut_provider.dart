@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/shortcut_binding.dart';
+import '../utils/platform_utils.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
 
 /// 快捷键状态管理
@@ -151,12 +152,22 @@ class ShortcutScopeRegistration {
     required this.route,
     required this.callbacks,
     required this.order,
+    this.enabled,
   });
 
   final Object owner;
   final Route<dynamic>? route;
   final Map<ShortcutAction, VoidCallback> callbacks;
   final int order;
+
+  /// 分发时的活跃谓词。底栏 tab 页全部挂在同一个 IndexedStack、共享
+  /// 同一个根路由——按路由过滤区分不出"哪个 tab 活跃",不活跃 tab 的
+  /// 注册会吞掉/抢走活跃 tab 的按键(实测:草稿 tab 的 maybePop 注册
+  /// 吞掉私信页的 ESC)。IndexedStack 常驻页面注册时必须传
+  /// `() => widget.isActive` 这类谓词;独立路由页可不传(路由过滤够用)。
+  final bool Function()? enabled;
+
+  bool get isEnabled => enabled?.call() ?? true;
 }
 
 class ShortcutScopeRegistryState {
@@ -213,6 +224,7 @@ class ShortcutScopeRegistryNotifier
     required Object owner,
     required Route<dynamic>? route,
     required Map<ShortcutAction, VoidCallback> callbacks,
+    bool Function()? enabled,
   }) {
     final next = Map<Object, ShortcutScopeRegistration>.from(
       state.registrationsFor(scope),
@@ -225,6 +237,7 @@ class ShortcutScopeRegistryNotifier
         owner: owner,
         route: route,
         callbacks: Map.unmodifiable(Map.of(callbacks)),
+        enabled: enabled,
         order: ++_registrationOrder,
       );
     }
@@ -266,7 +279,13 @@ Map<ShortcutAction, VoidCallback> resolveShortcutScopeCallbacks({
   required ShortcutScope scope,
   required Route<dynamic>? route,
 }) {
-  final registrations = registry.registrationsFor(scope).values.toList();
+  // isEnabled 过滤:IndexedStack 常驻 tab 页共享根路由,路由过滤分不出
+  // 活跃 tab,靠注册方传入的谓词把非活跃 tab 的注册排除在分发之外。
+  final registrations = registry
+      .registrationsFor(scope)
+      .values
+      .where((registration) => registration.isEnabled)
+      .toList();
   if (registrations.isEmpty) return const {};
 
   if (route != null) {
@@ -307,10 +326,19 @@ Map<ShortcutAction, VoidCallback> resolveShortcutScopeCallbacks({
 }
 
 class ShortcutScopeBinding {
-  ShortcutScopeBinding({required WidgetRef ref, required this.scope})
-    : _registry = ref.read(shortcutScopeRegistryProvider.notifier);
+  ShortcutScopeBinding({
+    required WidgetRef ref,
+    required this.scope,
+    this.enabled,
+  }) : _registry = ref.read(shortcutScopeRegistryProvider.notifier);
 
   final ShortcutScope scope;
+
+  /// 分发时的活跃谓词(见 [ShortcutScopeRegistration.enabled])。
+  /// IndexedStack 常驻 tab 页必须传 `() => widget.isActive` 之类,
+  /// 否则非活跃 tab 的注册会截胡活跃 tab 的按键。
+  final bool Function()? enabled;
+
   final ShortcutScopeRegistryNotifier _registry;
   final Object _owner = Object();
   bool _disposed = false;
@@ -332,6 +360,7 @@ class ShortcutScopeBinding {
       owner: _owner,
       route: route,
       callbacks: callbacks,
+      enabled: enabled,
     );
   }
 
@@ -351,6 +380,94 @@ class ShortcutScopeBinding {
     final disposeNow = dispose;
     Future(disposeNow);
   }
+}
+
+/// 普通全屏路由的「ESC 可关」标准件。
+///
+/// 全局 [HardwareKeyboard] 处理器对 closeOverlay 没有兜底动作（不能全局
+/// maybePop：它先于 Flutter 焦点管线执行，会抢跑图片查看器等自带
+/// CallbackShortcuts 的页面，造成双 pop）。因此普通 `Navigator.push` 出来
+/// 的全屏页想响应 ESC，须显式 opt-in —— 本类封装标准写法：以
+/// [ShortcutScope.context] 注册 closeOverlay → `Navigator.maybePop`，
+/// 分发端保证仅当前路由命中。
+///
+/// 用法（State 内）：
+/// ```dart
+/// late final _escClose = RouteEscCloseBinding(ref: ref);
+/// initState: _escClose.attach(context);   // 内部已 postFrame + 平台判断
+/// dispose:   _escClose.dispose();
+/// ```
+///
+/// 嵌入面板层不要用本类（面板不是独立路由，maybePop 会捅穿宿主），
+/// 应以 [ShortcutScope.detail] 注册 closeOverlay 走 onEmbeddedBack，
+/// 参照 TopicDetailPage / UserProfilePage。
+class RouteEscCloseBinding {
+  RouteEscCloseBinding({required WidgetRef ref})
+    : _binding = ShortcutScopeBinding(ref: ref, scope: ShortcutScope.context);
+
+  final ShortcutScopeBinding _binding;
+
+  /// 在 initState 里调用。挂到帧后：ModalRoute.of 在 initState 期间
+  /// 还拿不到本页路由。
+  void attach(BuildContext context) {
+    if (!PlatformUtils.isDesktop) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      _binding.register(context, {
+        ShortcutAction.closeOverlay: () {
+          if (context.mounted) Navigator.of(context).maybePop();
+        },
+      });
+    });
+  }
+
+  void dispose() => _binding.dispose();
+}
+
+/// 双栏宿主页的「ESC 两段式」标准件:右栏开着时不注册 context 层
+/// (让分发落到 detail scope——TopicDetailPage 等注册的关闭回调,先退
+/// 页内搜索/AI,再 pop/clear 右栏);右栏空了才注册 maybePop 关整页。
+/// 底栏 tab 形态页面是首路由,maybePop 为 no-op,注册无害。
+///
+/// 用法(State 内):
+/// ```dart
+/// late final _esc = PaneHostEscBinding(ref: ref, enabled: () => widget.isActive);
+/// build:    _esc.sync(context, paneOpen: canShowBothPanes && selected.hasSelection);
+/// dispose:  _esc.dispose();
+/// ```
+class PaneHostEscBinding {
+  PaneHostEscBinding({required WidgetRef ref, bool Function()? enabled})
+    : _binding = ShortcutScopeBinding(
+        ref: ref,
+        scope: ShortcutScope.context,
+        enabled: enabled,
+      );
+
+  final ShortcutScopeBinding _binding;
+  bool? _pageCloseRegistered;
+
+  /// 每次 build 调用,按右栏开合同步注册状态。内部挂帧后,可在 build
+  /// 期间安全调用。
+  void sync(BuildContext context, {required bool paneOpen}) {
+    if (!PlatformUtils.isDesktop) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      final wantPageClose = !paneOpen;
+      if (_pageCloseRegistered == wantPageClose) return;
+      _pageCloseRegistered = wantPageClose;
+      if (wantPageClose) {
+        _binding.register(context, {
+          ShortcutAction.closeOverlay: () {
+            if (context.mounted) Navigator.of(context).maybePop();
+          },
+        });
+      } else {
+        _binding.clear();
+      }
+    });
+  }
+
+  void dispose() => _binding.dispose();
 }
 
 enum ShortcutSurfaceKind { route, panel, overlay }
@@ -420,6 +537,7 @@ class ShortcutSurfaceRegistration {
     this.route,
     this.onClose,
     this.onFocus,
+    this.enabled,
   });
 
   final Object owner;
@@ -434,6 +552,13 @@ class ShortcutSurfaceRegistration {
   final Route<dynamic>? route;
   final VoidCallback? onClose;
   final VoidCallback? onFocus;
+
+  /// 活跃谓词,语义同 [ShortcutScopeRegistration.enabled]:IndexedStack
+  /// 常驻 tab 页里的 surface(嵌入设置/嵌入搜索)共享根路由,切走 tab 后
+  /// 不过滤会拦截活跃 tab 的按键。
+  final bool Function()? enabled;
+
+  bool get isEnabled => enabled?.call() ?? true;
 
   bool matchesAction(ShortcutAction action) {
     return triggerAction == action || repeatActions.contains(action);
@@ -469,6 +594,7 @@ class ShortcutSurfaceRegistryNotifier
     Route<dynamic>? route,
     VoidCallback? onClose,
     VoidCallback? onFocus,
+    bool Function()? enabled,
   }) {
     final next = Map<Object, ShortcutSurfaceRegistration>.from(
       state.registrations,
@@ -491,6 +617,7 @@ class ShortcutSurfaceRegistryNotifier
       route: route,
       onClose: onClose,
       onFocus: onFocus,
+      enabled: enabled,
       order: ++_registrationOrder,
     );
     state = ShortcutSurfaceRegistryState(registrations: Map.unmodifiable(next));
@@ -517,7 +644,10 @@ ShortcutSurfaceRegistration? resolveTopShortcutSurface({
   required ShortcutSurfaceRegistryState registry,
   required Route<dynamic>? route,
 }) {
-  final registrations = registry.registrations.values.toList();
+  // isEnabled 过滤:非活跃 tab 里的 surface 不参与分发(见字段注释)。
+  final registrations = registry.registrations.values
+      .where((registration) => registration.isEnabled)
+      .toList();
   if (registrations.isEmpty) return null;
 
   if (route != null) {
@@ -557,6 +687,9 @@ ShortcutSurfaceRegistration? findLatestShortcutSurface({
   final matches = registry.registrations.values.where((registration) {
     if (registration.id != id) return false;
     if (kind != null && registration.kind != kind) return false;
+    // 非活跃 tab 里的 surface 不算"已存在":否则 Ctrl+, 之类的
+    // push-or-reveal 会去 reveal 一个看不见的嵌入实例,表现为按了没反应。
+    if (!registration.isEnabled) return false;
 
     final registrationRoute = registration.route;
     if (registrationRoute == null) return true;
@@ -579,6 +712,7 @@ class ShortcutSurfaceBinding {
     this.repeatBehavior = ShortcutSurfaceRepeatBehavior.toggle,
     this.blocksShortcuts = true,
     this.passthroughActions = const <ShortcutAction>{},
+    this.enabled,
   }) : _registry = ref.read(shortcutSurfaceRegistryProvider.notifier);
 
   final String id;
@@ -588,6 +722,10 @@ class ShortcutSurfaceBinding {
   final ShortcutSurfaceRepeatBehavior repeatBehavior;
   final bool blocksShortcuts;
   final Set<ShortcutAction> passthroughActions;
+
+  /// 活跃谓词(见 [ShortcutSurfaceRegistration.enabled])。
+  final bool Function()? enabled;
+
   final ShortcutSurfaceRegistryNotifier _registry;
   final Object _owner = Object();
   bool _disposed = false;
@@ -612,6 +750,7 @@ class ShortcutSurfaceBinding {
       route: route,
       onClose: onClose,
       onFocus: onFocus,
+      enabled: enabled,
     );
   }
 

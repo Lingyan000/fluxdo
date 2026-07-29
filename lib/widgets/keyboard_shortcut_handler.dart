@@ -181,7 +181,7 @@ class _KeyboardShortcutHandlerState
       return singlePane[action];
     }
 
-    // 2. 双栏模式：仅查找活跃面板的回调，不回退到另一面板
+    // 2. 双栏模式：仅查找活跃面板的回调（closeOverlay 的回退例外见下）
     final activePane = ref.read(activePaneProvider);
     final activeCallbacks = resolveShortcutScopeCallbacks(
       registry: registry,
@@ -192,6 +192,23 @@ class _KeyboardShortcutHandlerState
     );
     if (activeCallbacks.containsKey(action)) {
       return activeCallbacks[action];
+    }
+
+    // 3. 例外：closeOverlay 在 master 侧回退到 detail。master 列表只注册
+    //    J/K/Enter 之类导航动作,没有 closeOverlay——焦点在左栏时按 Esc
+    //    落空会显得"失灵",用户直觉是关掉右侧详情。仅 closeOverlay 回退,
+    //    导航动作仍严格按活跃面板分发,不越界。右栏无选中时 detail 无
+    //    注册,回退落空,维持原空操作。
+    if (action == ShortcutAction.closeOverlay &&
+        activePane == ActivePane.master) {
+      final detailCallbacks = resolveShortcutScopeCallbacks(
+        registry: registry,
+        scope: ShortcutScope.detail,
+        route: currentRoute,
+      );
+      if (detailCallbacks.containsKey(action)) {
+        return detailCallbacks[action];
+      }
     }
 
     return null;

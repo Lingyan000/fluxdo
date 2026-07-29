@@ -69,6 +69,9 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
     ref: ref,
     scope: ShortcutScope.context,
+    // 底栏 tab 形态挂在 IndexedStack 里:不活跃时注册失效,否则截胡
+    // 其他 tab 的 ESC(共享根路由,路由过滤分不出活跃 tab)。
+    enabled: () => widget.isActive,
   );
 
   @override

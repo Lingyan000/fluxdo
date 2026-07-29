@@ -245,6 +245,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
     ref: ref,
     scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
+    // 嵌入面板挂在 IndexedStack 常驻 tab 里(首页/私信/草稿…各自的
+    // detail),切走 tab 后 State 仍存活、注册仍在——不按宿主活跃状态
+    // 失效的话,先注册的那个 tab 会一直霸占 detail scope,其他 tab 的
+    // ESC/快捷键全部被截胡(实测:私信 ESC 失效,被首页详情吃掉)。
+    enabled: () => !widget.embeddedMode || widget.parentActive,
   );
   late int? _fallbackBookmarkId = widget.initialBookmarkId;
   late String? _fallbackBookmarkName = widget.initialBookmarkName;
@@ -571,9 +576,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       },
     };
     // Esc 优先退出页内搜索/AI，再按当前布局执行嵌入返回或路由返回。
-    // （_handleCloseShortcut 的嵌入分支会调 onEmbeddedBack——平行视界
-    // 栈深度 > 1 时非空,Esc 退回上一层,与返回按钮一致;为 null 时
-    // 刻意空操作,不会误 pop 宿主路由。）
+    // （_handleCloseShortcut 的嵌入分支会调 onEmbeddedBack——压栈时退回
+    // 上一层,基础层清空右栏回空态,与返回按钮一致。）
     final registeredShortcuts = {
       ...shortcuts,
       ShortcutAction.closeOverlay: _handleCloseShortcut,
@@ -605,11 +609,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     if (widget.embeddedMode) {
-      // 嵌入模式只有书签页移动端 chrome 会传 onEmbeddedBack;桌面双栏
-      // 下它是 null,此时 Esc 落到这里是刻意的空操作:scope 回调没有
-      // 「未处理」语义(分发端 containsKey 即消费),又不能不注册 ——
-      // 上面退搜索/回正文正是嵌入模式需要的。也不能落到 maybePop:
-      // 嵌入面板不是独立路由,pop 的会是宿主页面(如整个书签页)。
+      // 嵌入模式统一走宿主传入的 onEmbeddedBack:压栈时 pop 一层,基础层
+      // clear 清空右栏回空态(首页/私信/搜索/追觅四家现已统一为恒非
+      // null)。不能落到 maybePop:嵌入面板不是独立路由,pop 的会是宿主
+      // 页面(如整个书签页)。
       widget.onEmbeddedBack?.call();
       return;
     }

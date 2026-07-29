@@ -61,11 +61,16 @@ class UserProfilePage extends ConsumerStatefulWidget {
   final bool embeddedMode;
   final VoidCallback? onEmbeddedBack;
 
+  /// 宿主 tab 是否活跃(嵌入模式下用于快捷键注册失活:IndexedStack
+  /// 常驻页共享根路由,非活跃 tab 的注册会截胡活跃 tab 的按键)。
+  final bool parentActive;
+
   const UserProfilePage({
     super.key,
     required this.username,
     this.embeddedMode = false,
     this.onEmbeddedBack,
+    this.parentActive = true,
   });
 
   @override
@@ -224,6 +229,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
     ref: ref,
     scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
+    // 嵌入面板挂在 IndexedStack 常驻 tab 里:宿主不活跃时注册失效,
+    // 否则截胡其他 tab 的 ESC(见 TopicDetailPage 同注)。
+    enabled: () => !widget.embeddedMode || widget.parentActive,
   );
 
   void _registerShortcuts() {

@@ -9,7 +9,7 @@ import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/keyboard_shortcut_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum _RegistrationKind { searchSurface, detailScope }
+enum _RegistrationKind { searchSurface, detailScope, inactiveDetailScope }
 
 class _ShortcutTextFieldHost extends ConsumerStatefulWidget {
   const _ShortcutTextFieldHost({
@@ -49,6 +49,13 @@ class _ShortcutTextFieldHostState
           ref: ref,
           scope: ShortcutScope.detail,
         );
+      case _RegistrationKind.inactiveDetailScope:
+        // 模拟 IndexedStack 非活跃 tab 的注册:enabled 恒 false
+        _scopeBinding = ShortcutScopeBinding(
+          ref: ref,
+          scope: ShortcutScope.detail,
+          enabled: () => false,
+        );
     }
   }
 
@@ -61,6 +68,7 @@ class _ShortcutTextFieldHostState
       case _RegistrationKind.searchSurface:
         _surfaceBinding!.registerDeferred(context, onClose: widget.onClose);
       case _RegistrationKind.detailScope:
+      case _RegistrationKind.inactiveDetailScope:
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           ref.read(activePaneProvider.notifier).state = ActivePane.detail;
@@ -185,5 +193,47 @@ void main() {
 
     expect(nextCalls, 0);
     expect(closeCalls, 1);
+  });
+
+  testWidgets('活跃面板在 master 时 Esc 回退到 detail 的 closeOverlay', (tester) async {
+    var closeCalls = 0;
+    var nextCalls = 0;
+    await _pumpShortcutHost(
+      tester,
+      kind: _RegistrationKind.detailScope,
+      onClose: () => closeCalls++,
+      onNext: () => nextCalls++,
+    );
+
+    // 焦点/活跃面板切到左栏列表——master 侧没有注册 closeOverlay,
+    // Esc 应回退命中 detail 的关闭回调(关掉右栏);导航动作不回退。
+    final element = tester.element(find.byType(TextField));
+    final container = ProviderScope.containerOf(element, listen: false);
+    container.read(activePaneProvider.notifier).state = ActivePane.master;
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(nextCalls, 0, reason: '导航动作严格按活跃面板分发,不回退');
+    expect(closeCalls, 1, reason: 'closeOverlay 在 master 未注册时回退 detail');
+  });
+
+  testWidgets('enabled=false 的注册不参与分发(非活跃 tab 不截胡按键)', (tester) async {
+    var closeCalls = 0;
+    await _pumpShortcutHost(
+      tester,
+      kind: _RegistrationKind.inactiveDetailScope,
+      onClose: () => closeCalls++,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(
+      closeCalls,
+      0,
+      reason: 'IndexedStack 非活跃 tab 的注册必须失效,否则截胡活跃 tab 的 ESC',
+    );
   });
 }

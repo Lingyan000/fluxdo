@@ -660,11 +660,16 @@ class TopicsPage extends ConsumerStatefulWidget {
     this.onSearchRequested,
     this.externalCategoryId,
     this.externalTag,
+    this.isActive = true,
   });
 
   final ValueChanged<SearchFilter?>? onSearchRequested;
   final int? externalCategoryId;
   final String? externalTag;
+
+  /// 宿主底栏 tab 是否活跃(IndexedStack 常驻:不活跃时本页的 master
+  /// 快捷键注册须失效,否则截胡其他 tab 的按键)。
+  final bool isActive;
 
   @override
   ConsumerState<TopicsPage> createState() => _TopicsPageState();
@@ -682,6 +687,8 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
   late final ShortcutScopeBinding _tabShortcutBinding = ShortcutScopeBinding(
     ref: ref,
     scope: ShortcutScope.master,
+    // IndexedStack 常驻:宿主 tab 不活跃时注册失效(见 TopicsPage.isActive)
+    enabled: () => widget.isActive,
   );
   int _tabLength = 1; // 初始只有"全部"
   int _currentTabIndex = 0;
@@ -1744,6 +1751,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         topInset: _collapsibleExtentFor(_visiblePinnedIds, tags),
         headerController: _headerController,
         onLoginRequired: _goToLogin,
+        parentActive: widget.isActive,
       ),
     );
   }
@@ -2455,6 +2463,9 @@ class _TopicList extends ConsumerStatefulWidget {
   final int? categoryId;
   final Map<int, Category> categoryMap;
 
+  /// 宿主底栏 tab 是否活跃(快捷键注册的失活谓词用)
+  final bool parentActive;
+
   /// 页面持有的滚动控制器（snap 需要从页面驱动当前列表）
   final ScrollController scrollController;
 
@@ -2472,6 +2483,7 @@ class _TopicList extends ConsumerStatefulWidget {
     required this.topInset,
     required this.headerController,
     required this.categoryMap,
+    required this.parentActive,
     this.categoryId,
   });
 
@@ -2489,6 +2501,8 @@ class _TopicListState extends ConsumerState<_TopicList>
   late final ShortcutScopeBinding _listShortcutBinding = ShortcutScopeBinding(
     ref: ref,
     scope: ShortcutScope.master,
+    // IndexedStack 常驻:宿主 tab 不活跃时注册失效
+    enabled: () => widget.parentActive,
   );
   bool _isLoadingNewTopics = false;
 

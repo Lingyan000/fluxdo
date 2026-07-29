@@ -48,6 +48,19 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   bool? _lastCanShowDetailPane;
   bool _isAutoSwitching = false;
 
+  /// 桌面 ESC 两段式:右栏开着→分发落 detail scope(关右栏);右栏空→
+  /// 注册 maybePop(首页是首路由,no-op,注册无害但保持机制一致)。
+  late final PaneHostEscBinding _escBinding = PaneHostEscBinding(
+    ref: ref,
+    enabled: () => widget.isActive,
+  );
+
+  @override
+  void dispose() {
+    _escBinding.dispose();
+    super.dispose();
+  }
+
   /// 左栏是不是"列表形态"（信息流 / 草稿列表）。列表给窄栏，内容预览
   /// 才对半分。build 里按当前栈算。
   bool _masterIsListLike = true;
@@ -216,10 +229,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   Widget build(BuildContext context) {
     final selectedTopic = ref.watch(selectedTopicProvider);
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
-    // 左栏本质是不是"列表"（信息流 / 草稿列表）——决定给窄栏还是对半分
-    _masterIsListLike = !selectedTopic.isStacked ||
-        selectedTopic.stack[selectedTopic.stack.length - 2].kind ==
-            PaneKind.drafts;
+    // 左栏本质是不是"列表"（信息流）——决定给窄栏还是对半分
+    _masterIsListLike = !selectedTopic.isStacked;
     final user = ref.watch(currentUserProvider).value;
 
     // 左侧导航栏的板块快捷入口位于平行视界布局之外。切换板块时除了让
@@ -263,6 +274,10 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     });
 
     _maybePushDetail(selectedTopic, canShowDetailPane);
+    _escBinding.sync(
+      context,
+      paneOpen: canShowDetailPane && selectedTopic.hasSelection,
+    );
 
     // 统一使用 MasterDetailLayout 处理所有情况
     // 手机/平板单栏：只显示 master
@@ -320,9 +335,17 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                       : selectedTopic.topEntry!,
                   stackProvider: selectedTopicProvider,
                   parentActive: widget.isActive,
-                  onBack: selectedTopic.isStacked
-                      ? () => ref.read(selectedTopicProvider.notifier).pop()
-                      : null,
+                  // 基础层（栈仅一层）也给 clear：ESC/返回按钮清空右栏回到
+                  // 空态，与 search/seeking 行为一致（平行视界 ESC 统一）。
+                  // 回调内重读 provider，不闭包捕获 build 时的快照。
+                  onBack: () {
+                    final notifier = ref.read(selectedTopicProvider.notifier);
+                    if (ref.read(selectedTopicProvider).isStacked) {
+                      notifier.pop();
+                    } else {
+                      notifier.clear();
+                    }
+                  },
                 ),
               )
             : null,
@@ -378,6 +401,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     final topicsPage = TopicsPage(
       externalCategoryId: _leftCategory?.id,
       externalTag: _leftTag,
+      isActive: widget.isActive,
       onSearchRequested: (filter) => setState(() {
         _embeddedSearchFilter = filter;
         _showEmbeddedSearch = true;
@@ -400,6 +424,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
             embeddedMaster: true,
             stackProvider: selectedTopicProvider,
             onClose: _showFeed,
+            parentActive: widget.isActive,
           ),
       ],
     );
@@ -441,15 +466,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   }
 
   void _openDrafts(BuildContext context) {
-    // 首页信息流**自己**就是平行视界宿主（左列表 + 右 detail），但这里的
-    // context 在栈外（FAB/菜单），拿不到 EmbeddedStackScope —— 之前靠
-    // scope 查找必然落空、每次都全屏。直接压首页栈：草稿列表进右栏，
-    // 左边信息流不动。
-    if (MasterDetailLayout.canShowBothPanesFor(context)) {
-      ref.read(selectedTopicProvider.notifier).pushDrafts();
-      return;
-    }
-    // 窄屏没有右栏可承载，照旧全屏
+    // 草稿页是独立的双栏页（宽屏自带"左列表右话题"），所有入口统一
+    // 全屏打开，不再往平行视界栈里塞草稿层。
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const DraftsPage()),
@@ -1055,33 +1073,17 @@ class PaneContentWidget extends StatelessWidget {
             username: entry.username!,
             embeddedMode: true,
             onEmbeddedBack: onBack,
+            parentActive: parentActive,
           ),
         );
       case PaneKind.settings:
         return EmbeddedStackScope(
           stackProvider: stackProvider,
           truncateOnPush: truncateOnPush,
-          child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
-        );
-      case PaneKind.drafts:
-        return EmbeddedStackScope(
-          stackProvider: stackProvider,
-          truncateOnPush: truncateOnPush,
-          // 草稿处理完 → 把草稿这一层从栈里抽掉（不是 pop：pop 会连右边
-          // 的话题一起关掉）。master 预览位的 onBack 本来就是 null，所以
-          // 这条必须独立接线，否则草稿栏永远赖着不走。
-          child: Consumer(
-            builder: (context, ref, _) => DraftsPage(
-              embeddedMode: true,
-              // 跟随宿主 tab 的活跃状态：切走再切回来要重新拉一次草稿
-              isActive: parentActive,
-              // truncateOnPush = 我在左栏预览位 = 我是"处理栏"，空了该撤
-              autoCloseWhenEmpty: truncateOnPush,
-              onEmbeddedBack: onBack,
-              onAllHandled: () => ref
-                  .read(stackProvider.notifier)
-                  .removeEntriesOfKind(PaneKind.drafts),
-            ),
+          child: SettingsPage(
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
+            parentActive: parentActive,
           ),
         );
     }

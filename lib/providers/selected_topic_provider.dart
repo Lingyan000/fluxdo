@@ -4,14 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
-import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/user_profile_page.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
 
 /// 平行视界导航栈里一层的内容种类。栈里可以混插话题层和个人资料层
 /// （比如：话题 -> 点头像 -> 资料 -> 点资料里的链接 -> 另一个话题）。
-enum PaneKind { topic, profile, settings, drafts }
+enum PaneKind { topic, profile, settings }
 
 /// 平行视界导航栈里的一层。
 class PaneEntry {
@@ -31,19 +30,6 @@ class PaneEntry {
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
       topicId = null,
-      initialTitle = null,
-      scrollToPostNumber = null,
-      instanceId = null,
-      highlightBoostUsername = null,
-      initialRevisionPostNumber = null,
-      initialRevisionNumber = null,
-      autoOpenReply = false,
-      autoReplyToPostNumber = null;
-
-  const PaneEntry.drafts()
-    : kind = PaneKind.drafts,
-      topicId = null,
-      username = null,
       initialTitle = null,
       scrollToPostNumber = null,
       instanceId = null,
@@ -323,33 +309,6 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     state = SelectedTopicState(stack: [PaneEntry.profile(username: username)]);
   }
 
-  /// 打开草稿列表：压栈显示在右栏。语义同 pushSettings ——
-  /// 草稿页是平行视界的一层内容，不是自成一套分栏。
-  void pushDrafts() {
-    // 草稿**占据**右栏，不是叠在别人上面：右边已经有话题时顶替掉它，
-    // 左边保持信息流/私信列表。所以整栈重置成单层草稿，而不是 append
-    // —— append 会让"栈里两个草稿"和"草稿压在话题上"两种烂状态都成立。
-    if (state.stack.length == 1 && state.stack.single.kind == PaneKind.drafts) {
-      return; // 已经就是它，别白重建一次状态
-    }
-    state = const SelectedTopicState(stack: [PaneEntry.drafts()]);
-  }
-
-  /// master 面板"上一层预览"里打开草稿：截断栈顶后压入。
-  void pushDraftsTruncating() {
-    if (state.stack.length < 2) {
-      pushDrafts();
-      return;
-    }
-    // 同 [pushDrafts]：草稿层唯一，截断后若下面还压着一个草稿就别再加
-    final kept = state.stack
-        .take(state.stack.length - 1)
-        .where((e) => e.kind != PaneKind.drafts);
-    state = SelectedTopicState(
-      stack: [...kept, const PaneEntry.drafts()],
-    );
-  }
-
   /// 打开设置：压栈，保留之前的层。
   void pushSettings() {
     state = SelectedTopicState(
@@ -432,18 +391,6 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
     );
   }
 
-  /// 抽掉栈中某一类层，其余层保持相对顺序。
-  ///
-  /// 草稿栏用:草稿全部处理完之后，草稿这一层要从栈里消失，但**右边的
-  /// 话题/私信必须留着** —— 所以不能用 pop(那会关掉栈顶的话题)。
-  /// 抽掉后 `[草稿, 话题]` 变成 `[话题]`，左栏自然退回信息流/私信列表。
-  void removeEntriesOfKind(PaneKind kind) {
-    if (!state.stack.any((e) => e.kind == kind)) return;
-    state = SelectedTopicState(
-      stack: state.stack.where((e) => e.kind != kind).toList(),
-    );
-  }
-
   void clear() {
     state = const SelectedTopicState();
   }
@@ -462,28 +409,6 @@ final selectedTopicProvider = SelectedTopicProvider((ref) {
 final selectedMessageProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
-
-/// 把草稿和某条话题/私信一起放进栈：`[草稿, 内容]`。
-///
-/// 这是"处理草稿"的标准形态 —— 左栏草稿处理栏、右栏正在处理的那条。
-/// 处理完最后一条时 [SelectedTopicNotifier.removeEntriesOfKind] 抽掉草稿
-/// 层，栈剩 `[内容]`，左栏自然退回该内容对应的列表（信息流 / 私信列表）。
-extension DraftHandoff on SelectedTopicNotifier {
-  void openDraftTarget({
-    required int topicId,
-    int? scrollToPostNumber,
-    bool autoOpenReply = true,
-    int? autoReplyToPostNumber,
-  }) {
-    pushDrafts(); // 栈重置成 [草稿]
-    push(
-      topicId: topicId,
-      scrollToPostNumber: scrollToPostNumber,
-      autoOpenReply: autoOpenReply,
-      autoReplyToPostNumber: autoReplyToPostNumber,
-    ); // → [草稿, 内容]
-  }
-}
 
 /// 「我的」页右栏的平行视界栈。
 ///
@@ -670,25 +595,6 @@ class EmbeddedStackScope extends InheritedWidget {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
-  }
-
-  /// 打开草稿列表的统一入口：嵌入面板里压栈（右栏显示草稿列表），
-  /// 不在就全屏 push。
-  static void openDrafts(BuildContext context) {
-    final scope = _maybeScopeOf(context);
-    if (scope != null) {
-      final container = ProviderScope.containerOf(context, listen: false);
-      final notifier = container.read(scope.stackProvider.notifier);
-      if (scope.truncateOnPush) {
-        notifier.pushDraftsTruncating();
-      } else {
-        notifier.pushDrafts();
-      }
-      return;
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const DraftsPage()));
   }
 
   /// 打开设置的统一入口：嵌入面板里压栈显示平行视界，不在就全屏 push。

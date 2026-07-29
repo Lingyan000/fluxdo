@@ -15,6 +15,7 @@ import '../widgets/content/collapsed_html_content.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/full_screen_pane_stack.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../providers/shortcut_provider.dart';
 import 'topics_screen.dart' show PaneContentWidget;
 
 /// 追觅：实时监控指定用户的发帖 / 回复 / 点赞 / 表情回应 / Boost 动态。
@@ -39,6 +40,19 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
   String? _focusUser;
   bool? _lastCanShowParallel;
   bool _isAutoSwitching = false;
+
+  /// 桌面 ESC 两段式(右栏开→关右栏;右栏空→maybePop,底栏 tab 首路由
+  /// 为 no-op)。isActive 谓词防截胡其他 tab。
+  late final PaneHostEscBinding _escBinding = PaneHostEscBinding(
+    ref: ref,
+    enabled: () => widget.isActive,
+  );
+
+  @override
+  void dispose() {
+    _escBinding.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant SeekingPage oldWidget) {
@@ -327,6 +341,10 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
     final selected = ref.watch(selectedSeekingProvider);
     final canShowParallel = _canShowParallel(context);
     _maybePushSelectedPane(selected, canShowParallel);
+    _escBinding.sync(
+      context,
+      paneOpen: canShowParallel && selected.hasSelection,
+    );
     if (!canShowParallel || !selected.hasSelection) return page;
 
     final notifier = ref.read(selectedSeekingProvider.notifier);
@@ -345,9 +363,10 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
     return MasterDetailLayout(
       masterWidth: _parallelMasterWidth,
       minDetailWidth: _parallelMinDetailWidth,
-      minMasterRatio: 0.32,
+      // 与搜索页同语义:列表态初始=masterWidth,压栈才对半分(旧的
+      // min 0.32/preferred 0.4 让初始占四成屏宽,与其他双栏页不一致)。
       maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
-      preferredMasterRatio: selected.isStacked ? 0.5 : 0.4,
+      preferredMasterRatio: selected.isStacked ? 0.5 : null,
       master: master,
       detail: PaneContentWidget(
         key: _paneKey(selected.topEntry!, 'detail'),

@@ -31,10 +31,15 @@ class SettingsPage extends ConsumerStatefulWidget {
   final bool embeddedMode;
   final VoidCallback? onEmbeddedBack;
 
+  /// 宿主 tab 是否活跃(嵌入模式下用于 surface 注册失活:IndexedStack
+  /// 常驻页共享根路由,非活跃 tab 的注册会截胡活跃 tab 的按键)。
+  final bool parentActive;
+
   const SettingsPage({
     super.key,
     this.embeddedMode = false,
     this.onEmbeddedBack,
+    this.parentActive = true,
   });
 
   @visibleForTesting
@@ -62,6 +67,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         kind: ShortcutSurfaceKind.route,
         repeatBehavior: ShortcutSurfaceRepeatBehavior.reveal,
         passthroughActions: ShortcutSurfaceActionSets.globalRoutePassthrough,
+        // 嵌入在 IndexedStack 常驻 tab 里时,宿主不活跃则本 surface 不
+        // 参与分发(否则 blocksShortcuts 会拦掉其他 tab 的按键)。
+        enabled: () => !widget.embeddedMode || widget.parentActive,
       );
   ModalRoute<dynamic>? _route;
   String _query = '';

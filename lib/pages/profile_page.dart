@@ -67,9 +67,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _showTitle = false;
   bool _isRefreshing = false;
 
-  /// build 里存下的宽屏判定,供点击回调读(不能在回调里读 MediaQuery)。
-  bool _showWideLayout = false;
-
   // 余额卡片(CDK/LDC)是否已可渲染:仅在本页首次成为活跃 tab 后置 true。
   // 避免 IndexedStack 冷启动预构建本页时,balance card 的 watch 就触发
   // cdk/ldc user-info 请求(撞上 cdk 子域冷启动的 CF 挑战窗口)。
@@ -344,7 +341,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
     final isOffline = userState.hasError && userState.hasValue && userState.value != null;
     final showWideLayout = MasterDetailLayout.canShowBothPanesFor(context);
-    _showWideLayout = showWideLayout; // 供点击回调用，见 [_openDrafts]
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -685,24 +681,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  /// 打开草稿：走**和信息流 + 号完全同一条路径**（切到首页栈、草稿进右栏）。
-  ///
-  /// 点某条草稿后草稿自己会挪到左栏当处理栏、内容进右栏，处理完草稿层被
-  /// 抽掉，左栏退回对应的信息流/私信列表 —— 所以这里不需要另造一个页面。
-  ///
-  /// 不用 `EmbeddedStackScope.openDrafts(context)`：这里的 `context` 是
-  /// ProfilePage 自己的 State context，而 EmbeddedStackScope 是它的
-  /// **后代**——`dependOnInheritedWidgetOfExactType` 只往上找，必然落空，
-  /// 于是每次都退化成全屏。（topics_screen 的 FAB 踩过同一个坑。）
   void _openDrafts() {
-    // 用 build 里存下的值：`canShowBothPanesFor` 内部读 MediaQuery，在
-    // 点击回调里调用等于在 build 之外注册 InheritedWidget 依赖（drafts_page
-    // 那边踩过，红屏 `check that it really is our descendant`）。
-    if (_showWideLayout) {
-      ref.requestNavDestination(NavEntryIds.home);
-      ref.read(selectedTopicProvider.notifier).pushDrafts();
-      return;
-    }
+    // 草稿页是独立的双栏页(宽屏自带"左列表右话题"),所有入口统一
+    // 全屏打开,不再往「我的」页右栏塞草稿层。
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const DraftsPage()),

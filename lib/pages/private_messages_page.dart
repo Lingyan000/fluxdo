@@ -8,6 +8,7 @@ import '../navigation/nav_action_bus.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/shortcut_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/layout/auto_restore_master_detail_route.dart';
@@ -55,6 +56,13 @@ class PrivateMessagesPage extends ConsumerStatefulWidget {
 class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+
+  /// 桌面 ESC 两段式:右栏开着→分发落 detail scope(关右栏);右栏空→
+  /// 注册 maybePop。底栏 tab 形态是首路由,maybePop 为 no-op。
+  late final PaneHostEscBinding _escBinding = PaneHostEscBinding(
+    ref: ref,
+    enabled: () => widget.isActive,
+  );
 
   /// 用持久化 GlobalKey 做 master/detail 槽位间的话题面板"挪动"已回退——
   /// 实测多切换几个私信会命中 Flutter 框架级断言
@@ -166,6 +174,7 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
 
   @override
   void dispose() {
+    _escBinding.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -253,13 +262,14 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
     final selectedMessage = ref.watch(selectedMessageProvider);
     _maybePushDetail(selectedMessage, canShowDetailPane);
+    _escBinding.sync(
+      context,
+      paneOpen: canShowDetailPane && selectedMessage.hasSelection,
+    );
     if (!canShowDetailPane) return listScaffold;
 
-    // 左栏本质是不是"列表"（私信列表 / 草稿处理栏）——决定给窄栏还是
-    // 对半分。草稿处理栏是列表，对半分会让它空得离谱。
-    final masterIsListLike = !selectedMessage.isStacked ||
-        selectedMessage.stack[selectedMessage.stack.length - 2].kind ==
-            PaneKind.drafts;
+    // 左栏本质是不是"列表"（私信列表）——决定给窄栏还是对半分。
+    final masterIsListLike = !selectedMessage.isStacked;
     return MasterDetailLayout(
       maxMasterRatio: masterIsListLike
           ? MasterDetailLayout.defaultMaxMasterRatio
@@ -274,9 +284,17 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
               entry: selectedMessage.topEntry!,
               stackProvider: selectedMessageProvider,
               parentActive: widget.isActive,
-              onBack: selectedMessage.isStacked
-                  ? () => ref.read(selectedMessageProvider.notifier).pop()
-                  : null,
+              // 基础层也给 clear：ESC/返回按钮清空右栏回到空态，与
+              // search/seeking 一致（平行视界 ESC 统一）。回调内重读
+              // provider，不闭包捕获 build 时的快照。
+              onBack: () {
+                final notifier = ref.read(selectedMessageProvider.notifier);
+                if (ref.read(selectedMessageProvider).isStacked) {
+                  notifier.pop();
+                } else {
+                  notifier.clear();
+                }
+              },
             )
           : null,
     );

@@ -29,7 +29,6 @@ import '../utils/blocked_user_filter.dart';
 import '../utils/discourse_url_parser.dart';
 import '../widgets/common/search_capsule.dart';
 import '../utils/link_launcher.dart';
-import 'drafts_page.dart';
 import 'settings_page.dart';
 
 /// 搜索框中的站内直达链接标准化。支持完整 URL、`linux.do/...` 和相对路径；
@@ -67,11 +66,16 @@ class SearchPage extends ConsumerStatefulWidget {
     this.stackProvider,
     this.onClose,
     this.heroCapsule = false,
+    this.parentActive = true,
   });
 
   final bool embeddedMaster;
   final SelectedTopicProvider? stackProvider;
   final VoidCallback? onClose;
+
+  /// 宿主 tab 是否活跃(嵌入首页左栏时传入:IndexedStack 常驻页共享
+  /// 根路由,非活跃 tab 的 surface 注册会截胡活跃 tab 的按键)。
+  final bool parentActive;
 
   @visibleForTesting
   static bool canShowParallelFor(BuildContext context) {
@@ -101,6 +105,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         kind: ShortcutSurfaceKind.route,
         repeatBehavior: ShortcutSurfaceRepeatBehavior.reveal,
         passthroughActions: ShortcutSurfaceActionSets.globalRoutePassthrough,
+        // 嵌入首页左栏(embeddedMaster)时挂在 IndexedStack 常驻 tab 里,
+        // 宿主不活跃则不参与分发,否则拦掉其他 tab 的按键。
+        enabled: () => !widget.embeddedMaster || widget.parentActive,
       );
   ModalRoute<dynamic>? _route;
 
@@ -748,9 +755,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     return MasterDetailLayout(
       masterWidth: SearchPage.parallelMasterWidth,
       minDetailWidth: SearchPage.parallelMinDetailWidth,
-      minMasterRatio: 0.32,
+      // 列表态与其他双栏页同语义:初始=masterWidth(440,结果卡片比首页
+      // 话题卡宽一点),比例只在超大窗口放宽。旧参数(min 0.32/preferred
+      // 0.4)让搜索初始就占四成屏宽,明显宽于其他页。
       maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
-      preferredMasterRatio: selected.isStacked ? 0.5 : 0.4,
+      preferredMasterRatio: selected.isStacked ? 0.5 : null,
       master: _buildParallelMaster(selected, master),
       detail: selected.hasSelection
           ? _buildParallelPane(
@@ -765,7 +774,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               },
             )
           : null,
-      emptyDetail: _buildParallelEmptyState(theme),
+      emptyDetail: MasterDetailEmptyState(
+        icon: Symbols.preview_rounded,
+        iconSize: 56,
+        message: context.l10n.search_selectResultHint,
+      ),
     );
   }
 
@@ -961,58 +974,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             username: entry.username!,
             embeddedMode: true,
             onEmbeddedBack: onBack,
+            parentActive: widget.parentActive,
           ),
         );
       case PaneKind.settings:
         return EmbeddedStackScope(
           stackProvider: _stackProvider,
           truncateOnPush: truncateOnPush,
-          child: SettingsPage(embeddedMode: true, onEmbeddedBack: onBack),
-        );
-      case PaneKind.drafts:
-        return EmbeddedStackScope(
-          stackProvider: _stackProvider,
-          truncateOnPush: truncateOnPush,
-          child: Consumer(
-            builder: (context, ref, _) => DraftsPage(
-              embeddedMode: true,
-              autoCloseWhenEmpty: truncateOnPush,
-              onEmbeddedBack: onBack,
-              // 草稿处理完 → 抽掉草稿这一层（不是 pop，右边的话题要留着）
-              onAllHandled: () => ref
-                  .read(_stackProvider.notifier)
-                  .removeEntriesOfKind(PaneKind.drafts),
-            ),
+          child: SettingsPage(
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
+            parentActive: widget.parentActive,
           ),
         );
     }
-  }
-
-  Widget _buildParallelEmptyState(ThemeData theme) {
-    // 右侧空详情没有 Scaffold，若不显式铺底会透出 MaterialApp 默认
-    // canvasColor，和左侧搜索 Scaffold 的主题背景形成灰蓝/暖色断层。
-    return ColoredBox(
-      color: theme.scaffoldBackgroundColor,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Symbols.preview_rounded,
-              size: 56,
-              color: theme.colorScheme.outlineVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              context.l10n.search_selectResultHint,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildEmptyState(ThemeData theme) {
