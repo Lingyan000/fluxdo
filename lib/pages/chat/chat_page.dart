@@ -53,9 +53,7 @@ typedef ChatConversationGroups = ({
 /// 「私聊」仅指 1:1 Direct Message；群组 Direct Message 与公开频道都属于
 /// 多人会话，放入「群聊」。这样收藏页加入子 Tab 后不会丢失已收藏的
 /// 公开频道。
-ChatConversationGroups partitionChatChannels(
-  List<ChatChannel> channels,
-) {
+ChatConversationGroups partitionChatChannels(List<ChatChannel> channels) {
   final privateChats = <ChatChannel>[];
   final groupChats = <ChatChannel>[];
   for (final channel in channels) {
