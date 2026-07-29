@@ -52,7 +52,8 @@ class SignetEffect
   }
 
   IFACEMETHODIMP GetNamedPropertyMapping(
-      LPCWSTR, UINT*, GRAPHICS_EFFECT_PROPERTY_MAPPING*) noexcept override {
+      LPCWSTR, UINT*,
+      abi_wge::GRAPHICS_EFFECT_PROPERTY_MAPPING*) noexcept override {
     // 不暴露可动画命名属性
     return E_INVALIDARG;
   }
