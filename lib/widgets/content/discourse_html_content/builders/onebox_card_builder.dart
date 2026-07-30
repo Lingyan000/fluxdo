@@ -195,6 +195,7 @@ Widget _buildByType({
       case OneboxType.googleDocs:
       case OneboxType.pdf:
       case OneboxType.amazon:
+      case OneboxType.spotify:
       case OneboxType.discourseTopic:
       case OneboxType.defaultOnebox:
         return buildDefaultOnebox(
@@ -206,7 +207,8 @@ Widget _buildByType({
     }
   } catch (e, stackTrace) {
     debugPrint(
-        '=== Onebox Build Error [$type] ===\nError: $e\nStackTrace: $stackTrace');
+      '=== Onebox Build Error [$type] ===\nError: $e\nStackTrace: $stackTrace',
+    );
     // 专用 builder 失败时回退到默认样式
     return _buildSafeDefault(
       context: context,

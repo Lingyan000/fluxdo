@@ -27,6 +27,7 @@ import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/chat/online_status_avatar.dart';
+import '../../widgets/user/user_card.dart';
 import '../../widgets/markdown_editor/emoji_sticker_panel.dart';
 import '../image_viewer_page.dart';
 import '../user_profile_page.dart';
@@ -183,6 +184,18 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
   bool get _pinEnabled {
     final settings = PreloadedDataService().siteSettingsSync;
     return settings?['chat_pinned_messages'] == true;
+  }
+
+  void _showPinnedMessages() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _PinnedMessagesSheet(channelId: widget.channelId),
+    );
   }
 
   Future<void> _togglePinMessage(ChatMessage message) async {
@@ -1463,6 +1476,16 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
                   tooltip: '搜索对话',
                   onPressed: _enterSearchMode,
                 ),
+                // 置顶消息查看入口
+                if (_pinEnabled)
+                  IconButton(
+                    icon: Icon(
+                      Icons.push_pin_rounded,
+                      color: theme.colorScheme.primary,
+                    ),
+                    tooltip: context.l10n.chat_view_pinned_messages,
+                    onPressed: _showPinnedMessages,
+                  ),
                 // 消息串开启时显示入口：进入频道消息串列表
                 // （对齐 Discourse threads-list-button → chat.channel.threads）
                 if (currentChannel?.threadingEnabled == true)
@@ -2264,8 +2287,24 @@ class _ChatMessageBubble extends StatefulWidget {
 }
 
 class _ChatMessageBubbleState extends State<_ChatMessageBubble> {
+  final LayerLink _link = LayerLink();
+
   /// 桌面鼠标悬停时显示异侧 react 按钮；触控设备始终保留轻量入口。
   bool _hovered = false;
+
+  void _openUserCard() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final anchorRect = box.localToGlobal(Offset.zero) & box.size;
+    showUserCard(
+      context: context,
+      anchorRect: anchorRect,
+      layerLink: _link,
+      username: message.user!.username,
+      avatarFallbackUrl: avatarUrl,
+      nameFallback: message.user!.name ?? message.user!.username,
+    );
+  }
 
   ChatMessage get message => widget.message;
   ChatMessage? get replyToMessage => widget.replyToMessage;
@@ -3420,6 +3459,173 @@ class _ChatMessageFlagSheetState extends State<_ChatMessageFlagSheet> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 置顶消息底部面板
+class _PinnedMessagesSheet extends ConsumerWidget {
+  final int channelId;
+
+  const _PinnedMessagesSheet({required this.channelId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final messagesAsync = ref.watch(chatPinnedMessagesProvider(channelId));
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          // 拖拽指示条
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 12),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.4,
+                ),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.push_pin_rounded,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  context.l10n.chat_pinned_messages_title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(),
+          Expanded(
+            child: messagesAsync.when(
+              data: (messages) {
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.push_pin_outlined,
+                          size: 48,
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          context.l10n.chat_pinned_messages_empty,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final username =
+                        msg.user?.name ?? msg.user?.username ?? '用户';
+                    final avatarUrl = msg.user?.avatarTemplate != null
+                        ? UrlHelper.resolveUrlWithCdn(
+                            msg.user!.avatarTemplate!.replaceAll(
+                              '{size}',
+                              '40',
+                            ),
+                          )
+                        : null;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, right: 10),
+                            child: OnlineStatusAvatar(
+                              userId: msg.user?.id ?? 0,
+                              imageUrl: avatarUrl,
+                              radius: 16,
+                              fallbackText: username,
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      username,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      TimeUtils.formatCompactTime(
+                                        msg.createdAt,
+                                      ),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            fontSize: 10,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.6),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  msg.message,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(child: Text('加载失败: $error')),
+            ),
+          ),
+        ],
       ),
     );
   }

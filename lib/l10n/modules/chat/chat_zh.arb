@@ -130,5 +130,8 @@
       "error": { "type": "String" }
     }
   },
-  "chat_start": "聊天"
+  "chat_start": "聊天",
+  "chat_pinned_messages_title": "置顶消息",
+  "chat_pinned_messages_empty": "暂无置顶消息",
+  "chat_view_pinned_messages": "查看置顶消息"
 }

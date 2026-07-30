@@ -36,6 +36,9 @@ enum OneboxType {
   // 购物
   amazon,
 
+  // 音频
+  spotify,
+
   // Discourse
   discourseTopic,
 
@@ -110,7 +113,8 @@ OneboxType detectOneboxType(dynamic element) {
   if (classes.contains('githubrepo')) return OneboxType.githubRepo;
   if (classes.contains('githubblob')) return OneboxType.githubBlob;
   if (classes.contains('githubissue')) return OneboxType.githubIssue;
-  if (classes.contains('githubpullrequest')) return OneboxType.githubPullRequest;
+  if (classes.contains('githubpullrequest'))
+    return OneboxType.githubPullRequest;
   if (classes.contains('githubcommit')) return OneboxType.githubCommit;
   if (classes.contains('githubgist')) return OneboxType.githubGist;
   if (classes.contains('githubfolder')) return OneboxType.githubFolder;
@@ -149,7 +153,8 @@ OneboxType detectOneboxType(dynamic element) {
       classes.contains('stackoverflow-onebox')) {
     return OneboxType.stackExchange;
   }
-  if (classes.contains('hackernews-onebox') || classes.contains('ycombinator')) {
+  if (classes.contains('hackernews-onebox') ||
+      classes.contains('ycombinator')) {
     return OneboxType.hackernews;
   }
   if (classes.contains('pastebin-onebox')) {
@@ -169,6 +174,11 @@ OneboxType detectOneboxType(dynamic element) {
     return OneboxType.amazon;
   }
 
+  // 音频
+  if (classes.contains('spotify-onebox')) {
+    return OneboxType.spotify;
+  }
+
   // Discourse 话题
   if (classes.contains('discoursetopic-onebox')) {
     return OneboxType.discourseTopic;
@@ -176,7 +186,8 @@ OneboxType detectOneboxType(dynamic element) {
 
   // 通过 data-onebox-src 或 URL 检测
   final dataSource = element.attributes['data-onebox-src'] ?? '';
-  final headerLink = element.querySelector('header a')?.attributes['href'] ?? '';
+  final headerLink =
+      element.querySelector('header a')?.attributes['href'] ?? '';
   final url = dataSource.isNotEmpty ? dataSource : headerLink;
 
   if (url.contains('github.com')) {
@@ -197,6 +208,9 @@ OneboxType detectOneboxType(dynamic element) {
   if (url.contains('news.ycombinator.com')) {
     return OneboxType.hackernews;
   }
+  if (url.contains('open.spotify.com') || url.contains('spotify.com')) {
+    return OneboxType.spotify;
+  }
 
   return OneboxType.defaultOnebox;
 }
@@ -204,7 +218,9 @@ OneboxType detectOneboxType(dynamic element) {
 /// 从 URL 检测 GitHub 类型
 OneboxType _detectGithubTypeFromUrl(String url) {
   if (url.contains('/blob/') || url.contains('/tree/')) {
-    return url.contains('/blob/') ? OneboxType.githubBlob : OneboxType.githubFolder;
+    return url.contains('/blob/')
+        ? OneboxType.githubBlob
+        : OneboxType.githubFolder;
   }
   if (url.contains('/issues/') || url.contains('/issue/')) {
     return OneboxType.githubIssue;
@@ -294,6 +310,8 @@ String getOneboxTypeName(OneboxType type) {
       return 'PDF';
     case OneboxType.amazon:
       return 'Amazon';
+    case OneboxType.spotify:
+      return 'Spotify';
     case OneboxType.discourseTopic:
       return 'Discourse Topic';
     case OneboxType.userOnebox:

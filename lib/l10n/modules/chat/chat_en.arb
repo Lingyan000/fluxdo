@@ -130,5 +130,8 @@
       "error": { "type": "String" }
     }
   },
-  "chat_start": "Chat"
+  "chat_start": "Chat",
+  "chat_pinned_messages_title": "Pinned Messages",
+  "chat_pinned_messages_empty": "No pinned messages",
+  "chat_view_pinned_messages": "View pinned messages"
 }

@@ -1721,3 +1721,15 @@ final markAllChatChannelsReadProvider = FutureProvider<void>((ref) async {
   await service.markAllChannelsRead();
   ref.invalidate(chatChannelsProvider);
 });
+
+/// ============================================================================
+/// 9. 置顶消息 Provider
+/// ============================================================================
+
+/// 获取频道置顶消息列表
+final chatPinnedMessagesProvider = FutureProvider.autoDispose
+    .family<List<ChatMessage>, int>((ref, channelId) async {
+      final service = ref.read(discourseServiceProvider);
+      final raw = await service.getPinnedMessages(channelId);
+      return _parseChatMessageList(raw);
+    });
