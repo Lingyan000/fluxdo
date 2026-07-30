@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../models/category.dart';
 import '../pages/category_topics_page.dart';
 import '../pages/chat/dm_channel_detail_page.dart';
+import '../pages/chat/dm_thread_page.dart';
 import '../pages/tag_topics_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/settings_page.dart';
@@ -27,6 +28,7 @@ enum PaneKind {
   category,
   tag,
   chat,
+  chatThread,
 }
 
 /// 平行视界导航栈里的一层。
@@ -47,7 +49,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.profile({required this.username})
     : kind = PaneKind.profile,
@@ -64,7 +68,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.drafts()
     : kind = PaneKind.drafts,
@@ -82,7 +88,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.settings()
     : kind = PaneKind.settings,
@@ -100,7 +108,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.trustLevelRequirements()
     : kind = PaneKind.trustLevelRequirements,
@@ -118,7 +128,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.metaverse()
     : kind = PaneKind.metaverse,
@@ -136,7 +148,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.inviteLinks()
     : kind = PaneKind.inviteLinks,
@@ -154,7 +168,9 @@ class PaneEntry {
       tagDisplayName = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   /// 标签层。[tagName] 是**带 id 段的原串**(`1534-tag/1534`),请求路径
   /// 直接用它,显示时经 `DiscourseUrlParser.tagDisplayName` 去掉 id。
@@ -172,7 +188,9 @@ class PaneEntry {
       autoReplyToPostNumber = null,
       categoryId = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   const PaneEntry.category({required int this.categoryId})
     : kind = PaneKind.category,
@@ -189,11 +207,37 @@ class PaneEntry {
       autoOpenReply = false,
       autoReplyToPostNumber = null,
       chatChannelId = null,
-      chatTitle = null;
+      chatTitle = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
 
   /// Chat 插件 DM 频道层。
   const PaneEntry.chat({required int this.chatChannelId, this.chatTitle})
     : kind = PaneKind.chat,
+      tagName = null,
+      tagDisplayName = null,
+      categoryId = null,
+      topicId = null,
+      username = null,
+      initialTitle = null,
+      scrollToPostNumber = null,
+      instanceId = null,
+      highlightBoostUsername = null,
+      initialRevisionPostNumber = null,
+      initialRevisionNumber = null,
+      autoOpenReply = false,
+      autoReplyToPostNumber = null,
+      chatThreadId = null,
+      chatThreadTitle = null;
+
+  /// Chat 插件消息串(thread)层——挂在某个频道下的子对话流。
+  /// [chatChannelId] 是串所属的频道,不是可选项(串脱离频道没意义)。
+  const PaneEntry.chatThread({
+    required int this.chatChannelId,
+    required int this.chatThreadId,
+    this.chatThreadTitle,
+  }) : kind = PaneKind.chatThread,
+      chatTitle = null,
       tagName = null,
       tagDisplayName = null,
       categoryId = null,
@@ -226,6 +270,12 @@ class PaneEntry {
 
   /// DM 频道的显示名(对方昵称/用户名,或群聊标题)。
   final String? chatTitle;
+
+  /// kind == chatThread 时的消息串 id。
+  final int? chatThreadId;
+
+  /// 消息串的显示名。
+  final String? chatThreadTitle;
   final String? username;
   final String? initialTitle;
   final int? scrollToPostNumber;
@@ -531,6 +581,39 @@ class SelectedTopicNotifier extends StateNotifier<SelectedTopicState> {
       stack: [
         ...state.stack.take(state.stack.length - 1),
         PaneEntry.chat(chatChannelId: channelId, chatTitle: title),
+      ],
+    );
+  }
+
+  /// 打开消息串(thread):压栈显示在右栏。栈顶原有内容(频道本身,或
+  /// 频道里点开的话题/资料等)退到 master 预览位,不丢——退串就能回去。
+  void pushThread(int channelId, int threadId, {String? title}) {
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack,
+        PaneEntry.chatThread(
+          chatChannelId: channelId,
+          chatThreadId: threadId,
+          chatThreadTitle: title,
+        ),
+      ],
+    );
+  }
+
+  /// master 预览位里打开消息串:截断栈顶后压入(顶替右栏)。
+  void pushThreadTruncating(int channelId, int threadId, {String? title}) {
+    if (state.stack.length < 2) {
+      pushThread(channelId, threadId, title: title);
+      return;
+    }
+    state = SelectedTopicState(
+      stack: [
+        ...state.stack.take(state.stack.length - 1),
+        PaneEntry.chatThread(
+          chatChannelId: channelId,
+          chatThreadId: threadId,
+          chatThreadTitle: title,
+        ),
       ],
     );
   }
@@ -975,6 +1058,40 @@ class EmbeddedStackScope extends InheritedWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => DmChannelDetailPage(channelId: channelId, title: title),
+      ),
+    );
+  }
+
+  /// 打开消息串(thread)的统一入口。嵌入面板里(不管当前右栏是频道本身
+  /// 还是频道里点开的话题/资料等)一律压栈顶替显示,退出去再退回上一层
+  /// ——用户要的"右边没东西就顶到右栏,右边已经有东西就在当前平行视界
+  /// 里再压一层"两种情形,压栈语义本身就覆盖了(depth 1→2 时串顶替频道
+  /// 显示且频道退到 master 预览位;depth ≥2 时串再往上叠一层)。不在
+  /// 嵌入上下文里(窄屏/独立入口)就全屏 push。
+  static void openThread(
+    BuildContext context,
+    int channelId,
+    int threadId, {
+    String? title,
+  }) {
+    final scope = _maybeScopeOf(context);
+    if (scope != null) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final notifier = container.read(scope.stackProvider.notifier);
+      if (scope.truncateOnPush) {
+        notifier.pushThreadTruncating(channelId, threadId, title: title);
+      } else {
+        notifier.pushThread(channelId, threadId, title: title);
+      }
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DmThreadPage(
+          channelId: channelId,
+          threadId: threadId,
+          title: title,
+        ),
       ),
     );
   }

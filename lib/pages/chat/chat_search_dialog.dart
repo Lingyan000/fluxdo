@@ -149,7 +149,7 @@ class _ChatSearchDialogState extends ConsumerState<_ChatSearchDialog> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
-                                '${msg.user?.name ?? msg.user?.username ?? ''}'
+                                '${msg.user?.displayName ?? ''}'
                                 '${msg.channelTitle != null ? ' · ${msg.channelTitle}' : ''}'
                                 ' · ${TimeUtils.formatCompactTime(msg.createdAt)}',
                                 maxLines: 1,
