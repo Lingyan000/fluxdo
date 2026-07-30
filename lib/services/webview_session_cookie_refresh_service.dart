@@ -71,11 +71,19 @@ class WebViewSessionCookieRefreshService {
   static const Duration _successTtl = Duration(minutes: 15);
   static const Duration _bootstrapTimeout = Duration(seconds: 18);
 
-  /// 不看 force 的硬下限,防止两个独立触发源背靠背各起一个 headless
-  /// WebView(见 ensureSynced 里的用法注释)。故意很短:被这道闸门拦下的
-  /// 那次不会重试,只是这个窗口错过同步,下一次自然触发(dio 请求失败/
-  /// resume 等)几秒后照常能跑,不值得为了防背靠背而拖累真正需要跑的
-  /// 场景(尤其是 CF 验证刚解决那次)。
+  /// 非 force 触发源的最小尝试间隔,防止两个独立触发源背靠背各起一个
+  /// headless WebView(见 ensureSynced 里的用法注释)。故意很短:被这道
+  /// 闸门拦下的那次不会重试,只是这个窗口错过同步,下一次自然触发
+  /// (dio 请求失败/resume 等)几秒后照常能跑。
+  ///
+  /// force 请求穿透本闸门:闸门要防的是「非协调」触发源撞车,而 force
+  /// 只有两个来源(登录成功 / CF 恢复),都是单点串行编排——尤其
+  /// cf_recover:coordinator 先跑一次 ensureSynced(写入 _lastAttemptAt)
+  /// → 被 CF 挡 → 用户完成验证(自动过盾常 <3s)→ force 重跑。若被
+  /// 本闸门吞掉,coordinator 不重试,后续自然触发全要过失败退避
+  /// (45s 起步指数放大)——正是 12b78389 修掉的「CF 后持续 403」死局
+  /// 的时序变体。force 路径对背靠背的贡献本就被 waitForManualTeardown
+  /// 的 1.2s 冷却 + _activeRefresh join 两道既有机制压着。
   static const Duration _minAttemptSpacing = Duration(seconds: 3);
 
   /// 连续失败的最大冷却(与 _successTtl 对齐):端点 404 等"重试也不会好"
@@ -233,15 +241,16 @@ class WebViewSessionCookieRefreshService {
       );
       return const SessionBootstrapResult.failure(phase: 'attempt_cooldown');
     }
-    // 不看 force 的硬下限:CF 验证解决那一刻的 `cf_recover`(force:true,
-    // 本轮只重跑一次,不受失败退避约束)有概率跟另一条独立触发源(比如
-    // 同时失败的 dio 请求各自的 ensureInBackground)在几乎同一时刻都
-    // 通过了各自的判断,背靠背各起一个 headless WebView——每个
-    // WebView 创建/销毁都占平台主线程(见上面 FrameJankMonitor 标注的
-    // 掉帧点),GPU 贴图资源短时间内高频创建销毁还牵出过一次原生层崩溃
-    // (Skia GrResourceCache 内部断言,dump 定位到的)。跟失败退避
-    // 冷却分开算,这里只是"不管谁触发,几秒内最多真正跑一次"的硬闸门。
-    if (lastAttemptAt != null &&
+    // 非 force 的最小间隔闸门:两条独立触发源(比如同时失败的多个 dio
+    // 请求各自的 ensureInBackground)有概率在几乎同一时刻都通过了各自
+    // 的判断,背靠背各起一个 headless WebView——每个 WebView 创建/销毁
+    // 都占平台主线程(见上面 FrameJankMonitor 标注的掉帧点),GPU 贴图
+    // 资源短时间内高频创建销毁还牵出过一次原生层崩溃(Skia
+    // GrResourceCache 内部断言,dump 定位到的)。跟失败退避冷却分开算,
+    // 这里只是"几秒内最多真正跑一次"的闸门;force 穿透的理由见
+    // _minAttemptSpacing 注释(cf_recover 被吞会复活 CF 后持续 403)。
+    if (!force &&
+        lastAttemptAt != null &&
         now.difference(lastAttemptAt) < _minAttemptSpacing) {
       _logEnsureEvent(
         event: 'webview_session_sync_skipped',
