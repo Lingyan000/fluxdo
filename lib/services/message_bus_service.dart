@@ -658,7 +658,13 @@ class MessageBusService {
         sub.lastMessageId = message.messageId;
       }
 
-      for (final callback in sub.callbacks) {
+      // 拷贝一份快照再遍历——回调内部经常触发 Riverpod notifier 重建,
+      // 同步走到 subscribe/unsubscribe 改到这同一个 sub.callbacks 列表,
+      // 直接遍历原列表会在改动的同一帧内炸 ConcurrentModificationError,
+      // 且这个异常发生在 _processChunk 的 try 块里,会把整个 chunk(可能
+      // 还带着其它频道的真消息)一起吞掉——表现就是"消息发过去了但对方
+      // 收不到/不实时"。
+      for (final callback in List<MessageBusCallback>.of(sub.callbacks)) {
         try {
           callback(message);
         } catch (e) {
