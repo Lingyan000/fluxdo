@@ -102,6 +102,8 @@ class ChatChannel {
   final int id;
   final String? title;
   final String? slug;
+  /// 群聊自定义图标(表情短代码,不带冒号),没设置过为 null
+  final String? emoji;
   final String chatableType;
   final int? chatableId;
   final String? description;
@@ -127,6 +129,7 @@ class ChatChannel {
     required this.id,
     this.title,
     this.slug,
+    this.emoji,
     required this.chatableType,
     this.chatableId,
     this.description,
@@ -155,6 +158,7 @@ class ChatChannel {
       id: json['id'] as int,
       title: json['title'] as String?,
       slug: json['slug'] as String?,
+      emoji: json['emoji'] as String?,
       chatableType: json['chatable_type'] as String? ?? 'DirectMessage',
       chatableId: json['chatable_id'] as int?,
       description: json['description'] as String?,
@@ -185,11 +189,15 @@ class ChatChannel {
     ChatLastMessage? lastMessage,
     ChatMembership? membership,
     bool? threadingEnabled,
+    String? title,
+    String? slug,
+    String? emoji,
   }) {
     return ChatChannel(
       id: id,
-      title: title,
-      slug: slug,
+      title: title ?? this.title,
+      slug: slug ?? this.slug,
+      emoji: emoji ?? this.emoji,
       chatableType: chatableType,
       chatableId: chatableId,
       description: description,

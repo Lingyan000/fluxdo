@@ -92,6 +92,26 @@ mixin _PresenceMixin on _DiscourseServiceBase {
     }
   }
 
+  /// 聊天在线用户 id 集合(对齐官方 `/chat/online` presence 频道初始快照)
+  Future<Set<int>> getChatOnlinePresence() async {
+    try {
+      final response = await _dio.get(
+        '/presence/get',
+        queryParameters: {'channels[]': '/chat/online'},
+      );
+      final data = response.data as Map<String, dynamic>;
+      final channelData = data['/chat/online'] as Map<String, dynamic>?;
+      final usersList = channelData?['users'] as List<dynamic>? ?? [];
+      return usersList
+          .map((u) => (u as Map<String, dynamic>)['id'] as int? ?? 0)
+          .where((id) => id > 0)
+          .toSet();
+    } catch (e) {
+      debugPrint('[DiscourseService] getChatOnlinePresence failed: $e');
+      return {};
+    }
+  }
+
   /// 获取预加载的话题追踪频道元数据
   Future<Map<String, dynamic>?> getPreloadedTopicTrackingMeta() async {
     final preloaded = PreloadedDataService();

@@ -327,13 +327,33 @@ mixin _ChatMixin on _DiscourseServiceBase {
     );
   }
 
-  /// 开关频道"消息串"(threading)。核对过源码 `Chat::UpdateChannel`:
-  /// `PUT /chat/api/channels/:id`,参数是顶层 `threading_enabled`。
+  /// 开关频道"消息串"(threading)。核对过源码 `Chat::Api::ChannelsController#update`:
+  /// `PUT /chat/api/channels/:id`,`params.require(:channel).permit(...)`——
+  /// 参数必须包在顶层 `channel` 键下面,不能拍平发。
   Future<void> setChatChannelThreadingEnabled(int channelId, bool enabled) async {
     await _dio.put(
       '/chat/api/channels/$channelId',
-      data: {'threading_enabled': enabled},
+      data: {
+        'channel': {'threading_enabled': enabled},
+      },
     );
+  }
+
+  /// 改群聊名称/缩略名(slug)/emoji 图标。核对过源码
+  /// `Chat::Api::ChannelsController::CHANNEL_EDITABLE_PARAMS`:
+  /// `name`/`description`/`slug`/`threading_enabled`/`emoji`,DM 群聊(非
+  /// category channel)这几个都能改,同一个 `PUT /chat/api/channels/:id`。
+  Future<void> updateChatChannel(
+    int channelId, {
+    String? name,
+    String? slug,
+    String? emoji,
+  }) async {
+    final channel = <String, dynamic>{};
+    if (name != null) channel['name'] = name;
+    if (slug != null) channel['slug'] = slug;
+    if (emoji != null) channel['emoji'] = emoji;
+    await _dio.put('/chat/api/channels/$channelId', data: {'channel': channel});
   }
 
   /// 标记单个频道已读到某条消息

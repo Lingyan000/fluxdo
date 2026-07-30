@@ -10,10 +10,13 @@ import '../../providers/core_providers.dart';
 import '../../providers/message_bus/chat_providers.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../utils/time_utils.dart';
+import '../../widgets/chat/group_channel_icon.dart';
 import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/common/error_view.dart';
 import '../../widgets/common/user_status_icon.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
+import '../../widgets/layout/auto_restore_master_detail_route.dart';
+import '../../widgets/layout/full_screen_pane_stack.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import '../../widgets/layout/pane_empty_state.dart';
 import '../../widgets/post/pm_recipient_field.dart';
@@ -36,7 +39,83 @@ class DmChannelListPage extends ConsumerStatefulWidget {
 }
 
 class _DmChannelListPageState extends ConsumerState<DmChannelListPage> {
-  Key _keyForChat(int channelId) => ValueKey('chat_$channelId');
+  // GlobalKey(不是 ValueKey!):频道详情页在"右栏独占"/"master 预览位"/
+  // "三栏布局中间列"之间来回切换时,父级插槽类型不一样(不同 slot 用
+  // ValueKey 保不住 State——具体表现是开消息串那一刻频道消息列表的
+  // ScrollController 被重建,聊天记录跳回最底下)。GlobalKey 跨树位置
+  // 迁移也能保住同一个 Element/State,滚动位置才不丢。
+  final Map<int, GlobalKey> _chatKeys = {};
+  Key _keyForChat(int channelId) =>
+      _chatKeys.putIfAbsent(channelId, () => GlobalKey());
+
+  // 折叠屏/窗口拖窄跨越双栏阈值时的"别丢界面"兜底,对齐
+  // profile_page.dart 的 `_maybeMigratePaneToFullScreen`:双栏→单栏那
+  // 一刻,如果右栏正开着内容,`selectedChatProvider` 里的栈状态本身
+  // 没丢(单栏分支只是不渲染它),但用户看到的就是一个光秃秃的列表。
+  // 用 [AutoRestoreMasterDetailRoute] + [FullScreenPaneStack] 把当前
+  // 栈顶(不管是频道/消息串还是从聊天内容里点出去的话题/资料等任意
+  // 层)当全屏页面 push 出去——provider 栈原样保留,折回双栏时
+  // AutoRestoreMasterDetailRoute 会自己把这个临时路由摘掉,不留痕迹。
+  bool _paneAutoSwitching = false;
+
+  void _maybeMigratePaneToFullScreen(SelectedTopicState selectedChat) {
+    if (_paneAutoSwitching) return;
+    if (!selectedChat.hasSelection) return;
+    if (!widget.isActive) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    _paneAutoSwitching = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      // 一帧内又变宽(折叠屏铰链抖动):provider 里的 pane 会由宽屏
+      // build 直接渲染,不用迁移。
+      if (MasterDetailLayout.canShowBothPanesFor(context)) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => AutoRestoreMasterDetailRoute(
+                child: FullScreenPaneStack(
+                  stackProvider: selectedChatProvider,
+                  builder: (_, entry, onBack) => PaneContentWidget(
+                    // 特意用普通 ValueKey,不复用 `_keyForChat`/
+                    // `_keyForThread` 的 GlobalKey——那两个还同时被宽屏
+                    // 布局的正常插槽用着,折叠屏抖动的那一帧宽屏布局和
+                    // 这个全屏临时路由可能同时挂载在树上,同一个
+                    // GlobalKey 被两处同时占用是非法状态(表现为红屏
+                    // "Multiple widgets used the same GlobalKey",严重时
+                    // 拖累原生层触发 flutter_windows.dll 内部断言崩溃)。
+                    // 全屏路由本来就是临时的,不需要跟宽屏插槽共享
+                    // Element/滚动位置。
+                    key: ValueKey(
+                      'chat_fullscreen_${entry.kind}_'
+                      '${entry.chatChannelId}_${entry.chatThreadId}_${entry.username}',
+                    ),
+                    entry: entry,
+                    stackProvider: selectedChatProvider,
+                    parentActive: true,
+                    onBack: onBack,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) _paneAutoSwitching = false;
+          });
+    });
+  }
+
+  // 同理:消息串面板也可能在"三栏布局第三列"和"退化成两栏时的独占右栏"
+  // 之间切换插槽,同一个 GlobalKey 处理。
+  final Map<int, GlobalKey> _threadKeys = {};
+  Key _keyForThread(int threadId) =>
+      _threadKeys.putIfAbsent(threadId, () => GlobalKey());
 
   /// 平行视界压栈时:左侧显示栈里"上一层"内容,右侧显示新顶替的内容。
   Widget _buildMasterPane(SelectedTopicState selectedChat, Widget list) {
@@ -48,7 +127,9 @@ class _DmChannelListPageState extends ConsumerState<DmChannelListPage> {
         PaneContentWidget(
           key: previous.kind == PaneKind.chat
               ? _keyForChat(previous.chatChannelId!)
-              : ValueKey('master_${previous.kind}_${previous.username}'),
+              : previous.kind == PaneKind.chatThread
+                  ? _keyForThread(previous.chatThreadId!)
+                  : ValueKey('master_${previous.kind}_${previous.username}'),
           entry: previous,
           stackProvider: selectedChatProvider,
           truncateOnPush: true,
@@ -77,7 +158,7 @@ class _DmChannelListPageState extends ConsumerState<DmChannelListPage> {
           : channel.participants.firstOrNull;
       final title = channel.isGroup
           ? (channel.title ?? '群聊')
-          : (other?.name ?? other?.username);
+          : other?.displayName;
       _openChannel(channel.id, title);
     } catch (e) {
       if (!mounted) return;
@@ -228,23 +309,81 @@ class _DmChannelListPageState extends ConsumerState<DmChannelListPage> {
 
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
     final selectedChat = ref.watch(selectedChatProvider);
-    if (!canShowDetailPane) return listScaffold;
+    if (!canShowDetailPane) {
+      _maybeMigratePaneToFullScreen(selectedChat);
+      return listScaffold;
+    }
+
+    // 消息串挂在自己所属的频道正上方(栈顶是串,栈顶下面正好是它所属的
+    // 频道)时,走真三栏:频道列表 | 频道正文(保持挂载,不走 master 预览
+    // 位那套 Offstage/切换插槽逻辑)| 消息串。用户要的是"频道右边已经
+    // 有东西(串)时,串在当前平行视界内部再开一层",而不是顶掉频道——
+    // 跟其它 kind(话题/资料等)压栈会顶替右栏的语义不一样,单独开分支。
+    final stack = selectedChat.stack;
+    final topEntry = selectedChat.topEntry;
+    final ownThreadOnTop = stack.length >= 2 &&
+        topEntry != null &&
+        topEntry.kind == PaneKind.chatThread &&
+        stack[stack.length - 2].kind == PaneKind.chat &&
+        stack[stack.length - 2].chatChannelId == topEntry.chatChannelId;
+
+    if (ownThreadOnTop) {
+      final channelEntry = stack[stack.length - 2];
+      return EmbeddedStackScope(
+        stackProvider: selectedChatProvider,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 340,
+              child: listScaffold,
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: PaneContentWidget(
+                key: _keyForChat(channelEntry.chatChannelId!),
+                entry: channelEntry,
+                stackProvider: selectedChatProvider,
+                parentActive: widget.isActive,
+                truncateOnPush: true,
+                onBack: () => ref.read(selectedChatProvider.notifier).pop(),
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            SizedBox(
+              width: 380,
+              child: PaneContentWidget(
+                key: _keyForThread(topEntry.chatThreadId!),
+                entry: topEntry,
+                stackProvider: selectedChatProvider,
+                parentActive: widget.isActive,
+                onBack: () => ref.read(selectedChatProvider.notifier).pop(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     // 单层(左列表右聊天)时列表窄一点好看;一旦压栈(左边变成话题等
     // 正文内容)就回到 1:1——不然从私聊里点话题、再点新话题后,左栏的
     // 话题被挤成私聊列表那么窄。
-    final masterRatio = selectedChat.isStacked ? 0.5 : 0.32;
+    final masterRatio = selectedChat.isStacked ? 0.551 : 0.288;
 
     return EmbeddedStackScope(
       stackProvider: selectedChatProvider,
       child: MasterDetailLayout(
         preferredMasterRatio: masterRatio,
+        // 默认 maxMasterRatio 是 0.3——不放宽的话 preferredMasterRatio 传
+        // 再大也会在 _clampMasterWidth 里被摁回 0.3,之前调宽度全是白改。
+        maxMasterRatio: 0.6,
         master: _buildMasterPane(selectedChat, listScaffold),
         detail: selectedChat.hasSelection
             ? PaneContentWidget(
                 key: selectedChat.kind == PaneKind.chat
                     ? _keyForChat(selectedChat.topEntry!.chatChannelId!)
-                    : ValueKey('${selectedChat.kind}_${selectedChat.username}'),
+                    : selectedChat.kind == PaneKind.chatThread
+                        ? _keyForThread(selectedChat.topEntry!.chatThreadId!)
+                        : ValueKey('${selectedChat.kind}_${selectedChat.username}'),
                 entry: selectedChat.topEntry!,
                 stackProvider: selectedChatProvider,
                 parentActive: widget.isActive,
@@ -325,15 +464,22 @@ class _DmChannelTile extends StatelessWidget {
         : channel.participants.firstOrNull;
     final displayName = channel.isGroup
         ? (channel.title ?? '群聊')
-        : (other?.name ?? other?.username ?? channel.title ?? '未知用户');
+        : (other?.displayName ?? channel.title ?? '未知用户');
     final unread = channel.membership.unreadCount;
 
     return ListTile(
-      leading: SmartAvatar(
-        imageUrl: other?.getAvatarUrl(AppConstants.baseUrl, size: 48),
-        radius: 22,
-        fallbackText: displayName.isNotEmpty ? displayName[0] : '?',
-      ),
+      leading: channel.isGroup && (channel.emoji?.isNotEmpty ?? false)
+          ? GroupChannelIcon(emoji: channel.emoji!, radius: 22)
+          : Consumer(
+              builder: (context, ref, _) => SmartAvatar(
+                imageUrl: other?.getAvatarUrl(AppConstants.baseUrl, size: 48),
+                radius: 22,
+                fallbackText: displayName.isNotEmpty ? displayName[0] : '?',
+                isOnline: other?.id != null &&
+                    (ref.watch(chatOnlinePresenceProvider).value ?? const {})
+                        .contains(other!.id),
+              ),
+            ),
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

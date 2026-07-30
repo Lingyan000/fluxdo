@@ -17,6 +17,8 @@ class SmartAvatar extends StatefulWidget {
   final Color? backgroundColor;
   final Color? foregroundColor;
   final BoxBorder? border;
+  /// 对齐官方 chat-user-avatar 的 `.is-online` 描边:头像外缘一圈绿色。
+  final bool isOnline;
 
   const SmartAvatar({
     super.key,
@@ -26,6 +28,7 @@ class SmartAvatar extends StatefulWidget {
     this.backgroundColor,
     this.foregroundColor,
     this.border,
+    this.isOnline = false,
   });
 
   @override
@@ -286,6 +289,24 @@ class _SmartAvatarState extends State<SmartAvatar> {
       );
     }
 
+    if (widget.isOnline) {
+      avatar = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          avatar,
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _OnlineRingPainter(
+                isSquare: isSquare,
+                borderRadius: widget.radius * 0.2,
+                gapColor: theme.scaffoldBackgroundColor,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return avatar;
   }
 
@@ -328,6 +349,64 @@ class _SmartAvatarState extends State<SmartAvatar> {
       child: Icon(Symbols.person_rounded, size: radius, color: fgColor),
     );
   }
+}
+
+/// 头像在线态描边:先铺一圈背景色留缝隙,再在最外缘描一圈绿色,
+/// 效果对齐官方 CSS `inset box-shadow: 1px var(--success), 2px var(--secondary)`。
+class _OnlineRingPainter extends CustomPainter {
+  const _OnlineRingPainter({
+    required this.isSquare,
+    required this.borderRadius,
+    required this.gapColor,
+  });
+
+  final bool isSquare;
+  final double borderRadius;
+  final Color gapColor;
+
+  static const Color _ringColor = Color(0xFF2ECC71);
+  static const double _ringWidth = 1.6;
+  static const double _gapWidth = 1.6;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gapPaint = Paint()
+      ..color = gapColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _gapWidth * 2;
+    final ringPaint = Paint()
+      ..color = _ringColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _ringWidth;
+
+    final gapInset = _gapWidth;
+    final ringInset = _ringWidth / 2;
+
+    if (isSquare) {
+      final gapRect = Rect.fromLTWH(
+        gapInset, gapInset, size.width - gapInset * 2, size.height - gapInset * 2);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(gapRect, Radius.circular(borderRadius)),
+        gapPaint,
+      );
+      final ringRect = Rect.fromLTWH(
+        ringInset, ringInset, size.width - ringInset * 2, size.height - ringInset * 2);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(ringRect, Radius.circular(borderRadius)),
+        ringPaint,
+      );
+    } else {
+      final center = size.center(Offset.zero);
+      canvas.drawCircle(center, size.width / 2 - gapInset, gapPaint);
+      canvas.drawCircle(center, size.width / 2 - ringInset, ringPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OnlineRingPainter oldDelegate) =>
+      oldDelegate.isSquare != isSquare ||
+      oldDelegate.borderRadius != borderRadius ||
+      oldDelegate.gapColor != gapColor;
 }
 
 /// SVG 检测和渲染组件
