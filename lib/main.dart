@@ -859,8 +859,11 @@ class MainApp extends ConsumerWidget {
                     children: [
                       child!,
                       const ReadLaterBubble(),
-                      // 渲染帧标识印记:置于最顶层保证捕获帧必含点阵
-                      const RenderSignetLayer(),
+                      // 诊断实验:暂时关掉暗水印层,排查是否是它每帧强制
+                      // 重新栅格化 GPU 贴图(willChange:true)跟转场动画
+                      // 撞车导致的 GrGpuResource::release 崩溃——确认后
+                      // 记得改回来,别真的把水印关没了。
+                      // const RenderSignetLayer(),
                     ],
                   ),
                 );
@@ -1399,8 +1402,12 @@ class _MainPageState extends ConsumerState<MainPage>
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
   Future<void> _enterBackground() async {
-    // 清除 Flutter 图片内存缓存，降低后台内存占用
-    PaintingBinding.instance.imageCache.clear();
+    // 之前这里会 imageCache.clear() 降后台内存占用,现在去掉——怀疑是
+    // 崩溃根因:一次性并发销毁大量 GPU 贴图(SkImage_Ganesh/
+    // GrTextureProxy),撞上 Skia 已知的 disposal 问题(discourse_cache_
+    // manager.dart 里动图那块引用过的 Flutter #85831 同一类坑),聊天页
+    // 同屏头像/emoji 最多,最容易踩中。缓存本身有 256MB/30000 张上限会
+    // 自动 LRU 淘汰,不清空只是少省一点后台内存,不是必须的。
 
     // 诊断快照落盘:进程随后被杀时环形缓冲现场不再全丢(监控未启用
     // 或无记录时内部直接返回;静默失败,不干扰退后台路径)

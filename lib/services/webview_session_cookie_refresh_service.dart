@@ -71,6 +71,13 @@ class WebViewSessionCookieRefreshService {
   static const Duration _successTtl = Duration(minutes: 15);
   static const Duration _bootstrapTimeout = Duration(seconds: 18);
 
+  /// 不看 force 的硬下限,防止两个独立触发源背靠背各起一个 headless
+  /// WebView(见 ensureSynced 里的用法注释)。故意很短:被这道闸门拦下的
+  /// 那次不会重试,只是这个窗口错过同步,下一次自然触发(dio 请求失败/
+  /// resume 等)几秒后照常能跑,不值得为了防背靠背而拖累真正需要跑的
+  /// 场景(尤其是 CF 验证刚解决那次)。
+  static const Duration _minAttemptSpacing = Duration(seconds: 3);
+
   /// 连续失败的最大冷却(与 _successTtl 对齐):端点 404 等"重试也不会好"
   /// 的失败,不该比成功路径(15min 免打扰)更频繁地烧 WebView。
   static const Duration _maxFailureCooldown = Duration(minutes: 15);
@@ -225,6 +232,28 @@ class WebViewSessionCookieRefreshService {
         },
       );
       return const SessionBootstrapResult.failure(phase: 'attempt_cooldown');
+    }
+    // 不看 force 的硬下限:CF 验证解决那一刻的 `cf_recover`(force:true,
+    // 本轮只重跑一次,不受失败退避约束)有概率跟另一条独立触发源(比如
+    // 同时失败的 dio 请求各自的 ensureInBackground)在几乎同一时刻都
+    // 通过了各自的判断,背靠背各起一个 headless WebView——每个
+    // WebView 创建/销毁都占平台主线程(见上面 FrameJankMonitor 标注的
+    // 掉帧点),GPU 贴图资源短时间内高频创建销毁还牵出过一次原生层崩溃
+    // (Skia GrResourceCache 内部断言,dump 定位到的)。跟失败退避
+    // 冷却分开算,这里只是"不管谁触发,几秒内最多真正跑一次"的硬闸门。
+    if (lastAttemptAt != null &&
+        now.difference(lastAttemptAt) < _minAttemptSpacing) {
+      _logEnsureEvent(
+        event: 'webview_session_sync_skipped',
+        reason: reason,
+        level: 'info',
+        extra: {
+          'skipReason': 'min_spacing',
+          'lastAttemptAgeMs': now.difference(lastAttemptAt).inMilliseconds,
+          'force': force,
+        },
+      );
+      return const SessionBootstrapResult.failure(phase: 'min_spacing');
     }
 
     _lastAttemptAt = now;

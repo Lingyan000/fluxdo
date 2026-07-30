@@ -2146,14 +2146,21 @@ class _CfChallengePageState extends State<CfChallengePage> {
                 final coverWebView = _shouldCoverWebView;
                 final webViewWidth = math.max(1.0, constraints.maxWidth);
                 final webViewHeight = math.max(1.0, constraints.maxHeight);
-                final screenWidth = MediaQuery.sizeOf(context).width;
-                final hiddenLeft = -(screenWidth + webViewWidth + 64);
 
                 return Stack(
                   clipBehavior: Clip.hardEdge,
                   children: [
+                    // 隐藏态不再把 WebView 挪到屏幕外——那是对一个由
+                    // WebView2/ANGLE D3D11 swapchain 支撑的原生 platform
+                    // view 做瞬时大幅度位移,和下面的不透明覆盖层在同一帧
+                    // 生效,曾经在 reveal 那一刻(_challengeWebViewVisible
+                    // 从 false→true)稳定触发 flutter_windows.dll 内部的
+                    // native crash(illegal instruction / 访问越界,Dart
+                    // 层 try/catch、Catcher2 都拦不住)。位置固定不动,
+                    // 隐藏完全交给下面已有的不透明 AnimatedOpacity 覆盖层
+                    // + IgnorePointer,视觉效果不变。
                     Positioned(
-                      left: coverWebView ? hiddenLeft : 0,
+                      left: 0,
                       top: 0,
                       width: webViewWidth,
                       height: webViewHeight,
