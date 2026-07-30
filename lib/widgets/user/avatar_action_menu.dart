@@ -80,9 +80,7 @@ List<RadialMenuItem> buildAvatarMenuItems(
   final currentUser = container.read(currentUserProvider).value;
   final isSelf = currentUser != null && currentUser.username == username;
   final canMessage =
-      currentUser != null &&
-      currentUser.canSendPrivateMessages != false &&
-      !isSelf;
+      currentUser != null && currentUser.canSendPrivateMessages != false;
 
   // 话题内过滤状态:决定「只看此人/取消只看」形态
   bool isFilteringThisUser = false;
