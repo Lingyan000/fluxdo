@@ -11,18 +11,25 @@ class ChatReaction {
   final String emoji;
   final int count;
   final bool reacted;
+  /// 最多 5 个(服务端 `reactions.take(5)`),数量超过 5 时仅展示前几个
+  final List<ChatMessageUser> users;
 
   const ChatReaction({
     required this.emoji,
     required this.count,
     required this.reacted,
+    this.users = const [],
   });
 
   factory ChatReaction.fromJson(Map<String, dynamic> json) {
+    final usersJson = json['users'] as List<dynamic>? ?? const [];
     return ChatReaction(
       emoji: json['emoji'] as String,
       count: json['count'] as int? ?? 0,
       reacted: json['reacted'] as bool? ?? false,
+      users: usersJson
+          .map((u) => ChatMessageUser.fromJson(u as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -87,15 +94,34 @@ class ChatThreadInfo {
   final int id;
   final String? title;
   final int replyCount;
+  /// 以下三个来自 `preview`(`Chat::ThreadPreviewSerializer`),服务端要
+  /// `include_thread_preview` opt 才会给,没有就是 null,UI 要能优雅降级。
+  final String? lastReplyExcerpt;
+  final ChatMessageUser? lastReplyUser;
+  final DateTime? lastReplyCreatedAt;
 
-  const ChatThreadInfo({required this.id, this.title, this.replyCount = 0});
+  const ChatThreadInfo({
+    required this.id,
+    this.title,
+    this.replyCount = 0,
+    this.lastReplyExcerpt,
+    this.lastReplyUser,
+    this.lastReplyCreatedAt,
+  });
 
   factory ChatThreadInfo.fromJson(Map<String, dynamic> json) {
     final preview = json['preview'] as Map<String, dynamic>?;
+    final lastReplyUserJson = preview?['last_reply_user'] as Map<String, dynamic>?;
     return ChatThreadInfo(
       id: json['id'] as int,
       title: json['title'] as String?,
       replyCount: (preview?['reply_count'] ?? json['reply_count']) as int? ?? 0,
+      lastReplyExcerpt: preview?['last_reply_excerpt'] as String?,
+      lastReplyUser: lastReplyUserJson == null
+          ? null
+          : ChatMessageUser.fromJson(lastReplyUserJson),
+      lastReplyCreatedAt:
+          TimeUtils.parseUtcTime(preview?['last_reply_created_at'] as String?),
     );
   }
 }
