@@ -32,6 +32,7 @@ import 'metaverse_page.dart';
 import 'invite_links_page.dart';
 import 'category_topics_page.dart';
 import 'chat/dm_channel_detail_page.dart';
+import 'chat/dm_thread_page.dart';
 import 'tag_topics_page.dart';
 
 /// 话题屏幕
@@ -1175,6 +1176,21 @@ class PaneContentWidget extends StatelessWidget {
             key: ValueKey('pane_chat_${entry.chatChannelId}'),
             channelId: entry.chatChannelId!,
             title: entry.chatTitle,
+            embeddedMode: true,
+            onEmbeddedBack: onBack,
+          ),
+        );
+      case PaneKind.chatThread:
+        return EmbeddedStackScope(
+          stackProvider: stackProvider,
+          truncateOnPush: truncateOnPush,
+          child: DmThreadPage(
+            key: ValueKey(
+              'pane_chat_thread_${entry.chatChannelId}_${entry.chatThreadId}',
+            ),
+            channelId: entry.chatChannelId!,
+            threadId: entry.chatThreadId!,
+            title: entry.chatThreadTitle,
             embeddedMode: true,
             onEmbeddedBack: onBack,
           ),

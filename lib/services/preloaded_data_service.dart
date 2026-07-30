@@ -291,6 +291,14 @@ class PreloadedDataService {
   bool get signaturesFirstPostOnly =>
       _siteSettings?['signatures_first_post_only'] == true;
 
+  /// 公共频道消息保存天数（`chat_channel_retention_days`，默认 90）。
+  int get chatChannelRetentionDays =>
+      (_siteSettings?['chat_channel_retention_days'] as num?)?.toInt() ?? 90;
+
+  /// 私聊消息保存天数（`chat_dm_retention_days`，默认 0 = 无限期保留）。
+  int get chatDmRetentionDays =>
+      (_siteSettings?['chat_dm_retention_days'] as num?)?.toInt() ?? 0;
+
   /// 限定显示签名的分类 id 列表；空列表 = 不限分类。
   List<int> get signaturesShowInCategories {
     final raw = _siteSettings?['signatures_show_in_categories'] as String?;
