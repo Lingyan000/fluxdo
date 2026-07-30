@@ -45,6 +45,11 @@ class EmojiStickerPanel extends StatefulWidget {
   /// 时先收弹层,否则 sheet 被 root overlay 的弹层压住)
   final VoidCallback? onDismissRequested;
 
+  /// 是否显示"表情包"页签。回应(reaction)场景表情包传不进
+  /// Discourse 的 react 接口,与其让用户点了才提示不支持,不如
+  /// 干脆不露出这个入口。
+  final bool showStickerTab;
+
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
@@ -54,6 +59,7 @@ class EmojiStickerPanel extends StatefulWidget {
     this.inlineSearch = false,
     this.compact = false,
     this.onDismissRequested,
+    this.showStickerTab = true,
   });
 
   @override
@@ -90,12 +96,13 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           inlineSearch: widget.inlineSearch,
           compact: widget.compact,
         ),
-        StickerPicker(
-          onStickerSelected: widget.onStickerSelected,
-          bottomPadding: bottomPadding,
-          compact: widget.compact,
-          onDismissRequested: widget.onDismissRequested,
-        ),
+        if (widget.showStickerTab)
+          StickerPicker(
+            onStickerSelected: widget.onStickerSelected,
+            bottomPadding: bottomPadding,
+            compact: widget.compact,
+            onDismissRequested: widget.onDismissRequested,
+          ),
       ];
     }
     return _pages!;
@@ -153,8 +160,9 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final tabHeight =
-        widget.compact ? floatingTabHeightCompact : floatingTabHeight;
+    final tabHeight = widget.showStickerTab
+        ? (widget.compact ? floatingTabHeightCompact : floatingTabHeight)
+        : 0.0;
     final totalBottomPadding = tabHeight + safeBottom;
 
     return Stack(
@@ -167,6 +175,9 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           },
           child: PageView(
             controller: _pageController,
+            physics: widget.showStickerTab
+                ? null
+                : const NeverScrollableScrollPhysics(),
             onPageChanged: (index) {
               setState(() {
                 _currentPage = index;
@@ -178,20 +189,22 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           ),
         ),
 
-        // 悬浮切换 Tab(紧凑模式桌面无安全区,补 6px 底距不贴边)
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: widget.compact ? safeBottom + 6 : safeBottom,
-          child: Center(
-            child: AnimatedSlide(
-              offset: _tabVisible ? Offset.zero : const Offset(0, 2),
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: _buildFloatingTab(context),
+        // 悬浮切换 Tab(紧凑模式桌面无安全区,补 6px 底距不贴边;只有
+        // 表情包页签存在时才需要切换 UI,否则单页无需 Tab)
+        if (widget.showStickerTab)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: widget.compact ? safeBottom + 6 : safeBottom,
+            child: Center(
+              child: AnimatedSlide(
+                offset: _tabVisible ? Offset.zero : const Offset(0, 2),
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: _buildFloatingTab(context),
+              ),
             ),
           ),
-        ),
 
         // 悬浮退格键(仅移动端,与 Tab 同层同显隐节奏,靠右)
         if (widget.onBackspace != null && PlatformUtils.isMobile)

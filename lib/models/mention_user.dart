@@ -33,6 +33,7 @@ class UserCustomStatus {
 
 /// 用户提及搜索结果中的用户
 class MentionUser {
+  final int? id;
   final String username;
   final String? name;
   final String? avatarTemplate;
@@ -40,6 +41,7 @@ class MentionUser {
   final UserCustomStatus? status;
 
   const MentionUser({
+    this.id,
     required this.username,
     this.name,
     this.avatarTemplate,
@@ -49,6 +51,7 @@ class MentionUser {
 
   factory MentionUser.fromJson(Map<String, dynamic> json) {
     return MentionUser(
+      id: json['id'] as int?,
       username: json['username'] as String,
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
@@ -65,6 +68,11 @@ class MentionUser {
     final url = avatarTemplate!.replaceAll('{size}', size.toString());
     return UrlHelper.resolveUrlWithCdn(url);
   }
+
+  /// 展示名:优先真实姓名,姓名为空(很多用户没填,服务端给的是空字符串
+  /// 不是 null)则退到用户名。**不要**用 `name ?? username` 代替——`??`
+  /// 只在 null 时才回退,空字符串会直接把用户名顶掉,显示成空白。
+  String get displayName => name?.isNotEmpty == true ? name! : username;
 }
 
 /// 用户提及搜索结果中的群组
