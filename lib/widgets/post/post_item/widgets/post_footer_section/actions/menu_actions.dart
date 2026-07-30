@@ -250,6 +250,18 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                     }
                   },
                 ),
+              if (widget.canAssignPost && widget.onAssignPost != null)
+                ListTile(
+                  leading: Icon(
+                    Icons.assignment_ind_outlined,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  title: const Text('指定帖子'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    widget.onAssignPost!();
+                  },
+                ),
               if (!isGuest)
                 ListTile(
                   leading: Icon(

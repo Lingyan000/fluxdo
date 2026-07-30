@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../models/topic.dart';
+import '../../models/assignment.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic_vote.dart';
 import '../../models/shared_issue.dart';
@@ -71,6 +72,7 @@ part '_policy.dart';
 part '_revisions.dart';
 part '_onebox.dart';
 part '_reviewables.dart';
+part '_assign.dart';
 
 /// 基类，包含所有共享字段
 abstract class _DiscourseServiceBase {
@@ -135,7 +137,8 @@ class DiscourseService extends _DiscourseServiceBase
         _PolicyMixin,
         _RevisionsMixin,
         _OneboxMixin,
-        _ReviewablesMixin {
+        _ReviewablesMixin,
+        _AssignMixin {
   static const String baseUrl = AppConstants.baseUrl;
   static const String _usernameKey = 'linux_do_username';
   static const _summaryCacheDuration = Duration(minutes: 5);

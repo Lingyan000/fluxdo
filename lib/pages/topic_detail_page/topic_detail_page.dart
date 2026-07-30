@@ -81,6 +81,7 @@ import '../../utils/platform_utils.dart';
 import '../../models/shortcut_binding.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
+import '../../widgets/topic/assign_sheet.dart';
 
 part 'actions/_scroll_actions.dart';
 part 'actions/_user_actions.dart';
@@ -446,8 +447,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _onScrollIdle() {
     if (!mounted) return;
-    final scrolling =
-        _idleFlushPosition?.isScrollingNotifier.value ?? true;
+    final scrolling = _idleFlushPosition?.isScrollingNotifier.value ?? true;
     if (scrolling) return;
     if (_deferredPostUpdates.isEmpty) return;
     // 推迟一帧回放:isScrollingNotifier 翻 false 发生在惯性最后一个 tick
@@ -1359,6 +1359,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final isInReadLater = ref
         .read(readLaterProvider.notifier)
         .contains(widget.topicId);
+    // can_assign 只对真正有指定权限的用户开放这一项——之前不管有没有权限
+    // 都显示,没权限的人点了直接吃服务端 403。
+    final canAssignTopic =
+        ref.read(currentUserProvider).value?.canAssign ?? false;
     final hasFilter =
         notifier.isSummaryMode ||
         notifier.isAuthorOnlyMode ||
@@ -1537,6 +1541,17 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           }
           return;
         }
+        if (value == 'assign') {
+          // 弹菜单本身的关闭动画(PopupMenuButton onSelected 触发时它还没
+          // 收完)跟紧接着开的新 modal route 同一帧抢 GPU 合成——聊天那边
+          // 悬浮面板同款场景(_runPanelAction)踩过一次原生层崩溃,靠隔一
+          // 个 tick 再开新 UI 避开两段转场重叠,这里抄同样的套路。
+          Future<void>.delayed(Duration.zero, () {
+            if (!mounted) return;
+            unawaited(showAssignSheet(context, ref, topicId: widget.topicId));
+          });
+          return;
+        }
         final bookmarkTraceTarget = value == 'bookmark'
             ? _bookmarkEditTarget(detail)
             : null;
@@ -1649,6 +1664,28 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             ],
           ),
         ),
+        if (canAssignTopic)
+          PopupMenuItem(
+            value: 'assign',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.assignment_ind_outlined,
+                  size: 20,
+                  color: detail.isAssigned
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  detail.isAssigned
+                      ? '已指定 · ${detail.assignedToUser?.displayName ?? detail.assignedToGroupName ?? ''}'
+                      : '指定',
+                ),
+              ],
+            ),
+          ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'reading_settings',
@@ -2180,8 +2217,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 _KeepAlivePage(
                   child: Consumer(
                     builder: (context, ref, _) {
-                      final detail =
-                          ref.watch(topicDetailProvider(params)).value;
+                      final detail = ref
+                          .watch(topicDetailProvider(params))
+                          .value;
                       return AiChatPage(
                         topicId: widget.topicId,
                         detail: detail,
@@ -2358,7 +2396,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // Stack 组装
     return Stack(
-        children: [
+      children: [
         // 使用 Offstage 保持帖子列表存在但在搜索模式下隐藏，保留滚动位置
         Offstage(offstage: isSearchMode, child: content),
 
@@ -2445,7 +2483,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               );
             },
           ),
-        ],
+      ],
     );
   }
 
@@ -2600,6 +2638,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               viewportAnchor: _viewportAnchor,
               headerKey: _headerKey,
               hideHeaderTitle: widget.hideInlineHeaderTitle,
+              canAssignPost:
+                  ref.read(currentUserProvider).value?.canAssign ?? false,
               selectedPostNumber: selectedPostNumber,
               highlightPostNumber: highlightPostNumber,
               highlightBoostUsername: widget.highlightBoostUsername,
@@ -2649,8 +2689,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 onJumpToPost: _scrollToPost,
               ),
               onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
-              onWithdrawAndEditPendingPost:
-                  isLoggedIn ? _handleWithdrawAndEditPending : null,
+              onWithdrawAndEditPendingPost: isLoggedIn
+                  ? _handleWithdrawAndEditPending
+                  : null,
             );
           },
         );
