@@ -9,6 +9,7 @@ import 'onebox/github_onebox_builder.dart';
 import 'onebox/social_onebox_builder.dart';
 import 'onebox/video_onebox_builder.dart';
 import 'onebox/tech_onebox_builder.dart';
+import 'onebox/spotify_onebox_builder.dart';
 import '../../../../l10n/s.dart';
 
 /// 构建链接预览卡片 (onebox)
@@ -189,13 +190,21 @@ Widget _buildByType({
           linkCounts: linkCounts,
         );
 
+      // 音频
+      case OneboxType.spotify:
+        return SpotifyOneboxBuilder.buildSpotify(
+          context: context,
+          theme: theme,
+          element: element,
+          linkCounts: linkCounts,
+        );
+
       // 暂未实现专用样式的类型，使用默认样式
       case OneboxType.threads:
       case OneboxType.tiktok:
       case OneboxType.googleDocs:
       case OneboxType.pdf:
       case OneboxType.amazon:
-      case OneboxType.spotify:
       case OneboxType.discourseTopic:
       case OneboxType.defaultOnebox:
         return buildDefaultOnebox(
