@@ -11,6 +11,19 @@ class PostGrantedBadgeIcon extends StatelessWidget {
 
   const PostGrantedBadgeIcon({super.key, required this.badge});
 
+  /// 徽章 description 是站点富文本(部分徽章带 <a> 链接、HTML 实体),
+  /// Tooltip 只能显示纯文本,去标签 + 反转义常见实体。
+  static String _plainText(String html) {
+    return html
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .trim();
+  }
+
   /// 根据徽章类型获取颜色（1=Gold, 2=Silver, 3=Bronze）
   Color _badgeTypeColor(ThemeData theme) {
     switch (badge.badgeTypeId) {
@@ -32,9 +45,10 @@ class PostGrantedBadgeIcon extends StatelessWidget {
     // 真实站点 poster-icon 的 title 提示用的是徽章说明(如"连续 365 天
     // 访问"),不是内部英文名(如"Devotee")——name 只在没填 description
     // 时兜底。
-    final tooltip = (badge.description?.isNotEmpty ?? false)
-        ? badge.description!
-        : badge.name;
+    final description = badge.description != null
+        ? _plainText(badge.description!)
+        : '';
+    final tooltip = description.isNotEmpty ? description : badge.name;
 
     // 优先使用图片
     if (badge.imageUrl != null && badge.imageUrl!.isNotEmpty) {

@@ -302,50 +302,6 @@ class Topic {
     this.canHaveAnswer = false,
   });
 
-  Topic copyWith({
-    bool? unseen,
-    int? unread,
-    int? newPosts,
-    int? lastReadPostNumber,
-    bool clearLastReadPostNumber = false,
-    int? highestPostNumber,
-  }) {
-    return Topic(
-      id: id,
-      title: title,
-      slug: slug,
-      postsCount: postsCount,
-      replyCount: replyCount,
-      views: views,
-      likeCount: likeCount,
-      excerpt: excerpt,
-      createdAt: createdAt,
-      lastPostedAt: lastPostedAt,
-      lastPosterUsername: lastPosterUsername,
-      categoryId: categoryId,
-      pinned: pinned,
-      visible: visible,
-      closed: closed,
-      archived: archived,
-      tags: tags,
-      posters: posters,
-      unseen: unseen ?? this.unseen,
-      unread: unread ?? this.unread,
-      newPosts: newPosts ?? this.newPosts,
-      lastReadPostNumber: clearLastReadPostNumber
-          ? null
-          : (lastReadPostNumber ?? this.lastReadPostNumber),
-      highestPostNumber: highestPostNumber ?? this.highestPostNumber,
-      bookmarkedPostNumber: bookmarkedPostNumber,
-      bookmarkId: bookmarkId,
-      bookmarkName: bookmarkName,
-      bookmarkReminderAt: bookmarkReminderAt,
-      bookmarkableType: bookmarkableType,
-      hasAcceptedAnswer: hasAcceptedAnswer,
-      canHaveAnswer: canHaveAnswer,
-    );
-  }
-
   factory Topic.fromJson(
     Map<String, dynamic> json, {
     Map<int, TopicUser>? userMap,
@@ -680,10 +636,11 @@ class Post {
   // 帖子头部徽章
   final List<GrantedBadge>? badgesGranted; // 帖子头部显示的徽章
 
-  // 纪念日 / 生日(纯日期,格式 "YYYY-MM-DD",年份可能是站点为保护隐私塞的
-  // 假值——只比较月/日,不当成真实 DateTime 用,故不经 TimeUtils)
-  final String? userCakedate; // 加入社区的纪念日
-  final String? userBirthdate; // 生日
+  // 纪念日 / 生日(纯日期,格式 "YYYY-MM-DD";birthdate 的年份可能是
+  // 站点为保护隐私塞的假值——月/日判断不依赖年份,不当成真实 DateTime
+  // 用,故不经 TimeUtils)
+  final String? userCakedate; // 加入社区的纪念日(年份为真实注册年份)
+  final String? userBirthdate; // 生日(年份可能是隐私假值)
 
   // 用户 ID（用于打赏等功能）
   final int? userId;
@@ -1221,10 +1178,16 @@ class Post {
     return month == now.month && day == now.day;
   }
 
-  /// 今天是否是用户加入社区的纪念日
-  bool get isTodayCakeday => _isTodayMonthDay(userCakedate);
+  /// 今天是否是用户加入社区的纪念日。官方 discourse-cakeday 的周年判定
+  /// 是三条件:月/日相等且年份不等——注册当年不算周年(第一年没有
+  /// "一周年"),cakedate 的年份是真实注册年份,可以参与比较。
+  bool get isTodayCakeday {
+    if (!_isTodayMonthDay(userCakedate)) return false;
+    final year = int.tryParse(userCakedate!.substring(0, 4));
+    return year != null && year != DateTime.now().year;
+  }
 
-  /// 今天是否是用户生日
+  /// 今天是否是用户生日(birthdate 年份可能是隐私假值,只比月/日)
   bool get isTodayBirthday => _isTodayMonthDay(userBirthdate);
 }
 
