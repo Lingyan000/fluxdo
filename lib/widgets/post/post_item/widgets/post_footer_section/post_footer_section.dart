@@ -79,6 +79,12 @@ class PostFooterSection extends ConsumerStatefulWidget {
   /// "+ Boost" 火箭按钮出现在 action bar。
   final bool? danmakuActive;
 
+  /// 当前用户是否有指定权限且这条帖子还没被指定——控制"更多"菜单
+  /// 是否显示"指定帖子"这一项(已指定的话走正文下方那个标签的
+  /// 编辑/取消,不在这里重复放)。
+  final bool canAssignPost;
+  final VoidCallback? onAssignPost;
+
   const PostFooterSection({
     super.key,
     required this.post,
@@ -103,6 +109,8 @@ class PostFooterSection extends ConsumerStatefulWidget {
     this.highlightBoostUsername,
     this.opTopSlot,
     this.danmakuActive,
+    this.canAssignPost = false,
+    this.onAssignPost,
   });
 
   @override
@@ -170,9 +178,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   /// 无活跃实例时静默跳过,footer 本地 state 仍保证当场显示)。
   /// 弹幕层/action bar 读的是 provider 的 post.boosts —— 此前只写本地
   /// state,弹幕模式下自己刚发的 boost 直接不可见。
-  void _syncBoostToProvider(
-    void Function(TopicDetailNotifier notifier) apply,
-  ) {
+  void _syncBoostToProvider(void Function(TopicDetailNotifier notifier) apply) {
     final params = TopicDetailNotifier.activeParamsFor(widget.topicId);
     if (params == null) return;
     try {

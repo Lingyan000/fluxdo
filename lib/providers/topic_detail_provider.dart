@@ -141,6 +141,32 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     );
   }
 
+  /// 指定(discourse-assign)操作后本地落地——服务端不回传更新后的
+  /// 完整 topic,靠调用方(指定弹窗)把已知的新状态直接写回,不用整页重拉。
+  void updateAssignmentLocal({
+    TopicUser? assignedToUser,
+    bool clearAssignedToUser = false,
+    String? assignedToGroupName,
+    bool clearAssignedToGroupName = false,
+    String? assignmentNote,
+    bool clearAssignmentNote = false,
+    String? assignmentStatus,
+    bool clearAssignmentStatus = false,
+  }) {
+    final currentDetail = state.value;
+    if (currentDetail == null) return;
+    state = AsyncValue.data(currentDetail.copyWith(
+      assignedToUser: assignedToUser,
+      clearAssignedToUser: clearAssignedToUser,
+      assignedToGroupName: assignedToGroupName,
+      clearAssignedToGroupName: clearAssignedToGroupName,
+      assignmentNote: assignmentNote,
+      clearAssignmentNote: clearAssignmentNote,
+      assignmentStatus: assignmentStatus,
+      clearAssignmentStatus: clearAssignmentStatus,
+    ));
+  }
+
   /// 更新单个帖子的辅助方法
   void _updatePostById(int postId, Post Function(Post) updater) {
     final currentDetail = state.value;
