@@ -987,6 +987,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             parentActive: widget.parentActive,
           ),
         );
+      case PaneKind.chat:
+      case PaneKind.chatThread:
+        // 搜索页自己的栈(_stackProvider)不会被压入 DM 频道/消息串——
+        // 私聊走的是独立的 selectedChatProvider,两套栈完全不共用。
+        // 兜底分支不该真的走到,走到了也不炸,给空态而不是崩溃。
+        return const SizedBox.shrink();
     }
   }
 
