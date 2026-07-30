@@ -17,6 +17,8 @@ import '../widgets/search/search_preview_dialog.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
+import '../widgets/layout/auto_restore_master_detail_route.dart';
+import '../widgets/layout/full_screen_pane_stack.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/pane_empty_state.dart';
 import 'topic_detail_page/topic_detail_page.dart';
@@ -103,6 +105,59 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         passthroughActions: ShortcutSurfaceActionSets.globalRoutePassthrough,
       );
   ModalRoute<dynamic>? _route;
+
+  // 折叠屏/窗口拖窄跨越双栏阈值时的"别丢界面"兜底,对齐
+  // profile_page.dart 的 `_maybeMigratePaneToFullScreen`:双栏→单栏
+  // 那一刻,如果右栏正开着话题/资料等内容,`selectedSearchProvider`
+  // 里的栈状态本身没丢(单栏分支只是不渲染它),但用户看到的就是一个
+  // 光秃秃的搜索结果列表。用 AutoRestoreMasterDetailRoute +
+  // FullScreenPaneStack 把当前栈顶当全屏页面 push 出去,provider 栈
+  // 原样保留,折回双栏时自动摘掉这个临时路由。
+  bool _paneAutoSwitching = false;
+
+  void _maybeMigratePaneToFullScreen() {
+    if (_paneAutoSwitching) return;
+    final selected = ref.read(_stackProvider);
+    if (!selected.hasSelection) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    _paneAutoSwitching = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      if (SearchPage.canShowParallelFor(context)) {
+        _paneAutoSwitching = false;
+        return;
+      }
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => AutoRestoreMasterDetailRoute(
+                masterWidth: SearchPage.parallelMasterWidth,
+                minDetailWidth: SearchPage.parallelMinDetailWidth,
+                child: FullScreenPaneStack(
+                  stackProvider: _stackProvider,
+                  builder: (_, entry, onBack) => PaneContentWidget(
+                    key: ValueKey(
+                      'search_fullscreen_${entry.kind}_'
+                      '${entry.instanceId ?? entry.username ?? entry.topicId ?? entry.categoryId}',
+                    ),
+                    entry: entry,
+                    stackProvider: _stackProvider,
+                    parentActive: true,
+                    onBack: onBack,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) _paneAutoSwitching = false;
+          });
+    });
+  }
 
   String _currentQuery = '';
   int _currentPage = 1;
@@ -722,7 +777,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     final master = _buildSearchScaffold(theme);
     if (widget.embeddedMaster) return master;
-    if (!canShowParallel) return master;
+    if (!canShowParallel) {
+      // 独立搜索页(非嵌入)拖窄跨越双栏阈值时的"别丢界面"兜底,
+      // 对齐 profile_page.dart 的 `_maybeMigratePaneToFullScreen`——
+      // 嵌入首页左栏的场景(embeddedMaster)已在上面提前 return,不会
+      // 走到这里,右栏详情由 topics_screen.dart 自己的同款兜底处理。
+      _maybeMigratePaneToFullScreen();
+      return master;
+    }
 
     return MasterDetailLayout(
       masterWidth: SearchPage.parallelMasterWidth,
