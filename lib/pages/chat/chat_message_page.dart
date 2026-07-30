@@ -1250,64 +1250,6 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
-  /// 对齐 Discourse 侧栏 leave：
-  /// - DM（含群组）：unfollow
-  /// - 公开频道：leaveChannel API
-  Future<void> _leaveCurrentChannel(ChatChannel? channel) async {
-    final l10n = context.l10n;
-    final ch = channel;
-    final isDm = ch?.isDirectMessage == true;
-    final isGroup = ch?.isGroupDm == true;
-    final title = ch?.title ?? widget.channelTitle;
-    final leaveTitle = isDm
-        ? (isGroup ? l10n.chat_leave_group : l10n.chat_leave_dm)
-        : l10n.chat_leave_channel;
-    final confirm = isDm
-        ? (isGroup ? l10n.chat_leave_confirm_group : l10n.chat_leave_confirm_dm)
-        : l10n.chat_leave_confirm_channel;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(leaveTitle),
-        content: Text(confirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.chat_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-              foregroundColor: Theme.of(ctx).colorScheme.onError,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.chat_leave),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-
-    try {
-      if (isDm) {
-        await ref.read(unfollowChannelProvider(widget.channelId).future);
-      } else {
-        await ref.read(leaveChannelProvider(widget.channelId).future);
-      }
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.chat_leave_success(title))));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.chat_leave_failed('$e'))));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
