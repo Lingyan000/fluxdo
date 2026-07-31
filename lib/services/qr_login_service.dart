@@ -20,7 +20,9 @@ import 'user_api_key_service.dart';
 /// ```
 /// - `k`: User API Key(明文,等同临时分享登录能力,UI 需提示勿外泄)
 /// - `o`: 服务端随 create 下发的一次性 OTP(约 10 分钟有效,兑换即焚)
-/// - `exp`: API Key 过期时间 UTC 毫秒; `0` 表示不过期
+/// - `exp`: 恒写 0。服务端不支持 API Key 过期(user_api_keys 表无
+///   expires_at),字段仅为向后兼容保留;解析侧仍尊重旧版生成的非零值
+///   (软过期,拒绝解析已过期的旧码)
 /// - 不传 `_t`/密码;二维码只传 API Key + OTP
 class QrLoginPayload {
   const QrLoginPayload({
@@ -36,7 +38,7 @@ class QrLoginPayload {
   final String otp;
   final String username;
 
-  /// API Key 服务端过期时间; `null` 表示不过期。
+  /// 旧版协议的软过期时间;当前版本生成的码恒为 `null`。
   final DateTime? expiresAt;
 
   bool get neverExpires => expiresAt == null;
@@ -45,13 +47,6 @@ class QrLoginPayload {
     final exp = expiresAt;
     if (exp == null) return false;
     return DateTime.now().toUtc().isAfter(exp.toUtc());
-  }
-
-  Duration get remaining {
-    final exp = expiresAt;
-    if (exp == null) return Duration.zero;
-    final left = exp.toUtc().difference(DateTime.now().toUtc());
-    return left.isNegative ? Duration.zero : left;
   }
 }
 
@@ -163,10 +158,9 @@ class QrLoginService {
 
   /// 已登录设备:经用户批准后创建可分享的 User API Key,组装二维码字符串。
   ///
-  /// [expiresIn] 为 `null` 表示 API Key 不过期(默认);传入正时长则带
-  /// `expires_in_seconds` 创建。
+  /// 服务端不支持 API Key 过期参数(user_api_keys 表无 expires_at),
+  /// 生成的码 `exp` 恒为 0;真实时间窗口是 OTP 的 10 分钟 TTL。
   Future<({String raw, QrLoginPayload payload})> buildPayload({
-    Duration? expiresIn,
     String? username,
     Dio? dio,
   }) async {
@@ -182,7 +176,6 @@ class QrLoginService {
     final service = UserApiKeyService();
     final created = await service.createCrossDeviceKey(
       dio ?? DiscourseService().dio,
-      expiresIn: expiresIn,
     );
 
     final payload = QrLoginPayload(
@@ -190,12 +183,9 @@ class QrLoginService {
       apiKey: created.apiKey,
       otp: created.otp,
       username: resolvedUsername,
-      expiresAt: created.expiresAt,
     );
     final raw = encodePayload(payload);
     _log('info', 'qr_login_payload_built', '已生成扫码登录 API Key 二维码', {
-      'neverExpires': payload.neverExpires,
-      'expiresInSec': expiresIn?.inSeconds,
       'username': resolvedUsername,
       'apiKeyLen': created.apiKey.length,
       'otpLen': created.otp.length,
