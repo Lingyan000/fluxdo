@@ -266,16 +266,23 @@ def _box_blur(a: np.ndarray, r: int) -> np.ndarray:
     return (s[y1][:, x1] - s[y0][:, x1] - s[y1][:, x0] + s[y0][:, x0]) / area
 
 
-def weighted_channel(rgb: np.ndarray) -> np.ndarray:
-    """RGB(h,w,3) → 极性归一的加权通道 O·w(匹配滤波最优加权)。
+def weighted_channel(rgb: np.ndarray, unipolar: bool = False) -> np.ndarray:
+    """RGB(h,w,3) → 印记提取通道。
 
-    O = B-(R+G)/2 承载印记(渲染端只动 B,故 ΔO = ΔB),而亮度纹理
-    (白字黑底等)在 O 上近似抵消;w = 1-2·blur(B)/255 是由局部底色
-    估计的逐像素期望极性(黑底 +1、白底 -1)。乘 w 后印记信号恒为
-    +DELTA·w²,同屏明暗混排统一成单极性提取;中灰死区 w≈0 自动
-    降权,内容纹理不会因错误极性反相叠加。"""
+    O = B-(R+G)/2 承载印记(渲染端只动 B——单极性方案的消饱和笔
+    全通道等比缩放,在 O 上近似抵消,不破坏该前提),亮度纹理
+    (白字黑底等)在 O 上近似抵消。
+
+    两代嵌入模型对应两种通道:
+    - unipolar=True(消饱和+plus 内联方案,2026-07 起):ΔO 恒 +δ,
+      直接返回 O,无需极性加权;
+    - unipolar=False(modulate+plus 双极性,原生后端与历史版本):
+      ΔO = ±δ 随底色翻转,以 w = 1-2·blur(B)/255 估计逐像素期望极性,
+      返回 O·w:信号恒为 +δ·w²,中灰死区权重自动趋零。"""
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     o = b - (r + g) / 2
+    if unipolar:
+        return o
     w = 1.0 - 2.0 * _box_blur(b, WEIGHT_BLUR) / 255.0
     return o * w
 
@@ -348,14 +355,19 @@ def try_extract(chan_logical: np.ndarray, dpr: float) -> Hit | None:
             (ratio >= VERIFY_RATIO_STRONG and margin >= VERIFY_STRONG_MIN_MARGIN)
             or (ratio >= VERIFY_RATIO_WEAK and margin >= VERIFY_MIN_MARGIN)
         )
-        # 小截图共识复核:ratio/margin 不足时的独立判别维度(见常量注释)
+        # 小截图共识复核:ratio/margin 不足时的独立判别维度(见常量注释)。
+        # 须叠加 ratio 下限:真印记在错误缩放档下的混叠残留同样源自
+        # 印记、块间一致,能骗过"逐块全同号"(实测 scale=4 档两例
+        # verified 错 uid);但混叠候选的相位能量分散,ratio 恒低
+        # (0.9~1.2 vs 真信号 1.75+),WEAK 档下限即可判别
         if not verified and per_block is not None and n >= CONSENSUS_MIN_BLOCKS:
-            block_scores = [
-                float((template * d[:, py, px] * w[:, py, px]).sum()
-                      / w[:, py, px].sum())
-                for d, w in per_block
-            ]
-            verified = min(block_scores) >= CONSENSUS_MIN_SCORE
+            if ratio >= VERIFY_RATIO_WEAK:
+                block_scores = [
+                    float((template * d[:, py, px] * w[:, py, px]).sum()
+                          / w[:, py, px].sum())
+                    for d, w in per_block
+                ]
+                verified = min(block_scores) >= CONSENSUS_MIN_SCORE
         hit = Hit(uid, dpr, (py, px), margin, n, verified, ratio)
         if best is None or (hit.verified, hit.ratio) > (best.verified, best.ratio):
             best = hit
@@ -404,12 +416,12 @@ def _comb_period_seeds(chan: np.ndarray) -> list[float]:
     return [t / CELL for _, t in peaks[:3]]
 
 
-def _blind_metric(rgb: np.ndarray, sx: float, sy: float) -> float:
+def _blind_metric(rgb: np.ndarray, sx: float, sy: float, unipolar: bool) -> float:
     """爬山度量:重采样后,同步行匹配相位上的最弱格净票强度峰值。
     无需已知 uid;缩放正确时块间相位对齐,度量出现陡峰(实测正确
     点 ~0.18,偏 3% 即跌回 ~0.02 本底)。为控制成本只取前
     BLIND_METRIC_BLOCKS 块投票。"""
-    chan = weighted_channel(_resample(rgb, sx, sy))
+    chan = weighted_channel(_resample(rgb, sx, sy), unipolar)
     blocks = split_blocks(chan)
     if blocks is None or len(blocks) < 4:
         return -1.0
@@ -424,16 +436,18 @@ def _blind_metric(rgb: np.ndarray, sx: float, sy: float) -> float:
     return float((margin * cand).max()) if cand.any() else 0.0
 
 
-def _hill_climb(rgb: np.ndarray, sx0: float, sy0: float) -> tuple[float, float, float]:
+def _hill_climb(
+    rgb: np.ndarray, sx0: float, sy0: float, unipolar: bool
+) -> tuple[float, float, float]:
     """从 (sx0, sy0) 出发按坐标轮换爬山,返回 (sx, sy, metric)。"""
     sx, sy = sx0, sy0
-    best = _blind_metric(rgb, sx, sy)
+    best = _blind_metric(rgb, sx, sy, unipolar)
     for step in BLIND_HILL_STEPS:
         for _ in range(BLIND_HILL_MAX_ITER):
             improved = False
             for dsx, dsy in ((step, 0), (-step, 0), (0, step), (0, -step)):
                 nx, ny = sx * (1 + dsx), sy * (1 + dsy)
-                m = _blind_metric(rgb, nx, ny)
+                m = _blind_metric(rgb, nx, ny, unipolar)
                 if m > best:
                     sx, sy, best = nx, ny, m
                     improved = True
@@ -442,17 +456,20 @@ def _hill_climb(rgb: np.ndarray, sx0: float, sy0: float) -> tuple[float, float, 
     return sx, sy, best
 
 
-def blind_extract(img: Image.Image) -> Hit | None:
+def blind_extract(img: Image.Image, unipolar: bool) -> Hit | None:
     """盲缩放搜索:梳状周期盲测 sy 种子(等比粗扫兜底),各向异性
     爬山细化,在最优 (sx,sy) 处完整解码。"""
     rgb = np.asarray(img.convert("RGB"), dtype=np.float64)
 
     seeds: list[tuple[float, float]] = []
-    for sy in _comb_period_seeds(weighted_channel(rgb)):
+    for sy in _comb_period_seeds(weighted_channel(rgb, unipolar)):
         seeds.append((sy, sy))
     if not seeds:
         # 兜底:等比粗扫 0.8~4.2(步长 3%,与爬山首档衔接)
-        coarse = [(s, _blind_metric(rgb, s, s)) for s in np.arange(0.8, 4.2, 0.03)]
+        coarse = [
+            (s, _blind_metric(rgb, s, s, unipolar))
+            for s in np.arange(0.8, 4.2, 0.03)
+        ]
         coarse.sort(key=lambda kv: -kv[1])
         seeds = [(s, s) for s, m in coarse[:3] if m > 0]
     if not seeds:
@@ -460,10 +477,12 @@ def blind_extract(img: Image.Image) -> Hit | None:
 
     best_hit: Hit | None = None
     for sx0, sy0 in seeds:
-        sx, sy, metric = _hill_climb(rgb, sx0, sy0)
+        sx, sy, metric = _hill_climb(rgb, sx0, sy0, unipolar)
         if metric <= 0:
             continue
-        hit = try_extract(weighted_channel(_resample(rgb, sx, sy)), round(sx, 4))
+        hit = try_extract(
+            weighted_channel(_resample(rgb, sx, sy), unipolar), round(sx, 4)
+        )
         if hit:
             hit.dpr_y = round(sy, 4)
             if best_hit is None or (hit.verified, hit.ratio) > (
@@ -479,16 +498,23 @@ def blind_extract(img: Image.Image) -> Hit | None:
 def extract(img: Image.Image, dprs: list[float]) -> list[Hit]:
     rgb = np.asarray(img.convert("RGB"), dtype=np.float64)
     hits: list[Hit] = []
+    # 两代嵌入模型都试(unipolar=新内联方案 / bipolar=原生后端与历史
+    # 版本),verified 复核天然去伪,两模型互不误报
     for dpr in dprs:
         # BOX = 面积平均,降采样时最忠实保留低幅度信号
-        hit = try_extract(weighted_channel(_resample(rgb, dpr, dpr)), dpr)
-        if hit:
-            hits.append(hit)
+        logical = _resample(rgb, dpr, dpr)
+        for unipolar in (True, False):
+            hit = try_extract(weighted_channel(logical, unipolar), dpr)
+            if hit:
+                hits.append(hit)
     if not any(h.verified for h in hits):
         # 快路径失败:捕获帧可能被连续比例/非等比缩放,转盲搜
-        blind = blind_extract(img)
-        if blind:
-            hits.append(blind)
+        for unipolar in (True, False):
+            blind = blind_extract(img, unipolar)
+            if blind:
+                hits.append(blind)
+                if blind.verified:
+                    break
     return sorted(hits, key=lambda h: (-h.verified, -h.ratio))
 
 
@@ -503,12 +529,17 @@ def encode_bits(uid: int) -> list[int]:
     return bits
 
 
-def stamp(bg: np.ndarray, uid: int, dpr: float) -> np.ndarray:
-    """在物理分辨率 RGB 背景上按位置编码叠加印记,复现渲染端
-    modulate+plus 双笔混合:点位 B' = B·(255-DROP)/255 + DELTA,
-    R/G 不动。像素中心落入矩形才着色,与 Flutter 关闭抗锯齿的
-    drawRect 栅格规则一致。"""
+def stamp(bg: np.ndarray, uid: int, dpr: float, unipolar: bool = False) -> np.ndarray:
+    """在物理分辨率 RGB 背景上按位置编码叠加印记。像素中心落入矩形
+    才着色,与 Flutter 关闭抗锯齿的 drawRect 栅格规则一致。
+
+    unipolar=False:复现 modulate+plus 双笔(原生后端/历史版本),
+      点位 B' = B·(255-DROP)/255 + DELTA,R/G 不动;
+    unipolar=True:复现消饱和+plus 内联方案(2026-07 起),
+      全屏三通道先乘 (255-DELTA)/255,点位 B 再 +DELTA。"""
     out = bg.astype(np.float64).copy()
+    if unipolar:
+        out *= (255 - DELTA) / 255
     bits = encode_bits(uid)
     h, w = out.shape[:2]
 
@@ -521,7 +552,10 @@ def stamp(bg: np.ndarray, uid: int, dpr: float) -> np.ndarray:
         if y0 >= y1 or x0 >= x1:
             return
         b = out[y0:y1, x0:x1, 2]
-        out[y0:y1, x0:x1, 2] = b * (255 - DROP) / 255 + DELTA
+        if unipolar:
+            out[y0:y1, x0:x1, 2] = b + DELTA
+        else:
+            out[y0:y1, x0:x1, 2] = b * (255 - DROP) / 255 + DELTA
 
     for by in range(int(h / dpr / PERIOD) + 1):
         for bx in range(int(w / dpr / PERIOD) + 1):
@@ -605,6 +639,10 @@ def self_test() -> int:
     st_light = np.clip(stamp(light, uid, dpr), 0, 255).astype(np.uint8)
     st_dark = np.clip(stamp(dark, uid, dpr), 0, 255).astype(np.uint8)
     st_mixed = np.clip(stamp(mixed, uid, dpr), 0, 255).astype(np.uint8)
+    # 消饱和+plus 单极性(内联新方案)
+    su_light = np.clip(stamp(light, uid, dpr, unipolar=True), 0, 255).astype(np.uint8)
+    su_dark = np.clip(stamp(dark, uid, dpr, unipolar=True), 0, 255).astype(np.uint8)
+    su_mixed = np.clip(stamp(mixed, uid, dpr, unipolar=True), 0, 255).astype(np.uint8)
 
     cases = [
         # δ=1 契约:无损 PNG(系统捕获帧本体)必须稳过;JPEG 重压缩为
@@ -619,6 +657,11 @@ def self_test() -> int:
         ("深色 JPEG q85", _jpeg_roundtrip(st_dark, 85), False),
         ("明暗混排 PNG 无损", Image.fromarray(st_mixed), True),
         ("明暗混排 JPEG q85", _jpeg_roundtrip(st_mixed, 85), False),
+        ("单极性 浅色 PNG 无损", Image.fromarray(su_light), True),
+        ("单极性 深色 PNG 无损", Image.fromarray(su_dark), True),
+        ("单极性 明暗混排 PNG 无损", Image.fromarray(su_mixed), True),
+        ("单极性 裁剪 60% PNG", Image.fromarray(su_light[300:2000, 200:1000]), True),
+        ("单极性 浅色 JPEG q85", _jpeg_roundtrip(su_light, 85), False),
     ]
     # 边界情报:全屏彩色照片背景,色度纹理淹没印记属预期,不计入结果
     yy, xx = np.mgrid[0:h_px, 0:w_px]

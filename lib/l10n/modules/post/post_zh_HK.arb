@@ -137,6 +137,8 @@
   "post_submitFlag": "提交舉報",
   "post_tipLdc": "打賞 LDC",
   "post_titleRequired": "請輸入標題",
+  "post_todayIsBirthday": "今天是我的生日！",
+  "post_todayIsCakeday": "今天是您加入我們社區的紀念日！",
   "post_topicSolved": "此話題已解決",
   "post_unacceptSolution": "取消採納",
   "post_unsolved": "待解決",

@@ -1313,8 +1313,18 @@ class _MainPageState extends ConsumerState<MainPage>
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
   Future<void> _enterBackground() async {
-    // 清除 Flutter 图片内存缓存，降低后台内存占用
-    PaintingBinding.instance.imageCache.clear();
+    // 清后台图片内存缓存按平台分派:
+    // - 桌面端跳过——最小化即触发本回调,一次性并发销毁大量 GPU 贴图
+    //   (SkImage_Ganesh/GrTextureProxy)疑撞 Skia disposal 问题
+    //   (discourse_cache_manager.dart 里动图那块引用过的 Flutter
+    //   #85831 同一类坑),聊天页同屏头像/emoji 最多最易踩中;桌面
+    //   也不存在后台 OOM 击杀,清空只省一点驻留,不值得冒崩溃风险。
+    // - 移动端保留——降后台驻留配合保活,降低 LMKD 击杀概率(被杀
+    //   = 通知轮询没了);LMKD 不总先发 memory pressure,框架自清
+    //   兜不住这个场景。
+    if (!PlatformUtils.isDesktop) {
+      PaintingBinding.instance.imageCache.clear();
+    }
 
     // 诊断快照落盘:进程随后被杀时环形缓冲现场不再全丢(监控未启用
     // 或无记录时内部直接返回;静默失败,不干扰退后台路径)

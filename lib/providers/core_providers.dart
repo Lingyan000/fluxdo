@@ -45,15 +45,12 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   }
 
   Future<User?> _loadUserWithCache(DiscourseService service) async {
-    final hasToken = await service.isLoggedIn();
-    if (!hasToken) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_cacheKey);
-      await prefs.remove(_cacheUserKey);
-      return null;
-    }
-
-    // 先尝试从 SP 读取缓存
+    // 先把上次会话的缓存亮出来(毫秒级,登出时缓存会被清,存在即上次已
+    // 登录):本 provider 可能在预加载完成前就被 watch(如根部印记层第一
+    // 帧即 watch,早于 PreheatGate 放行),此时 build 的同步快路径拿不到
+    // preloaded;而下面的 isLoggedIn 含服务端校验、getCurrentUser 是全量
+    // 接口,若等它们串行完成才给首值,头像/发帖入口要白等数秒。
+    // 渐进 emit:缓存 → preloaded → 接口终态。
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString(_cacheKey);
     User? cachedUser;
@@ -61,16 +58,31 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
       try {
         final json = jsonDecode(cached) as Map<String, dynamic>;
         cachedUser = User.fromCacheJson(json);
+        state = AsyncValue.data(cachedUser);
       } catch (_) {
         // 缓存损坏，忽略
       }
     }
 
+    final hasToken = await service.isLoggedIn();
+    if (!hasToken) {
+      await prefs.remove(_cacheKey);
+      await prefs.remove(_cacheUserKey);
+      return null;
+    }
+
     try {
-      final user = await _loadUser(service);
-      if (user != null) {
-        _saveCache(prefs, user);
-        return user;
+      final preloadedUser = await service.getPreloadedCurrentUser();
+      if (preloadedUser != null) {
+        state = AsyncValue.data(preloadedUser);
+      }
+      final user = await service.getCurrentUser();
+      final resolved = user == null
+          ? preloadedUser
+          : (preloadedUser == null ? user : _mergeUser(user, preloadedUser));
+      if (resolved != null) {
+        _saveCache(prefs, resolved);
+        return resolved;
       }
       // 网络返回 null 但本地有缓存时，保守处理：保留缓存返回，
       // 避免短暂鉴权抖动把 UI 误判成已登出。

@@ -20,12 +20,23 @@ import 'render_signet_codec.dart';
 ///   引擎的原生命中测试忽略区,macOS 上又没有手势转发兜底,表现为
 ///   可见 WebView 整块点不动;原生兄弟视图不参与该统计,从根上消除
 ///   互斥,且能把印记盖到 WebView 自身的像素上。
-/// - 其余平台:Flutter 内联绘制。把单个印记块按设备像素比栅格成两张
-///   ui.Image(modulate 笔/plus 笔),各用 ImageShader(TileMode.repeated)
-///   一次 drawRect 覆盖全屏——每帧只有两条绘制指令。两笔混合让扰动
-///   极性逐像素跟随底色自适应(暗底 +ΔB/浅底 -ΔB),同屏明暗混排也
-///   全域不可见且信号完整,无需任何主题/底色判断。两种混合模式在
-///   Skia/Impeller 均为系数混合,不触发离屏 pass。
+/// - 其余平台:Flutter 内联绘制,「消饱和 + 单极性点阵」两笔,全部为
+///   Porter-Duff 系数混合(固定管线,不依赖 framebuffer fetch,任何
+///   GPU 上都无离屏回退):
+///   1. 消饱和笔:全屏 srcATop 纯色 (0,0,0)@α=δ,把所有色通道均匀乘
+///      (255-δ)/255——纯白像素降到 255-δ,全屏不再存在饱和像素。
+///      均匀无对比的 0.4% 变化低于面板校准差异,物理不可见;
+///   2. 信号笔:点阵图块(预乘 (0,0,δ,δ))配 plus。因已无饱和,
+///      +δ 处处满效——含旧双极性方案信号过零的中灰死区,SNR 更优。
+///
+///   历史:曾用 modulate(不透明白底图块)+plus 双极性分解,个别
+///   Android 驱动在混合首用帧把白底图块按 srcOver 原样画出=整屏白
+///   (2026-07 白屏案);随后的 exclusion 单笔修掉了白屏,但它是
+///   advanced blend,在 Adreno≤630/PowerVR 等无 framebuffer fetch 的
+///   GPU 上走 Impeller 离屏回退(每帧全屏拷贝),低端机滚动付税。
+///   现方案两个问题同时消灭:全部失败形态结构性不可见(消饱和笔
+///   退化成 srcOver 时公式 out = 0 + d·(1-δ/255) 与正常效果完全相同;
+///   信号笔退化 = α≈1/255 微染色),且全 GPU 走固定管线混合。
 ///
 /// [RenderSignetLayer.inline] 强制内联绘制,供离屏 RepaintBoundary
 /// 截图场景(分享图)使用——窗口级原生层盖不进离屏合成产物。
@@ -60,23 +71,19 @@ class RenderSignetLayer extends ConsumerStatefulWidget {
 }
 
 class _RenderSignetLayerState extends ConsumerState<RenderSignetLayer> {
-  ui.Image? _modTile;
-  ui.Image? _plusTile;
+  ui.Image? _tile;
   int? _tileId;
   double? _tileDpr;
 
   @override
   void dispose() {
-    _modTile?.dispose();
-    _plusTile?.dispose();
+    _tile?.dispose();
     super.dispose();
   }
 
   void _clearTiles() {
-    _modTile?.dispose();
-    _plusTile?.dispose();
-    _modTile = null;
-    _plusTile = null;
+    _tile?.dispose();
+    _tile = null;
     _tileId = null;
     _tileDpr = null;
   }
@@ -103,33 +110,74 @@ class _RenderSignetLayerState extends ConsumerState<RenderSignetLayer> {
     }
 
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    if (_modTile == null || _tileId != id || _tileDpr != dpr) {
+    if (_tile == null || _tileId != id || _tileDpr != dpr) {
       _clearTiles();
-      final (mod, plus) = buildSignetTiles(id, dpr);
-      _modTile = mod;
-      _plusTile = plus;
+      _tile = buildSignetSignalTile(id, dpr);
       _tileId = id;
       _tileDpr = dpr;
     }
 
-    // 混合笔的 dst 依赖语义(modulate/plus)要求两条指令直接落在 app
-    // 内容之上的同一渲染目标里,任何形式的离屏烘焙都会把混合底换成
-    // 透明黑——modulate 整笔蒸发、plus 退化为 srcOver 蓝点,在浅底
-    // 显出 13 倍于设计信号的亮度脏纹(像素法证:R/G 各降 1)。
-    // 两道防线:不包 RepaintBoundary(防图层级 raster cache),
-    // willChange: true(防 Skia picture 级 raster cache 把静态两指令
-    // picture 烘成纹理;Impeller 无 raster cache 不受影响)
+    // 两笔的 dst 依赖语义(srcATop/plus)要求指令直接落在 app 内容
+    // 之上的同一渲染目标里,任何形式的离屏烘焙都会把混合底换成
+    // 透明黑,信号丢失(残余 δ 量级,不可见)。两道防线:不包
+    // RepaintBoundary(防图层级 raster cache),willChange: true
+    // (防 Skia picture 级 raster cache;Impeller 无 raster cache)
     return IgnorePointer(
       child: CustomPaint(
         size: Size.infinite,
         willChange: true,
-        painter: RenderSignetPainter(
-          modTile: _modTile!,
-          plusTile: _plusTile!,
-        ),
+        painter: RenderSignetPainter(tile: _tile!),
       ),
     );
   }
+}
+
+/// 把一个印记块(kSignetBlockPeriod 见方)按 dpr 栅格成一张信号笔
+/// 图块:透明底,点位为预乘 (0,0,δ,δ)(直通色 (0,0,255)@α=δ)。
+/// 关闭抗锯齿 + 整数几何,保证点边缘落在整物理像素上,解码端才能按
+/// 同款网格精确采样。
+///
+/// 与消饱和笔(painter 内联的全屏 srcATop)配合:
+///   1. srcATop (0,0,0)@α=δ → 全通道乘 (255-δ)/255,饱和消失;
+///   2. 本图块 plus → 点位 B 恒 +δ(无 clamp,处处满效)。
+/// 单极性信号,解码端以位置差分(左位-右位)提取,极性权重恒 1。
+///
+/// 结构安全性(2026-07 Android 白屏案后的硬要求):本方案所有构件
+/// 中不存在不透明亮色底图,任何混合失败形态(srcOver 退化/被跳过/
+/// 离屏烘焙)的视觉残余都在 δ≈1/255 量级——结构上无可见坏帧;且
+/// 两笔均为 Porter-Duff 系数混合,任何 GPU 走固定管线,无性能分层。
+ui.Image buildSignetSignalTile(int id, double dpr) {
+  final bits = encodeSignetBits(id);
+  final tilePx = (kSignetBlockPeriod * dpr).round().clamp(1, 1 << 12);
+  final scale = tilePx / kSignetBlockPeriod;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder)..scale(scale.toDouble());
+  final dot = Paint()
+    ..color = const Color.fromARGB(kSignetPlusDelta, 0, 0, 255)
+    ..isAntiAlias = false;
+  for (var row = 0; row < kSignetGridRows; row++) {
+    for (var col = 0; col < kSignetGridCols; col++) {
+      final bit = bits[row * kSignetGridCols + col];
+      final x = col * kSignetCellSize;
+      // y 逐格打散消除条纹感,见 signetDotYOffset 注释
+      final y = row * kSignetCellSize + signetDotYOffset(row, col);
+      // 位置编码:bit=1 点画在左位,bit=0 画在右位
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x + (bit ? kSignetDotLeftX : kSignetDotRightX),
+          y.toDouble(),
+          kSignetDotW,
+          kSignetDotH,
+        ),
+        dot,
+      );
+    }
+  }
+  final picture = recorder.endRecording();
+  final image = picture.toImageSync(tilePx, tilePx);
+  picture.dispose();
+  return image;
 }
 
 /// 把一个印记块(kSignetBlockPeriod 见方)按 dpr 栅格成两张物理像素
@@ -210,18 +258,26 @@ class _RenderSignetLayerState extends ConsumerState<RenderSignetLayer> {
 }
 
 class RenderSignetPainter extends CustomPainter {
-  RenderSignetPainter({required this.modTile, required this.plusTile});
+  RenderSignetPainter({required this.tile});
 
-  final ui.Image modTile;
-  final ui.Image plusTile;
+  /// 信号笔图块([buildSignetSignalTile])
+  final ui.Image tile;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    // 必须先 modulate 后 plus:合成值域 [δ, 255-δ] 不触 clamp,黑白底
-    // 信号严格对称;反序会在白底被截断。原理见 codec 库注释
-    _drawTiled(canvas, rect, modTile, BlendMode.modulate);
-    _drawTiled(canvas, rect, plusTile, BlendMode.plus);
+    // 笔 1 消饱和:srcATop (0,0,0)@α=δ → 全通道乘 (255-δ)/255。
+    // 必须先于信号笔:消除 B=255 饱和,plus 的 +δ 才处处满效。
+    // 该笔退化成 srcOver 时输出与正常完全相同(0 + d·(1-δ/255)),
+    // 连失败形态都不存在
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = const Color.fromARGB(kSignetPlusDelta, 0, 0, 0)
+        ..blendMode = BlendMode.srcATop,
+    );
+    // 笔 2 信号:点阵 plus,B 恒 +δ,单极性
+    _drawTiled(canvas, rect, tile, BlendMode.plus);
   }
 
   void _drawTiled(Canvas canvas, Rect rect, ui.Image tile, BlendMode mode) {
@@ -244,5 +300,5 @@ class RenderSignetPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(RenderSignetPainter oldDelegate) =>
-      oldDelegate.modTile != modTile || oldDelegate.plusTile != plusTile;
+      oldDelegate.tile != tile;
 }

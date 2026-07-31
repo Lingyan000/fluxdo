@@ -11,9 +11,8 @@ import '../../../utils/platform_utils.dart';
 ///
 /// **移动端(触摸)**:
 /// - 单击:toggle 控制条
-/// - 双击 左 1/4 / 中 1/2 / 右 1/4:-10s / 播放暂停 / +10s
-///   (中央占半宽 —— 三等分时中央太窄,瞄准中央双击暂停常落到侧区
-///   变成 seek,观感是「暂停无效」;主流播放器同型分区)
+/// - 双击:播放/暂停(全区 —— 分区双击 seek 已删:有横滑调进度后
+///   属于冗余入口,且侧区误触会让「双击暂停」变成 seek)
 /// - 横滑:调进度(滑满一屏宽 = ±90s,松手提交;inline 与全屏都开;
 ///   左右 24px 边缘让给系统返回手势)
 /// - 长按:2x 快进(松手恢复)+ 触觉反馈
@@ -31,7 +30,6 @@ class MediaGestureLayer extends StatefulWidget {
     super.key,
     required this.onToggleControls,
     required this.onTogglePlay,
-    required this.onSeekRelative,
     required this.onLongPressSpeedChanged,
     this.onDesktopDoubleTapFullscreen,
     this.onVerticalAdjust,
@@ -46,9 +44,6 @@ class MediaGestureLayer extends StatefulWidget {
   /// 移动端单击:toggle 控制条(桌面端不走此回调)。
   final VoidCallback onToggleControls;
   final VoidCallback onTogglePlay;
-
-  /// 双击侧区 seek([forward]=true 为 +10s,仅移动端)。
-  final void Function({required bool forward}) onSeekRelative;
 
   /// 长按 2x 状态变化(true=按下进入,false=松手退出)。
   final ValueChanged<bool> onLongPressSpeedChanged;
@@ -92,7 +87,6 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
   /// 全宽贴屏,这里不抢。
   static const double _edgeExclusion = 24;
 
-  Offset? _doubleTapPosition;
   bool _longPressActive = false;
 
   /// 桌面端双击判定窗口:第一击已立即执行播/停,窗口内第二击到来
@@ -143,22 +137,6 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
     }
     widget.onTogglePlay();
     _desktopTapWindow = Timer(const Duration(milliseconds: 300), () {});
-  }
-
-  void _handleDoubleTap() {
-    final position = _doubleTapPosition;
-    if (position == null) return;
-    final width = context.size?.width ?? 0;
-    if (width <= 0) return;
-    // 左 1/4 | 中 1/2 | 右 1/4
-    final quarter = width / 4;
-    if (position.dx < quarter) {
-      widget.onSeekRelative(forward: false);
-    } else if (position.dx > quarter * 3) {
-      widget.onSeekRelative(forward: true);
-    } else {
-      widget.onTogglePlay();
-    }
   }
 
   // ---- 横滑 seek ----
@@ -291,9 +269,7 @@ class _MediaGestureLayerState extends State<MediaGestureLayer> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onToggleControls,
-      onDoubleTapDown: (details) =>
-          _doubleTapPosition = details.localPosition,
-      onDoubleTap: _handleDoubleTap,
+      onDoubleTap: widget.onTogglePlay,
       onLongPressStart: (_) {
         _longPressActive = true;
         HapticFeedback.lightImpact();

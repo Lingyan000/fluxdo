@@ -464,7 +464,8 @@ class MentionedUser {
 /// 帖子头部显示的徽章
 class GrantedBadge {
   final int id;
-  final String name;
+  final String name; // 徽章内部名(英文,如 "Devotee")
+  final String? description; // 徽章说明(真实站点 title 提示用的是这个,不是 name)
   final String? icon; // FontAwesome 图标名，如 "seedling"
   final String? imageUrl; // 图片 URL（与 icon 二选一）
   final String slug;
@@ -473,6 +474,7 @@ class GrantedBadge {
   const GrantedBadge({
     required this.id,
     required this.name,
+    this.description,
     this.icon,
     this.imageUrl,
     required this.slug,
@@ -484,6 +486,7 @@ class GrantedBadge {
     return GrantedBadge(
       id: badge['id'] as int? ?? 0,
       name: badge['name'] as String? ?? '',
+      description: badge['description'] as String?,
       icon: badge['icon'] as String?,
       imageUrl: badge['image_url'] as String?,
       slug: badge['slug'] as String? ?? '',
@@ -659,6 +662,12 @@ class Post {
   // 帖子头部徽章
   final List<GrantedBadge>? badgesGranted; // 帖子头部显示的徽章
 
+  // 纪念日 / 生日(纯日期,格式 "YYYY-MM-DD";birthdate 的年份可能是
+  // 站点为保护隐私塞的假值——月/日判断不依赖年份,不当成真实 DateTime
+  // 用,故不经 TimeUtils)
+  final String? userCakedate; // 加入社区的纪念日(年份为真实注册年份)
+  final String? userBirthdate; // 生日(年份可能是隐私假值)
+
   // 用户 ID（用于打赏等功能）
   final int? userId;
 
@@ -779,6 +788,8 @@ class Post {
     this.userTitle,
     this.userStatus,
     this.badgesGranted,
+    this.userCakedate,
+    this.userBirthdate,
     this.userId,
     this.moderator = false,
     this.admin = false,
@@ -890,6 +901,8 @@ class Post {
       badgesGranted: (json['badges_granted'] as List<dynamic>?)
           ?.map((e) => GrantedBadge.fromJson(e as Map<String, dynamic>))
           .toList(),
+      userCakedate: json['user_cakedate'] as String?,
+      userBirthdate: json['user_birthdate'] as String?,
       userId: json['user_id'] as int?,
       moderator: json['moderator'] as bool? ?? false,
       admin: json['admin'] as bool? ?? false,
@@ -1056,6 +1069,8 @@ class Post {
     String? userTitle,
     UserStatus? userStatus,
     List<GrantedBadge>? badgesGranted,
+    String? userCakedate,
+    String? userBirthdate,
     int? userId,
     bool? moderator,
     bool? admin,
@@ -1141,6 +1156,8 @@ class Post {
       userTitle: userTitle ?? this.userTitle,
       userStatus: userStatus ?? this.userStatus,
       badgesGranted: badgesGranted ?? this.badgesGranted,
+      userCakedate: userCakedate ?? this.userCakedate,
+      userBirthdate: userBirthdate ?? this.userBirthdate,
       userId: userId ?? this.userId,
       moderator: moderator ?? this.moderator,
       admin: admin ?? this.admin,
@@ -1173,6 +1190,31 @@ class Post {
       editReason: clearEditReason ? null : (editReason ?? this.editReason),
     );
   }
+
+  /// [dateStr]("YYYY-MM-DD",年份可能是站点塞的假值)的月/日是否等于本机
+  /// 今天的月/日。纯日历比较,不构造 DateTime,避免 CLAUDE.md 禁用的
+  /// DateTime.parse 路径,也不受时区影响——纪念日/生日本来就该按"今天
+  /// 是几月几号"判断,不是某个精确时间点。
+  static bool _isTodayMonthDay(String? dateStr) {
+    if (dateStr == null || dateStr.length < 10) return false;
+    final month = int.tryParse(dateStr.substring(5, 7));
+    final day = int.tryParse(dateStr.substring(8, 10));
+    if (month == null || day == null) return false;
+    final now = DateTime.now();
+    return month == now.month && day == now.day;
+  }
+
+  /// 今天是否是用户加入社区的纪念日。官方 discourse-cakeday 的周年判定
+  /// 是三条件:月/日相等且年份不等——注册当年不算周年(第一年没有
+  /// "一周年"),cakedate 的年份是真实注册年份,可以参与比较。
+  bool get isTodayCakeday {
+    if (!_isTodayMonthDay(userCakedate)) return false;
+    final year = int.tryParse(userCakedate!.substring(0, 4));
+    return year != null && year != DateTime.now().year;
+  }
+
+  /// 今天是否是用户生日(birthdate 年份可能是隐私假值,只比月/日)
+  bool get isTodayBirthday => _isTodayMonthDay(userBirthdate);
 }
 
 /// Policy 用户摘要（精简字段：id / username / avatar_template）

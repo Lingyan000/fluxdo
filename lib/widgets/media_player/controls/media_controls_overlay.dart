@@ -8,7 +8,6 @@ import 'package:video_player/video_player.dart';
 import '../../../l10n/s.dart';
 import '../../../utils/platform_utils.dart';
 import '../video/video_player_session.dart';
-import 'double_tap_seek_indicator.dart';
 import 'media_gesture_layer.dart';
 import 'media_overlay_style.dart';
 import 'media_progress_bar.dart';
@@ -50,10 +49,6 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     with TickerProviderStateMixin {
   static final bool _isDesktop = PlatformUtils.isDesktop;
   static const Duration _autoHideDelay = Duration(seconds: 3);
-  static const int _seekStepSeconds = 10;
-
-  final GlobalKey<DoubleTapSeekIndicatorState> _seekIndicatorKey =
-      GlobalKey();
 
   VideoPlayerController get _controller => widget.session.controller;
 
@@ -66,13 +61,6 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
   bool _locked = false;
   bool _lockButtonVisible = true;
   Timer? _lockButtonHideTimer;
-
-  /// 双击侧区 seek 的累加窗口:连点期间只累加不真 seek,静默 400ms
-  /// 才提交一次(每击立即 seek 会连环触发缓冲)。
-  Duration? _doubleTapSeekBase;
-  Duration _doubleTapSeekAccum = Duration.zero;
-  bool _doubleTapSeekForward = true;
-  Timer? _doubleTapSeekCommitTimer;
 
   Timer? _hideTimer;
   Timer? _volumeCollapseTimer;
@@ -99,6 +87,34 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
   Duration? _resumedHint;
   Timer? _resumedHintTimer;
 
+  /// 中央播放钮的「稳定暂停」判定:seek 期间后端会瞬时回报
+  /// isPlaying=false,直接跟随会让大按钮闪现一帧。暂停态持续 250ms
+  /// 才算真暂停;恢复播放立即撤。
+  bool _stablyPaused = false;
+  Timer? _pauseDebounce;
+
+  void _syncStablyPaused(bool playing) {
+    if (playing) {
+      _pauseDebounce?.cancel();
+      _pauseDebounce = null;
+      if (_stablyPaused) {
+        // build 中触发,推迟到帧尾翻转
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.value.isPlaying) {
+            setState(() => _stablyPaused = false);
+          }
+        });
+      }
+    } else if (!_stablyPaused && _pauseDebounce == null) {
+      _pauseDebounce = Timer(const Duration(milliseconds: 250), () {
+        _pauseDebounce = null;
+        if (mounted && !_controller.value.isPlaying) {
+          setState(() => _stablyPaused = true);
+        }
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -112,11 +128,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     _resumedHintTimer?.cancel();
     _volumeCollapseTimer?.cancel();
     _lockButtonHideTimer?.cancel();
-    // 有未提交的双击累加 seek,收尾提交(不能丢用户的操作)
-    if (_doubleTapSeekCommitTimer?.isActive ?? false) {
-      _doubleTapSeekCommitTimer!.cancel();
-      _commitDoubleTapSeek();
-    }
+    _pauseDebounce?.cancel();
     _playPauseIcon.dispose();
     super.dispose();
   }
@@ -188,40 +200,6 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     _resumedHintTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _resumedHint = null);
     });
-  }
-
-  /// 双击侧区 seek:累加窗口内只更新指示器与累计值,静默 400ms 后
-  /// 一次性提交 —— 连点 3 下是一次 ±30s seek,不是三轮缓冲。
-  void _seekRelative({required bool forward}) {
-    final value = _controller.value;
-    if (!value.isInitialized) return;
-    // 换向:立即提交已累计的,重新开窗
-    if (_doubleTapSeekBase != null && forward != _doubleTapSeekForward) {
-      _doubleTapSeekCommitTimer?.cancel();
-      _commitDoubleTapSeek();
-    }
-    _doubleTapSeekBase ??= value.position;
-    _doubleTapSeekForward = forward;
-    _doubleTapSeekAccum += Duration(
-        seconds: forward ? _seekStepSeconds : -_seekStepSeconds);
-    _seekIndicatorKey.currentState
-        ?.show(forward: forward, seconds: _seekStepSeconds);
-    _doubleTapSeekCommitTimer?.cancel();
-    _doubleTapSeekCommitTimer = Timer(
-        const Duration(milliseconds: 400), _commitDoubleTapSeek);
-  }
-
-  void _commitDoubleTapSeek() {
-    final base = _doubleTapSeekBase;
-    if (base == null) return;
-    final duration = _controller.value.duration;
-    var target = base + _doubleTapSeekAccum;
-    if (target < Duration.zero) target = Duration.zero;
-    if (target > duration) target = duration;
-    _doubleTapSeekBase = null;
-    _doubleTapSeekAccum = Duration.zero;
-    widget.session.resumedPosition = null;
-    _controller.seekTo(target);
   }
 
   // ---- 全屏锁定 ----
@@ -356,6 +334,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
             _playPauseIcon.value != 0) {
           _playPauseIcon.reverse();
         }
+        _syncStablyPaused(value.isPlaying);
 
         final showLoading = !value.isInitialized ||
             (value.isBuffering && value.isPlaying);
@@ -378,11 +357,10 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
         Widget overlay = Stack(
           fit: StackFit.expand,
           children: [
-            // 手势层(最底,吃单击/双击/长按/竖滑)
+            // 手势层(最底,吃单击/双击/长按/横滑/竖滑)
             MediaGestureLayer(
               onToggleControls: _toggleControls,
               onTogglePlay: _togglePlay,
-              onSeekRelative: _seekRelative,
               onLongPressSpeedChanged: _onLongPressSpeed,
               onDesktopDoubleTapFullscreen: widget.onFullscreenToggle,
               enableVerticalGestures: widget.isFullscreen,
@@ -410,11 +388,10 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
                 });
               },
             ),
-            // 双击 seek 提示
-            DoubleTapSeekIndicator(key: _seekIndicatorKey),
-            // 中央播放大按钮:只在暂停/播完时作为「可播放」召唤物出现,
-            // 播放中画面保持完全干净(常驻会遮挡内容)
-            if (!showLoading && !value.isPlaying)
+            // 中央播放大按钮:只在「稳定暂停」时作为「可播放」召唤物
+            // 出现(seek 期间后端瞬时回报 isPlaying=false,直接跟随会
+            // 闪现一帧);播放中画面保持完全干净
+            if (!showLoading && _stablyPaused && !value.isPlaying)
               _CenterPlayButton(
                 isCompleted: value.isCompleted,
                 expressive: M3eFlags.of(context).enabled,
@@ -647,36 +624,40 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
   }
 
   /// 全屏锁定/解锁钮:左缘垂直居中的圆钮。
+  /// SafeArea 必须:横屏全屏时左缘正是刘海/挖孔区(异形屏),
+  /// 不避让会被摄像头岛遮住或不可点。
   Widget _buildLockButton() {
     final visible = _locked ? _lockButtonVisible : _controlsVisible;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 16),
-        child: IgnorePointer(
-          ignoring: !visible,
-          child: AnimatedOpacity(
-            opacity: visible ? 1 : 0,
-            duration: MediaOverlayStyle.barDuration,
-            child: Material(
-              color: const Color(0x8A000000),
-              shape: const CircleBorder(
-                side: BorderSide(color: Color(0x24FFFFFF)),
-              ),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _toggleLock,
-                child: Padding(
-                  padding: const EdgeInsets.all(11),
-                  child: Icon(
-                    _locked
-                        ? Icons.lock_rounded
-                        : Icons.lock_open_rounded,
-                    color: MediaOverlayStyle.foreground,
-                    size: 22,
-                    semanticLabel: _locked
-                        ? S.current.mediaPlayer_unlockControls
-                        : S.current.mediaPlayer_lockControls,
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16),
+          child: IgnorePointer(
+            ignoring: !visible,
+            child: AnimatedOpacity(
+              opacity: visible ? 1 : 0,
+              duration: MediaOverlayStyle.barDuration,
+              child: Material(
+                color: const Color(0x8A000000),
+                shape: const CircleBorder(
+                  side: BorderSide(color: Color(0x24FFFFFF)),
+                ),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _toggleLock,
+                  child: Padding(
+                    padding: const EdgeInsets.all(11),
+                    child: Icon(
+                      _locked
+                          ? Icons.lock_rounded
+                          : Icons.lock_open_rounded,
+                      color: MediaOverlayStyle.foreground,
+                      size: 22,
+                      semanticLabel: _locked
+                          ? S.current.mediaPlayer_unlockControls
+                          : S.current.mediaPlayer_lockControls,
+                    ),
                   ),
                 ),
               ),
@@ -711,49 +692,70 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
     return Container(
       decoration:
           const BoxDecoration(gradient: MediaOverlayStyle.bottomScrim),
-      child: SafeArea(
-        top: false,
-        child: widget.isFullscreen
-            ? _buildFullscreenBar(value)
-            : _buildInlineBar(value),
-      ),
+      // SafeArea 只在全屏需要(inline 在正文流里,底部 inset 与它无关,
+      // 包上反而平白垫高控制条)
+      child: widget.isFullscreen
+          ? SafeArea(top: false, child: _buildFullscreenBar(value))
+          : _buildInlineBar(value),
     );
   }
 
-  /// inline 单行(B 站内嵌样式):[▶] 00:41 ──进度── 02:31 (倍速|音量) [⛶]
+  /// inline 单行紧凑条(高 36):[▶] 00:41 ──进度── 02:31 (倍速|音量) [⛶]
   /// 倍速/音量只在桌面 inline 摆(移动端窄,倍速走全屏或长按)。
   Widget _buildInlineBar(VideoPlayerValue value) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
-      child: Row(
-        children: [
-          _buildPlayButton(value, iconSize: 24),
-          Text(
-            _fmt(value.position),
-            style: const TextStyle(
-              color: MediaOverlayStyle.foreground,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              fontFeatures: [FontFeature.tabularFigures()],
+    return SizedBox(
+      height: 36,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            _CompactIconButton(
+              icon: value.isCompleted && !value.isPlaying
+                  ? const Icon(Icons.replay_rounded)
+                  : AnimatedIcon(
+                      icon: AnimatedIcons.play_pause,
+                      progress: _playPauseIcon,
+                    ),
+              size: 22,
+              tooltip: value.isPlaying
+                  ? S.current.mediaPlayer_pause
+                  : S.current.mediaPlayer_play,
+              onTap: _togglePlay,
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: _buildProgressBar(value)),
-          const SizedBox(width: 8),
-          Text(
-            _fmt(value.duration),
-            style: const TextStyle(
-              color: MediaOverlayStyle.foregroundDim,
-              fontSize: 11.5,
-              fontFeatures: [FontFeature.tabularFigures()],
+            const SizedBox(width: 4),
+            Text(
+              _fmt(value.position),
+              style: const TextStyle(
+                color: MediaOverlayStyle.foreground,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
-          ),
-          if (_isDesktop) ...[
-            _buildSpeedButton(value),
-            _buildMuteAndVolume(value),
+            const SizedBox(width: 8),
+            Expanded(child: _buildProgressBar(value)),
+            const SizedBox(width: 8),
+            Text(
+              _fmt(value.duration),
+              style: const TextStyle(
+                color: MediaOverlayStyle.foregroundDim,
+                fontSize: 11.5,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+            if (_isDesktop) ...[
+              _buildSpeedButton(value),
+              _buildMuteAndVolume(value),
+            ],
+            const SizedBox(width: 4),
+            _CompactIconButton(
+              icon: const Icon(Icons.fullscreen_rounded),
+              size: 22,
+              tooltip: S.current.mediaPlayer_fullscreen,
+              onTap: widget.onFullscreenToggle,
+            ),
           ],
-          _buildFullscreenButton(iconSize: 22),
-        ],
+        ),
       ),
     );
   }
@@ -969,6 +971,45 @@ class _SlidingBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 紧凑图标钮:36×36 触达面积(IconButton 默认 48dp 最小约束会把
+/// inline 单行条撑高)。
+class _CompactIconButton extends StatelessWidget {
+  const _CompactIconButton({
+    required this.icon,
+    required this.onTap,
+    this.size = 22,
+    this.tooltip,
+  });
+
+  final Widget icon;
+  final VoidCallback onTap;
+  final double size;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button = InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: IconTheme(
+          data: IconThemeData(
+            color: MediaOverlayStyle.foreground,
+            size: size,
+          ),
+          child: Center(child: icon),
+        ),
+      ),
+    );
+    if (tooltip != null) {
+      button = Tooltip(message: tooltip!, child: button);
+    }
+    return button;
   }
 }
 
