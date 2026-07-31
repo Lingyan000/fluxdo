@@ -223,9 +223,7 @@ class RhttpAdapter implements HttpClientAdapter {
           }
           break;
         default:
-          // dio>=5.10 新增枚举值(如 transformTimeout)；约束锁在 <5.10 时
-          // 不能写具名 case，否则编译期 Member not found。default 同时
-          // 满足新 SDK analyzer 的穷尽检查。
+          // 其余枚举值(如 5.11 新增 transformTimeout)不视为可重试的连接失败
           break;
       }
     }

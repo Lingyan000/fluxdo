@@ -8,6 +8,7 @@ import 'package:pointycastle/export.dart';
 import 'package:uuid/uuid.dart';
 
 import '../constants.dart';
+import '../utils/time_utils.dart';
 import 'log/log_writer.dart';
 import 'network/cookie/cookie_jar_service.dart';
 import 'storage/resilient_secure_storage.dart';
@@ -311,7 +312,7 @@ class UserApiKeyService {
       DateTime? expiresAt;
       final expRaw = payload['expires_at'];
       if (expRaw is String && expRaw.isNotEmpty) {
-        expiresAt = DateTime.tryParse(expRaw)?.toUtc();
+        expiresAt = TimeUtils.parseUtcTime(expRaw)?.toUtc();
       } else if (expiresIn != null) {
         expiresAt = DateTime.now().toUtc().add(expiresIn);
       }

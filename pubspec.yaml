@@ -36,9 +36,7 @@ dependencies:
   slang_flutter: 4.14.0
   collection: ^1.19.1
   synchronized: ^3.4.0+1
-  # 钉在 5.9.x:5.11 新增 DioExceptionType.transformTimeout,全量抬升会连带改多处
-  # exhaustive switch;扫码登录引入新依赖时避免解析到 5.11。
-  dio: ">=5.9.0 <5.10.0"
+  dio: ^5.11.0
   http: ^1.6.0
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8

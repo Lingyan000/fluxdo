@@ -211,9 +211,10 @@ class QrLoginService {
 
     try {
       final userApiKeyService = UserApiKeyService();
-      await userApiKeyService.persistSharedKey(payload.apiKey);
-
       final service = DiscourseService();
+
+      // 先兑换 OTP,成功后才落 API Key:兑换失败(OTP 已消费/过期)时
+      // 不能在本机残留对方的 key,否则后续自愈可能静默用它拉起会话
       final token = await userApiKeyService.redeemOtp(service.dio, payload.otp);
       if (token == null || token.isEmpty) {
         throw const QrLoginException(
@@ -221,6 +222,7 @@ class QrLoginService {
           '登录令牌兑换失败,二维码可能已失效,请让对方重新生成',
         );
       }
+      await userApiKeyService.persistSharedKey(payload.apiKey);
 
       var username = payload.username;
       if (username.isEmpty) {

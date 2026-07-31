@@ -20,6 +20,7 @@ class AiProviderApiService {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.receiveTimeout:
+        case DioExceptionType.transformTimeout:
           return l10n.connectionTimeoutError;
         case DioExceptionType.connectionError:
           return l10n.cannotConnectError;

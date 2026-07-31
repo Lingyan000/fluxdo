@@ -1289,6 +1289,7 @@ class AiChatService {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.receiveTimeout:
+        case DioExceptionType.transformTimeout:
           return Exception(l10n.connectionTimeoutError);
         case DioExceptionType.connectionError:
           return Exception(l10n.cannotConnectError);
