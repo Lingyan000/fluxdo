@@ -176,6 +176,24 @@ class HighlighterService {
   final _cache = <String, List<HighlightToken>>{};
   static const _maxCacheSize = 50;
 
+  /// 高亮熔断阈值 —— 对齐 discourse 网页端 highlight-syntax.js:
+  /// 超大代码块任何语言都不高亮("Large code blocks can cause crashes or
+  /// slowdowns");lang-auto 需跑多语言探测,成本更高,阈值狠得多。
+  static const maxHighlightLength = 30000;
+  static const maxAutoHighlightLength = 1000;
+
+  /// 是否跳过高亮(网页端同款两道熔断)。
+  ///
+  /// [language] 传 cooked 提取的原始语言标识('auto' / null / 'json' ...),
+  /// 显式语言只受 [maxHighlightLength] 约束;auto/无语言另受
+  /// [maxAutoHighlightLength] 约束。命中时调用方应保持纯 monospace 显示,
+  /// 与网页端行为一致。
+  bool shouldSkipHighlight(String code, String? language) {
+    if (code.length > maxHighlightLength) return true;
+    final isAuto = language == null || language.isEmpty || language == 'auto';
+    return isAuto && code.length > maxAutoHighlightLength;
+  }
+
   // 并发限制器：避免大量代码块同时创建 ReceivePort 等待结果
   int _activeRequests = 0;
   static const _maxConcurrentRequests = 3;
@@ -214,6 +232,11 @@ class HighlighterService {
 
   /// 异步获取高亮 tokens（带并发限制）
   Future<List<HighlightToken>> highlightAsync(String code, {String? language}) async {
+    // 网页端同款熔断:超大块 / lang-auto 大块直接纯文本,不进 isolate
+    if (shouldSkipHighlight(code, language)) {
+      return [HighlightToken.text(code)];
+    }
+
     final key = _cacheKey(code, language);
     if (_cache.containsKey(key)) {
       // 移到末尾（LRU）
@@ -246,6 +269,11 @@ class HighlighterService {
   }
 
   /// 将 tokens 转换为 TextSpan
+  ///
+  /// 扁平化输出:按 scope 栈折叠出每个 text token 的等效样式(与原嵌套
+  /// wrapper 的 TextStyle 继承链等价),相邻同样式 token 合并为单个 span。
+  /// 大代码块 token 数以千计,嵌套树 + 逐 token span 是主线程排版大头,
+  /// 合并后 span 数下降一个量级。
   TextSpan tokensToSpan(List<HighlightToken> tokens, {
     bool isDark = false,
     TextStyle? baseStyle,
@@ -253,33 +281,53 @@ class HighlighterService {
     final theme = isDark ? githubDarkTheme : githubTheme;
     final base = baseStyle ?? firaCodeStyle;
 
-    final List<InlineSpan> result = [];
-    final List<List<InlineSpan>> stack = [result];
-    final List<String> scopeStack = [];
+    final spans = <InlineSpan>[];
+    final scopeStack = <String>[];
+    // scope 栈签名 → 折叠样式缓存(数千 token 通常只在少数几种签名间切换)
+    final styleCache = <String, TextStyle?>{};
+    final buffer = StringBuffer();
+    TextStyle? currentStyle;
+    String? currentSig;
+
+    void flush() {
+      if (buffer.isEmpty) return;
+      spans.add(TextSpan(text: buffer.toString(), style: currentStyle));
+      buffer.clear();
+    }
+
+    TextStyle? resolveStyle() {
+      TextStyle? style;
+      for (final scope in scopeStack) {
+        final scopeStyle = theme[scope];
+        if (scopeStyle != null) {
+          style = style == null ? scopeStyle : style.merge(scopeStyle);
+        }
+      }
+      return style;
+    }
 
     for (final token in tokens) {
       switch (token.type) {
         case 'text':
-          final style = scopeStack.isNotEmpty ? theme[scopeStack.last] : null;
-          stack.last.add(TextSpan(text: token.content, style: style));
+          final sig = scopeStack.join(' ');
+          if (sig != currentSig) {
+            flush();
+            currentSig = sig;
+            currentStyle = styleCache.putIfAbsent(sig, resolveStyle);
+          }
+          buffer.write(token.content);
           break;
         case 'open':
           scopeStack.add(token.scope!);
-          stack.add([]);
           break;
         case 'close':
-          if (scopeStack.isNotEmpty) {
-            final scope = scopeStack.removeLast();
-            final children = stack.removeLast();
-            if (children.isNotEmpty) {
-              stack.last.add(TextSpan(children: children, style: theme[scope]));
-            }
-          }
+          if (scopeStack.isNotEmpty) scopeStack.removeLast();
           break;
       }
     }
+    flush();
 
-    return TextSpan(style: base, children: result.isEmpty ? [const TextSpan(text: '')] : result);
+    return TextSpan(style: base, children: spans.isEmpty ? [const TextSpan(text: '')] : spans);
   }
 
   /// 构建高亮代码块 Widget

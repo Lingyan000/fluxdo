@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,6 +19,8 @@ import '../../services/ai_post_review_service.dart';
 import '../../services/presence_service.dart';
 import '../../services/emoji_handler.dart';
 import '../../services/draft_controller.dart';
+import '../../services/dynamic_content_suspension_service.dart';
+import '../../services/embedded_browser_controller_pool.dart';
 import 'package:dio/dio.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/network/exceptions/api_exception.dart';
@@ -28,7 +31,22 @@ import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
 import '../ai/ai_post_review_button.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
+
+/// Windows 平台视图从 Widget 树移除到 WebView2 Controller 真正析构存在
+/// 明显时间差。若立即弹出编辑器，旧 SVG WebView 的析构会和输入框首帧、
+/// 键盘焦点及草稿加载同时争抢平台/UI 消息泵。只在确有浏览器槽位时短暂
+/// 等待，原生 SVG 或普通帖子不会增加打开延迟。
+Future<void> _waitForEmbeddedBrowserTeardown() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+  await WidgetsBinding.instance.endOfFrame;
+  final pool = EmbeddedBrowserControllerPool.instance;
+  if (pool.activeCount == 0) return;
+  final deadline = DateTime.now().add(const Duration(milliseconds: 900));
+  while (pool.activeCount > 0 && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+}
 
 /// 显示回复底部弹框
 /// [topicId] 话题 ID (回复话题/帖子时必需)
@@ -60,29 +78,40 @@ Future<Post?> showReplySheet({
   ShortcutSurfaceConfig? shortcutSurface,
   ValueChanged<PendingPost>? onEnqueued,
 }) async {
-  final result = await showAppBottomSheet<Post?>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: false,
-    backgroundColor: Colors.transparent,
-    shortcutSurface: shortcutSurface,
-    builder: (context) => ReplySheet(
-      topicId: topicId,
-      categoryId: categoryId,
-      replyToPost: replyToPost,
-      targetUsername: targetUsername,
-      composePrivateMessage: composePrivateMessage,
-      draftKey: draftKey,
-      preloadedDraftFuture: preloadedDraftFuture,
-      initialContent: initialContent,
-      initialTitle: initialTitle,
-      topicTitle: topicTitle,
-      isPrivateMessageTopic: isPrivateMessageTopic,
-      isPmWithNonHumanUser: isPmWithNonHumanUser,
-      onEnqueued: onEnqueued,
-    ),
+  final suspension = DynamicContentSuspensionService.instance.acquire(
+    reason: 'reply_sheet',
   );
-  return result;
+  try {
+    await _waitForEmbeddedBrowserTeardown();
+    if (!context.mounted) return null;
+    return await showAppBottomSheet<Post?>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Colors.transparent,
+      shortcutSurface: shortcutSurface,
+      // 动态帖子位于弹层下方时，全屏实时模糊会被每个动画帧重新计算，
+      // 与编辑器同步 cook 叠加后可同时打满 GPU 和 UI isolate。
+      blur: false,
+      builder: (context) => ReplySheet(
+        topicId: topicId,
+        categoryId: categoryId,
+        replyToPost: replyToPost,
+        targetUsername: targetUsername,
+        composePrivateMessage: composePrivateMessage,
+        draftKey: draftKey,
+        preloadedDraftFuture: preloadedDraftFuture,
+        initialContent: initialContent,
+        initialTitle: initialTitle,
+        topicTitle: topicTitle,
+        isPrivateMessageTopic: isPrivateMessageTopic,
+        isPmWithNonHumanUser: isPmWithNonHumanUser,
+        onEnqueued: onEnqueued,
+      ),
+    );
+  } finally {
+    suspension.release();
+  }
 }
 
 /// 显示编辑帖子底部弹框
@@ -99,21 +128,30 @@ Future<Post?> showEditSheet({
   bool isPmWithNonHumanUser = false,
   ShortcutSurfaceConfig? shortcutSurface,
 }) async {
-  final result = await showAppBottomSheet<Post?>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: false,
-    backgroundColor: Colors.transparent,
-    shortcutSurface: shortcutSurface,
-    builder: (context) => ReplySheet(
-      topicId: topicId,
-      categoryId: categoryId,
-      editPost: post,
-      isPrivateMessageTopic: isPrivateMessageTopic,
-      isPmWithNonHumanUser: isPmWithNonHumanUser,
-    ),
+  final suspension = DynamicContentSuspensionService.instance.acquire(
+    reason: 'edit_sheet',
   );
-  return result;
+  try {
+    await _waitForEmbeddedBrowserTeardown();
+    if (!context.mounted) return null;
+    return await showAppBottomSheet<Post?>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Colors.transparent,
+      shortcutSurface: shortcutSurface,
+      blur: false,
+      builder: (context) => ReplySheet(
+        topicId: topicId,
+        categoryId: categoryId,
+        editPost: post,
+        isPrivateMessageTopic: isPrivateMessageTopic,
+        isPmWithNonHumanUser: isPmWithNonHumanUser,
+      ),
+    );
+  } finally {
+    suspension.release();
+  }
 }
 
 class ReplySheet extends ConsumerStatefulWidget {
@@ -525,6 +563,15 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       _submitted = true;
       if (!mounted) return;
       final pending = e.pendingPost;
+      if (pending != null && widget.editPost == null && widget.topicId != null) {
+        // enqueued 响应的 pending_post 只有 {id, raw, created_at},回复目标
+        // 服务端 payload 存了但本人可见接口都不吐;趁 composer 还知道上下文
+        // 记入注册表,「撤回并重新编辑」才能恢复"回复某楼"而非退化为直接回复话题
+        PendingReplyTargetRegistry.record(
+          pending.id,
+          widget.replyToPost?.postNumber,
+        );
+      }
       if (widget.onEnqueued != null && pending != null) {
         // 宿主接管展示(如主题页底部待审块),轻提示即可
         widget.onEnqueued!(pending);
@@ -609,6 +656,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
               if (didPop) return;
               if (_showEmojiPanel) {
                 _editorKey.currentState?.closeEmojiPanel();
+                _richKey.currentState?.closeEmojiPanel();
                 setState(() => _showEmojiPanel = false);
               }
             },
@@ -753,13 +801,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                       ? null
                                       : _submit,
                                   child: _isSubmitting
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
+                                      ? const LoadingSpinner(
+                                          size: 20,
+                                          color: Colors.white,
                                         )
                                       : Text(
                                           _isEditMode
@@ -808,6 +852,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             onTap: () {
                               if (_showEmojiPanel) {
                                 _editorKey.currentState?.closeEmojiPanel();
+                                _richKey.currentState?.closeEmojiPanel();
                                 setState(() => _showEmojiPanel = false);
                               }
                             },
@@ -826,10 +871,13 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                       // 并存 IME 交接竞态,说明见 create_topic_page)
                       Expanded(
                         child: ComposerSwitchFade(
-                          child: (ref
-                                      .watch(preferencesProvider)
-                                      .useRichComposer &&
-                                  !_richFallback)
+                          child:
+                              (ref.watch(
+                                  preferencesProvider.select(
+                                    (p) => p.useRichComposer,
+                                  ),
+                                ) &&
+                                !_richFallback)
                             // 富文本的初始导入是一次性的(不监听 controller
                             // 后续变化)——编辑原帖 raw / 草稿加载完成前挂载
                             // 会用空 controller 建空文档,之后镜像回写覆盖
@@ -837,37 +885,37 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             // 加载视觉由草稿遮罩/RichComposer 自身统一提供
                             // (双 spinner 叠影)。
                             ? ((_isLoadingRaw || _isLoadingDraft)
-                                ? const SizedBox.shrink()
-                                : RichComposerEditor(
-                                    key: _richKey,
-                                    controller: _contentController,
-                                    focusNode: _contentFocusNode,
-                                    hintText: context.l10n.editor_hintText,
-                                    emojiPanelHeight: _emojiPanelHeight,
-                                    onEmojiPanelChanged: (show) {
-                                      setState(() => _showEmojiPanel = show);
-                                    },
-                                    mentionDataSource: (term) =>
-                                        DiscourseService().searchUsers(
-                                          term: term,
-                                          topicId: widget.topicId,
-                                          categoryId: widget.categoryId,
-                                          includeGroups:
-                                              !_isInPrivateMessageContext,
-                                        ),
-                                    onFallbackToPlain: () {
-                                      if (mounted) {
-                                        setState(() => _richFallback = true);
-                                      }
-                                    },
-                                    // 主动切源码(可经工具栏「富文本
-                                    // 模式」切回,导入门禁重跑)
-                                    onSwitchToSource: () {
-                                      if (mounted) {
-                                        setState(() => _richFallback = true);
-                                      }
-                                    },
-                                  ))
+                                  ? const SizedBox.shrink()
+                                  : RichComposerEditor(
+                                      key: _richKey,
+                                      controller: _contentController,
+                                      focusNode: _contentFocusNode,
+                                      hintText: context.l10n.editor_hintText,
+                                      emojiPanelHeight: _emojiPanelHeight,
+                                      onEmojiPanelChanged: (show) {
+                                        setState(() => _showEmojiPanel = show);
+                                      },
+                                      mentionDataSource: (term) =>
+                                          DiscourseService().searchUsers(
+                                            term: term,
+                                            topicId: widget.topicId,
+                                            categoryId: widget.categoryId,
+                                            includeGroups:
+                                                !_isInPrivateMessageContext,
+                                          ),
+                                      onFallbackToPlain: () {
+                                        if (mounted) {
+                                          setState(() => _richFallback = true);
+                                        }
+                                      },
+                                      // 主动切源码:会话内单向(重开恢复
+                                      // 富文本并重跑导入门禁)
+                                      onSwitchToSource: () {
+                                        if (mounted) {
+                                          setState(() => _richFallback = true);
+                                        }
+                                      },
+                                    ))
                             : MarkdownEditor(
                                 key: _editorKey,
                                 controller: _contentController,

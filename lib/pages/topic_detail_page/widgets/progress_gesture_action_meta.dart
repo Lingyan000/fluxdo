@@ -112,5 +112,10 @@ import '../../../providers/preferences_provider.dart';
         icon: Symbols.refresh_rounded,
         label: l.progressGesture_action_refresh,
       );
+    case ProgressGestureAction.goBack:
+      return (
+        icon: Symbols.arrow_back_rounded,
+        label: l.progressGesture_action_goBack,
+      );
   }
 }

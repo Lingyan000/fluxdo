@@ -5,6 +5,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart'
     show SwipeActionCell, SwipeAction, SwipeActionScope;
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:cross_file/cross_file.dart';
 
@@ -292,10 +293,9 @@ class _DownloadCard extends StatelessWidget {
                   ),
                   if (item.status == DownloadItemStatus.downloading) ...[
                     const SizedBox(height: 8),
-                    LinearProgressIndicator(
+                    M3eLinearProgress(
                       value: item.progress > 0 ? item.progress : null,
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
+                      trackColor: theme.colorScheme.surfaceContainerHighest,
                     ),
                   ],
                 ],

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/selected_topic_provider.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
@@ -18,13 +20,11 @@ import 'my_topics_page.dart';
 import 'my_badges_page.dart';
 import 'user_profile_page.dart';
 import 'trust_level_requirements_page.dart';
-import 'settings_page.dart';
-import '../widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/smart_avatar.dart';
-import 'package:common_ui/common_ui.dart';
 import '../providers/app_state_refresher.dart';
 import 'metaverse_page.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -103,10 +103,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
   }
 
-  /// 下拉刷新
-  Future<void> _refreshData() async {
+  /// 刷新页面数据。
+  ///
+  /// [showAppBarIndicator] 为 false 时不点亮 AppBar 的刷新指示:
+  /// 下拉/快捷键刷新自带圆片 spinner,再亮 AppBar 就是同屏双 loading;
+  /// AppBar 指示只留给无下拉指示器的静默刷新(tab 切回等)。
+  Future<void> _refreshData({bool showAppBarIndicator = true}) async {
     if (!mounted) return;
-    setState(() => _isRefreshing = true);
+    if (showAppBarIndicator) setState(() => _isRefreshing = true);
     try {
       // LDC/CDK provider 现在只 watch currentUser.username，
       // refreshSilently 不会再连带触发它们 rebuild，需要显式刷新
@@ -120,7 +124,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         if (cdkEnabled) ref.read(cdkUserInfoProvider.notifier).refresh(),
       ]);
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (mounted && showAppBarIndicator) {
+        setState(() => _isRefreshing = false);
+      }
     }
   }
 
@@ -401,11 +407,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     width: 48,
                     height: 48,
                     child: Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      child: LoadingSpinner(size: 18),
                     ),
                   )
                 : isOffline
@@ -430,7 +432,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
         ] : null,
       ),
-      body: showWideLayout ? _buildWideBody(theme) : _buildMobileBody(theme),
+      // 宽屏才提供平行视界栈：窄屏没有右栏可承载，openDrafts/openSettings
+      // 必须走全屏 push（有 scope 却没人渲染 = 点了没反应）。
+      body: showWideLayout
+          ? EmbeddedStackScope(
+              stackProvider: selectedProfilePaneProvider,
+              child: _buildWideBody(theme),
+            )
+          : _buildMobileBody(theme),
     );
   }
 
@@ -446,7 +455,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return DesktopRefreshIndicator(
       refreshNotifier: masterRefreshNotifier,
       shouldRefresh: () => widget.isActive,
-      onRefresh: _refreshData,
+      onRefresh: () => _refreshData(showAppBarIndicator: false),
       child: ListView(
         controller: _scrollController,
         // 底部让出 extendBody 注入的底栏高度
@@ -493,6 +502,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   /// 平板/桌面端：左右双栏布局
   Widget _buildWideBody(ThemeData theme) {
+    // 右半边：栈为空时是原来的卡片列表，压了内容（草稿/设置）就顶替掉。
+    final selected = ref.watch(selectedProfilePaneProvider);
+    final entry = selected.topEntry;
+    final notifier = ref.read(selectedProfilePaneProvider.notifier);
     return Row(
       children: [
         SizedBox(
@@ -501,7 +514,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         VerticalDivider(width: 1, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
         Expanded(
-          child: _buildRightPanel(theme),
+          child: entry == null
+              ? _buildRightPanel(theme)
+              : PaneContentWidget(
+                  key: ValueKey(
+                    'profile_pane_${entry.kind}_'
+                    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+                  ),
+                  entry: entry,
+                  stackProvider: selectedProfilePaneProvider,
+                  parentActive: widget.isActive,
+                  onBack: () =>
+                      selected.isStacked ? notifier.pop() : notifier.clear(),
+                ),
         ),
       ],
     );
@@ -562,7 +587,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return DesktopRefreshIndicator(
       refreshNotifier: masterRefreshNotifier,
       shouldRefresh: () => widget.isActive,
-      onRefresh: _refreshData,
+      onRefresh: () => _refreshData(showAppBarIndicator: false),
       child: ListView(
         controller: _rightScrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -656,6 +681,15 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
+  void _openDrafts() {
+    // 草稿页是独立的双栏页(宽屏自带"左列表右话题"),所有入口统一
+    // 全屏打开,不再往「我的」页右栏塞草稿层。
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DraftsPage()),
+    );
+  }
+
   Widget _buildContentCard(ThemeData theme) {
     final actions = [
       (
@@ -680,10 +714,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         icon: Symbols.drafts_rounded,
         iconColor: Colors.teal,
         title: context.l10n.profile_myDrafts,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DraftsPage()),
-        ),
+        onTap: _openDrafts,
       ),
       (
         icon: Symbols.history_rounded,
@@ -859,7 +890,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.settings_rounded,
           iconColor: Colors.blueGrey,
           title: context.l10n.profile_settings,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage())),
+          onTap: () => EmbeddedStackScope.openSettings(context),
         ),
       ],
     );

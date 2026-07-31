@@ -222,6 +222,41 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     }
   }
 
+  /// 静默同步已加载话题的状态(已读进度、回帖数等):拉第一页后按 id
+  /// 原地合并,不整表替换。整表替换会把已 load more 的多页数据截断回
+  /// 第一页,列表变短后滚动位置被 clamp 到第一页底部。
+  Future<void> _silentSyncTopics() async {
+    try {
+      final service = ref.read(discourseServiceProvider);
+      final response = await service.getFilteredTopics(
+        filter: _currentFilter.filterName,
+        categoryId: widget.category.id,
+        categorySlug: widget.category.slug,
+        parentCategorySlug: _parentSlug,
+        tags: _selectedTags.isNotEmpty ? _selectedTags : null,
+        period: _currentFilter.period,
+        page: 0,
+        order: _currentOrder.apiValue,
+        ascending: _currentOrder != TopicSortOrder.defaultOrder
+            ? _ascending
+            : null,
+        subset: _currentFilter == TopicListFilter.newTopics
+            ? _currentSubset.apiValue
+            : null,
+      );
+
+      if (!mounted) return;
+      final updates = {for (final t in response.topics) t.id: t};
+      setState(() {
+        _topics = [for (final t in _topics) updates[t.id] ?? t];
+      });
+    } on DioException catch (_) {
+      // 网络错误已由 ErrorInterceptor 处理
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadMoreFailed) return;
     if (!_hasMore || _isLoadingMore || _isLoading) return;
@@ -423,9 +458,10 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
       ),
     );
 
-    // 从话题详情返回后，静默刷新以获取 MessageBus 更新的状态
+    // 从话题详情返回后,静默同步已读状态等。按 id 原地合并而非整表
+    // 刷新,保住已 load more 的数据和滚动位置
     if (mounted) {
-      _silentRefresh();
+      _silentSyncTopics();
     }
   }
 

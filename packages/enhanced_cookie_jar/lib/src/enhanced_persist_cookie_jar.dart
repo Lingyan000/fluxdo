@@ -166,7 +166,43 @@ class EnhancedPersistCookieJar implements base.CookieJar {
 
         return a.creationTime.compareTo(b.creationTime);
       });
-    return filtered;
+    return _dedupePartitionVariants(filtered);
+  }
+
+  /// 同名同域同路径、仅 partitionKey 不同的重复项只保留一条。
+  ///
+  /// CF 会把 cf_clearance 以 CHIPS 分区 cookie 重新签发，与 jar 中旧的
+  /// 非分区条目 storageKey 不同而并存；一次请求发出两个同名 cookie 时
+  /// 服务端可能读到旧值，导致反复弹盾。version 是 per-storageKey 计数器，
+  /// 跨条目不可比，这里按 expiresAt / creationTime 判断新鲜度。
+  List<CanonicalCookie> _dedupePartitionVariants(
+    List<CanonicalCookie> cookies,
+  ) {
+    final byIdentity = <(String, String?, String), CanonicalCookie>{};
+    final order = <(String, String?, String)>[];
+    for (final cookie in cookies) {
+      final key = (cookie.name, cookie.normalizedDomain, cookie.path);
+      final existing = byIdentity[key];
+      if (existing == null) {
+        byIdentity[key] = cookie;
+        order.add(key);
+      } else if (_fresherAcrossPartitions(cookie, existing)) {
+        byIdentity[key] = cookie;
+      }
+    }
+    if (order.length == cookies.length) return cookies;
+    return [for (final key in order) byIdentity[key]!];
+  }
+
+  bool _fresherAcrossPartitions(CanonicalCookie a, CanonicalCookie b) {
+    final ea = a.expiresAt;
+    final eb = b.expiresAt;
+    if (ea != null && eb != null) {
+      if (ea != eb) return ea.isAfter(eb);
+    } else if (ea != null || eb != null) {
+      return ea != null;
+    }
+    return a.creationTime.isAfter(b.creationTime);
   }
 
   @override

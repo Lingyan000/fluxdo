@@ -147,8 +147,13 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
                 return NotificationItem(
                   notification: notification,
                   systemAvatarTemplate: systemAvatarTemplate,
-                  onTap: () =>
-                      handleNotificationTap(context, ref, notification),
+                  // siblings = 当前已加载列表,大屏弹窗内可上一条/下一条
+                  onTap: () => handleNotificationTap(
+                    context,
+                    ref,
+                    notification,
+                    siblings: visibleNotifications,
+                  ),
                 );
               },
             );

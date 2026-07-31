@@ -50,6 +50,10 @@ final class SwitchModel extends SettingsModel {
   final bool Function(WidgetRef ref) getValue;
   final void Function(WidgetRef ref, bool value) onChanged;
 
+  /// 依赖前置开关:返回 false 时本项整行隐藏(如「即时渲染」依赖
+  /// 「富文本编辑器」开启才有意义,前置关闭时展示无意义)。null = 恒显示。
+  final bool Function(WidgetRef ref)? enabledWhen;
+
   const SwitchModel({
     required super.id,
     required super.title,
@@ -57,6 +61,7 @@ final class SwitchModel extends SettingsModel {
     required this.icon,
     required this.getValue,
     required this.onChanged,
+    this.enabledWhen,
   });
 }
 

@@ -2,6 +2,105 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.25] - 2026-07-24
+
+
+### 🌟 新功能
+
+- M3eNavigationBar 暂时关闭 by @Lingyan000
+
+- 稍后阅读浮层重做:整屏模糊遮罩+横向卡片列表 by @Lingyan000
+
+- 自研 M3E 组件库 m3e_ui:动效/组件全家桶 + 全局开关 by @Lingyan000
+
+- 图片查看器:双击/缩放弹簧动画 + 打开转场升级 by @Lingyan000
+
+- 私信列表支持新建私信(可搜索收件人) (#345) ([#345](https://github.com/lingyan000/fluxdo/pull/345)) by @homo11451419
+
+- : 进度悬浮条支持「返回」动作 ([#323](https://github.com/lingyan000/fluxdo/pull/323)) by @dashu33
+
+- 表情面板退格键全覆盖:主编辑器接入 + 公共删除工具 + 移动端限定 by @Lingyan000
+
+- Boost 表情面板:底部安全区 + 悬浮退格键 by @Lingyan000
+
+- 数据管理页重做:缓存分类多选清理 + 备份反白名单 v2 by @Lingyan000
+
+- 接入金标联盟公平运行内存机制:TRIM 广播转标准 memoryPressure by @Lingyan000
+
+
+### 🐛 修复
+
+- 适配 preloaded 数据新版承载形态:script/json 标签 + 旧属性形态兼容 by @Lingyan000
+
+- 待审回复撤回重编不再丢回复目标:送审时会话级补记 + 冷场景降级提示 by @Lingyan000
+
+- 修复 Windows MSVC UTF-8 源码编码构建失败 by @Lingyan000
+
+- Win+V 粘贴图片无反应:补原生剪贴板兜底 (#346) ([#346](https://github.com/lingyan000/fluxdo/pull/346)) by @homo11451419
+
+- 修 dec 归因盲区:raster 大帧独立附解码名单 by @Lingyan000
+
+- 修复富 composer 表情面板打开后返回键失效 by @Lingyan000
+
+- 下载并发分通道:贴纸独立 3 槽,治贴纸风暴饿死正文图 by @Lingyan000
+
+- 查看器 AVIF fallback 补 original bucket by @Lingyan000
+
+- 数据管理:图片缓存统计/清理纳入迁移 .trash 待删目录 by @Lingyan000
+
+- Boost 弹幕全链路收口:provider 单一数据源 + 长帖弹幕层 by @Lingyan000
+
+- 大代码块进视口滚动卡顿:高亮熔断对齐网页端 + span 扁平化合并 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 下载视野优先级:首帧 paint 提级 + 滚出沉底 + 查看器插队 by @Lingyan000
+
+- ️ AVIF 零拷贝帧桥:直连 FFI 免 protobuf 三拷贝 + 帧级降采样 + 滚动首帧放行 by @Lingyan000
+
+- ️ 面板加载提速:emoji 独立 12 槽通道 + 贴纸预取全流水线 + 解码 3 worker by @Lingyan000
+
+- ️ 图片缓存全量 blob 收编 + 正文图契约取用(srcset/主色/原图直链) by @Lingyan000
+
+- ️ 小图缓存重构:blob 直寻址 + emojis.json SWR 快照 + 迁移防卡顿 by @Lingyan000
+
+- ️ 图片管线三笔修复 + 解码归因探针 by @Lingyan000
+
+- ️ 子包指针:emoji 占位岛(emoji 段落进直绘,见 fluxdo_render ccf857b) by @Lingyan000
+
+- ️ 滚动停止后段落预热:首见段落也变缓存命中 by @Lingyan000
+
+- ️ 接入正文段落直绘布局缓存:tlay:miss span 上报 + 子包指针 by @Lingyan000
+
+- ️ 性能三件套:解码闸门离屏摘除 + 帧调度归因 + 图片引用作用域 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 图片查看器重构:手势状态外提+持久层栈+关闭转场统一 by @Lingyan000
+
+
+### 📝 文档
+
+- 起草 v0.2.25 版本亮点 by @Lingyan000
+
+
+### 🔧 其他
+
+- 🌟 桌面端表情面板改为悬浮弹层 by @Lingyan000
+
+- 🌟 图片直链改为内置查看器打开,不再走"离站确认"弹窗 (#347) ([#347](https://github.com/lingyan000/fluxdo/pull/347)) by @homo11451419
+
+- 💄 数据管理页打磨:统计色板/占比标注/彩条分段圆角/按钮通栏 by @Lingyan000
+
+- 🔧 macOS 自签证书签名:消除钥匙串反复弹窗 + CI 接入 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.24...v0.2.25
+
 ## [0.2.24] - 2026-07-17
 
 

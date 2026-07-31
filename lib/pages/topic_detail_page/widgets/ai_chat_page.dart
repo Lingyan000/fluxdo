@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +48,9 @@ class AiChatPage extends ConsumerStatefulWidget {
   /// 回复话题回调（将 AI 回复内容预填到回复框）
   final void Function(String content)? onReplyToTopic;
 
+  /// 嵌入话题页时按 Escape 返回话题正文
+  final VoidCallback? onEscape;
+
   const AiChatPage({
     super.key,
     required this.topicId,
@@ -54,6 +58,7 @@ class AiChatPage extends ConsumerStatefulWidget {
     this.embedded = false,
     this.detail,
     this.onReplyToTopic,
+    this.onEscape,
   });
 
   @override
@@ -787,8 +792,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       children: [
         // 上下文加载提示
         if (_isLoadingContext)
-          LinearProgressIndicator(
-            minHeight: 2,
+          M3eLinearProgress(
             color: theme.colorScheme.primary,
           ),
 
@@ -838,6 +842,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                 );
               },
               onStop: chatNotifier.stopGeneration,
+              onEscape: widget.onEscape,
               modelButton: currentModel == null
                   ? null
                   : _ModelLogoButton(

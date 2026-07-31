@@ -2,8 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
-import '../../services/discourse_cache_manager.dart';
+import '../../services/blob_image_cache.dart';
 import '../../services/media_geometry_memo.dart';
 import '../../utils/svg_utils.dart';
 import 'animated_svg_view.dart';
@@ -105,7 +106,6 @@ class DiscourseSvgView extends StatefulWidget {
 }
 
 class _DiscourseSvgViewState extends State<DiscourseSvgView> {
-  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
 
   /// 大文件门槛:utf8 解码+动画嗅探全量扫描挪 isolate。
   static const int _bigFileBytes = 256 << 10;
@@ -163,8 +163,8 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
     final url = widget.url;
     final cacheKey = _cacheKey;
     try {
-      final file = await _cacheManager.getSingleFile(url);
-      final bytes = await file.readAsBytes();
+      final bytes =
+          await BlobImageCache.fetch(BlobImageCache.contentBucket, url);
       if (!mounted || _cacheKey != cacheKey) return;
 
       // 大文件的解码+嗅探是全量字符串扫描,挪 isolate
@@ -273,11 +273,7 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
       width: widget.width,
       height: widget.height ?? 100,
       child: const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        child: LoadingSpinner(size: 20),
       ),
     );
   }
@@ -316,7 +312,6 @@ class SvgSniffFallback extends StatefulWidget {
 }
 
 class _SvgSniffFallbackState extends State<SvgSniffFallback> {
-  static final DiscourseCacheManager _cacheManager = DiscourseCacheManager();
 
   /// url → 嗅探结论(会话级,同图反复失败不重复读盘)。
   static final Map<String, bool> _verdicts = <String, bool>{};
@@ -342,8 +337,8 @@ class _SvgSniffFallbackState extends State<SvgSniffFallback> {
   Future<void> _sniff() async {
     final url = widget.url;
     try {
-      final file = await _cacheManager.getSingleFile(url);
-      final bytes = await file.readAsBytes();
+      final bytes =
+          await BlobImageCache.fetch(BlobImageCache.contentBucket, url);
       final verdict = SvgUtils.isSvgBytes(bytes);
       _verdicts[url] = verdict;
       if (mounted && widget.url == url) setState(() => _isSvg = verdict);

@@ -40,6 +40,7 @@ class GrainGradient extends StatefulWidget {
     this.noise = 0.1,
     this.shape = GrainGradientShape.sphere,
     this.speed = 1.0,
+    this.animated = true,
     this.scale = 1.0,
     this.rotation = 0.0,
     this.offsetX = 0.0,
@@ -67,6 +68,12 @@ class GrainGradient extends StatefulWidget {
 
   /// 动画速度倍数
   final double speed;
+
+  /// 是否持续推进 shader 时间轴。
+  ///
+  /// 关闭后仍使用同一套 GPU shader 和噪声纹理，只固定渲染当前帧，适合
+  /// 个人主页背景等不需要常驻动画、但仍需保留完整视觉质量的场景。
+  final bool animated;
 
   /// 整体缩放 (0.01-4)
   final double scale;
@@ -98,8 +105,22 @@ class _GrainGradientState extends State<GrainGradient>
   @override
   void initState() {
     super.initState();
-    _ticker = createTicker(_onTick)..start();
+    _ticker = createTicker(_onTick);
+    if (widget.animated) {
+      _ticker.start();
+    }
     _loadResources();
+  }
+
+  @override
+  void didUpdateWidget(GrainGradient oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animated == widget.animated) return;
+    if (widget.animated) {
+      _ticker.start();
+    } else {
+      _ticker.stop();
+    }
   }
 
   Future<void> _loadResources() async {

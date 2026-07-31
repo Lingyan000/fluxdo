@@ -111,11 +111,25 @@ mixin _SearchMixin on _DiscourseServiceBase {
       if (topicId != null) {
         queryParams['topic_id'] = topicId;
       }
-      if (categoryId != null) {
+      // 私信没有分类,TopicDetail 会把 category_id 兜底成 0;
+      // 带 category_id=0 请求会被 Discourse 以 404 拒绝(分类不存在),
+      // 导致私信里 @ 搜不到人。0 及负值一律不发。
+      if (categoryId != null && categoryId > 0) {
         queryParams['category_id'] = categoryId;
       }
 
-      final response = await _dio.get('/u/search/users', queryParameters: queryParams);
+      // 逐字触发的自动补全请求:被 CF 挑战时只做后台静默过盾,
+      // 不能每敲一个字就弹前台验证页(私信 @ 疯狂过盾问题)。
+      //
+      // priority 必须显式给 normal:调度器对 isSilent 一律推断成 low
+      // (request_scheduler_interceptor._inferPriority),而队列是按优先级
+      // 排序的堆、没有 aging —— 后到的 normal 会不断反超已排队的 low。
+      // 每 host 只有 3 个并发槽,边加载楼层边打字时补全会被饿死。
+      final response = await _dio.get(
+        '/u/search/users',
+        queryParameters: queryParams,
+        options: Options(extra: {'isSilent': true, 'priority': 'normal'}),
+      );
       return MentionSearchResult.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {
       debugPrint('[DiscourseService] searchUsers failed: $e');
@@ -134,6 +148,9 @@ mixin _SearchMixin on _DiscourseServiceBase {
         queryParameters: {
           'names[]': names,
         },
+        // 编辑器内自动触发的校验请求,同样不应弹前台验证;
+        // 同样显式声明 normal,避免被调度器按 isSilent 降级排队。
+        options: Options(extra: {'isSilent': true, 'priority': 'normal'}),
       );
       return MentionCheckResult.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {

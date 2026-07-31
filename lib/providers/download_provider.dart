@@ -24,6 +24,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// 正在进行中的下载 CancelToken，key = item.id
   final Map<String, CancelToken> _cancelTokens = {};
 
+  /// Dio 的下载进度回调可能按网络分片高频触发。若每次都发布 Riverpod 状态，
+  /// 下载页会反复重建整份列表，进度 Toast 也会在同一帧收到多次通知。
+  final Map<String, int> _lastProgressPublishMicros = {};
+  static const int _progressPublishIntervalMicros = 100000;
+
   DownloadNotifier(this._prefs) : super(_load(_prefs));
 
   /// 从 SharedPreferences 加载列表
@@ -48,8 +53,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     int? contentLength,
   }) async {
     // 快速解析初始文件名（不等待网络），立即反馈用户
-    final initialFileName =
-        DownloadService.resolveFileName(url, suggestedFilename: suggestedFilename);
+    final initialFileName = DownloadService.resolveFileName(
+      url,
+      suggestedFilename: suggestedFilename,
+    );
 
     // 获取下载目录，处理重名
     final dir = await _getDownloadDir();
@@ -77,8 +84,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     // 没有建议文件名时，通过 HEAD 请求获取更准确的文件名（作为下载 loading 的一部分）
     if (suggestedFilename == null || suggestedFilename.isEmpty) {
-      final headerName =
-          await DownloadService.instance.fetchFileNameFromHeader(url);
+      final headerName = await DownloadService.instance.fetchFileNameFromHeader(
+        url,
+      );
       if (headerName != null && headerName.isNotEmpty) {
         final betterPath = _uniquePath(dir.path, headerName);
         final betterActualName = betterPath.split('/').last;
@@ -102,14 +110,23 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         cancelToken: cancelToken,
         onProgress: (received, total) {
           final progress = total > 0 ? received / total : -1.0;
+          final now = DateTime.now().microsecondsSinceEpoch;
+          final last = _lastProgressPublishMicros[id];
+          if (last != null &&
+              now - last < _progressPublishIntervalMicros &&
+              progress < 1.0) {
+            return;
+          }
+          _lastProgressPublishMicros[id] = now;
           toastHandle.updateProgress(progress);
-          _updateItem(id,
-              progress: total > 0 ? received / total : 0.0,
-              fileSize: total > 0 ? total : null);
+          _updateItem(
+            id,
+            progress: total > 0 ? received / total : 0.0,
+            fileSize: total > 0 ? total : null,
+          );
         },
       );
-      _updateItem(id,
-          status: DownloadItemStatus.completed, progress: 1.0);
+      _updateItem(id, status: DownloadItemStatus.completed, progress: 1.0);
       toastHandle.dismiss();
       // 显示完成 Toast，带"查看"按钮跳转下载列表
       ToastService.show(
@@ -135,6 +152,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ToastService.showError(S.current.myBrowser_downloadFailed);
     } finally {
       _cancelTokens.remove(id);
+      _lastProgressPublishMicros.remove(id);
     }
   }
 
@@ -188,21 +206,24 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _save();
   }
 
-  void _updateItem(String id,
-      {String? fileName,
-      String? savePath,
-      DownloadItemStatus? status,
-      double? progress,
-      int? fileSize}) {
+  void _updateItem(
+    String id, {
+    String? fileName,
+    String? savePath,
+    DownloadItemStatus? status,
+    double? progress,
+    int? fileSize,
+  }) {
     state = [
       for (final item in state)
         if (item.id == id)
           item.copyWith(
-              fileName: fileName,
-              savePath: savePath,
-              status: status,
-              progress: progress,
-              fileSize: fileSize)
+            fileName: fileName,
+            savePath: savePath,
+            status: status,
+            progress: progress,
+            fileSize: fileSize,
+          )
         else
           item,
     ];
@@ -251,6 +272,6 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  return DownloadNotifier(prefs);
-});
+      final prefs = ref.watch(sharedPreferencesProvider);
+      return DownloadNotifier(prefs);
+    });

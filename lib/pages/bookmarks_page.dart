@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../models/search_filter.dart';
@@ -14,6 +15,8 @@ import '../providers/preferences_provider.dart';
 import '../providers/bookmarks_reconciler.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/user_content_search_provider.dart';
+import '../models/shortcut_binding.dart';
+import '../providers/shortcut_provider.dart';
 import '../services/app_error_handler.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
@@ -61,9 +64,29 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   String? _selectedBookmarkName;
   BookmarksWorkspaceState _workspaceState = const BookmarksWorkspaceState();
 
+  /// 桌面端 Esc 退出书签页(maybePop 会依次经过 PopScope:搜索模式先退
+  /// 搜索、手机工作区先回书签标签,最后才真正 pop 路由)。
+  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
+    ref: ref,
+    scope: ShortcutScope.context,
+    // 底栏 tab 形态挂在 IndexedStack 里:不活跃时注册失效,否则截胡
+    // 其他 tab 的 ESC(共享根路由,路由过滤分不出活跃 tab)。
+    enabled: () => widget.isActive,
+  );
+
   @override
   void initState() {
     super.initState();
+    if (PlatformUtils.isDesktop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _shortcutScopeBinding.register(context, {
+          ShortcutAction.closeOverlay: () {
+            if (mounted) Navigator.of(context).maybePop();
+          },
+        });
+      });
+    }
     _scrollController.addListener(_onScroll);
     _searchNotifier = ref.read(
       userContentSearchProvider(SearchInType.bookmarks).notifier,
@@ -87,6 +110,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   @override
   void dispose() {
+    _shortcutScopeBinding.disposeDeferred();
     _setMobileBottomBarHidden(false);
     _scrollController.dispose();
     Future.microtask(_searchNotifier.exitSearchMode);
@@ -564,11 +588,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
       tooltip: context.l10n.bookmarks_syncBookmarks,
       onPressed: isReconciling ? null : _onManualSync,
       icon: isReconciling
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
+          ? const LoadingSpinner(size: 18)
           : const Icon(Symbols.sync_rounded),
     );
   }
@@ -783,6 +803,9 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
             activeTabId: _workspaceState.activeTabId,
             topicTabs: _workspaceState.topicTabs,
             bookmarksLabel: context.l10n.bookmarks_title,
+            onBack: Navigator.of(context).canPop()
+                ? () => Navigator.of(context).maybePop()
+                : null,
             isSearchMode: searchState.isSearchMode,
             onSearchTap: () => _onSearchPressed(true),
             onBookmarksTap: () {

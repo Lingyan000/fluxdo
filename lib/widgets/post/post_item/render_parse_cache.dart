@@ -123,6 +123,13 @@ class RenderParseCache {
       map.remove(map.keys.first);
     }
   }
+
+  /// 全清(系统内存压力响应)。纯数据缓存无 dispose 语义,清空安全:
+  /// 在屏帖子 State 自持解析产物引用不受影响,滚回来 miss 重解析即可。
+  static void clear() {
+    _short.clear();
+    _long.clear();
+  }
 }
 
 class _ShortEntry {
@@ -173,8 +180,9 @@ class LongPostParseData {
     return _offsets[index]!;
   }
 
-  /// 是否还有未解析的 chunk(空闲预热用)。
-  bool get fullyParsed => _parsed.isNotEmpty && _parsed.last != null;
+  /// 是否还有未解析的 chunk(空闲预热用)。chunks 为空视为已完成,
+  /// 否则空条目会被预热循环永远选中却无事可做,零延时自转锁死 UI 线程。
+  bool get fullyParsed => _parsed.isEmpty || _parsed.last != null;
 
   /// 顺序解析 0..[index](offset 有前缀依赖)。已解析的块直接跳过,
   /// 单块只解析一次。

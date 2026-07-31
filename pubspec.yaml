@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.24+2026071622
+version: 0.2.25+2026072418
 
 environment:
   sdk: ^3.10.4
@@ -22,6 +22,7 @@ workspace:
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/fluxdo_render
+  - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
 
@@ -45,12 +46,6 @@ dependencies:
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
   # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
   flutter_js: ^0.8.7
-  cached_network_image: ^3.4.1
-  octo_image: ^2.1.0
-  flutter_cache_manager: ^3.4.1
-  # 桌面(Windows/Linux)图片缓存索引走 sqlite 的 FFI 后端。dart≥3.9 + ffi≥2.4.0
-  # 由 build_hooks 自动打包 sqlite3,无需 sqlite3_flutter_libs;移动 / macOS 用原生 sqflite。
-  sqflite_common_ffi: ^2.4.2
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
@@ -92,6 +87,8 @@ dependencies:
     path: packages/ai_model_manager
   common_ui:
     path: packages/common_ui
+  m3e_ui:
+    path: packages/m3e_ui
   paper_shaders:
     path: packages/paper_shaders
   fluxdo_render:
@@ -139,6 +136,10 @@ dependencies:
   # (mc_arm.rs:5905 usize underflow)。flutter_avif 用 C 的 libavif/dav1d,
   # 工业标准、稳定,直到 native_animated_image v0.3.0 砍掉 AVIF 之前必须保留。
   flutter_avif: ^3.1.0
+  # 显式引 platform_interface(flutter_avif 的传递依赖):AvifFastBridge
+  # 直连它的 FFI 符号表(FlutterAvifImpl.flutterAvifFFI),绕开每帧 protobuf
+  # 解析 + 双重拷贝的慢桥,见 lib/services/avif_fast_bridge.dart。
+  flutter_avif_platform_interface: ^3.1.0
   catcher_2: ^2.1.5
   logging: ^1.3.0
   timezone: ^0.11.0
@@ -146,9 +147,6 @@ dependencies:
   # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
   # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
   chinese_font_library: ^1.2.0
-  # androidx.graphics.shapes 的 Dart 移植(RoundedPolygon/Morph/MaterialShapes),
-  # 用于 1:1 复刻 M3 Expressive LoadingIndicator 的形状变形加载动画。
-  material_new_shapes: ^1.0.0
 
   window_manager: ^0.5.1
   screen_retriever: ^0.2.1
@@ -158,9 +156,38 @@ dependencies:
   flutter_foreground_task: ^9.2.0  # Android 前台服务保活
   workmanager: ^0.9.0+3            # iOS BGTaskScheduler
 
-  chewie: any
   video_player: any
+  # video_player 官方无 Windows/Linux 后端,两平台经 video_player_media_kit
+  # 桥接到 media_kit(libmpv);移动端 + macOS 维持官方后端。
+  video_player_media_kit: ^2.0.0
+  # Windows 的 libmpv-2.dll。video 包是 audio 包的超集,音频侧
+  # (just_audio_media_kit)共用同一份 dll,不再单独引 *_windows_audio。
+  media_kit_libs_windows_video: ^1.0.11
+  # Linux 的 media_kit 初始化桩:不打包 libmpv,运行期 dlopen 系统/flatpak
+  # 内置的 libmpv.so.2(flatpak manifest 自建 mpv 模块,见 flatpak/*.yml);
+  # 其 CMake 会在 configure 期联网下载 mimalloc —— flatpak 禁网沙箱里由
+  # scripts/ci/linux/patch_plugins.sh 指向 vendored 副本。
+  media_kit_libs_linux: ^1.2.1
+  # 视频播放期间防熄屏(自绘播放器直接依赖)。1.4+ 依赖 package_info_plus ^9
+  # / win32 ^6,与项目锁定的 device_info_plus 12.3.0(win32 ^5)和
+  # package_info_plus ^8 冲突,停在 1.3.x。
+  wakelock_plus: ^1.3.3
+  volume_controller: ^3.6.0 # 播放器竖滑手势调系统音量(仅移动端调用)
+  screen_brightness: ^2.1.11 # 播放器竖滑手势调 app 亮度(仅移动端调用)
   just_audio: ^0.10.6 # 原生上传音频播放(FluxdoRender audioBuilder)
+  # just_audio 本身不包含 Windows/Linux 实现。
+  # - Windows: media_kit 后端(libmpv-2.dll 随 media_kit_libs_windows_video
+  #   打包,与视频共用)。
+  # - Linux: 自写 GStreamer 桥(services/audio/just_audio_gst.dart),经
+  #   audioplayers_linux 走 GNOME runtime 自带的 GStreamer。音频不改走
+  #   media_kit:GStreamer 桥已稳定,换后端无收益(视频引入 libmpv 是
+  #   因为视频别无后端可选)。
+  #   只依赖 audioplayers_linux + platform_interface,不拉 audioplayers 主包,
+  #   避免给 Android/iOS 等平台塞进用不到的实现插件。
+  just_audio_media_kit: ^2.1.0
+  just_audio_platform_interface: ^4.6.0 # JustAudioGst 实现平台接口
+  audioplayers_linux: ^4.3.0
+  audioplayers_platform_interface: ^7.2.0
   rhttp:
     git:
       url: https://github.com/Lingyan000/rhttp_plus.git
@@ -177,6 +204,10 @@ dependency_overrides:
   device_info_plus: 12.3.0
   flutter_inappwebview_linux:
     path: packages/flutter_inappwebview_linux
+  # Windows 插件析构存在悬垂 this 回调 UAF(CF 验证 WebView 销毁时闪退),
+  # vendored 版本带 aliveGuard 修复
+  flutter_inappwebview_windows:
+    path: packages/flutter_inappwebview_windows
   # 锁定 flutter_rust_bridge 版本，与 rhttp 插件的 codegen 版本保持一致。
   # rhttp_plus 已同步 upstream 0.18.0，生成代码基于 2.12.0。
   flutter_rust_bridge: 2.12.0

@@ -50,5 +50,22 @@
   },
   "bookmarks_syncUpToDate": "書籤已是最新",
   "bookmarks_syncFailed": "同步失敗，請稍後重試",
-  "readLater_title": "稍後閱讀"
+  "readLater_title": "稍後閱讀",
+  "readLater_continueReading": "繼續閱讀",
+  "readLater_readAt": "讀到 #{postNumber}",
+  "@readLater_readAt": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "readLater_addedTime": "{time}加入",
+  "@readLater_addedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

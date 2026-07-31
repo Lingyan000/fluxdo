@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../utils/dialog_utils.dart';
 
@@ -135,28 +136,19 @@ class _CalloutEditDialogState extends State<_CalloutEditDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('静态')),
-                  ButtonSegment(value: 1, label: Text('可折叠')),
-                  ButtonSegment(value: 2, label: Text('默认折叠')),
+              M3eButtonGroup<int>(
+                items: const [
+                  M3eButtonGroupItem(value: 0, label: Text('静态')),
+                  M3eButtonGroupItem(value: 1, label: Text('可折叠')),
+                  M3eButtonGroupItem(value: 2, label: Text('默认折叠')),
                 ],
-                selected: {
-                  switch (_foldable) {
-                    null => 0,
-                    true => 1,
-                    false => 2,
-                  },
+                selected: switch (_foldable) {
+                  null => 0,
+                  true => 1,
+                  false => 2,
                 },
-                showSelectedIcon: false,
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  textStyle: WidgetStatePropertyAll(
-                    Theme.of(context).textTheme.labelSmall,
-                  ),
-                ),
-                onSelectionChanged: (v) => setState(
-                  () => _foldable = switch (v.first) {
+                onSelected: (v) => setState(
+                  () => _foldable = switch (v) {
                     0 => null,
                     1 => true,
                     _ => false,

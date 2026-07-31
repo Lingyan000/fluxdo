@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../providers/ai_post_review_provider.dart';
+import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
@@ -95,6 +96,20 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           ),
           condition: () => Platform.isIOS || Platform.isAndroid,
         ),
+        PlatformConditionalModel(
+          inner: SwitchModel(
+            id: 'fullscreenSwipeBack',
+            title: l10n.preferences_fullscreenSwipeBack,
+            subtitle: l10n.preferences_fullscreenSwipeBackDesc,
+            icon: Symbols.swipe_right_rounded,
+            getValue: (ref) =>
+                ref.watch(preferencesProvider).fullscreenSwipeBack,
+            onChanged: (ref, v) => ref
+                .read(preferencesProvider.notifier)
+                .setFullscreenSwipeBack(v),
+          ),
+          condition: () => Platform.isIOS || Platform.isAndroid,
+        ),
       ],
     ),
     SettingsGroup(
@@ -118,6 +133,31 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           getValue: (ref) => ref.watch(preferencesProvider).useRichComposer,
           onChanged: (ref, v) =>
               ref.read(preferencesProvider.notifier).setUseRichComposer(v),
+        ),
+        SwitchModel(
+          id: 'composerEnterSoftBreak',
+          title: l10n.preferences_composerEnterSoftBreak,
+          subtitle: l10n.preferences_composerEnterSoftBreakDesc,
+          icon: Symbols.keyboard_return_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).composerEnterSoftBreak,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setComposerEnterSoftBreak(v),
+          // 软换行是富文本编辑器(EditorState)的语义,源码编辑器不认
+          enabledWhen: (ref) => ref.watch(preferencesProvider).useRichComposer,
+        ),
+        SwitchModel(
+          id: 'composerLiveRender',
+          title: l10n.preferences_composerLiveRender,
+          subtitle: l10n.preferences_composerLiveRenderDesc,
+          icon: Symbols.preview_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).composerLiveRender,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setComposerLiveRender(v),
+          // 即时渲染(ir)是富文本编辑器的模式,源码编辑器无显形概念
+          enabledWhen: (ref) => ref.watch(preferencesProvider).useRichComposer,
         ),
         SwitchModel(
           id: 'aiPostReview',
@@ -151,6 +191,58 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             return '${selected.provider.name} / $modelName';
           },
           onTap: (context, ref) => _showAiPostReviewModelSheet(context, ref),
+        ),
+        SwitchModel(
+          id: 'aiTranslation',
+          title: l10n.ai_translationEnabled,
+          subtitle: l10n.ai_translationEnabledDesc,
+          icon: Symbols.translate_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).aiTranslationEnabled,
+          onChanged: (ref, v) async {
+            final notifier = ref.read(preferencesProvider.notifier);
+            await notifier.setAiTranslationEnabled(v);
+            if (!v) return;
+            final prefs = ref.read(preferencesProvider);
+            if (prefs.aiTranslationModelKey != null) return;
+            final selected = ref.read(aiTranslationSelectedModelProvider);
+            if (selected == null) return;
+            await notifier.setAiTranslationModelKey(
+              buildAiModelKey(selected.provider.id, selected.model.id),
+            );
+          },
+        ),
+        ActionModel(
+          id: 'aiTranslationTargetLanguage',
+          title: l10n.ai_translationTargetLanguage,
+          icon: Symbols.translate_rounded,
+          getDynamicSubtitle: (ref) {
+            final preferred = ref.watch(
+              preferencesProvider.select(
+                (preferences) => preferences.aiTranslationTargetLanguage,
+              ),
+            );
+            if (preferred == null || preferred.isEmpty) {
+              return l10n.ai_translationTargetLanguageFollowApp;
+            }
+            return aiTranslationLanguageLabel(preferred);
+          },
+          onTap: (context, ref) =>
+              _showAiTranslationLanguagePicker(context, ref),
+        ),
+        ActionModel(
+          id: 'aiTranslationModel',
+          title: l10n.ai_translationModel,
+          icon: Symbols.psychology_alt_rounded,
+          getDynamicSubtitle: (ref) {
+            final selected = ref.watch(aiTranslationSelectedModelProvider);
+            if (selected == null) {
+              return l10n.ai_translationModelNotSelected;
+            }
+            final modelName = selected.model.name ?? selected.model.id;
+            return '${selected.provider.name} / $modelName';
+          },
+          onTap: (context, ref) => _showAiTranslationModelSheet(context, ref),
         ),
         ActionModel(
           id: 'stickerSource',
@@ -209,6 +301,93 @@ Future<void> _showAiPostReviewModelSheet(
   await ref
       .read(preferencesProvider.notifier)
       .setAiPostReviewModelKey(
+        buildAiModelKey(selected.provider.id, selected.model.id),
+      );
+}
+
+void _showAiTranslationLanguagePicker(BuildContext context, WidgetRef ref) {
+  final l10n = context.l10n;
+  final current = ref.read(preferencesProvider).aiTranslationTargetLanguage;
+  showAppDialog<String?>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: Text(l10n.ai_translationTargetLanguage),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(dialogContext, ''),
+          child: Row(
+            children: [
+              Icon(
+                current == null || current.isEmpty
+                    ? Symbols.radio_button_checked_rounded
+                    : Symbols.radio_button_unchecked_rounded,
+                color: current == null || current.isEmpty
+                    ? Theme.of(dialogContext).colorScheme.primary
+                    : null,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(l10n.ai_translationTargetLanguageFollowApp),
+            ],
+          ),
+        ),
+        for (final entry in aiTranslationLanguages.entries)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, entry.key),
+            child: Row(
+              children: [
+                Icon(
+                  entry.key == current
+                      ? Symbols.radio_button_checked_rounded
+                      : Symbols.radio_button_unchecked_rounded,
+                  color: entry.key == current
+                      ? Theme.of(dialogContext).colorScheme.primary
+                      : null,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(entry.value),
+              ],
+            ),
+          ),
+      ],
+    ),
+  ).then((selected) {
+    if (selected == null) return;
+    ref
+        .read(preferencesProvider.notifier)
+        .setAiTranslationTargetLanguage(selected.isEmpty ? null : selected);
+  });
+}
+
+Future<void> _showAiTranslationModelSheet(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final allModels = ref.read(aiPostReviewAvailableModelsProvider);
+  if (allModels.isEmpty) {
+    ToastService.showInfo(context.l10n.aiPostReview_noAvailableModel);
+    return;
+  }
+
+  final current =
+      ref.read(aiTranslationSelectedModelProvider) ?? allModels.first;
+  final selected = await showAiModelSelectSheet(
+    context: context,
+    allModels: allModels,
+    current: current,
+    mode: PromptType.text,
+  );
+  if (!context.mounted || selected == null) return;
+
+  if (!selected.model.output.contains(Modality.text)) {
+    ToastService.showInfo(context.l10n.aiPostReview_chooseTextModel);
+    return;
+  }
+
+  await ref
+      .read(preferencesProvider.notifier)
+      .setAiTranslationModelKey(
         buildAiModelKey(selected.provider.id, selected.model.id),
       );
 }

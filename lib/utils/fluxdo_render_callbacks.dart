@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:archive/archive.dart' show ZLibEncoder;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -16,14 +15,15 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:popover/popover.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
-import '../pages/user_profile_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../models/topic.dart' show Post, MentionedUser, LinkCount;
 import '../providers/download_provider.dart';
+import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
@@ -31,11 +31,13 @@ import '../services/highlighter_service.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
+import '../utils/html_to_markdown.dart';
 import '../utils/link_launcher.dart';
 import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
 import '../widgets/common/image_context_menu.dart';
 import '../widgets/common/smart_avatar.dart';
+import '../widgets/post/quote_image_scope.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/content/audio/discourse_audio_player.dart';
 import '../widgets/content/svg_view.dart';
@@ -56,7 +58,7 @@ import '../widgets/content/discourse_html_content/builders/poll_builder.dart'
     as legacy_poll;
 import '../widgets/content/discourse_html_content/builders/chat_transcript_builder.dart'
     as legacy_chat;
-import '../widgets/content/discourse_html_content/builders/video_builder.dart';
+import '../widgets/media_player/video/discourse_video_player.dart';
 import '../widgets/content/discourse_html_content/image_utils.dart';
 import '../widgets/content/discourse_html_content/lazy_image.dart';
 import '../widgets/content/lazy_load_scope.dart';
@@ -254,23 +256,33 @@ class FluxdoRenderCallbacks {
     DiscourseService().trackClick(url: url, postId: postId, topicId: topicId);
   }
 
-  /// 默认内部链接点击 —— push 一个新的 TopicDetailPage。
+  /// 默认内部链接点击。
   /// 供 [linkHandler] 在调用方未定制 onInternalLinkTap 时兜底。
+  ///
+  /// 平行视界中的正文链接进入当前面板栈；普通全屏页面维持 Navigator
+  /// 跳转。必须通过 [EmbeddedStackScope.maybePushTopic]，才能同时遵守
+  /// master 预览里的“截断并替换右栏”语义。
   static void _defaultInternalLinkTap(
     BuildContext ctx,
     int topicId,
     String? topicSlug,
     int? postNumber,
   ) {
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => TopicDetailPage(
-          topicId: topicId,
-          initialTitle: topicSlug,
-          scrollToPostNumber: postNumber,
-        ),
+    if (EmbeddedStackScope.maybePushTopic(
+      ctx,
+      topicId: topicId,
+      initialTitle: topicSlug,
+      scrollToPostNumber: postNumber,
+    )) {
+      return;
+    }
+    Navigator.of(ctx).push(MaterialPageRoute(
+      builder: (_) => TopicDetailPage(
+        topicId: topicId,
+        initialTitle: topicSlug,
+        scrollToPostNumber: postNumber,
       ),
-    );
+    ));
   }
 
   // ==========================================================================
@@ -310,15 +322,11 @@ class FluxdoRenderCallbacks {
     return RepaintBoundary(child: image);
   };
 
-  /// Mention chip 点击 → 跳用户资料页。
+  /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
     final user = DiscourseUrlParser.parseUser(href);
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfilePage(username: user?.username ?? username),
-      ),
-    );
+    EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
   };
 
   /// 代码块高亮:走 HighlighterService(mermaid 不会到这里 ——
@@ -406,7 +414,8 @@ class FluxdoRenderCallbacks {
     return _buildInlineSvgFromSource(node.svgSource);
   };
 
-  /// 原生上传视频:复用 DiscourseVideoPlayer(chewie)。VideoNode 已结构化,
+  /// 原生上传视频:DiscourseVideoPlayer(自绘控制层,六端统一)。
+  /// VideoNode 已结构化,
   /// upload:// 短链先解析成真实 URL(与 image builder 同套路);再过
   /// MediaCompatService 处理「改名上传」(.xz 装 mp4 等,AVFoundation
   /// 按扩展名认容器,须本地化改回正确后缀,详见该服务文档)。
@@ -443,7 +452,10 @@ class FluxdoRenderCallbacks {
           resolvedSrc,
           aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
           autoResize: !dimensOk,
-          controls: true,
+          // <source type> 优先于 URL 后缀(.xz 伪装等),Android ExoPlayer
+          // 靠它强制 progressive 路径;media_kit/mpv 按内容 probe 不吃提示
+          mimeType: node.mime,
+          loop: node.loop,
           poster: posterUrl == null
               ? null
               : Image(
@@ -465,11 +477,7 @@ class FluxdoRenderCallbacks {
           loadingBuilder: (c, _, child) => Center(
             child: posterUrl != null
                 ? child
-                : const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                : const LoadingSpinner(size: 24),
           ),
         ),
       ),
@@ -478,7 +486,9 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        // 与后续初始化段的 loadingBuilder 同款(LoadingSpinner 自适应
+        // M3E 开关),两段加载不换样式
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) =>
@@ -510,7 +520,7 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
         height: 56,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) => _withPlayableUrl(
@@ -728,6 +738,20 @@ class FluxdoRenderCallbacks {
   /// 不传 resolver(单图打开、菜单隐藏引用)。heroTag 统一 `${heroNamespace}_img_N`。
   /// [galleryResolver] 惰性:仅在用户点图时调用(见 _buildImageWidget onTap),
   /// build 阶段零解析成本。
+  /// 按设备 dpr 从 srcset 选档(浏览器语义:scale ≥ dpr 的最小档,
+  /// 都不够则取最大档)。Discourse 契约:src=1x 主档,srcset 含 1.5x/2x
+  /// (cooked_processor_mixin optimize_image!)。无 srcset 返回 null
+  /// (调用方回落 src)。3x 屏由此从"690px 拉伸模糊"变 2x 档,与 web
+  /// 端渲染等价;解码纹理量不变(ResizeImage 仍按显示宽 × dpr cap)。
+  static String? _pickSrcsetUrl(ImageRun image, double dpr) {
+    if (image.srcset.isEmpty) return null;
+    final sorted = [...image.srcset]..sort((a, b) => a.scale.compareTo(b.scale));
+    for (final c in sorted) {
+      if (c.scale >= dpr - 0.01) return c.url;
+    }
+    return sorted.last.url;
+  }
+
   static ImageContentBuilder _imageContentBuilder({
     required String heroNamespace,
     _GalleryData Function()? galleryResolver,
@@ -1102,9 +1126,17 @@ class FluxdoRenderCallbacks {
     // 在无约束下 assert 崩溃)。
     return LayoutBuilder(
       builder: (lbCtx, lbc) {
+        // 网格瓦片内(GridTileScope):瓦片给 tight 约束,图按 cover
+        // 填满 —— Hero 包在 cover 之内,量到的就是瓦片矩形,开合飞行
+        // 落点正确(配合查看器/HeroImage 的裁切插值 shuttle,飞行中
+        // 裁切窗口随缩放连续张合,两端像素级对齐)。
+        final bool inGridTile = GridTileScope.of(lbCtx);
         double? dispW = image.width;
         double? dispH = image.height;
-        if (dispW != null &&
+        if (inGridTile && lbc.hasTightWidth && lbc.hasTightHeight) {
+          dispW = lbc.maxWidth;
+          dispH = lbc.maxHeight;
+        } else if (dispW != null &&
             dispH != null &&
             dispW > 0 &&
             lbc.maxWidth.isFinite &&
@@ -1142,13 +1174,7 @@ class FluxdoRenderCallbacks {
                   url: resolvedUrl,
                   width: dispW,
                   height: dispH,
-                  placeholderBuilder: (_) => const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
+                  placeholderBuilder: (_) => const LoadingSpinner(size: 24),
                 ),
               ),
             ),
@@ -1170,10 +1196,33 @@ class FluxdoRenderCallbacks {
           height: dispH,
           child: Builder(
             builder: (ctx) {
+              // srcset 按 dpr 选档(仅 http(s) src;upload:// 短链解析后的
+              // resolvedUrl 与 srcset 候选不同源,不混用)。cacheKey 保持
+              // resolvedUrl:查看器 thumbnailUrl / Hero 同 key 复用不受
+              // 档位影响。
+              final srcsetUrl = DiscourseImageUtils.isUploadUrl(image.src)
+                  ? null
+                  : _pickSrcsetUrl(
+                      image, MediaQuery.devicePixelRatioOf(ctx));
+              final displayUrl = srcsetUrl == null
+                  ? resolvedUrl
+                  : UrlHelper.resolveUrlWithCdn(srcsetUrl);
+              final dominant = image.dominantColor;
               Widget img = LazyImage(
-                imageProvider: discourseImageProvider(resolvedUrl),
+                imageProvider: discourseImageProvider(displayUrl),
+                placeholderColor: dominant == null
+                    ? null
+                    : Color(
+                        0xFF000000 |
+                            (int.tryParse(dominant, radix: 16) ?? 0xEEEEEE),
+                      ),
                 width: dispW,
                 height: dispH,
+                // 瓦片内 cover 填满(裁切由瓦片 ClipRRect 完成);
+                // 文档流保持 contain
+                fit: inGridTile ? BoxFit.cover : BoxFit.contain,
+                coverFlight: inGridTile,
+                flightRadius: inGridTile ? 4 : 0,
                 // 解码恒按**原始宽**(scale 乘之前的声明宽):缩放档切换
                 // 显示宽变但解码宽不变 → ImageCache 同 key,切档零重
                 // 解码零 spinner(此前解码宽跟显示宽走,每次切档全新
@@ -1181,18 +1230,26 @@ class FluxdoRenderCallbacks {
                 // 行为不变。
                 decodeWidth: image.origWidth ?? dispW,
                 heroTag: heroTag,
-                cacheKey: resolvedUrl,
+                cacheKey: displayUrl,
                 onTap: () {
                   // 打开大图前清掉自研选区:图片 tap 被 HeroImage 手势赢走,
                   // 选区层收不到不会自动清(否则返回后选区还残留)。
                   SelectionScope.clearAt(ctx);
-                  // 优先用 lightboxUrl(原图大版本);否则用当前 resolvedUrl(已 CDN 重写)
+                  // Discourse 契约:a.lightbox[href] 就是原图 URL,直接用;
+                  // 只有裸 <img>(无 lightbox 包装)才用 /optimized/→
+                  // /original/ 正则反推兜底(正则对 CDN 变体路径有漏配
+                  // 风险,能不用就不用)。
+                  final hasLightbox = image.lightboxUrl != null;
                   final fullUrl = image.lightboxUrl ?? resolvedUrl;
-                  final resolvedFullUrl =
+                  var resolvedFullUrl =
                       DiscourseImageUtils.isUploadUrl(fullUrl)
                       ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
                             fullUrl)
                       : UrlHelper.resolveUrlWithCdn(fullUrl);
+                  if (!hasLightbox) {
+                    resolvedFullUrl =
+                        DiscourseImageUtils.getOriginalUrl(resolvedFullUrl);
+                  }
                   // 画廊数据在点击时才解析(长帖懒解析场景首次点图会触发
                   // 全 chunk parse,离散动作可接受;之后命中缓存)。
                   // 全帖画廊非空时走画廊 viewer(左右切同帖其他图);否则单图。
@@ -1205,17 +1262,20 @@ class FluxdoRenderCallbacks {
                       galleryIndex != null &&
                       galleryIndex >= 0 &&
                       galleryIndex < gallery.urls.length;
+                  // 网格瓦片(cover 裁切+圆角 4)来源:启用飞行 crossfade,
+                  // 消除开合瞬间「裁剪图↔完整图」跳变
+                  final bool inGridTile = GridTileScope.of(ctx);
                   DiscourseImageUtils.openViewer(
                     context: ctx,
-                    imageUrl: DiscourseImageUtils.getOriginalUrl(
-                      resolvedFullUrl,
-                    ),
+                    imageUrl: resolvedFullUrl,
                     heroTag: heroTag,
-                    thumbnailUrl: resolvedUrl,
+                    thumbnailUrl: displayUrl,
                     galleryImages: hasGallery ? gallery.urls : null,
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
                     initialIndex: hasGallery ? galleryIndex : 0,
+                    heroSourceFit: inGridTile ? BoxFit.cover : null,
+                    heroSourceRadius: inGridTile ? 4 : 0,
                   );
                 },
                 // 长按/右键 → 图片上下文菜单(对齐 legacy LazyImage
@@ -1227,6 +1287,7 @@ class FluxdoRenderCallbacks {
                   post: post,
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
+                  heroTag: heroTag,
                 ),
                 onSecondaryTapUp: (details) => _showImageContextMenu(
                   ctx,
@@ -1236,6 +1297,7 @@ class FluxdoRenderCallbacks {
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
                   position: details.globalPosition,
+                  heroTag: heroTag,
                 ),
               );
               // 预览缩放胶囊(右上角浮层,子包统一视觉)。仅有界宽上下文
@@ -1275,6 +1337,10 @@ class FluxdoRenderCallbacks {
   /// 否则用当前已 CDN 重写的 resolvedUrl;再过一遍 getOriginalUrl 还原
   /// /optimized/ → /original/(与 onTap 打开大图同口径)。getOriginalUrl
   /// 幂等,ImageContextMenu.show 内部还会再调一次,无副作用。
+  ///
+  /// 引用 handler 在 **tap 时刻**经 [QuoteImageScope] 就近现取(flatten
+  /// 产物进全局缓存后,闭包冻结的 [onQuoteImage] 可能指向已销毁页面的
+  /// State);无作用域场景(分享截图等)回落冻结引用。
   static void _showImageContextMenu(
     BuildContext context, {
     required ImageRun image,
@@ -1283,7 +1349,10 @@ class FluxdoRenderCallbacks {
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
+    String? heroTag,
   }) {
+    final scope = QuoteImageScope.maybeOf(context);
+    final liveQuoteHandler = scope != null ? scope.handler : onQuoteImage;
     final fullUrl = image.lightboxUrl ?? resolvedUrl;
     final resolvedFullUrl = DiscourseImageUtils.isUploadUrl(fullUrl)
         ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ?? fullUrl)
@@ -1294,8 +1363,39 @@ class FluxdoRenderCallbacks {
       imageUrl: menuUrl,
       post: post,
       topicId: topicId,
-      onQuoteImage: onQuoteImage,
+      onQuoteImage: liveQuoteHandler,
       position: position,
+      quoteMarkdown: _uploadMarkdownForImage(image),
+      heroTag: heroTag,
+    );
+  }
+
+  /// 引用/复制引用图片时,对齐官方 lightbox/quote-image.js 的行为:直接用
+  /// [ImageRun] 自带的 cooked 契约字段构建 markdown,`base62Sha1 →
+  /// origSrc → src` 三级回退,用 `upload://sha1.ext` 短链而非 CDN 解析后
+  /// 的完整 URL(那样粘回聊天框/编辑器无法被识别为图片附件)。
+  ///
+  /// 无上传短链信息的外链图退回 src 本身,同样对齐官方;返回 null 仅在
+  /// src 为空时发生,调用方降级用 `![image](CDN url)`。
+  static String? _uploadMarkdownForImage(ImageRun image) {
+    String src;
+    final base62Sha1 = image.base62Sha1;
+    if (base62Sha1 != null && base62Sha1.isNotEmpty) {
+      src = 'upload://$base62Sha1';
+      final ext = HtmlToMarkdown.extensionFromUrl(image.src) ??
+          HtmlToMarkdown.extensionFromUrl(image.lightboxUrl) ??
+          HtmlToMarkdown.extensionFromUrl(image.origSrc);
+      if (ext != null) src = '$src.$ext';
+    } else {
+      final origSrc = image.origSrc;
+      src = (origSrc != null && origSrc.isNotEmpty) ? origSrc : image.src;
+    }
+    if (src.isEmpty) return null;
+    return HtmlToMarkdown.buildImageMarkdown(
+      src: src,
+      alt: image.alt.isNotEmpty ? image.alt : 'image',
+      width: image.width?.round().toString(),
+      height: image.height?.round().toString(),
     );
   }
 
@@ -1386,6 +1486,10 @@ class _AsyncHighlightedCode extends StatefulWidget {
 
 class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   List<HighlightToken>? _tokens;
+  // memoize:span 树只在 tokens / 明暗切换时重建,普通 build 直接复用。
+  // 大代码块 tokensToSpan 是主线程大头,不能每帧重算。
+  TextSpan? _span;
+  bool? _spanIsDark;
 
   @override
   void initState() {
@@ -1398,17 +1502,31 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     super.didUpdateWidget(old);
     if (old.code != widget.code || old.language != widget.language) {
       _tokens = null;
+      _span = null;
       unawaited(_load());
     }
   }
 
   Future<void> _load() async {
+    // 网页端同款熔断:超大块 / lang-auto 大块保持纯 monospace,
+    // 提前短路连 isolate 往返都省掉。
+    if (HighlighterService.instance.shouldSkipHighlight(
+      widget.code,
+      widget.language,
+    )) {
+      return;
+    }
     try {
       final tokens = await HighlighterService.instance.highlightAsync(
         widget.code,
         language: widget.language,
       );
-      if (mounted) setState(() => _tokens = tokens);
+      if (mounted) {
+        setState(() {
+          _tokens = tokens;
+          _span = null;
+        });
+      }
     } catch (_) {
       // 高亮失败:保持 null,fallback 显示纯 monospace
     }
@@ -1428,12 +1546,15 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     if (_tokens == null) {
       return Text(widget.code, style: baseStyle);
     }
-    final span = HighlighterService.instance.tokensToSpan(
-      _tokens!,
-      isDark: isDark,
-      baseStyle: baseStyle,
-    );
-    return Text.rich(span);
+    if (_span == null || _spanIsDark != isDark) {
+      _span = HighlighterService.instance.tokensToSpan(
+        _tokens!,
+        isDark: isDark,
+        baseStyle: baseStyle,
+      );
+      _spanIsDark = isDark;
+    }
+    return Text.rich(_span!);
   }
 }
 
@@ -1460,8 +1581,7 @@ class _MermaidBlock extends StatefulWidget {
   State<_MermaidBlock> createState() => _MermaidBlockState();
 }
 
-class _MermaidBlockState extends State<_MermaidBlock>
-    with SingleTickerProviderStateMixin {
+class _MermaidBlockState extends State<_MermaidBlock> {
   bool _showCode = false;
   bool _shouldLoad = false;
   bool _initialized = false;
@@ -1472,32 +1592,21 @@ class _MermaidBlockState extends State<_MermaidBlock>
   int _sourceIndex = 0;
   final _vController = ScrollController();
   final _hController = ScrollController();
-  AnimationController? _shimmerController;
 
   // 缓存 key:对齐 legacy 'mermaid-${text.hashCode}',用于 LazyLoadScope。
   String get _cacheKey => 'mermaid-${widget.code.hashCode}';
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
-      // 已在本页 LazyLoadScope 里加载过则直接出图、停掉 shimmer。
+      // 已在本页 LazyLoadScope 里加载过则直接出图。
       // 截图模式(离屏渲染)下 VisibilityDetector 永不触发,读 ScreenshotMode
       // 直接立即出图,避免分享成图截到 shimmer 占位。
       if (LazyLoadScope.isLoaded(context, _cacheKey) ||
           ScreenshotMode.of(context)) {
         _shouldLoad = true;
-        _shimmerController?.stop();
       }
     }
   }
@@ -1506,7 +1615,6 @@ class _MermaidBlockState extends State<_MermaidBlock>
   void dispose() {
     _vController.dispose();
     _hController.dispose();
-    _shimmerController?.dispose();
     super.dispose();
   }
 
@@ -1553,38 +1661,11 @@ class _MermaidBlockState extends State<_MermaidBlock>
   }
 
   /// shimmer 占位(铺满固定内容框,1500ms 线性渐变,RepaintBoundary 隔离重绘)。
+  /// controller 由 [_MermaidShimmer] 自持:占位被真图/代码态替换即随 State
+  /// dispose,不会出图后继续空转产帧(旧版 controller 挂在块 State 上,
+  /// 出图后无人 stop,每个已渲染 mermaid 块都是常驻帧生产者)。
   Widget _buildShimmer(ThemeData theme, {bool withMargin = true}) {
-    final controller = _shimmerController;
-    if (controller == null) return const SizedBox.expand();
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, child) {
-          return Container(
-            margin: withMargin ? const EdgeInsets.all(12) : null,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              gradient: LinearGradient(
-                begin: Alignment(-1.0 + 2.0 * controller.value, 0),
-                end: Alignment(-0.5 + 2.0 * controller.value, 0),
-                colors: [
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.3,
-                  ),
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.6,
-                  ),
-                  theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.3,
-                  ),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          );
-        },
-      ),
-    );
+    return _MermaidShimmer(theme: theme, withMargin: withMargin);
   }
 
   /// 代码态:HighlighterService 高亮 mermaid 源码,在固定内容框内双向滚动。
@@ -1669,14 +1750,19 @@ class _MermaidBlockState extends State<_MermaidBlock>
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: CachedNetworkImage(
+        child: Image(
           key: ValueKey('$imageUrl-$_retryCount'),
-          imageUrl: imageUrl,
-          cacheManager: ExternalImageCacheManager(),
+          image: BlobImageProvider(
+            imageUrl,
+            bucket: BlobImageCache.externalBucket,
+          ),
           fit: BoxFit.contain,
-          placeholder: (context, url) =>
-              _buildShimmer(theme, withMargin: false),
-          errorWidget: (context, url, error) {
+          gaplessPlayback: true,
+          frameBuilder: (context, child, frame, wasSync) {
+            if (wasSync || frame != null) return child;
+            return _buildShimmer(theme, withMargin: false);
+          },
+          errorBuilder: (context, error, stack) {
             if (!onInk) {
               // 主源失败 → 下一帧切备源(build 内不能直接 setState)
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1851,6 +1937,72 @@ class _MermaidBlockState extends State<_MermaidBlock>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// mermaid shimmer 占位:controller 自持,占位从树上移除即 dispose,
+/// 保证"占位在=动画在,占位走=帧调度停"。
+class _MermaidShimmer extends StatefulWidget {
+  const _MermaidShimmer({required this.theme, required this.withMargin});
+
+  final ThemeData theme;
+  final bool withMargin;
+
+  @override
+  State<_MermaidShimmer> createState() => _MermaidShimmerState();
+}
+
+class _MermaidShimmerState extends State<_MermaidShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Container(
+            margin: widget.withMargin ? const EdgeInsets.all(12) : null,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              gradient: LinearGradient(
+                begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
+                end: Alignment(-0.5 + 2.0 * _controller.value, 0),
+                colors: [
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.6,
+                  ),
+                  theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

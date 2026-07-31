@@ -5,8 +5,10 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/link_launcher.dart';
+import '../services/deep_link_service.dart';
 import '../services/toast_service.dart';
 import '../services/app_link_service.dart';
 import '../services/network/cookie/cookie_store_observer.dart';
@@ -227,9 +229,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         body: Column(
               children: [
                 if (_isLoading)
-                  LinearProgressIndicator(
+                  M3eLinearProgress(
                     value: _progress,
-                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    trackColor: theme.colorScheme.surfaceContainerHighest,
                   ),
                 Expanded(
                   child: Stack(
@@ -387,6 +389,13 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
     // javascript: 静默阻止
     if (scheme == 'javascript') {
+      return NavigationActionPolicy.CANCEL;
+    }
+
+    // 应用自有 scheme 直接交给深链服务，避免授权回调被当成外部应用
+    // 链接弹出确认框，或在 WebView 内导航失败。
+    if (scheme == 'fluxdo' || scheme == 'discourse') {
+      DeepLinkService.instance.handleUri(url);
       return NavigationActionPolicy.CANCEL;
     }
 

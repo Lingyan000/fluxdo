@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/cdk_providers.dart';
 import '../pages/webview_page.dart';
 import '../services/network/exceptions/oauth_exception.dart';
-import 'common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../l10n/s.dart';
 
 class CdkBalanceCard extends ConsumerWidget {

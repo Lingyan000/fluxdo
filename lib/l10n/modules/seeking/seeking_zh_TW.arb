@@ -1,0 +1,40 @@
+{
+  "seeking_title": "追覓",
+  "seeking_addUser": "新增使用者",
+  "seeking_addUserHint": "輸入使用者名稱",
+  "seeking_removeUser": "移除監控",
+  "seeking_userExists": "該使用者已在監控清單中",
+  "seeking_userLimit": "監控上限 {max} 人",
+  "@seeking_userLimit": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollow": "同步關注",
+  "seeking_syncFollowDone": "已匯入 {count} 位關注使用者",
+  "@seeking_syncFollowDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seeking_syncFollowFailed": "同步關注失敗，請稍後再試",
+  "seeking_userNotFound": "找不到該使用者",
+  "seeking_addUserFailed": "新增使用者失敗，請稍後再試",
+  "seeking_paceTitle": "請求頻率",
+  "seeking_paceHigh": "高",
+  "seeking_paceMedium": "中",
+  "seeking_paceLow": "低",
+  "seeking_emptyHint": "新增想要關注動態的使用者，\n開啟開關後將自動輪詢其發文 / 回覆 / 按讚 / 回應 / Boost",
+  "seeking_waitingData": "等待第一輪資料…",
+  "seeking_disabledHint": "監控已關閉，打開右上角開關開始追覓",
+  "seeking_rateLimited": "觸發限流，已暫停到下一分鐘自動恢復",
+  "seeking_typePost": "發佈了話題",
+  "seeking_typeReply": "回覆了",
+  "seeking_typeLike": "按讚了",
+  "seeking_typeReaction": "回應了",
+  "seeking_typeBoost": "Boost 了"
+}

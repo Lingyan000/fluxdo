@@ -8,7 +8,7 @@ import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('手机端 barVisibility 为 0 时隐藏底部导航栏', (tester) async {
+  testWidgets('手机端 barVisibility 为 0 时将底部导航栏平移出屏', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
@@ -50,11 +50,73 @@ void main() {
       ),
     );
 
-    expect(find.byType(NavigationBar), findsNothing);
+    final bottomNavTranslation = find.byWidgetPredicate(
+      (widget) =>
+          widget is FractionalTranslation &&
+          widget.child is AdaptiveBottomNavigation,
+    );
+
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(bottomNavTranslation, findsOneWidget);
+    expect(
+      tester.widget<FractionalTranslation>(bottomNavTranslation).translation,
+      const Offset(0, 1),
+    );
 
     container.read(barVisibilityProvider.notifier).state = 1;
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(
+      tester.widget<FractionalTranslation>(bottomNavTranslation).translation,
+      Offset.zero,
+    );
+  });
+
+  testWidgets('横屏二级平行视界隐藏全局侧栏', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(1400, 900)),
+            child: AdaptiveScaffold(
+              selectedIndex: 0,
+              onDestinationSelected: (_) {},
+              hideNavigationRail: true,
+              destinations: const [
+                AdaptiveDestination(
+                  id: 'home',
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: '首页',
+                ),
+                AdaptiveDestination(
+                  id: 'messages',
+                  icon: Icon(Icons.mail_outline),
+                  selectedIcon: Icon(Icons.mail),
+                  label: '私信',
+                ),
+              ],
+              body: const SizedBox.expand(child: Text('平行视界内容')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AdaptiveNavigationRail), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('平行视界内容'), findsOneWidget);
   });
 }

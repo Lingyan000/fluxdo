@@ -34,6 +34,7 @@ class DohProxyService {
   bool? _currentPreferIPv6;
   int? _currentPreferredPort;
   String? _currentServerIp;
+  bool? _currentMitmConnect;
   bool? _currentH2Mitm;
   String? _currentUpstreamSignature;
   String? _lastError;
@@ -72,6 +73,7 @@ class DohProxyService {
     String? upstreamCipher,
     String? caCertPem,
     String? caKeyPem,
+    bool mitmConnect = true,
     bool h2Mitm = false,
   }) async {
     final upstreamSignature = _buildUpstreamSignature(
@@ -91,6 +93,7 @@ class DohProxyService {
           _currentPreferIPv6 == preferIPv6 &&
           _currentPreferredPort == preferredPort &&
           _currentServerIp == serverIp &&
+          _currentMitmConnect == mitmConnect &&
           _currentH2Mitm == h2Mitm &&
           _currentUpstreamSignature == upstreamSignature;
       if (sameConfig) {
@@ -121,6 +124,7 @@ class DohProxyService {
         upstreamCipher,
         caCertPem,
         caKeyPem,
+        mitmConnect,
         h2Mitm,
       );
       // 桌面平台 FFI 加载失败时，回退到进程模式
@@ -141,6 +145,7 @@ class DohProxyService {
           upstreamUsername,
           upstreamPassword,
           upstreamCipher,
+          mitmConnect,
           h2Mitm,
         );
       }
@@ -160,6 +165,7 @@ class DohProxyService {
         upstreamUsername,
         upstreamPassword,
         upstreamCipher,
+        mitmConnect,
         h2Mitm,
       );
     }
@@ -182,6 +188,7 @@ class DohProxyService {
     String? upstreamCipher,
     String? caCertPem,
     String? caKeyPem,
+    bool mitmConnect,
     bool h2Mitm,
   ) async {
     try {
@@ -208,6 +215,7 @@ class DohProxyService {
           upstreamCipher: upstreamCipher,
           caCertPem: caCertPem,
           caKeyPem: caKeyPem,
+          mitmConnect: mitmConnect,
           h2Mitm: h2Mitm,
         );
         if (resultPort <= 0) {
@@ -226,6 +234,7 @@ class DohProxyService {
         _currentPreferIPv6 = preferIPv6;
         _currentPreferredPort = port;
         _currentServerIp = serverIp;
+        _currentMitmConnect = mitmConnect;
         _currentH2Mitm = h2Mitm;
         _currentUpstreamSignature = _buildUpstreamSignature(
           protocol: upstreamProtocol,
@@ -260,6 +269,7 @@ class DohProxyService {
     String? upstreamUsername,
     String? upstreamPassword,
     String? upstreamCipher,
+    bool mitmConnect,
     bool h2Mitm,
   ) async {
     try {
@@ -279,6 +289,7 @@ class DohProxyService {
         preferredPort.toString(),
         if (!enableDoh) '--no-doh',
         if (gatewayMode) '--gateway',
+        if (!mitmConnect) '--tunnel-connect',
         if (h2Mitm) '--h2-mitm',
         if (preferIPv6) '--ipv6',
         if (dohServer != null && dohServer.isNotEmpty) ...['--doh', dohServer],
@@ -339,6 +350,7 @@ class DohProxyService {
           _currentPreferIPv6 = preferIPv6;
           _currentPreferredPort = preferredPort;
           _currentServerIp = serverIp;
+          _currentMitmConnect = mitmConnect;
           _currentH2Mitm = h2Mitm;
           _currentUpstreamSignature = _buildUpstreamSignature(
             protocol: upstreamProtocol,
@@ -450,6 +462,7 @@ class DohProxyService {
     _currentPreferIPv6 = null;
     _currentPreferredPort = null;
     _currentServerIp = null;
+    _currentMitmConnect = null;
     _currentH2Mitm = null;
     _currentUpstreamSignature = null;
     // 注意：不清除 _lastError，保留用于 UI 展示
@@ -778,6 +791,7 @@ class DohProxyService {
     required String? upstreamCipher,
     String? caCertPem,
     String? caKeyPem,
+    bool mitmConnect = true,
     bool h2Mitm = false,
   }) async {
     final sendPort = await _ensureFfiIsolate();
@@ -800,6 +814,7 @@ class DohProxyService {
       'upstreamCipher': upstreamCipher,
       'caCertPem': caCertPem,
       'caKeyPem': caKeyPem,
+      'mitmConnect': mitmConnect,
       'preferredPort': port,
       'replyTo': response.sendPort,
     });
@@ -1087,6 +1102,7 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
           final upstreamCipher = message['upstreamCipher'] as String?;
           final caCertPem = message['caCertPem'] as String?;
           final caKeyPem = message['caKeyPem'] as String?;
+          final mitmConnect = message['mitmConnect'] as bool? ?? true;
           var resultPort = DohProxyFfi.instance.start(
             port: portValue,
             enableDoh: enableDoh,
@@ -1103,6 +1119,7 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
             upstreamCipher: upstreamCipher,
             caCertPem: caCertPem,
             caKeyPem: caKeyPem,
+            mitmConnect: mitmConnect,
             h2Mitm: h2Mitm,
           );
           if (resultPort <= 0 && preferredPort != 0) {
@@ -1122,6 +1139,7 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
               upstreamCipher: upstreamCipher,
               caCertPem: caCertPem,
               caKeyPem: caKeyPem,
+              mitmConnect: mitmConnect,
               h2Mitm: h2Mitm,
             );
           }

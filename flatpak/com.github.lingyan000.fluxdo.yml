@@ -10,6 +10,17 @@ separate-locales: false
 build-options:
   append-path: /usr/lib/sdk/llvm20/bin
   prepend-ld-library-path: /usr/lib/sdk/llvm20/lib
+# 视频播放(media_kit → dlopen libmpv.so.2)的编解码依赖:runtime 自带的
+# ffmpeg 只含自由编解码器,ffmpeg-full 扩展在 /app/lib/ffmpeg 提供全量
+# (H.264/HEVC 等),add-ld-path 让其优先于 runtime 同名库。未安装扩展时
+# 回落 runtime ffmpeg,仅编解码器覆盖面变窄,不影响启动。
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    version: '24.08'
+    directory: lib/ffmpeg
+    add-ld-path: .
+cleanup-commands:
+  - mkdir -p ${FLATPAK_DEST}/lib/ffmpeg
 finish-args:
   - --share=network
   - --share=ipc
@@ -36,6 +47,52 @@ modules:
     sources:
       - type: archive
         path: stage/wpe-layer/fluxdo-flatpak-wpe-layer-gnome48-x86_64.tar.zst
+
+  # === libmpv 链(视频播放,media_kit 运行期 dlopen libmpv.so.2)===
+  # GNOME runtime 不带 libmpv,自建最小集:libass + libplacebo 是 mpv
+  # 硬依赖,ffmpeg 用 runtime 自带的(全量编解码由 ffmpeg-full 扩展在
+  # 运行期补,见顶部 add-extensions)。版本组合取自 Celluloid flathub
+  # 清单(mpv 0.41 + libplacebo 7.360.1 + libass 0.17.5,已验证兼容)。
+  - name: libass
+    config-opts:
+      - --disable-static
+    cleanup:
+      - /include
+      - /lib/*.la
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
+        sha256: 2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
+
+  - name: libplacebo
+    buildsystem: meson
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/haasn/libplacebo.git
+        tag: v7.360.1
+        commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+
+  - name: libmpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dbuild-date=false
+      - -Dalsa=disabled
+      - -Dlua=disabled
+      - -Dmanpage-build=disabled
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
 
   - name: fluxdo
     buildsystem: simple

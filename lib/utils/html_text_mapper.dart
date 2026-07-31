@@ -11,6 +11,10 @@ class HtmlTextMapper {
   /// [cooked] 帖子的 HTML 内容 (post.cooked)
   /// [selectedPlainText] 用户选中的纯文本
   ///
+  /// 全选整帖时直接返回完整 [cooked]（子串反查对图片等占位符文本的还原
+  /// 不完全可靠，全选场景没必要冒这个险；放在这里而不是调用方，是让
+  /// 划词引用/复制引用/回复弹层等所有入口统一受益）。
+  ///
   /// 返回对应的 HTML 片段，如果无法匹配则返回 null
   static String? extractHtml(String cooked, String selectedPlainText) {
     if (cooked.isEmpty || selectedPlainText.isEmpty) return null;
@@ -30,6 +34,9 @@ class HtmlTextMapper {
       final normalizedFull = _normalize(fullText);
       final normalizedSelected = _normalize(selectedPlainText);
       if (normalizedSelected.isEmpty) return null;
+
+      // 全选：整帖即"对应片段"
+      if (normalizedFull == normalizedSelected) return cooked;
 
       final matchStart = normalizedFull.indexOf(normalizedSelected);
       if (matchStart == -1) return null;
@@ -71,9 +78,15 @@ class HtmlTextMapper {
         }
 
         if (isFullySelected) {
-          // 完整选中：返回父元素 HTML（保留 <b>、<em> 等格式标记）
+          // 完整选中：返回父元素 HTML（保留 <b>、<em> 等格式标记）。
+          // 但前提是父元素的全部文本内容 == 本节点文本 —— 否则父元素是
+          // <p> 这类块级容器、内部还有其他 <br> 分隔的兄弟行/文本,
+          // outerHtml 会把没选中的兄弟内容也带出来(实测:只选中三行中
+          // 的一行,复制引用/引用出来变成整段三行)。这种情况没有格式
+          // 需要保留,退化成纯文本更安全。
           final parent = startNode.node.parentNode;
-          if (parent is dom.Element) {
+          if (parent is dom.Element &&
+              _normalize(parent.text) == _normalize(startNode.node.text ?? '')) {
             return parent.outerHtml;
           }
         }
@@ -344,6 +357,23 @@ class HtmlTextMapper {
     List<_TextNodeInfo> result,
     StringBuffer buffer,
   ) {
+    // lightbox 锚点整体视为一张图,只收集内部 <img>(title/alt 投影文本),
+    // 其余子节点全部吞掉——对齐官方 parseDOM 的 `a.lightbox` 规则
+    // (prosemirror extensions/image.js 只从锚点里取 img)。悬浮遮罩层
+    // `<div class="meta">` 的文件名/尺寸是纯 CSS hover 内容,渲染选区投影
+    // 里不存在,计入缓冲区会与 img 的 title/alt 撞车,把后续偏移量全部
+    // 错位,导致选区跨过图片时反查失败、退化成裸文本。
+    if (node is dom.Element &&
+        node.localName == 'a' &&
+        (node.classes.contains('lightbox') ||
+            node.classes.contains('d-lazyload'))) {
+      final img = node.querySelector('img');
+      if (img != null) {
+        _collectTextNodes(img, result, buffer);
+      }
+      return;
+    }
+
     if (node.nodeType == dom.Node.TEXT_NODE) {
       final text = node.text ?? '';
       if (text.isNotEmpty) {

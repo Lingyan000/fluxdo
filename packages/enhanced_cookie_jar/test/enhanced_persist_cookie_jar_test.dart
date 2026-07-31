@@ -830,5 +830,50 @@ void main() {
         expect(session.value, 'mem', reason: '内存 session cookie 不丢失');
       });
     });
+
+    // =========================================================================
+    // 分区 cookie 去重
+    // =========================================================================
+
+    group('分区 cookie 去重', () {
+      test('同名同域同路径、仅 partitionKey 不同时只发送更新鲜的一条', () async {
+        final uri = Uri.parse('https://linux.do');
+        final now = DateTime.now().toUtc();
+        // 旧的非分区 cf_clearance（较早过期）
+        await jar.saveFromCdpCookies(uri, [
+          {
+            'name': 'cf_clearance',
+            'value': 'stale-value',
+            'domain': '.linux.do',
+            'path': '/',
+            'expires':
+                now.add(const Duration(days: 30)).millisecondsSinceEpoch / 1000,
+            'secure': true,
+            'httpOnly': true,
+          },
+        ]);
+        // CF 以 CHIPS 分区 cookie 重新签发的新 cf_clearance
+        await jar.saveFromCdpCookies(uri, [
+          {
+            'name': 'cf_clearance',
+            'value': 'fresh-value',
+            'domain': '.linux.do',
+            'path': '/',
+            'expires':
+                now.add(const Duration(days: 365)).millisecondsSinceEpoch /
+                    1000,
+            'secure': true,
+            'httpOnly': true,
+            'partitionKey': 'https://linux.do',
+          },
+        ]);
+
+        final loaded = await jar.loadForRequest(uri);
+        final clearances =
+            loaded.where((c) => c.name == 'cf_clearance').toList();
+        expect(clearances, hasLength(1), reason: '同名 cookie 不应重复发送');
+        expect(clearances.single.value, 'fresh-value');
+      });
+    });
   });
 }

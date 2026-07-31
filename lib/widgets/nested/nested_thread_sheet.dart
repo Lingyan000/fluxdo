@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic.dart';
@@ -182,11 +183,7 @@ class _NestedThreadSheetContentState
                   ),
                   child: _isLoadingMore
                       ? const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
+                          child: LoadingSpinner(size: 20),
                         )
                       : Center(
                           child: TextButton(

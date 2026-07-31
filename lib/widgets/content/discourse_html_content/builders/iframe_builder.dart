@@ -5,12 +5,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../constants.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/url_helper.dart';
 import '../../../../pages/webview_page.dart';
 import '../../../../l10n/s.dart';
 import '../../../../services/navigation/app_route_observer.dart';
+import '../../../../services/embedded_browser_controller_pool.dart';
+import '../../../../services/dynamic_content_suspension_service.dart';
 import '../../../../services/webview_settings.dart';
 import '../../../../services/windows_webview_environment_service.dart';
 
@@ -148,6 +151,8 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   bool _isLoaded = false;
   bool _hasError = false;
   bool _didLockLayout = false;
+  bool _webViewActivated = false;
+  EmbeddedBrowserLease? _browserLease;
 
   /// 桌面平台：是否进入交互模式
   bool _interacting = false;
@@ -160,6 +165,15 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   @override
   void initState() {
     super.initState();
+    DynamicContentSuspensionService.instance.addListener(
+      _handleDynamicContentSuspension,
+    );
+  }
+
+  void _handleDynamicContentSuspension() {
+    if (!DynamicContentSuspensionService.instance.suspended) return;
+    _removeOverlay();
+    if (_webViewActivated) _deactivateWindowsWebView();
   }
 
   @override
@@ -183,10 +197,46 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
 
   @override
   void dispose() {
+    DynamicContentSuspensionService.instance.removeListener(
+      _handleDynamicContentSuspension,
+    );
     appRouteObserver.unsubscribe(this);
     _removeOverlay();
     _unlockLayoutIfNeeded();
+    _browserLease?.release();
     super.dispose();
+  }
+
+  void _activateWindowsWebView() {
+    if (_webViewActivated ||
+        DynamicContentSuspensionService.instance.suspended) {
+      return;
+    }
+    final lease = EmbeddedBrowserControllerPool.instance.tryAcquire(
+      priority: EmbeddedBrowserPriority.iframe,
+      onRevoked: _deactivateWindowsWebView,
+    );
+    if (lease == null) {
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(S.current.common_pleaseWait)));
+      return;
+    }
+    _browserLease = lease;
+    setState(() => _webViewActivated = true);
+  }
+
+  void _deactivateWindowsWebView() {
+    if (!mounted || !_webViewActivated) return;
+    // release() 幂等:onRevoked 路径 pool 已释放,重复调用无害;
+    // 挂起路径(_handleDynamicContentSuspension)必须在此归还,否则槽位泄漏。
+    _browserLease?.release();
+    _browserLease = null;
+    setState(() {
+      _webViewActivated = false;
+      _isLoaded = false;
+      _hasError = false;
+    });
   }
 
   void _enterInteractMode() {
@@ -221,7 +271,11 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Symbols.close_rounded, size: 18, color: Colors.white),
+                    const Icon(
+                      Symbols.close_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       S.current.iframe_exitInteraction,
@@ -247,58 +301,62 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   Widget build(BuildContext context) {
     final attrs = widget.attributes;
     final theme = Theme.of(context);
-    final windowsWebViewEnvironment =
-        WindowsWebViewEnvironmentService.instance.environment;
+    final deferWindowsWebView =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+    final showWebView = !deferWindowsWebView || _webViewActivated;
 
     // 构建内容 Widget
     Widget content = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         children: [
-          // WebView - 始终渲染
-          // 直接加载 URL，通过设置 Referer 头解决 origin 验证问题
-          Offstage(
-            offstage: _routeOverlayed,
-            child: InAppWebView(
-            webViewEnvironment: windowsWebViewEnvironment,
-            initialUrlRequest: URLRequest(
-              url: WebUri(attrs.fullUrl),
-              headers: {'Referer': AppConstants.baseUrl},
-            ),
-            initialSettings: _buildSettings(attrs),
-            initialUserScripts: WebViewSettings.compatPolyfillScripts,
-            onWebViewCreated: (controller) {
-              WebViewSettings.registerJsErrorReporter(controller);
-            },
-            onReceivedServerTrustAuthRequest: (_, challenge) =>
-                WebViewSettings.handleServerTrustAuthRequest(challenge),
-            // 允许 WebView 接收水平滑动手势
-            gestureRecognizers: {
-              Factory<HorizontalDragGestureRecognizer>(
-                () => HorizontalDragGestureRecognizer(),
-              ),
-            },
-            onEnterFullscreen: (controller) {
-              _lockLayout();
-            },
-            onExitFullscreen: (controller) {
-              _unlockLayoutIfNeeded();
-            },
-            onLoadStart: (controller, url) {
-              if (mounted) {
-                setState(() {
-                  _isLoaded = false;
-                  _hasError = false;
-                });
-              }
-            },
-            onLoadStop: (controller, url) async {
-              if (mounted) {
-                setState(() => _isLoaded = true);
-              }
-              // 注入 viewport meta 标签，确保内容正确缩放
-              await controller.evaluateJavascript(
-                source: '''
+          // Windows 快速滚动时禁止自动创建 WebView2 Controller。用户明确
+          // 点击后才加载，避免列表构建/回收堵住 Win32 平台消息线程。
+          if (showWebView)
+            Offstage(
+              offstage: _routeOverlayed,
+              child: InAppWebView(
+                webViewEnvironment: deferWindowsWebView
+                    ? WindowsWebViewEnvironmentService.instance.environment
+                    : null,
+                initialUrlRequest: URLRequest(
+                  url: WebUri(attrs.fullUrl),
+                  headers: {'Referer': AppConstants.baseUrl},
+                ),
+                initialSettings: _buildSettings(attrs),
+                initialUserScripts: WebViewSettings.compatPolyfillScripts,
+                onWebViewCreated: (controller) {
+                  WebViewSettings.registerJsErrorReporter(controller);
+                },
+                onReceivedServerTrustAuthRequest: (_, challenge) =>
+                    WebViewSettings.handleServerTrustAuthRequest(challenge),
+                // 允许 WebView 接收水平滑动手势
+                gestureRecognizers: {
+                  Factory<HorizontalDragGestureRecognizer>(
+                    () => HorizontalDragGestureRecognizer(),
+                  ),
+                },
+                onEnterFullscreen: (controller) {
+                  _lockLayout();
+                },
+                onExitFullscreen: (controller) {
+                  _unlockLayoutIfNeeded();
+                },
+                onLoadStart: (controller, url) {
+                  if (mounted) {
+                    setState(() {
+                      _isLoaded = false;
+                      _hasError = false;
+                    });
+                  }
+                },
+                onLoadStop: (controller, url) async {
+                  if (mounted) {
+                    setState(() => _isLoaded = true);
+                  }
+                  // 注入 viewport meta 标签，确保内容正确缩放
+                  await controller.evaluateJavascript(
+                    source: '''
                     (function() {
                       var meta = document.querySelector('meta[name="viewport"]');
                       if (!meta) {
@@ -309,41 +367,74 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
                       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
                     })();
                   ''',
-              );
-            },
-            onReceivedError: (controller, request, error) {
-              // 只有主框架加载失败才显示错误
-              // 忽略子资源（JS、图片、视频海报等）的加载错误
-              if (mounted && request.isForMainFrame == true) {
-                setState(() => _hasError = true);
-              }
-            },
-            // 拦截用户点击的链接，使用 WebViewPage 打开
-            shouldOverrideUrlLoading: (controller, navigationAction) async {
-              // 只拦截用户主动点击的链接
-              if (navigationAction.navigationType !=
-                  NavigationType.LINK_ACTIVATED) {
-                return NavigationActionPolicy.ALLOW;
-              }
+                  );
+                },
+                onReceivedError: (controller, request, error) {
+                  // 只有主框架加载失败才显示错误
+                  // 忽略子资源（JS、图片、视频海报等）的加载错误
+                  if (mounted && request.isForMainFrame == true) {
+                    setState(() => _hasError = true);
+                  }
+                },
+                // 拦截用户点击的链接，使用 WebViewPage 打开
+                shouldOverrideUrlLoading: (controller, navigationAction) async {
+                  // 只拦截用户主动点击的链接
+                  if (navigationAction.navigationType !=
+                      NavigationType.LINK_ACTIVATED) {
+                    return NavigationActionPolicy.ALLOW;
+                  }
 
-              final url = navigationAction.request.url?.toString();
-              if (url == null) {
-                return NavigationActionPolicy.ALLOW;
-              }
+                  final url = navigationAction.request.url?.toString();
+                  if (url == null) {
+                    return NavigationActionPolicy.ALLOW;
+                  }
 
-              // 使用 WebViewPage 打开
-              if (mounted) {
-                WebViewPage.open(context, url);
-              }
-              return NavigationActionPolicy.CANCEL;
-            },
-          ),
-          ),
+                  // 使用 WebViewPage 打开
+                  if (mounted) {
+                    WebViewPage.open(context, url);
+                  }
+                  return NavigationActionPolicy.CANCEL;
+                },
+              ),
+            ),
+          if (!showWebView)
+            Positioned.fill(
+              child: Material(
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: InkWell(
+                  onTap: _activateWindowsWebView,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Symbols.play_circle_rounded,
+                          size: 48,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          attrs.title?.trim().isNotEmpty == true
+                              ? attrs.title!
+                              : Uri.tryParse(attrs.fullUrl)?.host ??
+                                    attrs.fullUrl,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // 加载指示器
-          if (!_isLoaded && !_hasError)
+          if (showWebView && !_isLoaded && !_hasError)
             Container(
               color: theme.colorScheme.surfaceContainerHighest,
-              child: const Center(child: CircularProgressIndicator()),
+              child: const Center(child: LoadingSpinner()),
             ),
           // 错误状态
           if (_hasError)

@@ -11,7 +11,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/cached_image.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'sticker_market_sheet.dart';
 import '../../../../../l10n/s.dart';
 
@@ -25,10 +25,19 @@ class StickerPicker extends ConsumerStatefulWidget {
   /// 底部额外 padding（用于给悬浮 Tab 留空间）
   final double bottomPadding;
 
+  /// 紧凑模式(桌面悬浮弹层):顶部圆角交给弹层壳,分类栏收紧
+  final bool compact;
+
+  /// 请求宿主收起面板(桌面悬浮弹层场景:打开表情包市场 sheet 前调用,
+  /// sheet 走 Navigator 路由层,会被 root overlay 的弹层压住)
+  final VoidCallback? onDismissRequested;
+
   const StickerPicker({
     super.key,
     required this.onStickerSelected,
     this.bottomPadding = 0,
+    this.compact = false,
+    this.onDismissRequested,
   });
 
   @override
@@ -86,6 +95,9 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   }
 
   void _openMarket() {
+    // 桌面悬浮弹层:市场 sheet 在 Navigator 路由层,会被 root overlay
+    // 的弹层盖住 —— 先收弹层再开 sheet
+    widget.onDismissRequested?.call();
     showAppBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -151,7 +163,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 
   void _ensureTabVisible(int index) {
     if (!_tabScrollController.hasClients) return;
-    const tabWidth = 40.0;
+    final tabWidth = widget.compact ? 34.0 : 40.0;
     final target =
         index * tabWidth -
         _tabScrollController.position.viewportDimension / 2 +
@@ -223,7 +235,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          // 紧凑模式在弹层壳里,壳已裁圆角,自身不再画顶部圆角
+          borderRadius: widget.compact
+              ? null
+              : const BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: (() {
           if (subscribedIds.isEmpty) return _buildEmptyState();
@@ -348,10 +363,12 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 
   Widget _buildTabBar(List<StickerGroup> groups, bool hasRecent) {
     final theme = Theme.of(context);
+    final compact = widget.compact;
     final totalTabs = (hasRecent ? 1 : 0) + groups.length;
-    const tabSlotWidth = 40.0;
-    const tabWidth = 36.0;
+    final tabSlotWidth = compact ? 34.0 : 40.0;
+    final tabWidth = compact ? 30.0 : 36.0;
     const tabMargin = 2.0;
+    final barHeight = compact ? 36.0 : 40.0;
 
     // 只这一块订阅 _activeGroupIndex 变化,scroll 时只这小条重绘,
     // 不影响 grid 等 panel 其它部分。
@@ -360,14 +377,14 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
         children: [
           Expanded(
             child: SizedBox(
-              height: 40,
+              height: barHeight,
               child: SingleChildScrollView(
                 controller: _tabScrollController,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: SizedBox(
                   width: totalTabs * tabSlotWidth,
-                  height: 40,
+                  height: barHeight,
                   child: Stack(
                     children: [
                       // 滑动指示器 — 跟随 activeIndex
@@ -447,6 +464,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
               size: 20,
               color: theme.colorScheme.primary,
             ),
+            visualDensity: compact ? VisualDensity.compact : null,
             onPressed: _openMarket,
             tooltip: S.current.sticker_addTooltip,
           ),
@@ -468,7 +486,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           memCacheHeight: 48,
           thumbnailMode: true,
           fit: BoxFit.cover,
-          cacheManager: StickerCacheManager(),
+          bucket: BlobImageCache.stickerOriginalBucket,
           placeholder: (_) => _buildFallbackIcon(group.name),
           errorBuilder: (_, _, _) => _buildFallbackIcon(group.name),
         ),
@@ -702,7 +720,7 @@ class _StickerItemWidget extends StatelessWidget {
               memCacheWidth: 160,
               memCacheHeight: 160,
               thumbnailMode: true,
-              cacheManager: StickerCacheManager(),
+              bucket: BlobImageCache.stickerOriginalBucket,
               // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
               // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。
               placeholder: (ctx) => DecoratedBox(
@@ -826,7 +844,7 @@ class _StickerPreviewPopup extends StatelessWidget {
                       url: sticker.url,
                       fit: BoxFit.contain,
                       // 不传 memCacheWidth → AVIF 完整解码（含动画）
-                      cacheManager: StickerCacheManager(),
+                      bucket: BlobImageCache.stickerOriginalBucket,
                       errorBuilder: (_, _, _) => Icon(
                         Symbols.broken_image_rounded,
                         size: 48,

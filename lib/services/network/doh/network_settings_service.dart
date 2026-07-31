@@ -14,10 +14,15 @@ import '../doh_proxy/doh_proxy_ffi.dart';
 import '../doh_proxy/doh_proxy_service.dart';
 import '../doh_proxy/per_device_cert_service.dart';
 import '../doh_proxy/proxy_certificate.dart';
+import '../doh_proxy/windows_cert_trust_service.dart';
+import '../proxy/gateway_upstream.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
+import '../system_proxy_service.dart';
+import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
+import 'webview_mitm_policy.dart';
 
 class NetworkSettings {
   const NetworkSettings({
@@ -181,6 +186,10 @@ class NetworkSettingsService {
     RhttpSettingsService.instance.notifier.addListener(
       _handleRhttpSettingsChanged,
     );
+    WebViewAdapterSettingsService.instance.notifier.addListener(
+      _handleWebViewAdapterSettingsChanged,
+    );
+    SystemProxyService.instance.version.addListener(_handleSystemProxyChanged);
   }
 
   static final NetworkSettingsService instance =
@@ -493,8 +502,7 @@ class NetworkSettingsService {
     }
     if (!shouldRunLocalProxy) {
       try {
-        await _rustProxyService.stop();
-        await _clearWebViewProxy();
+        await _stopLocalProxyUnlessRequiredByWebView();
         if (_pendingStart) {
           _setPendingStart(false);
         }
@@ -525,12 +533,47 @@ class NetworkSettingsService {
     }
 
     try {
-      final upstream = _proxyService.current;
+      final webViewAdapterEnabled =
+          WebViewAdapterSettingsService.instance.enabled;
+      final requiresWindowsCa = WebViewMitmPolicy.requiresTrustedCa(
+        isWindows: Platform.isWindows,
+        dohEnabled: current.dohEnabled,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
+      // 历史配置可能绕过 UI 留下「WebView + DoH 但 CA 未安装」状态。
+      // 不再静默篡改 DoH 偏好；只阻止 MITM 启动，避免证书失败重试风暴。
+      if (requiresWindowsCa &&
+          !await WindowsCertTrustService.instance.isInstalled()) {
+        debugPrint('[DOH] Windows WebView MITM 缺少受信任 CA，跳过代理启动');
+        _setStartFailed(true);
+        _setPendingStart(false);
+        await _clearWebViewProxy();
+        return;
+      }
+
+      final upstream = GatewayUpstream.resolve(
+        applicationProxy: _proxyService.current,
+        systemProxyUrl: Platform.isWindows
+            ? SystemProxyService.instance.effectiveProxyUrl
+            : null,
+      );
       final effectiveEchServer = _effectiveEchServerUrl;
+      final mitmConnect = WebViewMitmPolicy.useMitmConnect(
+        isWindows: Platform.isWindows,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
 
       // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
+      // Windows 高性能模式不使用 CA，公开 doh_proxy 的非 gateway CONNECT
+      // 路径无法表达 mitm_connect=false；此时复用 gateway 的纯隧道分支，
+      // 保持端到端 TLS，同时不改变 WebView MITM 模式的既有开关语义。
       final shouldTryEch = effectiveEchServer != null;
-      final useGateway = current.dohEnabled && current.gatewayEnabled;
+      final useGateway = WebViewMitmPolicy.useGatewayMode(
+        isWindows: Platform.isWindows,
+        dohEnabled: current.dohEnabled,
+        gatewayEnabled: current.gatewayEnabled,
+        webViewAdapterEnabled: webViewAdapterEnabled,
+      );
 
       if (!shouldTryEch) {
         _clearResolvedHostCache();
@@ -550,7 +593,7 @@ class NetworkSettingsService {
       // per-device CA: 读取证书传给代理（iOS/macOS 强制，其他平台可选）
       String? caCertPem;
       String? caKeyPem;
-      if (await CertPreferenceService.usePerDevice()) {
+      if (mitmConnect && await CertPreferenceService.usePerDevice()) {
         final certService = PerDeviceCertService.instance;
         if (certService.isLoaded || await certService.ensureCaCert()) {
           caCertPem = certService.certPem;
@@ -560,23 +603,26 @@ class NetworkSettingsService {
 
       // Rust 代理始终为 WebView 提供 DOH/代理支持，enableDoh 不受 rhttp 影响
       final success = await _rustProxyService.start(
-        preferredPort: current.proxyPort ?? 0,
+        preferredPort:
+            WindowsWebViewEnvironmentService.instance.activeLocalProxyPort ??
+            _activeProxyPort ??
+            current.proxyPort ??
+            0,
         enableDoh: current.dohEnabled,
         gatewayMode: useGateway,
         preferIPv6: current.preferIPv6,
         dohServer: current.dohEnabled ? current.selectedServerUrl : null,
         dohServerEch: current.dohEnabled ? current.echServerUrl : null,
         serverIp: current.serverIp,
-        upstreamProtocol: upstream.isValid
-            ? upstream.protocol.storageValue
-            : null,
-        upstreamHost: upstream.isValid ? upstream.host : null,
-        upstreamPort: upstream.isValid ? upstream.port : null,
-        upstreamUsername: upstream.isValid ? upstream.username : null,
-        upstreamPassword: upstream.isValid ? upstream.password : null,
-        upstreamCipher: upstream.isValid ? upstream.cipher : null,
+        upstreamProtocol: upstream?.protocol,
+        upstreamHost: upstream?.host,
+        upstreamPort: upstream?.port,
+        upstreamUsername: upstream?.username,
+        upstreamPassword: upstream?.password,
+        upstreamCipher: upstream?.cipher,
         caCertPem: caCertPem,
         caKeyPem: caKeyPem,
+        mitmConnect: mitmConnect,
         h2Mitm: current.h2Mitm,
       );
 
@@ -585,6 +631,16 @@ class NetworkSettingsService {
         _setStartFailed(true);
         _setPendingStart(false);
         await _clearWebViewProxy();
+        return;
+      }
+
+      // start 耗时较长(读证书/绑端口),期间设置可能已被改为无需本地代理
+      // (如 VPN 自动压制关闭了 DoH 与上游代理)。此时并发的 stop 分支先于
+      // start 完成,会留下"开关已关、代理仍在跑"的孤儿网关,这里必须复查。
+      if (!shouldRunLocalProxy) {
+        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,重新核对 WebView 路由');
+        await _stopLocalProxyUnlessRequiredByWebView();
+        _setPendingStart(false);
         return;
       }
 
@@ -678,6 +734,29 @@ class NetworkSettingsService {
 
   bool _webViewProxySet = false;
 
+  Future<void> _stopLocalProxyUnlessRequiredByWebView() async {
+    var retainForWindowsWebView = false;
+    if (Platform.isWindows) {
+      final runningPort = _rustProxyService.port;
+      final clearApplied = await _clearWebViewProxy();
+      retainForWindowsWebView =
+          WindowsWebViewEnvironmentService.shouldRetainLocalProxy(
+            clearApplied: clearApplied,
+            activeEnvironmentPort:
+                WindowsWebViewEnvironmentService.instance.activeLocalProxyPort,
+            runningProxyPort: runningPort,
+          );
+    } else {
+      await _clearWebViewProxy();
+    }
+
+    if (retainForWindowsWebView) {
+      debugPrint('[DOH] WebView2 当前仍使用本地代理，保留端口直到应用重启');
+      return;
+    }
+    await _rustProxyService.stop();
+  }
+
   Future<void> _applyWebViewProxy() async {
     if (!shouldRunLocalProxy) return;
     final port = _activeProxyPort;
@@ -685,11 +764,15 @@ class NetworkSettingsService {
 
     if (Platform.isWindows) {
       try {
-        await WindowsWebViewEnvironmentService.instance.setProxy(
-          'http://127.0.0.1:$port',
-        );
+        final applied = await WindowsWebViewEnvironmentService.instance
+            .setProxy('http://127.0.0.1:$port');
         _webViewProxySet = true;
-        debugPrint('[DOH] WebView2 代理已设置 -> 127.0.0.1:$port');
+        debugPrint(
+          applied
+              ? '[DOH] WebView2 代理已设置 -> 127.0.0.1:$port'
+              : '[DOH] WebView2 代理已登记，重启应用后生效 -> '
+                    '127.0.0.1:$port',
+        );
       } catch (e) {
         debugPrint('[DOH] WebView2 代理设置失败: $e');
       }
@@ -716,31 +799,37 @@ class NetworkSettingsService {
     }
   }
 
-  Future<void> _clearWebViewProxy() async {
-    if (!_webViewProxySet) return;
-
+  Future<bool> _clearWebViewProxy() async {
     if (Platform.isWindows) {
       try {
-        await WindowsWebViewEnvironmentService.instance.setProxy(null);
+        final applied = await WindowsWebViewEnvironmentService.instance
+            .setProxy(null);
         _webViewProxySet = false;
-        debugPrint('[DOH] WebView2 代理已清除');
+        debugPrint(
+          applied ? '[DOH] WebView2 代理已清除' : '[DOH] WebView2 代理清除已登记，重启应用后生效',
+        );
+        return applied;
       } catch (e) {
         debugPrint('[DOH] WebView2 代理清除失败: $e');
+        return false;
       }
-      return;
     }
+
+    if (!_webViewProxySet) return true;
 
     if (!Platform.isAndroid &&
         !await _isMacOS14OrAbove() &&
         !await _isiOS17OrAbove()) {
-      return;
+      return true;
     }
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
       _webViewProxySet = false;
       debugPrint('[DOH] WebView 代理已清除');
+      return true;
     } catch (e) {
       debugPrint('[DOH] WebView 代理清除失败: $e');
+      return false;
     }
   }
 
@@ -777,6 +866,19 @@ class NetworkSettingsService {
     _clearResolvedHostCache();
     _scheduleApplyProxyState();
     _touch();
+  }
+
+  void _handleWebViewAdapterSettingsChanged() {
+    if (_prefs == null || !shouldRunLocalProxy) return;
+    _scheduleApplyProxyState();
+    _touch();
+  }
+
+  void _handleSystemProxyChanged() {
+    if (_prefs == null || !Platform.isWindows) return;
+    // 应用内代理拥有更高优先级；只有走系统代理回退时才需要重启网关。
+    if (_proxyService.current.isValid || !shouldRunLocalProxy) return;
+    _scheduleApplyProxyState();
   }
 
   Future<ResolvedHostConfig> resolveHostForRequest(

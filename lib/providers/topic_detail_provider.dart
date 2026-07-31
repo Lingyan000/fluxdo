@@ -44,6 +44,19 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   TopicDetailNotifier(this.arg);
   final TopicDetailParams arg;
 
+  /// 活跃实例注册表:topicId → 该话题当前存活的 provider 参数(后注册在后)。
+  ///
+  /// 页面实例的 params 携带 UUID instanceId,深层组件(帖脚的 boost/
+  /// reaction 本地操作落地)只知道 topicId —— 直接 new 一个空 instanceId
+  /// 的 params 与页面实例不相等,只会凭空创建并 fetch 一个孤儿实例,
+  /// 更新永远落不到在显示的那份数据上。经注册表找回真实实例。
+  static final Map<int, List<TopicDetailParams>> _activeParams = {};
+
+  /// 该话题最近激活的 provider 参数(同话题叠开多页时取最上层);无活跃
+  /// 实例(如个人页等无话题上下文)返回 null,调用方自行跳过同步。
+  static TopicDetailParams? activeParamsFor(int topicId) =>
+      _activeParams[topicId]?.lastOrNull;
+
   bool _hasMoreAfter = true;
   bool _hasMoreBefore = true;
 
@@ -64,6 +77,12 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   set _isLoadMoreFailed(bool v) => loadMoreFailedListenable.value = v;
   bool get _isLoadPreviousFailed => loadPreviousFailedListenable.value;
   set _isLoadPreviousFailed(bool v) => loadPreviousFailedListenable.value = v;
+
+  /// 推荐话题缓存(对齐网页版 post-stream `_setSuggestedTopics`:响应没带
+  /// 这两组就保留旧值)。服务端只在"帖子流已到末尾"的请求里下发,过滤模式
+  /// 切换、跳楼层重载都拿不到 —— 不缓存的话底部推荐会莫名其妙消失。
+  List<Topic> _cachedSuggestedTopics = const [];
+  List<Topic> _cachedRelatedTopics = const [];
 
   String? _filter;  // 当前过滤模式（如 'summary' 表示热门回复）
   String? _usernameFilter;  // 当前用户名过滤（如只看题主）
@@ -103,6 +122,25 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     _hasMoreAfter = lastIndex != -1 && lastIndex < stream.length - 1;
   }
 
+  /// 用缓存补齐详情里的推荐话题(新响应带了就刷新缓存,没带就回填)
+  TopicDetail _withSuggestedCache(TopicDetail detail) {
+    if (detail.suggestedTopics.isNotEmpty) {
+      _cachedSuggestedTopics = detail.suggestedTopics;
+    }
+    if (detail.relatedTopics.isNotEmpty) {
+      _cachedRelatedTopics = detail.relatedTopics;
+    }
+    final needSuggested =
+        detail.suggestedTopics.isEmpty && _cachedSuggestedTopics.isNotEmpty;
+    final needRelated =
+        detail.relatedTopics.isEmpty && _cachedRelatedTopics.isNotEmpty;
+    if (!needSuggested && !needRelated) return detail;
+    return detail.copyWith(
+      suggestedTopics: needSuggested ? _cachedSuggestedTopics : null,
+      relatedTopics: needRelated ? _cachedRelatedTopics : null,
+    );
+  }
+
   /// 更新单个帖子的辅助方法
   void _updatePostById(int postId, Post Function(Post) updater) {
     final currentDetail = state.value;
@@ -136,6 +174,18 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   Future<TopicDetail> build() async {
     debugPrint('[TopicDetailNotifier] build called with topicId=${arg.topicId}, postNumber=${arg.postNumber}');
 
+    // 注册活跃实例(见 _activeParams);autoDispose 时反注册。
+    // build 重跑(refresh)会重复进入,先去重再追加保持"最近激活在尾"。
+    final registered = _activeParams.putIfAbsent(arg.topicId, () => []);
+    registered.remove(arg);
+    registered.add(arg);
+    ref.onDispose(() {
+      final list = _activeParams[arg.topicId];
+      if (list == null) return;
+      list.remove(arg);
+      if (list.isEmpty) _activeParams.remove(arg.topicId);
+    });
+
     // 保持存活，防止布局切换的短暂间隙被 autoDispose 清理
     // 使用 onCancel/onResume 模式：最后一个 watcher 移除后才开始倒计时
     final link = ref.keepAlive();
@@ -161,7 +211,7 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
 
     _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
 
-    return detail;
+    return _withSuggestedCache(detail);
   }
 }
 

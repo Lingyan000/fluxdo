@@ -511,8 +511,9 @@ class TopicCard extends ConsumerWidget {
       final op = topic.posters.first;
       if (op.user != null) {
         // 静态模板小图打底(几 KB 秒出);动图原件只作 overlay 叠加,
-        // ready 前透明 —— 避免把几百 KB 的 gif 原件喂进静态首帧管线
-        // 造成"动图用户头像加载慢"
+        // ready 前透明、ready 后收起静态层 —— 既避免把几百 KB 的 gif
+        // 原件喂进静态首帧管线造成"动图用户头像加载慢",又防透明 gif
+        // 从透明像素后透出静态层成"双影"
         final avatarUrl = op.user!.getAvatarUrl(
           size: (radius * 4).round(), // @2x 显示尺寸请求,radius*2 为显示直径
         );
@@ -525,13 +526,10 @@ class TopicCard extends ConsumerWidget {
           fallbackText: op.user!.username,
         );
         if (animatedUrl == null) return base;
-        return SizedBox(
-          width: radius * 2,
-          height: radius * 2,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [base, AnimatedAvatarOverlay(url: animatedUrl)],
-          ),
+        return AnimatedAvatarStack(
+          animatedUrl: animatedUrl,
+          base: base,
+          size: radius * 2,
         );
       }
     }

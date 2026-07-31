@@ -4,7 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
-import 'package:fluxdo/widgets/common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
@@ -355,6 +355,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         _editorKey.currentState?.closeEmojiPanel();
+        _richKey.currentState?.closeEmojiPanel();
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
@@ -503,6 +504,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
             : null,
         onTap: () {
           _editorKey.currentState?.closeEmojiPanel();
+          _richKey.currentState?.closeEmojiPanel();
         },
       );
     }
@@ -623,6 +625,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                   if (_showPreview) {
                     FocusScope.of(context).unfocus();
                     _editorKey.currentState?.closeEmojiPanel();
+                    _richKey.currentState?.closeEmojiPanel();
                   }
                 },
                 children: [

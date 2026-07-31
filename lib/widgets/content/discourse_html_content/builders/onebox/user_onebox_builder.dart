@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
-import '../../../../../pages/user_profile_page.dart';
+import '../../../../../providers/selected_topic_provider.dart';
 import 'onebox_base.dart';
 
 /// 构建用户 onebox 卡片
@@ -40,13 +40,7 @@ Widget buildUserOnebox({
   return OneboxContainer(
     borderRadius: 12,
     onTap: username.isNotEmpty
-        ? () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => UserProfilePage(username: username),
-              ),
-            );
-          }
+        ? () => EmbeddedStackScope.openProfile(context, username)
         : null,
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,

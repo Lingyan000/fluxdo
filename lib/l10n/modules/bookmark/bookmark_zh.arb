@@ -50,5 +50,22 @@
   },
   "bookmarks_syncUpToDate": "书签已是最新",
   "bookmarks_syncFailed": "同步失败，请稍后重试",
-  "readLater_title": "稍后阅读"
+  "readLater_title": "稍后阅读",
+  "readLater_continueReading": "继续阅读",
+  "readLater_readAt": "读到 #{postNumber}",
+  "@readLater_readAt": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "readLater_addedTime": "{time}加入",
+  "@readLater_addedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

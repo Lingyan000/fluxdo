@@ -1,3 +1,8 @@
+import 'package:flutter/gestures.dart'
+    show
+        DelayedMultiDragGestureRecognizer,
+        ImmediateMultiDragGestureRecognizer,
+        PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +19,7 @@ import '../settings/definitions/bottom_nav_defs.dart';
 import '../settings/settings_model.dart';
 import '../settings/settings_renderer.dart';
 import '../utils/dialog_utils.dart';
-import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 底栏设置页
 ///
@@ -341,7 +346,7 @@ class _PreviewBar extends StatelessWidget {
             key: ValueKey('preview-${e.id}'),
             entry: e,
             index: i,
-            canDrag: !e.locked,
+            canDrag: e.id != NavEntryIds.home,
             canRemove: canRemove,
             onRemove: () => onRemove(e),
           );
@@ -451,15 +456,53 @@ class _PreviewItem extends StatelessWidget {
     );
 
     if (canDrag) {
-      // Delayed 避免水平滑动误触；长按 ~500ms 才进入拖动
-      return ReorderableDelayedDragStartListener(
+      // 按指针类型分流手感（见 _PointerAwareDragStartListener）；
+      // 只有首页固定在第一位。
+      return _PointerAwareDragStartListener(
         key: key,
         index: index,
         child: core,
       );
     }
-    // 首页等 locked 项：不包拖动监听，但仍需要有 Key
+    // 首页固定项：不包拖动监听，但仍需要有 Key
     return KeyedSubtree(key: key, child: core);
+  }
+}
+
+/// 按指针类型分流的拖拽监听：鼠标/触控板按下即拖（桌面手感），触屏
+/// 长按进入拖拽。触屏若也即按即拖，手指落在预览条上就无法滚动页面
+/// （拖拽识别器会立刻抢占滚动手势）。
+class _PointerAwareDragStartListener extends StatelessWidget {
+  const _PointerAwareDragStartListener({
+    super.key,
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (event) {
+        final list = SliverReorderableList.maybeOf(context);
+        if (list == null) return;
+        final recognizer = switch (event.kind) {
+          PointerDeviceKind.mouse ||
+          PointerDeviceKind.trackpad =>
+            ImmediateMultiDragGestureRecognizer(debugOwner: this),
+          _ => DelayedMultiDragGestureRecognizer(debugOwner: this),
+        };
+        list.startItemDragReorder(
+          index: index,
+          event: event,
+          recognizer: recognizer
+            ..gestureSettings = MediaQuery.maybeGestureSettingsOf(context),
+        );
+      },
+      child: child,
+    );
   }
 }
 

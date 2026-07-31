@@ -4,11 +4,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageFfi, NativeAnimatedImageException;
 
-import 'discourse_cache_manager.dart';
+import 'avif_image_provider.dart';
+import 'blob_image_cache.dart';
 
 // 与 native_animated_image 内部定义的错误码保持一致(Rust 端 ERR_UNSUPPORTED = -2),
 // dart 端没单独 export 这个常量,我们直接复用数字 — 这是 stable FFI contract。
@@ -59,7 +59,7 @@ class StickerThumbnailProvider
     this.url, {
     required this.targetSize,
     this.scale = 1.0,
-    this.cacheManager,
+    this.bucket = BlobImageCache.stickerOriginalBucket,
   });
 
   /// 主动 cancel 所有 in-flight thumbnail decode。
@@ -78,7 +78,9 @@ class StickerThumbnailProvider
   final int targetSize;
 
   final double scale;
-  final BaseCacheManager? cacheManager;
+
+  /// 原文件所在 blob bucket(贴纸默认 stickerOriginal)。
+  final String bucket;
 
   /// URL 是否走得通这个 provider(AVIF / GIF / animated WebP / APNG)。
   /// 静态图(PNG/JPEG)和其它格式应该走 `CachedNetworkImageProvider`。
@@ -108,78 +110,59 @@ class StickerThumbnailProvider
   static Future<void> precacheBatch(
     List<String> urls, {
     required int targetSize,
-    required BaseCacheManager cacheManager,
+    String bucket = BlobImageCache.stickerOriginalBucket,
     bool Function()? shouldContinue,
   }) async {
-    // Phase 1: 过滤掉不支持 / 已 cache / in-flight 的 URL,异步拉 bytes。
-    // AVIF 跟非 AVIF 分开:走不同的解码 backend(AVIF → flutter_avif FFI,
-    // 其余 → Rust worker pool),且各自独立限流。
+    // 全程流水线:每张图「下载 → magic 分流 → 解码 → 写缩略图」独立
+    // 链式推进,不再是"全部下载完才开始解码"的两段式 —— 旧形态下载
+    // 串行(30 张 × 数百 ms = 十几秒)且总时长 = 下载总和 + 解码总和;
+    // 现在下载并发由 sticker 通道(3 槽)限,解码并发由 AVIF(4)/
+    // 非 AVIF worker pool 各自限,总时长 ≈ max(下载, 解码)。
     //
-    // 关键:用**实际 magic bytes** 而不是 URL 后缀分流。CDN 给的 .gif/.webp
-    // URL 实际内容可能是 AVIF,只看后缀会让 AVIF bytes 进 Rust → crash。
-    final pendingNonAvif = <(String, Uint8List)>[];
-    final pendingAvifUrls = <String>[];
-    for (final url in urls) {
-      if (shouldContinue != null && !shouldContinue()) return;
-      if (!supports(url)) continue;
+    // 分流关键不变:用**实际 magic bytes** 而不是 URL 后缀。CDN 给的
+    // .gif/.webp URL 实际内容可能是 AVIF,后缀分流会让 AVIF bytes 进
+    // Rust → crash。
+    //
+    // shouldContinue 在每张的下载前与解码前各检查一次,切组/关 panel
+    // 后在途任务自然收敛(已发起的单张下载/解码不可中断,跑完即停)。
+    Future<void> one(String url) async {
+      if (!supports(url)) return;
       final thumbKey = _thumbnailCacheKey(url, targetSize);
-      if (_knownThumbnailKeys.contains(thumbKey)) continue;
-      if (_pendingThumbnailTasks.containsKey(thumbKey)) continue;
-
-      final cachedBytes = await _readCachedThumbnailBytes(cacheManager, thumbKey);
-      if (cachedBytes != null) continue;
+      if (_knownThumbnailKeys.contains(thumbKey)) return;
+      if (_pendingThumbnailTasks.containsKey(thumbKey)) return;
+      if (shouldContinue != null && !shouldContinue()) return;
 
       try {
-        final file = await cacheManager.getSingleFile(url);
-        final bytes = await file.readAsBytes();
+        final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
+        if (cachedBytes != null) return;
+
+        final bytes = await BlobImageCache.fetch(bucket, url);
+        if (shouldContinue != null && !shouldContinue()) return;
+
         if (_bytesLookLikeAvif(bytes)) {
-          pendingAvifUrls.add(url);
+          // AVIF → precache(_pendingThumbnailTasks 去重,与 grid 现场
+          // 解码互不重复;_avifSemaphore(4) 限流)
+          await precache(url, targetSize: targetSize, bucket: bucket);
         } else {
-          pendingNonAvif.add((url, bytes));
+          // 非 AVIF → Rust worker pool(池内并发限流)
+          final reply = await _DecoderWorkerPool.instance.decode(bytes);
+          if (reply == null) return;
+          if (shouldContinue != null && !shouldContinue()) return;
+          await _writeThumbnailFromRustOrFallback(
+            url: url,
+            bytes: bytes,
+            reply: reply,
+            targetSize: targetSize,
+          );
         }
-      } catch (e) {
-        debugPrint('[StickerThumbnail] fetch bytes failed $url: $e');
-      }
-    }
-
-    // Phase 2A: 非 AVIF (GIF / WebP / APNG) — 走 long-lived worker pool
-    // 每张串行送进 worker,主 isolate 拿到 reply 后 ui.Image + resize + cache。
-    // shouldContinue 在每张 sticker 之间检查,用户切组 / 关 panel 立即停。
-    // (worker 内部正在跑的那张无法中断,但不会再 enqueue 新任务。)
-    for (final entry in pendingNonAvif) {
-      if (shouldContinue != null && !shouldContinue()) return;
-      final reply = await _DecoderWorkerPool.instance.decode(entry.$2);
-      if (reply == null) continue;
-      await _writeThumbnailFromRustOrFallback(
-        url: entry.$1,
-        bytes: entry.$2,
-        reply: reply,
-        targetSize: targetSize,
-        cacheManager: cacheManager,
-      );
-    }
-
-    // Phase 2B: AVIF — 经 [precache] 逐张预热(内部 `_pendingThumbnailTasks`
-    // 去重,与 grid widget 触发的现场解码互不重复;`_avifSemaphore(4)` 限流)。
-    //
-    // 历史:这里曾经完全跳过 AVIF prefetch —— 当时 `fa.decodeAvif` 被认为
-    // 走 method channel 全帧 marshal 阻塞主 isolate。现在两个前提都变了:
-    // flutter_avif 3.x 是 FFI + native port 异步(解码在 native 线程),
-    // 且缩略图改为单帧解码([AvifImageProvider.decodeFirstFrame]),主
-    // isolate 每张只剩一次单帧 RGBA 解包,毫秒级 → 放心预热。
-    //
-    // shouldContinue 在每张之间检查(切组 / 关 panel 立即停);已在跑的
-    // 单张解码由 generation 检查点兜底取消(见 [cancelInflight])。
-    for (final url in pendingAvifUrls) {
-      if (shouldContinue != null && !shouldContinue()) return;
-      try {
-        await precache(url, targetSize: targetSize, cacheManager: cacheManager);
       } on _ThumbnailCancelled {
-        return;
+        // 面板关闭触发的取消,静默
       } catch (e) {
-        debugPrint('[StickerThumbnail] avif prefetch failed $url: $e');
+        debugPrint('[StickerThumbnail] prefetch failed $url: $e');
       }
     }
+
+    await Future.wait([for (final url in urls) one(url)]);
   }
 
   static Future<void> _writeThumbnailFromRustOrFallback({
@@ -187,7 +170,6 @@ class StickerThumbnailProvider
     required Uint8List bytes,
     required _DecodeReply reply,
     required int targetSize,
-    required BaseCacheManager cacheManager,
   }) async {
     ui.Image? srcImage;
     try {
@@ -210,7 +192,6 @@ class StickerThumbnailProvider
               ? await _resize(srcImage, targetSize)
               : srcImage;
       await _cacheThumbnail(
-        cacheManager,
         _thumbnailCacheKey(url, targetSize),
         displayImage,
       );
@@ -227,15 +208,14 @@ class StickerThumbnailProvider
   static Future<void> precache(
     String url, {
     required int targetSize,
-    BaseCacheManager? cacheManager,
+    String bucket = BlobImageCache.stickerOriginalBucket,
   }) async {
     if (!supports(url)) return;
 
-    final manager = cacheManager ?? DiscourseCacheManager();
     final thumbKey = _thumbnailCacheKey(url, targetSize);
     if (_knownThumbnailKeys.contains(thumbKey)) return;
 
-    final cachedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (cachedBytes != null) return;
 
     final pending = _pendingThumbnailTasks[thumbKey];
@@ -245,7 +225,7 @@ class StickerThumbnailProvider
     }
 
     final task = _warmThumbnail(
-      manager: manager,
+      bucket: bucket,
       url: url,
       targetSize: targetSize,
       thumbKey: thumbKey,
@@ -283,11 +263,10 @@ class StickerThumbnailProvider
   }
 
   Future<ImageInfo> _loadThumbnail(StickerThumbnailProvider key) async {
-    final manager = key.cacheManager ?? DiscourseCacheManager();
     final thumbKey = _thumbnailCacheKey(key.url, key.targetSize);
 
     // 快速路径:PNG 缓存命中 → Flutter 内置 PNG codec(毫秒级)
-    final cachedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final cachedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (cachedBytes != null) {
       return _decodeThumbnailBytes(cachedBytes, key.scale);
     }
@@ -296,20 +275,20 @@ class StickerThumbnailProvider
     await precache(
       key.url,
       targetSize: key.targetSize,
-      cacheManager: manager,
+      bucket: key.bucket,
     );
-    final warmedBytes = await _readCachedThumbnailBytes(manager, thumbKey);
+    final warmedBytes = await _readCachedThumbnailBytes(thumbKey);
     if (warmedBytes != null) {
       return _decodeThumbnailBytes(warmedBytes, key.scale);
     }
 
     // 缓存写入失败兜底:现场解 + 显示,不让用户看到空白
     final displayImage = await _decodeFirstFrameImage(
-      manager: manager,
+      bucket: key.bucket,
       url: key.url,
       targetSize: key.targetSize,
     );
-    unawaited(_cacheThumbnail(manager, thumbKey, displayImage));
+    unawaited(_cacheThumbnail(thumbKey, displayImage));
     return ImageInfo(image: displayImage, scale: key.scale);
   }
 
@@ -318,12 +297,13 @@ class StickerThumbnailProvider
     if (identical(this, other)) return true;
     return other is StickerThumbnailProvider &&
         other.url == url &&
+        other.bucket == bucket &&
         other.targetSize == targetSize &&
         other.scale == scale;
   }
 
   @override
-  int get hashCode => Object.hash(url, targetSize, scale);
+  int get hashCode => Object.hash(url, bucket, targetSize, scale);
 
   @override
   String toString() =>
@@ -380,14 +360,17 @@ String _thumbnailCacheKey(String url, int targetSize) {
   return 'sticker_thumb:$targetSize:$url';
 }
 
-Future<Uint8List?> _readCachedThumbnailBytes(
-  BaseCacheManager manager,
-  String thumbKey,
-) async {
-  final cached = await manager.getFileFromCache(thumbKey);
-  if (cached == null) return null;
+/// 缩略图 PNG 走 [BlobImageCache](零 sqlite 寻址):30 张同屏的 grid
+/// 场景下,cache_manager 的每 key 一次 SELECT 是纯浪费。原图字节仍走
+/// cache manager(下载进度/大文件语义)。
+Future<Uint8List?> _readCachedThumbnailBytes(String thumbKey) async {
+  final bytes = await BlobImageCache.read(
+    BlobImageCache.stickerThumbBucket,
+    thumbKey,
+  );
+  if (bytes == null) return null;
   _knownThumbnailKeys.add(thumbKey);
-  return cached.file.readAsBytes();
+  return bytes;
 }
 
 Future<ImageInfo> _decodeThumbnailBytes(
@@ -402,7 +385,7 @@ Future<ImageInfo> _decodeThumbnailBytes(
 }
 
 Future<void> _warmThumbnail({
-  required BaseCacheManager manager,
+  required String bucket,
   required String url,
   required int targetSize,
   required String thumbKey,
@@ -410,11 +393,11 @@ Future<void> _warmThumbnail({
   ui.Image? displayImage;
   try {
     displayImage = await _decodeFirstFrameImage(
-      manager: manager,
+      bucket: bucket,
       url: url,
       targetSize: targetSize,
     );
-    await _cacheThumbnail(manager, thumbKey, displayImage);
+    await _cacheThumbnail(thumbKey, displayImage);
     _knownThumbnailKeys.add(thumbKey);
   } finally {
     displayImage?.dispose();
@@ -426,7 +409,7 @@ Future<void> _warmThumbnail({
 /// 用 magic bytes 决定走 AVIF semaphore 还是非 AVIF semaphore。两者**独立**
 /// 限流,AVIF 慢不阻塞 GIF/WebP/APNG。
 Future<ui.Image> _decodeFirstFrameImage({
-  required BaseCacheManager manager,
+  required String bucket,
   required String url,
   required int targetSize,
 }) async {
@@ -438,9 +421,7 @@ Future<ui.Image> _decodeFirstFrameImage({
   // 先把 bytes 拉出来,根据 magic 选 semaphore(不能用 URL 后缀 — CDN 可能
   // 给 `.gif/.webp` 后缀但实际是 AVIF)。bytes 读取本身是 IO async,不占
   // semaphore 配额。
-  final file = await manager.getSingleFile(url);
-  checkCancel();
-  final bytes = await file.readAsBytes();
+  final bytes = await BlobImageCache.fetch(bucket, url);
   checkCancel();
 
   final isAvif = _bytesLookLikeAvif(bytes);
@@ -457,7 +438,7 @@ Future<ui.Image> _decodeFirstFrameImage({
   }
   ui.Image srcImage;
   try {
-    srcImage = await _decodeFirstFrame(url, bytes);
+    srcImage = await _decodeFirstFrame(url, bytes, targetSize: targetSize);
   } finally {
     semaphore.release();
   }
@@ -480,10 +461,14 @@ Future<ui.Image> _decodeFirstFrameImage({
 ///   isolate),解码在 background isolate 串行,**主线程零 spawn 开销**。
 ///
 /// - **其它 / 静态格式**:worker 返 unsupported → Flutter 内置 codec fallback。
-Future<ui.Image> _decodeFirstFrame(String url, Uint8List bytes) async {
+Future<ui.Image> _decodeFirstFrame(
+  String url,
+  Uint8List bytes, {
+  int? targetSize,
+}) async {
   // 必须按 magic 判,不能信 URL 后缀(CDN 可能给 .webp/.gif 后缀但实际是 AVIF)
   if (_bytesLookLikeAvif(bytes)) {
-    return _decodeAvifFirstFrame(bytes, url);
+    return _decodeAvifFirstFrame(bytes, url, targetSize: targetSize);
   }
 
   final reply = await _DecoderWorkerPool.instance.decode(bytes);
@@ -499,9 +484,15 @@ Future<ui.Image> _decodeFirstFrame(String url, Uint8List bytes) async {
   return _rgbaToUiImage(reply.rgba!, reply.width, reply.height);
 }
 
-Future<ui.Image> _decodeAvifFirstFrame(Uint8List bytes, String url) async {
-  // 增量解码:只解第 1 帧立即 dispose,不像 fa.decodeAvif 全帧解完丢 N-1 帧
-  return AvifImageProvider.decodeFirstFrame(bytes);
+Future<ui.Image> _decodeAvifFirstFrame(
+  Uint8List bytes,
+  String url, {
+  int? targetSize,
+}) async {
+  // 平台 codec 可用时 targetSize 直接 decode-time 降采样出小图;
+  // Rust 回落 = 增量解码:只解第 1 帧立即 dispose,不像 fa.decodeAvif
+  // 全帧解完丢 N-1 帧
+  return AvifImageProvider.decodeFirstFrame(bytes, maxDim: targetSize);
 }
 
 /// Flutter 内置 codec fallback:Rust pipeline 不识别的格式走这条
@@ -529,18 +520,14 @@ Future<ui.Image> _rgbaToUiImage(Uint8List rgba, int width, int height) {
   return completer.future;
 }
 
-Future<void> _cacheThumbnail(
-  BaseCacheManager manager,
-  String key,
-  ui.Image image,
-) async {
+Future<void> _cacheThumbnail(String key, ui.Image image) async {
   try {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData != null) {
-      await manager.putFile(
+      await BlobImageCache.write(
+        BlobImageCache.stickerThumbBucket,
         key,
         byteData.buffer.asUint8List(),
-        fileExtension: 'png',
       );
     }
   } catch (_) {
@@ -650,21 +637,30 @@ class _DecoderWorkerPool {
   _DecoderWorkerPool._();
   static final _DecoderWorkerPool instance = _DecoderWorkerPool._();
 
-  SendPort? _sendPort;
+  /// worker 条数。旧值 1 的注释是"decode CPU-bound,worker 内并行无意义"
+  /// —— 对单核成立,对现代 8+ 核机器不成立:1 条 isolate 串行吃 30 张
+  /// GIF/WebP,其余核全闲。3 条对齐 AVIF 侧 _avifSemaphore(4) 的量级,
+  /// 冷开面板解码段 ≈ 1/3;spawn 仍是一次性成本(long-lived)。
+  static const int _workerCount = 3;
+
+  final List<SendPort> _sendPorts = [];
   Future<void>? _initFuture;
   int _nextTaskId = 0;
+  int _nextWorker = 0;
   final Map<int, Completer<_DecodeReply>> _pending = {};
 
   Future<void> _ensureInit() {
-    if (_sendPort != null) return Future.value();
+    if (_sendPorts.length == _workerCount) return Future.value();
     if (_initFuture != null) return _initFuture!;
     final completer = Completer<void>();
     _initFuture = completer.future;
     final receivePort = ReceivePort();
     receivePort.listen((dynamic msg) {
       if (msg is SendPort) {
-        _sendPort = msg;
-        if (!completer.isCompleted) completer.complete();
+        _sendPorts.add(msg);
+        if (_sendPorts.length == _workerCount && !completer.isCompleted) {
+          completer.complete();
+        }
         return;
       }
       if (msg is List && msg.length == 2 && msg[0] is int) {
@@ -675,13 +671,15 @@ class _DecoderWorkerPool {
         if (pending != null) pending.complete(reply);
       }
     });
-    Isolate.spawn<SendPort>(_decoderWorkerEntry, receivePort.sendPort,
-            debugName: 'StickerThumbnailWorker')
-        .then((_) {});
+    for (var i = 0; i < _workerCount; i++) {
+      Isolate.spawn<SendPort>(_decoderWorkerEntry, receivePort.sendPort,
+              debugName: 'StickerThumbnailWorker#$i')
+          .then((_) {});
+    }
     return completer.future;
   }
 
-  /// 提交一个 decode 任务。Worker 串行处理。
+  /// 提交一个 decode 任务(round-robin 派给某条 worker,各自串行)。
   /// 如果在解码过程中 [token] 被 cancel,Future 立即 complete `_DecodeReply.err`
   /// (用 sentinel 错误),后续 ui.Image 创建会被跳过。
   Future<_DecodeReply?> decode(
@@ -693,7 +691,8 @@ class _DecoderWorkerPool {
     final taskId = _nextTaskId++;
     final completer = Completer<_DecodeReply>();
     _pending[taskId] = completer;
-    _sendPort!.send([taskId, bytes]);
+    _sendPorts[_nextWorker].send([taskId, bytes]);
+    _nextWorker = (_nextWorker + 1) % _sendPorts.length;
 
     if (token != null) {
       // 监听 cancel:如果在等待期间 token 被 cancel,主动从 pending 移除

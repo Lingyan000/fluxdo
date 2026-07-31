@@ -106,3 +106,8 @@ devtools_extension/pubspec.lock
 # 桌面端随包 ffmpeg 的构建期下载缓存
 windows/.ffmpeg-cache/
 linux/.ffmpeg-cache/
+
+# 内嵌插件 example 的 Flutter 生成物(机器相关:symlink 指向本机 pub 缓存)
+packages/flutter_inappwebview_*/example/*/flutter/ephemeral/
+packages/flutter_inappwebview_windows/pubspec.lock
+packages/flutter_inappwebview_windows/example/pubspec.lock

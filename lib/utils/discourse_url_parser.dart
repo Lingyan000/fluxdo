@@ -4,11 +4,7 @@ class TopicLinkInfo {
   final String? slug;
   final int? postNumber;
 
-  const TopicLinkInfo({
-    required this.topicId,
-    this.slug,
-    this.postNumber,
-  });
+  const TopicLinkInfo({required this.topicId, this.slug, this.postNumber});
 }
 
 /// 用户链接解析结果
@@ -16,6 +12,13 @@ class UserLinkInfo {
   final String username;
 
   const UserLinkInfo({required this.username});
+}
+
+/// 分类链接解析结果。
+class CategoryLinkInfo {
+  const CategoryLinkInfo({required this.categoryId});
+
+  final int categoryId;
 }
 
 class DiscourseUrlParser {
@@ -41,10 +44,14 @@ class DiscourseUrlParser {
   );
 
   /// 用户链接格式：/u/username
-  static final _userRegex = RegExp(
-    r'/u/([^/?#]+)',
+  static final _userRegex = RegExp(r'/u/([^/?#]+)', caseSensitive: false);
+
+  static final _categoryRegex = RegExp(
+    r'/c/(?:[^/?#]+/)?(\d+)(?:[/?#]|$)',
     caseSensitive: false,
   );
+
+  static final _tagRegex = RegExp(r'/tag/([^/?#]+)', caseSensitive: false);
 
   /// 解析话题链接，返回 [TopicLinkInfo] 或 null
   ///
@@ -93,6 +100,26 @@ class DiscourseUrlParser {
       return UserLinkInfo(username: match.group(1)!);
     }
     return null;
+  }
+
+  static CategoryLinkInfo? parseCategory(String url) {
+    final match = _categoryRegex.firstMatch(url);
+    final id = int.tryParse(match?.group(1) ?? '');
+    return id == null ? null : CategoryLinkInfo(categoryId: id);
+  }
+
+  static String? parseTag(String url) {
+    final match = _tagRegex.firstMatch(url);
+    final encoded = match?.group(1);
+    return encoded == null ? null : Uri.decodeComponent(encoded);
+  }
+
+  static bool isHomepage(String url) {
+    final resolved = Uri.tryParse(url);
+    if (resolved == null) return false;
+    return (resolved.path.isEmpty || resolved.path == '/') &&
+        resolved.query.isEmpty &&
+        resolved.fragment.isEmpty;
   }
 
   /// 是否是用户链接（用于快速判断）

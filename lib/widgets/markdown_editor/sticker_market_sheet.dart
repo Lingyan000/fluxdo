@@ -9,7 +9,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../utils/load_more_coordinator.dart';
 import '../common/app_bottom_sheet.dart';
 import '../common/cached_image.dart';
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../common/paged_list_footer.dart';
 import '../../../../../l10n/s.dart';
 
@@ -243,7 +243,7 @@ class _StickerGroupTile extends ConsumerWidget {
             memCacheHeight: 80,
             thumbnailMode: true,
             fit: BoxFit.cover,
-            cacheManager: StickerCacheManager(),
+            bucket: BlobImageCache.stickerOriginalBucket,
             placeholder: (_) => _buildFallbackIcon(theme),
             errorBuilder: (_, _, _) => _buildFallbackIcon(theme),
           ),

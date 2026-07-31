@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/search_filter.dart';
 import '../models/topic.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/selected_topic_provider.dart';
 import '../providers/user_content_search_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -16,6 +19,11 @@ import '../widgets/common/error_view.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+
+/// 「我的话题」右栏的平行视界栈。
+final selectedMyTopicsPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
 
 /// 我的话题页面
 class MyTopicsPage extends ConsumerStatefulWidget {
@@ -29,6 +37,9 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
   final ScrollController _scrollController = ScrollController();
   final LoadMoreCoordinator _loadMoreCoordinator = LoadMoreCoordinator();
   late final UserContentSearchNotifier _searchNotifier;
+
+  /// 在 build 里取（不能在点击回调里读 MediaQuery）
+  bool _canShowBothPanes = false;
 
   @override
   void initState() {
@@ -72,6 +83,15 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
   }
 
   void _onItemTap(Topic topic) {
+    // 宽屏进右栏,窄屏全屏 push——与草稿页同一套形态
+    if (_canShowBothPanes) {
+      ref.read(selectedMyTopicsPaneProvider.notifier).select(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: topic.lastReadPostNumber,
+          );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -91,8 +111,9 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
     );
     // 话题卡自定义样式:改设置触发 rebuild(自绘排版直读全局快照)
     ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
+    _canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(context);
 
-    return PopScope(
+    final list = PopScope(
       canPop: !searchState.isSearchMode,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (!didPop) {
@@ -137,9 +158,17 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
         ),
       ),
     );
+
+    return MasterDetailPaneHost(
+      stackProvider: selectedMyTopicsPaneProvider,
+      master: list,
+    );
   }
 
   Widget _buildTopicList(AsyncValue<List<Topic>> myTopicsAsync) {
+    final selectedTopicId = ref.watch(
+      selectedMyTopicsPaneProvider.select((s) => s.topicId),
+    );
     return DesktopRefreshIndicator(
       onRefresh: _onRefresh,
       child: myTopicsAsync.when(
@@ -186,7 +215,7 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
               return buildTopicItem(
                 context: context,
                 topic: topic,
-                isSelected: false,
+                isSelected: _canShowBothPanes && topic.id == selectedTopicId,
                 onTap: () => _onItemTap(topic),
                 enableLongPress: enableLongPress,
               );

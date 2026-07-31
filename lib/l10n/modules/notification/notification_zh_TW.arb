@@ -259,6 +259,7 @@
     }
   },
   "notification_newTopic": "新建話題",
+  "notification_next": "下一條通知",
   "notification_peopleLikedPost": "{count} 人讚了你的帖子",
   "@notification_peopleLikedPost": {
     "placeholders": {
@@ -276,6 +277,7 @@
     }
   },
   "notification_postApproved": "你的帖子已被批准",
+  "notification_previous": "上一條通知",
   "notification_privateMsgSent": "{username} 傳送了私信",
   "@notification_privateMsgSent": {
     "placeholders": {
@@ -324,6 +326,7 @@
       }
     }
   },
+  "notification_showList": "通知列表",
   "notification_topicReminder": "話題提醒",
   "notification_typeAdminProblems": "管理員問題",
   "notification_typeAssignedTopic": "話題指派",

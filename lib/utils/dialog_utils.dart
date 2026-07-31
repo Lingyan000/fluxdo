@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
+import '../services/dynamic_content_suspension_service.dart';
 import 'blur_config.dart';
 
 /// 根据用户偏好判断是否启用模糊
@@ -80,6 +82,26 @@ Future<T?> _pushShortcutManagedRoute<T>({
   });
 }
 
+Future<T?> _pushOverlayRoute<T>({
+  required BuildContext context,
+  required NavigatorState navigator,
+  required Route<T> route,
+  required bool suspendDynamicContent,
+  ShortcutSurfaceConfig? shortcutSurface,
+}) {
+  final lease = suspendDynamicContent
+      ? DynamicContentSuspensionService.instance.acquire(
+          reason: 'modal-overlay',
+        )
+      : null;
+  return _pushShortcutManagedRoute(
+    context: context,
+    navigator: navigator,
+    route: route,
+    shortcutSurface: shortcutSurface,
+  ).whenComplete(() => lease?.release());
+}
+
 Future<T?> pushAppRoute<T>({
   required BuildContext context,
   required Route<T> route,
@@ -110,6 +132,7 @@ Future<T?> showAppDialog<T>({
   bool blur = true,
   Duration transitionDuration = const Duration(milliseconds: 150),
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -136,10 +159,11 @@ Future<T?> showAppDialog<T>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }
@@ -157,6 +181,7 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
   RouteSettings? routeSettings,
   bool blur = true,
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -175,10 +200,11 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }
@@ -190,11 +216,30 @@ Widget _buildMaterialDialogTransitions(
   Animation<double> secondaryAnimation,
   Widget child,
 ) {
+  // M3E:入场淡入 + 从 0.92 弹性放大(defaultSpatial 解析解,带轻微
+  // 过冲的"落座感");退场纯淡出。关闭 M3E 时维持经典纯淡入。
+  if (M3eFlags.of(context).enabled) {
+    final scale = animation.status == AnimationStatus.reverse
+        ? const AlwaysStoppedAnimation(1.0)
+        : Tween<double>(begin: 0.92, end: 1.0).animate(
+            CurvedAnimation(parent: animation, curve: _kDialogEnterCurve),
+          );
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: ScaleTransition(scale: scale, child: child),
+    );
+  }
   return FadeTransition(
     opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
     child: child,
   );
 }
+
+/// 对话框入场弹簧曲线:defaultSpatial(0.8/380)在 250ms 窗口内的
+/// 解析解,首峰轻微过冲(≈1.7%),收敛即落座。
+final Curve _kDialogEnterCurve = M3eMotion.defaultSpatial.curveFor(
+  const Duration(milliseconds: 250),
+);
 
 /// 替代 [showModalBottomSheet]，自动根据用户偏好添加背景高斯模糊。
 Future<T?> showAppBottomSheet<T>({
@@ -219,6 +264,7 @@ Future<T?> showAppBottomSheet<T>({
   AnimationStyle? sheetAnimationStyle,
   bool blur = true,
   ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final NavigatorState navigator = Navigator.of(
@@ -257,10 +303,11 @@ Future<T?> showAppBottomSheet<T>({
     enableBlur: enableBlur,
   );
 
-  return _pushShortcutManagedRoute(
+  return _pushOverlayRoute(
     context: context,
     navigator: navigator,
     route: route,
+    suspendDynamicContent: suspendDynamicContent,
     shortcutSurface: shortcutSurface,
   );
 }

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/sticker.dart';
-import '../services/discourse_cache_manager.dart' show StickerCacheManager;
 import '../services/sticker_market_service.dart';
 import '../services/sticker_thumbnail_provider.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
@@ -75,7 +74,6 @@ Future<void> _prefetchFirstScreenThumbnails(
   const prefetchCount = 30;
   // 与 sticker_picker `_StickerItemWidget` 的 memCacheWidth=160 一致。
   const targetSize = 160;
-  final cache = StickerCacheManager();
   final visible = emojis.length <= prefetchCount
       ? emojis
       : emojis.sublist(0, prefetchCount);
@@ -86,7 +84,6 @@ Future<void> _prefetchFirstScreenThumbnails(
     await StickerThumbnailProvider.precacheBatch(
       visible.map((s) => s.url).toList(growable: false),
       targetSize: targetSize,
-      cacheManager: cache,
       shouldContinue: () =>
           _stickerPanelOpen && _activePrefetchGroupId == groupId,
     );
