@@ -259,7 +259,9 @@ Future<void> main() async {
   // Android 由 WV onLoadStop 等 hook 主动调 notifyExternalChange()。
   CookieStoreObserver.instance.attach();
 
-  // 桌面平台：恢复窗口状态后再显示，避免默认位置闪烁
+  // 桌面平台：三端 runner 均隐藏启动（macOS 在 MainFlutterWindow 首次
+  // order 时隐藏，Windows/Linux 由 runner 创建隐藏窗口），正常冷启动都
+  // 走下方 else 分支：首帧光栅化后恢复窗口状态再显示，避免默认位置闪烁。
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await acrylic.Window.setEffect(
       effect: Platform.isMacOS
@@ -274,6 +276,10 @@ Future<void> main() async {
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
     if (isVisible) {
+      // 窗口已可见（热重启，或原生隐藏启动未生效的兜底路径）：
+      // macOS 走 restore() 读取并应用保存的窗口状态——attach() 只刷新
+      // 最大化缓存不读状态文件，曾导致 macOS 冷启动永远回到 XIB 默认
+      // 位置；Windows/Linux 可见说明状态已恢复过，attach 即可。
       if (Platform.isMacOS) {
         await WindowStateService.instance.restore(prefs);
       } else {
