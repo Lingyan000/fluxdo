@@ -297,7 +297,11 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(ctx.l10n.login_qrConfirmTitle),
-        content: Text(ctx.l10n.login_qrConfirmMessage),
+        // 桌面宽窗口下 AlertDialog 会被长文案撑满,限宽保持可读行长
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Text(ctx.l10n.login_qrConfirmMessage),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
