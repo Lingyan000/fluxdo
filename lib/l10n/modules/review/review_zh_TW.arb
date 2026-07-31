@@ -16,6 +16,7 @@
   },
   "review_withdrawAndEdit": "撤回並重新編輯",
   "review_withdrawAndEditConfirmContent": "將先從稽核佇列撤回這條內容，原文帶回編輯器；重新提交後需再次稽核。中途放棄編輯的話內容不會自動復原。",
+  "review_replyTargetUnknownHint": "注意：無法確認這條內容原本回覆的是哪個樓層，重新提交後將作為對話題的直接回覆。",
   "review_typeNewTopic": "新話題",
   "review_typeReply": "回覆",
   "review_empty": "沒有等待稽核的內容",

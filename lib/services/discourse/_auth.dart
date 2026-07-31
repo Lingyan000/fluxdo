@@ -1382,6 +1382,32 @@ mixin _AuthMixin on _DiscourseServiceBase {
     if (_isLoggingOut) return;
     _isLoggingOut = true;
 
+    // ===== 第零步：尝试 User API Key 静默恢复 =====
+    // 已授权 key（one_time_password scope）时先换新 OTP 重建会话，
+    // 成功则本次失效对用户完全透明，不登出不打扰。
+    // selfHeal 内部有单飞合流与失败冷却窗口，不会形成恢复风暴。
+    try {
+      final restoredUser = await UserApiKeyService().selfHeal(_dio);
+      final restoredUsername = restoredUser?['username']?.toString();
+      if (restoredUsername != null && restoredUsername.isNotEmpty) {
+        await finalizeNativeLoginSuccess(restoredUsername);
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'info',
+          'type': 'auth',
+          'event': 'auth_restored_by_user_api_key',
+          'message': '登录失效已通过 User API Key 自动恢复，取消登出',
+          'source': source,
+          'trigger': triggerInfo,
+        });
+        _resetStrikes();
+        _isLoggingOut = false;
+        return;
+      }
+    } catch (e) {
+      debugPrint('[Auth] User API Key 自动恢复异常: $e');
+    }
+
     // ===== 第一步：立即切断所有在途请求 =====
     // 先于 logout 执行，防止用户在失效状态下继续操作产生更多 403
     AuthSession().advance();
@@ -1542,7 +1568,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
     // ===== 第二步：主动停止后台 Service =====
     MessageBusService().stopAll();
-    CfClearanceRefreshService().stop();
+    unawaited(CfClearanceRefreshService().stop());
     WebViewAdapterSettingsService.instance.resetSessionFallback();
     CfChallengeService().resetSessionCompatibilityDecision();
 

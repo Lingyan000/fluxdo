@@ -42,6 +42,30 @@ class HtmlToMarkdown {
     }
   }
 
+  /// 从 URL 提取扩展名（公开复用版）。
+  ///
+  /// 对齐官方把 extensionFromUrl/buildImageMarkdown 抽进共享模块
+  /// markdown-image-builder.js 的做法：引用图片(quote-image)等
+  /// HtmlToMarkdown 之外的场景也要构造同格式的图片 markdown。
+  static String? extensionFromUrl(String? url) => _extensionFromUrl(url);
+
+  /// 构建图片 Markdown（公开复用版，见 [extensionFromUrl] 说明）。
+  static String buildImageMarkdown({
+    required String src,
+    String? alt,
+    String? width,
+    String? height,
+    String? title,
+  }) {
+    return _buildImageMarkdown(
+      src: src,
+      alt: alt,
+      width: width,
+      height: height,
+      title: title,
+    );
+  }
+
   /// 预处理：移除 body 标签、&nbsp; 等
   static String _trimUnwanted(String html) {
     final body = RegExp(r'<body[^>]*>([\s\S]*?)<\/body>').firstMatch(html);
@@ -325,6 +349,13 @@ class _LinkTag extends _Tag {
               _extensionFromUrl(attr['href']) ??
               _extensionFromUrl(attr['data-download-href']);
           if (ext != null) href += '.$ext';
+        } else {
+          // 客户端 cook 预览形态(见 _ImageTag 同名注释):没有
+          // data-base62-sha1 时,真实短链在 img 的 data-orig-src。
+          final origSrc = img.attributes['data-orig-src'];
+          if (origSrc != null && origSrc.startsWith('upload://')) {
+            href = origSrc;
+          }
         }
 
         final width = img.attributes['width'];
@@ -372,6 +403,14 @@ class _ImageTag extends _Tag {
       final ext = _extensionFromUrl(attr['src'] ?? pAttr['src']) ??
           _extensionFromUrl(attr['data-orig-src']);
       if (ext != null) src = '$src.$ext';
+    } else {
+      // 刚发帖/编辑后本地乐观渲染的「客户端 cook 预览形态」:src 是占位图
+      // /images/transparent.png,没有 data-base62-sha1,真实短链在
+      // data-orig-src(等服务端返回真 cooked 前一直是这个形态)。
+      final origSrc = attr['data-orig-src'] ?? pAttr['data-orig-src'];
+      if (origSrc != null && origSrc.startsWith('upload://')) {
+        src = origSrc;
+      }
     }
 
     // emoji
@@ -444,9 +483,20 @@ class _AsideTag extends _BlockTag {
     final username = element!.attributes['data-username'];
     final post = element!.attributes['data-post'];
     final topic = element!.attributes['data-topic'];
+    // 首字段官方语义是**显示名**(昵称),不是登录用户名。官方 cooked 里
+    // 显示名≠用户名时 aside 自带 data-display-name 属性(discourse
+    // features/quotes.js),直接读它;不要从标题栏 DOM 反查——同主题引用
+    // 的显示名是纯文本节点,跨主题引用标题里的 <a> 装的是话题标题而不是
+    // 人名。有显示名时真实用户名单独放 username: 参数,服务端靠它查人。
+    final displayName = element!.attributes['data-display-name'];
+    final hasDisplayName = displayName != null &&
+        displayName.isNotEmpty &&
+        displayName != username;
 
     final quotePrefix = (username != null && post != null && topic != null)
-        ? '[quote="$username, post:$post, topic:$topic"]'
+        ? (hasDisplayName
+            ? '[quote="$displayName, post:$post, topic:$topic, username:$username"]'
+            : '[quote="$username, post:$post, topic:$topic"]')
         : '[quote]';
 
     return '\n$quotePrefix\n$text\n[/quote]\n';

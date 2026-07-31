@@ -8,6 +8,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../pages/image_viewer_page.dart';
 import '../../../services/toast_service.dart';
@@ -871,11 +872,7 @@ class _ImageGenerationPlaceholderState
                 ],
               )
             else
-              const SizedBox(
-                height: 18,
-                width: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              const LoadingSpinner(size: 18),
           ],
         ),
       ),

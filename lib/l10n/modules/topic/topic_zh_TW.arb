@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "已加入浮窗",
   "topicDetail_aiAssistant": "AI 助手",
   "topicDetail_authorOnly": "只看題主",
+  "topicDetail_browseMoreInCategory": "想閱讀更多？瀏覽 {category} 分類",
+  "@topicDetail_browseMoreInCategory": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_cannotOpenBrowser": "無法開啟瀏覽器",
   "topicDetail_editBookmark": "編輯書籤",
   "topicDetail_editTopic": "編輯話題",
@@ -22,6 +30,7 @@
       }
     }
   },
+  "topicDetail_relatedTopics": "相關話題",
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已從浮窗移除",
   "topicDetail_replyLabel": "回覆",
@@ -45,6 +54,7 @@
       }
     }
   },
+  "topicDetail_suggestedTopics": "建議話題",
   "topicDetail_topLevelOnly": "只看頂層",
   "topicDetail_viewAll": "檢視全部",
   "topicDetail_viewsLabel": "瀏覽",

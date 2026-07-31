@@ -51,6 +51,7 @@
   "search_noLimit": "不限",
   "search_noPopularTags": "暫無熱門標籤",
   "search_noResults": "沒有找到相關結果",
+  "search_selectResultHint": "選擇一個搜索結果，在此處查看詳情",
   "search_popularTags": "熱門標籤",
   "search_recentSearches": "最近搜索",
   "search_replyCount": "{count} 條回覆",

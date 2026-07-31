@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   common_ui:
     path: ../common_ui
+  m3e_ui:
+    path: ../m3e_ui
   flutter_riverpod:
   dio:
   http: ^1.6.0

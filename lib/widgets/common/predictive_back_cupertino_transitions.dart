@@ -12,7 +12,13 @@
 // 2. transitionDuration 800ms → 400ms(Cupertino 时长),commit 动画
 //    Interval 分母同步改为 400 → commit 仍是完整 400ms(与 Android
 //    原生一致);
-// 3. 只保留 shared-element 变体(fullscreen 变体未使用,未拷贝)。
+// 3. 只保留 shared-element 变体(fullscreen 变体未使用,未拷贝);
+// 4. 预测返回判定从单独的 popGestureInProgress 收紧为「且 phase 非
+//    idle」,并在手势窗口结束时把 phase 归位 —— 原版降级是 FadeForwards,
+//    树里没有拖拽手势源;换 Cupertino 降级后,app 内 iOS 式拖拽返回
+//    (边缘/全屏)同样置位 popGestureInProgress,原判定会把跟手平移误
+//    渲染成预测返回的缩放预览。预测返回必经 handleStartBackGesture
+//    (phase → start),以此区分手势来源。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -21,6 +27,7 @@
 import 'dart:ui' show clampDouble;
 
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -56,7 +63,11 @@ class PredictiveBackCupertinoPageTransitionsBuilder extends PageTransitionsBuild
             // pop gesture. Otherwise, for things like button presses or other
             // programmatic navigation, fall back to
             // CupertinoPageTransitionsBuilder.
-            if (route.popGestureInProgress) {
+            //
+            // 差异点(文件头第 4 条):app 内 iOS 式拖拽返回同样置位
+            // popGestureInProgress,但不会触发 handleStartBackGesture,
+            // phase 仍为 idle —— 交给 Cupertino 分支跟手渲染。
+            if (route.popGestureInProgress && phase != _PredictiveBackPhase.idle) {
               return _PredictiveBackSharedElementPageTransition(
                 isDelegatedTransition: true,
                 animation: animation,
@@ -189,14 +200,43 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   // End WidgetsBindingObserver.
 
+  // 差异点(文件头第 4 条):手势窗口关闭(didStopUserGesture)时把 phase
+  // 归位 idle。否则上一次预测返回 cancel 残留的 phase 会让之后的 app 内
+  // 拖拽返回(同样置位 popGestureInProgress)整程误判成预测返回。
+  ValueListenable<bool>? _userGestureInProgress;
+
+  void _handleUserGestureChanged() {
+    if (_userGestureInProgress?.value == false) {
+      phase = _PredictiveBackPhase.idle;
+    }
+  }
+
+  void _subscribeUserGesture() {
+    final notifier = widget.route.navigator?.userGestureInProgressNotifier;
+    if (identical(notifier, _userGestureInProgress)) {
+      return;
+    }
+    _userGestureInProgress?.removeListener(_handleUserGestureChanged);
+    _userGestureInProgress = notifier;
+    _userGestureInProgress?.addListener(_handleUserGestureChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PredictiveBackGestureDetector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _subscribeUserGesture();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _subscribeUserGesture();
   }
 
   @override
   void dispose() {
+    _userGestureInProgress?.removeListener(_handleUserGestureChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

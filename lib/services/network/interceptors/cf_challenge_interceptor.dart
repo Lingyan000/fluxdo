@@ -9,6 +9,7 @@ import '../../app_logger.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
+import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
 import '../exceptions/api_exception.dart';
@@ -122,8 +123,10 @@ class CfChallengeInterceptor extends Interceptor {
       CfClearanceRefreshService().extractAndUpdateSitekey(
         err.response?.data?.toString() ?? '',
       );
-      // 403 说明 cf_clearance 已失效，停止自动续期（避免与手动验证冲突）
-      CfClearanceRefreshService().stop();
+      // 403 说明 cf_clearance 已失效，停止自动续期（避免与手动验证冲突）。
+      // 这里不需要 await——真正要建验证 WebView 前，showManualVerify 内部
+      // 会自己再 await 一次 stop()，确保销毁完成。
+      unawaited(CfClearanceRefreshService().stop());
 
       final requestUrl = err.requestOptions.uri.toString();
       final requestMethod = err.requestOptions.method.toUpperCase();
@@ -134,6 +137,9 @@ class CfChallengeInterceptor extends Interceptor {
           'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.extra['skipCsrf'] == true})';
       debugPrint('[Dio] $logMessage');
       AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
+      // 命中 CF 盾时立即重读系统代理状态:若用户刚开/关了系统代理,
+      // 下一个请求就能用一致的出口重试,而不是等 10s 周期刷新。
+      SystemProxyService.instance.refresh();
       CfChallengeLogger.logInterceptorDetected(
         url: requestUrl,
         statusCode: statusCode!,
@@ -180,6 +186,8 @@ class CfChallengeInterceptor extends Interceptor {
       }
 
       // 静默请求只在后台尝试验证；页面数据/操作请求在前台展示验证。
+      // (Windows 曾因插件析构竞态崩溃 0xc0000005 禁用过静默后台验证;
+      // vendored 插件的 aliveGuard/TextureBridge 修复落地后恢复。)
       final result = await cfService.showManualVerify(null, !isSilent);
 
       if (result == true) {
@@ -303,6 +311,24 @@ class CfChallengeInterceptor extends Interceptor {
               debugPrint(
                 '[Dio] Retry got ${e.response?.statusCode} again — cf_clearance may not have been sent or already expired',
               );
+              // 验证刚「成功」、cookie 也带上了,重试却仍被 CF 拦——铸出的
+              // clearance 对 Dio 无效。这是确定性环境问题(典型:系统代理
+              // 只对 WebView2 生效,Dio 直连,两侧出口 IP 不一致),再验证
+              // 多少次都一样,立即熔断进入冷却,阻断验证无限循环。
+              if (CfChallengeService.isCfChallengeResponse(e.response)) {
+                cfService.startIneffectiveClearanceCooldown();
+                CfChallengeLogger.log(
+                  '[INTERCEPTOR] Verified clearance ineffective for Dio '
+                  '(retry ${e.response?.statusCode}), entering cooldown: '
+                  '$requestMethod $requestUrl',
+                  level: 'warning',
+                );
+                if (shouldShowActionPrompt) {
+                  CfChallengeService.showGlobalMessage(
+                    S.current.cf_challengeNotEffective,
+                  );
+                }
+              }
             }
           } else {
             debugPrint('[Dio] Retry failed (non-Dio): $e');

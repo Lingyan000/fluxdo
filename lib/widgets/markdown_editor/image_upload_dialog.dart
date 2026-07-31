@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -13,6 +13,38 @@ import '../../utils/dialog_utils.dart';
 import 'image_compression_strategy.dart';
 import 'image_editor_i18n_zh.dart';
 import '../../../../../l10n/s.dart';
+
+/// 回车 = 按当前设置直接上传(桌面端一键确认;移动端软键盘回车不经这条
+/// 路径,不受影响)。
+///
+/// [onSubmit] 为 null(处理中)时不响应,避免重复提交。
+///
+/// 用 Focus.onKeyEvent 而不是 CallbackShortcuts:后者包住整个弹框时,
+/// Tab 把焦点移到「取消」等按钮上后回车仍会被截走触发上传 —— 这里只在
+/// 焦点还停留在弹框级节点(没 Tab 到任何按钮)时才吃回车,焦点在按钮上
+/// 时放行给按钮自己的激活动作。
+Widget _enterToSubmit({required VoidCallback? onSubmit, required Widget child}) {
+  return Focus(
+    // autofocus:弹框刚出来焦点还没落到任何按钮上,不抢焦点就收不到按键
+    autofocus: true,
+    onKeyEvent: (node, event) {
+      if (onSubmit == null) return KeyEventResult.ignored;
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key != LogicalKeyboardKey.enter &&
+          key != LogicalKeyboardKey.numpadEnter) {
+        return KeyEventResult.ignored;
+      }
+      // 焦点已在按钮等子节点上 → 回车属于那个控件,不做一键上传
+      if (FocusManager.instance.primaryFocus != node) {
+        return KeyEventResult.ignored;
+      }
+      onSubmit();
+      return KeyEventResult.handled;
+    },
+    child: child,
+  );
+}
 
 /// 图片上传确认弹框结果
 class ImageUploadResult {
@@ -174,7 +206,9 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return AlertDialog(
+    return _enterToSubmit(
+      onSubmit: _isProcessing ? null : _submit,
+      child: AlertDialog(
       title: Text(S.current.imageUpload_confirmTitle),
       content: SingleChildScrollView(
         child: Column(
@@ -325,6 +359,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
               : Text(S.current.common_upload),
         ),
       ],
+      ),
     );
   }
 }
@@ -482,7 +517,9 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return AlertDialog(
+    return _enterToSubmit(
+      onSubmit: _isProcessing ? null : _submit,
+      child: AlertDialog(
       title: Text(S.current.imageUpload_multiTitle(_items.length)),
       content: SizedBox(
         width: double.maxFinite,
@@ -691,6 +728,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
               : Text(S.current.imageUpload_uploadCount(_items.length)),
         ),
       ],
+      ),
     );
   }
 }

@@ -64,6 +64,16 @@ final categoryNotificationOverridesProvider = StateProvider<Map<int, int>>(
 /// 侧边栏当前激活的分类 ID（仅用于桌面/平板导航高亮）
 final activeSidebarCategoryIdProvider = StateProvider<int?>((ref) => null);
 
+/// 侧边栏板块的「点击事件」。
+///
+/// 与 [activeSidebarCategoryIdProvider]（高亮状态，同值会被 StateProvider
+/// 去重）不同，**重选当前板块**也必须触发——首页靠它把深层平行视界收回
+/// 板块列表。nonce 单调递增保证连续点同一板块也能被 ref.listen 捕获
+/// （同 NavActionEvent 的做法）。
+final sidebarCategoryTapProvider = StateProvider<({int categoryId, int nonce})?>(
+  (ref) => null,
+);
+
 /// 热门标签列表 Provider
 final tagsProvider = FutureProvider<List<String>>((ref) async {
   final service = ref.watch(discourseServiceProvider);

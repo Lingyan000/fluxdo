@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../models/mention_user.dart';
 import '../../constants.dart';
@@ -335,24 +336,30 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
           showWhenUnlinked: false,
           offset: Offset(0, anchorY + (showAbove ? -4 : 4)), // 根据光标位置偏移
           followerAnchor: showAbove ? Alignment.bottomLeft : Alignment.topLeft,
-          targetAnchor: Alignment.topLeft, 
-          child: Container(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+          targetAnchor: Alignment.topLeft,
+          // 桌面端 TextField 默认"点击区域外即失焦":点弹窗的瞬间输入框
+          // 失焦 → overlay 被移除 → 点击落空。把弹窗并入 EditableText 的
+          // TapRegion 分组,点选就不再触发失焦。
+          child: TapRegion(
+            groupId: EditableText,
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: effectiveMaxHeight),
+                  child: _buildContent(theme),
                 ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: effectiveMaxHeight),
-                child: _buildContent(theme),
               ),
             ),
           ),
@@ -370,9 +377,8 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
       children: [
         // 顶部 Loading 条 (保留旧数据时显示)
         if (_isLoading)
-          LinearProgressIndicator(
-            minHeight: 2,
-            backgroundColor: Colors.transparent,
+          M3eLinearProgress(
+            trackColor: Colors.transparent,
             color: theme.colorScheme.primary,
           ),
           

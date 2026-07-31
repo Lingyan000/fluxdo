@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/topic.dart';
@@ -26,6 +28,18 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
   @override
   Future<List<Topic>> build() async {
+    // 话题列表里每张卡的已读状态是拉取那一刻的快照,之后只有
+    // topicTrackingStateProvider(MessageBus /latest /unread /read 频道
+    // 实时更新)会变,列表卡本身不会跟着刷新——来了新回复数字不涨,
+    // 在网页/别的设备读完了红点也一直挂着。这里订阅追踪状态,把变化
+    // 双向同步回当前显示的话题上,不需要用户手动下拉刷新整个列表。
+    ref.listen<Map<int, TrackedTopicState>>(topicTrackingStateProvider, (
+      previous,
+      next,
+    ) {
+      _syncFromTrackingState(next);
+    });
+
     // 所有参数使用 ref.read（不建立依赖），
     // 由 UI 层在参数变化时主动 invalidate provider
     final currentFilter = ref.read(topicFilterProvider);
@@ -47,12 +61,17 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     // 优化：如果是 latest 列表且没有筛选条件且没有自定义排序，优先同步使用预加载数据
     // 这样可以避免显示 loading 状态
-    if (currentFilter == TopicListFilter.latest && filter.isEmpty && orderParam == null) {
+    if (currentFilter == TopicListFilter.latest &&
+        filter.isEmpty &&
+        orderParam == null) {
       final preloadedService = PreloadedDataService();
       final preloadedData = preloadedService.getInitialTopicListSync();
       if (preloadedData != null) {
         final result = _paginationHelper.processRefresh(
-          PaginationResult(items: preloadedData.topics, moreUrl: preloadedData.moreTopicsUrl),
+          PaginationResult(
+            items: preloadedData.topics,
+            moreUrl: preloadedData.moreTopicsUrl,
+          ),
         );
         return completePagedRefresh(PagedPage.fromPagination(result));
       }
@@ -60,7 +79,10 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         final asyncPreloaded = await preloadedService.getInitialTopicList();
         if (asyncPreloaded != null) {
           final result = _paginationHelper.processRefresh(
-            PaginationResult(items: asyncPreloaded.topics, moreUrl: asyncPreloaded.moreTopicsUrl),
+            PaginationResult(
+              items: asyncPreloaded.topics,
+              moreUrl: asyncPreloaded.moreTopicsUrl,
+            ),
           );
           return completePagedRefresh(PagedPage.fromPagination(result));
         }
@@ -69,7 +91,15 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     // 如果没有预加载数据，走正常的异步流程
     final service = ref.read(discourseServiceProvider);
-    final response = await _fetchTopics(service, currentFilter, 0, filter, order: orderParam, ascending: ascendingParam, subset: subset);
+    final response = await _fetchTopics(
+      service,
+      currentFilter,
+      0,
+      filter,
+      order: orderParam,
+      ascending: ascendingParam,
+      subset: subset,
+    );
 
     final result = _paginationHelper.processRefresh(
       PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
@@ -106,17 +136,38 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     // 无筛选条件，使用原有方法
     switch (filter) {
       case TopicListFilter.latest:
-        return service.getLatestTopics(page: page, order: order, ascending: ascending);
+        return service.getLatestTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.newTopics:
-        return service.getNewTopics(page: page, order: order, ascending: ascending, subset: subset);
+        return service.getNewTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+          subset: subset,
+        );
       case TopicListFilter.unread:
-        return service.getUnreadTopics(page: page, order: order, ascending: ascending);
+        return service.getUnreadTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.unseen:
-        return service.getUnseenTopics(page: page, order: order, ascending: ascending);
+        return service.getUnseenTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
       case TopicListFilter.top:
         return service.getTopTopics();
       case TopicListFilter.hot:
-        return service.getHotTopics(page: page, order: order, ascending: ascending);
+        return service.getHotTopics(
+          page: page,
+          order: order,
+          ascending: ascending,
+        );
     }
   }
 
@@ -157,7 +208,9 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
   (String?, bool?) _currentSortParams() {
     final sortOrder = ref.read(topicSortOrderProvider);
     final orderParam = sortOrder.apiValue;
-    final ascendingParam = orderParam != null ? ref.read(topicSortAscendingProvider) : null;
+    final ascendingParam = orderParam != null
+        ? ref.read(topicSortAscendingProvider)
+        : null;
     return (orderParam, ascendingParam);
   }
 
@@ -170,10 +223,21 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       final subset = _currentFilter == TopicListFilter.newTopics
           ? ref.read(topicNewSubsetProvider).apiValue
           : null;
-      final response = await _fetchTopics(service, _currentFilter, 0, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        0,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
       return PagedPage.fromPagination(result);
     });
@@ -188,10 +252,21 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         ? ref.read(topicNewSubsetProvider).apiValue
         : null;
     try {
-      final response = await _fetchTopics(service, _currentFilter, 0, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        0,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final result = _paginationHelper.processRefresh(
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
       state = AsyncValue.data(
         completePagedRefresh(PagedPage.fromPagination(result)),
@@ -221,7 +296,9 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
       // 移除列表中已存在的同 ID 话题（刷新重复项，与网页版 removeValuesFromArray 一致）
       final newTopicIds = newTopics.map((t) => t.id).toSet();
-      final remaining = currentTopics.where((t) => !newTopicIds.contains(t.id)).toList();
+      final remaining = currentTopics
+          .where((t) => !newTopicIds.contains(t.id))
+          .toList();
       // 将新话题全部插入列表顶部
       state = AsyncValue.data([...newTopics, ...remaining]);
       return newTopics.map((t) => t.id).toList();
@@ -240,12 +317,23 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       final subset = _currentFilter == TopicListFilter.newTopics
           ? ref.read(topicNewSubsetProvider).apiValue
           : null;
-      final response = await _fetchTopics(service, _currentFilter, nextPage, filterParams, order: order, ascending: ascending, subset: subset);
+      final response = await _fetchTopics(
+        service,
+        _currentFilter,
+        nextPage,
+        filterParams,
+        order: order,
+        ascending: ascending,
+        subset: subset,
+      );
 
       final currentState = PaginationState(items: currentTopics);
       final paginationResult = _paginationHelper.processLoadMore(
         currentState,
-        PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+        PaginationResult(
+          items: response.topics,
+          moreUrl: response.moreTopicsUrl,
+        ),
       );
 
       return PagedPage.fromPagination(
@@ -329,7 +417,8 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     } else if (filter == TopicListFilter.unread) {
       await service.dismissUnreadTopics(categoryId: _categoryId);
       // 同步更新追踪状态计数
-      ref.read(topicTrackingStateProvider.notifier)
+      ref
+          .read(topicTrackingStateProvider.notifier)
           .dismissUnreadTopics(categoryId: _categoryId);
     }
     state = AsyncValue.data(
@@ -339,7 +428,66 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     );
   }
 
-  void updateSeen(int topicId, int highestSeen) {
+  /// 用 topicTrackingStateProvider 的实时数据刷新当前列表里对应话题的
+  /// 已读状态(见 build() 里的 ref.listen)。对齐网页版
+  /// topic-tracking-state.js 的 updateTopics:双向同步——来新回复时
+  /// 未读数上涨,在别端读完/忽略时红点下降或清除。
+  ///
+  /// tracking map 是全局单例,任何一个话题的消息都会让整个 map 换新
+  /// 触发这个监听;长轮询重连还可能补发旧消息。防串扰不靠"只涨不落"
+  /// 的整体守卫(那会把跨端已读的下降方向也挡死),而是两个游标各自
+  /// 单调合并:highestPostNumber 与 lastReadPostNumber 都只取双方更
+  /// 前进的一侧——旧消息重放两个游标都不倒退,自然不会出现"刚读完
+  /// 又弹回未读";tracking 初值来自启动快照,可能落后于刚拉回的列表
+  /// 数据,取 max 也堵住了未读数被旧快照算虚高的口子。
+  void _syncFromTrackingState(Map<int, TrackedTopicState> tracking) {
+    final topics = state.value;
+    if (topics == null || tracking.isEmpty) return;
+
+    List<Topic>? newList;
+    for (var i = 0; i < topics.length; i++) {
+      final topic = topics[i];
+      final tracked = tracking[topic.id];
+      if (tracked == null) continue;
+
+      final highest = math.max(tracked.highestPostNumber, topic.highestPostNumber);
+      final trackedLastRead = tracked.lastReadPostNumber;
+      final topicLastRead = topic.lastReadPostNumber;
+      final lastRead = trackedLastRead == null
+          ? topicLastRead
+          : (topicLastRead == null
+                ? trackedLastRead
+                : math.max(trackedLastRead, topicLastRead));
+
+      // 未读数口径对齐服务端 lib/unread.rb:没读过的话题 unread 恒为 0
+      // (它走 unseen/NEW 语义,不走未读计数)
+      final newUnread = lastRead == null ? 0 : (highest - lastRead).clamp(0, highest);
+      // 对齐网页版 updateTopics 的 unseen 回写:读过或已被忽略
+      // (dismiss_new 置 isSeen)都不再算新话题
+      final newUnseen = lastRead == null && !tracked.isSeen && topic.unseen;
+
+      if (newUnread == topic.unread &&
+          highest == topic.highestPostNumber &&
+          lastRead == topicLastRead &&
+          newUnseen == topic.unseen) {
+        continue;
+      }
+
+      newList ??= [...topics];
+      newList[i] = topic.copyWith(
+        unseen: newUnseen,
+        unread: newUnread,
+        lastReadPostNumber: lastRead,
+        highestPostNumber: highest,
+      );
+    }
+
+    if (newList != null) {
+      state = AsyncValue.data(newList);
+    }
+  }
+
+  void updateSeen(int topicId, int highestSeen, {bool updateTracking = true}) {
     final topics = state.value;
     if (topics == null) return;
 
@@ -351,47 +499,33 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
     if (highestSeen <= currentRead) return;
 
-    final newUnread = (topic.highestPostNumber - highestSeen).clamp(0, topic.highestPostNumber);
+    final newUnread = (topic.highestPostNumber - highestSeen).clamp(
+      0,
+      topic.highestPostNumber,
+    );
 
-    final updated = Topic(
-      id: topic.id,
-      title: topic.title,
-      slug: topic.slug,
-      postsCount: topic.postsCount,
-      replyCount: topic.replyCount,
-      views: topic.views,
-      likeCount: topic.likeCount,
-      excerpt: topic.excerpt,
-      createdAt: topic.createdAt,
-      lastPostedAt: topic.lastPostedAt,
-      lastPosterUsername: topic.lastPosterUsername,
-      categoryId: topic.categoryId,
-      pinned: topic.pinned,
-      visible: topic.visible,
-      closed: topic.closed,
-      archived: topic.archived,
-      tags: topic.tags,
-      posters: topic.posters,
+    final newList = [...topics];
+    newList[index] = topic.copyWith(
       unseen: false,
       unread: newUnread,
       newPosts: 0,
       lastReadPostNumber: highestSeen,
-      highestPostNumber: topic.highestPostNumber,
     );
-
-    final newList = [...topics];
-    newList[index] = updated;
     state = AsyncValue.data(newList);
 
-    // 同步更新追踪状态计数（阅读后减少 new/unread 计数）
-    ref.read(topicTrackingStateProvider.notifier)
-        .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
+    if (updateTracking) {
+      // 同步更新追踪状态计数（阅读后减少 new/unread 计数）
+      ref
+          .read(topicTrackingStateProvider.notifier)
+          .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
+    }
   }
 }
 
-final topicListProvider = AsyncNotifierProvider.family<TopicListNotifier, List<Topic>, int?>(
-  TopicListNotifier.new,
-);
+final topicListProvider =
+    AsyncNotifierProvider.family<TopicListNotifier, List<Topic>, int?>(
+      TopicListNotifier.new,
+    );
 
 /// 热门话题 Provider
 final topTopicsProvider = FutureProvider<TopicListResponse>((ref) async {

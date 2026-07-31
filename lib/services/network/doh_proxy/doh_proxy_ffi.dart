@@ -436,6 +436,7 @@ class DohProxyFfi {
     String? upstreamCipher,
     String? caCertPem,
     String? caKeyPem,
+    bool mitmConnect = true,
     bool h2Mitm = false,
   }) {
     if (!_initialized && !initialize()) {
@@ -447,7 +448,7 @@ class DohProxyFfi {
       'bind_port': port,
       'enable_doh': enableDoh,
       'gateway_mode': gatewayMode,
-      'mitm_connect': true,
+      'mitm_connect': mitmConnect,
       'h2_mitm': h2Mitm,
       'doh_server': dohServer ?? 'cloudflare',
       'prefer_ipv6': preferIpv6,

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:collection' show UnmodifiableListView;
+import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -28,10 +30,43 @@ class WebViewSettings {
   if(window.__fluxdoScrollFix) return;
   window.__fluxdoScrollFix = true;
   window.addEventListener('wheel', function(e){ e.preventDefault(); }, {passive:false});
-  window.__fluxdoScroll = function(dx, dy) {
-    var el = document.scrollingElement || document.documentElement;
-    el.scrollTop += dy;
-    el.scrollLeft += dx;
+  function canScroll(el, axis) {
+    if (!el || el === document) return false;
+    var style = getComputedStyle(el);
+    var overflow = axis === 'x' ? style.overflowX : style.overflowY;
+    if (!/(auto|scroll|overlay)/.test(overflow)) return false;
+    return axis === 'x'
+      ? el.scrollWidth > el.clientWidth + 1
+      : el.scrollHeight > el.clientHeight + 1;
+  }
+  function canMove(el, axis, delta) {
+    if (!canScroll(el, axis)) return false;
+    var current = axis === 'x' ? el.scrollLeft : el.scrollTop;
+    var maximum = axis === 'x'
+      ? el.scrollWidth - el.clientWidth
+      : el.scrollHeight - el.clientHeight;
+    return delta < 0 ? current > 0 : current < maximum - 1;
+  }
+  function findScroller(start, axis, delta) {
+    var el = start;
+    while (el && el !== document.documentElement && el !== document.body) {
+      if (canMove(el, axis, delta)) return el;
+      el = el.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  window.__fluxdoScroll = function(dx, dy, x, y) {
+    var start = Number.isFinite(x) && Number.isFinite(y)
+      ? document.elementFromPoint(x, y)
+      : document.activeElement;
+    if (dy) {
+      var vertical = findScroller(start, 'y', dy);
+      vertical.scrollTop += dy;
+    }
+    if (dx) {
+      var horizontal = findScroller(start, 'x', dx);
+      horizontal.scrollLeft += dx;
+    }
   };
 })();
 ''';
@@ -333,16 +368,68 @@ class WebViewSettings {
 }
 
 /// Windows 滚轮/触摸板事件转发 widget
-class _JsonScrollListener extends StatelessWidget {
+class _JsonScrollListener extends StatefulWidget {
   const _JsonScrollListener({required this.getController, required this.child});
 
   final InAppWebViewController? Function() getController;
   final Widget child;
 
-  void _doScroll(double dx, double dy) {
-    final controller = getController();
-    if (controller != null && (dx != 0 || dy != 0)) {
-      controller.evaluateJavascript(source: 'window.__fluxdoScroll?.($dx,$dy)');
+  @override
+  State<_JsonScrollListener> createState() => _JsonScrollListenerState();
+}
+
+class _JsonScrollListenerState extends State<_JsonScrollListener> {
+  double _pendingDx = 0;
+  double _pendingDy = 0;
+  Offset _lastPosition = Offset.zero;
+  int? _frameCallbackId;
+  bool _inFlight = false;
+
+  @override
+  void dispose() {
+    final callbackId = _frameCallbackId;
+    if (callbackId != null) {
+      SchedulerBinding.instance.cancelFrameCallbackWithId(callbackId);
+    }
+    super.dispose();
+  }
+
+  void _queueScroll(double dx, double dy, Offset position) {
+    if (dx == 0 && dy == 0) return;
+    _pendingDx += dx;
+    _pendingDy += dy;
+    _lastPosition = position;
+    _scheduleFlush();
+  }
+
+  void _scheduleFlush() {
+    if (_frameCallbackId != null || _inFlight || !mounted) return;
+    _frameCallbackId = SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _frameCallbackId = null;
+      _flushScroll();
+    });
+  }
+
+  Future<void> _flushScroll() async {
+    final controller = widget.getController();
+    if (controller == null || (_pendingDx == 0 && _pendingDy == 0)) return;
+
+    final dx = _pendingDx;
+    final dy = _pendingDy;
+    final position = _lastPosition;
+    _pendingDx = 0;
+    _pendingDy = 0;
+    _inFlight = true;
+    try {
+      final args = jsonEncode([dx, dy, position.dx, position.dy]);
+      await controller.evaluateJavascript(
+        source: 'window.__fluxdoScroll?.apply(null, $args)',
+      );
+    } catch (_) {
+      // 页面导航/销毁窗口期允许丢弃本次滚动，下一次输入会重新注入并转发。
+    } finally {
+      _inFlight = false;
+      if (_pendingDx != 0 || _pendingDy != 0) _scheduleFlush();
     }
   }
 
@@ -353,14 +440,22 @@ class _JsonScrollListener extends StatelessWidget {
       // 鼠标滚轮
       onPointerSignal: (event) {
         if (event is PointerScrollEvent) {
-          _doScroll(event.scrollDelta.dx, event.scrollDelta.dy);
+          _queueScroll(
+            event.scrollDelta.dx,
+            event.scrollDelta.dy,
+            event.localPosition,
+          );
         }
       },
       // 精确触摸板（Precision Touchpad）
       onPointerPanZoomUpdate: (event) {
-        _doScroll(-event.panDelta.dx, -event.panDelta.dy);
+        _queueScroll(
+          -event.panDelta.dx,
+          -event.panDelta.dy,
+          event.localPosition,
+        );
       },
-      child: child,
+      child: widget.child,
     );
   }
 }

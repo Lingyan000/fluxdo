@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/dialog_utils.dart';
-import 'loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// 显示 Loading 对话框
 ///

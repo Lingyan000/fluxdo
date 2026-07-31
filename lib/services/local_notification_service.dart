@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/s.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
+import '../utils/notification_navigation.dart';
 
 /// 全局 NavigatorKey，用于通知点击时导航
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -64,24 +65,34 @@ class LocalNotificationService {
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
 
-    // payload 格式: "topic:{topicId}" 或 "topic:{topicId}:{postNumber}"
-    if (payload.startsWith('topic:')) {
-      final parts = payload.substring(6).split(':');
-      final topicId = int.tryParse(parts[0]);
-      final postNumber = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    // payload 格式: "topic:{topicId}[:{postNumber}]" 或
+    // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈)。
+    final isMessage = payload.startsWith('message:');
+    if (!isMessage && !payload.startsWith('topic:')) return;
+    final parts = payload.substring(isMessage ? 8 : 6).split(':');
+    final topicId = int.tryParse(parts[0]);
+    final postNumber = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    if (topicId == null) return;
 
-      if (topicId != null) {
-        debugPrint('[LocalNotification] 跳转到话题: $topicId, 帖子: $postNumber');
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (_) => TopicDetailPage(
-              topicId: topicId,
-              scrollToPostNumber: postNumber,
-            ),
-          ),
-        );
-      }
+    debugPrint(
+      '[LocalNotification] 跳转到${isMessage ? "私信" : "话题"}: $topicId, 帖子: $postNumber',
+    );
+
+    // 与应用内通知落点一致:大屏页面弹窗、窄屏全屏路由(私信/话题
+    // 同一入口,不再写工作区栈/切 tab)。拿不到 context(冷启动时通知
+    // 先于根 widget 树就绪)退化为直接 push。
+    final page = TopicDetailPage(
+      topicId: topicId,
+      scrollToPostNumber: postNumber,
+    );
+    final context = navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      openNotificationPage(context, page);
+      return;
     }
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => page),
+    );
   }
 
   /// 请求通知权限
@@ -106,6 +117,7 @@ class LocalNotificationService {
     int? id,
     int? topicId,
     int? postNumber,
+    bool isPrivateMessage = false,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -135,10 +147,14 @@ class LocalNotificationService {
 
     final notificationId = id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
     
-    // 构建 payload 用于点击回调
+    // 构建 payload 用于点击回调:私信用 message: 前缀,走私信自己的
+    // 平行视界栈,不能跟普通话题共用 topic: 前缀(否则左栏会显示信息流)。
     String? payload;
     if (topicId != null) {
-      payload = postNumber != null ? 'topic:$topicId:$postNumber' : 'topic:$topicId';
+      final prefix = isPrivateMessage ? 'message' : 'topic';
+      payload = postNumber != null
+          ? '$prefix:$topicId:$postNumber'
+          : '$prefix:$topicId';
     }
     
     await _plugin.show(id: notificationId, title: title, body: body, notificationDetails: details, payload: payload);

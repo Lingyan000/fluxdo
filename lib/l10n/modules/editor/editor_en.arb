@@ -16,6 +16,7 @@
   "drafts_newTopic": "New topic",
   "drafts_pmIncomplete": "PM draft data incomplete",
   "drafts_privateMessage": "Private message",
+  "drafts_selectHint": "Select a draft to continue editing",
   "drafts_replyToPost": "Reply to #{number}",
   "drafts_title": "My Drafts",
   "editor_hintText": "Say something... (Markdown supported)",

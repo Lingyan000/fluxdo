@@ -26,6 +26,9 @@ class ThemeState {
   /// 系统动态色原始 primary（由 DynamicColorBuilder 提供）
   final Color? dynamicPrimary;
 
+  /// M3E 组件风格总开关（加载动画/进度条/滑块/按钮形变/下拉刷新）
+  final bool m3eEnabled;
+
   const ThemeState({
     required this.mode,
     required this.seedColor,
@@ -34,6 +37,7 @@ class ThemeState {
     this.schemeVariant = DynamicSchemeVariant.tonalSpot,
     this.customColors = const [],
     this.dynamicPrimary,
+    this.m3eEnabled = true,
   });
 
   /// 获取实际用于 ThemeData 的 fontFamily 字符串
@@ -54,6 +58,7 @@ class ThemeState {
     DynamicSchemeVariant? schemeVariant,
     List<Color>? customColors,
     Color? dynamicPrimary,
+    bool? m3eEnabled,
   }) {
     return ThemeState(
       mode: mode ?? this.mode,
@@ -63,6 +68,7 @@ class ThemeState {
       schemeVariant: schemeVariant ?? this.schemeVariant,
       customColors: customColors ?? this.customColors,
       dynamicPrimary: dynamicPrimary ?? this.dynamicPrimary,
+      m3eEnabled: m3eEnabled ?? this.m3eEnabled,
     );
   }
 }
@@ -75,10 +81,19 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _fontFamilyKey = 'font_family';
   static const String _schemeVariantKey = 'scheme_variant';
   static const String _customColorsKey = 'custom_colors';
+  static const String _m3eEnabledKey = 'm3e_enabled';
   final SharedPreferences _prefs;
 
   // Preset Colors
+  //
+  // 前四个为内置精选种子(海洋/樱花/春/秋):Material Theme Builder 按
+  // tonalSpot 从种子导出的经典配色,fromSeed(默认 tonalSpot)可 1:1
+  // 复现全套 token(已实测 primary/container/surface/scl 一致)。
   static const List<Color> presetColors = [
+    Color(0xFF116682), // 海洋
+    Color(0xFF8E4955), // 樱花
+    Color(0xFF4C662B), // 春
+    Color(0xFF735C0C), // 秋
     Colors.blue,
     Colors.purple,
     Colors.green,
@@ -145,6 +160,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       fontFamily: fontFamily,
       schemeVariant: schemeVariant,
       customColors: customColors,
+      m3eEnabled: prefs.getBool(_m3eEnabledKey) ?? true,
     );
   }
 
@@ -179,6 +195,11 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   Future<void> setSchemeVariant(DynamicSchemeVariant variant) async {
     state = state.copyWith(schemeVariant: variant);
     await _prefs.setString(_schemeVariantKey, variant.name);
+  }
+
+  Future<void> setM3eEnabled(bool value) async {
+    state = state.copyWith(m3eEnabled: value);
+    await _prefs.setBool(_m3eEnabledKey, value);
   }
 
   Future<void> addCustomColor(Color color) async {

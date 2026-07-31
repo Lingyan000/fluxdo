@@ -1,8 +1,20 @@
 import Cocoa
 import FlutterMacOS
 import WebKit
+import window_manager
 
 class MainFlutterWindow: NSWindow {
+  // 隐藏启动:XIB 窗口默认 visibleAtLaunch,直接显示会先落在 XIB 默认
+  // 位置(800×600),等 Dart 端读完 window_state.json 才跳到恢复位置,
+  // 产生肉眼可见的闪跳。这里在首次 order 时立刻隐藏窗口(与 Windows/
+  // Linux runner 的隐藏启动对齐),由 Dart 端 main() 冷启动分支在首帧
+  // 光栅化后恢复位置再显示。hiddenWindowAtLaunch 内部带 configured
+  // 标记,只在首次生效,不影响后续 show/hide/Dock 唤起。
+  override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    super.order(place, relativeTo: otherWin)
+    hiddenWindowAtLaunch()
+  }
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -14,6 +26,12 @@ class MainFlutterWindow: NSWindow {
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
     MediaTranscodeHandler.shared.register(
       messenger: flutterViewController.engine.binaryMessenger
+    )
+
+    // 渲染帧标识印记(窗口级原生层,机制见 RenderSignetHandler)
+    RenderSignetHandler.shared.register(
+      messenger: flutterViewController.engine.binaryMessenger,
+      window: self
     )
 
     // 注册 cookie 同步 channel，用于将 cookie 写入 HTTPCookieStorage.shared

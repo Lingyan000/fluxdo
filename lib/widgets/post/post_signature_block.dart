@@ -6,6 +6,7 @@ import '../../providers/preferences_provider.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../content/discourse_image.dart';
+import '../content/signature_animation_scope.dart';
 
 /// 帖子底部的用户签名区块（discourse-signatures 插件）。
 ///
@@ -100,6 +101,11 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
 
     final theme = Theme.of(context);
     final preloaded = PreloadedDataService();
+    final adaptiveFrameRate = ref.watch(
+      preferencesProvider.select(
+        (preferences) => preferences.adaptiveSignatureFrameRate,
+      ),
+    );
 
     // URL 模式:user_signature 是图片地址(advanced 关)。合法性已由
     // shouldRender 把关;此处兜底——非法地址(历史脏数据可为任意
@@ -156,7 +162,10 @@ class _PostSignatureBlockState extends ConsumerState<PostSignatureBlock> {
             ),
           ),
         ),
-        child: content,
+        child: SignatureAnimationScope(
+          adaptiveFrameRate: adaptiveFrameRate,
+          child: content,
+        ),
       ),
     );
   }

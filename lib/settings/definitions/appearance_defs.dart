@@ -7,6 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../pages/topic_card_style_settings_page.dart';
@@ -18,6 +19,7 @@ import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../utils/platform_utils.dart';
+import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
 /// 外观设置数据声明
@@ -69,15 +71,15 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
 
             // 为每种模式生成预览配色
             final variant = themeState.schemeVariant;
-            final lightScheme = ColorScheme.fromSeed(
+            final lightScheme = SeedColorScheme.from(
               seedColor: effectiveSeed,
               brightness: Brightness.light,
-              dynamicSchemeVariant: variant,
+              variant: variant,
             );
-            final darkScheme = ColorScheme.fromSeed(
+            final darkScheme = SeedColorScheme.from(
               seedColor: effectiveSeed,
               brightness: Brightness.dark,
-              dynamicSchemeVariant: variant,
+              variant: variant,
             );
 
             final modes = [
@@ -311,6 +313,23 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       ],
     ),
 
+    // ── M3E 风格 ─────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_m3eStyle,
+      icon: Symbols.animation_rounded,
+      items: [
+        SwitchModel(
+          id: 'm3eStyle',
+          title: l10n.appearance_m3eStyle,
+          subtitle: l10n.appearance_m3eStyleDesc,
+          icon: Symbols.animation_rounded,
+          getValue: (ref) => ref.watch(themeProvider).m3eEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setM3eEnabled(v),
+        ),
+      ],
+    ),
+
     // ── 对话框模糊 ──────────────────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_dialogBlur,
@@ -450,7 +469,7 @@ class _DisplayModeSheetBodyState extends ConsumerState<_DisplayModeSheetBody> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const SizedBox(
               height: 200,
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: LoadingSpinner()),
             );
           }
           if (snapshot.hasError || snapshot.data == null) {
@@ -738,14 +757,7 @@ class _AppIconCard extends StatelessWidget {
                         Container(
                           color: Colors.black26,
                           child: const Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
+                            child: LoadingSpinner(size: 24, color: Colors.white),
                           ),
                         ),
                     ],
@@ -1342,6 +1354,8 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
               value,
             ).toColor();
             final variant = ref.read(themeProvider).schemeVariant;
+            // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
+            // 免得把色卡网格常用的那些配色挤出去。
             final scheme = ColorScheme.fromSeed(
               seedColor: color,
               dynamicSchemeVariant: variant,
@@ -1592,9 +1606,9 @@ class _VariantChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final scheme = ColorScheme.fromSeed(
+    final scheme = SeedColorScheme.from(
       seedColor: seedColor,
-      dynamicSchemeVariant: variant,
+      variant: variant,
       brightness: Theme.of(context).brightness,
     );
 
@@ -1695,9 +1709,9 @@ class _ColorSwatchCard extends StatelessWidget {
     final effectiveSeed = isDynamic
         ? (dynamicPrimary ?? Theme.of(context).colorScheme.primary)
         : seedColor!;
-    final tileScheme = ColorScheme.fromSeed(
+    final tileScheme = SeedColorScheme.from(
       seedColor: effectiveSeed,
-      dynamicSchemeVariant: variant,
+      variant: variant,
       brightness: Theme.of(context).brightness,
     );
 

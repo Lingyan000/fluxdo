@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fluxdo_render/editor.dart' show
+        observeModifierKeyEvent,
+        primaryModifierHeldForReversibleAction,
+        shiftModifierHeld;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +24,7 @@ import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'composer_shortcuts.dart';
 import 'editor_tools.dart';
+import 'emoji_popover.dart';
 import 'media_upload_helper.dart';
 import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
@@ -73,6 +78,10 @@ class MarkdownToolbar extends StatefulWidget {
   /// null（桌面端）= 显示全部工具；空列表 = 中部不显示任何工具
   final List<String>? visibleToolIds;
 
+  /// 桌面端表情悬浮弹层控制器(非 null 时表情按钮被锚点包裹,
+  /// 弹层跟随按钮定位且点按钮不触发弹层的 onTapOutside)
+  final EmojiPopoverController? emojiPopover;
+
   const MarkdownToolbar({
     super.key,
     required this.controller,
@@ -88,6 +97,7 @@ class MarkdownToolbar extends StatefulWidget {
     this.onToggleTools,
     this.isToolsPanelVisible = false,
     this.visibleToolIds,
+    this.emojiPopover,
   });
 
   @override
@@ -114,13 +124,21 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   /// 全局键盘事件处理，检测 Cmd+V / Ctrl+V 粘贴图片
   bool _handleRawKeyEvent(KeyEvent event) {
+    // 先喂内核的修饰键跟踪:焦点在源码编辑器(普通 TextField)时内核的
+    // handleEditorKeyEvent 收不到按键,本地 Shift 跟踪会冻结 ——
+    // shiftModifierHeld 是合取语义(HardwareKeyboard 且 本地跟踪),不喂
+    // 就恒 false,Ctrl+Shift+V 会被误判成 Ctrl+V 触发贴图。
+    observeModifierKeyEvent(event);
     if (widget.focusNode == null || !widget.focusNode!.hasFocus) return false;
+    // 贴图是**可逆**动作 → 用宽松版判定(真实状态 或 2s 补偿窗口):
+    // Win+V 注入的 V 不带 Ctrl 修饰位,只认真实状态整条贴图路径失效。
+    // Shift 用内核合取判定防 Windows 中文输入法切换导致的假按住,
+    // Alt 无失真先例保持直读。
     if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.keyV &&
-        !HardwareKeyboard.instance.isShiftPressed &&
+        !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
-        (HardwareKeyboard.instance.isMetaPressed ||
-            HardwareKeyboard.instance.isControlPressed)) {
+        primaryModifierHeldForReversibleAction(event)) {
       _handlePasteImage();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理
@@ -1030,6 +1048,30 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     );
   }
 
+  /// 表情按钮:桌面端(emojiPopover != null)由弹层锚点包裹,且不切
+  /// keyboard 图标(那是移动端"切回键盘"语义,悬浮弹层不收键盘)
+  Widget _buildEmojiButton(ThemeData theme, Color pillColor) {
+    final popover = widget.emojiPopover;
+    final button = _ToolbarPill(
+      color: pillColor,
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        icon: FaIcon(
+          widget.isEmojiPanelVisible && popover == null
+              ? FontAwesomeIcons.keyboard
+              : FontAwesomeIcons.faceSmile,
+          size: 20,
+          color: widget.isEmojiPanelVisible
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        onPressed: widget.onToggleEmoji,
+      ),
+    );
+    if (popover == null) return button;
+    return EmojiPopoverAnchor(controller: popover, child: button);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1047,22 +1089,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
           child: Row(
             children: [
               // 左：表情按钮（胶囊背景，固定）
-              _ToolbarPill(
-                color: pillColor,
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: FaIcon(
-                    widget.isEmojiPanelVisible
-                        ? FontAwesomeIcons.keyboard
-                        : FontAwesomeIcons.faceSmile,
-                    size: 20,
-                    color: widget.isEmojiPanelVisible
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: widget.onToggleEmoji,
-                ),
-              ),
+              _buildEmojiButton(theme, pillColor),
               // 中：外显工具（可滚动，无背景）
               Expanded(
                 child: Padding(

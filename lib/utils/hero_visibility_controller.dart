@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 
 /// 控制哪个 Hero tag 对应的图片应该在底层页面隐藏
 /// 用于解决 opaque: false 路由中 Hero 切换不更新的问题
@@ -11,11 +11,61 @@ class HeroVisibilityController extends ChangeNotifier {
   bool _isPopping = false;
   bool _notifyScheduled = false;
 
+  /// 源端缩略图注册表:heroTag → 挂载中的 BuildContext。
+  /// 查看器翻页时借此把源缩略图滚进可视区,保证 pop 时 Hero 有目的地。
+  final Map<String, BuildContext> _sources = {};
+
+  /// 源页注册的"按 heroTag 滚到附近"能力(段级粗滚,滚后源缩略图
+  /// 构建并注册,再由 [ensureSourceVisible] 二次精确化)。
+  Future<void> Function(String heroTag)? sourceScrollResolver;
+
   /// 当前应该隐藏的 hero tag
   String? get hiddenHeroTag => _hiddenHeroTag;
 
   /// 是否正在 pop 飞行结束
   bool get isPopping => _isPopping;
+
+  /// 源缩略图挂载时注册(HeroImage 调用)
+  void registerSource(String tag, BuildContext context) {
+    _sources[tag] = context;
+  }
+
+  /// 源缩略图卸载时注销;校验 context 匹配,避免同 tag 新实例先注册、
+  /// 旧实例后 dispose 时误删新注册。
+  void unregisterSource(String tag, BuildContext context) {
+    if (identical(_sources[tag], context)) {
+      _sources.remove(tag);
+    }
+  }
+
+  /// 把 [tag] 对应的源缩略图滚进可视区(供查看器翻页时预滚,
+  /// 保证之后任意 pop 路径 Hero 都能飞回原位)。
+  ///
+  /// 失败静默:降级 = pop 时无飞行,整页渐隐。
+  Future<void> ensureSourceVisible(String tag) async {
+    try {
+      if (_tryEnsureVisible(tag)) return;
+      // 未注册(源缩略图已被列表回收):请求源页段级粗滚,
+      // 等它构建注册后再精确化一次。
+      final resolver = sourceScrollResolver;
+      if (resolver == null) return;
+      await resolver(tag);
+      _tryEnsureVisible(tag);
+    } catch (_) {
+      // 静默降级
+    }
+  }
+
+  bool _tryEnsureVisible(String tag) {
+    final context = _sources[tag];
+    if (context == null || !context.mounted) return false;
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0.5,
+      duration: Duration.zero,
+    );
+    return true;
+  }
 
   /// 设置当前应该隐藏的 hero tag（静默版，不触发通知）
   /// 用于 initState 中初始化，避免构建期间触发 rebuild

@@ -59,6 +59,10 @@ class CfClearanceRefreshService {
   bool _pausedByLifecycle = false;
   bool _isSyncingCookies = false;
 
+  /// 正在进行中的销毁 Future：供并发的 [stop] 调用等同一次销毁完成，
+  /// 而不是各自提前返回、让调用方误以为 WebView 已经销毁干净。
+  Future<void>? _disposingFuture;
+
   int _generation = 0;
   int _consecutiveFailures = 0;
 
@@ -120,6 +124,17 @@ class CfClearanceRefreshService {
   /// 这个方法不阻塞启动链路；没有 sitekey 或没有现存 cf_clearance 时不会
   /// 主动拉起验证页，交给正常请求的 CF challenge 流程处理。
   void start() {
+    // Windows 的常驻 Turnstile WebView 会让 Flutter 合成线程持续退化，
+    // 最终卡死；按需 CF 验证仍由 CfChallengeService 负责。
+    //
+    // (2026-07-23 曾短暂解除过这个禁用，理由是 pause/resume 改为复用同一个
+    // WebView、不再逐次销毁重建，"实测卡顿明显缓解"；但实机复现常驻 WebView
+    // 在验证页反复收到 beforeunload/pagehide 导航事件、每次都被 fallback
+    // 强行覆盖，导致连接被中途打断（"Indicates that the connection was
+    // stopped"）、验证页卡死转圈——跟当初禁用它时描述的是同一类不稳定，
+    // 复用 WebView 并没有根治，只是换了个故障形态。重新禁用。)
+    if (io.Platform.isWindows) return;
+
     _shouldBeRunning = true;
     _pausedByLifecycle = false;
     if (_isRunning && !_isDisposing) return;
@@ -139,34 +154,32 @@ class CfClearanceRefreshService {
     _startWebView();
   }
 
-  /// 暂停：应用进后台时释放 WebView，避免后台 WebView 被系统挂起后状态不明。
+  /// 暂停：应用进后台时只停止维护任务，保留同一个 Headless WebView。
+  ///
+  /// Windows WebView2 的创建/销毁与主窗口共用平台消息线程。前后台切换如果
+  /// 每次都 dispose/recreate，会放大原生生命周期竞态，甚至造成窗口无响应。
   void pause() {
     _isForeground = false;
-    final shouldResume = _shouldBeRunning || _isRunning || _isDisposing;
-    if (!shouldResume) return;
+    if (!_shouldBeRunning && !_isRunning && !_isDisposing) return;
     _pausedByLifecycle = true;
-    _shouldBeRunning = false;
-    _generation++;
     _cancelDelayedTimers();
-    if (_isDisposing) {
-      CfChallengeLogger.log('[CfRefresh] 暂停，等待当前 WebView 销毁');
-      return;
-    }
-    if (!_isRunning && _headlessWebView == null && _webViewController == null) {
-      CfChallengeLogger.log('[CfRefresh] 暂停，取消待启动 WebView');
-      return;
-    }
-    CfChallengeLogger.log('[CfRefresh] 暂停，释放 WebView');
-    unawaited(_disposeWebView(reason: 'pause'));
+    _cancelRuntimeTimers();
+    CfChallengeLogger.log('[CfRefresh] 暂停维护，保留现有 WebView');
   }
 
-  /// 恢复：应用回前台后重新创建轻量 WebView。
+  /// 恢复：应用回前台后复用现有 WebView，只恢复计时器与 cookie 同步。
   void resume() {
     _isForeground = true;
     if (!_pausedByLifecycle && !_shouldBeRunning) return;
     _pausedByLifecycle = false;
     _shouldBeRunning = true;
-    if (_isRunning && !_isDisposing) return;
+    if (_isRunning && !_isDisposing) {
+      final gen = _generation;
+      CfChallengeLogger.log('[CfRefresh] 恢复，复用现有 WebView');
+      _startTimers(gen, includeInitialTimeout: false);
+      unawaited(_syncAndCheckCookies('lifecycle_resume', gen));
+      return;
+    }
 
     _generation++;
     _consecutiveFailures = 0;
@@ -180,14 +193,23 @@ class CfClearanceRefreshService {
     _startWebView();
   }
 
-  /// 停止服务。
-  void stop() {
+  /// 停止服务。返回的 Future 在真正需要"确保 WebView 已销毁完毕再继续"的
+  /// 调用点（如 [CfChallengeService.showManualVerify] 起自己的验证 WebView
+  /// 之前）应该 await；其余生命周期钩子等不关心时序的调用点可以不 await
+  /// （fire-and-forget，跟之前行为一致）。
+  ///
+  /// 之前这里是同步方法内部 `unawaited(_disposeWebView(...))`：调用方拿不到
+  /// 完成信号，紧接着立刻建自己的验证 WebView，两个 WebView 短暂共存，实测
+  /// 会撞上 flutter_inappwebview_windows_plugin 的一处原生崩溃（0xc0000005）。
+  Future<void> stop() async {
     _pausedByLifecycle = false;
     if (!_shouldBeRunning && !_isRunning && !_isDisposing) {
       return;
     }
 
     if (_isDisposing && !_shouldBeRunning) {
+      // 已有一次销毁在进行中：等它完成，而不是直接返回让调用方以为已销毁。
+      await _disposingFuture;
       return;
     }
 
@@ -197,7 +219,7 @@ class CfClearanceRefreshService {
     _cancelDelayedTimers();
 
     if (_isRunning || _headlessWebView != null || _webViewController != null) {
-      unawaited(_disposeWebView(reason: 'stop'));
+      await _disposeWebView(reason: 'stop');
     }
     CfChallengeLogger.log('[CfRefresh] 服务已停止');
   }
@@ -448,9 +470,7 @@ document.close();
       return;
     }
     if (_staleReloads >= _maxReloadsBeforeRestart) {
-      CfChallengeLogger.log(
-        '[CfRefresh] 原地重载 $_staleReloads 次仍无更新,退回完全重建',
-      );
+      CfChallengeLogger.log('[CfRefresh] 原地重载 $_staleReloads 次仍无更新,退回完全重建');
       _staleReloads = 0;
       _scheduleRestart(reason, gen: gen);
       return;
@@ -480,12 +500,20 @@ document.close();
     }
   }
 
-  Future<void> _disposeWebView({required String reason}) async {
+  Future<void> _disposeWebView({required String reason}) {
     if (_isDisposing) {
       CfChallengeLogger.log('[CfRefresh] 忽略重复 dispose 请求: $reason');
-      return;
+      return _disposingFuture ?? Future.value();
     }
+    final future = _disposeWebViewImpl(reason);
+    _disposingFuture = future;
+    future.whenComplete(() {
+      if (identical(_disposingFuture, future)) _disposingFuture = null;
+    });
+    return future;
+  }
 
+  Future<void> _disposeWebViewImpl(String reason) async {
     _isDisposing = true;
     _isRunning = false;
     _isSyncingCookies = false;
@@ -538,15 +566,17 @@ document.close();
   // Cookie 同步与健康检查
   // ---------------------------------------------------------------------------
 
-  void _startTimers(int gen) {
+  void _startTimers(int gen, {bool includeInitialTimeout = true}) {
     _cancelRuntimeTimers();
 
-    _initialTimer = Timer(_initialTimeout, () {
-      if (!_canHandleGeneration(gen)) return;
-      CfChallengeLogger.log('[CfRefresh] Turnstile 初始运行超时，准备重建');
-      unawaited(_syncAndCheckCookies('initial_timeout', gen));
-      _recordFailure('initial_timeout', gen: gen, restart: true);
-    });
+    if (includeInitialTimeout) {
+      _initialTimer = Timer(_initialTimeout, () {
+        if (!_canHandleGeneration(gen)) return;
+        CfChallengeLogger.log('[CfRefresh] Turnstile 初始运行超时，准备重建');
+        unawaited(_syncAndCheckCookies('initial_timeout', gen));
+        _recordFailure('initial_timeout', gen: gen, restart: true);
+      });
+    }
 
     _cookiePollTimer = Timer.periodic(_cookiePollInterval, (_) {
       if (!_canHandleGeneration(gen)) {

@@ -436,17 +436,33 @@ class _MarkdownBodyState extends State<MarkdownBody> {
 
       // 解析属性
       String? username;
+      String? displayName;
       String? post;
       String? topic;
       if (attrs.isNotEmpty) {
-        // 格式: "username, post:N, topic:T"
+        // 格式: "displayName, post:N, topic:T, username:realUsername"
+        // 首字段是显示名(昵称),真实用户名优先取 username: 参数——没有
+        // 这个参数(老格式/外部来源)才退回首字段当用户名用。显示名本身
+        // 可能含逗号被 split 打散,与官方解析(features/quotes.js)一致地
+        // 取 post: 之前的全部片段拼回。
         final parts = attrs.split(',').map((s) => s.trim()).toList();
-        if (parts.isNotEmpty) username = parts[0];
         for (final part in parts.skip(1)) {
           if (part.startsWith('post:')) {
             post = part.substring(5);
           } else if (part.startsWith('topic:')) {
             topic = part.substring(6);
+          } else if (part.startsWith('username:')) {
+            username = part.substring(9);
+          }
+        }
+        final postIdx = parts.indexWhere((p) => p.startsWith('post:'));
+        final first = (postIdx == -1 ? parts.take(1) : parts.take(postIdx))
+            .join(', ');
+        if (first.isNotEmpty) {
+          if (username == null) {
+            username = first;
+          } else if (first != username) {
+            displayName = first;
           }
         }
       }
@@ -457,9 +473,13 @@ class _MarkdownBodyState extends State<MarkdownBody> {
         extensionSet: md.ExtensionSet.gitHubFlavored,
       );
 
-      // 构建 aside.quote HTML（与 Discourse 的格式一致）
+      // 构建 aside.quote HTML（与 Discourse 的格式一致；官方 cooked 里
+      // 显示名≠用户名时带 data-display-name,fluxdo_render 解析端会消费）
       final dataAttrs = StringBuffer();
       if (username != null) dataAttrs.write(' data-username="$username"');
+      if (displayName != null) {
+        dataAttrs.write(' data-display-name="$displayName"');
+      }
       if (post != null) dataAttrs.write(' data-post="$post"');
       if (topic != null) dataAttrs.write(' data-topic="$topic"');
 

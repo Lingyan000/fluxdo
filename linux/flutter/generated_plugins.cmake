@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  audioplayers_linux
   dynamic_color
   file_selector_linux
   flutter_acrylic
@@ -13,11 +14,14 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_timezone
   gtk
   irondash_engine_context
+  media_kit_libs_linux
+  media_kit_video
   quickjs_engine
   record_linux
   screen_retriever_linux
   super_native_extensions
   url_launcher_linux
+  volume_controller
   window_manager
 )
 

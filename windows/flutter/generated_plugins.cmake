@@ -15,12 +15,16 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_timezone
   gal
   irondash_engine_context
+  media_kit_libs_windows_video
+  media_kit_video
   quickjs_engine
   record_windows
+  screen_brightness_windows
   screen_retriever_windows
   share_plus
   super_native_extensions
   url_launcher_windows
+  volume_controller
   window_manager
 )
 

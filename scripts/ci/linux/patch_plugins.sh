@@ -55,6 +55,21 @@ for script in "${CARGOKIT_RUN_BUILD_TOOL_CMD[@]}"; do
   fi
 done
 
+# media_kit_libs_linux 的 CMake 默认(MIMALLOC_USE_STATIC_LIBS=ON)会在
+# configure 期联网下载 mimalloc 源码 —— flatpak 禁网沙箱里 FATAL_ERROR。
+# mimalloc 只是给应用 runner 可选链接的分配器优化(需应用侧手动
+# target_link_libraries(${MIMALLOC_LIB}),本项目不链),置 OFF 走
+# find_library 分支:找不到 libmimalloc.so 也只是不设变量,不报错。
+mapfile -t MEDIA_KIT_LINUX_CMAKE < <(find "${SEARCH_ROOTS[@]}" -path '*media_kit_libs_linux-*/linux/CMakeLists.txt' 2>/dev/null | sort -u)
+
+for cmake_file in "${MEDIA_KIT_LINUX_CMAKE[@]}"; do
+  if grep -q 'option(MIMALLOC_USE_STATIC_LIBS "Whether to prefer linking to mimalloc statically" ON)' "${cmake_file}"; then
+    echo "==> Patching ${cmake_file}"
+    sed -i 's/option(MIMALLOC_USE_STATIC_LIBS "Whether to prefer linking to mimalloc statically" ON)/option(MIMALLOC_USE_STATIC_LIBS "Whether to prefer linking to mimalloc statically" OFF)/' "${cmake_file}"
+    PATCHED=1
+  fi
+done
+
 if [[ "${PATCHED}" -eq 0 ]]; then
   echo "==> No Linux plugin patches needed"
 fi

@@ -37,6 +37,7 @@
   "drafts_newTopic": "新話題",
   "drafts_pmIncomplete": "私信草稿數據不完整",
   "drafts_privateMessage": "私信",
+  "drafts_selectHint": "選擇一條草稿繼續編輯",
   "drafts_replyToPost": "回覆 #{number}",
   "@drafts_replyToPost": {
     "placeholders": {

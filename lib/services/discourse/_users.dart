@@ -2,6 +2,21 @@ part of 'discourse_service.dart';
 
 /// 用户相关
 mixin _UsersMixin on _DiscourseServiceBase {
+  /// 后台用户请求走现有调度器的低优先级静默通道。
+  ///
+  /// 仍复用主站 Dio、Cookie、代理和 CF 会话，只让前台普通请求在排队时
+  /// 优先执行，避免创建第二套网络身份。
+  Options? _userRequestOptions(bool isSilent) {
+    if (!isSilent) return null;
+    return Options(
+      extra: const {
+        'isSilent': true,
+        'requestLane': 'seeking',
+        '_networkLogFields': {'requestLane': 'seeking'},
+      },
+    );
+  }
+
   /// 获取缓存的用户名
   Future<String?> getUsername() async {
     if (_username != null && _username!.isNotEmpty) return _username;
@@ -28,12 +43,12 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取用户信息
-  Future<User> getUser(String username) async {
+  Future<User> getUser(String username, {bool isSilent = false}) async {
     final activeRequest = _activeUserRequests[username];
     if (activeRequest != null) return activeRequest;
 
     late final Future<User> request;
-    request = _fetchUser(username).whenComplete(() {
+    request = _fetchUser(username, isSilent: isSilent).whenComplete(() {
       if (identical(_activeUserRequests[username], request)) {
         _activeUserRequests.remove(username);
       }
@@ -42,8 +57,11 @@ mixin _UsersMixin on _DiscourseServiceBase {
     return request;
   }
 
-  Future<User> _fetchUser(String username) async {
-    final response = await _dio.get('/u/$username.json');
+  Future<User> _fetchUser(String username, {required bool isSilent}) async {
+    final response = await _dio.get(
+      '/u/$username.json',
+      options: _userRequestOptions(isSilent),
+    );
     final data = response.data as Map<String, dynamic>;
     return User.fromJson(data['user'] ?? data);
   }
@@ -136,6 +154,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
     String username, {
     String? filter,
     int offset = 0,
+    bool isSilent = false,
   }) async {
     final queryParams = <String, dynamic>{
       'username': username,
@@ -147,6 +166,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
     final response = await _dio.get(
       '/user_actions.json',
       queryParameters: queryParams,
+      options: _userRequestOptions(isSilent),
     );
     return UserActionResponse.fromJson(response.data);
   }
@@ -155,6 +175,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
   Future<UserReactionsResponse> getUserReactions(
     String username, {
     int? beforeReactionUserId,
+    bool isSilent = false,
   }) async {
     final queryParams = <String, dynamic>{'username': username};
     if (beforeReactionUserId != null) {
@@ -163,6 +184,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
     final response = await _dio.get(
       '/discourse-reactions/posts/reactions.json',
       queryParameters: queryParams,
+      options: _userRequestOptions(isSilent),
     );
     return UserReactionsResponse.fromJson(response.data);
   }
@@ -171,12 +193,14 @@ mixin _UsersMixin on _DiscourseServiceBase {
   Future<UserBoostsResponse> getUserBoostsGiven(
     String username, {
     int? beforeBoostId,
+    bool isSilent = false,
   }) async {
     final response = await _dio.get(
       '/discourse-boosts/users/$username/boosts-given.json',
       queryParameters: beforeBoostId != null
           ? {'before_boost_id': beforeBoostId}
           : null,
+      options: _userRequestOptions(isSilent),
     );
     return UserBoostsResponse.fromJson(response.data as Map<String, dynamic>);
   }

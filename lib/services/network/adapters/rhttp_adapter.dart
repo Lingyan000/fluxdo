@@ -7,6 +7,7 @@ import 'package:rhttp/rhttp.dart' as rhttp;
 import '../doh/network_settings_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
+import '../system_proxy_service.dart';
 
 /// 基于 rhttp (Rust reqwest) 的 Dio 适配器
 ///
@@ -28,6 +29,7 @@ class RhttpAdapter implements HttpClientAdapter {
   int _settingsVersion = -1;
   int _proxyVersion = -1;
   int _rhttpVersion = -1;
+  int _systemProxyVersion = -1;
   bool _closed = false;
 
   @override
@@ -86,16 +88,19 @@ class RhttpAdapter implements HttpClientAdapter {
     final settingsVersion = _networkSettings.version;
     final proxyVersion = _proxySettings.version;
     final rhttpVersion = RhttpSettingsService.instance.version;
+    final systemProxyVersion = SystemProxyService.instance.version.value;
 
     final configChanged =
         _settingsVersion != settingsVersion ||
         _proxyVersion != proxyVersion ||
-        _rhttpVersion != rhttpVersion;
+        _rhttpVersion != rhttpVersion ||
+        _systemProxyVersion != systemProxyVersion;
     if (configChanged) {
       _disposeAllClients();
       _settingsVersion = settingsVersion;
       _proxyVersion = proxyVersion;
       _rhttpVersion = rhttpVersion;
+      _systemProxyVersion = systemProxyVersion;
     }
 
     final hostKey = config.hostKey;
@@ -217,6 +222,9 @@ class RhttpAdapter implements HttpClientAdapter {
             return _isRetryableConnectionFailure(inner);
           }
           break;
+        default:
+          // 其余枚举值(如 5.11 新增 transformTimeout)不视为可重试的连接失败
+          break;
       }
     }
 
@@ -304,7 +312,17 @@ class RhttpAdapter implements HttpClientAdapter {
     NetworkSettings ns,
     ProxySettings ps,
   ) {
-    if (!ps.isValid) return const rhttp.ProxySettings.noProxy();
+    if (!ps.isValid) {
+      // 未配置上游代理时,Windows 下跟随注册表系统代理,与 WebView2
+      // (默认走系统代理)保持同一出口。出口不一致时验证 WebView 铸出的
+      // cf_clearance 绑定代理节点 IP,对直连的 Dio 无效,会造成 CF 验证
+      // 无限循环。
+      final systemProxy = SystemProxyService.instance.effectiveProxyUrl;
+      if (systemProxy != null) {
+        return rhttp.ProxySettings.proxy(systemProxy);
+      }
+      return const rhttp.ProxySettings.noProxy();
+    }
 
     if (ps.isShadowsocks) {
       // SS：经本地 Rust 代理（tunnel 模式）

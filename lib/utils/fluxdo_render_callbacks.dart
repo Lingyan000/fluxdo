@@ -15,14 +15,15 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:popover/popover.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
-import '../pages/user_profile_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../models/topic.dart' show Post, MentionedUser, LinkCount;
 import '../providers/download_provider.dart';
+import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
@@ -30,6 +31,7 @@ import '../services/highlighter_service.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
+import '../utils/html_to_markdown.dart';
 import '../utils/link_launcher.dart';
 import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
@@ -56,7 +58,7 @@ import '../widgets/content/discourse_html_content/builders/poll_builder.dart'
     as legacy_poll;
 import '../widgets/content/discourse_html_content/builders/chat_transcript_builder.dart'
     as legacy_chat;
-import '../widgets/content/discourse_html_content/builders/video_builder.dart';
+import '../widgets/media_player/video/discourse_video_player.dart';
 import '../widgets/content/discourse_html_content/image_utils.dart';
 import '../widgets/content/discourse_html_content/lazy_image.dart';
 import '../widgets/content/lazy_load_scope.dart';
@@ -254,23 +256,33 @@ class FluxdoRenderCallbacks {
     DiscourseService().trackClick(url: url, postId: postId, topicId: topicId);
   }
 
-  /// 默认内部链接点击 —— push 一个新的 TopicDetailPage。
+  /// 默认内部链接点击。
   /// 供 [linkHandler] 在调用方未定制 onInternalLinkTap 时兜底。
+  ///
+  /// 平行视界中的正文链接进入当前面板栈；普通全屏页面维持 Navigator
+  /// 跳转。必须通过 [EmbeddedStackScope.maybePushTopic]，才能同时遵守
+  /// master 预览里的“截断并替换右栏”语义。
   static void _defaultInternalLinkTap(
     BuildContext ctx,
     int topicId,
     String? topicSlug,
     int? postNumber,
   ) {
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => TopicDetailPage(
-          topicId: topicId,
-          initialTitle: topicSlug,
-          scrollToPostNumber: postNumber,
-        ),
+    if (EmbeddedStackScope.maybePushTopic(
+      ctx,
+      topicId: topicId,
+      initialTitle: topicSlug,
+      scrollToPostNumber: postNumber,
+    )) {
+      return;
+    }
+    Navigator.of(ctx).push(MaterialPageRoute(
+      builder: (_) => TopicDetailPage(
+        topicId: topicId,
+        initialTitle: topicSlug,
+        scrollToPostNumber: postNumber,
       ),
-    );
+    ));
   }
 
   // ==========================================================================
@@ -310,15 +322,11 @@ class FluxdoRenderCallbacks {
     return RepaintBoundary(child: image);
   };
 
-  /// Mention chip 点击 → 跳用户资料页。
+  /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
     final user = DiscourseUrlParser.parseUser(href);
-    Navigator.of(ctx).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfilePage(username: user?.username ?? username),
-      ),
-    );
+    EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
   };
 
   /// 代码块高亮:走 HighlighterService(mermaid 不会到这里 ——
@@ -406,7 +414,8 @@ class FluxdoRenderCallbacks {
     return _buildInlineSvgFromSource(node.svgSource);
   };
 
-  /// 原生上传视频:复用 DiscourseVideoPlayer(chewie)。VideoNode 已结构化,
+  /// 原生上传视频:DiscourseVideoPlayer(自绘控制层,六端统一)。
+  /// VideoNode 已结构化,
   /// upload:// 短链先解析成真实 URL(与 image builder 同套路);再过
   /// MediaCompatService 处理「改名上传」(.xz 装 mp4 等,AVFoundation
   /// 按扩展名认容器,须本地化改回正确后缀,详见该服务文档)。
@@ -443,7 +452,10 @@ class FluxdoRenderCallbacks {
           resolvedSrc,
           aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
           autoResize: !dimensOk,
-          controls: true,
+          // <source type> 优先于 URL 后缀(.xz 伪装等),Android ExoPlayer
+          // 靠它强制 progressive 路径;media_kit/mpv 按内容 probe 不吃提示
+          mimeType: node.mime,
+          loop: node.loop,
           poster: posterUrl == null
               ? null
               : Image(
@@ -465,11 +477,7 @@ class FluxdoRenderCallbacks {
           loadingBuilder: (c, _, child) => Center(
             child: posterUrl != null
                 ? child
-                : const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                : const LoadingSpinner(size: 24),
           ),
         ),
       ),
@@ -478,7 +486,9 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        // 与后续初始化段的 loadingBuilder 同款(LoadingSpinner 自适应
+        // M3E 开关),两段加载不换样式
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) =>
@@ -510,7 +520,7 @@ class FluxdoRenderCallbacks {
       padding: EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
         height: 56,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: Center(child: LoadingSpinner(size: 24)),
       ),
     );
     Widget compatPlayerFor(String src) => _withPlayableUrl(
@@ -1116,9 +1126,17 @@ class FluxdoRenderCallbacks {
     // 在无约束下 assert 崩溃)。
     return LayoutBuilder(
       builder: (lbCtx, lbc) {
+        // 网格瓦片内(GridTileScope):瓦片给 tight 约束,图按 cover
+        // 填满 —— Hero 包在 cover 之内,量到的就是瓦片矩形,开合飞行
+        // 落点正确(配合查看器/HeroImage 的裁切插值 shuttle,飞行中
+        // 裁切窗口随缩放连续张合,两端像素级对齐)。
+        final bool inGridTile = GridTileScope.of(lbCtx);
         double? dispW = image.width;
         double? dispH = image.height;
-        if (dispW != null &&
+        if (inGridTile && lbc.hasTightWidth && lbc.hasTightHeight) {
+          dispW = lbc.maxWidth;
+          dispH = lbc.maxHeight;
+        } else if (dispW != null &&
             dispH != null &&
             dispW > 0 &&
             lbc.maxWidth.isFinite &&
@@ -1156,13 +1174,7 @@ class FluxdoRenderCallbacks {
                   url: resolvedUrl,
                   width: dispW,
                   height: dispH,
-                  placeholderBuilder: (_) => const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
+                  placeholderBuilder: (_) => const LoadingSpinner(size: 24),
                 ),
               ),
             ),
@@ -1206,6 +1218,11 @@ class FluxdoRenderCallbacks {
                       ),
                 width: dispW,
                 height: dispH,
+                // 瓦片内 cover 填满(裁切由瓦片 ClipRRect 完成);
+                // 文档流保持 contain
+                fit: inGridTile ? BoxFit.cover : BoxFit.contain,
+                coverFlight: inGridTile,
+                flightRadius: inGridTile ? 4 : 0,
                 // 解码恒按**原始宽**(scale 乘之前的声明宽):缩放档切换
                 // 显示宽变但解码宽不变 → ImageCache 同 key,切档零重
                 // 解码零 spinner(此前解码宽跟显示宽走,每次切档全新
@@ -1245,6 +1262,9 @@ class FluxdoRenderCallbacks {
                       galleryIndex != null &&
                       galleryIndex >= 0 &&
                       galleryIndex < gallery.urls.length;
+                  // 网格瓦片(cover 裁切+圆角 4)来源:启用飞行 crossfade,
+                  // 消除开合瞬间「裁剪图↔完整图」跳变
+                  final bool inGridTile = GridTileScope.of(ctx);
                   DiscourseImageUtils.openViewer(
                     context: ctx,
                     imageUrl: resolvedFullUrl,
@@ -1254,6 +1274,8 @@ class FluxdoRenderCallbacks {
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
                     initialIndex: hasGallery ? galleryIndex : 0,
+                    heroSourceFit: inGridTile ? BoxFit.cover : null,
+                    heroSourceRadius: inGridTile ? 4 : 0,
                   );
                 },
                 // 长按/右键 → 图片上下文菜单(对齐 legacy LazyImage
@@ -1265,6 +1287,7 @@ class FluxdoRenderCallbacks {
                   post: post,
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
+                  heroTag: heroTag,
                 ),
                 onSecondaryTapUp: (details) => _showImageContextMenu(
                   ctx,
@@ -1274,6 +1297,7 @@ class FluxdoRenderCallbacks {
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
                   position: details.globalPosition,
+                  heroTag: heroTag,
                 ),
               );
               // 预览缩放胶囊(右上角浮层,子包统一视觉)。仅有界宽上下文
@@ -1325,6 +1349,7 @@ class FluxdoRenderCallbacks {
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
+    String? heroTag,
   }) {
     final scope = QuoteImageScope.maybeOf(context);
     final liveQuoteHandler = scope != null ? scope.handler : onQuoteImage;
@@ -1340,6 +1365,37 @@ class FluxdoRenderCallbacks {
       topicId: topicId,
       onQuoteImage: liveQuoteHandler,
       position: position,
+      quoteMarkdown: _uploadMarkdownForImage(image),
+      heroTag: heroTag,
+    );
+  }
+
+  /// 引用/复制引用图片时,对齐官方 lightbox/quote-image.js 的行为:直接用
+  /// [ImageRun] 自带的 cooked 契约字段构建 markdown,`base62Sha1 →
+  /// origSrc → src` 三级回退,用 `upload://sha1.ext` 短链而非 CDN 解析后
+  /// 的完整 URL(那样粘回聊天框/编辑器无法被识别为图片附件)。
+  ///
+  /// 无上传短链信息的外链图退回 src 本身,同样对齐官方;返回 null 仅在
+  /// src 为空时发生,调用方降级用 `![image](CDN url)`。
+  static String? _uploadMarkdownForImage(ImageRun image) {
+    String src;
+    final base62Sha1 = image.base62Sha1;
+    if (base62Sha1 != null && base62Sha1.isNotEmpty) {
+      src = 'upload://$base62Sha1';
+      final ext = HtmlToMarkdown.extensionFromUrl(image.src) ??
+          HtmlToMarkdown.extensionFromUrl(image.lightboxUrl) ??
+          HtmlToMarkdown.extensionFromUrl(image.origSrc);
+      if (ext != null) src = '$src.$ext';
+    } else {
+      final origSrc = image.origSrc;
+      src = (origSrc != null && origSrc.isNotEmpty) ? origSrc : image.src;
+    }
+    if (src.isEmpty) return null;
+    return HtmlToMarkdown.buildImageMarkdown(
+      src: src,
+      alt: image.alt.isNotEmpty ? image.alt : 'image',
+      width: image.width?.round().toString(),
+      height: image.height?.round().toString(),
     );
   }
 

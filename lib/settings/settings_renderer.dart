@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +34,8 @@ class SettingsRenderer extends ConsumerWidget {
     ThemeData theme,
     SwitchModel m,
   ) {
+    // 依赖的前置开关关闭时整行隐藏(展示无意义;前置开启当场出现)
+    if (!(m.enabledWhen?.call(ref) ?? true)) return const SizedBox.shrink();
     final value = m.getValue(ref);
     return SwitchListTile(
       title: Text(m.title),
@@ -44,7 +47,10 @@ class SettingsRenderer extends ConsumerWidget {
             : theme.colorScheme.onSurfaceVariant,
       ),
       value: value,
-      onChanged: (v) => m.onChanged(ref, v),
+      onChanged: (v) {
+        HapticFeedback.selectionClick();
+        m.onChanged(ref, v);
+      },
     );
   }
 
@@ -88,19 +94,15 @@ class SettingsRenderer extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-            ),
-            child: Slider(
-              value: value,
-              min: m.min,
-              max: m.max,
-              divisions: m.divisions,
-              label: m.labelBuilder(value),
-              onChanged: (v) => m.onChanged(ref, v),
-            ),
+          // 不再本地覆盖 SliderTheme:滑块样式统一走全局主题
+          // (M3E 开 = year2023:false 新样式,关 = M3 经典)。
+          Slider(
+            value: value,
+            min: m.min,
+            max: m.max,
+            divisions: m.divisions,
+            label: m.labelBuilder(value),
+            onChanged: (v) => m.onChanged(ref, v),
           ),
         ],
       ),

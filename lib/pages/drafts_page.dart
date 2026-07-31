@@ -8,13 +8,17 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse/discourse_service.dart';
 import '../widgets/common/skeleton.dart';
 import '../widgets/common/error_view.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../services/toast_service.dart';
 import '../widgets/common/relative_time_text.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
-import 'topic_detail_page/topic_detail_page.dart';
+import '../services/drafts_signal.dart';
+import '../providers/selected_topic_provider.dart';
 import 'create_topic_page.dart';
+import 'topic_detail_page/topic_detail_page.dart';
 
 /// 草稿列表 Provider
 final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
@@ -23,7 +27,17 @@ final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   return response.drafts;
 });
 
-/// 草稿列表页面
+/// 草稿页右栏的平行视界栈——独立于首页/私信/搜索，草稿页自己是宿主。
+final selectedDraftPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 草稿页:邮件式独立双栏。
+///
+/// 所有入口(首页 FAB 菜单/「我的」页/底栏 tab)打开的都是同一形态:
+/// 宽屏左栏草稿列表、右栏点开的话题+自动弹草稿回复框,列表始终可见,
+/// 处理完一条直接点下一条;窄屏纯列表,点开全屏话题。
+/// 双栏组装/ESC 两段式/宽窄切换由 [MasterDetailPaneHost] 统一承担。
 class DraftsPage extends ConsumerStatefulWidget {
   const DraftsPage({super.key, this.isActive = true});
 
@@ -37,26 +51,62 @@ class DraftsPage extends ConsumerStatefulWidget {
 class _DraftsPageState extends ConsumerState<DraftsPage> {
   final ScrollController _scrollController = ScrollController();
 
+  /// 当前是否有右栏可用（宽屏双栏）。
+  ///
+  /// **必须在 build 里取**:`canShowBothPanesFor` 内部是
+  /// `MediaQuery.sizeOf(context)`,会注册 InheritedWidget 依赖,不能在
+  /// 点击回调里调用。
+  bool _canShowBothPanes = false;
+
+  /// 左栏高亮:最近点开的那条草稿的 key。是否真的显示高亮还要看右栏
+  /// 有没有选中(ESC 清空右栏后高亮跟着消失)。
+  String? _selectedDraftKey;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_publishScrollProgress);
+    // 发送/舍弃都会删草稿 → 服务层 bump 信号 → 这里刷新，那一条自动
+    // 消失。页面自己看不到回复框里发生了什么，只能靠这个信号。
+    DraftsSignal.revision.addListener(_onDraftsChanged);
+  }
+
+  @override
+  void didUpdateWidget(DraftsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 重新变成活跃 tab → 刷一次。草稿可能是在**别的 tab** 里产生的
+    // （典型：跑去私信回了一半），本页一直挂在 IndexedStack 里没重建，
+    // 不主动刷就永远停在切走之前那份列表。
+    if (!oldWidget.isActive && widget.isActive) {
+      // didUpdateWidget 跑在 **build 阶段**，这里直接 ref.invalidate 会在
+      // 构建途中改 provider，把元素树搞成不一致状态（实测红屏：
+      // `_dependents.isEmpty is not true`）。挪到帧后。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onDraftsChanged();
+      });
+    }
   }
 
   @override
   void dispose() {
+    DraftsSignal.revision.removeListener(_onDraftsChanged);
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onDraftsChanged() {
+    if (!mounted) return;
+    ref.invalidate(draftsProvider);
+  }
+
+  /// 发布"距顶进度"给底栏图标（NavActionBus 的 progress provider）
   void _publishScrollProgress() {
     if (!_scrollController.hasClients) return;
     final raw = _scrollController.offset;
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.drafts));
     final atZero = progress == 0 && current != 0;
-    final crossed =
-        (progress >= navScrollIconThreshold) !=
+    final crossed = (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.drafts).notifier).state =
@@ -71,6 +121,10 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
   @override
   Widget build(BuildContext context) {
     final draftsAsync = ref.watch(draftsProvider);
+    final selected = ref.watch(selectedDraftPaneProvider);
+    // 在 build 里取（见字段注释：不能在点击回调里读 MediaQuery）
+    _canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(context);
+    final paneOpen = _canShowBothPanes && selected.hasSelection;
 
     // 嵌入底栏时响应快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -100,7 +154,7 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       }
     });
 
-    return Scaffold(
+    final list = Scaffold(
       appBar: AppBar(title: Text(context.l10n.drafts_title)),
       body: DesktopRefreshIndicator(
         onRefresh: _onRefresh,
@@ -140,6 +194,7 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
                 final draft = drafts[index];
                 return _DraftCard(
                   draft: draft,
+                  selected: paneOpen && draft.draftKey == _selectedDraftKey,
                   onTap: () => _onDraftTap(draft),
                   onDelete: () => _onDraftDelete(draft),
                 );
@@ -153,6 +208,16 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
             onRetry: () => ref.invalidate(draftsProvider),
           ),
         ),
+      ),
+    );
+
+    return MasterDetailPaneHost(
+      stackProvider: selectedDraftPaneProvider,
+      isActive: widget.isActive,
+      master: list,
+      emptyDetail: MasterDetailEmptyState(
+        icon: Symbols.drafts_rounded,
+        message: context.l10n.drafts_selectHint,
       ),
     );
   }
@@ -200,21 +265,31 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
             draft.topicId ?? int.tryParse(draftKey.replaceFirst('topic_', ''));
       }
 
-      if (topicId != null) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TopicDetailPage(
-              topicId: topicId!,
-              scrollToPostNumber: replyToPostNumber, // 跳转到对应帖子
+      if (topicId == null) return; // 不刷新
+
+      // 宽屏:右栏打开话题+自动弹草稿回复框,列表留在左边接着处理下一条
+      if (_canShowBothPanes) {
+        setState(() => _selectedDraftKey = draftKey);
+        ref.read(selectedDraftPaneProvider.notifier).select(
+              topicId: topicId,
+              scrollToPostNumber: replyToPostNumber,
               autoOpenReply: true,
               autoReplyToPostNumber: replyToPostNumber,
-            ),
-          ),
-        );
-      } else {
-        return; // 不刷新
+            );
+        return;
       }
+      // 窄屏:全屏打开,回来再刷新
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TopicDetailPage(
+            topicId: topicId!,
+            scrollToPostNumber: replyToPostNumber,
+            autoOpenReply: true,
+            autoReplyToPostNumber: replyToPostNumber,
+          ),
+        ),
+      );
     } else {
       return; // 不刷新
     }
@@ -289,11 +364,13 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
 /// 草稿卡片
 class _DraftCard extends StatelessWidget {
   final Draft draft;
+  final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _DraftCard({
     required this.draft,
+    this.selected = false,
     required this.onTap,
     required this.onDelete,
   });
@@ -333,6 +410,8 @@ class _DraftCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
+      // 双栏下标记"正在右栏处理的这条"。只有选中/未选中两档。
+      color: selected ? theme.colorScheme.surfaceContainerHighest : null,
       child: InkWell(
         onTap: onTap,
         child: Padding(

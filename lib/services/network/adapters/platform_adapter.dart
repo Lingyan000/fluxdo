@@ -8,6 +8,7 @@ import 'package:native_dio_adapter/native_dio_adapter.dart';
 import '../doh/network_settings_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
+import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import 'adapter_log_metadata.dart';
 import 'cronet_fallback_service.dart';
@@ -239,7 +240,27 @@ bool requestAllowsRhttpAdapter(RequestOptions options) {
 HttpClientAdapter _createNativeAdapter() {
   if (Platform.isWindows) {
     debugPrint('[DIO] Dynamic adapter -> IOHttpClientAdapter');
-    return IOHttpClientAdapter();
+    // 与 RhttpAdapter 一致:跟随注册表系统代理,保持与 WebView2 同一出口
+    // (cf_clearance 绑 IP,出口不一致会导致 CF 验证无限循环)。
+    // findProxy 每个请求求值,系统代理开关变化即时生效。
+    return IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        client.findProxy = (uri) {
+          // Gateway 模式会把 https URL 改写为明文 http 指向本地 DoH 网关
+          // (127.0.0.1:port)。这类回环请求绝不能再进系统代理,否则明文
+          // HTTP 会被代理直接送到 CF,触发 Always-Use-HTTPS 301 死循环。
+          if (_isLoopbackHost(uri.host)) return 'DIRECT';
+          final proxy = SystemProxyService.instance.effectiveProxyUrl;
+          if (proxy == null) return 'DIRECT';
+          final u = Uri.tryParse(proxy);
+          // dart:io HttpClient 不支持 SOCKS 代理,该场景保持直连。
+          if (u == null || u.scheme.startsWith('socks')) return 'DIRECT';
+          return 'PROXY ${u.host}:${u.port}';
+        };
+        return client;
+      },
+    );
   }
   if (kDebugMode && (Platform.isMacOS || Platform.isIOS)) {
     // 调试模式下使用默认适配器（IOHttpClientAdapter），避免 NativeAdapter 热重启崩溃
@@ -262,6 +283,13 @@ HttpClientAdapter _createNativeAdapter() {
     return NativeAdapter(createCupertinoConfiguration: () => config);
   }
   return NativeAdapter();
+}
+
+/// 回环地址判定:本地网关/本地代理的请求必须直连,不跟随系统代理。
+bool _isLoopbackHost(String host) {
+  if (host == 'localhost') return true;
+  final address = InternetAddress.tryParse(host);
+  return address?.isLoopback ?? false;
 }
 
 /// macOS 版本 < 14 时需要降级为 IO 适配器。

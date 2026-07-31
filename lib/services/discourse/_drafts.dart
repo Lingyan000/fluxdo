@@ -91,9 +91,14 @@ mixin _DraftsMixin on _DiscourseServiceBase {
         '/drafts/$draftKey.json',
         queryParameters: {'sequence': sequence},
       );
+      // 发送/舍弃都经这里 —— 通知草稿列表把这条去掉（见 DraftsSignal）
+      DraftsSignal.notifyChanged();
     } on DioException catch (e) {
-      // 忽略 404（草稿已不存在）
-      if (e.response?.statusCode == 404) return;
+      // 忽略 404（草稿已不存在）：服务端也没有了，同样要通知
+      if (e.response?.statusCode == 404) {
+        DraftsSignal.notifyChanged();
+        return;
+      }
       _throwApiError(e);
     }
   }

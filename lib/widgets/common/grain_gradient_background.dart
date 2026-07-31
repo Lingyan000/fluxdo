@@ -6,7 +6,10 @@ import 'package:paper_shaders/paper_shaders.dart';
 /// 包含 corners 形状的 shader 动画 + 3 层径向渐变辉光。
 /// 颜色从 [Theme.of(context).colorScheme] 动态获取。
 class GrainGradientBackground extends StatelessWidget {
-  const GrainGradientBackground({super.key});
+  const GrainGradientBackground({super.key, this.animated = true});
+
+  /// 是否持续播放 shader 动画；关闭只固定时间轴，不降低渲染质量。
+  final bool animated;
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +30,7 @@ class GrainGradientBackground extends StatelessWidget {
           softness: 1.0,
           intensity: 0.9,
           noise: 0.5,
+          animated: animated,
         ),
         // 径向渐变辉光（叠在 shader 上方）
         DecoratedBox(
@@ -34,7 +38,10 @@ class GrainGradientBackground extends StatelessWidget {
             gradient: RadialGradient(
               center: const Alignment(-0.6, -0.7),
               radius: 1.5,
-              colors: [colorScheme.primary.withValues(alpha: 0.25), colorScheme.primary.withValues(alpha: 0)],
+              colors: [
+                colorScheme.primary.withValues(alpha: 0.25),
+                colorScheme.primary.withValues(alpha: 0),
+              ],
               stops: const [0.0, 0.6],
             ),
           ),
@@ -44,7 +51,10 @@ class GrainGradientBackground extends StatelessWidget {
             gradient: RadialGradient(
               center: const Alignment(0.4, -0.5),
               radius: 1.3,
-              colors: [colorScheme.tertiary.withValues(alpha: 0.22), colorScheme.tertiary.withValues(alpha: 0)],
+              colors: [
+                colorScheme.tertiary.withValues(alpha: 0.22),
+                colorScheme.tertiary.withValues(alpha: 0),
+              ],
               stops: const [0.0, 0.55],
             ),
           ),
@@ -54,7 +64,10 @@ class GrainGradientBackground extends StatelessWidget {
             gradient: RadialGradient(
               center: const Alignment(0.1, 0.4),
               radius: 1.2,
-              colors: [colorScheme.secondary.withValues(alpha: 0.18), colorScheme.secondary.withValues(alpha: 0)],
+              colors: [
+                colorScheme.secondary.withValues(alpha: 0.18),
+                colorScheme.secondary.withValues(alpha: 0),
+              ],
               stops: const [0.0, 0.6],
             ),
           ),

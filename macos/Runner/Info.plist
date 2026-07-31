@@ -46,7 +46,12 @@
 	<!-- 禁用 Flutter 默认 deep link 处理，使用 app_links -->
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>
+	<!-- 扫码登录:相机 -->
+	<key>NSCameraUsageDescription</key>
+	<string>需要使用相机扫描登录二维码</string>
 	<!-- 相册权限声明 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册以识别登录二维码</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>需要访问相册以保存图片</string>
 	<!-- 麦克风权限声明(语音消息) -->

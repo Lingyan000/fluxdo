@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../models/badge.dart';
 import '../providers/discourse_providers.dart';
 import '../services/discourse_cache_manager.dart';
@@ -99,7 +100,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                   stackTrace: _errorStack,
                   onRetry: _loadBadges,
                 )
-              : RefreshIndicator(
+              : M3eRefreshIndicator(
                   onRefresh: _loadBadges,
                   child: CustomScrollView(
                     slivers: [

@@ -41,6 +41,7 @@ class QuoteSelectionHelper {
     final codeContext = codePayload?.context ?? fallbackCodeContext;
     String markdown;
 
+    // extractHtml 内置全选快路径:选中内容等于整帖时直接返回完整 cooked。
     final htmlFragment = HtmlTextMapper.extractHtml(post.cooked, plainSelectedText);
     if (htmlFragment != null) {
       markdown = HtmlToMarkdown.convert(htmlFragment);
@@ -63,6 +64,7 @@ class QuoteSelectionHelper {
 
     final quote = QuoteBuilder.build(
       markdown: markdown,
+      displayName: post.name,
       username: post.username,
       postNumber: post.postNumber,
       topicId: topicId,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import '../../../models/topic.dart';
 import '../../../services/screen_track.dart';
+import '../../../utils/scroll_jump.dart';
 
 /// 话题详情页滚动状态
 class TopicScrollState {
@@ -268,16 +269,17 @@ class TopicDetailController extends ChangeNotifier {
     return 0;
   }
 
-  /// 滚动到指定帖子
-  Future<void> scrollToPost(int postNumber, List<Post> posts) async {
+  /// 滚动到指定帖子（近距跳转，目标已渲染），返回是否收敛到布局范围。
+  ///
+  /// 用 jumpTo 而非 animateTo：动画窗口内维度收缩会留下越界位置，
+  /// 触底回弹的成因见 [AutoScrollJump.jumpToRenderedScrollIndex]。
+  Future<bool> scrollToPost(int postNumber, List<Post> posts) async {
     final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
-    if (postIndex == -1) return;
+    if (postIndex == -1) return false;
 
-    await scrollController.scrollToIndex(
-      scrollIndexForPostIndex(postIndex),
-      preferPosition: AutoScrollPosition.begin,
-      duration: const Duration(milliseconds: 1),
-    );
+    final scrollIndex = scrollIndexForPostIndex(postIndex);
+    await scrollController.jumpToRenderedScrollIndex(scrollIndex);
+    return scrollController.isIndexStateInLayoutRange(scrollIndex);
   }
 
   /// 回到顶部

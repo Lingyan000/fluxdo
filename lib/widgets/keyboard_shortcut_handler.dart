@@ -56,13 +56,22 @@ class _KeyboardShortcutHandlerState
   bool _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
 
-    // 如果焦点在文本输入框中，不拦截（让用户正常打字）
-    if (_isFocusInTextInput()) return false;
-
+    final focusInTextInput = _isFocusInTextInput();
     final bindings = ref.read(shortcutProvider);
 
     for (final binding in bindings) {
       if (!matchKeyEvent(event, binding.activator)) continue;
+      // 文本输入期间仍允许单次 Esc 关闭当前页内状态；其余快捷键继续
+      // 让给输入法，避免 J/K 等可打印字符被全局动作抢走。
+      // IME 组字中（拼音候选未上屏）Esc 的语义是"取消候选"，必须放行
+      // 给输入法，绝不能当 closeOverlay 消费。
+      if (focusInTextInput &&
+          (event is! KeyDownEvent ||
+              event.logicalKey != LogicalKeyboardKey.escape ||
+              binding.action != ShortcutAction.closeOverlay ||
+              _isImeComposingAtFocus())) {
+        continue;
+      }
 
       final surfaceDispatch = _handleSurfaceBeforeDispatch(binding.action);
       if (surfaceDispatch == _ShortcutSurfaceDispatch.handled ||
@@ -172,7 +181,7 @@ class _KeyboardShortcutHandlerState
       return singlePane[action];
     }
 
-    // 2. 双栏模式：仅查找活跃面板的回调，不回退到另一面板
+    // 2. 双栏模式：仅查找活跃面板的回调（closeOverlay 的回退例外见下）
     final activePane = ref.read(activePaneProvider);
     final activeCallbacks = resolveShortcutScopeCallbacks(
       registry: registry,
@@ -183,6 +192,23 @@ class _KeyboardShortcutHandlerState
     );
     if (activeCallbacks.containsKey(action)) {
       return activeCallbacks[action];
+    }
+
+    // 3. 例外：closeOverlay 在 master 侧回退到 detail。master 列表只注册
+    //    J/K/Enter 之类导航动作,没有 closeOverlay——焦点在左栏时按 Esc
+    //    落空会显得"失灵",用户直觉是关掉右侧详情。仅 closeOverlay 回退,
+    //    导航动作仍严格按活跃面板分发,不越界。右栏无选中时 detail 无
+    //    注册,回退落空,维持原空操作。
+    if (action == ShortcutAction.closeOverlay &&
+        activePane == ActivePane.master) {
+      final detailCallbacks = resolveShortcutScopeCallbacks(
+        registry: registry,
+        scope: ShortcutScope.detail,
+        route: currentRoute,
+      );
+      if (detailCallbacks.containsKey(action)) {
+        return detailCallbacks[action];
+      }
     }
 
     return null;
@@ -346,6 +372,33 @@ class _KeyboardShortcutHandlerState
   }
 
   /// 检查焦点是否在文本输入框中
+  /// 焦点编辑器是否正处于 IME 组字（候选词未上屏）。
+  ///
+  /// Windows 引擎会把合规 IME 组字期间消费的按键标成 VK_PROCESSKEY 并
+  /// 直接吞掉（engine keyboard_key_embedder_handler.cc），这类 Esc 根本
+  /// 到不了框架层；这里兜的是不合规输入法把组字中的 Esc 原样放行的
+  /// 场景。组字取消后（composing 区间清空）下一次 Esc 才恢复关闭语义。
+  bool _isImeComposingAtFocus() {
+    final focus = FocusManager.instance.primaryFocus;
+    final context = focus?.context;
+    if (context == null) return false;
+    var composing = false;
+    (context as Element).visitAncestorElements((ancestor) {
+      final w = ancestor.widget;
+      if (w is EditableText) {
+        final range = w.controller.value.composing;
+        composing = range.isValid && !range.isCollapsed;
+        return false;
+      }
+      if (w is FluxdoEditor) {
+        composing = w.state.hasComposing;
+        return false;
+      }
+      return true;
+    });
+    return composing;
+  }
+
   bool _isFocusInTextInput() {
     final focus = FocusManager.instance.primaryFocus;
     if (focus?.context == null) return false;

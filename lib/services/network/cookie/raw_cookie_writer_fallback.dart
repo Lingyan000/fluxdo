@@ -69,9 +69,13 @@ class RawCookieWriterFallback {
         name: canonical.name,
         value: canonical.value,
         path: canonical.path.isEmpty ? '/' : canonical.path,
-        // host-only 时不传 domain (CookieManager native 会用 host 作 host-only)
-        // 非 host-only 时传原始 Domain= 字符串 (可能 ".linux.do" 或 "linux.do")
-        domain: canonical.hostOnly ? null : canonical.domain,
+        // 没有 Domain= 的 Cookie 必须保持 host-only。Windows 的 Chromium
+        // Network.setCookie 和 Linux 的 SoupCookie 都用前导点区分域 Cookie，
+        // 因此仅对服务端明确声明了 Domain= 的 Cookie 补点。
+        domain: resolveCookieDomain(
+          hostOnly: canonical.hostOnly,
+          domain: canonical.domain,
+        ),
         expiresDate: canonical.expiresAt?.millisecondsSinceEpoch,
         maxAge: canonical.maxAge,
         isSecure: canonical.secure,
@@ -195,6 +199,17 @@ class RawCookieWriterFallback {
       debugPrint('[RawCookieWriterFallback] countCookiesByName failed: $e');
       return 0;
     }
+  }
+
+  @visibleForTesting
+  static String? resolveCookieDomain({
+    required bool hostOnly,
+    required String? domain,
+  }) {
+    if (hostOnly) return null;
+    final value = domain?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value.startsWith('.') ? value : '.$value';
   }
 
   HTTPCookieSameSitePolicy? _mapSameSite(CookieSameSite sameSite) {

@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "Added to float",
   "topicDetail_aiAssistant": "AI Assistant",
   "topicDetail_authorOnly": "OP only",
+  "topicDetail_browseMoreInCategory": "Want to read more? Browse the {category} category",
+  "@topicDetail_browseMoreInCategory": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_cannotOpenBrowser": "Cannot open browser",
   "topicDetail_editBookmark": "Edit bookmark",
   "topicDetail_editTopic": "Edit topic",
@@ -16,6 +24,7 @@
   "topicDetail_moreOptions": "More options",
   "topicDetail_openInBrowser": "Open in browser",
   "topicDetail_readLaterFull": "Float is full (max {max})",
+  "topicDetail_relatedTopics": "Related Topics",
   "topicDetail_removeFromReadLater": "Remove from float",
   "topicDetail_removeFromReadLaterSuccess": "Removed from float",
   "topicDetail_replyLabel": "Replies",
@@ -25,6 +34,7 @@
   "topicDetail_setToLevel": "Set to {level}",
   "topicDetail_shareLink": "Share link",
   "topicDetail_showHiddenReplies": "Show {count} hidden replies",
+  "topicDetail_suggestedTopics": "Suggested Topics",
   "topicDetail_topLevelOnly": "Top-level only",
   "topicDetail_viewAll": "View all",
   "topicDetail_viewsLabel": "Views",

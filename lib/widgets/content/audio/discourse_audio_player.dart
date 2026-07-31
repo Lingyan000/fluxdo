@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../../l10n/s.dart';
+import '../../media_player/controls/playback_speed_menu.dart';
+
 /// Discourse 上传音频播放条(替代 legacy 的 fwfh_just_audio 默认条)。
 ///
 /// 用 just_audio 加载 [url],显示 播放/暂停 按钮 + 进度条 + 当前/总时长。
@@ -28,6 +31,10 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
   final AudioPlayer _player = AudioPlayer();
   bool _ready = false;
   Object? _error;
+
+  /// 当前倍速(just_audio 三后端 —— 官方/media_kit/JustAudioGst 均实现
+  /// setSpeed)。换 url 重载后 just_audio 保持 speed,不需要重设。
+  double _speed = 1.0;
 
   @override
   void initState() {
@@ -88,7 +95,7 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.error_outline_rounded, size: 18, color: scheme.error),
           const SizedBox(width: 6),
-          Text('语音加载失败',
+          Text(context.l10n.mediaPlayer_voiceLoadFailed,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: scheme.onSurfaceVariant)),
         ]),
@@ -203,7 +210,7 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
                     size: 20, color: scheme.error),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('音频加载失败',
+                  child: Text(context.l10n.mediaPlayer_audioLoadFailed,
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: scheme.onSurfaceVariant)),
                 ),
@@ -238,22 +245,15 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
                             return Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 2,
-                                    thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 6),
-                                    overlayShape: const RoundSliderOverlayShape(
-                                        overlayRadius: 12),
-                                  ),
-                                  child: Slider(
-                                    value: value,
-                                    max: maxMs,
-                                    onChanged: !_ready
-                                        ? null
-                                        : (v) => _player.seek(
-                                            Duration(milliseconds: v.round())),
-                                  ),
+                                // 进度条走全局滑块主题(M3E 开 =
+                                // year2023 新样式,媒体控件同款)
+                                Slider(
+                                  value: value,
+                                  max: maxMs,
+                                  onChanged: !_ready
+                                      ? null
+                                      : (v) => _player.seek(
+                                          Duration(milliseconds: v.round())),
                                 ),
                                 Padding(
                                   padding:
@@ -272,6 +272,39 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
                               ],
                             );
                           },
+                        ),
+                      ),
+                      // 倍速按钮:弹共用倍速菜单(Builder 提供锚定 context)
+                      Builder(
+                        builder: (buttonContext) => TextButton(
+                          onPressed: !_ready
+                              ? null
+                              : () async {
+                                  final speed = await showPlaybackSpeedMenu(
+                                    buttonContext,
+                                    current: _speed,
+                                  );
+                                  if (speed == null || !mounted) return;
+                                  setState(() => _speed = speed);
+                                  await _player.setSpeed(speed);
+                                },
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(40, 32),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
+                            foregroundColor: _speed == 1.0
+                                ? scheme.onSurfaceVariant
+                                : scheme.primary,
+                          ),
+                          child: Text(
+                            formatPlaybackSpeed(_speed),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: _speed == 1.0
+                                  ? scheme.onSurfaceVariant
+                                  : scheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ],

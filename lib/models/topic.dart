@@ -209,13 +209,20 @@ class TopicPoster {
     Map<String, dynamic> json,
     Map<int, TopicUser> userMap,
   ) {
-    final userId = json['user_id'] as int;
+    // 推荐话题(suggested_topics/related_topics)的 poster 走
+    // SuggestedPosterSerializer:has_one :user, embed: :objects —— 用户对象
+    // 内嵌在 poster 里,没有 user_id,也没有顶层 users 表。列表接口则相反
+    // (user_id + 顶层 users)。两种形状都要吃下。
+    final embeddedUser = json['user'] as Map<String, dynamic>?;
+    final userId =
+        json['user_id'] as int? ?? embeddedUser?['id'] as int? ?? 0;
     return TopicPoster(
       userId: userId,
       description: json['description'] as String? ?? '',
       extras: json['extras'] as String? ?? '',
       user:
           userMap[userId] ??
+          (embeddedUser != null ? TopicUser.fromJson(embeddedUser) : null) ??
           // 从本地缓存反序列化时没有 userMap；fallback 到嵌入在
           // poster entry 里的用户字段（normalizeBookmarkListEntry 写入）。
           (json['_avatar_template'] != null || json['_username'] != null
@@ -302,6 +309,47 @@ class Topic {
     this.canHaveAnswer = false,
   });
 
+  Topic copyWith({
+    bool? unseen,
+    int? unread,
+    int? newPosts,
+    int? lastReadPostNumber,
+    int? highestPostNumber,
+  }) {
+    return Topic(
+      id: id,
+      title: title,
+      slug: slug,
+      postsCount: postsCount,
+      replyCount: replyCount,
+      views: views,
+      likeCount: likeCount,
+      excerpt: excerpt,
+      createdAt: createdAt,
+      lastPostedAt: lastPostedAt,
+      lastPosterUsername: lastPosterUsername,
+      categoryId: categoryId,
+      pinned: pinned,
+      visible: visible,
+      closed: closed,
+      archived: archived,
+      tags: tags,
+      posters: posters,
+      unseen: unseen ?? this.unseen,
+      unread: unread ?? this.unread,
+      newPosts: newPosts ?? this.newPosts,
+      lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
+      highestPostNumber: highestPostNumber ?? this.highestPostNumber,
+      bookmarkedPostNumber: bookmarkedPostNumber,
+      bookmarkId: bookmarkId,
+      bookmarkName: bookmarkName,
+      bookmarkReminderAt: bookmarkReminderAt,
+      bookmarkableType: bookmarkableType,
+      hasAcceptedAnswer: hasAcceptedAnswer,
+      canHaveAnswer: canHaveAnswer,
+    );
+  }
+
   factory Topic.fromJson(
     Map<String, dynamic> json, {
     Map<int, TopicUser>? userMap,
@@ -354,6 +402,25 @@ class Topic {
       canHaveAnswer: json['can_have_answer'] as bool? ?? false,
     );
   }
+}
+
+/// 解析话题详情响应里的推荐话题数组(suggested_topics / related_topics)
+///
+/// 这两组走 SuggestedTopicSerializer,字段比列表接口稀疏且随站点设置浮动
+/// (excerpt/tags/posters 都可能缺席),用户对象内嵌在 poster 里而非顶层
+/// users 表。单条解析失败只跳过该条,不能让整个话题详情解析失败。
+List<Topic> parseSuggestedTopicList(dynamic raw) {
+  if (raw is! List || raw.isEmpty) return const [];
+  final result = <Topic>[];
+  for (final item in raw) {
+    if (item is! Map<String, dynamic>) continue;
+    try {
+      result.add(Topic.fromJson(item));
+    } catch (_) {
+      // 单条字段异常不影响其余条目
+    }
+  }
+  return result;
 }
 
 /// 链接点击统计
@@ -438,7 +505,8 @@ class MentionedUser {
 /// 帖子头部显示的徽章
 class GrantedBadge {
   final int id;
-  final String name;
+  final String name; // 徽章内部名(英文,如 "Devotee")
+  final String? description; // 徽章说明(真实站点 title 提示用的是这个,不是 name)
   final String? icon; // FontAwesome 图标名，如 "seedling"
   final String? imageUrl; // 图片 URL（与 icon 二选一）
   final String slug;
@@ -447,6 +515,7 @@ class GrantedBadge {
   const GrantedBadge({
     required this.id,
     required this.name,
+    this.description,
     this.icon,
     this.imageUrl,
     required this.slug,
@@ -458,6 +527,7 @@ class GrantedBadge {
     return GrantedBadge(
       id: badge['id'] as int? ?? 0,
       name: badge['name'] as String? ?? '',
+      description: badge['description'] as String?,
       icon: badge['icon'] as String?,
       imageUrl: badge['image_url'] as String?,
       slug: badge['slug'] as String? ?? '',
@@ -633,6 +703,12 @@ class Post {
   // 帖子头部徽章
   final List<GrantedBadge>? badgesGranted; // 帖子头部显示的徽章
 
+  // 纪念日 / 生日(纯日期,格式 "YYYY-MM-DD";birthdate 的年份可能是
+  // 站点为保护隐私塞的假值——月/日判断不依赖年份,不当成真实 DateTime
+  // 用,故不经 TimeUtils)
+  final String? userCakedate; // 加入社区的纪念日(年份为真实注册年份)
+  final String? userBirthdate; // 生日(年份可能是隐私假值)
+
   // 用户 ID（用于打赏等功能）
   final int? userId;
 
@@ -753,6 +829,8 @@ class Post {
     this.userTitle,
     this.userStatus,
     this.badgesGranted,
+    this.userCakedate,
+    this.userBirthdate,
     this.userId,
     this.moderator = false,
     this.admin = false,
@@ -864,6 +942,8 @@ class Post {
       badgesGranted: (json['badges_granted'] as List<dynamic>?)
           ?.map((e) => GrantedBadge.fromJson(e as Map<String, dynamic>))
           .toList(),
+      userCakedate: json['user_cakedate'] as String?,
+      userBirthdate: json['user_birthdate'] as String?,
       userId: json['user_id'] as int?,
       moderator: json['moderator'] as bool? ?? false,
       admin: json['admin'] as bool? ?? false,
@@ -1030,6 +1110,8 @@ class Post {
     String? userTitle,
     UserStatus? userStatus,
     List<GrantedBadge>? badgesGranted,
+    String? userCakedate,
+    String? userBirthdate,
     int? userId,
     bool? moderator,
     bool? admin,
@@ -1115,6 +1197,8 @@ class Post {
       userTitle: userTitle ?? this.userTitle,
       userStatus: userStatus ?? this.userStatus,
       badgesGranted: badgesGranted ?? this.badgesGranted,
+      userCakedate: userCakedate ?? this.userCakedate,
+      userBirthdate: userBirthdate ?? this.userBirthdate,
       userId: userId ?? this.userId,
       moderator: moderator ?? this.moderator,
       admin: admin ?? this.admin,
@@ -1147,6 +1231,31 @@ class Post {
       editReason: clearEditReason ? null : (editReason ?? this.editReason),
     );
   }
+
+  /// [dateStr]("YYYY-MM-DD",年份可能是站点塞的假值)的月/日是否等于本机
+  /// 今天的月/日。纯日历比较,不构造 DateTime,避免 CLAUDE.md 禁用的
+  /// DateTime.parse 路径,也不受时区影响——纪念日/生日本来就该按"今天
+  /// 是几月几号"判断,不是某个精确时间点。
+  static bool _isTodayMonthDay(String? dateStr) {
+    if (dateStr == null || dateStr.length < 10) return false;
+    final month = int.tryParse(dateStr.substring(5, 7));
+    final day = int.tryParse(dateStr.substring(8, 10));
+    if (month == null || day == null) return false;
+    final now = DateTime.now();
+    return month == now.month && day == now.day;
+  }
+
+  /// 今天是否是用户加入社区的纪念日。官方 discourse-cakeday 的周年判定
+  /// 是三条件:月/日相等且年份不等——注册当年不算周年(第一年没有
+  /// "一周年"),cakedate 的年份是真实注册年份,可以参与比较。
+  bool get isTodayCakeday {
+    if (!_isTodayMonthDay(userCakedate)) return false;
+    final year = int.tryParse(userCakedate!.substring(0, 4));
+    return year != null && year != DateTime.now().year;
+  }
+
+  /// 今天是否是用户生日(birthdate 年份可能是隐私假值,只比月/日)
+  bool get isTodayBirthday => _isTodayMonthDay(userBirthdate);
 }
 
 /// Policy 用户摘要（精简字段：id / username / avatar_template）
@@ -1309,7 +1418,19 @@ class PostStream {
   final List<int> stream; // 所有 post_id 的列表
   final PostStreamGaps? gaps; // 拉黑用户帖子的 gaps 数据
 
-  PostStream({required this.posts, required this.stream, this.gaps});
+  /// 翻页响应(`/t/{id}/posts.json?include_suggested=true`)顶层带回的推荐
+  /// 话题。大话题首屏 `/t/{id}.json` 不返回这两组(服务端见 next_page 有值
+  /// 就关掉 include_suggested),只能靠翻页请求补,这里是回填通道。
+  final List<Topic> suggestedTopics;
+  final List<Topic> relatedTopics;
+
+  PostStream({
+    required this.posts,
+    required this.stream,
+    this.gaps,
+    this.suggestedTopics = const [],
+    this.relatedTopics = const [],
+  });
 
   factory PostStream.fromJson(Map<String, dynamic> json) {
     final gapsJson = json['gaps'] as Map<String, dynamic>?;
@@ -1558,6 +1679,14 @@ class TopicDetail {
   // 当前用户在本主题下的待审核回复(仅认证 + 站点启用审核队列时返回)
   final List<PendingPost> pendingPosts;
 
+  /// 帖子流末尾的推荐话题(对齐网页版 more-topics 区)
+  ///
+  /// suggested = 服务端 TopicQuery 给的「建议话题」;related = discourse-ai
+  /// 语义相关的「相关话题」(站点未开该插件时恒为空)。首屏未到话题末尾时
+  /// 服务端不下发,由翻页请求补回,见 [PostStream.suggestedTopics]。
+  final List<Topic> suggestedTopics;
+  final List<Topic> relatedTopics;
+
   bool get hasAcceptedAnswer => acceptedAnswers.isNotEmpty;
   int? get acceptedAnswerPostNumber =>
       acceptedAnswers.isEmpty ? null : acceptedAnswers.first.postNumber;
@@ -1603,6 +1732,8 @@ class TopicDetail {
     this.bookmarkReminderAt,
     this.acceptedAnswers = const [],
     this.pendingPosts = const [],
+    this.suggestedTopics = const [],
+    this.relatedTopics = const [],
   });
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
@@ -1782,6 +1913,8 @@ class TopicDetail {
           .whereType<Map>()
           .map((e) => PendingPost.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      suggestedTopics: parseSuggestedTopicList(json['suggested_topics']),
+      relatedTopics: parseSuggestedTopicList(json['related_topics']),
     );
   }
 
@@ -1825,6 +1958,8 @@ class TopicDetail {
     bool clearBookmarkReminderAt = false,
     List<AcceptedAnswer>? acceptedAnswers,
     List<PendingPost>? pendingPosts,
+    List<Topic>? suggestedTopics,
+    List<Topic>? relatedTopics,
   }) {
     return TopicDetail(
       id: id ?? this.id,
@@ -1867,6 +2002,8 @@ class TopicDetail {
           : (bookmarkReminderAt ?? this.bookmarkReminderAt),
       acceptedAnswers: acceptedAnswers ?? this.acceptedAnswers,
       pendingPosts: pendingPosts ?? this.pendingPosts,
+      suggestedTopics: suggestedTopics ?? this.suggestedTopics,
+      relatedTopics: relatedTopics ?? this.relatedTopics,
     );
   }
 }

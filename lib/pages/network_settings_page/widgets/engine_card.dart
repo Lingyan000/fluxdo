@@ -4,16 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/adapters/cronet_fallback_service.dart';
 import '../../../services/network/adapters/platform_adapter.dart';
 import '../../../services/network/doh/network_settings_service.dart';
+import '../../../services/network/doh/webview_mitm_policy.dart';
 import '../../../services/network/proxy/proxy_settings_service.dart';
 import '../../../services/network/rhttp/rhttp_settings_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
+import 'doh_settings_card.dart' show ensureWindowsCertTrusted;
 
 /// 网络引擎卡片（预设单选 + 自定义展开）
 ///
@@ -128,8 +131,8 @@ class _EngineCardState extends State<EngineCard> {
               ChoiceChip(
                 label: Text(item.$2),
                 selected: item.$1 == shown,
-                onSelected: (s) {
-                  if (s) _applyPreset(item.$1, rhttp, webview);
+                onSelected: (s) async {
+                  if (s) await _applyPreset(item.$1, rhttp, webview);
                 },
               ),
           ],
@@ -145,31 +148,51 @@ class _EngineCardState extends State<EngineCard> {
     );
   }
 
-  void _applyPreset(
+  Future<void> _applyPreset(
     _EnginePreset preset,
     RhttpSettingsService rhttp,
     WebViewAdapterSettingsService webview,
-  ) {
+  ) async {
     switch (preset) {
       case _EnginePreset.standard:
         setState(() => _customExpanded = false);
         webview.disableSessionFallback();
-        rhttp.setEnabled(false);
-        webview.setEnabled(false);
+        await rhttp.setEnabled(false);
+        await webview.setEnabled(false);
       case _EnginePreset.performance:
         setState(() => _customExpanded = false);
         webview.disableSessionFallback();
-        rhttp.setMode(RhttpMode.always);
-        rhttp.setEnabled(true);
-        webview.setEnabled(false);
+        await rhttp.setMode(RhttpMode.always);
+        await rhttp.setEnabled(true);
+        await webview.setEnabled(false);
       case _EnginePreset.compat:
+        if (!await _ensureWebViewCanBeEnabled()) return;
+        if (!mounted) return;
         setState(() => _customExpanded = false);
         webview.disableSessionFallback();
-        rhttp.setEnabled(false);
-        webview.setEnabled(true);
+        await rhttp.setEnabled(false);
+        await webview.setEnabled(true);
       case _EnginePreset.custom:
         setState(() => _customExpanded = true);
     }
+  }
+
+  Future<bool> _ensureWebViewCanBeEnabled() async {
+    final requiresCa = WebViewMitmPolicy.requiresTrustedCa(
+      isWindows: Platform.isWindows,
+      dohEnabled: NetworkSettingsService.instance.current.dohEnabled,
+      webViewAdapterEnabled: true,
+    );
+    if (!requiresCa) return true;
+    return ensureWindowsCertTrusted(context);
+  }
+
+  Future<void> _setWebViewEnabled(
+    bool value,
+    WebViewAdapterSettingsService webview,
+  ) async {
+    if (value && !await _ensureWebViewCanBeEnabled()) return;
+    await webview.setEnabled(value);
   }
 
   _EnginePreset _presetOf(bool rhttpOn, RhttpMode mode, bool webviewOn) {
@@ -325,23 +348,19 @@ class _EngineCardState extends State<EngineCard> {
               children: [
                 SizedBox(
                   width: double.infinity,
-                  child: SegmentedButton<RhttpMode>(
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    segments: [
-                      ButtonSegment(
+                  child: M3eButtonGroup<RhttpMode>(
+                    items: [
+                      M3eButtonGroupItem(
                         value: RhttpMode.always,
                         label: Text(l10n.rhttpEngine_alwaysUse),
                       ),
-                      ButtonSegment(
+                      M3eButtonGroupItem(
                         value: RhttpMode.proxyOnly,
                         label: Text(l10n.rhttpEngine_proxyDohOnly),
                       ),
                     ],
-                    selected: {rhttpSettings.mode},
-                    onSelectionChanged: (modes) => rhttp.setMode(modes.first),
+                    selected: rhttpSettings.mode,
+                    onSelected: (mode) => rhttp.setMode(mode),
                   ),
                 ),
                 if (echFallback)
@@ -367,7 +386,7 @@ class _EngineCardState extends State<EngineCard> {
           title: Text(l10n.webviewAdapter_title),
           subtitle: Text(l10n.webviewAdapter_enabledDesc),
           value: webviewEnabled,
-          onChanged: (value) => webview.setEnabled(value),
+          onChanged: (value) => _setWebViewEnabled(value, webview),
         ),
         // Android：Cronet 降级控制
         if (Platform.isAndroid)

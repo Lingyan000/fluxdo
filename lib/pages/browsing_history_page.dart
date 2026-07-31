@@ -5,10 +5,13 @@ import '../models/search_filter.dart';
 import '../models/topic.dart';
 import '../navigation/nav_action_bus.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/selected_topic_provider.dart';
 import '../providers/user_content_search_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/blocked_user_filter.dart';
 import '../widgets/common/paged_list_footer.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -18,6 +21,11 @@ import '../widgets/common/error_view.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+
+/// 「浏览历史」右栏的平行视界栈。
+final selectedHistoryPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
 
 /// 浏览历史页面
 class BrowsingHistoryPage extends ConsumerStatefulWidget {
@@ -35,6 +43,9 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
   final ScrollController _scrollController = ScrollController();
   final LoadMoreCoordinator _loadMoreCoordinator = LoadMoreCoordinator();
   late final UserContentSearchNotifier _searchNotifier;
+
+  /// 在 build 里取（不能在点击回调里读 MediaQuery）
+  bool _canShowBothPanes = false;
 
   @override
   void initState() {
@@ -92,6 +103,15 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
   }
 
   void _onItemTap(Topic topic) {
+    // 宽屏进右栏,窄屏全屏 push——与草稿页同一套形态
+    if (_canShowBothPanes) {
+      ref.read(selectedHistoryPaneProvider.notifier).select(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: topic.lastReadPostNumber,
+          );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -107,6 +127,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
   Widget build(BuildContext context) {
     final historyAsync = ref.watch(browsingHistoryProvider);
     final searchState = ref.watch(userContentSearchProvider(SearchInType.seen));
+    _canShowBothPanes = MasterDetailLayout.canShowBothPanesFor(context);
 
     // 嵌入底栏时响应快捷动作（仅活跃 tab 响应）
     ref.listen(navActionBusProvider, (_, event) {
@@ -136,7 +157,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
       }
     });
 
-    return PopScope(
+    final list = PopScope(
       canPop: !searchState.isSearchMode,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (!didPop) {
@@ -181,9 +202,18 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
         ),
       ),
     );
+
+    return MasterDetailPaneHost(
+      stackProvider: selectedHistoryPaneProvider,
+      isActive: widget.isActive,
+      master: list,
+    );
   }
 
   Widget _buildTopicList(AsyncValue<List<Topic>> historyAsync) {
+    final selectedTopicId = ref.watch(
+      selectedHistoryPaneProvider.select((s) => s.topicId),
+    );
     return DesktopRefreshIndicator(
       onRefresh: _onRefresh,
       child: historyAsync.when(
@@ -249,7 +279,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
               return buildTopicItem(
                 context: context,
                 topic: topic,
-                isSelected: false,
+                isSelected: _canShowBothPanes && topic.id == selectedTopicId,
                 onTap: () => _onItemTap(topic),
                 enableLongPress: enableLongPress,
               );

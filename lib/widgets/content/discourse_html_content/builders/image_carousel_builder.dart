@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
 import '../image_utils.dart';
@@ -311,11 +312,7 @@ class _CarouselSlideState extends State<_CarouselSlide>
     if (url == null) {
       // URL 还在解析中
       return const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        child: LoadingSpinner(size: 24),
       );
     }
 
@@ -354,18 +351,16 @@ class _CarouselSlideState extends State<_CarouselSlide>
           height: widget.carouselHeight,
           loadingBuilder: (context, child, loadingProgress) {
             if (loadingProgress == null) return child;
+            final total = loadingProgress.expectedTotalBytes;
+            // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
             return Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded /
-                          loadingProgress.expectedTotalBytes!
-                      : null,
-                ),
-              ),
+              child: total != null
+                  ? M3eCircularProgress(
+                      value: loadingProgress.cumulativeBytesLoaded / total,
+                      size: 24,
+                      strokeWidth: 2,
+                    )
+                  : const LoadingSpinner(size: 24),
             );
           },
           errorBuilder: (context, error, stackTrace) {

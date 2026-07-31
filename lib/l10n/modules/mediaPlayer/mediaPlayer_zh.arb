@@ -1,0 +1,47 @@
+{
+  "@@locale": "zh",
+  "mediaPlayer_play": "播放",
+  "mediaPlayer_pause": "暂停",
+  "mediaPlayer_replay": "重新播放",
+  "mediaPlayer_fullscreen": "全屏",
+  "mediaPlayer_exitFullscreen": "退出全屏",
+  "mediaPlayer_mute": "静音",
+  "mediaPlayer_unmute": "取消静音",
+  "mediaPlayer_playbackSpeed": "播放速度",
+  "mediaPlayer_speedNormal": "正常",
+  "mediaPlayer_fastForwarding": "倍速快进中",
+  "mediaPlayer_seekForward": "快进 {seconds} 秒",
+  "@mediaPlayer_seekForward": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaPlayer_seekBackward": "快退 {seconds} 秒",
+  "@mediaPlayer_seekBackward": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaPlayer_volume": "音量",
+  "mediaPlayer_brightness": "亮度",
+  "mediaPlayer_lockControls": "锁定",
+  "mediaPlayer_unlockControls": "解锁",
+  "mediaPlayer_releaseToCancel": "松开取消",
+  "mediaPlayer_resumedFrom": "已从 {position} 继续播放",
+  "@mediaPlayer_resumedFrom": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaPlayer_videoLoadFailed": "视频播放失败",
+  "mediaPlayer_videoLoadTimeout": "视频加载超时",
+  "mediaPlayer_tapToRetry": "点击重试",
+  "mediaPlayer_audioLoadFailed": "音频加载失败",
+  "mediaPlayer_voiceLoadFailed": "语音加载失败"
+}

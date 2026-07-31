@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
-import '../common/loading_spinner.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 /// username/email + password 输入表单。提交逻辑 (调 DiscourseService 登录 +
 /// 处理 hcaptcha/2FA/跳转) 由父组件持有,form 本身只负责 UI 和数据校验。

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import '../typedef.dart';
 import '../utils.dart';
 import 'slide_page.dart';
@@ -259,8 +260,10 @@ class GestureDetails {
     _boundary = Boundary();
     final Offset center = _getCenter(destinationRect)!;
     Rect result = _getDestinationRect(destinationRect, center);
+    final bool gateH = _computeHorizontalBoundary;
+    final bool gateV = _computeVerticalBoundary;
 
-    if (_computeHorizontalBoundary) {
+    if (gateH) {
       //move right
       if (result.left.greaterThanOrEqualTo(layoutRect.left)) {
         result = Rect.fromLTWH(
@@ -284,7 +287,7 @@ class GestureDetails {
       }
     }
 
-    if (_computeVerticalBoundary) {
+    if (gateV) {
       //move down
       if (result.bottom.lessThanOrEqualTo(layoutRect.bottom)) {
         result = Rect.fromLTWH(
@@ -385,8 +388,6 @@ class GestureConfig {
     this.gestureDetailsIsChanged,
     this.hitTestBehavior = HitTestBehavior.deferToChild,
     this.reverseMousePointerScrollDirection = false,
-    // 惯性滑动物理参数
-    this.inertiaPhysics = const InertiaPhysicsConfig(),
   }) : assert(minScale <= maxScale),
        animationMinScale = animationMinScale ??= minScale * 0.8,
        animationMaxScale = animationMaxScale ??= maxScale * 1.2,
@@ -435,9 +436,6 @@ class GestureConfig {
 
   /// reverse mouse pointer scroll direction
   final bool reverseMousePointerScrollDirection;
-
-  /// 惯性滑动物理配置
-  final InertiaPhysicsConfig inertiaPhysics;
 }
 
 double roundAfter(double number, int position) {
@@ -457,7 +455,7 @@ const double minMagnitude = 400.0;
 const double velocity = minMagnitude / 1000.0;
 const double minGesturePageDelta = 5.0;
 
-/// 手势动画 - 真实物理惯性滑动
+/// 手势动画 —— 惯性(摩擦衰减,撞边即停)与缩放归位(spring)的驱动器
 class GestureAnimation {
   GestureAnimation(
     TickerProvider vsync, {
@@ -471,9 +469,10 @@ class GestureAnimation {
     }
 
     if (scaleCallBack != null) {
-      _scaleController = AnimationController(vsync: vsync);
-      _scaleController!.addListener(() {
-        scaleCallBack(_scaleAnimation.value);
+      // unbounded controller 的 value 即缩放值本身
+      _springScaleController = AnimationController.unbounded(vsync: vsync);
+      _springScaleController!.addListener(() {
+        scaleCallBack(_springScaleController!.value);
       });
     }
   }
@@ -481,49 +480,27 @@ class GestureAnimation {
   GestureOffsetAnimationCallBack? _offsetCallBack;
 
   AnimationController? _offsetController;
-  Animation<Offset>? _offsetAnimation;
   Inertia2DSimulation? _inertiaSimulation;
 
-  AnimationController? _scaleController;
-  late Animation<double> _scaleAnimation;
+  AnimationController? _springScaleController;
 
   void _onOffsetAnimation() {
-    if (_offsetAnimation != null) {
-      _offsetCallBack?.call(_offsetAnimation!.value);
-    } else if (_inertiaSimulation != null) {
+    if (_inertiaSimulation != null) {
       // 使用真实的时间来驱动物理模拟
       final time = _offsetController!.value * _animationDuration;
-      final currentOffset = _inertiaSimulation!.positionAt(time);
-      _offsetCallBack?.call(currentOffset);
+      _offsetCallBack?.call(_inertiaSimulation!.positionAt(time));
     }
   }
 
   double _animationDuration = 1.0;
 
-  /// 传统的简单偏移动画
-  void animationOffset(Offset? begin, Offset end) {
-    if (_offsetController == null) {
-      return;
-    }
-    _inertiaSimulation = null;
-    _offsetAnimation = _offsetController!.drive(
-      Tween<Offset>(begin: begin, end: end),
-    );
-    _offsetController!
-      ..value = 0.0
-      ..fling(velocity: velocity);
-  }
-
-  /// 真实物理惯性滑动
+  /// 惯性滑动:摩擦衰减,撞边即停(采样层钳制,不产生越界状态)。
   ///
-  /// [from] 起始位置
-  /// [velocity] 初始速度（像素/秒）
-  /// [physics] 物理配置
-  /// [bounds] 边界范围 (minX, maxX, minY, maxY)
+  /// [from] 起始位置(显示位置)
+  /// [velocity] 初始速度(像素/秒)
   void animateInertia(
     Offset from,
-    Offset velocity,
-    InertiaPhysicsConfig physics, {
+    Offset velocity, {
     required double minX,
     required double maxX,
     required double minY,
@@ -533,17 +510,10 @@ class GestureAnimation {
       return;
     }
 
-    // 速度太小不触发惯性
-    if (velocity.distance < physics.minVelocity) {
-      return;
-    }
-
-    _offsetAnimation = null;
-
     _inertiaSimulation = Inertia2DSimulation(
       startPosition: from,
       velocity: velocity,
-      friction: physics.friction,
+      friction: _friction,
       minX: minX,
       maxX: maxX,
       minY: minY,
@@ -551,7 +521,7 @@ class GestureAnimation {
     );
 
     // 估算动画时长
-    _animationDuration = _estimateDuration(velocity.distance, physics.friction);
+    _animationDuration = _estimateDuration(velocity.distance);
 
     _offsetController!
       ..duration = Duration(milliseconds: (_animationDuration * 1000).toInt())
@@ -559,41 +529,58 @@ class GestureAnimation {
       ..forward();
   }
 
-  /// 估算惯性滑动时长（秒）
-  double _estimateDuration(double speed, double friction) {
-    // FrictionSimulation: v(t) = v0 * e^(-friction * t)
-    // 当速度降到 minVelocity 时停止
-    // t = -ln(minVelocity / v0) / friction
+  /// 摩擦系数(FrictionSimulation,值越小滑得越远)
+  static const double _friction = 0.02;
+
+  /// 估算惯性滑动时长(秒):v(t) = v0·e^(-friction·t),
+  /// 速度衰减到 minVelocity 时停止,t = -ln(minV/v0)/friction
+  double _estimateDuration(double speed) {
     const minVelocity = 10.0;
     if (speed <= minVelocity) return 0.2;
-
-    final duration = -log(minVelocity / speed) / friction;
+    final duration = -log(minVelocity / speed) / _friction;
     return duration.clamp(0.2, 3.0); // 最长 3 秒
   }
 
-  void animationScale(double? begin, double end, double velocity) {
-    if (_scaleController == null) {
+  /// 缩放 spring 归位:临界阻尼弹簧收敛到 [end],无过冲、末段自然减速
+  /// (k=1500/ζ=1,~150ms)。完成后精确落到目标值(spring 在容差内
+  /// 停住,残差会卡 totalScale<=1 的下滑关闭判定)。
+  void animationScaleSpring(double begin, double end) {
+    final controller = _springScaleController;
+    if (controller == null) {
       return;
     }
-    _scaleAnimation = _scaleController!.drive(
-      Tween<double>(begin: begin, end: end),
-    );
-    _scaleController!
-      ..value = 0.0
-      ..fling(velocity: velocity);
+    controller.stop();
+    controller.value = begin;
+    controller
+        .animateWith(
+          SpringSimulation(
+            SpringDescription.withDampingRatio(
+              mass: 1,
+              stiffness: 1500,
+              ratio: 1,
+            ),
+            begin,
+            end,
+            0,
+          ),
+        )
+        .then((_) {
+          // 仅自然完成时触发(被打断的 TickerFuture 不 resolve)
+          controller.value = end;
+        });
   }
 
   void dispose() {
     _offsetController?.dispose();
     _offsetController = null;
 
-    _scaleController?.dispose();
-    _scaleController = null;
+    _springScaleController?.dispose();
+    _springScaleController = null;
   }
 
   void stop() {
     _offsetController?.stop();
-    _scaleController?.stop();
+    _springScaleController?.stop();
     _inertiaSimulation = null;
   }
 }

@@ -7,6 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../l10n/s.dart';
@@ -418,12 +419,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                       child: OutlinedButton.icon(
                         onPressed: _anyLoading ? null : _copyImage,
                         icon: _isCopying
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
-                              )
+                            ? const LoadingSpinner(size: 18)
                             : const Icon(Symbols.content_copy_rounded, size: 18),
                         label: Text(context.l10n.common_copy),
                         style: OutlinedButton.styleFrom(
@@ -438,12 +434,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                       child: OutlinedButton.icon(
                         onPressed: _anyLoading ? null : _saveImage,
                         icon: _isSaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
-                              )
+                            ? const LoadingSpinner(size: 18)
                             : const Icon(Symbols.save_alt_rounded, size: 18),
                         label: Text(context.l10n.common_save),
                         style: OutlinedButton.styleFrom(
@@ -458,14 +449,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                       child: FilledButton.icon(
                         onPressed: _anyLoading ? null : _shareImage,
                         icon: _isSharing
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
+                            ? const LoadingSpinner(size: 18, color: Colors.white)
                             : const Icon(Symbols.share_rounded, size: 18),
                         label: Text(context.l10n.common_share),
                         style: FilledButton.styleFrom(
@@ -484,12 +468,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                     child: FilledButton.tonalIcon(
                       onPressed: _anyLoading ? null : _replyToTopic,
                       icon: _isReplying
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const LoadingSpinner(size: 18)
                           : const Icon(Symbols.reply_rounded, size: 18),
                       label: Text(_isReplying ? context.l10n.share_uploading : context.l10n.share_replyToTopic),
                       style: FilledButton.styleFrom(
