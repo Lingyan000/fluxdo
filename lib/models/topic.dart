@@ -314,7 +314,6 @@ class Topic {
     int? unread,
     int? newPosts,
     int? lastReadPostNumber,
-    bool clearLastReadPostNumber = false,
     int? highestPostNumber,
   }) {
     return Topic(
@@ -339,9 +338,7 @@ class Topic {
       unseen: unseen ?? this.unseen,
       unread: unread ?? this.unread,
       newPosts: newPosts ?? this.newPosts,
-      lastReadPostNumber: clearLastReadPostNumber
-          ? null
-          : (lastReadPostNumber ?? this.lastReadPostNumber),
+      lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       bookmarkedPostNumber: bookmarkedPostNumber,
       bookmarkId: bookmarkId,
