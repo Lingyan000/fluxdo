@@ -12,7 +12,7 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
 import 'webview_page.dart';
 import 'login_page.dart';
-import 'qr_login_display_page.dart';
+import '../widgets/auth/qr_login_sheet.dart';
 import 'browsing_history_page.dart';
 import 'bookmarks_page.dart';
 import 'export_history_page.dart';
@@ -807,20 +807,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   Widget _buildCommunityCard(ThemeData theme, {required bool canAccessInviteLinks}) {
-    final username = ref.read(currentUserProvider).value?.username;
     return SegmentedCardGroup(
       children: [
-        _buildOptionTile(
-          icon: Symbols.qr_code_rounded,
-          iconColor: Colors.teal,
-          title: context.l10n.login_qrShowCode,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => QrLoginDisplayPage(username: username),
-            ),
-          ),
-        ),
         _buildOptionTile(
           icon: Symbols.mail_rounded,
           iconColor: Colors.indigo,
@@ -1012,7 +1000,25 @@ class _ProfileHeader extends ConsumerWidget {
             _ProfileAvatarSection(userId: userId, isLoggedIn: isLoggedIn),
             const SizedBox(width: 20),
             const Expanded(child: _ProfileInfoSection()),
-            if (isLoggedIn)
+            if (isLoggedIn) ...[
+              Tooltip(
+                message: context.l10n.login_qrShowCode,
+                child: GestureDetector(
+                  // 独立手势:在竞技场胜出,不冒泡到外层跳 UserProfilePage
+                  onTap: () => showQrLoginSheet(context, username: username),
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Icon(
+                      Symbols.qr_code_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               CircleAvatar(
                 radius: 16,
                 backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -1022,6 +1028,7 @@ class _ProfileHeader extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
+            ],
           ],
         ),
       ),

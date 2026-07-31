@@ -27,14 +27,15 @@
       }
     }
   },
+  "login_qrAdjustExpiry": "调整有效期",
   "login_qrCameraUnavailable": "无法使用相机",
-  "login_qrDecodingImage": "正在识别图片中的二维码…",
   "login_qrConfirmAction": "确认生成",
-  "login_qrConfirmMessage": "将为另一台设备创建一枚 User API Key 并生成登录二维码。对方扫码后可使用你的账号登录。请确认这是你本人操作，且周围没有他人窥视。",
+  "login_qrConfirmMessage": "将为另一台设备创建一枚 User API Key 并生成登录二维码。对方扫码后可使用你的账号登录。重新生成会使之前分享的登录二维码失效。请确认这是你本人操作，且周围没有他人窥视。",
   "login_qrConfirmTitle": "确认生成登录二维码？",
+  "login_qrDecodingImage": "正在识别图片中的二维码…",
   "login_qrDisplayHint": "请用另一台未登录的设备打开 FluxDO，扫描此二维码完成登录。",
   "login_qrDisplayTitle": "登录二维码",
-  "login_qrExpired": "登录凭证已过期",
+  "login_qrExpiredTapRegenerate": "已过期，点击重新生成",
   "login_qrExpiryCustomHint": "可组合填写天、小时、分钟，至少一项大于 0。站点可能限制最长有效期。",
   "login_qrExpiryCustomInvalid": "请输入大于 0 的有效时长（小时 0–23，分钟 0–59）",
   "login_qrExpiryCustomTitle": "自定义有效期",
@@ -48,7 +49,7 @@
   },
   "login_qrExpiryDeadlineHint": "选择 API Key 失效的本地日期与时间。生成二维码时会换算为相对时长提交给服务端。",
   "login_qrExpiryDeadlinePast": "截止时间必须晚于当前时间",
-  "login_qrExpiryHint": "有效期作用于分享的 API Key；默认不过期。也可自定义固定时长或截止日期。OTP 登录令牌约 10 分钟内有效。",
+  "login_qrExpiryHint": "有效期作用于分享的 API Key，默认 24 小时。也可自定义固定时长或截止日期。二维码本身需在约 10 分钟内扫描。",
   "login_qrExpiryHours": "{hours} 小时",
   "@login_qrExpiryHours": {
     "placeholders": {
@@ -81,20 +82,28 @@
       }
     }
   },
-  "login_qrExpiresIn": "有效期剩余 {time}",
-  "@login_qrExpiresIn": {
+  "login_qrGalleryOnlyHint": "当前平台不支持实时扫码，请从相册选择包含登录二维码的图片。",
+  "login_qrGenerateAction": "生成登录二维码",
+  "login_qrGenerateFailed": "生成登录二维码失败",
+  "login_qrKeyExpiryUntil": "Key 有效至 {time}",
+  "@login_qrKeyExpiryUntil": {
     "placeholders": {
       "time": {
         "type": "String"
       }
     }
   },
-  "login_qrGalleryOnlyHint": "当前平台不支持实时扫码，请从相册选择包含登录二维码的图片。",
-  "login_qrGenerateAction": "生成登录二维码",
-  "login_qrGenerateFailed": "生成登录二维码失败",
   "login_qrLoggingIn": "正在完成登录…",
   "login_qrNeverExpires": "API Key 不过期",
   "login_qrNoCodeInImage": "图片中未识别到登录二维码",
+  "login_qrOtpWindowRemaining": "二维码有效时间 {time}",
+  "@login_qrOtpWindowRemaining": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "login_qrPickImage": "从相册选择",
   "login_qrRefresh": "重新生成",
   "login_qrScanFailed": "扫码登录失败，请重试",

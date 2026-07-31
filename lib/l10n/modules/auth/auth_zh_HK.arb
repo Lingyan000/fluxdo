@@ -20,21 +20,22 @@
   },
   "login_browserHint": "將在瀏覽器中打開登錄頁面",
   "login_qrAccount": "帳號：{username}",
+  "login_qrAdjustExpiry": "調整有效期",
   "login_qrCameraUnavailable": "無法使用相機",
-  "login_qrDecodingImage": "正在識別圖片中的二維碼…",
   "login_qrConfirmAction": "確認生成",
-  "login_qrConfirmMessage": "將為另一台裝置創建一枚 User API Key 並生成登錄二維碼。對方掃碼後可使用你的帳號登錄。請確認這是你本人操作，且周圍沒有他人窺視。",
+  "login_qrConfirmMessage": "將為另一部裝置建立一枚 User API Key 並生成登入二維碼。對方掃碼後可以用你嘅帳號登入。重新生成會令之前分享嘅登入二維碼失效。請確認係你本人操作，並且周圍冇其他人窺視。",
   "login_qrConfirmTitle": "確認生成登錄二維碼？",
+  "login_qrDecodingImage": "正在識別圖片中的二維碼…",
   "login_qrDisplayHint": "請用另一台未登錄的裝置打開 FluxDO，掃描此二維碼完成登錄。",
   "login_qrDisplayTitle": "登錄二維碼",
-  "login_qrExpired": "登錄憑證已過期",
+  "login_qrExpiredTapRegenerate": "已過期，點擊重新生成",
   "login_qrExpiryCustomHint": "可組合填寫天、小時、分鐘，至少一項大於 0。站點可能限制最長有效期。",
   "login_qrExpiryCustomInvalid": "請輸入大於 0 的有效時長（小時 0–23，分鐘 0–59）",
   "login_qrExpiryCustomTitle": "自定義有效期",
   "login_qrExpiryDays": "{days} 天",
   "login_qrExpiryDeadlineHint": "選擇 API Key 失效的本地日期與時間。生成二維碼時會換算為相對時長提交給伺服器。",
   "login_qrExpiryDeadlinePast": "截止時間必須晚於目前時間",
-  "login_qrExpiryHint": "有效期作用於分享的 API Key；預設不過期。也可自定義固定時長或截止日期。OTP 登錄令牌約 10 分鐘內有效。",
+  "login_qrExpiryHint": "有效期作用於分享嘅 API Key，預設 24 小時。亦可自訂固定時長或截止日期。二維碼本身需喺約 10 分鐘內掃描。",
   "login_qrExpiryHours": "{hours} 小時",
   "login_qrExpiryLabel": "API Key 有效期",
   "login_qrExpiryMinutes": "{minutes} 分鐘",
@@ -46,13 +47,28 @@
   "login_qrExpiryUnitHour": "小時",
   "login_qrExpiryUnitMinute": "分鐘",
   "login_qrExpiryUntil": "至 {time}",
-  "login_qrExpiresIn": "有效期剩餘 {time}",
   "login_qrGalleryOnlyHint": "目前平台不支援即時掃碼，請從相簿選擇包含登錄二維碼的圖片。",
   "login_qrGenerateAction": "生成登錄二維碼",
   "login_qrGenerateFailed": "生成登錄二維碼失敗",
+  "login_qrKeyExpiryUntil": "Key 有效至 {time}",
+  "@login_qrKeyExpiryUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "login_qrLoggingIn": "正在完成登錄…",
   "login_qrNeverExpires": "API Key 不過期",
   "login_qrNoCodeInImage": "圖片中未識別到登錄二維碼",
+  "login_qrOtpWindowRemaining": "二維碼有效時間 {time}",
+  "@login_qrOtpWindowRemaining": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "login_qrPickImage": "從相簿選擇",
   "login_qrRefresh": "重新生成",
   "login_qrScanFailed": "掃碼登錄失敗，請重試",
