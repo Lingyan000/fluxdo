@@ -918,7 +918,6 @@ class _MainPageState extends ConsumerState<MainPage>
   Timer? _pendingSingleTap;
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
-  DateTime? _lastBackPressTime;
   bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
@@ -1510,57 +1509,53 @@ class _MainPageState extends ConsumerState<MainPage>
         (activeEntryId == NavEntryIds.messages && messageParallelStacked) ||
         (activeEntryId == NavEntryIds.seeking && seekingParallelStacked);
 
-    // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁
-    Widget page = PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) {
-        if (didPop) return;
-        // 分类侧栏开着：返回=关抽屉。抽屉自身的 LocalHistoryEntry 在
-        // 根路由 canPop:false 下不生效（PopScope 的 doNotPop 判定
-        // 优先于 LocalHistoryRoute 的内部消费），只能在这里兜底。
-        if (CategoryDrawerHost.isOpen) {
-          CategoryDrawerHost.close();
-          return;
-        }
-        if (NotificationQuickPanel.isVisible) {
-          NotificationQuickPanel.dismiss();
-          return;
-        }
-        final now = DateTime.now();
-        if (_lastBackPressTime != null &&
-            now.difference(_lastBackPressTime!).inMilliseconds < 2000) {
-          SystemNavigator.pop();
-        } else {
-          _lastBackPressTime = now;
-          ToastService.showInfo(S.current.toast_pressAgainToExit);
-        }
-      },
-      child: AdaptiveScaffold(
-        selectedIndex: selectedBottomIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: destinations,
-        railBottomLeading: (user != null && !hasNotificationEntry)
-            ? const NotificationIconButton()
-            : null,
-        hideNavigationRail: hideNavigationRail,
-        body: IndexedStack(
-          index: safePageIndex,
-          children: [
-            for (int i = 0; i < pageEntries.length; i++)
-              KeyedSubtree(
-                key: ValueKey('nav-entry-${pageEntries[i].id}'),
-                child: TickerMode(
-                  enabled: safePageIndex == i,
-                  child: ExcludeFocus(
-                    excluding: safePageIndex != i,
-                    child: pageEntries[i].pageBuilder!(
-                      context,
-                      safePageIndex == i,
+    // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁。
+    // 根路由允许系统处理 bubble，从而支持 Android 单次返回退出及其
+    // 预测式退出动画；需要优先关闭的面板仍通过 PopScope 拦截。
+    Widget page = ValueListenableBuilder<bool>(
+      valueListenable: NotificationQuickPanel.visible,
+      builder: (context, notificationPanelVisible, _) => PopScope(
+        canPop: !notificationPanelVisible,
+        onPopInvokedWithResult: (bool didPop, dynamic result) {
+          if (didPop) return;
+          // 分类侧栏通过 LocalHistoryEntry 消费返回；这里保留兜底，覆盖
+          // 抽屉正在收尾动画等 LocalHistory 尚未同步的短暂状态。
+          if (CategoryDrawerHost.isOpen) {
+            CategoryDrawerHost.close();
+            return;
+          }
+          if (NotificationQuickPanel.isVisible) {
+            NotificationQuickPanel.dismiss();
+            return;
+          }
+        },
+        child: AdaptiveScaffold(
+          selectedIndex: selectedBottomIndex,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: destinations,
+          railBottomLeading: (user != null && !hasNotificationEntry)
+              ? const NotificationIconButton()
+              : null,
+          hideNavigationRail: hideNavigationRail,
+          body: IndexedStack(
+            index: safePageIndex,
+            children: [
+              for (int i = 0; i < pageEntries.length; i++)
+                KeyedSubtree(
+                  key: ValueKey('nav-entry-${pageEntries[i].id}'),
+                  child: TickerMode(
+                    enabled: safePageIndex == i,
+                    child: ExcludeFocus(
+                      excluding: safePageIndex != i,
+                      child: pageEntries[i].pageBuilder!(
+                        context,
+                        safePageIndex == i,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

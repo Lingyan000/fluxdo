@@ -47,6 +47,7 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/fading_edge_scroll_view.dart';
+import '../widgets/common/predictive_back_cupertino_transitions.dart';
 import '../widgets/offline_indicator.dart';
 import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
@@ -1320,8 +1321,15 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, _, _) =>
             SearchPage(initialFilter: filter, heroCapsule: true),
-        transitionsBuilder: (_, animation, _, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              fallbackBuilder: (_, animation, _, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            ),
       ),
     );
   }

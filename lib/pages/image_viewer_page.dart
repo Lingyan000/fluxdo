@@ -26,6 +26,7 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
+import '../widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 
@@ -128,12 +129,17 @@ class ImageViewerPage extends ConsumerStatefulWidget {
             heroSourceCircular: heroSourceCircular,
           );
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+                opacity: _routeFadeAnimation(animation),
+                child: child,
+              ),
+            ),
       ),
     );
   }
@@ -148,12 +154,17 @@ class ImageViewerPage extends ConsumerStatefulWidget {
         pageBuilder: (context, animation, secondaryAnimation) {
           return ImageViewerPage(imageBytes: bytes);
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+                opacity: _routeFadeAnimation(animation),
+                child: child,
+              ),
+            ),
       ),
     );
   }
