@@ -1646,9 +1646,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 语法 `[文件名|attachment](upload://...) (大小)`,cook 后渲染成
   /// 网页端同款的附件下载条。
   Future<void> _pickAndInsertFile() async {
+    // 白名单从站点配置动态派生(staff 名单叠加);null = 站点通配或
+    // 配置未加载,不设限让服务端裁决。
+    final allowed = attachmentAllowedExtensions();
     final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: kAttachmentAllowedExtensions,
+      type: allowed == null ? FileType.any : FileType.custom,
+      allowedExtensions: allowed,
     );
     final file = picked?.files.single;
     final path = file?.path;
