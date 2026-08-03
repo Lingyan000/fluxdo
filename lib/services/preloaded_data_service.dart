@@ -509,7 +509,13 @@ class PreloadedDataService {
       );
 
       final html = response.data as String;
-      await _parsePreloadedDataFromHtml(html);
+      final parsed = await _parsePreloadedDataFromHtml(html);
+      if (!parsed) {
+        // 解析失败不可标记成功:置 _loaded 会让所有消费方拿到空数据并
+        // 静默降级到接口兜底(站点改版时曾无声潜伏)。抛错让调用方走
+        // BrowserTrustCoordinator 的降级链(启动 WebView 补水/重试)。
+        throw const FormatException('首页 HTML 未解析出 data-preloaded 数据');
+      }
       debugPrint('[PreloadedData] 数据加载成功');
       _loaded = true;
       // 预热完成后仅更新站点基础数据和 sitekey。cf_clearance 自动续期

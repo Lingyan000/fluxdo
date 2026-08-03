@@ -46,6 +46,10 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>需要使用相机扫描登录二维码</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册以识别登录二维码</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>需要访问相册以保存图片</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

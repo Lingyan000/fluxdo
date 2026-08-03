@@ -399,10 +399,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   bool _interceptKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
     // Cmd/Ctrl+K 插入链接(对齐 Discourse composer;内核不处理 keyK,
-    // 弹窗动作属宿主层 —— 与剪贴板三键同理不进纯状态层)
+    // 弹窗动作属宿主层 —— 与剪贴板三键同理不进纯状态层)。可逆动作
+    // (弹窗可取消)→ 用宽松版判定,与内核格式快捷键同口径。
     if (_slashOverlay == null &&
         event.logicalKey == LogicalKeyboardKey.keyK &&
-        primaryModifierHeld(event)) {
+        primaryModifierHeldForReversibleAction(event)) {
       _insertLink();
       return true;
     }

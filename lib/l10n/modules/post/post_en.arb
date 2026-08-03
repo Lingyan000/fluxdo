@@ -113,6 +113,8 @@
   "post_submitFlag": "Submit report",
   "post_tipLdc": "Tip LDC",
   "post_titleRequired": "Please enter a title",
+  "post_todayIsBirthday": "It's my birthday today!",
+  "post_todayIsCakeday": "Today is your anniversary of joining our community!",
   "post_topicSolved": "This topic is solved",
   "post_unacceptSolution": "Unaccept solution",
   "post_unsolved": "Unsolved",

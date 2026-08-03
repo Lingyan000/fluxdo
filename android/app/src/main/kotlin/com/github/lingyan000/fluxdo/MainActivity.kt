@@ -17,6 +17,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager as WebCookieManager
 import android.webkit.WebView
 import androidx.webkit.CookieManagerCompat
@@ -129,6 +130,21 @@ class MainActivity : FlutterActivity() {
                     } else {
                         result.error("INVALID_URL", "URL is null", null)
                     }
+                }
+                // 展示登录二维码期间置 FLAG_SECURE:防截屏/录屏/最近任务缩略图
+                "setSecureScreen" -> {
+                    val secure = call.argument<Boolean>("secure") ?: false
+                    runOnUiThread {
+                        if (secure) {
+                            window.setFlags(
+                                WindowManager.LayoutParams.FLAG_SECURE,
+                                WindowManager.LayoutParams.FLAG_SECURE,
+                            )
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                    }
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }

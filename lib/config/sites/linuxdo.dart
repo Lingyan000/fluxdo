@@ -20,6 +20,12 @@ final linuxdoCustomization = SiteCustomization(
       builder: (title, fontSize) =>
           HolographicText(text: title, fontSize: fontSize),
     ),
+    // Premium 头衔跟"种子用户"是同一套站点头衔渐变特效,视觉上应当一致。
+    UserTitleStyleRule(
+      title: 'Premium',
+      builder: (title, fontSize) =>
+          HolographicText(text: title, fontSize: fontSize),
+    ),
   ],
   linkSecurityConfig: _linuxdoLinkSecurityConfig,
 );

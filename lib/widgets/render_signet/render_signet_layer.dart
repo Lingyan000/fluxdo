@@ -15,14 +15,15 @@ import 'render_signet_codec.dart';
 /// 可用 tools/render-signet/extract.py 离线还原标识做归属核验。
 ///
 /// 渲染后端按平台分派:
-/// - macOS / iOS:下沉为窗口级原生 CALayer([NativeSignetOverlay])。
+/// - macOS:下沉为窗口级原生 CALayer([NativeSignetOverlay])。
 ///   Flutter 层的全屏绘制会把平台视图(WKWebView)头顶的整个区域计入
-///   引擎的原生命中测试忽略区,macOS 上又没有手势转发兜底,表现为
-///   可见 WebView 整块点不动;原生兄弟视图不参与该统计,从根上消除
-///   互斥,且能把印记盖到 WebView 自身的像素上。
-/// - 其余平台:Flutter 内联绘制,「消饱和 + 单极性点阵」两笔,全部为
-///   Porter-Duff 系数混合(固定管线,不依赖 framebuffer fetch,任何
-///   GPU 上都无离屏回退):
+///   引擎的原生命中测试忽略区,macOS 又没有手势转发兜底,表现为可见
+///   WebView 整块点不动;原生兄弟视图不参与该统计,从根上消除互斥,
+///   且能把印记盖到 WebView 自身的像素上。
+/// - Windows:下沉为 DWM 合成层(动机是性能,见 usesNativeOverlay)。
+/// - iOS / Android / Linux:Flutter 内联绘制,「消饱和 + 单极性点阵」
+///   两笔,全部为 Porter-Duff 系数混合(固定管线,不依赖 framebuffer
+///   fetch,任何 GPU 上都无离屏回退):
 ///   1. 消饱和笔:全屏 srcATop 纯色 (0,0,0)@α=δ,把所有色通道均匀乘
 ///      (255-δ)/255——纯白像素降到 255-δ,全屏不再存在饱和像素。
 ///      均匀无对比的 0.4% 变化低于面板校准差异,物理不可见;
@@ -38,6 +39,15 @@ import 'render_signet_codec.dart';
 ///   退化成 srcOver 时公式 out = 0 + d·(1-δ/255) 与正常效果完全相同;
 ///   信号笔退化 = α≈1/255 微染色),且全 GPU 走固定管线混合。
 ///
+///   iOS 曾短暂走 CALayer 原生后端(2026-07),真实用户反馈启动数秒
+///   后短暂整屏白,时间点与原生层 install(登录态就绪)吻合。根因
+///   未定案,首要候选:compositingFilter 在 iOS 是无文档保证的灰色
+///   地带(历史上被忽略、近代部分生效),混合滤镜一旦未生效,双笔
+///   协议里的不透明白底 modulate 图块就按 srcOver 原样糊屏——与
+///   Android 白屏同类病灶。iOS 本就没有下沉动机(平台视图有
+///   _UiKitViewGestureRecognizer 触摸转发链路,Metal 引擎有 damage
+///   tracking),回退内联止血,原生链路整体下线。
+///
 /// [RenderSignetLayer.inline] 强制内联绘制,供离屏 RepaintBoundary
 /// 截图场景(分享图)使用——窗口级原生层盖不进离屏合成产物。
 ///
@@ -52,18 +62,18 @@ class RenderSignetLayer extends ConsumerStatefulWidget {
   final bool inline;
 
   /// 窗口级原生后端平台。
-  /// - macOS/iOS:动机是平台视图命中测试互斥(全屏 Flutter 绘制会让
+  /// - macOS:动机是平台视图命中测试互斥(全屏 Flutter 绘制会让
   ///   WKWebView 整块收不到鼠标事件),CALayer 混合下沉。
   /// - Windows:动机是性能——Skia+ANGLE 无 partial repaint,内联两笔
   ///   全屏 dst-read 混合每帧全额支付(4K≈132MB/帧),核显+高刷实测
   ///   卡顿(用户 A/B 实锤);下沉 Windows.UI.Composition 后每帧成本
   ///   转嫁 DWM 合成端,增量接近零。
+  /// - iOS:已下线,回退内联(白屏反馈与回退理由见类注释)。
   /// - Android:HC 平台视图有触摸转发、引擎有 partial repaint,两个
   ///   动机都不存在,维持内联;Linux 用户基数小,有反馈再说。
   static bool get usesNativeOverlay =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.windows);
 
   @override

@@ -291,7 +291,9 @@ Future<void> main() async {
   // Android 由 WV onLoadStop 等 hook 主动调 notifyExternalChange()。
   CookieStoreObserver.instance.attach();
 
-  // 桌面平台：恢复窗口状态后再显示，避免默认位置闪烁
+  // 桌面平台：三端 runner 均隐藏启动（macOS 在 MainFlutterWindow 首次
+  // order 时隐藏，Windows/Linux 由 runner 创建隐藏窗口），正常冷启动都
+  // 走下方 else 分支：首帧光栅化后恢复窗口状态再显示，避免默认位置闪烁。
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await acrylic.Window.setEffect(
       effect: Platform.isMacOS
@@ -306,7 +308,15 @@ Future<void> main() async {
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
     if (isVisible) {
-      await WindowStateService.instance.attach(prefs);
+      // 窗口已可见（热重启，或原生隐藏启动未生效的兜底路径）：
+      // macOS 走 restore() 读取并应用保存的窗口状态——attach() 只刷新
+      // 最大化缓存不读状态文件，曾导致 macOS 冷启动永远回到 XIB 默认
+      // 位置；Windows/Linux 可见说明状态已恢复过，attach 即可。
+      if (Platform.isMacOS) {
+        await WindowStateService.instance.restore(prefs);
+      } else {
+        await WindowStateService.instance.attach(prefs);
+      }
       if (Platform.isLinux) {
         await windowManager.focus();
       }
@@ -957,16 +967,17 @@ class _MainPageState extends ConsumerState<MainPage>
       }
     });
 
+    // 提前捕获 container:登录成功广播可能落在本元素 deactivate/重挂载
+    // 窗口内,届时 containerOf(context) 会抛错把刷新链掐死(登录后无
+    // 登录态)。container 与根 ProviderScope 同生命周期,不受元素影响。
+    final appContainer = ProviderScope.containerOf(context, listen: false);
     _authStateSub = ref.listenManual<AsyncValue<void>>(authStateProvider, (
       _,
       next,
     ) {
       next.whenData((_) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          AppStateRefresher.refreshAll(
-            ProviderScope.containerOf(context, listen: false),
-          );
+          AppStateRefresher.refreshAll(appContainer);
         });
       });
     });
@@ -1313,8 +1324,18 @@ class _MainPageState extends ConsumerState<MainPage>
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
   Future<void> _enterBackground() async {
-    // 清除 Flutter 图片内存缓存，降低后台内存占用
-    PaintingBinding.instance.imageCache.clear();
+    // 清后台图片内存缓存按平台分派:
+    // - 桌面端跳过——最小化即触发本回调,一次性并发销毁大量 GPU 贴图
+    //   (SkImage_Ganesh/GrTextureProxy)疑撞 Skia disposal 问题
+    //   (discourse_cache_manager.dart 里动图那块引用过的 Flutter
+    //   #85831 同一类坑),聊天页同屏头像/emoji 最多最易踩中;桌面
+    //   也不存在后台 OOM 击杀,清空只省一点驻留,不值得冒崩溃风险。
+    // - 移动端保留——降后台驻留配合保活,降低 LMKD 击杀概率(被杀
+    //   = 通知轮询没了);LMKD 不总先发 memory pressure,框架自清
+    //   兜不住这个场景。
+    if (!PlatformUtils.isDesktop) {
+      PaintingBinding.instance.imageCache.clear();
+    }
 
     // 诊断快照落盘:进程随后被杀时环形缓冲现场不再全丢(监控未启用
     // 或无记录时内部直接返回;静默失败,不干扰退后台路径)

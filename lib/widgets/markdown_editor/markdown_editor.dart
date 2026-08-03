@@ -108,6 +108,13 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   final _toolbarKey = GlobalKey<MarkdownToolbarState>();
   final _scrollController = ScrollController();
+
+  /// 正文 TextField 定位锚。_scrollToCursor 的 RenderEditable 搜索必须
+  /// 以它为根:创建帖子页 header 里有标题输入框,从编辑器整树 DFS 会
+  /// 先命中**标题**的 RenderEditable —— 内容超一屏后每次光标变动都按
+  /// 标题位置"纠偏"滚回顶部,与正文 EditableText 自身的 showCaretOnScreen
+  /// (showOnScreen 冒泡驱动外层滚动)来回打架 = #337 顶底跳跃。
+  final _bodyFieldKey = GlobalKey();
   final _pangu = Pangu();
   bool _isApplyingPangu = false;
   Timer? _panguTimer;
@@ -427,7 +434,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       final selection = widget.controller.selection;
       if (!selection.isValid) return;
 
-      final renderObject = context.findRenderObject();
+      // 只在正文 TextField 子树内找 RenderEditable(见 _bodyFieldKey)。
+      final renderObject = _bodyFieldKey.currentContext?.findRenderObject();
       if (renderObject == null) return;
 
       RenderEditable? editable;
@@ -459,12 +467,16 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       final caretBottom = caretTop + caretLocal.height;
 
       double? target;
+      // 余量 24 > EditableText scrollPadding(20):我们跳完后其膨胀矩形
+      // 已在视口内,自身的 showOnScreen reveal 直接 no-op,单驱动无抖尾。
+      const margin = 24.0;
       if (caretBottom > position.viewportDimension) {
         // 光标在视口下方，需要向下滚
-        target = position.pixels + caretBottom - position.viewportDimension + 8.0;
+        target =
+            position.pixels + caretBottom - position.viewportDimension + margin;
       } else if (caretTop < 0) {
         // 光标在视口上方，需要向上滚
-        target = position.pixels + caretTop - 8.0;
+        target = position.pixels + caretTop - margin;
       }
 
       if (target != null) {
@@ -624,6 +636,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   /// 构建文本编辑器（可选包含 @提及自动补全）
   Widget _buildTextEditor() {
     final textField = TextField(
+      key: _bodyFieldKey,
       controller: widget.controller,
       focusNode: _focusNode,
       readOnly: _readOnly,

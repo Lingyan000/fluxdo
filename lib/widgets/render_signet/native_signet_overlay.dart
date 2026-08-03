@@ -6,23 +6,26 @@ import 'package:flutter/services.dart';
 import 'render_signet_codec.dart';
 import 'render_signet_layer.dart' show buildSignetTiles;
 
-/// 窗口级原生印记层的 Dart 侧通道(macOS / iOS / Windows)。
+/// 窗口级原生印记层的 Dart 侧通道(macOS / Windows)。
 ///
 /// 编码单一真相仍在 Dart:[buildSignetTiles] 产出 modulate/plus 双笔
 /// 图块后,以未编码 RGBA(预乘)字节下发,原生侧只负责「平铺 + 混合」
 /// (multiply ≙ modulate、linearDodge ≙ plus,先乘后加),不含任何
-/// codec 逻辑。后端实现:macos/ios Runner 的 RenderSignetHandler.swift
+/// codec 逻辑。后端实现:macos Runner 的 RenderSignetHandler.swift
 /// (CALayer compositingFilter)、windows/runner/render_signet_handler.cpp
 /// (Windows.UI.Composition BackdropBrush + D2D Blend 效果链)。
 ///
 /// 下沉动机分平台:
-/// - macOS/iOS:Flutter 层的全屏绘制会被引擎统计进平台视图上方的
+/// - macOS:Flutter 层的全屏绘制会被引擎统计进平台视图上方的
 ///   backing store paint region,`FlutterMutatorView.hitTest` 对该区域
 ///   直接返 nil——WKWebView 整块收不到鼠标事件(macOS 无手势转发
 ///   兜底)。原生兄弟视图不参与该统计。
 /// - Windows:Skia+ANGLE 无 partial repaint,内联两笔全屏 dst-read
 ///   混合每帧全额支付,核显+高刷实测卡顿;合成器端做增量接近零。
 /// 共同副产品:印记连 WebView 自身的像素也能盖到。
+///
+/// iOS 曾短暂接入 CALayer 后端,已下线回退内联(用户白屏反馈,根因
+/// 候选与回退理由见 [RenderSignetLayer] 类注释)。
 class NativeSignetOverlay {
   NativeSignetOverlay._();
 
