@@ -58,6 +58,7 @@ class User {
   // 私信相关
   final bool? canSendPrivateMessages;        // 当前用户是否可以发送私信
   final bool? canSendPrivateMessageToUser;   // 是否可以给该用户发私信
+  final bool? canChatUser;                   // 是否可与该用户聊天(chat 插件 user_card 注入)
 
   // 积分相关
   final int? gamificationScore;
@@ -77,6 +78,15 @@ class User {
   // 角色（来自 /session/current.json 的 current_user）
   final bool admin;
   final bool moderator;
+
+  /// 隐私:隐藏公开资料与在线状态(user_option.hide_presence)。
+  /// true 时客户端不得上报 presence(正在输入/在线)——对齐网页版
+  /// chat.js 的前置判断。
+  final bool hidePresence;
+
+  /// 聊天草稿(current_user.chat_drafts,最近 20 条原始 JSON:
+  /// {channel_id, data, thread_id});chat 层自行解析,登录会话期有效
+  final List<Map<String, dynamic>> chatDrafts;
 
 
   User({
@@ -117,6 +127,7 @@ class User {
     this.totalFollowing,
     this.canSendPrivateMessages,
     this.canSendPrivateMessageToUser,
+    this.canChatUser,
     this.gamificationScore,
     this.muted,
     this.ignored,
@@ -128,6 +139,8 @@ class User {
     this.silencedTill,
     this.admin = false,
     this.moderator = false,
+    this.hidePresence = false,
+    this.chatDrafts = const [],
   });
 
   User copyWith({
@@ -180,6 +193,7 @@ class User {
       totalFollowing: totalFollowing,
       canSendPrivateMessages: canSendPrivateMessages,
       canSendPrivateMessageToUser: canSendPrivateMessageToUser,
+      canChatUser: canChatUser,
       gamificationScore: gamificationScore,
       muted: muted ?? this.muted,
       ignored: ignored ?? this.ignored,
@@ -191,6 +205,8 @@ class User {
       silencedTill: silencedTill,
       admin: admin,
       moderator: moderator,
+      hidePresence: hidePresence,
+      chatDrafts: chatDrafts,
     );
   }
 
@@ -245,6 +261,7 @@ class User {
       totalFollowing: json['total_following'] as int?,
       canSendPrivateMessages: json['can_send_private_messages'] as bool?,
       canSendPrivateMessageToUser: json['can_send_private_message_to_user'] as bool?,
+      canChatUser: json['can_chat_user'] as bool?,
       gamificationScore: json['gamification_score'] as int?,
       muted: json['muted'] as bool?,
       ignored: json['ignored'] as bool?,
@@ -256,6 +273,13 @@ class User {
       silencedTill: TimeUtils.parseUtcTime(json['silenced_till'] as String?),
       admin: json['admin'] as bool? ?? false,
       moderator: json['moderator'] as bool? ?? false,
+      hidePresence:
+          (json['user_option'] as Map<String, dynamic>?)?['hide_presence']
+                  as bool? ??
+              false,
+      chatDrafts: (json['chat_drafts'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
     );
   }
 

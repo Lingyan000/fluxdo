@@ -33,6 +33,7 @@ import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
 import 'pending_posts_page.dart';
 import 'private_messages_page.dart';
+import 'chat/chat_list_page.dart';
 import 'invite_links_page.dart';
 import '../providers/ldc_providers.dart';
 import '../widgets/ldc_balance_card.dart';
@@ -816,6 +817,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           iconColor: Colors.indigo,
           title: context.l10n.profile_privateMessages,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivateMessagesPage())),
+        ),
+        _buildOptionTile(
+          icon: Symbols.forum_rounded,
+          iconColor: Colors.teal,
+          title: context.l10n.chat_title,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListPage())),
         ),
         _buildOptionTile(
           icon: Symbols.pending_actions_rounded,

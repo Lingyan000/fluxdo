@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../l10n/s.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../app_logs_page.dart';
+import '../../chat_api_probe_page.dart';
 
 /// 调试工具卡片
 ///
@@ -67,6 +68,17 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
             subtitle: Text(context.l10n.debugTools_cfLogsDesc),
             trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
             onTap: () => _openLogs(LogTypeFilter.cfChallenge),
+          ),
+        // Chat API 探测（开发者模式,DM 功能落地前的临时验证入口）
+        if (_isDeveloperMode)
+          ListTile(
+            leading: const Icon(Symbols.chat_rounded),
+            title: const Text('Chat API 探测'),
+            trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChatApiProbePage()),
+            ),
           ),
       ],
     );

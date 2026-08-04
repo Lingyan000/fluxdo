@@ -21,6 +21,7 @@ import '../services/app_error_handler.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/link_launcher.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/bookmark/bookmark_edit_sheet_launcher.dart';
@@ -179,6 +180,14 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   }
 
   void _onBookmarkTap(Topic topic) {
+    // chat 消息书签:走统一链接分发进原生频道页(带消息锚点)
+    if (topic.isChatMessageBookmark) {
+      final url = topic.bookmarkableUrl;
+      if (url != null && url.isNotEmpty) {
+        launchContentLink(context, url);
+      }
+      return;
+    }
     final preferences = ref.read(preferencesProvider);
     if (_useWorkspace(preferences)) {
       _openTopicInWorkspace(
@@ -285,6 +294,14 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
   }
 
   void _onBookmarkMiddleClick(Topic topic) {
+    // chat 书签没有话题上下文,中键也走链接分发进频道页
+    if (topic.isChatMessageBookmark) {
+      final url = topic.bookmarkableUrl;
+      if (url != null && url.isNotEmpty) {
+        launchContentLink(context, url);
+      }
+      return;
+    }
     final preferences = ref.read(preferencesProvider);
     if (!_useDesktopWorkspace(preferences)) {
       return;

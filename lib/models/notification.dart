@@ -146,6 +146,11 @@ class NotificationData {
   final String? avatarTemplate;
   final String? boostRaw;
 
+  /// Chat 通知(chat_mention/chat_message 等)落点
+  final int? chatChannelId;
+  final int? chatMessageId;
+  final int? chatThreadId;
+
   NotificationData({
     this.displayUsername,
     this.originalPostId,
@@ -163,6 +168,9 @@ class NotificationData {
     this.username2,
     this.avatarTemplate,
     this.boostRaw,
+    this.chatChannelId,
+    this.chatMessageId,
+    this.chatThreadId,
   });
 
   factory NotificationData.fromJson(Map<String, dynamic> json) {
@@ -183,6 +191,9 @@ class NotificationData {
       username2: json['username2'] as String?,
       avatarTemplate: json['acting_user_avatar_template'] as String? ?? json['avatar_template'] as String?,
       boostRaw: json['boost_raw'] as String?,
+      chatChannelId: json['chat_channel_id'] as int?,
+      chatMessageId: json['chat_message_id'] as int?,
+      chatThreadId: json['chat_thread_id'] as int?,
     );
   }
 }

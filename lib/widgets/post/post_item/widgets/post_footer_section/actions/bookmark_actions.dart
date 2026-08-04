@@ -54,6 +54,13 @@ extension _PostFooterBookmarkActions on _PostFooterSectionState {
       if (bookmarkId != null) {
         await _service.deleteBookmark(bookmarkId);
         if (mounted) {
+          // 写穿透:书签列表的 Hive 缓存同步删除(否则等对账才消失)
+          unawaited(
+            purgeBookmarkFromLocalCache(
+              ProviderScope.containerOf(context, listen: false),
+              bookmarkId,
+            ),
+          );
           setState(() {
             _isBookmarked = false;
             _bookmarkId = null;

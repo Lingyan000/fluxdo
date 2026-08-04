@@ -411,6 +411,18 @@ extension PostUpdateMethods on TopicDetailNotifier {
     return newBookmarkId;
   }
 
+  Future<void> _purgeBookmarkCache(int bookmarkId) async {
+    try {
+      final username = await ref.read(currentUsernameProvider.future);
+      if (username == null) return;
+      await ref
+          .read(bookmarksRepositoryProvider)
+          .deleteOne(username, bookmarkId);
+    } catch (_) {
+      // 缓存清理失败无害:下次全量对账会纠正
+    }
+  }
+
   /// 删除话题书签
   Future<void> removeTopicBookmark() async {
     final currentDetail = state.value;
@@ -422,6 +434,8 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final service = ref.read(discourseServiceProvider);
     await service.deleteBookmark(bookmarkId);
     if (!ref.mounted) return;
+    // 写穿透:书签列表 Hive 缓存同步删除
+    unawaited(_purgeBookmarkCache(bookmarkId));
 
     state = AsyncValue.data(currentDetail.copyWith(
       bookmarked: false,

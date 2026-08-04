@@ -133,6 +133,7 @@
   "userProfile_location": "位置",
   "userProfile_message": "私信",
   "userCard_viewProfile": "檢視資料",
+  "userCard_chat": "私聊",
   "avatarMenu_viewProfile": "進入主頁",
   "avatarMenu_mention": "@用戶",
   "avatarMenu_copyUsername": "複製使用者名稱",

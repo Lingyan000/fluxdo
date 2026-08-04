@@ -270,7 +270,13 @@ class Topic {
   final int? bookmarkId; // 书签 ID（用于编辑/删除）
   final String? bookmarkName; // 书签备注名称
   final DateTime? bookmarkReminderAt; // 书签提醒时间
-  final String? bookmarkableType; // 书签类型（Post/Topic）
+  final String? bookmarkableType; // 书签类型（Post/Topic/ChatMessage）
+
+  /// chat 消息书签(服务端下发 'ChatMessage';'Chat::Message' 为创建
+  /// API 入参形态,双认兜底)
+  bool get isChatMessageBookmark =>
+      bookmarkableType == 'ChatMessage' || bookmarkableType == 'Chat::Message';
+  final String? bookmarkableUrl; // 书签目标 URL（chat 书签跳转用）
 
   // 已解决问题相关
   final bool hasAcceptedAnswer; // 话题是否有被接受的答案
@@ -305,6 +311,7 @@ class Topic {
     this.bookmarkName,
     this.bookmarkReminderAt,
     this.bookmarkableType,
+    this.bookmarkableUrl,
     this.hasAcceptedAnswer = false,
     this.canHaveAnswer = false,
   });
@@ -345,6 +352,7 @@ class Topic {
       bookmarkName: bookmarkName,
       bookmarkReminderAt: bookmarkReminderAt,
       bookmarkableType: bookmarkableType,
+      bookmarkableUrl: bookmarkableUrl,
       hasAcceptedAnswer: hasAcceptedAnswer,
       canHaveAnswer: canHaveAnswer,
     );
@@ -397,7 +405,10 @@ class Topic {
       bookmarkReminderAt: TimeUtils.parseUtcTime(
         json['_bookmark_reminder_at'] as String?,
       ),
-      bookmarkableType: json['_bookmarkable_type'] as String?,
+      bookmarkableType:
+          (json['_bookmarkable_type'] ?? json['bookmarkable_type']) as String?,
+      bookmarkableUrl:
+          (json['_bookmarkable_url'] ?? json['bookmarkable_url']) as String?,
       hasAcceptedAnswer: json['has_accepted_answer'] as bool? ?? false,
       canHaveAnswer: json['can_have_answer'] as bool? ?? false,
     );
@@ -2074,6 +2085,15 @@ Map<String, dynamic> normalizeBookmarkListEntry(
   }
   if (map['bookmarkable_type'] != null) {
     map['_bookmarkable_type'] = map['bookmarkable_type'];
+  }
+  if (map['bookmarkable_url'] != null) {
+    map['_bookmarkable_url'] = map['bookmarkable_url'];
+  }
+  // chat 书签没有 topic_id,fancy_title 是频道名;excerpt 已是 cooked 摘要
+  // 服务端 polymorphic_name 映射后是 'ChatMessage'(无冒号,
+  // chat/message.rb polymorphic_class_mapping),不是 Ruby 类名 Chat::Message
+  if (map['bookmarkable_type'] == 'ChatMessage' && map['title'] == null) {
+    map['title'] = map['fancy_title'];
   }
 
   // 帖子书签：保留 linked_post_number 供跳转使用

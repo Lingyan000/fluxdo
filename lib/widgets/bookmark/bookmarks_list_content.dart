@@ -272,7 +272,8 @@ class BookmarksListContent extends ConsumerWidget {
             layout: layout,
             onTap: () => onTap(topic),
             onMiddleClick: () => onMiddleClick(topic),
-            onLongPress: enableLongPress
+            // chat 书签无话题上下文,长按预览(按话题 id 拉详情)必错,禁用
+            onLongPress: enableLongPress && !topic.isChatMessageBookmark
                 ? () => TopicPreviewDialog.show(
                       context,
                       topic: topic,
@@ -324,7 +325,8 @@ class BookmarksListContent extends ConsumerWidget {
           isSelected: false,
           onTap: () => onTap(topic),
           onMiddleClick: () => onMiddleClick(topic),
-          enableLongPress: enableLongPress,
+          // chat 书签无话题上下文,长按预览必错,禁用
+          enableLongPress: enableLongPress && !topic.isChatMessageBookmark,
           statsAvailableWidth: statsAvailableWidth,
           categoryMap: categoryMap,
           topWidget: _buildBookmarkTopBar(context, topic),

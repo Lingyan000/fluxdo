@@ -6,12 +6,14 @@ import '../l10n/s.dart';
 import '../models/user.dart';
 import '../pages/bookmarks_page.dart';
 import '../pages/browsing_history_page.dart';
+import '../pages/chat/chat_list_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/private_messages_page.dart';
 import '../pages/profile_page.dart';
 import '../pages/seeking_page.dart';
 import '../pages/topics_screen.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/chat/chat_channels_provider.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/notification/notification_quick_panel.dart';
 import 'nav_action_bus.dart';
@@ -91,6 +93,19 @@ class NavEntryRegistry {
         requiresLogin: true,
       ),
       NavEntry(
+        id: NavEntryIds.chat,
+        kind: NavEntryKind.page,
+        iconData: Symbols.forum_rounded,
+        selectedIconData: Symbols.forum_rounded,
+        label: (ctx) => ctx.l10n.chat_title,
+        pageBuilder: (ctx, isActive) => ChatListPage(isActive: isActive),
+        requiresLogin: true,
+        // 未读徽章:watch 即激活 chatChannelsProvider(全局非 autoDispose),
+        // 使 new-channel/user-tracking-state 订阅随底栏常驻
+        customIconBuilder: (ctx, ref) => _chatIcon(ref, selected: false),
+        customSelectedIconBuilder: (ctx, ref) => _chatIcon(ref, selected: true),
+      ),
+      NavEntry(
         id: NavEntryIds.seeking,
         kind: NavEntryKind.page,
         iconData: Symbols.visibility_rounded,
@@ -137,6 +152,16 @@ class NavEntryRegistry {
   static List<String> lockedIds() {
     return buildAll().where((e) => e.locked).map((e) => e.id).toList();
   }
+}
+
+Widget _chatIcon(WidgetRef ref, {required bool selected}) {
+  final unread = ref.watch(chatTotalUnreadProvider);
+  final icon = Icon(Symbols.forum_rounded, fill: selected ? 1 : 0);
+  if (unread <= 0) return icon;
+  return Badge(
+    label: Text(unread > 99 ? '99+' : '$unread'),
+    child: icon,
+  );
 }
 
 Widget _profileIcon(

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../models/user.dart';
+import '../../pages/chat/chat_channel_page.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../services/app_error_handler.dart';
@@ -116,20 +117,51 @@ void showUserCard({
     entry = OverlayEntry(
       builder: (ctx) {
         final animatedCard = _CardEntryAnimation(child: buildCard(close));
-        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位
+        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位。
+        // 边界处理：锚点在下半屏 → 卡片底对齐锚点底向上生长；右侧放不下
+        // 宽度 → 挂到锚点左侧。maxHeight 按实际可用空间收紧,不再溢出屏幕。
+        final screen = MediaQuery.of(ctx).size;
+        final alignBottom = anchorRect.center.dy > screen.height * 0.55;
+        final placeLeft =
+            anchorRect.right + _kGap + _kFloatingWidth >
+            screen.width - _kScreenMargin;
+        final availableHeight = alignBottom
+            ? anchorRect.bottom - _kScreenMargin
+            : screen.height - anchorRect.top - _kScreenMargin;
+        final maxHeight = availableHeight
+            .clamp(200.0, screen.height * 0.8)
+            .toDouble();
         final Widget positioned = layerLink != null
             ? CompositedTransformFollower(
                 link: layerLink,
                 showWhenUnlinked: false,
-                targetAnchor: Alignment.topRight,
-                followerAnchor: Alignment.topLeft,
-                offset: const Offset(_kGap, -8),
+                targetAnchor: placeLeft
+                    ? (alignBottom
+                          ? Alignment.bottomLeft
+                          : Alignment.topLeft)
+                    : (alignBottom
+                          ? Alignment.bottomRight
+                          : Alignment.topRight),
+                followerAnchor: placeLeft
+                    ? (alignBottom
+                          ? Alignment.bottomRight
+                          : Alignment.topRight)
+                    : (alignBottom
+                          ? Alignment.bottomLeft
+                          : Alignment.topLeft),
+                offset: Offset(placeLeft ? -_kGap : _kGap, alignBottom ? 8 : -8),
                 child: Align(
-                  alignment: Alignment.topLeft,
+                  alignment: alignBottom
+                      ? (placeLeft
+                            ? Alignment.bottomRight
+                            : Alignment.bottomLeft)
+                      : (placeLeft
+                            ? Alignment.topRight
+                            : Alignment.topLeft),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: _kFloatingWidth,
-                      maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+                      maxHeight: maxHeight,
                     ),
                     child: animatedCard,
                   ),
@@ -509,6 +541,30 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     );
   }
 
+  /// 发起私聊(chat 插件 DM):创建/复用 1:1 频道并进入
+  Future<void> _openChat() async {
+    final anchorContext = widget.anchorContext;
+    widget.onClose();
+    try {
+      final channel = await ProviderScope.containerOf(
+        anchorContext,
+        listen: false,
+      ).read(discourseServiceProvider).createDirectMessageChannel(
+        targetUsernames: [widget.username],
+        upsert: true,
+      );
+      if (!anchorContext.mounted) return;
+      await Navigator.push(
+        anchorContext,
+        MaterialPageRoute(
+          builder: (_) => ChatChannelPage(channelId: channel.id),
+        ),
+      );
+    } catch (e) {
+      ToastService.showError(e.toString());
+    }
+  }
+
   Future<void> _toggleFollow() async {
     if (_followLoading) return;
     setState(() => _followLoading = true);
@@ -765,25 +821,21 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     );
   }
 
-  /// 简介：高度随内容自适应，超过约 3 行才裁剪。
-  /// 用 ConstrainedBox(maxHeight) + 内层不可滚动 ScrollView 让子节点按自然高度布局，
-  /// 短简介收缩、长简介封顶裁剪，且不触发 RenderFlex 溢出报错。
+  /// 简介：高度随内容自适应，超过封顶高度时裁剪 + 底部渐隐
+  /// （之前硬裁剪会把第 4 行拦腰切半截）。
   Widget _buildBio(ThemeData theme, User user) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 66),
-        child: SingleChildScrollView(
-          physics: const NeverScrollableScrollPhysics(),
-          // 用户卡 bio 属只读预览：走新引擎 FluxdoRender，关闭划词选区。
-          child: FluxdoRenderCallbacks.generic(
-            heroTagNamespace: 'user_card_bio_${user.username}',
-          ).render(
-            cookedHtml: user.bio!,
-            baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-            compact: true,
-            selectionEnabled: false,
-          ),
+      child: _ClampedFadeBox(
+        maxHeight: 66,
+        // 用户卡 bio 属只读预览：走新引擎 FluxdoRender，关闭划词选区。
+        child: FluxdoRenderCallbacks.generic(
+          heroTagNamespace: 'user_card_bio_${user.username}',
+        ).render(
+          cookedHtml: user.bio!,
+          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          compact: true,
+          selectionEnabled: false,
         ),
       ),
     );
@@ -956,18 +1008,34 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       currentUserProvider.select((value) => value.value != null),
     );
     final canMessage = isLoggedIn && user?.canSendPrivateMessageToUser == true;
+    final canChat = isLoggedIn && user?.canChatUser == true;
     final canFollow = isLoggedIn && user?.canFollow == true;
     final canMute = isLoggedIn && user?.canMuteUser == true;
     final canIgnore = isLoggedIn && user?.canIgnoreUser == true;
 
     final primary = <Widget>[];
-    if (canMessage) {
+    if (canChat) {
       primary.add(Expanded(
         child: FilledButton.icon(
-          onPressed: _composeMessage,
-          icon: const Icon(Symbols.mail_rounded, size: 18),
-          label: Text(S.current.userProfile_message),
+          onPressed: _openChat,
+          icon: const Icon(Symbols.chat_rounded, size: 18),
+          label: Text(S.current.userCard_chat),
         ),
+      ));
+    }
+    if (canMessage) {
+      primary.add(Expanded(
+        child: canChat
+            ? FilledButton.tonalIcon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              )
+            : FilledButton.icon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              ),
       ));
     }
     if (canFollow) {
@@ -1053,6 +1121,76 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
           Text(label),
         ],
       ),
+    );
+  }
+}
+
+/// 封顶裁剪 + 溢出时底部渐隐的容器:短内容自然高度,长内容裁到
+/// [maxHeight] 并在底缘淡出(替代硬裁剪的"半行字"观感)。
+class _ClampedFadeBox extends StatelessWidget {
+  final double maxHeight;
+  final Widget child;
+
+  const _ClampedFadeBox({required this.maxHeight, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: _OverflowFade(maxHeight: maxHeight, child: child),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 内容高度超过 [maxHeight] 时叠加底部 18px 渐隐遮罩
+class _OverflowFade extends StatefulWidget {
+  final double maxHeight;
+  final Widget child;
+
+  const _OverflowFade({required this.maxHeight, required this.child});
+
+  @override
+  State<_OverflowFade> createState() => _OverflowFadeState();
+}
+
+class _OverflowFadeState extends State<_OverflowFade> {
+  final GlobalKey _contentKey = GlobalKey();
+  bool _overflowing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // 帧末量内容自然高度,超限则挂渐隐
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = _contentKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize || !mounted) return;
+      final overflowing = box.size.height > widget.maxHeight + 0.5;
+      if (overflowing != _overflowing) {
+        setState(() => _overflowing = overflowing);
+      }
+    });
+    final content = KeyedSubtree(key: _contentKey, child: widget.child);
+    if (!_overflowing) return content;
+    return ShaderMask(
+      shaderCallback: (rect) => LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: const [Colors.white, Colors.white, Colors.transparent],
+        // 渐隐区间锚定可视窗口底部(rect 高是内容全高)
+        stops: [
+          0,
+          ((widget.maxHeight - 18) / rect.height).clamp(0.0, 1.0),
+          (widget.maxHeight / rect.height).clamp(0.0, 1.0),
+        ],
+      ).createShader(rect),
+      blendMode: BlendMode.dstIn,
+      child: content,
     );
   }
 }

@@ -1,0 +1,229 @@
+{
+  "chat_title": "Chat",
+  "chat_refresh": "Refresh",
+  "chat_newChat": "New chat",
+  "chat_startChat": "Start chat",
+  "chat_createGroup": "Create group ({count})",
+  "@chat_createGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_searchUserHint": "Search users",
+  "chat_empty": "No conversations yet",
+  "chat_noMessages": "No messages yet. Say something!",
+  "chat_previewImage": "[Image]",
+  "chat_previewFile": "[File]",
+  "chat_inputHint": "Message…",
+  "chat_send": "Send",
+  "chat_resend": "Resend",
+  "chat_discard": "Discard",
+  "chat_edited": "(edited)",
+  "chat_messageDeleted": "Message deleted",
+  "chat_deletedOne": "A message was deleted · view",
+  "chat_deletedMany": "{count} messages were deleted · view all",
+  "@chat_deletedMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_deletedTag": "(deleted)",
+  "chat_unreadDivider": "New messages",
+  "chat_menuReply": "Reply",
+  "chat_menuCopy": "Copy",
+  "chat_menuEdit": "Edit",
+  "chat_menuDelete": "Delete",
+  "chat_menuRestore": "Restore",
+  "chat_menuPin": "Pin",
+  "chat_menuUnpin": "Unpin",
+  "chat_pinnedBanner": "Pinned message",
+  "chat_pinnedCount": "{count} pinned",
+  "@chat_pinnedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuBookmark": "Bookmark",
+  "chat_menuRemoveBookmark": "Remove bookmark",
+  "chat_deleteConfirm": "Delete this message?",
+  "chat_editingBanner": "Edit message",
+  "chat_replyingTo": "Reply to {username}",
+  "@chat_replyingTo": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_moreReactions": "More reactions",
+  "chat_memberCount": "{count} members",
+  "@chat_memberCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuCopyLink": "Copy link",
+  "chat_attach": "Attach",
+  "chat_attachCamera": "Camera",
+  "chat_attachGallery": "Gallery",
+  "chat_attachFile": "File",
+  "chat_threadTitle": "Thread",
+  "chat_threadReplies": "{count} replies",
+  "@chat_threadReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_channelInfo": "Conversation info",
+  "chat_members": "Members",
+  "chat_memberSelf": "You",
+  "chat_addMembers": "Add members",
+  "chat_addMembersConfirm": "Add ({count})",
+  "chat_membersAdded": "Members added",
+  "chat_removeMember": "Remove from group",
+  "chat_removeMemberConfirm": "Remove {username} from this group?",
+  "chat_renameGroup": "Rename group",
+  "chat_groupNameHint": "Group name",
+  "chat_leave": "Leave conversation",
+  "chat_leaveConfirm": "Leave this conversation?",
+  "chat_leaveHint": "History is kept. The conversation reappears when new messages arrive.",
+  "@chat_addMembersConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_removeMemberConfirm": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_sectionChannels": "Channels",
+  "chat_sectionDirect": "Direct messages",
+  "chat_emptyChannels": "No channels joined yet",
+  "chat_typingOne": "{username} is typing…",
+  "chat_typingMany": "{count} people are typing…",
+  "@chat_typingOne": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "@chat_typingMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_markRead": "Mark read",
+  "chat_mute": "Mute",
+  "chat_unmute": "Unmute",
+  "chat_browseChannels": "Browse channels",
+  "chat_searchChannelHint": "Search channels",
+  "chat_noChannelsFound": "No channels found",
+  "chat_joinChannel": "Join",
+  "chat_enterChannel": "Open",
+  "chat_upgradeToGroup": "Add members to create group",
+  "chat_upgradeToGroupHint": "Creates a new group chat. Current history stays here.",
+  "chat_menuSelect": "Select",
+  "chat_selectedCount": "{count} selected",
+  "chat_selectionQuote": "Quote",
+  "chat_quoteCopied": "Quote copied — paste into a post or message",
+  "chat_deleteSelectedConfirm": "Delete {count} selected messages?",
+  "@chat_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_deleteSelectedConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuFlag": "Flag",
+  "chat_flagTitle": "Flag message",
+  "chat_flagSuccess": "Flag submitted",
+  "chat_flagNoTypes": "This message cannot be flagged right now",
+  "chat_flagMessageHint": "Additional details (optional)",
+  "chat_flagSubmit": "Submit flag",
+  "chat_emoji": "Emoji",
+  "chat_insertTemplate": "Insert template",
+  "chat_insertDateTime": "Insert date/time",
+  "chat_noTemplates": "No templates available",
+  "chat_searchAll": "Search messages",
+  "chat_searchAllHint": "Search all messages",
+  "chat_searchInChannel": "Search in conversation",
+  "chat_searchInChannelHint": "Search this conversation",
+  "chat_searchPrompt": "Type to search chat messages",
+  "chat_searchNoResults": "No matching messages",
+  "chat_star": "Star",
+  "chat_unstar": "Unstar",
+  "chat_leaveChannel": "Leave channel",
+  "chat_summarize": "Summarize messages",
+  "chat_summarizeHours": "Last {count} hours",
+  "chat_summarizeDays": "Last {count} days",
+  "@chat_summarizeHours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_summarizeDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_settingsSection": "Settings",
+  "chat_muteChannel": "Mute channel",
+  "chat_notificationLevel": "Send push notifications",
+  "chat_levelNever": "Never",
+  "chat_levelMention": "Mentions only",
+  "chat_levelAlways": "All messages",
+  "chat_threadingEnabled": "Enable threads",
+  "chat_threadingHint": "Replies go into threads instead of the main stream",
+  "chat_viewMembers": "View members",
+  "chat_infoCategory": "Category",
+  "chat_infoRetention": "History",
+  "chat_retentionForever": "Kept forever",
+  "chat_retentionDays": "Kept for {count} days",
+  "@chat_retentionDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_reactionUsersMore": "{names} and {count} others",
+  "@chat_reactionUsersMore": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

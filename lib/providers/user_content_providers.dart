@@ -20,6 +20,26 @@ final currentUsernameProvider = FutureProvider<String?>((ref) async {
   return ref.read(discourseServiceProvider).getUsername();
 });
 
+/// 删除书签后的本地缓存写穿透(全入口统一收口):
+/// 服务端 DELETE 成功后调用,把 Hive 里对应条目立刻删掉——否则要等
+/// 下次对账才消失,期间书签列表仍展示已删条目(用户实测漏报)。
+/// container 版签名:帖子脚等非 Consumer 场景用
+/// ProviderScope.containerOf(context) 也能调。
+Future<void> purgeBookmarkFromLocalCache(
+  ProviderContainer container,
+  int bookmarkId,
+) async {
+  try {
+    final username = await container.read(currentUsernameProvider.future);
+    if (username == null) return;
+    await container
+        .read(bookmarksRepositoryProvider)
+        .deleteOne(username, bookmarkId);
+  } catch (_) {
+    // 缓存清理失败无害:下次全量对账会纠正
+  }
+}
+
 /// 分页助手（所有用户内容列表共用）
 final _topicPaginationHelper = PaginationHelpers.forTopics<Topic>(
   keyExtractor: (topic) => topic.id,

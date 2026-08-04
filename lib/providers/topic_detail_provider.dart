@@ -8,8 +8,10 @@ import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/anchor_guard_sliver.dart';
+import 'bookmarks_repository.dart';
 import 'core_providers.dart';
 import 'message_bus/models.dart';
+import 'user_content_providers.dart';
 
 part 'topic_detail/_loading_methods.dart';
 part 'topic_detail/_filter_methods.dart';

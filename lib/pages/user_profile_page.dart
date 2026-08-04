@@ -49,6 +49,7 @@ import 'search_page.dart';
 import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
+import 'chat/chat_channel_page.dart';
 import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -382,6 +383,32 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     showReplySheet(context: context, targetUsername: _user!.username);
   }
+
+  /// 发起 1:1 聊天(Chat 插件 DM;服务端 upsert 自动复用旧会话)
+  Future<void> _startChat() async {
+    if (_user == null || _isStartingChat) return;
+    setState(() => _isStartingChat = true);
+    try {
+      final service = ref.read(discourseServiceProvider);
+      final channel = await service.createDirectMessageChannel(
+        targetUsernames: [_user!.username],
+        upsert: true,
+      );
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatChannelPage(channelId: channel.id),
+        ),
+      );
+    } catch (e) {
+      ToastService.showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isStartingChat = false);
+    }
+  }
+
+  bool _isStartingChat = false;
 
   /// 打开用户内容搜索
   void _openUserSearch() {
@@ -1272,6 +1299,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             onPressed: _openMessageDialog,
             icon: const Icon(Symbols.mail_rounded),
             tooltip: context.l10n.userProfile_message,
+          ),
+        if (_user != null && !isOwnProfile)
+          IconButton(
+            onPressed: _isStartingChat ? null : _startChat,
+            icon: const Icon(Symbols.forum_rounded),
+            tooltip: context.l10n.chat_title,
           ),
         SwipeDismissiblePopupMenuButton<String>(
           icon: const Icon(Symbols.more_vert_rounded),

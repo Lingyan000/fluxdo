@@ -20,6 +20,7 @@ import 'providers/selected_topic_provider.dart';
 import 'providers/locale_provider.dart';
 import 'widgets/ai/builtin_presets_factory.dart';
 import 'providers/message_bus_providers.dart';
+import 'providers/chat/chat_notification_alert_provider.dart';
 import 'services/auth_issue_notice_service.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
@@ -909,6 +910,7 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<void>? _messageBusSub;
   ProviderSubscription<void>? _notificationChannelSub;
   ProviderSubscription<void>? _notificationAlertChannelSub;
+  ProviderSubscription<void>? _chatAlertChannelSub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -1014,6 +1016,11 @@ class _MainPageState extends ConsumerState<MainPage>
             notificationAlertChannelProvider,
             (_, _) {},
           );
+          _chatAlertChannelSub?.close();
+          _chatAlertChannelSub = ref.listenManual<void>(
+            chatNotificationAlertProvider,
+            (_, _) {},
+          );
         });
       } else if (user == null) {
         _messageBusInitialized = false;
@@ -1023,6 +1030,8 @@ class _MainPageState extends ConsumerState<MainPage>
         _notificationChannelSub = null;
         _notificationAlertChannelSub?.close();
         _notificationAlertChannelSub = null;
+        _chatAlertChannelSub?.close();
+        _chatAlertChannelSub = null;
       }
     }, fireImmediately: true);
   }
@@ -1184,6 +1193,7 @@ class _MainPageState extends ConsumerState<MainPage>
     _messageBusSub?.close();
     _notificationChannelSub?.close();
     _notificationAlertChannelSub?.close();
+    _chatAlertChannelSub?.close();
     _connectivitySub?.close();
     super.dispose();
   }

@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/bookmark.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
 import '../../l10n/s.dart';
 import '../../services/log/bookmark_edit_trace.dart';
+import '../../providers/user_content_providers.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/app_error_handler.dart';
@@ -259,6 +263,15 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     );
     try {
       await _service.deleteBookmark(widget.bookmarkId);
+      if (mounted) {
+        // 写穿透:书签列表 Hive 缓存同步删除
+        unawaited(
+          purgeBookmarkFromLocalCache(
+            ProviderScope.containerOf(context, listen: false),
+            widget.bookmarkId,
+          ),
+        );
+      }
       if (mounted) {
         writeBookmarkEditTrace(
           phase: 'sheet_delete_success',
