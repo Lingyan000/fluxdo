@@ -14,7 +14,7 @@ import '../../utils/motion_springs.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/tag_icon_list.dart';
 import '../../utils/url_helper.dart';
-import '../common/predictive_back_cupertino_transitions.dart';
+import '../common/predictive_back_overlay_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/category_topics_page.dart';
 import '../../pages/tag_topics_page.dart';

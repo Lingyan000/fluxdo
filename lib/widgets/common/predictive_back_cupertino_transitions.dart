@@ -19,6 +19,9 @@
 //    (边缘/全屏)同样置位 popGestureInProgress,原判定会把跟手平移误
 //    渲染成预测返回的缩放预览。预测返回必经 handleStartBackGesture
 //    (phase → start),以此区分手势来源。
+// 5. 文件尾新增 [buildPredictiveBackPageTransitions](上游没有):给不走
+//    PageTransitionsTheme 的 PageRouteBuilder 自定义转场补挂预测返回,
+//    追加在上游内容之后,不打断上游类排布。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -94,57 +97,6 @@ class PredictiveBackCupertinoPageTransitionsBuilder
   }
 }
 
-/// Wraps a custom [PageRouteBuilder] transition with Android predictive back.
-///
-/// [PageRouteBuilder] does not use the app-wide [PageTransitionsTheme], so its
-/// transition would otherwise never register as a predictive-back observer.
-/// The supplied fallback keeps the route's existing push and button-pop
-/// animation; only an active Android back gesture uses the shared-element
-/// preview.
-Widget buildPredictiveBackPageTransitions(
-  BuildContext context,
-  Animation<double> animation,
-  Animation<double> secondaryAnimation,
-  Widget child, {
-  required Widget Function(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  )
-  fallbackBuilder,
-}) {
-  final route = ModalRoute.of(context);
-  if (route is! PageRoute<dynamic>) {
-    return fallbackBuilder(context, animation, secondaryAnimation, child);
-  }
-
-  return _PredictiveBackGestureDetector(
-    route: route,
-    builder:
-        (
-          BuildContext context,
-          _PredictiveBackPhase phase,
-          PredictiveBackEvent? startBackEvent,
-          PredictiveBackEvent? currentBackEvent,
-        ) {
-          if (route.popGestureInProgress) {
-            return _PredictiveBackSharedElementPageTransition(
-              isDelegatedTransition: true,
-              animation: animation,
-              phase: phase,
-              secondaryAnimation: secondaryAnimation,
-              startBackEvent: startBackEvent,
-              currentBackEvent: currentBackEvent,
-              child: child,
-            );
-          }
-
-          return fallbackBuilder(context, animation, secondaryAnimation, child);
-        },
-  );
-}
-
 typedef _PredictiveBackGestureDetectorWidgetBuilder =
     Widget Function(
       BuildContext context,
@@ -187,47 +139,6 @@ class _PredictiveBackGestureDetector extends StatefulWidget {
   @override
   State<_PredictiveBackGestureDetector> createState() =>
       _PredictiveBackGestureDetectorState();
-}
-
-/// Lets an embedded overlay consume Android's predictive back gesture without
-/// becoming a Navigator route. The overlay remains responsible for mapping
-/// progress to its own visual animation and for closing on commit.
-class PredictiveBackOverlayHandler with WidgetsBindingObserver {
-  PredictiveBackOverlayHandler({
-    required this.isEnabled,
-    required this.onStart,
-    required this.onUpdate,
-    required this.onCancel,
-    required this.onCommit,
-  });
-
-  final bool Function() isEnabled;
-  final VoidCallback onStart;
-  final ValueChanged<double> onUpdate;
-  final VoidCallback onCancel;
-  final VoidCallback onCommit;
-
-  void attach() => WidgetsBinding.instance.addObserver(this);
-
-  void dispose() => WidgetsBinding.instance.removeObserver(this);
-
-  @override
-  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    if (backEvent.isButtonEvent || !isEnabled()) return false;
-    onStart();
-    return true;
-  }
-
-  @override
-  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
-    onUpdate(backEvent.progress.clamp(0.0, 1.0));
-  }
-
-  @override
-  void handleCancelBackGesture() => onCancel();
-
-  @override
-  void handleCommitBackGesture() => onCommit();
 }
 
 class _PredictiveBackGestureDetectorState
@@ -604,4 +515,64 @@ class _PredictiveBackSharedElementPageTransitionState
       child: widget.child,
     );
   }
+}
+
+// —— 以下为本仓库追加,上游无对应物(差异点 5)——
+
+/// 给 [PageRouteBuilder] 自定义转场补挂 Android 预测返回。
+///
+/// PageRouteBuilder 不走全局 PageTransitionsTheme,其转场树里没有
+/// _PredictiveBackGestureDetector,预测返回手势无人认领 → 系统只能整
+/// app 缩走。本函数在自定义转场外围补挂探测器:预测返回手势期间渲染
+/// shared-element 预览,其余(push、按钮/程序化 pop、其它平台)保持
+/// 路由原有的 [fallbackBuilder] 转场。
+///
+/// 判定与 [PredictiveBackCupertinoPageTransitionsBuilder] 同标准
+/// (popGestureInProgress 且 phase 非 idle,见文件头差异点 4):这些
+/// 路由今天没挂 app 内拖拽返回手势,但 fullscreen_swipe_back 等手势
+/// 源置位的是 Navigator 级 userGestureInProgress,宽松判定会在共存时
+/// 误判,统一收紧避免踩坑。
+Widget buildPredictiveBackPageTransitions(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child, {
+  required Widget Function(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  )
+  fallbackBuilder,
+}) {
+  final route = ModalRoute.of(context);
+  if (route is! PageRoute<dynamic>) {
+    return fallbackBuilder(context, animation, secondaryAnimation, child);
+  }
+
+  return _PredictiveBackGestureDetector(
+    route: route,
+    builder:
+        (
+          BuildContext context,
+          _PredictiveBackPhase phase,
+          PredictiveBackEvent? startBackEvent,
+          PredictiveBackEvent? currentBackEvent,
+        ) {
+          if (route.popGestureInProgress &&
+              phase != _PredictiveBackPhase.idle) {
+            return _PredictiveBackSharedElementPageTransition(
+              isDelegatedTransition: true,
+              animation: animation,
+              phase: phase,
+              secondaryAnimation: secondaryAnimation,
+              startBackEvent: startBackEvent,
+              currentBackEvent: currentBackEvent,
+              child: child,
+            );
+          }
+
+          return fallbackBuilder(context, animation, secondaryAnimation, child);
+        },
+  );
 }

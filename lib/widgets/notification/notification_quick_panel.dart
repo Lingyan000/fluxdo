@@ -13,7 +13,8 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
 import '../../utils/blocked_user_filter.dart';
-import '../common/predictive_back_cupertino_transitions.dart';
+import '../common/predictive_back_overlay_handler.dart';
+import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
 
@@ -28,15 +29,22 @@ class NotificationQuickPanel {
   static ValueNotifier<bool> get visible => _visible;
   static bool get isVisible => _visible.value;
   static Future<void>? _mobileFuture;
-  static NavigatorState? _mobileNavigator;
 
-  /// 弹出或关闭快捷面板
+  /// 手机 sheet 自身的路由,由 [_MobileNotificationPanelState] 在挂载后
+  /// 回填。dismiss 必须锚定这条路由而非「navigator 栈顶」:通知条目的
+  /// 点击顺序是「先 push 详情页再关面板」,此刻栈顶是详情页,盲目 pop
+  /// 会把刚打开的详情页弹掉。
+  static ModalRoute<dynamic>? _mobileRoute;
+
+  /// 弹出或关闭快捷面板(重复触发 = 收起,两种模式同语义)
   static Future<void> show(BuildContext context) {
     if (!Responsive.showNavigationRail(context)) {
       final existing = _mobileFuture;
-      if (existing != null) return existing;
+      if (existing != null) {
+        dismiss();
+        return existing;
+      }
 
-      _mobileNavigator = Navigator.of(context, rootNavigator: true);
       final future = showAppBottomSheet<void>(
         context: context,
         useRootNavigator: true,
@@ -45,23 +53,22 @@ class NotificationQuickPanel {
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
+        shortcutSurface: const ShortcutSurfaceConfig(
+          id: ShortcutSurfaceIds.notifications,
+          triggerAction: ShortcutAction.toggleNotifications,
+          repeatBehavior: ShortcutSurfaceRepeatBehavior.toggle,
+        ),
         builder: (_) => const _MobileNotificationPanel(),
       ).then<void>((_) {});
       _mobileFuture = future;
-      future.then<void>(
-        (_) {
-          if (identical(_mobileFuture, future)) {
-            _mobileFuture = null;
-            _mobileNavigator = null;
-          }
-        },
-        onError: (Object _, StackTrace _) {
-          if (identical(_mobileFuture, future)) {
-            _mobileFuture = null;
-            _mobileNavigator = null;
-          }
-        },
-      );
+      future
+          .whenComplete(() {
+            if (identical(_mobileFuture, future)) {
+              _mobileFuture = null;
+              _mobileRoute = null;
+            }
+          })
+          .ignore();
       return future;
     }
 
@@ -71,8 +78,18 @@ class NotificationQuickPanel {
 
   /// 关闭当前通知面板
   static void dismiss() {
-    if (_mobileFuture != null) {
-      _mobileNavigator?.pop();
+    final route = _mobileRoute;
+    if (route != null) {
+      final navigator = route.navigator;
+      if (navigator != null && route.isActive) {
+        if (route.isCurrent) {
+          navigator.pop();
+        } else {
+          // 上面已经盖了别的路由(点通知先 push 详情页):无动画抽掉
+          // sheet,详情页保持在原位。
+          navigator.removeRoute(route);
+        }
+      }
       return;
     }
     _visible.value = false;
@@ -113,9 +130,12 @@ class _SidebarNotificationPanelState
       reverseCurve: Curves.easeInCubic,
     );
     _predictiveBackHandler = PredictiveBackOverlayHandler(
+      // 分类抽屉在 Stack 里盖在本面板之上,两者同开时手势归抽屉,
+      // 这里让位(见 PredictiveBackOverlayHandler 的互斥说明)。
       isEnabled: () =>
           (ModalRoute.of(context)?.isCurrent ?? false) &&
-          NotificationQuickPanel.isVisible,
+          NotificationQuickPanel.isVisible &&
+          !CategoryDrawerHost.isOpen,
       onStart: _onPredictiveBackStart,
       onUpdate: _onPredictiveBackUpdate,
       onCancel: _onPredictiveBackCancel,
@@ -488,6 +508,13 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 回填 sheet 自身路由,供 dismiss 精确锚定(而非盲 pop 栈顶)
+    NotificationQuickPanel._mobileRoute = ModalRoute.of(context);
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
@@ -512,7 +539,7 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
           children: [
             _NotificationHeader(
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-              onClose: () => Navigator.of(context).pop(),
+              onClose: NotificationQuickPanel.dismiss,
               onViewAll: _openAllNotifications,
             ),
             _NotificationBody(scrollController: _scrollController),

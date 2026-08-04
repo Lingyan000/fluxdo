@@ -97,6 +97,10 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     return PopScope(
       // WebView 还有历史时，返回键先回退网页；到首层后交给路由，
       // 这样离开浏览器页面可以使用 Android 预测式返回动画。
+      // _canGoBack 靠 onLoadStop/onUpdateVisitedHistory 异步回填,
+      // 网页刚导航完的一小段窗口内可能过期:过期为 true 时返回键
+      // 走 _handleBackNavigation 的实时查询兜底,行为仍正确;过期
+      // 为 false 时(极短暂)会直接退出页面而非回退网页,可接受。
       canPop: !_canGoBack,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
