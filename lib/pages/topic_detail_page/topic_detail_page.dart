@@ -451,7 +451,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _onScrollIdle() {
     if (!mounted) return;
-    final scrolling = _idleFlushPosition?.isScrollingNotifier.value ?? true;
+    final scrolling =
+        _idleFlushPosition?.isScrollingNotifier.value ?? true;
     if (scrolling) return;
     if (_deferredPostUpdates.isEmpty) return;
     // 推迟一帧回放:isScrollingNotifier 翻 false 发生在惯性最后一个 tick
@@ -2298,9 +2299,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 _KeepAlivePage(
                   child: Consumer(
                     builder: (context, ref, _) {
-                      final detail = ref
-                          .watch(topicDetailProvider(params))
-                          .value;
+                      final detail =
+                          ref.watch(topicDetailProvider(params)).value;
                       return AiChatPage(
                         topicId: widget.topicId,
                         detail: detail,
@@ -2477,7 +2477,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // Stack 组装
     return Stack(
-      children: [
+        children: [
         // 使用 Offstage 保持帖子列表存在但在搜索模式下隐藏，保留滚动位置
         Offstage(offstage: isSearchMode, child: content),
 
@@ -2564,7 +2564,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               );
             },
           ),
-      ],
+        ],
     );
   }
 
@@ -2806,9 +2806,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 onJumpToPost: _scrollToPost,
               ),
               onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
-              onWithdrawAndEditPendingPost: isLoggedIn
-                  ? _handleWithdrawAndEditPending
-                  : null,
+              onWithdrawAndEditPendingPost:
+                  isLoggedIn ? _handleWithdrawAndEditPending : null,
             );
           },
         );

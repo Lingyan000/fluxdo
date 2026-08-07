@@ -123,8 +123,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   /// didUpdateWidget，两处都手动失效即可安全复用
   List<NestedNode>? _visibleChildrenCache;
 
-  List<NestedNode> get _visibleChildren => _visibleChildrenCache ??=
-      BlockedUserFilter.visibleNestedNodes(_children, widget.blockedUsernames);
+  List<NestedNode> get _visibleChildren =>
+      _visibleChildrenCache ??= BlockedUserFilter.visibleNestedNodes(
+        _children,
+        widget.blockedUsernames,
+      );
 
   @override
   void didUpdateWidget(covariant NestedPostCard oldWidget) {

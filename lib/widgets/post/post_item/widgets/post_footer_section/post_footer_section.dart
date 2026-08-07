@@ -194,7 +194,9 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   /// 无活跃实例时静默跳过,footer 本地 state 仍保证当场显示)。
   /// 弹幕层/action bar 读的是 provider 的 post.boosts —— 此前只写本地
   /// state,弹幕模式下自己刚发的 boost 直接不可见。
-  void _syncBoostToProvider(void Function(TopicDetailNotifier notifier) apply) {
+  void _syncBoostToProvider(
+    void Function(TopicDetailNotifier notifier) apply,
+  ) {
     final params = TopicDetailNotifier.activeParamsFor(widget.topicId);
     if (params == null) return;
     try {
