@@ -6,12 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
-import 'topics_screen.dart' show PaneContentWidget;
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
 import 'webview_page.dart';
 import 'login_page.dart';
+import '../widgets/auth/qr_login_sheet.dart';
 import 'browsing_history_page.dart';
 import 'bookmarks_page.dart';
 import 'export_history_page.dart';
@@ -32,6 +32,7 @@ import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
 import 'pending_posts_page.dart';
 import 'private_messages_page.dart';
+import 'chat/chat_list_page.dart';
 import 'invite_links_page.dart';
 import '../providers/ldc_providers.dart';
 import '../widgets/ldc_balance_card.dart';
@@ -195,34 +196,36 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   Future<void> _goToLogin() async {
+    // 提前捕获 container:登录路由弹出/平行视界重挂载可能让本元素短暂
+    // deactivate(此时 mounted 仍为 true),任何祖先查找(context.l10n、
+    // Navigator.of、containerOf)都会抛错;曾因此把 refreshAll 整段掐死,
+    // 表现为扫码登录成功后 UI 无登录态、要重启才恢复。
+    final container = ProviderScope.containerOf(context, listen: false);
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const LoginPage()),
     );
-    if (result == true && mounted) {
-      final loading = LoadingDialog.show(
-        context,
-        message: context.l10n.profile_loadingData,
-      );
-      try {
-        // 等加载弹框首帧结束后再刷新 provider，避免登录路由恢复时和
-        // Overlay/TickerMode 的构建时机相撞。
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted) return;
+    if (result != true) return;
 
-        AppStateRefresher.refreshAll(
-          ProviderScope.containerOf(context, listen: false),
-        );
+    // 等一帧让路由弹出与重挂载稳定;deactivate 未复活的元素此刻已 unmount,
+    // mounted 重新可信。刷新在任何分支都必须执行,不依赖本元素存活。
+    await WidgetsBinding.instance.endOfFrame;
+    AppStateRefresher.refreshAll(container);
 
-        await Future.wait([
-          ref.read(currentUserProvider.future),
-          ref.read(userSummaryProvider.future),
-        ]).timeout(const Duration(seconds: 10));
-      } catch (e) {
-        debugPrint('[ProfilePage] 登录后刷新失败/超时: $e');
-        // 超时或错误时继续
-      } finally {
-        loading.hide();
-      }
+    if (!mounted) return;
+    final loading = LoadingDialog.show(
+      context,
+      message: S.current.profile_loadingData,
+    );
+    try {
+      await Future.wait([
+        container.read(currentUserProvider.future),
+        container.read(userSummaryProvider.future),
+      ]).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[ProfilePage] 登录后刷新失败/超时: $e');
+      // 超时或错误时继续
+    } finally {
+      loading.hide();
     }
   }
   
@@ -371,7 +374,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
     });
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: !showWideLayout && _showTitle && displayName.isNotEmpty
             ? GestureDetector(
@@ -432,15 +435,22 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
         ] : null,
       ),
-      // 宽屏才提供平行视界栈：窄屏没有右栏可承载，openDrafts/openSettings
-      // 必须走全屏 push（有 scope 却没人渲染 = 点了没反应）。
+      // 「我的」页是**导航枢纽**:所有入口(话题/设置/资料…)一律开
+      // 新页面,不做右栏平行视界(曾接过 panes 宿主,用户拍板退役:
+      // 本页不存在"切换别的页面"的语义)。宽屏纯静态双栏(左资料卡
+      // 右功能卡),窄屏单列。
       body: showWideLayout
-          ? EmbeddedStackScope(
-              stackProvider: selectedProfilePaneProvider,
-              child: _buildWideBody(theme),
+          ? MasterDetailLayout(
+              // 左栏是定宽资料卡,保持固定 360:不可拖拽、不随窗口
+              // 比例放宽。
+              masterWidth: 360,
+              resizableMaster: false,
+              master: _buildLeftPanel(theme),
+              emptyDetail: _buildRightPanel(theme),
             )
           : _buildMobileBody(theme),
     );
+    return scaffold;
   }
 
   /// 手机端：保持原有单列布局
@@ -497,38 +507,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           const SizedBox(height: 48),
         ],
       ),
-    );
-  }
-
-  /// 平板/桌面端：左右双栏布局
-  Widget _buildWideBody(ThemeData theme) {
-    // 右半边：栈为空时是原来的卡片列表，压了内容（草稿/设置）就顶替掉。
-    final selected = ref.watch(selectedProfilePaneProvider);
-    final entry = selected.topEntry;
-    final notifier = ref.read(selectedProfilePaneProvider.notifier);
-    return Row(
-      children: [
-        SizedBox(
-          width: 360,
-          child: _buildLeftPanel(theme),
-        ),
-        VerticalDivider(width: 1, thickness: 0.5, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
-        Expanded(
-          child: entry == null
-              ? _buildRightPanel(theme)
-              : PaneContentWidget(
-                  key: ValueKey(
-                    'profile_pane_${entry.kind}_'
-                    '${entry.instanceId ?? entry.username ?? entry.topicId}',
-                  ),
-                  entry: entry,
-                  stackProvider: selectedProfilePaneProvider,
-                  parentActive: widget.isActive,
-                  onBack: () =>
-                      selected.isStacked ? notifier.pop() : notifier.clear(),
-                ),
-        ),
-      ],
     );
   }
 
@@ -815,6 +793,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivateMessagesPage())),
         ),
         _buildOptionTile(
+          icon: Symbols.forum_rounded,
+          iconColor: Colors.teal,
+          title: context.l10n.chat_title,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListPage())),
+        ),
+        _buildOptionTile(
           icon: Symbols.pending_actions_rounded,
           iconColor: Colors.amber,
           title: context.l10n.review_myPending,
@@ -890,6 +874,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.settings_rounded,
           iconColor: Colors.blueGrey,
           title: context.l10n.profile_settings,
+          // 导航枢纽语义:开新页面(本页无 EmbeddedStackScope,
+          // openSettings 自然走全屏 push,与其他入口一致)。
           onTap: () => EmbeddedStackScope.openSettings(context),
         ),
       ],
@@ -999,7 +985,25 @@ class _ProfileHeader extends ConsumerWidget {
             _ProfileAvatarSection(userId: userId, isLoggedIn: isLoggedIn),
             const SizedBox(width: 20),
             const Expanded(child: _ProfileInfoSection()),
-            if (isLoggedIn)
+            if (isLoggedIn) ...[
+              Tooltip(
+                message: context.l10n.login_qrShowCode,
+                child: GestureDetector(
+                  // 独立手势:在竞技场胜出,不冒泡到外层跳 UserProfilePage
+                  onTap: () => showQrLoginSheet(context, username: username),
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Icon(
+                      Symbols.qr_code_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               CircleAvatar(
                 radius: 16,
                 backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -1009,6 +1013,7 @@ class _ProfileHeader extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
+            ],
           ],
         ),
       ),

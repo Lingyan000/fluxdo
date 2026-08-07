@@ -30,11 +30,13 @@ class TopicDetailOverlay extends StatelessWidget {
   final VoidCallback onProgressTap;
   final ValueChanged<ProgressGestureAction>? onProgressGesture;
   final bool isSummaryMode;
+  final bool isActivityMode;
   final bool isAuthorOnlyMode;
   final bool isTopLevelMode;
   final bool isNestedMode;
   final bool isLoading;
   final VoidCallback? onShowTopReplies;
+  final VoidCallback? onShowByActivity;
   final VoidCallback? onShowAuthorOnly;
   final VoidCallback? onShowTopLevelReplies;
   final VoidCallback? onCancelFilter;
@@ -56,11 +58,13 @@ class TopicDetailOverlay extends StatelessWidget {
     required this.onProgressTap,
     this.onProgressGesture,
     this.isSummaryMode = false,
+    this.isActivityMode = false,
     this.isAuthorOnlyMode = false,
     this.isTopLevelMode = false,
     this.isNestedMode = false,
     this.isLoading = false,
     this.onShowTopReplies,
+    this.onShowByActivity,
     this.onShowAuthorOnly,
     this.onShowTopLevelReplies,
     this.onCancelFilter,
@@ -126,13 +130,16 @@ class TopicDetailOverlay extends StatelessWidget {
             onExport: onExport,
             onOpenInBrowser: onOpenInBrowser,
             hasSummary: detail.hasSummary,
+            isPostVoting: detail.isPostVoting,
             isSummaryMode: isSummaryMode,
+            isActivityMode: isActivityMode,
             isAuthorOnlyMode: isAuthorOnlyMode,
             isTopLevelMode: isTopLevelMode,
             isNestedMode: isNestedMode,
             isLoading: isLoading,
             isPrivateMessage: detail.isPrivateMessage,
             onShowTopReplies: onShowTopReplies,
+            onShowByActivity: onShowByActivity,
             onShowAuthorOnly: onShowAuthorOnly,
             onShowTopLevelReplies: onShowTopLevelReplies,
             onCancelFilter: onCancelFilter,

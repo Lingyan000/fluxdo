@@ -160,14 +160,6 @@ class SmallActionItem extends ConsumerWidget {
   /// 猜测/重新实现这条权限规则)。
   final VoidCallback? onEdit;
 
-  /// 当前用户是否有指定权限(discourse-assign can_assign)——决定"编辑
-  /// 指定"这个铅笔图标是否显示。跟上面的 [onEdit](编辑帖子正文,走
-  /// Discourse 核心的 can_edit)是两条完全独立的权限:指定/取消指定
-  /// 走的是插件自己的 `/assign/assign`、`/assign/unassign` 接口,
-  /// 权限只看 `current_user.can_assign?`(见 AssignController#
-  /// ensure_assign_allowed),跟这条帖子本身能不能编辑毫无关系。
-  final bool canAssign;
-
   const SmallActionItem({
     super.key,
     required this.post,
@@ -175,7 +167,6 @@ class SmallActionItem extends ConsumerWidget {
     this.selected = false,
     this.onTap,
     this.onEdit,
-    this.canAssign = false,
   });
 
   bool get _isAssignCode => _assignActionCodes.contains(post.actionCode ?? '');

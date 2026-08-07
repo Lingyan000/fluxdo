@@ -24,6 +24,7 @@ import irondash_engine_context
 import just_audio
 import macos_window_utils
 import media_kit_video
+import mobile_scanner
 import native_animated_image_macos
 import package_info_plus
 import quickjs_engine
@@ -61,6 +62,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   JustAudioPlugin.register(with: registry.registrar(forPlugin: "JustAudioPlugin"))
   MacOSWindowUtilsPlugin.register(with: registry.registrar(forPlugin: "MacOSWindowUtilsPlugin"))
   MediaKitVideoPlugin.register(with: registry.registrar(forPlugin: "MediaKitVideoPlugin"))
+  MobileScannerPlugin.register(with: registry.registrar(forPlugin: "MobileScannerPlugin"))
   NativeAnimatedImageMacosPlugin.register(with: registry.registrar(forPlugin: "NativeAnimatedImageMacosPlugin"))
   FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
   QuickjsEnginePlugin.register(with: registry.registrar(forPlugin: "QuickjsEnginePlugin"))

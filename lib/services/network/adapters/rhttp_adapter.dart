@@ -222,6 +222,9 @@ class RhttpAdapter implements HttpClientAdapter {
             return _isRetryableConnectionFailure(inner);
           }
           break;
+        default:
+          // 其余枚举值(如 5.11 新增 transformTimeout)不视为可重试的连接失败
+          break;
       }
     }
 

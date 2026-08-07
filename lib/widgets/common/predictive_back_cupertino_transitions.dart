@@ -19,6 +19,21 @@
 //    (边缘/全屏)同样置位 popGestureInProgress,原判定会把跟手平移误
 //    渲染成预测返回的缩放预览。预测返回必经 handleStartBackGesture
 //    (phase → start),以此区分手势来源。
+// 5. 文件尾新增 [buildPredictiveBackPageTransitions](上游没有):给不走
+//    PageTransitionsTheme 的 PageRouteBuilder 自定义转场补挂预测返回,
+//    追加在上游内容之后,不打断上游类排布。
+// 6. 预测返回期间冻结下层路由的 Cupertino secondaryAnimation。否则
+//    当前页缩小后,下层页仍停在向左偏移 1/3 屏的位置,右侧会露出
+//    Navigator 的黑色背景。
+// 7. 手势中途 Activity 进后台(挂后台/锁屏)时代打 cancel。系统不为
+//    被打断的手势补发 commit/cancel,否则 userGestureInProgress 计数
+//    永不归零 → popGestureEnabled 恒 false,回前台后预测返回永久失效
+//    (手势无人认领,退场无动画),手势期 flag 也卡死。
+// 8. 转场期静默认领:上一次 pop 退场动画未完时快速再划,
+//    popGestureEnabled 因 !animation.isCompleted 全员拒绝,引擎
+//    fallback 把整个 FlutterView 缩小露出 windowBackground 黑边。
+//    栈顶 detector 此时认领但不驱动路由动画,commit 排队 maybePop,
+//    连划=连续返回。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -31,16 +46,28 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+final Expando<ValueNotifier<bool>> _predictiveBackGestureStates =
+    Expando<ValueNotifier<bool>>('predictive back gesture state');
+
+ValueNotifier<bool>? _predictiveBackGestureStateFor(PageRoute<dynamic> route) {
+  final navigator = route.navigator;
+  if (navigator == null) return null;
+  return _predictiveBackGestureStates[navigator] ??= ValueNotifier<bool>(false);
+}
+
 /// Android 预测返回 + Cupertino 降级的页面转场。
 ///
 /// 预测返回手势(Android U+)期间与系统手势联动显示 shared-element 预览;
 /// 其余导航(push、按钮/程序化 pop、其它平台)走 Cupertino 滑动转场。
-class PredictiveBackCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
+class PredictiveBackCupertinoPageTransitionsBuilder
+    extends PageTransitionsBuilder {
   const PredictiveBackCupertinoPageTransitionsBuilder();
 
   @override
-  Duration get transitionDuration =>
-      const Duration(milliseconds: _PredictiveBackSharedElementPageTransitionState._kTransitionMilliseconds);
+  Duration get transitionDuration => const Duration(
+    milliseconds: _PredictiveBackSharedElementPageTransitionState
+        ._kTransitionMilliseconds,
+  );
 
   @override
   Widget buildTransitions<T>(
@@ -59,28 +86,58 @@ class PredictiveBackCupertinoPageTransitionsBuilder extends PageTransitionsBuild
             PredictiveBackEvent? startBackEvent,
             PredictiveBackEvent? currentBackEvent,
           ) {
-            // Only do a predictive back transition when the user is performing a
-            // pop gesture. Otherwise, for things like button presses or other
-            // programmatic navigation, fall back to
-            // CupertinoPageTransitionsBuilder.
-            //
-            // 差异点(文件头第 4 条):app 内 iOS 式拖拽返回同样置位
-            // popGestureInProgress,但不会触发 handleStartBackGesture,
-            // phase 仍为 idle —— 交给 Cupertino 分支跟手渲染。
-            if (route.popGestureInProgress && phase != _PredictiveBackPhase.idle) {
-              return _PredictiveBackSharedElementPageTransition(
-                isDelegatedTransition: true,
-                animation: animation,
-                phase: phase,
-                secondaryAnimation: secondaryAnimation,
-                startBackEvent: startBackEvent,
-                currentBackEvent: currentBackEvent,
-                child: child,
+            final predictiveBackState = _predictiveBackGestureStateFor(route);
+
+            Widget buildTransition(bool predictiveBackInProgress) {
+              // Cupertino 的 secondaryAnimation 会把上一页向左推出约
+              // 1/3 屏。预测返回缩小当前页时,上一页应作为静态背景铺满。
+              // 判定「未参与手势」必须用 phase == idle(下层路由的
+              // detector 从未认领手势,phase 恒为 idle),不能用
+              // !route.isCurrent:commit 的 navigator.pop() 同步把被弹
+              // 路由翻成非 current,而手势 flag 要等收尾动画播完才清,
+              // 按 isCurrent 判定会把 commit 收尾动画整段吞成静态贴图。
+              if (predictiveBackInProgress &&
+                  phase == _PredictiveBackPhase.idle) {
+                return child;
+              }
+
+              // Only do a predictive back transition when the user is performing a
+              // pop gesture. Otherwise, for things like button presses or other
+              // programmatic navigation, fall back to
+              // CupertinoPageTransitionsBuilder.
+              //
+              // 差异点(文件头第 4 条):app 内 iOS 式拖拽返回同样置位
+              // popGestureInProgress,但不会触发 handleStartBackGesture,
+              // phase 仍为 idle —— 交给 Cupertino 分支跟手渲染。
+              if (route.popGestureInProgress &&
+                  phase != _PredictiveBackPhase.idle) {
+                return _PredictiveBackSharedElementPageTransition(
+                  isDelegatedTransition: true,
+                  animation: animation,
+                  phase: phase,
+                  secondaryAnimation: secondaryAnimation,
+                  startBackEvent: startBackEvent,
+                  currentBackEvent: currentBackEvent,
+                  child: child,
+                );
+              }
+
+              return const CupertinoPageTransitionsBuilder().buildTransitions(
+                route,
+                context,
+                animation,
+                secondaryAnimation,
+                child,
               );
             }
 
-            return const CupertinoPageTransitionsBuilder()
-                .buildTransitions(route, context, animation, secondaryAnimation, child);
+            if (predictiveBackState == null) {
+              return buildTransition(false);
+            }
+            return ValueListenableBuilder<bool>(
+              valueListenable: predictiveBackState,
+              builder: (_, inProgress, _) => buildTransition(inProgress),
+            );
           },
     );
   }
@@ -117,21 +174,50 @@ enum _PredictiveBackPhase {
 }
 
 class _PredictiveBackGestureDetector extends StatefulWidget {
-  const _PredictiveBackGestureDetector({required this.route, required this.builder});
+  const _PredictiveBackGestureDetector({
+    required this.route,
+    required this.builder,
+  });
 
   final _PredictiveBackGestureDetectorWidgetBuilder builder;
   final PageRoute<dynamic> route;
 
   @override
-  State<_PredictiveBackGestureDetector> createState() => _PredictiveBackGestureDetectorState();
+  State<_PredictiveBackGestureDetector> createState() =>
+      _PredictiveBackGestureDetectorState();
 }
 
-class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDetector>
+class _PredictiveBackGestureDetectorState
+    extends State<_PredictiveBackGestureDetector>
     with WidgetsBindingObserver {
+  bool _ownsPredictiveBackGesture = false;
+
+  // 差异点(文件头第 7 条):后台/锁屏打断手势后,系统不会为这条
+  // 手势补发 commit/cancel。置位后忽略迟到的收尾事件,直到下一次
+  // startBackGesture 重新认领。
+  bool _gestureForceCancelled = false;
+
   /// True when the predictive back gesture is enabled.
   bool get _isEnabled {
     return widget.route.isCurrent && widget.route.popGestureEnabled;
   }
+
+  /// 差异点(文件头第 8 条):上一次 pop 的退场动画未播完时快速再划,
+  /// popGestureEnabled 因 !animation.isCompleted 拒绝,全员不认领 →
+  /// 引擎 fallback 把整个 FlutterView 缩小、露出 windowBackground
+  /// 黑边。此时静默认领:不驱动路由动画(转场进行中不能碰),
+  /// commit 时排队再退一层,连划语义自然。
+  bool get _shouldClaimDuringTransition {
+    final route = widget.route;
+    return route.isCurrent &&
+        !route.isFirst &&
+        !route.willHandlePopInternally &&
+        route.popDisposition != RoutePopDisposition.doNotPop &&
+        !route.animation!.isCompleted;
+  }
+
+  /// 本次认领是「转场期静默认领」(不驱动路由动画,commit 只 pop)
+  bool _silentClaim = false;
 
   _PredictiveBackPhase get phase => _phase;
   _PredictiveBackPhase _phase = _PredictiveBackPhase.idle;
@@ -163,12 +249,24 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    phase = _PredictiveBackPhase.start;
-    final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
-    if (!gestureInProgress) {
+    if (backEvent.isButtonEvent) {
+      return false;
+    }
+    if (!_isEnabled) {
+      // 差异点 8:转场期静默认领,防引擎 fallback 黑边
+      if (_shouldClaimDuringTransition) {
+        _gestureForceCancelled = false;
+        _silentClaim = true;
+        return true;
+      }
       return false;
     }
 
+    _gestureForceCancelled = false;
+    _silentClaim = false;
+    phase = _PredictiveBackPhase.start;
+    _ownsPredictiveBackGesture = true;
+    _predictiveBackGestureStateFor(widget.route)?.value = true;
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     startBackEvent = currentBackEvent = backEvent;
     return true;
@@ -176,14 +274,22 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
+    if (_gestureForceCancelled || _silentClaim) return;
     phase = _PredictiveBackPhase.update;
 
-    widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+    widget.route.handleUpdateBackGestureProgress(
+      progress: 1 - backEvent.progress,
+    );
     currentBackEvent = backEvent;
   }
 
   @override
   void handleCancelBackGesture() {
+    if (_gestureForceCancelled) return;
+    if (_silentClaim) {
+      _silentClaim = false;
+      return;
+    }
     phase = _PredictiveBackPhase.cancel;
 
     widget.route.handleCancelBackGesture();
@@ -192,9 +298,59 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   @override
   void handleCommitBackGesture() {
+    if (_gestureForceCancelled) return;
+    if (_silentClaim) {
+      _silentClaim = false;
+      // 转场期 commit:排队再退一层(等本帧转场态结算后执行,直接
+      // pop 会撞上仍在 popping 的上一路由)
+      final navigator = widget.route.navigator;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigator?.maybePop();
+      });
+      return;
+    }
     phase = _PredictiveBackPhase.commit;
 
     widget.route.handleCommitBackGesture();
+    startBackEvent = currentBackEvent = null;
+  }
+
+  // 差异点(文件头第 7 条):Activity 进后台(挂后台/锁屏)会打断
+  // 进行中的预测返回手势,且系统不再补发 commit/cancel。若不收尾,
+  // navigator.userGestureInProgress 计数永不归零 → popGestureEnabled
+  // 恒 false,回前台后所有预测返回被静默拒绝(手势无人认领,系统
+  // 只能整 app 缩走/无动画),且手势期 flag 卡 true 让下层路由永远
+  // 渲染成静态背景。这里代打 cancel 把手势态完整归零。
+  // hidden/paused 会先后各触发一次,_gestureForceCancelled 防重入
+  // (_ownsPredictiveBackGesture 要等取消动画播完才清,挡不住)。
+  //
+  // 只在 phase 为 start/update(手势活跃未收尾)时代打:commit/cancel
+  // 之后 _ownsPredictiveBackGesture 仍为 true(等收尾动画),这个窗口
+  // 内锁屏若再代打 cancel,会与 commit/cancel 自己挂的动画完成回调
+  // 各触发一次 didStopUserGesture → 计数下溢(release 无 assert,
+  // 计数变 -1),之后 userGestureInProgress 永久 off-by-one 恒 false,
+  // 预测返回全局静默失效 —— 恰是本修复要防的症状,别自己造一遍。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.paused) {
+      return;
+    }
+    // 转场期静默认领没碰路由动画,锁屏只需弃掉认领
+    if (_silentClaim) {
+      _silentClaim = false;
+      return;
+    }
+    if (!_ownsPredictiveBackGesture || _gestureForceCancelled) return;
+    if (phase != _PredictiveBackPhase.start &&
+        phase != _PredictiveBackPhase.update) {
+      return;
+    }
+
+    _gestureForceCancelled = true;
+    phase = _PredictiveBackPhase.cancel;
+    widget.route.handleCancelBackGesture();
     startBackEvent = currentBackEvent = null;
   }
 
@@ -208,7 +364,14 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
   void _handleUserGestureChanged() {
     if (_userGestureInProgress?.value == false) {
       phase = _PredictiveBackPhase.idle;
+      _clearPredictiveBackGesture();
     }
+  }
+
+  void _clearPredictiveBackGesture() {
+    if (!_ownsPredictiveBackGesture) return;
+    _ownsPredictiveBackGesture = false;
+    _predictiveBackGestureStateFor(widget.route)?.value = false;
   }
 
   void _subscribeUserGesture() {
@@ -224,6 +387,11 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
   @override
   void didUpdateWidget(covariant _PredictiveBackGestureDetector oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.route, widget.route) &&
+        _ownsPredictiveBackGesture) {
+      _ownsPredictiveBackGesture = false;
+      _predictiveBackGestureStateFor(oldWidget.route)?.value = false;
+    }
     _subscribeUserGesture();
   }
 
@@ -236,6 +404,16 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   @override
   void dispose() {
+    // dispose 可能发生在树锁定期间(被弹路由退场动画结束帧),同步
+    // notify 手势 flag 会命中 markNeedsBuild-when-locked 断言;
+    // 延迟到帧后清理。
+    if (_ownsPredictiveBackGesture) {
+      _ownsPredictiveBackGesture = false;
+      final route = widget.route;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _predictiveBackGestureStateFor(route)?.value = false;
+      });
+    }
     _userGestureInProgress?.removeListener(_handleUserGestureChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -243,10 +421,14 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
 
   @override
   Widget build(BuildContext context) {
-    final _PredictiveBackPhase effectivePhase = widget.route.popGestureInProgress
-        ? phase
-        : _PredictiveBackPhase.idle;
-    return widget.builder(context, effectivePhase, startBackEvent, currentBackEvent);
+    final _PredictiveBackPhase effectivePhase =
+        widget.route.popGestureInProgress ? phase : _PredictiveBackPhase.idle;
+    return widget.builder(
+      context,
+      effectivePhase,
+      startBackEvent,
+      currentBackEvent,
+    );
   }
 }
 
@@ -318,7 +500,10 @@ class _PredictiveBackSharedElementPageTransitionState
 
   // Provides a smooth transition between the default radius and the
   // _kDeviceBorderRadius, when the display corner radii are unavailable.
-  final Tween<double> _borderRadiusTween = Tween<double>(begin: 0.0, end: _kDeviceBorderRadius);
+  final Tween<double> _borderRadiusTween = Tween<double>(
+    begin: 0.0,
+    end: _kDeviceBorderRadius,
+  );
 
   // The route fades out after commit.
   final Tween<double> _opacityTween = Tween<double>(begin: 1.0, end: 0.0);
@@ -364,7 +549,9 @@ class _PredictiveBackSharedElementPageTransitionState
     final double rawYShift = currentTouchY - startTouchY;
     final double easedYShift =
         // This curve was eyeballed on a Pixel 9 running Android 16.
-        Curves.easeOut.transform(clampDouble(rawYShift.abs() / screenHeight, 0.0, 1.0)) *
+        Curves.easeOut.transform(
+          clampDouble(rawYShift.abs() / screenHeight, 0.0, 1.0),
+        ) *
         rawYShift.sign *
         yShiftMax;
 
@@ -400,8 +587,14 @@ class _PredictiveBackSharedElementPageTransitionState
         // The y position before commit is given by the vertical drag, not by an
         // animation.
         begin: switch (widget.currentBackEvent?.swipeEdge) {
-          SwipeEdge.left => Offset(xShift, _getYShiftPosition(screenSize.height)),
-          SwipeEdge.right => Offset(-xShift, _getYShiftPosition(screenSize.height)),
+          SwipeEdge.left => Offset(
+            xShift,
+            _getYShiftPosition(screenSize.height),
+          ),
+          SwipeEdge.right => Offset(
+            -xShift,
+            _getYShiftPosition(screenSize.height),
+          ),
           null => Offset(xShift, _getYShiftPosition(screenSize.height)),
         },
         end: Offset.zero,
@@ -412,7 +605,10 @@ class _PredictiveBackSharedElementPageTransitionState
   void _updateCurvedAnimations() {
     _curvedAnimation?.dispose();
     _curvedAnimationReversed?.dispose();
-    _curvedAnimation = CurvedAnimation(parent: widget.animation, curve: _kCommitInterval);
+    _curvedAnimation = CurvedAnimation(
+      parent: widget.animation,
+      curve: _kCommitInterval,
+    );
     _curvedAnimationReversed = CurvedAnimation(
       parent: ReverseAnimation(widget.animation),
       curve: _kCommitInterval,
@@ -426,7 +622,8 @@ class _PredictiveBackSharedElementPageTransitionState
     if (widget.animation != oldWidget.animation) {
       _updateCurvedAnimations();
     }
-    if (widget.phase != oldWidget.phase && widget.phase == _PredictiveBackPhase.commit) {
+    if (widget.phase != oldWidget.phase &&
+        widget.phase == _PredictiveBackPhase.commit) {
       _updateAnimations(MediaQuery.sizeOf(context));
     }
   }
@@ -466,7 +663,9 @@ class _PredictiveBackSharedElementPageTransitionState
               child: ClipRRect(
                 borderRadius:
                     MediaQuery.displayCornerRadiiOf(context) ??
-                    BorderRadius.circular(_borderRadiusTween.evaluate(_bounceAnimation)),
+                    BorderRadius.circular(
+                      _borderRadiusTween.evaluate(_bounceAnimation),
+                    ),
                 child: child,
               ),
             ),
@@ -476,4 +675,99 @@ class _PredictiveBackSharedElementPageTransitionState
       child: widget.child,
     );
   }
+}
+
+// —— 以下为本仓库追加,上游无对应物(差异点 5)——
+
+/// 给 [PageRouteBuilder] 自定义转场补挂 Android 预测返回。
+///
+/// PageRouteBuilder 不走全局 PageTransitionsTheme,其转场树里没有
+/// _PredictiveBackGestureDetector,预测返回手势无人认领 → 系统只能整
+/// app 缩走。本函数在自定义转场外围补挂探测器:预测返回手势期间渲染
+/// shared-element 预览,其余(push、按钮/程序化 pop、其它平台)保持
+/// 路由原有的 [fallbackBuilder] 转场。
+///
+/// [useSharedElementPreview] = false 时仍认领手势(路由动画由手势进度
+/// 驱动),但视觉沿用 [fallbackBuilder] —— 供 Hero 路由使用:预览的
+/// 缩放/裁切会跟 Hero 飞行体打架,而认领手势恰恰是 Hero 跟手飞行的
+/// 前提(HeroController 只为 user gesture 转场启动带
+/// transitionOnUserGestures 标记的 Hero;不认领则系统整 app 缩走,
+/// Hero 完全不飞)。两端 Hero 都需置 transitionOnUserGestures: true。
+///
+/// 判定与 [PredictiveBackCupertinoPageTransitionsBuilder] 同标准
+/// (popGestureInProgress 且 phase 非 idle,见文件头差异点 4):这些
+/// 路由今天没挂 app 内拖拽返回手势,但 fullscreen_swipe_back 等手势
+/// 源置位的是 Navigator 级 userGestureInProgress,宽松判定会在共存时
+/// 误判,统一收紧避免踩坑。
+Widget buildPredictiveBackPageTransitions(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child, {
+  bool useSharedElementPreview = true,
+  required Widget Function(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  )
+  fallbackBuilder,
+}) {
+  final route = ModalRoute.of(context);
+  if (route is! PageRoute<dynamic>) {
+    return fallbackBuilder(context, animation, secondaryAnimation, child);
+  }
+
+  return _PredictiveBackGestureDetector(
+    route: route,
+    builder:
+        (
+          BuildContext context,
+          _PredictiveBackPhase phase,
+          PredictiveBackEvent? startBackEvent,
+          PredictiveBackEvent? currentBackEvent,
+        ) {
+          final predictiveBackState = _predictiveBackGestureStateFor(route);
+
+          Widget buildTransition(bool predictiveBackInProgress) {
+            // 同上方主题 builder:判定「未参与手势」用 phase == idle,
+            // 不能用 !isCurrent(commit 的 pop 同步翻非 current,会把
+            // 被弹路由自己的 commit 收尾动画吞掉)。
+            if (predictiveBackInProgress &&
+                phase == _PredictiveBackPhase.idle) {
+              return child;
+            }
+            if (useSharedElementPreview &&
+                route.popGestureInProgress &&
+                phase != _PredictiveBackPhase.idle) {
+              return _PredictiveBackSharedElementPageTransition(
+                isDelegatedTransition: true,
+                animation: animation,
+                phase: phase,
+                secondaryAnimation: secondaryAnimation,
+                startBackEvent: startBackEvent,
+                currentBackEvent: currentBackEvent,
+                child: child,
+              );
+            }
+
+            // 手势期间落到这里(useSharedElementPreview: false):路由
+            // 动画已被手势进度驱动,fallback 转场自然跟手。
+            return fallbackBuilder(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+            );
+          }
+
+          if (predictiveBackState == null) {
+            return buildTransition(false);
+          }
+          return ValueListenableBuilder<bool>(
+            valueListenable: predictiveBackState,
+            builder: (_, inProgress, _) => buildTransition(inProgress),
+          );
+        },
+  );
 }

@@ -3,6 +3,8 @@
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <!-- 引擎级预测返回 fallback(无人认领手势时整树缩小)会露出
+             windowBackground;跟随 M3 浅色 surface,避免刺眼黑边。 -->
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 </resources>

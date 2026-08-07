@@ -27,11 +27,6 @@ final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   return response.drafts;
 });
 
-/// 草稿页右栏的平行视界栈——独立于首页/私信/搜索，草稿页自己是宿主。
-final selectedDraftPaneProvider = SelectedTopicProvider((ref) {
-  return SelectedTopicNotifier();
-});
-
 /// 草稿页:邮件式独立双栏。
 ///
 /// 所有入口(首页 FAB 菜单/「我的」页/底栏 tab)打开的都是同一形态:

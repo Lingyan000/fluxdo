@@ -392,6 +392,15 @@ class TopicCardImages {
     return null;
   }
 
+  /// 空闲预解码(TopicCardPrewarmScope):无发起方 RenderObject,命中
+  /// /在途都免费返回;miss 时登记空 waiter 集发起解码 —— 后续真实
+  /// 挂载若在解码完成前 lookup,会并入同一份 waiter 正常收到补画。
+  static void prewarm(String url, {String bucket = BlobImageCache.avatarBucket}) {
+    if (_images.containsKey(url) || _waiters.containsKey(url)) return;
+    _waiters[url] = {};
+    unawaited(_load(url, bucket));
+  }
+
   static Future<void> _load(String url, String bucket) async {
     try {
       final bytes = await BlobImageCache.fetch(bucket, url);

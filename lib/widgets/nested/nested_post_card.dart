@@ -8,10 +8,13 @@ import '../../providers/nested_topic_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../providers/topic_session_provider.dart';
+import '../../services/toast_service.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../../utils/code_selection_context.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/responsive.dart';
 import '../../utils/time_utils.dart';
+import '../post/post_item/quote_selection_helper.dart';
 import '../post/post_item/widgets/post_footer_section/post_footer_section.dart';
 import '../post/post_signature_block.dart';
 import '../post/small_action_item.dart';
@@ -64,11 +67,20 @@ class NestedPostCard extends ConsumerStatefulWidget {
   final void Function(int postNumber) onJumpToPost;
   final void Function(int postId, bool accepted)? onSolutionChanged;
 
+  /// 划词引用（与平铺视图 PostItem 同链路;null 时选区 toolbar 自动降级只留复制）
+  final void Function(String selectedText, Post post)? onQuoteSelection;
+
   /// 父节点竖线是否高亮
   final bool parentLineHighlighted;
 
   /// 展开/折叠状态存储（跨滚动回收保持状态）
   final Map<int, bool>? expansionState;
+
+  /// context 定位模式的目标楼层:命中节点短暂高亮并挂载 [highlightKey]
+  final int? highlightPostNumber;
+
+  /// 命中 [highlightPostNumber] 的节点挂载此 key,供外层 ensureVisible 滚动定位
+  final GlobalKey? highlightKey;
 
   const NestedPostCard({
     super.key,
@@ -86,8 +98,11 @@ class NestedPostCard extends ConsumerStatefulWidget {
     required this.onRefreshPost,
     required this.onJumpToPost,
     this.onSolutionChanged,
+    this.onQuoteSelection,
     this.parentLineHighlighted = false,
     this.expansionState,
+    this.highlightPostNumber,
+    this.highlightKey,
   });
 
   @override
@@ -537,6 +552,28 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       );
     }
 
+    // context 定位:命中目标楼层短暂底色高亮(渐隐),并挂 key 供滚动定位
+    if (widget.highlightPostNumber == post.postNumber) {
+      card = KeyedSubtree(
+        key: widget.highlightKey,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 1.0, end: 0.0),
+          duration: const Duration(milliseconds: 2500),
+          curve: Curves.easeOut,
+          builder: (context, value, child) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer.withValues(
+                alpha: 0.35 * value,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: child,
+          ),
+          child: card,
+        ),
+      );
+    }
+
     return card;
   }
 
@@ -551,19 +588,37 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         // Header
         _buildHeader(theme, post, isOp, isMobile: isMobile),
         const SizedBox(height: 4),
-        // Content
-        FluxdoRenderCallbacks.forPost(
-          post: post,
-          topicId: widget.topicId,
-        ).render(
-          cookedHtml: post.cooked,
-          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
-            height: 1.5,
-            fontSize:
-                (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                ref.watch(preferencesProvider).contentFontScale,
+        // Content(自研逻辑选区,与平铺 PostItem 同链路:
+        // toolbar「引用」→ onQuoteSelection,未登录/未接线自动降级只留复制)
+        Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => CodeSelectionContextTracker.instance.clear(),
+          child: FluxdoRenderCallbacks.forPost(
+            post: post,
+            topicId: widget.topicId,
+          ).render(
+            cookedHtml: post.cooked,
+            baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.5,
+              fontSize:
+                  (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                  ref.watch(preferencesProvider).contentFontScale,
+            ),
+            selectionEnabled: true,
+            selectionScopeId: post.id,
+            onQuoteRequest: widget.onQuoteSelection == null
+                ? null
+                : (plainText) => widget.onQuoteSelection!(plainText, post),
+            onCopyQuoteRequest: (plainText) =>
+                QuoteSelectionHelper.copyQuoteToClipboard(
+                  selectedText: plainText,
+                  post: post,
+                  topicId: widget.topicId,
+                ),
+            onCopyToast: () => ToastService.showSuccess(
+              context.l10n.common_copiedToClipboard,
+            ),
           ),
-          selectionEnabled: false,
         ),
         // 用户签名
         if (PostSignatureBlock.shouldRender(
@@ -807,8 +862,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
             onRefreshPost: widget.onRefreshPost,
             onJumpToPost: widget.onJumpToPost,
             onSolutionChanged: widget.onSolutionChanged,
+            onQuoteSelection: widget.onQuoteSelection,
             parentLineHighlighted: _depthLineHovered,
             expansionState: widget.expansionState,
+            highlightPostNumber: widget.highlightPostNumber,
+            highlightKey: widget.highlightKey,
           ),
         if (_hasMore)
           isMobile
@@ -914,6 +972,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         onRefreshPost: widget.onRefreshPost,
         onJumpToPost: widget.onJumpToPost,
         onSolutionChanged: widget.onSolutionChanged,
+        onQuoteSelection: widget.onQuoteSelection,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

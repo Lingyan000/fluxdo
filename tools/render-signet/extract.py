@@ -355,14 +355,19 @@ def try_extract(chan_logical: np.ndarray, dpr: float) -> Hit | None:
             (ratio >= VERIFY_RATIO_STRONG and margin >= VERIFY_STRONG_MIN_MARGIN)
             or (ratio >= VERIFY_RATIO_WEAK and margin >= VERIFY_MIN_MARGIN)
         )
-        # 小截图共识复核:ratio/margin 不足时的独立判别维度(见常量注释)
+        # 小截图共识复核:ratio/margin 不足时的独立判别维度(见常量注释)。
+        # 须叠加 ratio 下限:真印记在错误缩放档下的混叠残留同样源自
+        # 印记、块间一致,能骗过"逐块全同号"(实测 scale=4 档两例
+        # verified 错 uid);但混叠候选的相位能量分散,ratio 恒低
+        # (0.9~1.2 vs 真信号 1.75+),WEAK 档下限即可判别
         if not verified and per_block is not None and n >= CONSENSUS_MIN_BLOCKS:
-            block_scores = [
-                float((template * d[:, py, px] * w[:, py, px]).sum()
-                      / w[:, py, px].sum())
-                for d, w in per_block
-            ]
-            verified = min(block_scores) >= CONSENSUS_MIN_SCORE
+            if ratio >= VERIFY_RATIO_WEAK:
+                block_scores = [
+                    float((template * d[:, py, px] * w[:, py, px]).sum()
+                          / w[:, py, px].sum())
+                    for d, w in per_block
+                ]
+                verified = min(block_scores) >= CONSENSUS_MIN_SCORE
         hit = Hit(uid, dpr, (py, px), margin, n, verified, ratio)
         if best is None or (hit.verified, hit.ratio) > (best.verified, best.ratio):
             best = hit

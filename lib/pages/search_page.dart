@@ -18,6 +18,7 @@ import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../utils/responsive.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'package:dio/dio.dart';
 import '../services/app_error_handler.dart';
@@ -48,8 +49,9 @@ String normalizeDirectSearchLink(String rawValue) {
 
 /// 搜索页面
 class SearchPage extends ConsumerStatefulWidget {
-  static const double parallelMasterWidth = 440;
-  static const double parallelMinDetailWidth = 480;
+  static const double parallelMasterWidth = PaneBreakpoints.wideMasterWidth;
+  static const double parallelMinDetailWidth =
+      PaneBreakpoints.wideMinDetailWidth;
 
   final String? initialQuery;
   final SearchFilter? initialFilter;
@@ -760,20 +762,30 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       // 0.4)让搜索初始就占四成屏宽,明显宽于其他页。
       maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
       preferredMasterRatio: selected.isStacked ? 0.5 : null,
-      master: _buildParallelMaster(selected, master),
-      detail: selected.hasSelection
-          ? _buildParallelPane(
-              selected.topEntry!,
+      // 胶片带:搜索列表也在带上,压栈被顶出左侧,倒二层格作预览。
+      pinMaster: false,
+      master: master,
+      panes: [
+        for (var i = 0; i < selected.stack.length; i++)
+          KeyedSubtree(
+            key: _cellKey(selected.stack[i]),
+            child: _buildParallelPane(
+              selected.stack[i],
+              truncateOnPush: i < selected.stack.length - 1,
+              // 回调内重读 provider:嵌入面板在注册 ESC 时会捕获这个闭包
+              // 且不随宿主 rebuild 刷新,捕获 build 快照的 selected 会让
+              // 后续按键用过期的 isStacked 判断 pop/clear。
               onBack: () {
                 final notifier = ref.read(_stackProvider.notifier);
-                if (selected.isStacked) {
+                if (ref.read(_stackProvider).isStacked) {
                   notifier.pop();
                 } else {
                   notifier.clear();
                 }
               },
-            )
-          : null,
+            ),
+          ),
+      ],
       emptyDetail: MasterDetailEmptyState(
         icon: Symbols.preview_rounded,
         iconSize: 56,
@@ -781,6 +793,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       ),
     );
   }
+
+  Key _cellKey(PaneEntry entry) => ValueKey(
+    'search_cell_${entry.kind}_'
+    '${entry.instanceId ?? entry.username ?? entry.topicId}',
+  );
 
   Widget _buildSearchScaffold(ThemeData theme) {
     final searchField = TextField(
@@ -822,6 +839,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final Widget titleField = widget.heroCapsule
         ? Hero(
             tag: kSearchCapsuleHeroTag,
+            // 预测返回(user gesture)时胶囊也要 morph 回首页
+            transitionOnUserGestures: true,
             flightShuttleBuilder: searchCapsuleFlightShuttle,
             child: MediaQuery.withClampedTextScaling(
               maxScaleFactor: 1.2,
@@ -929,20 +948,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildParallelMaster(SelectedTopicState selected, Widget searchPage) {
-    if (!selected.isStacked) return searchPage;
-    final previous = selected.stack[selected.stack.length - 2];
-    return Stack(
-      children: [
-        ExcludeFocus(
-          excluding: true,
-          child: Offstage(offstage: true, child: searchPage),
-        ),
-        _buildParallelPane(previous, truncateOnPush: true),
-      ],
     );
   }
 
@@ -1253,8 +1258,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             ),
           ),
         Expanded(
-          child: ListView.builder(
+          child: SearchPostPrewarmScope(
+            posts: posts,
+            child: ListView.builder(
             controller: _scrollController,
+            addAutomaticKeepAlives: false,
             padding: const EdgeInsets.all(16),
             itemCount:
                 posts.length + (users.isNotEmpty ? users.length + 1 : 0) + 1,
@@ -1313,6 +1321,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 },
               );
             },
+            ),
           ),
         ),
       ],

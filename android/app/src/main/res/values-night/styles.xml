@@ -3,6 +3,7 @@
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <!-- 同 values/styles.xml:深色用 M3 深色 surface,避免纯黑割裂。 -->
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 </resources>

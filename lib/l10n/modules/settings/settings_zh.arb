@@ -100,6 +100,8 @@
   "preferences_enterUrl": "输入 URL",
   "preferences_fullscreenSwipeBack": "全屏侧滑返回",
   "preferences_fullscreenSwipeBackDesc": "在页面任意位置右滑即可返回上一页；关闭时仅屏幕左缘可侧滑",
+  "preferences_exitOnSingleBack": "单次返回退出应用",
+  "preferences_exitOnSingleBackDesc": "在首页返回时直接退出并使用系统预测退出动画；关闭时需连续返回两次",
   "preferences_hideBarOnScroll": "滚动收起导航栏",
   "preferences_hideBarOnScrollDesc": "首页滚动时自动收起顶栏和底栏",
   "preferences_longPressPreview": "长按预览",

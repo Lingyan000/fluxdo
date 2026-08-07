@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/topic.dart';
@@ -26,6 +28,18 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
   @override
   Future<List<Topic>> build() async {
+    // 话题列表里每张卡的已读状态是拉取那一刻的快照,之后只有
+    // topicTrackingStateProvider(MessageBus /latest /unread /read 频道
+    // 实时更新)会变,列表卡本身不会跟着刷新——来了新回复数字不涨,
+    // 在网页/别的设备读完了红点也一直挂着。这里订阅追踪状态,把变化
+    // 双向同步回当前显示的话题上,不需要用户手动下拉刷新整个列表。
+    ref.listen<Map<int, TrackedTopicState>>(topicTrackingStateProvider, (
+      previous,
+      next,
+    ) {
+      _syncFromTrackingState(next);
+    });
+
     // 所有参数使用 ref.read（不建立依赖），
     // 由 UI 层在参数变化时主动 invalidate provider
     final currentFilter = ref.read(topicFilterProvider);
@@ -414,6 +428,65 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     );
   }
 
+  /// 用 topicTrackingStateProvider 的实时数据刷新当前列表里对应话题的
+  /// 已读状态(见 build() 里的 ref.listen)。对齐网页版
+  /// topic-tracking-state.js 的 updateTopics:双向同步——来新回复时
+  /// 未读数上涨,在别端读完/忽略时红点下降或清除。
+  ///
+  /// tracking map 是全局单例,任何一个话题的消息都会让整个 map 换新
+  /// 触发这个监听;长轮询重连还可能补发旧消息。防串扰不靠"只涨不落"
+  /// 的整体守卫(那会把跨端已读的下降方向也挡死),而是两个游标各自
+  /// 单调合并:highestPostNumber 与 lastReadPostNumber 都只取双方更
+  /// 前进的一侧——旧消息重放两个游标都不倒退,自然不会出现"刚读完
+  /// 又弹回未读";tracking 初值来自启动快照,可能落后于刚拉回的列表
+  /// 数据,取 max 也堵住了未读数被旧快照算虚高的口子。
+  void _syncFromTrackingState(Map<int, TrackedTopicState> tracking) {
+    final topics = state.value;
+    if (topics == null || tracking.isEmpty) return;
+
+    List<Topic>? newList;
+    for (var i = 0; i < topics.length; i++) {
+      final topic = topics[i];
+      final tracked = tracking[topic.id];
+      if (tracked == null) continue;
+
+      final highest = math.max(tracked.highestPostNumber, topic.highestPostNumber);
+      final trackedLastRead = tracked.lastReadPostNumber;
+      final topicLastRead = topic.lastReadPostNumber;
+      final lastRead = trackedLastRead == null
+          ? topicLastRead
+          : (topicLastRead == null
+                ? trackedLastRead
+                : math.max(trackedLastRead, topicLastRead));
+
+      // 未读数口径对齐服务端 lib/unread.rb:没读过的话题 unread 恒为 0
+      // (它走 unseen/NEW 语义,不走未读计数)
+      final newUnread = lastRead == null ? 0 : (highest - lastRead).clamp(0, highest);
+      // 对齐网页版 updateTopics 的 unseen 回写:读过或已被忽略
+      // (dismiss_new 置 isSeen)都不再算新话题
+      final newUnseen = lastRead == null && !tracked.isSeen && topic.unseen;
+
+      if (newUnread == topic.unread &&
+          highest == topic.highestPostNumber &&
+          lastRead == topicLastRead &&
+          newUnseen == topic.unseen) {
+        continue;
+      }
+
+      newList ??= [...topics];
+      newList[i] = topic.copyWith(
+        unseen: newUnseen,
+        unread: newUnread,
+        lastReadPostNumber: lastRead,
+        highestPostNumber: highest,
+      );
+    }
+
+    if (newList != null) {
+      state = AsyncValue.data(newList);
+    }
+  }
+
   void updateSeen(int topicId, int highestSeen, {bool updateTracking = true}) {
     final topics = state.value;
     if (topics == null) return;
@@ -431,34 +504,13 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       topic.highestPostNumber,
     );
 
-    final updated = Topic(
-      id: topic.id,
-      title: topic.title,
-      slug: topic.slug,
-      postsCount: topic.postsCount,
-      replyCount: topic.replyCount,
-      views: topic.views,
-      likeCount: topic.likeCount,
-      excerpt: topic.excerpt,
-      createdAt: topic.createdAt,
-      lastPostedAt: topic.lastPostedAt,
-      lastPosterUsername: topic.lastPosterUsername,
-      categoryId: topic.categoryId,
-      pinned: topic.pinned,
-      visible: topic.visible,
-      closed: topic.closed,
-      archived: topic.archived,
-      tags: topic.tags,
-      posters: topic.posters,
+    final newList = [...topics];
+    newList[index] = topic.copyWith(
       unseen: false,
       unread: newUnread,
       newPosts: 0,
       lastReadPostNumber: highestSeen,
-      highestPostNumber: topic.highestPostNumber,
     );
-
-    final newList = [...topics];
-    newList[index] = updated;
     state = AsyncValue.data(newList);
 
     if (updateTracking) {
@@ -467,6 +519,34 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
           .read(topicTrackingStateProvider.notifier)
           .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
     }
+  }
+
+  /// 标记话题为未读:已读游标显式回退到 highest - 1(与服务端
+  /// destroy_last_for 一致)。_syncFromTrackingState 的单调合并只认
+  /// 前进方向,回退必须在这里直写列表项;tracking 侧由调用方另行回退,
+  /// 两头游标落到同一位置后,后续合并两边等值不会互相顶回。
+  /// [all] = true 清空整个游标,回 unseen/NEW 语义(unread 恒 0,
+  /// 对齐 lib/unread.rb:没读过的话题不走未读计数)。
+  void markUnread(int topicId, {bool all = false}) {
+    final topics = state.value;
+    if (topics == null) return;
+
+    final index = topics.indexWhere((t) => t.id == topicId);
+    if (index == -1) return;
+
+    final topic = topics[index];
+    final highest = topic.highestPostNumber;
+    final lastRead = all ? null : (highest > 1 ? highest - 1 : null);
+
+    final newList = [...topics];
+    newList[index] = topic.copyWith(
+      unseen: all,
+      unread: lastRead == null ? 0 : (highest - lastRead).clamp(0, highest),
+      newPosts: 0,
+      lastReadPostNumber: lastRead,
+      clearLastRead: lastRead == null,
+    );
+    state = AsyncValue.data(newList);
   }
 }
 

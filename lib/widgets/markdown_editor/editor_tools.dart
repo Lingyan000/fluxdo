@@ -199,6 +199,12 @@ final List<EditorTool> editorTools = [
     action: (t) => t.insertSpoiler(),
   ),
   EditorTool(
+    id: 'poll',
+    icon: const FaIcon(FontAwesomeIcons.squarePollVertical),
+    label: (s) => '投票',
+    action: (t) => t.insertPoll(t.context),
+  ),
+  EditorTool(
     id: 'imageGrid',
     icon: const FaIcon(FontAwesomeIcons.tableColumns),
     label: (s) => s.toolPanel_imageGrid,

@@ -30,6 +30,10 @@ import 'storage/resilient_secure_storage.dart';
 ///   请求会被 ensure_allowed! 拒(仅能授权时随 create 返回一枚一次性 OTP),
 ///   故 POST /user-api-key/otp 的长期自愈在 linux.do 现配置下不可用——授权登录
 ///   本身不受影响。selfHeal/requestOtp 对开了 write 的站点仍有效,403 时静默降级。
+/// - **用完即焚**:兑换 `_t` 与 key 存活完全解耦(session#one_time_password 只查
+///   Redis),且零 scope key 也能自我吊销(allow? 的 is_revoke_self_request? 豁免)。
+///   scopes 无 write 时 key 落地即纯负债(永久有效+零用途+用户 Apps 列表常驻),
+///   登录收口后立即 revoke+清除;将来站点放开 write 则自动改为保留([keyWorthKeeping])。
 /// - auth_redirect 用 discourse://auth_redirect(站点 allowed_user_api_auth_redirects
 ///   默认白名单,无需站方配置);App 已在 Android/iOS/macOS/Linux 注册 discourse
 ///   scheme,系统浏览器授权后深链回 App(DiscourseHub 同款流程)
@@ -41,6 +45,9 @@ class UserApiKeyService {
   static const _keyPrivateKey = 'user_api_key_rsa_private';
   static const _keyApiKey = 'user_api_key_key';
   static const _keyClientId = 'user_api_key_client_id';
+  /// 跨设备扫码专用 client_id(与浏览器授权 client 隔离)。
+  /// 稳定复用,使服务端 create 时 destroy_all 只清掉上一枚分享 key。
+  static const _keyQrClientId = 'user_api_key_qr_client_id';
   // nonce 持久化:跨重启存活。冷启动 getInitialLink 会重放上次的
   // auth_redirect 深链,内存态 nonce 会丢失导致每次重启误报"回调解析失败"。
   static const _keyPendingNonce = 'user_api_key_pending_nonce';
@@ -48,6 +55,17 @@ class UserApiKeyService {
   static const String authRedirect = 'discourse://auth_redirect';
   static const String applicationName = 'FluxDO';
   static const String scopes = 'one_time_password';
+
+  /// 跨设备扫码 key 的 application_name。展示端靠它在
+  /// /u/:username.json 的 user_api_keys 列表里识别自己那枚分享 key
+  /// (轮询其消失 = 扫码端已登录并自我吊销)。
+  static const String qrApplicationName = '$applicationName QR Login';
+
+  /// scopes 是否含 write(决定 key 是否值得留作 _t 自愈弹药)。
+  /// linux.do 现配置只允许 one_time_password → key 兑换后即为
+  /// 零 scope 永久凭据,纯负债,应当用完即焚。
+  static bool get keyWorthKeeping =>
+      scopes.split(',').map((s) => s.trim()).contains('write');
 
   /// 自愈冷却:失败后短期内不再重试,避免 key 已撤销时反复打服务端
   static const Duration _selfHealCooldown = Duration(minutes: 10);
@@ -73,23 +91,47 @@ class UserApiKeyService {
     _lastSelfHealFailureAt = null;
   }
 
+  /// 撤销一枚指定的 User API Key(服务端 revoked_at 置位)。
+  ///
+  /// 关键依据(discourse user_api_key.rb#allow?):即使 scope 的
+  /// RouteMatcher 全空(one_time_password),自我吊销请求
+  /// `POST /user-api-key/revoke`(带 User-Api-Key 头、不带 id)
+  /// 永远豁免——`is_revoke_self_request?`。带 key 头亦豁免 CSRF。
+  /// 因此"零权限 key 焚毁自己"在任何站点配置下都可行。
+  Future<bool> revokeKey(Dio dio, String apiKey) async {
+    if (apiKey.isEmpty) return false;
+    try {
+      await dio.post(
+        '/user-api-key/revoke',
+        options: Options(
+          headers: {'User-Api-Key': apiKey},
+          extra: const {'skipAuthCheck': true, 'skipCsrf': true},
+        ),
+      );
+      _log('info', 'user_api_key_revoked', '已撤销 User API Key');
+      return true;
+    } catch (e) {
+      _log('warning', 'user_api_key_revoke_failed', '撤销 User API Key 失败(忽略)', {
+        'error': e.toString(),
+      });
+      return false;
+    }
+  }
+
   /// 显式登出时尽力撤销服务端 key(失败不阻塞登出)
   Future<void> revokeAndClear(Dio dio) async {
     final key = await readApiKey();
     if (key != null && key.isNotEmpty) {
-      try {
-        await dio.post(
-          '/user-api-key/revoke',
-          options: Options(
-            headers: {'User-Api-Key': key},
-            extra: const {'skipAuthCheck': true, 'skipCsrf': true},
-          ),
-        );
-      } catch (e) {
-        debugPrint('[UserApiKey] 撤销 key 失败(忽略): $e');
-      }
+      await revokeKey(dio, key);
     }
     await clearKey();
+  }
+
+  /// 授权登录收口后的"用完即焚":scopes 无 write(本地无自愈价值)时
+  /// 撤销并清除刚拿到的 key,不给服务端留永久零权限凭据。
+  Future<void> burnAfterLoginIfUseless(Dio dio) async {
+    if (keyWorthKeeping) return;
+    await revokeAndClear(dio);
   }
 
   Future<String> _ensureClientId() async {
@@ -97,6 +139,16 @@ class UserApiKeyService {
     if (clientId == null || clientId.isEmpty) {
       clientId = const Uuid().v4();
       await _storage.write(key: _keyClientId, value: clientId);
+    }
+    return clientId;
+  }
+
+  /// 跨设备扫码专用 client_id,与 [_ensureClientId] 隔离。
+  Future<String> _ensureQrClientId() async {
+    var clientId = await _storage.read(key: _keyQrClientId);
+    if (clientId == null || clientId.isEmpty) {
+      clientId = const Uuid().v4();
+      await _storage.write(key: _keyQrClientId, value: clientId);
     }
     return clientId;
   }
@@ -183,6 +235,121 @@ class UserApiKeyService {
     } catch (e) {
       debugPrint('[UserApiKey] payload 解密失败: $e');
       return null;
+    }
+  }
+
+  // ---------- 跨设备扫码:创建可分享的 User API Key ----------
+
+  /// 已登录设备为跨设备扫码创建一枚**独立 client** 的 User API Key。
+  ///
+  /// 必须使用全新 [client_id],避免 `destroy_all` 清掉本机浏览器授权那枚 key。
+  /// 通过 `auth_redirect` 让服务端把 OTP 附在 redirect_url 上(无 redirect 时
+  /// JSON 只返回加密 payload,不含 OTP)。
+  ///
+  /// 服务端 user_api_keys#create 不接受过期参数(表无 expires_at),
+  /// key 本身不过期;回收靠站点定时任务或手动 revoke。
+  Future<({String apiKey, String otp})> createCrossDeviceKey(Dio dio) async {
+    final publicKeyPem = await ensurePublicKeyPem();
+    // 与浏览器授权 client_id 隔离;本路径稳定复用,重新生成会撤销上一枚分享 key
+    final clientId = await _ensureQrClientId();
+    final nonce = const Uuid().v4();
+
+    final data = <String, dynamic>{
+      'application_name': qrApplicationName,
+      'client_id': clientId,
+      'scopes': scopes,
+      'public_key': publicKeyPem,
+      'nonce': nonce,
+      'auth_redirect': authRedirect,
+    };
+
+    try {
+      final response = await dio.post(
+        '/user-api-key',
+        data: data,
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          headers: const {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+          },
+          // 跟随 302 会把 redirect 打到 discourse://,dio 解析失败;
+          // JSON 路径直接返回 {redirect_url: ...}; HTML 路径则 302 Location
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 400,
+          extra: const {
+            // 走会话 CSRF;不要 skipCsrf
+            'skipAuthCheck': true,
+            'skipRedirect': true,
+          },
+        ),
+      );
+
+      final body = response.data;
+      Map<String, dynamic>? map;
+      if (body is Map<String, dynamic>) {
+        map = body;
+      } else if (body is String && body.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(body);
+          if (decoded is Map<String, dynamic>) map = decoded;
+        } catch (_) {}
+      }
+
+      // 优先 JSON.redirect_url; 其次 302 Location(HTML 协商时)
+      var redirectUrl = map?['redirect_url']?.toString();
+      if (redirectUrl == null || redirectUrl.isEmpty) {
+        redirectUrl = response.headers.value('location');
+      }
+      if (redirectUrl == null || redirectUrl.isEmpty) {
+        _log('warning', 'cross_device_key_no_redirect', '创建跨设备 key 未返回 redirect_url', {
+          'statusCode': response.statusCode,
+          'hasPayload': map?['payload'] != null,
+        });
+        throw StateError('服务端未返回授权结果');
+      }
+
+      final uri = Uri.parse(redirectUrl);
+      final payloadParam = uri.queryParameters['payload'];
+      final otpParam = uri.queryParameters['oneTimePassword'];
+      if (payloadParam == null || payloadParam.isEmpty) {
+        throw StateError('授权结果缺少 payload');
+      }
+      if (otpParam == null || otpParam.isEmpty) {
+        throw StateError('授权结果缺少一次性登录令牌');
+      }
+
+      final decrypted = await _decrypt(payloadParam);
+      if (decrypted == null) {
+        throw StateError('授权结果解密失败');
+      }
+      final payload = jsonDecode(decrypted) as Map<String, dynamic>;
+      final returnedNonce = payload['nonce'] as String?;
+      if (returnedNonce != nonce) {
+        throw StateError('授权结果 nonce 不匹配');
+      }
+      final apiKey = payload['key'] as String?;
+      if (apiKey == null || apiKey.isEmpty) {
+        throw StateError('授权结果无 API Key');
+      }
+
+      final otp = await _decrypt(otpParam);
+      if (otp == null || otp.isEmpty) {
+        throw StateError('一次性登录令牌解密失败');
+      }
+
+      _log('info', 'cross_device_key_created', '已创建跨设备 User API Key', {
+        'apiKeyLen': apiKey.length,
+        'otpLen': otp.length,
+      });
+      return (apiKey: apiKey, otp: otp);
+    } on DioException catch (e) {
+      _log('warning', 'cross_device_key_failed', '创建跨设备 User API Key 失败', {
+        'statusCode': e.response?.statusCode,
+        'errorType': e.type.toString(),
+      });
+      rethrow;
     }
   }
 

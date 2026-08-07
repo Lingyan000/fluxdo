@@ -298,6 +298,24 @@ class PreloadedDataService {
     return raw.split('|').map(int.tryParse).whereType<int>().toList();
   }
 
+  // ---- discourse-assign 插件开关（均为 client:true，preload 可读）----
+
+  /// 指定功能总开关(assign_enabled)。站点未装插件时该键不存在,
+  /// 视为未启用——入口显隐以「assignEnabled && can_assign」为准。
+  bool get assignEnabled => _siteSettings?['assign_enabled'] == true;
+
+  /// 指定状态字段开关(enable_assign_status)。关闭时官方 Web 端弹窗
+  /// 不显示状态下拉。
+  bool get assignStatusEnabled =>
+      _siteSettings?['enable_assign_status'] == true;
+
+  /// 指定状态可选值(assign_statuses,竖线分隔;首项为默认状态)。
+  List<String> get assignStatuses {
+    final raw = _siteSettings?['assign_statuses'] as String?;
+    if (raw == null || raw.isEmpty) return const [];
+    return raw.split('|').where((s) => s.isNotEmpty).toList();
+  }
+
   /// 获取可用的回应表情列表
   Future<List<String>> getEnabledReactions() async {
     await _ensureLoaded();
@@ -509,7 +527,13 @@ class PreloadedDataService {
       );
 
       final html = response.data as String;
-      await _parsePreloadedDataFromHtml(html);
+      final parsed = await _parsePreloadedDataFromHtml(html);
+      if (!parsed) {
+        // 解析失败不可标记成功:置 _loaded 会让所有消费方拿到空数据并
+        // 静默降级到接口兜底(站点改版时曾无声潜伏)。抛错让调用方走
+        // BrowserTrustCoordinator 的降级链(启动 WebView 补水/重试)。
+        throw const FormatException('首页 HTML 未解析出 data-preloaded 数据');
+      }
       debugPrint('[PreloadedData] 数据加载成功');
       _loaded = true;
       // 预热完成后仅更新站点基础数据和 sitekey。cf_clearance 自动续期

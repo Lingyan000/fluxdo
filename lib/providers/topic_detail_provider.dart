@@ -8,6 +8,7 @@ import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/anchor_guard_sliver.dart';
+import 'bookmark_sync_controller.dart';
 import 'core_providers.dart';
 import 'message_bus/models.dart';
 
@@ -98,6 +99,7 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   bool get isLoadMoreFailed => _isLoadMoreFailed;
   bool get isLoadPreviousFailed => _isLoadPreviousFailed;
   bool get isSummaryMode => _filter == 'summary';
+  bool get isActivityMode => _filter == 'activity';
   bool get isAuthorOnlyMode => _usernameFilter != null;
   bool get isTopLevelMode => _filterTopLevelReplies;
   bool get _isFilteredMode => _filter != null || _usernameFilter != null || _filterTopLevelReplies;
@@ -139,32 +141,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
       suggestedTopics: needSuggested ? _cachedSuggestedTopics : null,
       relatedTopics: needRelated ? _cachedRelatedTopics : null,
     );
-  }
-
-  /// 指定(discourse-assign)操作后本地落地——服务端不回传更新后的
-  /// 完整 topic,靠调用方(指定弹窗)把已知的新状态直接写回,不用整页重拉。
-  void updateAssignmentLocal({
-    TopicUser? assignedToUser,
-    bool clearAssignedToUser = false,
-    String? assignedToGroupName,
-    bool clearAssignedToGroupName = false,
-    String? assignmentNote,
-    bool clearAssignmentNote = false,
-    String? assignmentStatus,
-    bool clearAssignmentStatus = false,
-  }) {
-    final currentDetail = state.value;
-    if (currentDetail == null) return;
-    state = AsyncValue.data(currentDetail.copyWith(
-      assignedToUser: assignedToUser,
-      clearAssignedToUser: clearAssignedToUser,
-      assignedToGroupName: assignedToGroupName,
-      clearAssignedToGroupName: clearAssignedToGroupName,
-      assignmentNote: assignmentNote,
-      clearAssignmentNote: clearAssignmentNote,
-      assignmentStatus: assignmentStatus,
-      clearAssignmentStatus: clearAssignmentStatus,
-    ));
   }
 
   /// 更新单个帖子的辅助方法

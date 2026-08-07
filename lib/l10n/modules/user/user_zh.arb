@@ -140,6 +140,7 @@
   "userProfile_location": "位置",
   "userProfile_message": "私信",
   "userCard_viewProfile": "查看资料",
+  "userCard_chat": "私聊",
   "avatarMenu_viewProfile": "进入主页",
   "avatarMenu_mention": "@用户",
   "avatarMenu_copyUsername": "复制用户名",

@@ -12,11 +12,18 @@ import '../../providers/topic_detail_provider.dart';
 import '../../services/toast_service.dart';
 import '../common/smart_avatar.dart';
 import '../markdown_editor/markdown_editor.dart';
+import '../../services/preloaded_data_service.dart';
 
-/// discourse-assign 官方 Web 端"指定"弹窗里状态下拉的可选值——插件
-/// SiteSetting.assign_statuses 默认就是这三个,站点可以自定义但客户端
-/// 拿不到实际配置(没有暴露的公开接口),先按官方默认值走。
-const List<String> _assignStatusOptions = ['New', 'In Progress', 'Done'];
+/// 状态下拉的可选值——assign_statuses 是 client:true 的站点设置,
+/// 随预加载 siteSettings 下发(官方 Web 端就是读
+/// siteSettings.assign_statuses.split("|")),这里同源读取,不硬编码。
+/// enable_assign_status 关闭时官方不显示状态下拉,同样照做。
+List<String> get _assignStatusOptions =>
+    PreloadedDataService().assignStatuses;
+
+bool get _assignStatusEnabled =>
+    PreloadedDataService().assignStatusEnabled &&
+    _assignStatusOptions.isNotEmpty;
 
 /// _AssignDetailsDialog 的返回值:受理人(二选一)+ 备注 + 状态。
 class _AssignDialogResult {
@@ -603,18 +610,25 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
               ),
               const SizedBox(height: 8),
             ],
-            DropdownButtonFormField<String>(
-              initialValue: _status,
-              decoration: const InputDecoration(labelText: '状态(可选)'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('不设置')),
-                ..._assignStatusOptions.map(
-                  (s) => DropdownMenuItem(value: s, child: Text(s)),
-                ),
-              ],
-              onChanged: (v) => setState(() => _status = v),
-            ),
-            const SizedBox(height: 8),
+            if (_assignStatusEnabled) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _status,
+                decoration: const InputDecoration(labelText: '状态(可选)'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('不设置')),
+                  // 现有指定的状态值可能已被站点从配置里删掉——仍要出现在
+                  // 列表里,否则 Dropdown 对不上 value 直接断言崩溃。
+                  if (_status != null &&
+                      !_assignStatusOptions.contains(_status))
+                    DropdownMenuItem(value: _status, child: Text(_status!)),
+                  ..._assignStatusOptions.map(
+                    (s) => DropdownMenuItem(value: s, child: Text(s)),
+                  ),
+                ],
+                onChanged: (v) => setState(() => _status = v),
+              ),
+              const SizedBox(height: 8),
+            ],
             InkWell(
               onTap: _editNote,
               borderRadius: BorderRadius.circular(4),

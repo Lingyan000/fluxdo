@@ -135,6 +135,9 @@ class AppPreferences {
   /// 全屏侧滑返回(页面任意位置右滑,默认仅屏幕左缘)
   final bool fullscreenSwipeBack;
 
+  /// Android 首页单次返回直接退出；关闭时需在 2 秒内返回两次
+  final bool exitOnSingleBack;
+
   /// 滚动时收起顶栏和底栏
   final bool hideBarOnScroll;
 
@@ -271,6 +274,7 @@ class AppPreferences {
     required this.crashlytics,
     required this.portraitLock,
     required this.fullscreenSwipeBack,
+    required this.exitOnSingleBack,
     required this.hideBarOnScroll,
     required this.clearCacheOnExit,
     required this.autoCfChallenge,
@@ -326,6 +330,7 @@ class AppPreferences {
     bool? crashlytics,
     bool? portraitLock,
     bool? fullscreenSwipeBack,
+    bool? exitOnSingleBack,
     bool? hideBarOnScroll,
     bool? clearCacheOnExit,
     bool? autoCfChallenge,
@@ -382,6 +387,7 @@ class AppPreferences {
       crashlytics: crashlytics ?? this.crashlytics,
       portraitLock: portraitLock ?? this.portraitLock,
       fullscreenSwipeBack: fullscreenSwipeBack ?? this.fullscreenSwipeBack,
+      exitOnSingleBack: exitOnSingleBack ?? this.exitOnSingleBack,
       hideBarOnScroll: hideBarOnScroll ?? this.hideBarOnScroll,
       clearCacheOnExit: clearCacheOnExit ?? this.clearCacheOnExit,
       autoCfChallenge: autoCfChallenge ?? this.autoCfChallenge,
@@ -463,6 +469,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _crashlyticsKey = 'pref_crashlytics';
   static const String _portraitLockKey = 'pref_portrait_lock';
   static const String _fullscreenSwipeBackKey = 'pref_fullscreen_swipe_back';
+  static const String _exitOnSingleBackKey = 'pref_exit_on_single_back';
   static const String _hideBarOnScrollKey = 'pref_hide_bar_on_scroll';
   static const String _clearCacheOnExitKey = 'pref_clear_cache_on_exit';
   static const String _autoCfChallengeKey = 'pref_auto_cf_challenge';
@@ -542,6 +549,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
           fullscreenSwipeBack:
               _prefs.getBool(_fullscreenSwipeBackKey) ?? false,
+          exitOnSingleBack: _prefs.getBool(_exitOnSingleBackKey) ?? false,
           hideBarOnScroll: _prefs.getBool(_hideBarOnScrollKey) ?? true,
           clearCacheOnExit: _prefs.getBool(_clearCacheOnExitKey) ?? false,
           autoCfChallenge: _prefs.getBool(_autoCfChallengeKey) ?? true,
@@ -730,6 +738,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setFullscreenSwipeBack(bool enabled) async {
     state = state.copyWith(fullscreenSwipeBack: enabled);
     await _prefs.setBool(_fullscreenSwipeBackKey, enabled);
+  }
+
+  Future<void> setExitOnSingleBack(bool enabled) async {
+    state = state.copyWith(exitOnSingleBack: enabled);
+    await _prefs.setBool(_exitOnSingleBackKey, enabled);
   }
 
   Future<void> setHideBarOnScroll(bool enabled) async {

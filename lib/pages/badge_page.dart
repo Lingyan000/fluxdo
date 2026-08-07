@@ -13,6 +13,9 @@ import '../widgets/common/smart_avatar.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import '../utils/fluxdo_render_callbacks.dart';
 import '../services/emoji_handler.dart';
+import '../providers/selected_topic_provider.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'user_profile_page.dart';
 import '../l10n/s.dart';
@@ -91,7 +94,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final list = Scaffold(
       body: _isLoading
           ? const Center(child: LoadingSpinner())
           : _error != null
@@ -215,6 +218,11 @@ class _BadgePageState extends ConsumerState<BadgePage> {
                 ],
               ),
             ),
+    );
+
+    return MasterDetailPaneHost(
+      stackProvider: selectedBadgePaneProvider,
+      master: list,
     );
   }
 
@@ -527,6 +535,13 @@ class _UserBadgeItem extends StatelessWidget {
   }
 
   void _navigateToUser(BuildContext context) {
+    // 宽屏进本页右栏,窄屏全屏 push(平行视界宿主标准分流)。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ProviderScope.containerOf(context, listen: false)
+          .read(selectedBadgePaneProvider.notifier)
+          .selectProfile(user.username);
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -537,6 +552,15 @@ class _UserBadgeItem extends StatelessWidget {
 
   void _navigateToTopic(BuildContext context) {
     if (userBadge.topicId != null) {
+      if (MasterDetailLayout.canShowBothPanesFor(context)) {
+        ProviderScope.containerOf(context, listen: false)
+            .read(selectedBadgePaneProvider.notifier)
+            .select(
+              topicId: userBadge.topicId!,
+              scrollToPostNumber: userBadge.postNumber,
+            );
+        return;
+      }
       Navigator.push(
         context,
         MaterialPageRoute(

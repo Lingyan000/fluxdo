@@ -1,13 +1,158 @@
 import 'package:flutter/material.dart';
+import '../../utils/responsive.dart';
 import '../common/grain_gradient_background.dart';
 import '../common/skeleton.dart';
 
 /// 用户资料页骨架屏
+///
+/// 与正式页面同一条宽窄分流([UserProfileWideLayout.minWidth],按实际
+/// 可用宽度):宽版=左资料栏+右内容横排,竖版=折叠头图。loading 形态
+/// 必须与加载完成后的成品形态一致,否则数据到达瞬间整页跳版式。
 class UserProfileSkeleton extends StatelessWidget {
   const UserProfileSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= UserProfileWideLayout.minWidth) {
+          return _buildWide(context);
+        }
+        return _buildNarrow(context);
+      },
+    );
+  }
+
+  /// 宽版骨架:左资料栏(头图横幅+骑缝头像+正常底色信息区)+ 右侧
+  /// Tab 行与列表——与正式宽版同结构。
+  Widget _buildWide(BuildContext context) {
+    final theme = Theme.of(context);
+    const bannerHeight = UserProfileWideLayout.bannerHeight;
+    const avatarRadius = UserProfileWideLayout.avatarRadius;
+    return Scaffold(
+      body: Skeleton(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: UserProfileWideLayout.infoPanelWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      SizedBox(
+                        height: bannerHeight,
+                        width: double.infinity,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const GrainGradientBackground(animated: false),
+                            Container(
+                              color: Colors.black.withValues(alpha: 0.2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        left: 20,
+                        bottom: -avatarRadius,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: theme.scaffoldBackgroundColor,
+                              width: 4,
+                            ),
+                          ),
+                          child: _SkeletonCircleWhite(size: avatarRadius * 2),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: avatarRadius + 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonBox(width: 140, height: 26, borderRadius: 4),
+                          const SizedBox(height: 8),
+                          SkeletonBox(width: 100, height: 16, borderRadius: 4),
+                          const SizedBox(height: 20),
+                          SkeletonBox(
+                            width: double.infinity,
+                            height: 64,
+                            borderRadius: 12,
+                          ),
+                          const SizedBox(height: 24),
+                          SkeletonBox(width: 200, height: 40, borderRadius: 4),
+                          const SizedBox(height: 16),
+                          SkeletonBox(width: 260, height: 40, borderRadius: 4),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 1,
+              child: ColoredBox(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  SafeArea(
+                    bottom: false,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: Breakpoints.maxContentWidth,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: _buildTabBarSkeleton(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: Breakpoints.maxContentWidth,
+                        ),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          itemCount: 5,
+                          itemBuilder: (context, index) =>
+                              const UserActionItemSkeleton(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 竖版骨架:折叠头图 + Tab + 列表(原形态)。
+  Widget _buildNarrow(BuildContext context) {
     // 横屏时屏幕高度有限，限制 expandedHeight 不超过屏幕高度的 70%
     final screenHeight = MediaQuery.of(context).size.height;
     final double expandedHeight = 410.0.clamp(0.0, screenHeight * 0.7);

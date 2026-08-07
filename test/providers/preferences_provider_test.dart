@@ -15,6 +15,25 @@ Future<ProviderContainer> _createContainer({
 }
 
 void main() {
+  test('单次返回退出默认关闭并可以持久化', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(preferencesProvider).exitOnSingleBack, isFalse);
+
+    await container
+        .read(preferencesProvider.notifier)
+        .setExitOnSingleBack(true);
+
+    final prefs = container.read(sharedPreferencesProvider);
+    final reloaded = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(reloaded.dispose);
+
+    expect(reloaded.read(preferencesProvider).exitOnSingleBack, isTrue);
+  });
+
   test('书签默认打开方式默认值为 defaultRoute', () async {
     final container = await _createContainer();
     addTearDown(container.dispose);

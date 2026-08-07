@@ -69,10 +69,14 @@ class VolumeBrightnessIndicator extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   SizedBox(
-                    width: 34,
+                    // 容下最宽的「100%」(等宽数字),不够宽会折行
+                    width: 42,
                     child: Text(
                       '${(clamped * 100).round()}%',
                       textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                      softWrap: false,
                       style: const TextStyle(
                         color: MediaOverlayStyle.foreground,
                         fontSize: 12.5,

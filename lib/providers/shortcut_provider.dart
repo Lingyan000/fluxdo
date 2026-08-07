@@ -382,47 +382,10 @@ class ShortcutScopeBinding {
   }
 }
 
-/// 普通全屏路由的「ESC 可关」标准件。
-///
-/// 全局 [HardwareKeyboard] 处理器对 closeOverlay 没有兜底动作（不能全局
-/// maybePop：它先于 Flutter 焦点管线执行，会抢跑图片查看器等自带
-/// CallbackShortcuts 的页面，造成双 pop）。因此普通 `Navigator.push` 出来
-/// 的全屏页想响应 ESC，须显式 opt-in —— 本类封装标准写法：以
-/// [ShortcutScope.context] 注册 closeOverlay → `Navigator.maybePop`，
-/// 分发端保证仅当前路由命中。
-///
-/// 用法（State 内）：
-/// ```dart
-/// late final _escClose = RouteEscCloseBinding(ref: ref);
-/// initState: _escClose.attach(context);   // 内部已 postFrame + 平台判断
-/// dispose:   _escClose.dispose();
-/// ```
-///
-/// 嵌入面板层不要用本类（面板不是独立路由，maybePop 会捅穿宿主），
-/// 应以 [ShortcutScope.detail] 注册 closeOverlay 走 onEmbeddedBack，
-/// 参照 TopicDetailPage / UserProfilePage。
-class RouteEscCloseBinding {
-  RouteEscCloseBinding({required WidgetRef ref})
-    : _binding = ShortcutScopeBinding(ref: ref, scope: ShortcutScope.context);
-
-  final ShortcutScopeBinding _binding;
-
-  /// 在 initState 里调用。挂到帧后：ModalRoute.of 在 initState 期间
-  /// 还拿不到本页路由。
-  void attach(BuildContext context) {
-    if (!PlatformUtils.isDesktop) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!context.mounted) return;
-      _binding.register(context, {
-        ShortcutAction.closeOverlay: () {
-          if (context.mounted) Navigator.of(context).maybePop();
-        },
-      });
-    });
-  }
-
-  void dispose() => _binding.dispose();
-}
+// 「普通全屏路由 ESC 可关」不再需要页面显式接入:全屏 PageRoute 由
+// EscFallbackObserver(widgets/esc_fallback_observer.dart)在 push 时自动
+// 登记,分发端在 context 回调之后兜底 maybePop。原 RouteEscCloseBinding
+// 标准件(定义至今零使用,正是「逐页显式接入」约定腐烂的证据)已删除。
 
 /// 双栏宿主页的「ESC 两段式」标准件:右栏开着时不注册 context 层
 /// (让分发落到 detail scope——TopicDetailPage 等注册的关闭回调,先退

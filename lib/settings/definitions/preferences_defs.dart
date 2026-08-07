@@ -110,6 +110,18 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           ),
           condition: () => Platform.isIOS || Platform.isAndroid,
         ),
+        PlatformConditionalModel(
+          inner: SwitchModel(
+            id: 'exitOnSingleBack',
+            title: l10n.preferences_exitOnSingleBack,
+            subtitle: l10n.preferences_exitOnSingleBackDesc,
+            icon: Symbols.exit_to_app_rounded,
+            getValue: (ref) => ref.watch(preferencesProvider).exitOnSingleBack,
+            onChanged: (ref, v) =>
+                ref.read(preferencesProvider.notifier).setExitOnSingleBack(v),
+          ),
+          condition: () => Platform.isAndroid,
+        ),
       ],
     ),
     SettingsGroup(

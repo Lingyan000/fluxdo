@@ -49,6 +49,10 @@
   },
   "nested_defaultView": "Default to threaded view",
   "nested_defaultViewDesc": "Automatically switch to threaded view when opening a topic",
+  "nested_contextBanner": "Viewing context of selected replies",
+  "nested_contextViewFullTopic": "View full topic",
+  "nested_contextViewParent": "View earlier context",
+  "nested_fallbackToFlat": "Tree view unavailable, switched to flat view",
   "nested_lineStyle": "Thread connector style",
   "nested_lineStyleAuto": "Adaptive",
   "nested_lineStyleL": "L-shaped connectors",
@@ -113,6 +117,8 @@
   "post_submitFlag": "Submit report",
   "post_tipLdc": "Tip LDC",
   "post_titleRequired": "Please enter a title",
+  "post_todayIsBirthday": "It's my birthday today!",
+  "post_todayIsCakeday": "Today is your anniversary of joining our community!",
   "post_topicSolved": "This topic is solved",
   "post_unacceptSolution": "Unaccept solution",
   "post_unsolved": "Unsolved",
@@ -158,6 +164,48 @@
   "smallAction_visibleEnabled": "Made public",
   "vote_cancelled": "Vote cancelled",
   "vote_closed": "Closed",
+  "postVoting_answer": "Answer",
+  "postVoting_answerCount": "{count} Answers",
+  "@postVoting_answerCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_sortVotes": "Votes",
+  "postVoting_sortActivity": "Activity",
+  "postVoting_commentAdd": "Add a comment",
+  "postVoting_commentSheetTitle": "Comment on @{username}'s post",
+  "@postVoting_commentSheetTitle": {
+    "placeholders": {
+      "username": {"type": "String"}
+    }
+  },
+  "postVoting_commentSubmit": "Post",
+  "postVoting_commentHint": "Write a comment…",
+  "postVoting_cannotVoteOwn": "You can't vote on your own post",
+  "postVoting_commentTooShort": "At least {count} characters required",
+  "@postVoting_commentTooShort": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_commentsMore": "{count} more comments",
+  "@postVoting_commentsMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_noVoters": "No votes yet",
+  "postVoting_topicClosed": "Topic is closed, voting unavailable",
+  "postVoting_votersDown": "Downvotes",
+  "postVoting_votersMore": "{count} voters in total, showing latest 20",
+  "@postVoting_votersMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_votersTitle": "Voters",
+  "postVoting_votersUp": "Upvotes",
   "vote_label": "Vote",
   "vote_pleaseLogin": "Please log in first",
   "vote_success": "Vote successful",

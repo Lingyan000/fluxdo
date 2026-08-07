@@ -19,6 +19,38 @@
     }
   },
   "login_browserHint": "將在瀏覽器中打開登錄頁面",
+  "login_qrAccount": "帳號：{username}",
+  "login_qrCameraUnavailable": "無法使用相機",
+  "login_qrConfirmAction": "確認生成",
+  "login_qrConfirmMessage": "將為另一部裝置建立一枚 User API Key 並生成登入二維碼。對方掃碼後可以用你嘅帳號登入。重新生成會令之前分享嘅登入二維碼失效。請確認係你本人操作，並且周圍冇其他人窺視。",
+  "login_qrConfirmTitle": "確認生成登錄二維碼？",
+  "login_qrDecodingImage": "正在識別圖片中的二維碼…",
+  "login_qrDisplayHint": "請用另一台未登錄的裝置打開 FluxDO，掃描此二維碼完成登錄。",
+  "login_qrDisplayTitle": "登錄二維碼",
+  "login_qrExpiredTapRegenerate": "已過期，點擊重新生成",
+  "login_qrGalleryOnlyHint": "目前平台不支援即時掃碼，請從相簿選擇包含登錄二維碼的圖片。",
+  "login_qrGenerateAction": "生成登錄二維碼",
+  "login_qrGenerateFailed": "生成登錄二維碼失敗",
+  "login_qrLoggingIn": "正在完成登錄…",
+  "login_qrNoCodeInImage": "圖片中未識別到登錄二維碼",
+  "login_qrOtpWindowRemaining": "二維碼有效時間 {time}",
+  "@login_qrOtpWindowRemaining": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "login_qrPickImage": "從相簿選擇",
+  "login_qrRefresh": "重新生成",
+  "login_qrScanFailed": "掃碼登錄失敗，請重試",
+  "login_qrScannedSuccess": "對方裝置已登錄成功",
+  "login_qrScanHint": "將鏡頭對準另一台裝置上的登錄二維碼",
+  "login_qrScanTitle": "掃碼登錄",
+  "login_qrSecurityWarning": "二維碼含有 User API Key 同一次性登入令牌，約 10 分鐘內有效。請勿分享畀其他人或喺公共場合長時間展示。",
+  "login_qrShowCode": "顯示登錄二維碼",
+  "login_qrSuccess": "掃碼登錄成功",
+  "login_scanToLogin": "掃碼登錄",
   "login_slogan": "真誠、友善、團結、專業",
   "migration_cookieUpgrade": "正在升級 Cookie 儲存...",
   "migration_reloginRequired": "本次版本升級優化了 Cookie 儲存機制，已清除舊的登入狀態。請重新登入。",

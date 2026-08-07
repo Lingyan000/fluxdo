@@ -899,6 +899,7 @@ class TopicCard extends ConsumerWidget {
             size: 13,
             color: effectiveColor,
             gap: 3,
+            textStyle: theme.textTheme.labelSmall,
           ),
           TextSpan(
             text: NumberUtils.formatCount(count),
@@ -1122,6 +1123,9 @@ class CompactTopicCard extends ConsumerWidget {
                               alpha: 0.7,
                             ),
                             gap: 2,
+                            textStyle: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                            ),
                           ),
                           TextSpan(
                             text: '${topic.postsCount - 1}',

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 引擎预测返回 fallback 露底色:近似 app 浅色主题 surface -->
+    <color name="window_background">#FFF8F5F2</color>
+</resources>

@@ -7,9 +7,46 @@ import 'topic_card.dart';
 import 'topic_card_layout.dart';
 import 'topic_preview_dialog.dart';
 
+/// 话题卡排版宽:与 [buildTopicItem] 的壳层约束同源(移动 = 视口宽
+/// - 页边距 24;桌面 = 同口径再封顶 [Breakpoints.maxContentWidth])。
+/// 预热层([TopicCardPrewarmer])必须用同一口径取宽,否则挂载帧
+/// ensureWidth 纠偏重排,预热白做。
+double topicCardWidthFor(BuildContext context) {
+  final viewportWidth = MediaQuery.sizeOf(context).width - 24;
+  if (Responsive.isMobile(context)) return viewportWidth;
+  return viewportWidth > Breakpoints.maxContentWidth
+      ? Breakpoints.maxContentWidth
+      : viewportWidth;
+}
+
 /// 话题卡自绘路径总开关:false 一键回退 widget 版 TopicCard
 /// (验收期保险丝;稳定后与 widget 分支一并清理)
 const bool kUsePaintedTopicCard = true;
+
+/// 普通/私信话题卡的排版取用单一入口:[buildTopicItem] 挂载路径与
+/// [TopicCardPrewarmer] 空闲预热路径共用,保证 identity/宽度/theme/
+/// category/statsAvailableWidth 全部同源 —— 预热建的缓存挂载帧必命中
+/// (任一参数口径不一致,stamp 对不上就是白热)。
+TopicCardLayout obtainTopicItemLayout({
+  required BuildContext context,
+  required Topic topic,
+  Map<int, Category>? categoryMap,
+  double? statsAvailableWidth,
+  bool messageStyle = false,
+}) {
+  final cardWidth = topicCardWidthFor(context);
+  final categoryId = int.tryParse(topic.categoryId);
+  return TopicCardLayout.obtain(
+    identity: 'topic:${topic.id}',
+    topic: topic,
+    width: cardWidth,
+    theme: Theme.of(context),
+    category: categoryMap?[categoryId],
+    emojiUrlOf: topicCardEmojiUrlResolver,
+    statsAvailableWidth: statsAvailableWidth ?? (cardWidth - 64),
+    messageStyle: messageStyle,
+  );
+}
 
 /// 话题卡片渲染公共函数
 ///
@@ -58,24 +95,14 @@ Widget buildTopicItem({
       categoryMap: categoryMap,
     );
   } else if (kUsePaintedTopicCard && topWidget == null && middleWidget == null) {
-    // 自绘路径:排版全局缓存 + 单渲染对象。宽度 = 视口(或桌面列宽
-    // 上限)- 页边距 24;分类表由调用方传入(未传时不查,分类行缺分
+    // 自绘路径:排版全局缓存 + 单渲染对象。宽度口径见
+    // [topicCardWidthFor];分类表由调用方传入(未传时不查,分类行缺分
     // 类名 —— 各列表页均已传)
-    final viewportWidth = MediaQuery.sizeOf(context).width - 24;
-    final cardWidth = isMobile
-        ? viewportWidth
-        : (viewportWidth > Breakpoints.maxContentWidth
-            ? Breakpoints.maxContentWidth
-            : viewportWidth);
-    final categoryId = int.tryParse(topic.categoryId);
-    final layout = TopicCardLayout.obtain(
-      identity: 'topic:${topic.id}',
+    final layout = obtainTopicItemLayout(
+      context: context,
       topic: topic,
-      width: cardWidth,
-      theme: Theme.of(context),
-      category: categoryMap?[categoryId],
-      emojiUrlOf: topicCardEmojiUrlResolver,
-      statsAvailableWidth: statsAvailableWidth ?? (cardWidth - 64),
+      categoryMap: categoryMap,
+      statsAvailableWidth: statsAvailableWidth,
       messageStyle: messageStyle,
     );
     child = PaintedTopicCard(

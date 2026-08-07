@@ -31,6 +31,7 @@ import '../widgets/topic/topic_filter_menu.dart';
 import '../widgets/common/topic_badges.dart';
 import '../widgets/common/search_capsule.dart';
 import '../widgets/topic/category_drawer.dart';
+import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/common/tag_selection_sheet.dart';
 import '../widgets/common/paged_list_footer.dart';
@@ -46,6 +47,7 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/fading_edge_scroll_view.dart';
+import '../widgets/common/predictive_back_cupertino_transitions.dart';
 import '../widgets/offline_indicator.dart';
 import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
@@ -1319,8 +1321,19 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, _, _) =>
             SearchPage(initialFilter: filter, heroCapsule: true),
-        transitionsBuilder: (_, animation, _, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              // 搜索胶囊依赖 Hero 返回飞行:不用缩放预览,但认领手势
+              // (两端 Hero 已置 transitionOnUserGestures),fade +
+              // 胶囊 morph 由手势进度驱动。
+              useSharedElementPreview: false,
+              fallbackBuilder: (_, animation, _, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            ),
       ),
     );
   }
@@ -1899,6 +1912,8 @@ class _CollapsibleHeader extends StatelessWidget {
                   rect: capsuleRect,
                   child: Hero(
                     tag: kSearchCapsuleHeroTag,
+                    // 预测返回(user gesture)时胶囊也要 morph 回来
+                    transitionOnUserGestures: true,
                     flightShuttleBuilder: searchCapsuleFlightShuttle,
                     child: SearchCapsule(
                       onTap: onSearchTap,
@@ -2962,7 +2977,11 @@ class _TopicListState extends ConsumerState<_TopicList>
         }
         _lastHeaderOffset = headerOffset;
 
-        return DesktopRefreshIndicator(
+        return TopicCardPrewarmScope(
+          topics: topics,
+          categoryMap: widget.categoryMap,
+          statsAvailableWidth: statsAvailableWidth,
+          child: DesktopRefreshIndicator(
           refreshIndicatorKey: _refreshIndicatorKey,
           refreshNotifier: masterRefreshNotifier,
           // 头部可折叠段悬浮在列表上方;列表贴顶时头部必然全展开
@@ -3210,6 +3229,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                 ),
               ],
             ),
+          ),
           ),
         );
       },

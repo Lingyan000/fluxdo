@@ -129,6 +129,11 @@ class TopicCardLayout {
   static final Map<String, TopicCardLayout> _cache = {};
   static const int cacheCap = 500;
 
+  /// 全量排版累计次数(含宽度纠偏重排):预热层用前后差值区分
+  /// 命中(O(1) 免费)与 miss(真付了排版成本),按 miss 计预算;
+  /// 也可作性能诊断口径(挂载帧该值增长 = 预热漏了)。
+  static int layoutBuildCount = 0;
+
   /// 相对时间的分钟代:全局心跳每跳一次 +1,进 stamp —— 含时间的
   /// 排版跨分钟自动失效,下次 build 惰性重排(消灭"自绘卡时间是
   /// 排版快照不自刷"与 widget 路径的行为差异)。渲染对象侧由
@@ -462,6 +467,7 @@ class TopicCardLayout {
     required List<(_ChipKind, String)> titleRightChips,
     required TopicCardStyle style,
   }) {
+    layoutBuildCount++;
     final scheme = theme.colorScheme;
     final baseText = theme.textTheme.bodyMedium ?? const TextStyle();
     final labelSmall = theme.textTheme.labelSmall ?? const TextStyle();

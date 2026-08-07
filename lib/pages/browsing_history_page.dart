@@ -14,6 +14,7 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/master_detail_pane_host.dart';
 import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
+import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../providers/preferences_provider.dart';
@@ -21,11 +22,6 @@ import '../widgets/common/error_view.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
-
-/// 「浏览历史」右栏的平行视界栈。
-final selectedHistoryPaneProvider = SelectedTopicProvider((ref) {
-  return SelectedTopicNotifier();
-});
 
 /// 浏览历史页面
 class BrowsingHistoryPage extends ConsumerStatefulWidget {
@@ -251,7 +247,9 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
             );
           }
 
-          return ListView.builder(
+          return TopicCardPrewarmScope(
+            topics: visibleTopics,
+            child: ListView.builder(
             controller: _scrollController,
             // 底部让出 extendBody 注入的底栏高度
             padding: EdgeInsets.fromLTRB(
@@ -284,6 +282,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
                 enableLongPress: enableLongPress,
               );
             },
+            ),
           );
         },
         loading: () => const TopicListSkeleton(),

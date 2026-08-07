@@ -138,9 +138,13 @@ class _DiscourseImageState extends State<DiscourseImage> {
       imageWidget = _buildCachedImage(theme);
     }
 
-    // Hero 动画
+    // Hero 动画(预测返回是 user gesture 转场,须显式开启才有飞行)
     if (widget.heroTag != null) {
-      imageWidget = Hero(tag: widget.heroTag!, child: imageWidget);
+      imageWidget = Hero(
+        tag: widget.heroTag!,
+        transitionOnUserGestures: true,
+        child: imageWidget,
+      );
     }
 
     // Lightbox

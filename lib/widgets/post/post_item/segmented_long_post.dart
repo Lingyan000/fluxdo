@@ -471,6 +471,12 @@ class LongPostFooterSegment extends ConsumerWidget {
   /// OP 帖专属插槽: 仅在 postNumber == 1 时透传给 PostFooterSection
   final Widget? opTopSlot;
 
+  /// post-voting(问答)话题:footer 显示赞成/反对控件与评论区
+  final bool isPostVotingTopic;
+
+  /// 话题 closed/archived(问答投票禁投判定)
+  final bool topicClosed;
+
   const LongPostFooterSegment({
     super.key,
     required this.post,
@@ -494,6 +500,8 @@ class LongPostFooterSegment extends ConsumerWidget {
     this.isPmWithNonHumanUser = false,
     this.onShowPostDetail,
     this.opTopSlot,
+    this.isPostVotingTopic = false,
+    this.topicClosed = false,
   });
 
   @override
@@ -559,6 +567,8 @@ class LongPostFooterSegment extends ConsumerWidget {
             isPmWithNonHumanUser: isPmWithNonHumanUser,
             onShowPostDetail: onShowPostDetail,
             opTopSlot: opTopSlot,
+            isPostVotingTopic: isPostVotingTopic,
+            topicClosed: topicClosed,
           ),
         ],
       ),

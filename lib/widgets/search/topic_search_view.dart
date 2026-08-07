@@ -6,6 +6,7 @@ import '../../providers/topic_search_provider.dart';
 import '../../utils/load_more_coordinator.dart';
 import '../common/paged_list_footer.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
+import '../../providers/selected_topic_provider.dart';
 import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
 
@@ -177,8 +178,11 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: SearchPostPrewarmScope(
+            posts: searchState.results,
+            child: ListView.builder(
             controller: _scrollController,
+            addAutomaticKeepAlives: false,
             padding: const EdgeInsets.all(16),
             itemCount: searchState.results.length + 1,
             itemBuilder: (context, index) {
@@ -200,9 +204,16 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
                   if (widget.onJumpToPost != null) {
                     widget.onJumpToPost!(post.postNumber);
                   } else {
-                    // 否则打开新页面
+                    // 跨话题:平行视界面板内压当前栈,全屏页照旧 push
                     final topic = post.topic;
                     if (topic != null) {
+                      if (EmbeddedStackScope.maybePushTopic(
+                        context,
+                        topicId: topic.id,
+                        scrollToPostNumber: post.postNumber,
+                      )) {
+                        return;
+                      }
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -217,6 +228,7 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
                 },
               );
             },
+            ),
           ),
         ),
       ],

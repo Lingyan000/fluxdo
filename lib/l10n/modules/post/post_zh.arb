@@ -49,6 +49,10 @@
   },
   "nested_defaultView": "默认使用树形视图",
   "nested_defaultViewDesc": "进入话题时自动切换到树形视图",
+  "nested_contextBanner": "正在查看部分回复的上下文",
+  "nested_contextViewFullTopic": "查看完整话题",
+  "nested_contextViewParent": "查看更早的上下文",
+  "nested_fallbackToFlat": "树形视图暂不可用，已切换为平铺视图",
   "nested_lineStyle": "树形连接线样式",
   "nested_lineStyleAuto": "自适应",
   "nested_lineStyleL": "L 形连接线",
@@ -186,6 +190,8 @@
   "post_submitFlag": "提交举报",
   "post_tipLdc": "打赏 LDC",
   "post_titleRequired": "请输入标题",
+  "post_todayIsBirthday": "今天是我的生日！",
+  "post_todayIsCakeday": "今天是您加入我们社区的纪念日！",
   "post_topicSolved": "此话题已解决",
   "post_unacceptSolution": "取消采纳",
   "post_unsolved": "待解决",
@@ -231,6 +237,48 @@
   "smallAction_visibleEnabled": "公开了话题",
   "vote_cancelled": "已取消投票",
   "vote_closed": "已关闭",
+  "postVoting_answer": "回答",
+  "postVoting_answerCount": "{count} 个回答",
+  "@postVoting_answerCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_sortVotes": "按票数",
+  "postVoting_sortActivity": "按活动",
+  "postVoting_commentAdd": "添加评论",
+  "postVoting_commentSheetTitle": "评论 @{username} 的帖子",
+  "@postVoting_commentSheetTitle": {
+    "placeholders": {
+      "username": {"type": "String"}
+    }
+  },
+  "postVoting_commentSubmit": "发表",
+  "postVoting_commentHint": "写下评论…",
+  "postVoting_cannotVoteOwn": "不能给自己的帖子投票",
+  "postVoting_commentTooShort": "至少需要 {count} 个字符",
+  "@postVoting_commentTooShort": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_commentsMore": "还有 {count} 条评论",
+  "@postVoting_commentsMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_noVoters": "暂无投票",
+  "postVoting_topicClosed": "话题已关闭,无法投票",
+  "postVoting_votersDown": "反对",
+  "postVoting_votersMore": "共 {count} 人投票,仅显示最近 20 人",
+  "@postVoting_votersMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_votersTitle": "投票用户",
+  "postVoting_votersUp": "赞成",
   "vote_label": "投票",
   "vote_pleaseLogin": "请先登录",
   "vote_success": "投票成功",

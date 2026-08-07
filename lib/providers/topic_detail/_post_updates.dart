@@ -155,6 +155,16 @@ extension PostUpdateMethods on TopicDetailNotifier {
     ));
   }
 
+  /// 更新帖子的问答投票状态(post-voting 插件,direction null = 已撤票)
+  void updatePostVoting(int postId, int voteCount, String? direction) {
+    _updatePostById(postId, (post) => post.copyWith(
+      postVotingVoteCount: voteCount,
+      postVotingUserVotedDirection: direction,
+      clearPostVotingDirection: direction == null,
+      postVotingHasVotes: voteCount != 0 || direction != null,
+    ));
+  }
+
   /// 更新帖子的解决方案状态
   ///
   /// 单解决方案模式(`solved_allow_multiple_solutions=false`):接受新答案时清空其他;
@@ -404,11 +414,23 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final newBookmarkId = await service.bookmarkTopic(currentDetail.id);
     if (!ref.mounted) throw Exception(S.current.error_providerDisposed);
 
+    // 写穿透:静默拉书签列表第一页,新书签立刻进本地缓存
+    unawaited(
+      ref.read(bookmarkSyncControllerProvider.notifier).pullFirstPage(),
+    );
+
     state = AsyncValue.data(currentDetail.copyWith(
       bookmarked: true,
       bookmarkId: newBookmarkId,
     ));
     return newBookmarkId;
+  }
+
+  Future<void> _purgeBookmarkCache(int bookmarkId) {
+    // 写穿收口:全入口统一走 BookmarkSyncController.purgeLocal
+    return ref
+        .read(bookmarkSyncControllerProvider.notifier)
+        .purgeLocal(bookmarkId);
   }
 
   /// 删除话题书签
@@ -422,6 +444,8 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final service = ref.read(discourseServiceProvider);
     await service.deleteBookmark(bookmarkId);
     if (!ref.mounted) return;
+    // 写穿透:书签列表 Hive 缓存同步删除
+    unawaited(_purgeBookmarkCache(bookmarkId));
 
     state = AsyncValue.data(currentDetail.copyWith(
       bookmarked: false,

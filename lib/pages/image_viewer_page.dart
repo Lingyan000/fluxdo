@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -26,6 +27,7 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
+import '../widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 
@@ -90,6 +92,10 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     );
   }
 
+  static bool _hasHeroTransition(String? heroTag, List<String>? heroTags) {
+    return heroTag != null || (heroTags?.isNotEmpty ?? false);
+  }
+
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
   static Future<void> open(
@@ -107,6 +113,17 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     double heroSourceRadius = 0,
     bool heroSourceCircular = false,
   }) {
+    // Hero 飞行是框架级硬条件:只发生在同一 Navigator 的两个 PageRoute
+    // 之间(HeroController._maybeStartHeroTransition 对非 PageRoute 直接
+    // 返回)。从弹窗(PopupRoute,如通知页面弹窗/用户卡片)里打开时
+    // from 端不是 PageRoute,飞行永远不启动——但查看器拿着 heroTag 会
+    // 走"配对 Hero"的开合/退场路径(禁用缩放预览、退场等归位飞行),
+    // 表现为闪烁/贴片静止。此时一律退化为纯淡入淡出(缩略图占位仍然
+    // 生效,只是不飞)。
+    if (ModalRoute.of(context) is! PageRoute) {
+      heroTag = null;
+      heroTags = null;
+    }
     return Navigator.push(
       context,
       PageRouteBuilder(
@@ -128,12 +145,22 @@ class ImageViewerPage extends ConsumerStatefulWidget {
             heroSourceCircular: heroSourceCircular,
           );
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              // 有配对 Hero 时不用缩放预览(会跟 Hero 飞行体打架),但
+              // 仍认领手势:HeroController 只为 user gesture 转场启动
+              // 飞行,认领 + 两端 transitionOnUserGestures 才有跟手
+              // Hero 返回;fade 由手势进度驱动。
+              useSharedElementPreview: !_hasHeroTransition(heroTag, heroTags),
+              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+                opacity: _routeFadeAnimation(animation),
+                child: child,
+              ),
+            ),
       ),
     );
   }
@@ -148,12 +175,17 @@ class ImageViewerPage extends ConsumerStatefulWidget {
         pageBuilder: (context, animation, secondaryAnimation) {
           return ImageViewerPage(imageBytes: bytes);
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+                opacity: _routeFadeAnimation(animation),
+                child: child,
+              ),
+            ),
       ),
     );
   }
@@ -188,6 +220,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 持有 —— loading→completed 等树切换只换绘制载体,手势状态与进行
   /// 中的交互(如下滑关闭)不再随载体销毁。
   final Map<int, ImageGestureController> _gestureControllers = {};
+
+  /// 退场缩放归位的两路钩子(路由动画反转 = 按钮/程序化 pop;
+  /// userGestureInProgress = 预测返回/iOS 拖拽)。缩放是
+  /// RawGestureImage 的画布级变换,Hero 飞行只收缩布局盒子,飞行中
+  /// 逐帧拿「全屏布局的缩放裁切」往小盒子里画,内容乱跳;落地换回
+  /// 源端正常图又突变一次 —— 放大后返回的闪烁即此。pop 启动瞬间
+  /// (飞行测量前)把缩放归位,飞行全程 contain,与源端无缝。
+  ModalRoute<dynamic>? _route;
+  ValueListenable<bool>? _navUserGesture;
 
   ImageGestureController _obtainGestureController(
     int index, {
@@ -241,6 +282,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         thumbUrl != null;
     return Hero(
       tag: tag,
+      // 预测返回是 user gesture 转场,不开这个标记 Hero 不飞
+      // (与所有源端 Hero 配对开启,见 hero_image/discourse_image 等)
+      transitionOnUserGestures: true,
       flightShuttleBuilder: !coverSource
           ? (_, _, _, _, _) => child
           : (flightContext, animation, direction, fromContext, toContext) {
@@ -349,7 +393,49 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (!identical(route, _route)) {
+      _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
+      _route = route;
+      _route?.animation?.addStatusListener(_onRouteAnimationStatus);
+    }
+    final userGesture = route?.navigator?.userGestureInProgressNotifier;
+    if (!identical(userGesture, _navUserGesture)) {
+      _navUserGesture?.removeListener(_onNavUserGestureChanged);
+      _navUserGesture = userGesture;
+      _navUserGesture?.addListener(_onNavUserGestureChanged);
+    }
+  }
+
+  /// 按钮/程序化 pop:路由动画转 reverse 的第一帧归位缩放,
+  /// 早于 HeroController 对 to 路由的测量与飞行起跳。
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) {
+      _resetZoomForExit();
+    }
+  }
+
+  /// 预测返回/iOS 拖拽:手势置位即预归位。手势期间查看器整页被
+  /// 转场层拖动,画布级缩放对跟手观感无增益,提前归位换飞行无缝。
+  void _onNavUserGestureChanged() {
+    if (_navUserGesture?.value == true && (_route?.isCurrent ?? false)) {
+      _resetZoomForExit();
+    }
+  }
+
+  void _resetZoomForExit() {
+    final controller = _gestureControllers[currentIndex];
+    final scale = controller?.details?.totalScale ?? 1.0;
+    if (scale == 1.0) return;
+    controller?.reset();
+  }
+
+  @override
   void dispose() {
+    _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
+    _navUserGesture?.removeListener(_onNavUserGestureChanged);
     _dynamicContentLease.release();
     HeroVisibilityController.instance.clear();
     _activeHeroPage.dispose();

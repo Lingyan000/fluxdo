@@ -11,6 +11,7 @@ import '../pages/settings_page.dart';
 import '../providers/shortcut_provider.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
+import 'esc_fallback_observer.dart';
 import 'notification/notification_quick_panel.dart';
 import 'shortcut_help_overlay.dart';
 
@@ -73,6 +74,15 @@ class _KeyboardShortcutHandlerState
         continue;
       }
 
+      // 退层类动作是离散语义,不接受系统 key repeat:按住 Esc(或系统
+      // 重复率调快)时 repeat 以数十毫秒一发连打,配合路由级 ESC 兜底
+      // 会把整条路由栈一口气退光。消费而不放行——放行会漏进焦点管线,
+      // 被 DismissIntent / 页面本地 Esc 处理器重复触发,问题原样复现。
+      // J/K 等导航动作仍照常吃 repeat。
+      if (event is KeyRepeatEvent && _isCloseSurfaceAction(binding.action)) {
+        return true;
+      }
+
       final surfaceDispatch = _handleSurfaceBeforeDispatch(binding.action);
       if (surfaceDispatch == _ShortcutSurfaceDispatch.handled ||
           surfaceDispatch == _ShortcutSurfaceDispatch.blocked) {
@@ -84,6 +94,18 @@ class _KeyboardShortcutHandlerState
       if (callback != null) {
         callback();
         return true;
+      }
+
+      // 路由级 ESC 兜底:全屏页 push 时由 EscFallbackObserver 自动登记,
+      // 页面无需显式接入即可 ESC 关闭。放在 context 回调之后——显式
+      // 注册(先退页内搜索等定制语义)永远优先;弹层在 surface 层已被
+      // 消费,不会落到这里。maybePop 尊重 PopScope。
+      if (binding.action == ShortcutAction.closeOverlay) {
+        final entry = EscFallbackObserver.resolveCurrent();
+        if (entry != null) {
+          entry.close();
+          return true;
+        }
       }
 
       // 全局动作
@@ -105,6 +127,30 @@ class _KeyboardShortcutHandlerState
     );
     if (topSurface != null) {
       if (_isCloseSurfaceAction(action)) {
+        // 嵌套 Navigator(设置页内栏)里还有子页时,ESC 先退子页——
+        // 否则 surface 的 onClose 会直接关掉整个设置页。
+        final nested = EscFallbackObserver.resolveCurrent();
+        if (nested != null && nested.isNestedInside(currentRoute)) {
+          nested.close();
+          return _ShortcutSurfaceDispatch.handled;
+        }
+        // route 类 surface 就是页面自身:页内 detail 面板注册的
+        // closeOverlay(嵌入话题/资料面板的返回)比「关闭整页」更具体,
+        // 让位给 context 回调分发——否则搜索页开着话题按 Esc 会直接
+        // 关掉整个搜索页。只认 detail scope:context scope 可能是宿主
+        // PaneHostEscBinding 的"关整页"maybePop,让位给它会把嵌入搜索
+        // surface 的定制 onClose(_showFeed)顶掉。panel/overlay 类
+        // surface 浮在页面之上,仍然优先关自己(通知面板盖着话题页时
+        // Esc 必须先关面板)。
+        if (topSurface.kind == ShortcutSurfaceKind.route &&
+            action == ShortcutAction.closeOverlay &&
+            resolveShortcutScopeCallbacks(
+              registry: ref.read(shortcutScopeRegistryProvider),
+              scope: ShortcutScope.detail,
+              route: currentRoute,
+            ).containsKey(action)) {
+          return _ShortcutSurfaceDispatch.pass;
+        }
         _closeSurface(topSurface, fallbackRoute: currentRoute);
         return _ShortcutSurfaceDispatch.handled;
       }

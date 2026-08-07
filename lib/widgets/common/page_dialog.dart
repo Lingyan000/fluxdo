@@ -6,16 +6,18 @@ import 'package:app_icons/app_icons.dart';
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 
-/// 大屏「页面弹窗」:把整页内容装进居中弹窗,内部自带独立 Navigator,
-/// 页内跳转(话题内链、点头像进个人页等)在弹窗内前进后退,像一扇
-/// 迷你窗口。通知等外部入口在大屏的统一落点 —— 不进工作区栈、不切
-/// tab,看完即走,不打断底下工作区正在进行的浏览。
+/// 大屏「页面弹窗」:把整页内容装进居中弹窗。通知等外部入口在大屏的
+/// 统一落点 —— 不进工作区栈、不切 tab,看完即走,不打断底下工作区
+/// 正在进行的浏览。
 ///
-/// 关闭途径:面板右上外侧 ✕ / 点遮罩 / Esc / Android 返回键(返回键
-/// 先退弹窗内导航,退到根再关弹窗,由 NavigatorPopHandler 保证)。
+/// 弹窗只承载落点页**本身**;页内二跳(话题内链、点头像进个人页等)
+/// 走根导航全屏 push,盖在弹窗上,返回后弹窗仍在原地(翻页/列表
+/// 上下文不丢)。曾内置嵌套 Navigator 让二跳在弹窗内前进后退,实际
+/// 体验是所有路由都被挤进迷你窗口,已拆除。
 ///
-/// 页面内 showDialog/showModalBottomSheet 默认走 root navigator,仍是
-/// 全屏级弹层,不受嵌套 Navigator 影响。
+/// 关闭途径:面板右上外侧 ✕ / 点遮罩 / Esc / Android 返回键。页内
+/// AppBar 的返回键(根导航 canPop)同样落在弹窗路由上 —— 关弹窗,
+/// 语义一致。
 Future<T?> showPageDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -30,10 +32,10 @@ Future<T?> showPageDialog<T>({
   );
 }
 
-/// 页面弹窗的外壳:顶部操作行(✕ + 调用方追加的 [topBar])+ 嵌套导航
-/// 面板。需要在弹窗内切换内容的调用方(如通知的上一条/下一条)自行
-/// showAppGeneralDialog 并直接使用本外壳,通过改变 [contentKey] 让嵌套
-/// Navigator 整体重建 —— 上一条通知里点开的内链子页不应残留到下一条。
+/// 页面弹窗的外壳:顶部操作行(✕ + 调用方追加的 [topBar])+ 内容面板。
+/// 需要在弹窗内切换内容的调用方(如通知的上一条/下一条)自行
+/// showAppGeneralDialog 并直接使用本外壳,通过改变 [contentKey] 让内容
+/// 子树整体重建。
 class PageDialogScaffold extends StatefulWidget {
   const PageDialogScaffold({
     super.key,
@@ -56,7 +58,7 @@ class PageDialogScaffold extends StatefulWidget {
   /// 调用方传当前条目的落点页;弹窗内已产生的内链子页不随迁。
   final WidgetBuilder? fullscreenBuilder;
 
-  /// 内容身份。变化时嵌套 Navigator 连同其路由栈整体重建
+  /// 内容身份。变化时内容子树整体重建(上一条通知的页面状态不残留)
   final Key? contentKey;
 
   /// 常驻左侧栏(如通知列表)。非 null 时面板加宽,内容区在右
@@ -72,17 +74,6 @@ class PageDialogScaffold extends StatefulWidget {
 }
 
 class _PageDialogScaffoldState extends State<PageDialogScaffold> {
-  GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
-
-  @override
-  void didUpdateWidget(covariant PageDialogScaffold oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.contentKey != widget.contentKey) {
-      // 换 GlobalKey 强制旧 Navigator 子树销毁重建(路由栈清零)
-      _navKey = GlobalKey<NavigatorState>();
-    }
-  }
-
   /// 全屏打开:先关弹窗,再把同一页面推成根导航的全屏路由。顺序不能
   /// 反 —— 先 push 会让 pop 关掉的是刚推上去的全屏页
   void _openFullscreen() {
@@ -152,17 +143,11 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
 
 extension on _PageDialogScaffoldState {
   Widget _buildPanelBody(ThemeData theme) {
+    // 不做嵌套 Navigator:页内 Navigator.push 解析到根导航,二跳内容
+    // 全屏盖在弹窗上,返回后弹窗原地保留(见 showPageDialog 顶注)。
     Widget content = KeyedSubtree(
       key: widget.contentKey,
-      child: NavigatorPopHandler(
-        onPopWithResult: (_) => _navKey.currentState?.maybePop(),
-        child: Navigator(
-          key: _navKey,
-          onGenerateInitialRoutes: (nav, initialRoute) => [
-            MaterialPageRoute(builder: widget.builder),
-          ],
-        ),
-      ),
+      child: Builder(builder: widget.builder),
     );
     if (widget.overlay != null) {
       content = Stack(children: [content, widget.overlay!]);

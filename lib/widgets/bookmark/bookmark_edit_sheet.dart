@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/bookmark.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
 import '../../l10n/s.dart';
 import '../../services/log/bookmark_edit_trace.dart';
+import '../../providers/user_content_providers.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/app_error_handler.dart';
@@ -180,6 +184,15 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
           resultName: name.isNotEmpty ? name : null,
           hasReminder: reminderAt != null,
         );
+        // 写穿透:静默拉书签列表第一页——书签页入口的调用方会走
+        // updateBookmarkMeta 写穿,但帖子页等入口的书签可能还不在本地
+        // 缓存里(applyMetadataChange 对不存在的条目静默跳过),
+        // 拉一页兜底让列表缓存拿到最新元数据。
+        unawaited(
+          refreshBookmarkListCacheSilently(
+            ProviderScope.containerOf(context, listen: false),
+          ),
+        );
         Navigator.pop(
           context,
           BookmarkEditResult(
@@ -259,6 +272,15 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
     );
     try {
       await _service.deleteBookmark(widget.bookmarkId);
+      if (mounted) {
+        // 写穿透:书签列表 Hive 缓存同步删除
+        unawaited(
+          purgeBookmarkFromLocalCache(
+            ProviderScope.containerOf(context, listen: false),
+            widget.bookmarkId,
+          ),
+        );
+      }
       if (mounted) {
         writeBookmarkEditTrace(
           phase: 'sheet_delete_success',

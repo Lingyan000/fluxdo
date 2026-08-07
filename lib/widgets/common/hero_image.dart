@@ -271,6 +271,8 @@ class _HeroImageState extends State<HeroImage> {
           opacity: shouldHide ? 0.0 : 1.0,
           child: Hero(
             tag: heroTag,
+            // Android 预测返回是 user gesture 转场,须显式开启才有飞行
+            transitionOnUserGestures: true,
             // 飞行动画：pop 飞行结束时设置 isPopping;网格瓦片来源
             // (coverFlight)换裁切插值飞行体,否则返回纯图片
             flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {

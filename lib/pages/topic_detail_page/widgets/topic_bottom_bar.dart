@@ -11,12 +11,15 @@ class TopicBottomBar extends StatelessWidget {
   final VoidCallback? onExport;
   final VoidCallback? onOpenInBrowser;
   final bool hasSummary;
+  final bool isPostVoting;
   final bool isSummaryMode;
+  final bool isActivityMode;
   final bool isAuthorOnlyMode;
   final bool isTopLevelMode;
   final bool isNestedMode;
   final bool isLoading;
   final VoidCallback? onShowTopReplies;
+  final VoidCallback? onShowByActivity;
   final VoidCallback? onShowAuthorOnly;
   final VoidCallback? onShowTopLevelReplies;
   final VoidCallback? onCancelFilter;
@@ -31,20 +34,23 @@ class TopicBottomBar extends StatelessWidget {
     this.onExport,
     this.onOpenInBrowser,
     this.hasSummary = false,
+    this.isPostVoting = false,
     this.isSummaryMode = false,
+    this.isActivityMode = false,
     this.isAuthorOnlyMode = false,
     this.isTopLevelMode = false,
     this.isNestedMode = false,
     this.isLoading = false,
     this.isPrivateMessage = false,
     this.onShowTopReplies,
+    this.onShowByActivity,
     this.onShowAuthorOnly,
     this.onShowTopLevelReplies,
     this.onCancelFilter,
     this.onShowNestedView,
   });
 
-  bool get _hasActiveFilter => isSummaryMode || isAuthorOnlyMode || isTopLevelMode || isNestedMode;
+  bool get _hasActiveFilter => isSummaryMode || isActivityMode || isAuthorOnlyMode || isTopLevelMode || isNestedMode;
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +111,7 @@ class TopicBottomBar extends StatelessWidget {
 
   (IconData, String) _activeFilterInfo(BuildContext context) {
     if (isSummaryMode) return (Symbols.local_fire_department_rounded, context.l10n.topicDetail_hotOnly);
+    if (isActivityMode) return (Symbols.history_rounded, context.l10n.topicDetail_sortByActivity);
     if (isAuthorOnlyMode) return (Symbols.person_rounded, context.l10n.topicDetail_authorOnly);
     if (isTopLevelMode) return (Symbols.account_tree_rounded, context.l10n.topicDetail_topLevelOnly);
     if (isNestedMode) return (Symbols.forum_rounded, context.l10n.nested_title);
@@ -122,6 +129,8 @@ class TopicBottomBar extends StatelessWidget {
         switch (value) {
           case 'hot':
             onShowTopReplies?.call();
+          case 'activity':
+            onShowByActivity?.call();
           case 'author':
             onShowAuthorOnly?.call();
           case 'top_level':
@@ -131,6 +140,19 @@ class TopicBottomBar extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
+        if (isPostVoting)
+          PopupMenuItem(
+            value: 'activity',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Symbols.history_rounded,
+                    size: 20, color: theme.colorScheme.onSurface),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_sortByActivity),
+              ],
+            ),
+          ),
         if (hasSummary)
           PopupMenuItem(
             value: 'hot',

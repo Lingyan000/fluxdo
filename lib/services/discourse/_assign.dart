@@ -2,7 +2,7 @@ part of 'discourse_service.dart';
 
 /// 指定(discourse-assign 插件)相关。核对过插件源码 config/routes.rb:
 /// 挂载在 `/assign` 下,`assign`/`unassign` 走 PUT,`suggestions` 走 GET。
-/// `target_type` 目前站内只用到 `'Topic'`(帖子级指定用得少,先不做)。
+/// `target_type` 支持 `'Topic'`(话题级)与 `'Post'`(帖子级)。
 mixin _AssignMixin on _DiscourseServiceBase {
   /// 指定给某个用户或群组。[username]/[groupName] 二选一。
   Future<void> assignTarget({
@@ -24,10 +24,10 @@ mixin _AssignMixin on _DiscourseServiceBase {
         data: {
           'target_id': targetId,
           'target_type': targetType,
-          if (username != null) 'username': username,
-          if (groupName != null) 'group_name': groupName,
-          if (note != null) 'note': note,
-          if (status != null) 'status': status,
+          'username': ?username,
+          'group_name': ?groupName,
+          'note': ?note,
+          'status': ?status,
           'should_notify': shouldNotify,
         },
         options: Options(contentType: Headers.formUrlEncodedContentType),

@@ -83,6 +83,8 @@
   "preferences_enterUrl": "Enter URL",
   "preferences_fullscreenSwipeBack": "Full-screen swipe back",
   "preferences_fullscreenSwipeBackDesc": "Swipe right anywhere on a page to go back; when off, only the left edge responds",
+  "preferences_exitOnSingleBack": "Exit on one back press",
+  "preferences_exitOnSingleBackDesc": "Exit immediately from the home screen and use the system predictive exit animation; when off, press back twice to exit",
   "preferences_hideBarOnScroll": "Hide bar on scroll",
   "preferences_hideBarOnScrollDesc": "Auto-hide top and bottom bars when scrolling",
   "preferences_longPressPreview": "Long press preview",

@@ -7,6 +7,7 @@ void main() {
     var bookmarkCalls = 0;
     var readLaterCalls = 0;
     var subscribeCalls = 0;
+    var markUnreadCalls = 0;
     var shareLinkCalls = 0;
     var shareImageCalls = 0;
     var exportCalls = 0;
@@ -20,6 +21,8 @@ void main() {
       onBookmark: () => bookmarkCalls++,
       onReadLater: () => readLaterCalls++,
       onSubscribe: () => subscribeCalls++,
+      onMarkUnread: () => markUnreadCalls++,
+      onMarkUnreadAll: () => markUnreadCalls++,
       onShareLink: () => shareLinkCalls++,
       onShareImage: () => shareImageCalls++,
       onExport: () => exportCalls++,
@@ -32,11 +35,64 @@ void main() {
     expect(bookmarkCalls, 1);
     expect(readLaterCalls, 0);
     expect(subscribeCalls, 0);
+    expect(markUnreadCalls, 0);
     expect(shareLinkCalls, 0);
     expect(shareImageCalls, 0);
     expect(exportCalls, 0);
     expect(openInBrowserCalls, 0);
     expect(filterCalls, 0);
     expect(readingSettingsCalls, 0);
+  });
+
+  test('选择标记未读时只会触发标记未读动作', () {
+    var markUnreadCalls = 0;
+    var markUnreadAllCalls = 0;
+    var otherCalls = 0;
+
+    handleTopicDetailMoreMenuSelection(
+      'mark_unread',
+      onEditTopic: () => otherCalls++,
+      onBookmark: () => otherCalls++,
+      onReadLater: () => otherCalls++,
+      onSubscribe: () => otherCalls++,
+      onMarkUnread: () => markUnreadCalls++,
+      onMarkUnreadAll: () => markUnreadAllCalls++,
+      onShareLink: () => otherCalls++,
+      onShareImage: () => otherCalls++,
+      onExport: () => otherCalls++,
+      onOpenInBrowser: () => otherCalls++,
+      onFilter: () => otherCalls++,
+      onReadingSettings: () => otherCalls++,
+    );
+
+    expect(markUnreadCalls, 1);
+    expect(markUnreadAllCalls, 0);
+    expect(otherCalls, 0);
+  });
+
+  test('选择全部未读时只会触发全部未读动作', () {
+    var markUnreadCalls = 0;
+    var markUnreadAllCalls = 0;
+    var otherCalls = 0;
+
+    handleTopicDetailMoreMenuSelection(
+      'mark_unread_all',
+      onEditTopic: () => otherCalls++,
+      onBookmark: () => otherCalls++,
+      onReadLater: () => otherCalls++,
+      onSubscribe: () => otherCalls++,
+      onMarkUnread: () => markUnreadCalls++,
+      onMarkUnreadAll: () => markUnreadAllCalls++,
+      onShareLink: () => otherCalls++,
+      onShareImage: () => otherCalls++,
+      onExport: () => otherCalls++,
+      onOpenInBrowser: () => otherCalls++,
+      onFilter: () => otherCalls++,
+      onReadingSettings: () => otherCalls++,
+    );
+
+    expect(markUnreadCalls, 0);
+    expect(markUnreadAllCalls, 1);
+    expect(otherCalls, 0);
   });
 }

@@ -19,6 +19,38 @@
     }
   },
   "login_browserHint": "將在瀏覽器中開啟登入頁面",
+  "login_qrAccount": "帳號：{username}",
+  "login_qrCameraUnavailable": "無法使用相機",
+  "login_qrConfirmAction": "確認產生",
+  "login_qrConfirmMessage": "將為另一台裝置建立一枚 User API Key 並產生登入 QR Code。對方掃描後可使用你的帳號登入。重新產生會使先前分享的登入 QR Code 失效。請確認這是你本人操作，且周圍沒有他人窺視。",
+  "login_qrConfirmTitle": "確認產生登入 QR 碼？",
+  "login_qrDecodingImage": "正在辨識圖片中的 QR 碼…",
+  "login_qrDisplayHint": "請用另一台未登入的裝置開啟 FluxDO，掃描此 QR 碼完成登入。",
+  "login_qrDisplayTitle": "登入 QR 碼",
+  "login_qrExpiredTapRegenerate": "已過期，點擊重新產生",
+  "login_qrGalleryOnlyHint": "目前平台不支援即時掃碼，請從相簿選擇包含登入 QR 碼的圖片。",
+  "login_qrGenerateAction": "產生登入 QR 碼",
+  "login_qrGenerateFailed": "產生登入 QR 碼失敗",
+  "login_qrLoggingIn": "正在完成登入…",
+  "login_qrNoCodeInImage": "圖片中未辨識到登入 QR 碼",
+  "login_qrOtpWindowRemaining": "QR Code 有效時間 {time}",
+  "@login_qrOtpWindowRemaining": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "login_qrPickImage": "從相簿選擇",
+  "login_qrRefresh": "重新產生",
+  "login_qrScanFailed": "掃碼登入失敗，請重試",
+  "login_qrScannedSuccess": "對方裝置已登入成功",
+  "login_qrScanHint": "將鏡頭對準另一台裝置上的登入 QR 碼",
+  "login_qrScanTitle": "掃碼登入",
+  "login_qrSecurityWarning": "QR Code 含有 User API Key 與一次性登入權杖，約 10 分鐘內有效。請勿分享給他人或在公共場合長時間展示。",
+  "login_qrShowCode": "顯示登入 QR 碼",
+  "login_qrSuccess": "掃碼登入成功",
+  "login_scanToLogin": "掃碼登入",
   "login_slogan": "真誠、友善、團結、專業",
   "migration_cookieUpgrade": "正在升級 Cookie 儲存...",
   "migration_reloginRequired": "本次版本升級優化了 Cookie 儲存機制，已清除舊的登入狀態。請重新登入。",

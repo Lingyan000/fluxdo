@@ -17,8 +17,8 @@ import '../services/dynamic_content_suspension_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/blur_config.dart';
 import '../utils/responsive.dart';
-import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_projection_back_scope.dart';
 import '../widgets/layout/home_workspace_scope.dart';
 import 'topics_page.dart';
 import 'search_page.dart';
@@ -45,10 +45,8 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   SearchFilter? _embeddedSearchFilter;
   Category? _leftCategory;
   String? _leftTag;
-  bool? _lastCanShowDetailPane;
-  bool _isAutoSwitching = false;
 
-  /// 桌面 ESC 两段式:右栏开着→分发落 detail scope(关右栏);右栏空→
+  /// 桌面 ESC 两段式:右栏/投影开着→分发落 detail scope(关右栏);空态→
   /// 注册 maybePop(首页是首路由,no-op,注册无害但保持机制一致)。
   late final PaneHostEscBinding _escBinding = PaneHostEscBinding(
     ref: ref,
@@ -69,24 +67,9 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   String? _activeInstanceId;
   int? _activeTopicId;
 
-  @override
-  void didUpdateWidget(covariant TopicsScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isActive && widget.isActive) {
-      // 非活跃期间可能由通知/深链写入了新选择。重新激活时必须重新投影
-      // 当前状态，不能把上一次窄/宽布局判断当成已经处理。
-      _lastCanShowDetailPane = null;
-    }
-  }
-
-  /// 曾经尝试过用持久化的 per-topicId GlobalKey 让话题面板在 master/
-  /// detail 槽位间"挪动"而不是销毁重建（意图：避开 TopicDetailPage 内
-  /// 部 ref.listen 撞上销毁重建窗口期的竞态）。实测翻车更严重：多切换
-  /// 几个私信后直接命中 Flutter 框架级断言
-  /// `'_elements.contains(element)': is not true`（GlobalKey 内部记账
-  /// 出错，红屏崩溃）——比原来要解决的问题更糟，已回退。槽位切换时
-  /// 话题面板销毁重建暂时接受，如果 ref.listen 竞态复现再单独处理。
-  Key _keyForTopic(int topicId) => ValueKey('topic_$topicId');
+  /// 历史注:曾用持久化 per-topicId GlobalKey 让话题面板在 master/detail
+  /// 槽位间"挪动",红屏翻车已回退(`'_elements.contains(element)'` 断言)。
+  /// 胶片带模型下该问题不存在:格子恒驻,从不跨槽挪动。
 
   /// topicId 变化时生成新 instanceId，相同 topicId 复用
   /// 如果提供了 existingInstanceId（如从全屏详情页传回），直接采用
@@ -106,13 +89,24 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   /// 侧栏板块导航（切换或重选）时收起深层平行视界与嵌入态，退回列表。
   void _collapseParallelForSidebarNav() {
     final state = ref.read(selectedTopicProvider);
+    // 窄屏投影态:详情全宽盖着列表,collapseToTop 对单层栈是 no-op,
+    // 不清就会"点了板块没反应"(列表在投影底下换好了但看不见)——
+    // 投影态下切板块语义就是回列表,整栈清空。
+    final projecting =
+        state.hasSelection && !MasterDetailLayout.canShowBothPanesFor(context);
     if (!state.isStacked &&
+        !projecting &&
         !_showEmbeddedSearch &&
         _leftCategory == null &&
         _leftTag == null) {
       return;
     }
-    ref.read(selectedTopicProvider.notifier).collapseToTop();
+    final notifier = ref.read(selectedTopicProvider.notifier);
+    if (projecting) {
+      notifier.clear();
+    } else {
+      notifier.collapseToTop();
+    }
     if (mounted) {
       setState(() {
         _showEmbeddedSearch = false;
@@ -123,112 +117,9 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     }
   }
 
-  void _maybePushDetail(
-    SelectedTopicState selectedTopic,
-    bool canShowDetailPane,
-  ) {
-    if (_isAutoSwitching) return;
-
-    // IndexedStack 中非活跃 tab 仍需更新状态，避免切回时误触发
-    if (!widget.isActive) {
-      _lastCanShowDetailPane = canShowDetailPane;
-      return;
-    }
-
-    // 当前路由不在栈顶时（有其他页面覆盖），根据布局判断是否清除选中
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) {
-      // 页面被窄屏临时详情路由或其他内容覆盖时也必须保留选择；否则用户
-      // 在小屏打开话题/资料后再放大，平行视界历史已经被后台清空。
-      _lastCanShowDetailPane = canShowDetailPane;
-      return;
-    }
-
-    final previous = _lastCanShowDetailPane;
-    _lastCanShowDetailPane = canShowDetailPane;
-
-    // 从双栏切到单栏时自动 push；如果 previous 为空但当前为单栏且有选中，
-    // 也执行 push，避免因状态丢失导致无法自动进入详情。
-    if (!canShowDetailPane &&
-        selectedTopic.hasSelection &&
-        (previous == null || previous == true)) {
-      final topicId = selectedTopic.topicId;
-      if (topicId == null) {
-        // 个人资料/设置层：没有可复用的 instanceId/滚动位置，直接全屏 push。
-        final username = selectedTopic.username;
-        final isSettings = selectedTopic.kind == PaneKind.settings;
-        if (username == null && !isSettings) return;
-        _isAutoSwitching = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final navigator = Navigator.of(context);
-          // 不清空栈状态：只是临时用全屏页面顶替（因为窄屏放不下双栏），
-          // 状态还留着——回到宽屏时（这个全屏页面还盖在上面时）
-          // "route 不在栈顶"那个分支会把双栏状态原样恢复回去。之前这里
-          // 会 clear()，导致缩小后又放大回去，压栈的内容就丢了，只剩
-          // 空列表。
-          navigator
-              .push(
-                MaterialPageRoute(
-                  builder: (_) => AutoRestoreMasterDetailRoute(
-                    child: isSettings
-                        ? const SettingsPage()
-                        : UserProfilePage(username: username!),
-                  ),
-                ),
-              )
-              .whenComplete(() {
-                if (mounted) setState(() => _isAutoSwitching = false);
-              });
-        });
-        return;
-      }
-
-      // 复用同一个 instanceId，避免重新 fetch
-      final instanceId = _getOrCreateInstanceId(topicId);
-      // 读取嵌入式详情页的实际浏览位置（在当前 build 中嵌入页还在 tree 中）
-      final scrollPosition =
-          ref.read(
-            detailScrollPositionProvider((
-              topicId: topicId,
-              instanceId: instanceId,
-            )),
-          ) ??
-          selectedTopic.scrollToPostNumber;
-
-      _isAutoSwitching = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final navigator = Navigator.of(context);
-        // 同上：不清空栈状态，回宽屏时自动恢复。
-        navigator
-            .push(
-              MaterialPageRoute(
-                builder: (_) => TopicDetailPage(
-                  topicId: topicId,
-                  initialTitle: selectedTopic.initialTitle,
-                  scrollToPostNumber: scrollPosition,
-                  autoSwitchToMasterDetail: true,
-                  restoreExistingPaneStack: true,
-                  instanceId: instanceId,
-                  stackProvider: selectedTopicProvider,
-                ),
-              ),
-            )
-            .whenComplete(() {
-              if (mounted) {
-                setState(() => _isAutoSwitching = false);
-              }
-            });
-      });
-      return;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final selectedTopic = ref.watch(selectedTopicProvider);
-    final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
     // 左栏本质是不是"列表"（信息流）——决定给窄栏还是对半分
     _masterIsListLike = !selectedTopic.isStacked;
     final user = ref.watch(currentUserProvider).value;
@@ -252,10 +143,15 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       if (event == null) return;
       if (event.targetId != NavEntryIds.home) return;
       if (!widget.isActive) return;
+      // 投影态(窄屏详情全宽盖着列表)下点"首页"=回列表,与压栈态同语义
+      final projecting =
+          selectedTopic.hasSelection &&
+          !MasterDetailLayout.canShowBothPanesFor(context);
       if (_showEmbeddedSearch ||
           _leftCategory != null ||
           _leftTag != null ||
-          selectedTopic.isStacked) {
+          selectedTopic.isStacked ||
+          projecting) {
         _showFeed();
         return;
       }
@@ -273,21 +169,23 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       }
     });
 
-    _maybePushDetail(selectedTopic, canShowDetailPane);
-    _escBinding.sync(
-      context,
-      paneOpen: canShowDetailPane && selectedTopic.hasSelection,
-    );
+    // ESC 语义:栈非空(宽屏右栏开着/窄屏投影着)都让分发落 detail scope
+    // (关右栏/关投影);栈空才注册 maybePop 关整页。
+    _escBinding.sync(context, paneOpen: selectedTopic.hasSelection);
 
     // 统一使用 MasterDetailLayout 处理所有情况
-    // 手机/平板单栏：只显示 master
+    // 手机/平板单栏：只显示 master;栈非空时 detail 在本页体内全宽投影
+    // (平行视界栈是唯一真相,不 push 合成路由,宽窄切换 State 原地保留)
     // 平板双栏：显示 master + detail
     return HomeWorkspaceScope(
       onShowFeed: _showFeed,
       onShowCategory: _showCategory,
       onShowTag: _showTag,
-      child: MasterDetailLayout(
-        // 压栈时 master 显示的是"上一层"内容而不是列表，才是真正的平行
+      child: PaneProjectionBackScope(
+        stackProvider: selectedTopicProvider,
+        isActive: widget.isActive,
+        child: MasterDetailLayout(
+        // 压栈时左栏显示的是"上一层"内容而不是列表，才是真正的平行
         // 视界——放宽到接近对半分；master 还是列表时维持列表该有的窄栏。
         //
         // 例外：上一层是**草稿列表**时它本质仍是列表（一列卡片），
@@ -297,58 +195,18 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
             : MasterDetailLayout.defaultMaxMasterRatio,
         preferredMasterRatio:
             selectedTopic.isStacked && !_masterIsListLike ? 0.5 : 0.25,
+        projectDetailWhenNarrow: true,
+        // 胶片带:列表也在带上,压栈时被顶出左侧、倒二层格顶上左栏
+        // (旧"上一层预览"形态,由容器统一承担,预览格 State 全保)。
+        pinMaster: false,
         master: _wrapPaneTap(
           ActivePane.master,
           _buildMasterPane(selectedTopic),
         ),
-        detail: selectedTopic.hasSelection && canShowDetailPane
-            ? _wrapPaneTap(
-                ActivePane.detail,
-                PaneContentWidget(
-                  key: selectedTopic.kind == PaneKind.topic
-                      ? _keyForTopic(selectedTopic.topicId!)
-                      : ValueKey(
-                          '${selectedTopic.kind}_${selectedTopic.username}',
-                        ),
-                  entry: selectedTopic.topEntry!.kind == PaneKind.topic
-                      ? PaneEntry.topic(
-                          topicId: selectedTopic.topicId!,
-                          initialTitle: selectedTopic.initialTitle,
-                          scrollToPostNumber: selectedTopic.scrollToPostNumber,
-                          instanceId: _getOrCreateInstanceId(
-                            selectedTopic.topicId!,
-                            existingInstanceId: selectedTopic.instanceId,
-                          ),
-                          highlightBoostUsername:
-                              selectedTopic.highlightBoostUsername,
-                          initialRevisionPostNumber:
-                              selectedTopic.initialRevisionPostNumber,
-                          initialRevisionNumber:
-                              selectedTopic.initialRevisionNumber,
-                          // 这里是**重建** entry，漏一个字段就等于把它吞掉：
-                          // 之前漏了这两个，话题草稿点进来回复框根本不弹。
-                          autoOpenReply:
-                              selectedTopic.topEntry!.autoOpenReply,
-                          autoReplyToPostNumber:
-                              selectedTopic.topEntry!.autoReplyToPostNumber,
-                        )
-                      : selectedTopic.topEntry!,
-                  stackProvider: selectedTopicProvider,
-                  parentActive: widget.isActive,
-                  // 基础层（栈仅一层）也给 clear：ESC/返回按钮清空右栏回到
-                  // 空态，与 search/seeking 行为一致（平行视界 ESC 统一）。
-                  // 回调内重读 provider，不闭包捕获 build 时的快照。
-                  onBack: () {
-                    final notifier = ref.read(selectedTopicProvider.notifier);
-                    if (ref.read(selectedTopicProvider).isStacked) {
-                      notifier.pop();
-                    } else {
-                      notifier.clear();
-                    }
-                  },
-                ),
-              )
-            : null,
+        panes: [
+          for (var i = 0; i < selectedTopic.stack.length; i++)
+            _buildPaneCell(selectedTopic, i),
+        ],
         // 压栈时 master 显示的是话题预览（不可交互，见
         // TopicDetailPage.truncateOnPush 注释），不是列表——"新建话题"这个
         // FAB 只在 master 真的是列表时才有意义，之前没跟着切换，压栈后
@@ -359,12 +217,73 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
                 onOpenDrafts: () => _openDrafts(context),
               )
             : null,
+        ),
+      ),
+    );
+  }
+
+  /// 平行视界第 [index] 层格(0=栈底)。每层一格、key 稳定,格子在
+  /// 胶片带上恒驻:压栈时本格滑去左栏当"上一层预览"(truncateOnPush
+  /// 语义),退栈时滑回右栏——同一 Element,滚动位置全保。
+  Widget _buildPaneCell(SelectedTopicState selectedTopic, int index) {
+    final entry = selectedTopic.stack[index];
+    final isTop = index == selectedTopic.stack.length - 1;
+    final key = entry.kind == PaneKind.topic
+        ? ValueKey('home_pane_${entry.topicId}_${entry.instanceId ?? ''}')
+        : ValueKey('home_pane_${entry.kind}_${entry.username}');
+    return KeyedSubtree(
+      key: key,
+      child: _wrapPaneTap(
+        ActivePane.detail,
+        PaneContentWidget(
+          entry: entry.kind == PaneKind.topic && entry.instanceId == null
+              ? PaneEntry.topic(
+                  topicId: entry.topicId!,
+                  initialTitle: entry.initialTitle,
+                  scrollToPostNumber: entry.scrollToPostNumber,
+                  instanceId: _getOrCreateInstanceId(
+                    entry.topicId!,
+                    existingInstanceId: entry.instanceId,
+                  ),
+                  highlightBoostUsername: entry.highlightBoostUsername,
+                  initialRevisionPostNumber: entry.initialRevisionPostNumber,
+                  initialRevisionNumber: entry.initialRevisionNumber,
+                  // 这里是**重建** entry，漏一个字段就等于把它吞掉：
+                  // 之前漏了这两个，话题草稿点进来回复框根本不弹。
+                  autoOpenReply: entry.autoOpenReply,
+                  autoReplyToPostNumber: entry.autoReplyToPostNumber,
+                )
+              : entry,
+          stackProvider: selectedTopicProvider,
+          parentActive: widget.isActive,
+          // 非顶格 = "上一层预览":内部点击走截断替换语义。
+          truncateOnPush: !isTop,
+          // 基础层（栈仅一层）也给 clear：ESC/返回按钮清空右栏回到
+          // 空态，与 search/seeking 行为一致（平行视界 ESC 统一）。
+          // 回调内重读 provider，不闭包捕获 build 时的快照。
+          onBack: () {
+            final notifier = ref.read(selectedTopicProvider.notifier);
+            if (ref.read(selectedTopicProvider).isStacked) {
+              notifier.pop();
+            } else {
+              notifier.clear();
+            }
+          },
+        ),
       ),
     );
   }
 
   void _showFeed() {
-    ref.read(selectedTopicProvider.notifier).collapseToTop();
+    final notifier = ref.read(selectedTopicProvider.notifier);
+    // 投影态下"回信息流"必须整栈清空:collapseToTop 对单层栈是 no-op,
+    // 投影会继续盖着列表。宽屏保留右栏基础层(仅收深层)语义不变。
+    if (ref.read(selectedTopicProvider).hasSelection &&
+        !MasterDetailLayout.canShowBothPanesFor(context)) {
+      notifier.clear();
+    } else {
+      notifier.collapseToTop();
+    }
     setState(() {
       _showEmbeddedSearch = false;
       _embeddedSearchFilter = null;
@@ -397,6 +316,9 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
   /// 栈里"上一层"的话题（当前顶层内容左移那一层），右侧显示新顶替的
   /// 内容——而不是简单隐藏 master。列表用 Offstage 保留而非卸载，退回
   /// 最底层时原样恢复（含滚动位置）。
+  /// master 格:信息流列表(或嵌入搜索覆盖层)。压栈时的"上一层预览"
+  /// 不再在这里手工顶替——胶片带模型下由容器统一承担(倒二层格滑到
+  /// 左栏,格子恒驻 State 全保),本方法恒返回列表本体。
   Widget _buildMasterPane(SelectedTopicState selectedTopic) {
     final topicsPage = TopicsPage(
       externalCategoryId: _leftCategory?.id,
@@ -411,7 +333,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     );
     // 信息流始终保活，搜索只是覆盖左栏。退出搜索后滚动位置、Tab 和已加载
     // 数据原样恢复，不能因为一次搜索重新创建整棵信息流。
-    final list = Stack(
+    return Stack(
       children: [
         ExcludeFocus(
           excluding: _showEmbeddedSearch,
@@ -426,26 +348,6 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
             onClose: _showFeed,
             parentActive: widget.isActive,
           ),
-      ],
-    );
-    if (!selectedTopic.isStacked) return list;
-    final previous = selectedTopic.stack[selectedTopic.stack.length - 2];
-    return Stack(
-      children: [
-        ExcludeFocus(
-          excluding: true,
-          child: Offstage(offstage: true, child: list),
-        ),
-        PaneContentWidget(
-          key: previous.kind == PaneKind.topic
-              ? _keyForTopic(previous.topicId!)
-              : ValueKey('master_${previous.kind}_${previous.username}'),
-          entry: previous,
-          stackProvider: selectedTopicProvider,
-          truncateOnPush: true,
-          // 左栏预览位也要跟随 tab 活跃态（草稿列表靠它决定何时重拉）
-          parentActive: widget.isActive,
-        ),
       ],
     );
   }
@@ -527,6 +429,8 @@ class _TopicsFabState extends ConsumerState<_TopicsFab>
   final LayerLink _layerLink = LayerLink();
   bool _isExpanded = false;
   OverlayEntry? _overlayEntry;
+  LocalHistoryEntry? _historyEntry;
+  bool _removingHistory = false;
   DynamicContentSuspensionLease? _dynamicContentLease;
 
   @override
@@ -544,6 +448,7 @@ class _TopicsFabState extends ConsumerState<_TopicsFab>
 
   @override
   void dispose() {
+    _removeHistoryEntry();
     _removeOverlay();
     _controller.dispose();
     super.dispose();
@@ -554,13 +459,15 @@ class _TopicsFabState extends ConsumerState<_TopicsFab>
       _close();
     } else {
       setState(() => _isExpanded = true);
+      _addHistoryEntry();
       _showOverlay();
       _controller.forward();
       HapticFeedback.lightImpact();
     }
   }
 
-  void _close({bool immediately = false}) {
+  void _close({bool immediately = false, bool fromHistory = false}) {
+    if (!fromHistory) _removeHistoryEntry();
     if (!_isExpanded) return;
     setState(() => _isExpanded = false);
     if (immediately) {
@@ -572,6 +479,31 @@ class _TopicsFabState extends ConsumerState<_TopicsFab>
     _controller.reverse().then((_) {
       _removeOverlay();
     });
+  }
+
+  void _addHistoryEntry() {
+    if (_historyEntry != null) return;
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    _historyEntry = LocalHistoryEntry(
+      impliesAppBarDismissal: false,
+      onRemove: () {
+        _historyEntry = null;
+        if (!_removingHistory && mounted) {
+          _close(fromHistory: true);
+        }
+      },
+    );
+    route.addLocalHistoryEntry(_historyEntry!);
+  }
+
+  void _removeHistoryEntry() {
+    final entry = _historyEntry;
+    if (entry == null) return;
+    _historyEntry = null;
+    _removingHistory = true;
+    entry.remove();
+    _removingHistory = false;
   }
 
   void _showOverlay() {

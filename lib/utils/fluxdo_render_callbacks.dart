@@ -154,6 +154,7 @@ class FluxdoRenderCallbacks {
     int chunkIndex = 0,
     bool trimTopMargin = false,
     bool trimBottomMargin = false,
+    bool shrinkWrapWidth = false,
     QuoteRequestCallback? onQuoteRequest,
     QuoteRequestCallback? onCopyQuoteRequest,
     CopyToastCallback? onCopyToast,
@@ -172,6 +173,7 @@ class FluxdoRenderCallbacks {
       chunkIndex: chunkIndex,
       trimTopMargin: trimTopMargin,
       trimBottomMargin: trimBottomMargin,
+      shrinkWrapWidth: shrinkWrapWidth,
       onQuoteRequest: onQuoteRequest,
       onCopyQuoteRequest: onCopyQuoteRequest,
       onCopyToast: onCopyToast,
@@ -1022,7 +1024,9 @@ class FluxdoRenderCallbacks {
   /// - 链接:走 [onInternalLinkTap] 定制(默认 push TopicDetailPage);不追踪
   ///   点击(trackClick 需 postId)。
   /// - onebox / lazyVideo:点击数传空(无 post.linkCounts)。
-  /// - policy / poll:返回 null → 子包 fallback 占位(无 post 无法交互)。
+  /// - policy:返回 null → 子包 fallback 占位(无 post 无法交互)。
+  /// - poll:静态预览卡(从 rawHtml 解选项/属性,无投票交互)——
+  ///   编辑器岛预览等场景所见即所发。
   /// - 其余(emoji/mention/code/avatar/math/svg/video/audio/download/iframe/
   ///   localDate/imageGrid/footnote/chat)与 forPost 完全一致(共享 static)。
   factory FluxdoRenderCallbacks.generic({
@@ -1066,9 +1070,19 @@ class FluxdoRenderCallbacks {
       mathInlineBuilder: _mathInlineBuilder,
       oneboxBuilder: _oneboxHandler(const []),
       imageGridBuilder: _imageGridBuilder,
-      // 无 post → 无法做接受/撤销 + 票数交互,返回 null 让子包出 fallback 占位。
+      // 无 post → 无法做接受/撤销交互,返回 null 让子包出 fallback 占位。
       policyBuilder: (ctx, node) => null,
-      pollBuilder: (ctx, node) => null,
+      // 无 post 拿不到票数/投票交互,但 rawHtml(cooked div.poll)里
+      // 选项/属性齐全 —— 渲染静态预览卡(标题+类型徽标+选项+属性摘要)。
+      // 编辑器里插投票后看到的就是它,而不是「接入主项目」占位卡。
+      pollBuilder: (ctx, node) {
+        if (node.rawHtml.isEmpty) return null;
+        return legacy_poll.buildPollStaticPreview(
+          context: ctx,
+          theme: Theme.of(ctx),
+          element: _elementFromHtml(node.rawHtml),
+        );
+      },
       chatTranscriptBuilder: _chatTranscriptHandler(heroTagNamespace, topicId),
       svgBuilder: _svgBuilder,
       videoBuilder: _videoBuilder,

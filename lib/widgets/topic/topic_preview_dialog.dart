@@ -8,6 +8,7 @@ import '../../models/topic.dart';
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/share_utils.dart';
 import '../../utils/url_helper.dart';
@@ -48,6 +49,11 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
   final WidgetBuilder? customActionPanelBuilder;
   final Future<String?> Function()? firstPostLoader;
 
+  /// 锚点上下文所在的平行视界栈(show 时捕获)。弹窗自身是独立路由,
+  /// 体内 context 找不到 EmbeddedStackScope;预览内容里的内链点击要
+  /// 压回锚点的栈(与正文内链同语义),没有则全屏 push。
+  final SelectedTopicProvider? paneStack;
+
   const TopicPreviewDialog({
     super.key,
     required this.topic,
@@ -55,6 +61,7 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     this.actions,
     this.customActionPanelBuilder,
     this.firstPostLoader,
+    this.paneStack,
   });
 
   @override
@@ -72,6 +79,9 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     // 触觉反馈
     HapticFeedback.mediumImpact();
 
+    // pop 弹窗后锚点 context 可能已失效,进弹窗前先捕获平行视界栈。
+    final paneStack = EmbeddedStackScope.maybeOf(context);
+
     return showAppGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -85,6 +95,7 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
           actions: actions,
           customActionPanelBuilder: customActionPanelBuilder,
           firstPostLoader: firstPostLoader,
+          paneStack: paneStack,
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -266,8 +277,24 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         heroTagNamespace: 'topic_preview_${topic.id}',
         topicId: topic.id,
         onInternalLinkTap: (topicId, topicSlug, postNumber) {
-          Navigator.of(context).pop();
-          Navigator.of(context).push(
+          // 锚点在平行视界面板里=压回其栈(show 时捕获,pop 后锚点
+          // context 已不可用);否则全屏 push。container/navigator 都要
+          // 在 pop 前取——pop 后本 context deactivate,祖先查找会抛。
+          final stack = widget.paneStack;
+          final container = stack != null
+              ? ProviderScope.containerOf(context, listen: false)
+              : null;
+          final navigator = Navigator.of(context);
+          navigator.pop();
+          if (stack != null) {
+            container!.read(stack.notifier).push(
+                  topicId: topicId,
+                  initialTitle: topicSlug,
+                  scrollToPostNumber: postNumber,
+                );
+            return;
+          }
+          navigator.push(
             MaterialPageRoute(
               builder: (_) => TopicDetailPage(
                 topicId: topicId,

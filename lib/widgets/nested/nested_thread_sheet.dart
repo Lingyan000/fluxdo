@@ -28,6 +28,7 @@ void showNestedThreadSheet({
   required void Function(int postId) onRefreshPost,
   required void Function(int postNumber) onJumpToPost,
   void Function(int postId, bool accepted)? onSolutionChanged,
+  void Function(String selectedText, Post post)? onQuoteSelection,
 }) {
   showAppBottomSheet(
     context: context,
@@ -45,6 +46,7 @@ void showNestedThreadSheet({
       onRefreshPost: onRefreshPost,
       onJumpToPost: onJumpToPost,
       onSolutionChanged: onSolutionChanged,
+      onQuoteSelection: onQuoteSelection,
     ),
   );
 }
@@ -61,6 +63,7 @@ class _NestedThreadSheetContent extends ConsumerStatefulWidget {
   final void Function(int postId) onRefreshPost;
   final void Function(int postNumber) onJumpToPost;
   final void Function(int postId, bool accepted)? onSolutionChanged;
+  final void Function(String selectedText, Post post)? onQuoteSelection;
 
   const _NestedThreadSheetContent({
     required this.node,
@@ -74,6 +77,7 @@ class _NestedThreadSheetContent extends ConsumerStatefulWidget {
     required this.onRefreshPost,
     required this.onJumpToPost,
     this.onSolutionChanged,
+    this.onQuoteSelection,
   });
 
   @override
@@ -172,6 +176,7 @@ class _NestedThreadSheetContentState
                   onRefreshPost: widget.onRefreshPost,
                   onJumpToPost: widget.onJumpToPost,
                   onSolutionChanged: widget.onSolutionChanged,
+                  onQuoteSelection: widget.onQuoteSelection,
                   expansionState: _expansionState,
                 ),
               // 加载更多

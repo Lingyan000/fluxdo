@@ -20,10 +20,12 @@ import 'providers/selected_topic_provider.dart';
 import 'providers/locale_provider.dart';
 import 'widgets/ai/builtin_presets_factory.dart';
 import 'providers/message_bus_providers.dart';
+import 'providers/chat/chat_notification_alert_provider.dart';
 import 'services/auth_issue_notice_service.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
+import 'widgets/common/anchor_guard_sliver.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
 import 'widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
@@ -54,7 +56,7 @@ import 'services/browser_trust_coordinator.dart';
 import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, ParagraphLayoutCache;
+    show FlattenCache, FoldShiftHook, ParagraphLayoutCache;
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -69,6 +71,8 @@ import 'services/log/log_writer.dart';
 import 'services/download_service.dart';
 import 'services/migration_service.dart';
 import 'services/navigation/app_route_observer.dart';
+import 'services/navigation/back_exit_guard.dart';
+import 'services/navigation/keyboard_focus_guard.dart';
 import 'services/window_state_service.dart';
 import 'services/webview_settings.dart';
 import 'services/windows_webview_environment_service.dart';
@@ -78,6 +82,7 @@ import 'constants.dart';
 import 'providers/connectivity_provider.dart';
 import 'utils/dialog_utils.dart';
 import 'utils/frame_jank_monitor.dart';
+import 'utils/hashtag_handlers.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
@@ -98,7 +103,9 @@ import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
 import 'widgets/layout/adaptive_scaffold.dart';
 import 'widgets/layout/adaptive_navigation.dart';
+import 'widgets/esc_fallback_observer.dart';
 import 'widgets/layout/master_detail_layout.dart';
+import 'widgets/layout/pane_projection_back_scope.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/render_signet/render_signet_layer.dart';
@@ -291,7 +298,9 @@ Future<void> main() async {
   // Android 由 WV onLoadStop 等 hook 主动调 notifyExternalChange()。
   CookieStoreObserver.instance.attach();
 
-  // 桌面平台：恢复窗口状态后再显示，避免默认位置闪烁
+  // 桌面平台：三端 runner 均隐藏启动（macOS 在 MainFlutterWindow 首次
+  // order 时隐藏，Windows/Linux 由 runner 创建隐藏窗口），正常冷启动都
+  // 走下方 else 分支：首帧光栅化后恢复窗口状态再显示，避免默认位置闪烁。
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await acrylic.Window.setEffect(
       effect: Platform.isMacOS
@@ -306,7 +315,15 @@ Future<void> main() async {
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
     if (isVisible) {
-      await WindowStateService.instance.attach(prefs);
+      // 窗口已可见（热重启，或原生隐藏启动未生效的兜底路径）：
+      // macOS 走 restore() 读取并应用保存的窗口状态——attach() 只刷新
+      // 最大化缓存不读状态文件，曾导致 macOS 冷启动永远回到 XIB 默认
+      // 位置；Windows/Linux 可见说明状态已恢复过，attach 即可。
+      if (Platform.isMacOS) {
+        await WindowStateService.instance.restore(prefs);
+      } else {
+        await WindowStateService.instance.attach(prefs);
+      }
       if (Platform.isLinux) {
         await windowManager.focus();
       }
@@ -450,6 +467,15 @@ Future<void> main() async {
     await MigrationService.purgeTrash();
     await BlobImageCache.sweep(prefs);
   }());
+
+  // 注入 hashtag 药丸的图标解析与点击导航(fluxdo_render 注入点)
+  installHashtagHandlers();
+
+  // 折叠块(details/callout)展开动画帧武装滚动锚定哨兵:center 双向
+  // 列表的 reverse 半场里子项向上生长,不锚定的话点击展开会把头部顶出
+  // 视口(视觉 = 跳到内容底部)。forward 半场锚位移为 0,修正自动
+  // no-op,"展开再收起逐像素复原"不受影响。
+  FoldShiftHook.onFrame = AnchorGuardSliver.arm;
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {
@@ -746,7 +772,14 @@ class MainApp extends ConsumerWidget {
             builder: (context) => MaterialApp(
               navigatorKey: navigatorKey,
               // JankNavObserver 给 [JANK] 日志加导航归因(debug/profile 观测用)
-              navigatorObservers: [appRouteObserver, JankNavObserver()],
+              // KeyboardFocusGuard 压掉浮层关闭后键盘自弹(移动端)
+              // EscFallbackObserver 登记全屏页,桌面 ESC 路由级自动兜底
+              navigatorObservers: [
+                appRouteObserver,
+                keyboardFocusGuard,
+                JankNavObserver(),
+                EscFallbackObserver(),
+              ],
               title: 'FluxDO',
               locale: TranslationProvider.of(context).flutterLocale,
               localizationsDelegates: const [
@@ -896,6 +929,7 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<void>? _messageBusSub;
   ProviderSubscription<void>? _notificationChannelSub;
   ProviderSubscription<void>? _notificationAlertChannelSub;
+  ProviderSubscription<void>? _chatAlertChannelSub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -903,7 +937,7 @@ class _MainPageState extends ConsumerState<MainPage>
   Timer? _pendingSingleTap;
   List<NavEntry> _lastResolvedEntries = const [];
   Timer? _resumeDebounceTimer;
-  DateTime? _lastBackPressTime;
+  final BackExitGuard _backExitGuard = BackExitGuard();
   bool _clipboardCheckInFlight = false;
 
   // 不能是 const，需要传入 isActive
@@ -957,16 +991,17 @@ class _MainPageState extends ConsumerState<MainPage>
       }
     });
 
+    // 提前捕获 container:登录成功广播可能落在本元素 deactivate/重挂载
+    // 窗口内,届时 containerOf(context) 会抛错把刷新链掐死(登录后无
+    // 登录态)。container 与根 ProviderScope 同生命周期,不受元素影响。
+    final appContainer = ProviderScope.containerOf(context, listen: false);
     _authStateSub = ref.listenManual<AsyncValue<void>>(authStateProvider, (
       _,
       next,
     ) {
       next.whenData((_) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          AppStateRefresher.refreshAll(
-            ProviderScope.containerOf(context, listen: false),
-          );
+          AppStateRefresher.refreshAll(appContainer);
         });
       });
     });
@@ -1000,6 +1035,11 @@ class _MainPageState extends ConsumerState<MainPage>
             notificationAlertChannelProvider,
             (_, _) {},
           );
+          _chatAlertChannelSub?.close();
+          _chatAlertChannelSub = ref.listenManual<void>(
+            chatNotificationAlertProvider,
+            (_, _) {},
+          );
         });
       } else if (user == null) {
         _messageBusInitialized = false;
@@ -1009,6 +1049,8 @@ class _MainPageState extends ConsumerState<MainPage>
         _notificationChannelSub = null;
         _notificationAlertChannelSub?.close();
         _notificationAlertChannelSub = null;
+        _chatAlertChannelSub?.close();
+        _chatAlertChannelSub = null;
       }
     }, fireImmediately: true);
   }
@@ -1170,6 +1212,7 @@ class _MainPageState extends ConsumerState<MainPage>
     _messageBusSub?.close();
     _notificationChannelSub?.close();
     _notificationAlertChannelSub?.close();
+    _chatAlertChannelSub?.close();
     _connectivitySub?.close();
     super.dispose();
   }
@@ -1288,9 +1331,7 @@ class _MainPageState extends ConsumerState<MainPage>
         // 窄屏没有「写栈 → 推详情」的桥（同通知入口的窄屏问题），
         // 和解析失败一样退回深链通道全屏打开
         onAction: () {
-          final topic = DiscourseUrlParser.parseTopic(
-            candidate.uri.toString(),
-          );
+          final topic = DiscourseUrlParser.parseTopic(candidate.uri.toString());
           if (topic != null &&
               MasterDetailLayout.canShowBothPanesFor(context)) {
             ref
@@ -1313,8 +1354,18 @@ class _MainPageState extends ConsumerState<MainPage>
 
   /// App 进入后台：先启动前台服务保活，再切换到只轮询通知频道
   Future<void> _enterBackground() async {
-    // 清除 Flutter 图片内存缓存，降低后台内存占用
-    PaintingBinding.instance.imageCache.clear();
+    // 清后台图片内存缓存按平台分派:
+    // - 桌面端跳过——最小化即触发本回调,一次性并发销毁大量 GPU 贴图
+    //   (SkImage_Ganesh/GrTextureProxy)疑撞 Skia disposal 问题
+    //   (discourse_cache_manager.dart 里动图那块引用过的 Flutter
+    //   #85831 同一类坑),聊天页同屏头像/emoji 最多最易踩中;桌面
+    //   也不存在后台 OOM 击杀,清空只省一点驻留,不值得冒崩溃风险。
+    // - 移动端保留——降后台驻留配合保活,降低 LMKD 击杀概率(被杀
+    //   = 通知轮询没了);LMKD 不总先发 memory pressure,框架自清
+    //   兜不住这个场景。
+    if (!PlatformUtils.isDesktop) {
+      PaintingBinding.instance.imageCache.clear();
+    }
 
     // 诊断快照落盘:进程随后被杀时环形缓冲现场不再全丢(监控未启用
     // 或无记录时内部直接返回;静默失败,不干扰退后台路径)
@@ -1467,66 +1518,90 @@ class _MainPageState extends ConsumerState<MainPage>
     final hasNotificationEntry = entries.any(
       (e) => e.id == NavEntryIds.notifications,
     );
-    final activeEntryId = pageEntries[safePageIndex].id;
-    final topicParallelStacked = ref.watch(selectedTopicProvider).isStacked;
-    final messageParallelStacked = ref.watch(selectedMessageProvider).isStacked;
-    final seekingParallelStacked = ref.watch(selectedSeekingProvider).isStacked;
-    final hideNavigationRail =
-        (activeEntryId == NavEntryIds.home && topicParallelStacked) ||
-        (activeEntryId == NavEntryIds.messages && messageParallelStacked) ||
-        (activeEntryId == NavEntryIds.seeking && seekingParallelStacked);
+    // 深层平行视界隐藏 Rail 的旧联动已砍:抽掉 72px 侧栏 = 内容区
+    // 瞬间变宽,这发生在布局动画体系之外,快照底板盖不住,是压/退栈
+    // "必闪"的外部几何跳变源(还会触发编排撞帧取消)。Rail 恒定,
+    // 栏宽恒定,层间过渡才是纯内容平移(iPad 三栏同款前提)。
+    const hideNavigationRail = false;
+    final exitOnSingleBack = ref.watch(
+      preferencesProvider.select((preferences) => preferences.exitOnSingleBack),
+    );
+    final requireDoubleBackToExit = Platform.isAndroid && !exitOnSingleBack;
+    final routeCanPopInternally = ModalRoute.canPopOf(context) ?? false;
 
-    // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁
-    Widget page = PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) {
-        if (didPop) return;
-        // 分类侧栏开着：返回=关抽屉。抽屉自身的 LocalHistoryEntry 在
-        // 根路由 canPop:false 下不生效（PopScope 的 doNotPop 判定
-        // 优先于 LocalHistoryRoute 的内部消费），只能在这里兜底。
-        if (CategoryDrawerHost.isOpen) {
-          CategoryDrawerHost.close();
-          return;
-        }
-        if (NotificationQuickPanel.isVisible) {
-          NotificationQuickPanel.dismiss();
-          return;
-        }
-        final now = DateTime.now();
-        if (_lastBackPressTime != null &&
-            now.difference(_lastBackPressTime!).inMilliseconds < 2000) {
-          SystemNavigator.pop();
-        } else {
-          _lastBackPressTime = now;
-          ToastService.showInfo(S.current.toast_pressAgainToExit);
-        }
-      },
-      child: AdaptiveScaffold(
-        selectedIndex: selectedBottomIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: destinations,
-        railBottomLeading: (user != null && !hasNotificationEntry)
-            ? const NotificationIconButton()
-            : null,
-        hideNavigationRail: hideNavigationRail,
-        body: IndexedStack(
-          index: safePageIndex,
-          children: [
-            for (int i = 0; i < pageEntries.length; i++)
-              KeyedSubtree(
-                key: ValueKey('nav-entry-${pageEntries[i].id}'),
-                child: TickerMode(
-                  enabled: safePageIndex == i,
-                  child: ExcludeFocus(
-                    excluding: safePageIndex != i,
-                    child: pageEntries[i].pageBuilder!(
-                      context,
-                      safePageIndex == i,
+    // 首页的 FAB 由 TopicsScreen 内部处理，避免切换时闪烁。
+    // 单次退出模式允许系统处理 bubble 以支持预测式退出；双击退出模式
+    // 则拦截根路由的第一次返回。面板在两种模式下都拥有更高优先级。
+    Widget page = ValueListenableBuilder<bool>(
+      valueListenable: NotificationQuickPanel.visible,
+      builder: (context, notificationPanelVisible, _) =>
+          ValueListenableBuilder<bool>(
+        // 平行视界投影态(窄屏详情全宽盖在 tab 体内)开着时返回由
+        // PaneProjectionBackScope 消费,根层完全让位:不弹退出 toast。
+        valueListenable: PaneProjectionBackScope.hasActiveProjection,
+        builder: (context, paneProjectionOpen, _) => PopScope(
+          canPop:
+              routeCanPopInternally ||
+              (!notificationPanelVisible &&
+                  !paneProjectionOpen &&
+                  !requireDoubleBackToExit),
+          onPopInvokedWithResult: (bool didPop, dynamic result) {
+            if (didPop) return;
+            // 分类侧栏通过 LocalHistoryEntry 消费返回；这里保留兜底，覆盖
+            // 抽屉正在收尾动画等 LocalHistory 尚未同步的短暂状态。
+            if (CategoryDrawerHost.isOpen) {
+              CategoryDrawerHost.close();
+              return;
+            }
+            if (NotificationQuickPanel.isVisible) {
+              NotificationQuickPanel.dismiss();
+              return;
+            }
+            // 投影态:PaneProjectionBackScope 的 PopEntry 自己消费本次
+            // 返回(关投影层),根层不做双击退出。
+            if (PaneProjectionBackScope.hasActiveProjection.value) {
+              return;
+            }
+            if (requireDoubleBackToExit) {
+              if (_backExitGuard.shouldExit()) {
+                SystemNavigator.pop();
+              } else {
+                ToastService.showInfo(S.current.toast_pressAgainToExit);
+              }
+            }
+          },
+          child: AdaptiveScaffold(
+            selectedIndex: selectedBottomIndex,
+            onDestinationSelected: _onDestinationSelected,
+            destinations: destinations,
+            railBottomLeading: (user != null && !hasNotificationEntry)
+                ? const NotificationIconButton()
+                : null,
+            hideNavigationRail: hideNavigationRail,
+            // 投影态底栏隐藏:详情全宽盖在 tab 体内,底栏还留着会像
+            // "详情页悬在 tab 骨架上";合成路由时代盖住一切,投影态
+            // 用显式谓词达成同样观感。
+            hideBottomNavigation: paneProjectionOpen,
+            body: IndexedStack(
+              index: safePageIndex,
+              children: [
+                for (int i = 0; i < pageEntries.length; i++)
+                  KeyedSubtree(
+                    key: ValueKey('nav-entry-${pageEntries[i].id}'),
+                    child: TickerMode(
+                      enabled: safePageIndex == i,
+                      child: ExcludeFocus(
+                        excluding: safePageIndex != i,
+                        child: pageEntries[i].pageBuilder!(
+                          context,
+                          safePageIndex == i,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

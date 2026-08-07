@@ -8,6 +8,7 @@
       }
     }
   },
+  "createTopic_postVoting": "問答",
   "createTopic_confirmPublish": "確定發佈",
   "createTopic_contentHint": "正文內容 (支持 Markdown)...",
   "createTopic_continueEditing": "繼續編輯",

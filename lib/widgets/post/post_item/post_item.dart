@@ -23,6 +23,7 @@ import 'widgets/post_footer_section/post_footer_section.dart';
 import 'widgets/post_header_section.dart';
 import 'widgets/post_notice_widget.dart';
 import 'widgets/post_segment_frame.dart';
+import 'widgets/post_voting_control.dart';
 
 class PostItem extends ConsumerStatefulWidget {
   final Post post;
@@ -69,6 +70,12 @@ class PostItem extends ConsumerStatefulWidget {
   /// "更多"菜单里"指定帖子"这一项是否显示。
   final bool canAssignPost;
 
+  /// post-voting(问答)话题:footer 显示赞成/反对控件与评论区
+  final bool isPostVotingTopic;
+
+  /// 话题 closed/archived(问答投票禁投判定)
+  final bool topicClosed;
+
   const PostItem({
     super.key,
     required this.post,
@@ -102,6 +109,8 @@ class PostItem extends ConsumerStatefulWidget {
     this.opTopSlot,
     this.assignmentInfo,
     this.canAssignPost = false,
+    this.isPostVotingTopic = false,
+    this.topicClosed = false,
   });
 
   @override
@@ -152,6 +161,27 @@ class _PostItemState extends ConsumerState<PostItem> {
     );
   }
 
+  /// 问答话题:正文左侧挂竖排投票列(官方 .post-voting-post 形态,
+  /// 上箭头/票数/下箭头一列,正文右移让位);普通话题原样返回。
+  Widget _withVotingColumn(Post post, Widget body) {
+    if (!widget.isPostVotingTopic) return body;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: PostVotingControl(
+            post: post,
+            topicId: widget.topicId,
+            topicClosed: widget.topicClosed,
+            axis: Axis.vertical,
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
@@ -177,7 +207,6 @@ class _PostItemState extends ConsumerState<PostItem> {
         topicId: widget.topicId,
         selected: widget.selected,
         onEdit: widget.onEdit,
-        canAssign: widget.canAssignPost,
       );
     }
 
@@ -218,228 +247,245 @@ class _PostItemState extends ConsumerState<PostItem> {
     return PerfSpanBox(
       label: 'post#${post.postNumber}',
       child: PostSegmentFrame(
-        post: post,
-        selected: widget.selected,
-        highlight: widget.highlight,
-        constraints: const BoxConstraints(minHeight: 80),
-        showTopDateSeparator: widget.dateSeparatorLabel != null,
-        topDateSeparatorLabel: widget.dateSeparatorLabel,
-        showBottomDateSeparator: widget.bottomDateSeparatorLabel != null,
-        bottomDateSeparatorLabel: widget.bottomDateSeparatorLabel,
-        showBottomBorder: true,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              PostHeaderSection(
-                post: post,
-                topicId: widget.topicId,
-                isTopicOwner: widget.isTopicOwner,
-                showStamp: _acceptedAnswer,
-                padding: EdgeInsets.zero,
-                onJumpToPost: widget.onJumpToPost,
-                onEditWiki: widget.onEdit,
-                onMentionUser: widget.onMentionUser,
-                danmakuActive: showDanmakuToggle ? showDanmaku : null,
-                onToggleDanmaku: showDanmakuToggle
-                    ? () => ref
-                          .read(topicSessionProvider(widget.topicId).notifier)
-                          .setDanmakuOff(post.id, showDanmaku)
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              if (post.notice != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: PostNoticeWidget(
-                    notice: post.notice!,
-                    username: post.username,
-                  ),
+      post: post,
+      selected: widget.selected,
+      highlight: widget.highlight,
+      constraints: const BoxConstraints(minHeight: 80),
+      showTopDateSeparator: widget.dateSeparatorLabel != null,
+      topDateSeparatorLabel: widget.dateSeparatorLabel,
+      showBottomDateSeparator: widget.bottomDateSeparatorLabel != null,
+      bottomDateSeparatorLabel: widget.bottomDateSeparatorLabel,
+      showBottomBorder: true,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PostHeaderSection(
+              post: post,
+              topicId: widget.topicId,
+              isTopicOwner: widget.isTopicOwner,
+              showStamp: _acceptedAnswer,
+              padding: EdgeInsets.zero,
+              onJumpToPost: widget.onJumpToPost,
+              onEditWiki: widget.onEdit,
+              onMentionUser: widget.onMentionUser,
+              danmakuActive: showDanmakuToggle ? showDanmaku : null,
+              onToggleDanmaku: showDanmakuToggle
+                  ? () => ref
+                        .read(topicSessionProvider(widget.topicId).notifier)
+                        .setDanmakuOff(post.id, showDanmaku)
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            if (post.notice != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: PostNoticeWidget(
+                  notice: post.notice!,
+                  username: post.username,
                 ),
-              Container(
-                decoration: isModeratorAction
-                    ? BoxDecoration(
-                        color: theme.colorScheme.tertiaryContainer.withValues(
-                          alpha: 0.2,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      )
-                    : null,
-                padding: isModeratorAction
-                    ? const EdgeInsets.all(12)
-                    : EdgeInsets.zero,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    ConstrainedBox(
-                      // 弹幕模式下正文至少预留 1 行弹幕高度，避免短帖第一行弹幕被截
-                      constraints: BoxConstraints(
-                        minHeight: showDanmaku ? danmakuTrackHeight : 0,
+              ),
+            Container(
+              decoration: isModeratorAction
+                  ? BoxDecoration(
+                      color: theme.colorScheme.tertiaryContainer.withValues(
+                        alpha: 0.2,
                       ),
-                      child: Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: (_) =>
-                            CodeSelectionContextTracker.instance.clear(),
-                        child: Builder(
-                          builder: (_) {
-                            final data = _newEngineDataFor(post);
-                            // 新引擎自带自研逻辑选区(SelectionScope + 手势层 +
-                            // toolbar)。引用:toolbar 点「引用」→ onQuoteRequest
-                            // (plainText) → QuoteSelectionHelper 在原始 cooked 匹配。
-                            return data.callbacks.render(
-                              cookedHtml: data.preprocessedCooked,
-                              parsedNodes: data.parsedNodes,
-                              // 正文字号经 baseTextStyle 注入 contentFontScale
-                              // (此前新引擎分支未接入,顺带修复)。
-                              baseTextStyle: theme.textTheme.bodyMedium
-                                  ?.copyWith(
-                                    height: 1.5,
-                                    fontSize:
-                                        (theme.textTheme.bodyMedium?.fontSize ??
-                                            14) *
-                                        ref
-                                            .watch(preferencesProvider)
-                                            .contentFontScale,
-                                  ),
-                              // 自研选区恒开(外层系统 SelectionArea 已拆):
-                              // 未登录时 onQuoteRequest 为 null,toolbar 自动
-                              // 降级只留「复制/复制引用」。
-                              selectionEnabled: true,
-                              onQuoteRequest: widget.onQuoteSelection == null
-                                  ? null
-                                  : (plainText) => widget.onQuoteSelection!(
-                                      plainText,
-                                      post,
-                                    ),
-                              onCopyQuoteRequest: (plainText) =>
-                                  QuoteSelectionHelper.copyQuoteToClipboard(
-                                    selectedText: plainText,
-                                    post: post,
-                                    topicId: widget.topicId,
-                                  ),
-                              onCopyToast: () => ToastService.showSuccess(
-                                context.l10n.common_copiedToClipboard,
-                              ),
-                            );
-                          },
-                        ),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              padding: isModeratorAction
+                  ? const EdgeInsets.all(12)
+                  : EdgeInsets.zero,
+              child: _withVotingColumn(
+                post,
+                Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ConstrainedBox(
+                    // 弹幕模式下正文至少预留 1 行弹幕高度，避免短帖第一行弹幕被截
+                    constraints: BoxConstraints(
+                      minHeight: showDanmaku ? danmakuTrackHeight : 0,
+                    ),
+                    child: Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (_) =>
+                          CodeSelectionContextTracker.instance.clear(),
+                      child: Builder(
+                        builder: (_) {
+                          final data = _newEngineDataFor(post);
+                          // 新引擎自带自研逻辑选区(SelectionScope + 手势层 +
+                          // toolbar)。引用:toolbar 点「引用」→ onQuoteRequest
+                          // (plainText) → QuoteSelectionHelper 在原始 cooked 匹配。
+                          return data.callbacks.render(
+                            cookedHtml: data.preprocessedCooked,
+                            parsedNodes: data.parsedNodes,
+                            // 正文字号经 baseTextStyle 注入 contentFontScale
+                            // (此前新引擎分支未接入,顺带修复)。
+                            baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+                              height: 1.5,
+                              fontSize:
+                                  (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                                  ref
+                                      .watch(preferencesProvider)
+                                      .contentFontScale,
+                            ),
+                            // 自研选区恒开(外层系统 SelectionArea 已拆):
+                            // 未登录时 onQuoteRequest 为 null,toolbar 自动
+                            // 降级只留「复制/复制引用」。
+                            selectionEnabled: true,
+                            onQuoteRequest: widget.onQuoteSelection == null
+                                ? null
+                                : (plainText) =>
+                                      widget.onQuoteSelection!(plainText, post),
+                            onCopyQuoteRequest: (plainText) =>
+                                QuoteSelectionHelper.copyQuoteToClipboard(
+                                  selectedText: plainText,
+                                  post: post,
+                                  topicId: widget.topicId,
+                                ),
+                            onCopyToast: () => ToastService.showSuccess(
+                              context.l10n.common_copiedToClipboard,
+                            ),
+                          );
+                        },
                       ),
                     ),
-                    if (showDanmaku)
-                      Positioned.fill(
-                        child: BoostDanmaku(
-                          visibilityKey: post.id,
-                          boosts: visibleBoosts,
-                          maxTrackCount: danmakuTrackCount,
-                          trackHeight: danmakuTrackHeight,
-                          highlightUsername: widget.highlightBoostUsername,
-                          onBoostTap: (boost, anchorRect) {
-                            BoostActions.show(
-                              context: context,
-                              ref: ref,
-                              post: post,
-                              topicId: widget.topicId,
-                              boost: boost,
-                              anchorRect: anchorRect,
-                              topicTitle: widget.topicTitle,
-                            );
-                          },
-                        ),
+                  ),
+                  if (showDanmaku)
+                    Positioned.fill(
+                      child: BoostDanmaku(
+                        visibilityKey: post.id,
+                        boosts: visibleBoosts,
+                        maxTrackCount: danmakuTrackCount,
+                        trackHeight: danmakuTrackHeight,
+                        highlightUsername: widget.highlightBoostUsername,
+                        onBoostTap: (boost, anchorRect) {
+                          BoostActions.show(
+                            context: context,
+                            ref: ref,
+                            post: post,
+                            topicId: widget.topicId,
+                            boost: boost,
+                            anchorRect: anchorRect,
+                            topicTitle: widget.topicTitle,
+                          );
+                        },
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-              // 帖子级指定标签("被指定到 X"):正文下方、签名上方,
-              // 跟官方 Web 端位置一致。点开是编辑/取消的小菜单。
-              if (widget.assignmentInfo != null)
-                _PostAssignmentBadge(
-                  info: widget.assignmentInfo!,
-                  topicId: widget.topicId,
-                ),
-              // 用户签名
-              if (PostSignatureBlock.shouldRender(
-                ref,
-                post,
-                categoryId: widget.categoryId,
-              ))
-                PostSignatureBlock(post: post, categoryId: widget.categoryId),
-              // 举报隐藏帖子：显示展开按钮
-              if (post.cookedHidden &&
-                  post.canSeeHiddenPost &&
-                  widget.onExpandHiddenPost != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: InkWell(
-                    onTap: () => widget.onExpandHiddenPost!(post.id),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 4,
-                        horizontal: 8,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Symbols.visibility_rounded,
-                            size: 15,
+              ),
+            ),
+            // 帖子级指定标签("已指定给 X"):正文下方、签名上方,
+            // 跟官方 Web 端位置一致。点开是编辑/取消的小菜单。
+            if (widget.assignmentInfo != null)
+              _PostAssignmentBadge(
+                info: widget.assignmentInfo!,
+                topicId: widget.topicId,
+              ),
+            // 用户签名
+            if (PostSignatureBlock.shouldRender(
+              ref,
+              post,
+              categoryId: widget.categoryId,
+            ))
+              PostSignatureBlock(post: post, categoryId: widget.categoryId),
+            // 举报隐藏帖子：显示展开按钮
+            if (post.cookedHidden &&
+                post.canSeeHiddenPost &&
+                widget.onExpandHiddenPost != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: InkWell(
+                  onTap: () => widget.onExpandHiddenPost!(post.id),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Symbols.visibility_rounded,
+                          size: 15,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          context.l10n.post_viewHiddenInfo,
+                          style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.primary,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            context.l10n.post_viewHiddenInfo,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              PostFooterSection(
-                post: post,
-                danmakuActive: showDanmakuToggle ? showDanmaku : null,
-                topicId: widget.topicId,
-                topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,
-                acceptedAnswers: widget.acceptedAnswers,
-                padding: const EdgeInsets.only(top: 12),
-                highlightBoostUsername: widget.highlightBoostUsername,
-                onReply: widget.onReply,
-                onEdit: widget.onEdit,
-                onShareAsImage: widget.onShareAsImage,
-                onRefreshPost: widget.onRefreshPost,
-                onJumpToPost: widget.onJumpToPost,
-                onSolutionChanged: widget.onSolutionChanged,
-                useReplyDialog: widget.useReplyDialog,
-                topicTitle: widget.topicTitle,
-                isPrivateMessageTopic: widget.isPrivateMessageTopic,
-                isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
-                onShowPostDetail: widget.onShowPostDetail,
-                hideRepliesButton: widget.hideRepliesButton,
-                opTopSlot: widget.opTopSlot,
-                canAssignPost:
-                    widget.canAssignPost && widget.assignmentInfo == null,
-                onAssignPost: () => showPostAssignDialog(
-                  context,
-                  ref,
-                  topicId: widget.topicId,
-                  postId: post.id,
-                ),
-                onAcceptedAnswerChanged: (accepted) {
-                  if (!mounted) return;
-                  setState(() {
-                    _acceptedAnswer = accepted;
-                  });
-                },
               ),
-            ],
-          ),
+            PostFooterSection(
+              post: post,
+              danmakuActive: showDanmakuToggle ? showDanmaku : null,
+              topicId: widget.topicId,
+              topicHasAcceptedAnswer: widget.topicHasAcceptedAnswer,
+              acceptedAnswers: widget.acceptedAnswers,
+              padding: const EdgeInsets.only(top: 12),
+              highlightBoostUsername: widget.highlightBoostUsername,
+              onReply: widget.onReply,
+              onEdit: widget.onEdit,
+              onShareAsImage: widget.onShareAsImage,
+              onRefreshPost: widget.onRefreshPost,
+              onJumpToPost: widget.onJumpToPost,
+              onSolutionChanged: widget.onSolutionChanged,
+              useReplyDialog: widget.useReplyDialog,
+              topicTitle: widget.topicTitle,
+              isPrivateMessageTopic: widget.isPrivateMessageTopic,
+              isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
+              onShowPostDetail: widget.onShowPostDetail,
+              hideRepliesButton: widget.hideRepliesButton,
+              opTopSlot: widget.opTopSlot,
+              canAssignPost:
+                  widget.canAssignPost && widget.assignmentInfo == null,
+              onAssignPost: () => showPostAssignDialog(
+                context,
+                ref,
+                topicId: widget.topicId,
+                postId: post.id,
+              ),
+              isPostVotingTopic: widget.isPostVotingTopic,
+              topicClosed: widget.topicClosed,
+              // 短帖正文左侧已有竖排投票列,footer 不再放横排胶囊
+              showVotingControl: false,
+              onAcceptedAnswerChanged: (accepted) {
+                if (!mounted) return;
+                setState(() {
+                  _acceptedAnswer = accepted;
+                });
+              },
+            ),
+          ],
         ),
+      ),
       ),
     );
   }
+}
+
+class _ShortPostNewEngineRenderData {
+  final Post post;
+  final String preprocessedCooked;
+  final List<BlockNode> parsedNodes;
+  final FluxdoRenderCallbacks callbacks;
+
+  const _ShortPostNewEngineRenderData({
+    required this.post,
+    required this.preprocessedCooked,
+    required this.parsedNodes,
+    required this.callbacks,
+  });
 }
 
 /// "已指定给 X"标签(帖子级)——点开是编辑/取消的小菜单,对齐官方
@@ -521,18 +567,4 @@ class _PostAssignmentBadge extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _ShortPostNewEngineRenderData {
-  final Post post;
-  final String preprocessedCooked;
-  final List<BlockNode> parsedNodes;
-  final FluxdoRenderCallbacks callbacks;
-
-  const _ShortPostNewEngineRenderData({
-    required this.post,
-    required this.preprocessedCooked,
-    required this.parsedNodes,
-    required this.callbacks,
-  });
 }

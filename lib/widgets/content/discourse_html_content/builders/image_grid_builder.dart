@@ -273,6 +273,8 @@ class _GridImageTileState extends State<_GridImageTile> {
           onTap: () => _openViewer(context, fullUrl),
           child: Hero(
             tag: widget.heroTag,
+            // Android 预测返回是 user gesture 转场,须显式开启才有飞行
+            transitionOnUserGestures: true,
             // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
             // 不连带整个帖子 segment 每帧重绘
             child: RepaintBoundary(

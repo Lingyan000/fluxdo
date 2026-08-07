@@ -129,7 +129,8 @@ void main() {
     // 空态本体使用统一组件
     expect(find.byType(MasterDetailEmptyState), findsOneWidget);
 
-    // 空态之下有一层 scaffoldBackgroundColor 的 ColoredBox 铺底
+    // 空态之下有 scaffoldBackgroundColor 的 ColoredBox 铺底(空态槽
+    // 自己一层 + 胶片带底兜底一层,双保险,至少一层即可)
     final context = tester.element(find.byType(MasterDetailEmptyState));
     final expected = Theme.of(context).scaffoldBackgroundColor;
     final backdrop = find.ancestor(
@@ -138,6 +139,6 @@ void main() {
         (w) => w is ColoredBox && w.color == expected,
       ),
     );
-    expect(backdrop, findsOneWidget);
+    expect(backdrop, findsWidgets);
   });
 }

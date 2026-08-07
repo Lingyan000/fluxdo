@@ -137,6 +137,8 @@
   "post_submitFlag": "提交舉報",
   "post_tipLdc": "打賞 LDC",
   "post_titleRequired": "請輸入標題",
+  "post_todayIsBirthday": "今天是我的生日！",
+  "post_todayIsCakeday": "今天是您加入我們社區的紀念日！",
   "post_topicSolved": "此話題已解決",
   "post_unacceptSolution": "取消採納",
   "post_unsolved": "待解決",
@@ -182,6 +184,48 @@
   "smallAction_visibleEnabled": "公開了話題",
   "vote_cancelled": "已取消投票",
   "vote_closed": "已關閉",
+  "postVoting_answer": "回答",
+  "postVoting_answerCount": "{count} 個回答",
+  "@postVoting_answerCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_sortVotes": "按票數",
+  "postVoting_sortActivity": "按活動",
+  "postVoting_commentAdd": "新增留言",
+  "postVoting_commentSheetTitle": "留言 @{username} 的貼文",
+  "@postVoting_commentSheetTitle": {
+    "placeholders": {
+      "username": {"type": "String"}
+    }
+  },
+  "postVoting_commentSubmit": "發表",
+  "postVoting_commentHint": "寫下留言…",
+  "postVoting_cannotVoteOwn": "不能給自己的貼文投票",
+  "postVoting_commentTooShort": "至少需要 {count} 個字元",
+  "@postVoting_commentTooShort": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_commentsMore": "還有 {count} 則留言",
+  "@postVoting_commentsMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_noVoters": "暫無投票",
+  "postVoting_topicClosed": "話題已關閉,無法投票",
+  "postVoting_votersDown": "反對",
+  "postVoting_votersMore": "共 {count} 人投票,僅顯示最近 20 人",
+  "@postVoting_votersMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "postVoting_votersTitle": "投票使用者",
+  "postVoting_votersUp": "贊成",
   "vote_label": "投票",
   "vote_pleaseLogin": "請先登入",
   "vote_success": "投票成功",

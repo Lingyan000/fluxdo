@@ -277,14 +277,25 @@ class RenderSignetHandler::Impl {
             multiply.as<wge::IGraphicsEffectSource>(),
             MakeTiledTile(plus_param.as<wge::IGraphicsEffectSource>())});
 
+    // SurfaceBrush 默认 Stretch=Fill,会先把 tile 拉伸到整窗再交给
+    // Border wrap——点阵被放大成可见大色块。必须 None + 左上对齐 +
+    // 最近邻,保证 1:1 物理像素平铺(解码端网格对齐的前提)。
+    auto make_tile_brush = [this](wuc::CompositionDrawingSurface const& s) {
+      auto b = compositor_.CreateSurfaceBrush(s);
+      b.Stretch(wuc::CompositionStretch::None);
+      b.HorizontalAlignmentRatio(0.0f);
+      b.VerticalAlignmentRatio(0.0f);
+      b.BitmapInterpolationMode(
+          wuc::CompositionBitmapInterpolationMode::NearestNeighbor);
+      return b;
+    };
+
     auto factory =
         compositor_.CreateEffectFactory(linear_dodge.as<wge::IGraphicsEffect>());
     auto brush = factory.CreateBrush();
     brush.SetSourceParameter(L"backdrop", compositor_.CreateBackdropBrush());
-    brush.SetSourceParameter(L"modTile",
-                             compositor_.CreateSurfaceBrush(mod_surface));
-    brush.SetSourceParameter(L"plusTile",
-                             compositor_.CreateSurfaceBrush(plus_surface));
+    brush.SetSourceParameter(L"modTile", make_tile_brush(mod_surface));
+    brush.SetSourceParameter(L"plusTile", make_tile_brush(plus_surface));
 
     auto visual = compositor_.CreateSpriteVisual();
     visual.RelativeSizeAdjustment({1.0f, 1.0f});

@@ -581,6 +581,69 @@ extension _UserActions on _TopicDetailPageState {
     }
   }
 
+  /// 标记话题为未读并退出话题页(对齐官方 deferTopic 链路:
+  /// 1. abandon 阅读追踪——丢弃未上报的 timings,并抑制在途请求的
+  ///    onTimingsSent 回调,否则本地积攒的阅读时间会立刻把话题标回已读;
+  /// 2. DELETE /t/:id/timings(带 last=1 回退一层;[all] 时不带,
+  ///    服务端删全部 PostTiming + TopicUser,话题回 NEW 态从头读);
+  /// 3. 本地 tracking + 已挂载的列表 provider 两头显式回退游标
+  ///    (双游标单调合并只认前进方向,回退必须直写);
+  /// 4. 离开话题页(留在页内继续滚动会立即重新上报已读)。
+  Future<void> _handleMarkUnread(TopicDetail detail, {bool all = false}) async {
+    _screenTrack.abandon();
+    try {
+      await ref
+          .read(discourseServiceProvider)
+          .markTopicUnread(widget.topicId, all: all);
+    } on DioException catch (e) {
+      debugPrint('[TopicDetail] 标记未读失败: ${e.response?.statusCode}');
+      // 恢复追踪,页面还在
+      if (mounted && _controller.trackEnabled) {
+        _screenTrack.start(widget.topicId);
+      }
+      return;
+    } catch (e, s) {
+      if (mounted && _controller.trackEnabled) {
+        _screenTrack.start(widget.topicId);
+      }
+      AppErrorHandler.handleUnexpected(e, s);
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 服务端回退基准:优先 highest_post_number(与 destroy_last_for 同
+    // 口径,含小动作楼层),缺失时退回 postsCount
+    final highest = detail.highestPostNumber > 0
+        ? detail.highestPostNumber
+        : detail.postsCount;
+    final container = _providerContainer;
+    container.read(topicTrackingStateProvider.notifier).markTopicUnread(
+          widget.topicId,
+          highestPostNumber: highest,
+          categoryId: detail.categoryId,
+          notificationLevel: detail.notificationLevel.value,
+          all: all,
+        );
+    // 只回写已挂载的列表 provider(与 onTimingsSent 同一取用纪律:
+    // 绝不为本地字段更新触发未打开分类的网络初始化)
+    final pinnedIds = container.read(pinnedCategoriesProvider);
+    for (final categoryId in [null, ...pinnedIds]) {
+      final provider = topicListProvider(categoryId);
+      if (!container.exists(provider)) continue;
+      container.read(provider.notifier).markUnread(widget.topicId, all: all);
+    }
+
+    ToastService.showSuccess(S.current.topicDetail_markUnreadSuccess);
+    // 直接离开话题页(不走 _handleCloseShortcut:搜索态下它只退搜索)。
+    // 嵌入模式语义同 ESC:压栈时 pop 一层,基础层清空右栏回空态。
+    if (widget.embeddedMode) {
+      widget.onEmbeddedBack?.call();
+    } else {
+      unawaited(Navigator.of(context).maybePop());
+    }
+  }
+
   void _shareTopic() {
     final user = ref.read(currentUserProvider).value;
     final username = user?.username ?? '';
@@ -1141,18 +1204,23 @@ extension _UserActions on _TopicDetailPageState {
     }
   }
 
+  /// 当前活跃的嵌套视图 family 参数(context 定位模式带目标楼层)
+  NestedTopicParams get _activeNestedParams => NestedTopicParams(
+    topicId: widget.topicId,
+    targetPostNumber: _nestedTargetPostNumber,
+  );
+
   /// 回复成功后更新嵌套视图
   void _updateNestedViewAfterReply(Post newPost) {
     if (!_isNestedView) return;
-    final nestedParams = NestedTopicParams(topicId: widget.topicId);
     ref
-        .read(nestedTopicProvider(nestedParams).notifier)
+        .read(nestedTopicProvider(_activeNestedParams).notifier)
         .addNewPost(newPost, isOwnPost: true);
   }
 
   /// MessageBus created 事件：获取完整帖子数据并更新嵌套视图
   Future<void> _handleNestedCreated(int postId, int? userId) async {
-    final nestedParams = NestedTopicParams(topicId: widget.topicId);
+    final nestedParams = _activeNestedParams;
     final nestedNotifier = ref.read(nestedTopicProvider(nestedParams).notifier);
 
     // 去重：如果已存在（自己回复时 _updateNestedViewAfterReply 可能已处理）
@@ -1354,7 +1422,11 @@ extension _UserActions on _TopicDetailPageState {
   /// 切换嵌套视图
   void _toggleNestedView() {
     if (_isNestedView) {
-      setState(() => _isNestedView = false);
+      setState(() {
+        _isNestedView = false;
+        _nestedAutoEnabled = false;
+        _nestedTargetPostNumber = null;
+      });
       _scheduleCheckTitleVisibility();
       return;
     }
@@ -1365,7 +1437,11 @@ extension _UserActions on _TopicDetailPageState {
         notifier.isSummaryMode ||
         notifier.isAuthorOnlyMode ||
         notifier.isTopLevelMode;
-    setState(() => _isNestedView = true);
+    setState(() {
+      _isNestedView = true;
+      // 手动开启:失败时显示错误页可重试,不做静默回落
+      _nestedAutoEnabled = false;
+    });
     if (hadFilter) {
       unawaited(notifier.cancelFilter());
     }
