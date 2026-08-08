@@ -3,23 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 
-import '../../l10n/s.dart';
-import '../../models/chat/chat_message.dart';
-import '../../providers/discourse_providers.dart';
+import '../../providers/chat_providers.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/common/emoji_text.dart';
-import '../../widgets/common/error_view.dart';
-import '../../widgets/common/relative_time_text.dart';
-import '../../widgets/common/smart_avatar.dart';
-import 'channel/chat_channel_page.dart';
-import 'chat_list_page.dart' show chatPreviewText;
+import 'chat_message_page.dart';
 
-/// 聊天消息搜索:[channelId] 非空=会话内搜索,空=全部会话
+/// 聊天全局搜索页
+///
+/// 对齐 Discourse chat-search：
+/// - 独立入口（聊天页顶栏）
+/// - 排序：relevance / latest
+/// - 点击结果跳转频道并定位消息
 class ChatSearchPage extends ConsumerStatefulWidget {
-  final int? channelId;
-
-  const ChatSearchPage({super.key, this.channelId});
+  const ChatSearchPage({super.key});
 
   @override
   ConsumerState<ChatSearchPage> createState() => _ChatSearchPageState();
@@ -28,12 +25,14 @@ class ChatSearchPage extends ConsumerStatefulWidget {
 class _ChatSearchPageState extends ConsumerState<ChatSearchPage> {
   final TextEditingController _queryController = TextEditingController();
   Timer? _debounce;
-  List<ChatMessage> _results = [];
+  String _query = '';
+  String _sort = 'relevance';
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+  String? _error;
+  final List<ChatGlobalSearchHit> _hits = [];
   bool _hasMore = false;
-  bool _loading = false;
-  bool _loadingMore = false;
-  Object? _error;
-  String _activeQuery = '';
+  int _offset = 0;
 
   @override
   void dispose() {
@@ -42,83 +41,89 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage> {
     super.dispose();
   }
 
-  void _onQueryChanged(String term) {
+  void _onQueryChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
-      final query = term.trim();
-      if (query.isEmpty) {
-        setState(() {
-          _results = [];
-          _activeQuery = '';
-          _error = null;
-        });
-        return;
-      }
-      _search(query);
+      final q = value.trim();
+      if (q == _query) return;
+      setState(() => _query = q);
+      _search(reset: true);
     });
   }
 
-  Future<void> _search(String query) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _activeQuery = query;
-    });
+  Future<void> _search({required bool reset}) async {
+    final q = _query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _hits.clear();
+        _hasMore = false;
+        _offset = 0;
+        _error = null;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+      return;
+    }
+
+    if (reset) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _offset = 0;
+        _hits.clear();
+      });
+    } else {
+      if (!_hasMore || _isLoadingMore || _isLoading) return;
+      setState(() => _isLoadingMore = true);
+    }
+
     try {
-      final result = await ref
-          .read(discourseServiceProvider)
-          .searchChatMessages(query, channelId: widget.channelId);
-      if (mounted && _activeQuery == query) {
-        setState(() {
-          _results = result.messages;
-          _hasMore = result.hasMore;
-          _loading = false;
-        });
-      }
+      final result = await ref.read(
+        chatGlobalSearchProvider((
+          query: q,
+          sort: _sort,
+          offset: reset ? 0 : _offset,
+        )).future,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _hits
+            ..clear()
+            ..addAll(result.hits);
+        } else {
+          _hits.addAll(result.hits);
+        }
+        _hasMore = result.hasMore;
+        _offset = _hits.length;
+        _isLoading = false;
+        _isLoadingMore = false;
+        _error = null;
+      });
     } catch (e) {
-      if (mounted && _activeQuery == query) {
-        setState(() {
-          _error = e;
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _error = e.toString();
+      });
     }
   }
 
-  Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore || _activeQuery.isEmpty) return;
-    setState(() => _loadingMore = true);
-    try {
-      final result = await ref
-          .read(discourseServiceProvider)
-          .searchChatMessages(
-            _activeQuery,
-            channelId: widget.channelId,
-            offset: _results.length,
-          );
-      if (mounted) {
-        setState(() {
-          final existing = _results.map((m) => m.id).toSet();
-          _results.addAll(
-            result.messages.where((m) => !existing.contains(m.id)),
-          );
-          _hasMore = result.hasMore;
-          _loadingMore = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingMore = false);
-    }
+  void _setSort(String sort) {
+    if (sort == _sort) return;
+    setState(() => _sort = sort);
+    _search(reset: true);
   }
 
-  void _openResult(ChatMessage message) {
+  void _openHit(ChatGlobalSearchHit hit) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatChannelPage(
-          channelId: message.channelId,
-          threadId: message.threadId,
-          initialMessageId: message.id,
+        builder: (_) => ChatMessagePage(
+          channelId: hit.channelId,
+          channelTitle: hit.channelTitle,
+          targetMessageId: hit.message.id,
         ),
       ),
     );
@@ -127,176 +132,267 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 0,
-        title: Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: TextField(
-            controller: _queryController,
-            autofocus: true,
-            onChanged: _onQueryChanged,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (v) {
-              _debounce?.cancel();
-              final query = v.trim();
-              if (query.isNotEmpty) _search(query);
-            },
-            decoration: InputDecoration(
-              hintText: widget.channelId != null
-                  ? context.l10n.chat_searchInChannelHint
-                  : context.l10n.chat_searchAllHint,
-              hintStyle: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant.withValues(
-                  alpha: 0.5,
-                ),
+        title: const Text('搜索聊天'),
+        centerTitle: true,
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: '排序',
+            initialValue: _sort,
+            onSelected: _setSort,
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'relevance',
+                child: Text('相关性'),
               ),
-              isDense: true,
-              filled: true,
-              fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.4,
+              PopupMenuItem(
+                value: 'latest',
+                child: Text('最新'),
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.sort_rounded, size: 20),
+                  const SizedBox(width: 4),
+                  Text(
+                    _sort == 'latest' ? '最新' : '相关性',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ],
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-              prefixIcon: const Icon(Symbols.search_rounded, size: 20),
             ),
           ),
-        ),
+        ],
       ),
-      body: _buildBody(theme),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: TextField(
+              controller: _queryController,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: '搜索消息…',
+                prefixIcon: const Icon(Symbols.search_rounded, size: 20),
+                suffixIcon: _queryController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Symbols.close_rounded, size: 18),
+                        onPressed: () {
+                          _queryController.clear();
+                          setState(() => _query = '');
+                          _search(reset: true);
+                        },
+                      )
+                    : null,
+                isDense: true,
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHigh,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (v) {
+                setState(() {}); // 刷新 suffix
+                _onQueryChanged(v);
+              },
+              onSubmitted: (v) {
+                _debounce?.cancel();
+                setState(() => _query = v.trim());
+                _search(reset: true);
+              },
+            ),
+          ),
+          Expanded(child: _buildBody(theme)),
+        ],
+      ),
     );
   }
 
   Widget _buildBody(ThemeData theme) {
-    if (_loading) return const Center(child: LoadingSpinner());
+    if (_query.isEmpty) {
+      return Center(
+        child: Text(
+          '输入关键词搜索全部聊天消息',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_error != null) {
-      return ErrorView(error: _error!, onRetry: () => _search(_activeQuery));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('搜索失败: $_error'),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => _search(reset: true),
+                child: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
-    if (_activeQuery.isEmpty) {
+    if (_hits.isEmpty) {
       return Center(
         child: Text(
-          context.l10n.chat_searchPrompt,
-          style: theme.textTheme.bodyLarge?.copyWith(
+          '没有匹配的消息',
+          style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       );
     }
-    if (_results.isEmpty) {
-      return Center(
-        child: Text(
-          context.l10n.chat_searchNoResults,
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
-        if (n.metrics.pixels > n.metrics.maxScrollExtent - 300) _loadMore();
+        if (n.metrics.pixels >= n.metrics.maxScrollExtent - 200) {
+          _search(reset: false);
+        }
         return false;
       },
-      child: ListView.builder(
-        padding: EdgeInsets.fromLTRB(
-          12,
-          8,
-          12,
-          16 + MediaQuery.paddingOf(context).bottom,
-        ),
-        itemCount: _results.length + (_loadingMore ? 1 : 0),
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: _hits.length + (_isLoadingMore ? 1 : 0),
+        separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
-          if (index >= _results.length) {
+          if (index >= _hits.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
-              child: Center(child: LoadingSpinner()),
-            );
-          }
-          final message = _results[index];
-          return Padding(
-            padding: EdgeInsets.only(top: index == 0 ? 0 : 3),
-            child: SegmentedCardItem(
-              index: index,
-              count: _results.length,
-              child: InkWell(
-                onTap: () => _openResult(message),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SmartAvatar(
-                        imageUrl: message.user?.getAvatarUrl(size: 64),
-                        radius: 16,
-                        fallbackText: message.user?.username,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    message.user?.username ?? '',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                if (message.createdAt != null)
-                                  RelativeTimeText(
-                                    dateTime: message.createdAt!,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.outline,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            EmojiText(
-                              chatPreviewText(
-                                context,
-                                message.excerpt?.isNotEmpty == true
-                                    ? message.excerpt!
-                                    : message.message,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            ),
+            );
+          }
+          final hit = _hits[index];
+          return _SearchHitTile(
+            hit: hit,
+            onTap: () => _openHit(hit),
           );
         },
       ),
     );
+  }
+}
+
+class _SearchHitTile extends StatelessWidget {
+  final ChatGlobalSearchHit hit;
+  final VoidCallback onTap;
+
+  const _SearchHitTile({
+    required this.hit,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final message = hit.message;
+    final preview = message.message.length > 120
+        ? '${message.message.substring(0, 120)}…'
+        : message.message;
+    final userLabel =
+        message.user?.name ?? message.user?.username ?? '未知用户';
+    final timeLabel = TimeUtils.formatRelativeTime(message.createdAt);
+    final emojiCode = ChatChannelEmoji.shortcode(hit.channelEmoji);
+
+    return ListTile(
+      onTap: onTap,
+      isThreeLine: true,
+      title: Row(
+        children: [
+          if (emojiCode != null) ...[
+            EmojiText(emojiCode, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              hit.channelTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            timeLabel,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 2),
+          Text(
+            userLabel,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          if (hit.threadTitle != null && hit.threadTitle!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '串：${hit.threadTitle}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          const SizedBox(height: 2),
+          Text(
+            preview,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 仅用于搜索结果展示的 emoji 短码工具（避免循环依赖额外 import 逻辑）
+class ChatChannelEmoji {
+  static String? shortcode(String? raw) {
+    if (raw == null) return null;
+    var value = raw.trim();
+    if (value.isEmpty) return null;
+    while (value.startsWith(':')) {
+      value = value.substring(1);
+    }
+    while (value.endsWith(':')) {
+      value = value.substring(0, value.length - 1);
+    }
+    value = value.trim();
+    if (value.isEmpty) return null;
+    if (RegExp(r'^[a-zA-Z0-9_+-]+(?::t\d)?$').hasMatch(value)) {
+      return ':$value:';
+    }
+    return value;
   }
 }

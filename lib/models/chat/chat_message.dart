@@ -1,365 +1,225 @@
 import '../../utils/time_utils.dart';
-import '../../utils/url_helper.dart';
+import 'chat_thread.dart';
 import 'chat_user.dart';
 
-/// Chat 消息附件(uploads 数组元素,来自核心 UploadSerializer)
-class ChatUpload {
-  final int id;
-  final String? url;
-  final String? shortUrl;
-  final String? originalFilename;
-  final String? extension;
-  final int? width;
-  final int? height;
-  final int? thumbnailWidth;
-  final int? thumbnailHeight;
-  final String? dominantColor;
-
-  const ChatUpload({
-    required this.id,
-    this.url,
-    this.shortUrl,
-    this.originalFilename,
-    this.extension,
-    this.width,
-    this.height,
-    this.thumbnailWidth,
-    this.thumbnailHeight,
-    this.dominantColor,
-  });
-
-  factory ChatUpload.fromJson(Map<String, dynamic> json) {
-    return ChatUpload(
-      id: json['id'] as int? ?? 0,
-      url: json['url'] as String?,
-      shortUrl: json['short_url'] as String?,
-      originalFilename: json['original_filename'] as String?,
-      extension: json['extension'] as String?,
-      width: json['width'] as int?,
-      height: json['height'] as int?,
-      thumbnailWidth: json['thumbnail_width'] as int?,
-      thumbnailHeight: json['thumbnail_height'] as int?,
-      dominantColor: json['dominant_color'] as String?,
-    );
-  }
-
-  String? get resolvedUrl =>
-      url == null ? null : UrlHelper.resolveUrlWithCdn(url!);
-}
-
-/// Chat 消息上的表情回应聚合
+/// Chat 消息的回应（Reaction）数据模型
 class ChatMessageReaction {
   final String emoji;
   final int count;
   final bool reacted;
-  final List<ChatUser> users;
+  final List<ChatUser>? users;
 
   const ChatMessageReaction({
     required this.emoji,
     required this.count,
-    required this.reacted,
-    this.users = const [],
+    this.reacted = false,
+    this.users,
   });
 
   factory ChatMessageReaction.fromJson(Map<String, dynamic> json) {
     return ChatMessageReaction(
-      emoji: json['emoji'] as String? ?? '',
-      count: json['count'] as int? ?? 0,
-      reacted: json['reacted'] as bool? ?? false,
-      users: (json['users'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map(ChatUser.fromJson)
+      emoji: json['emoji']?.toString() ?? json['id']?.toString() ?? '',
+      count: (json['count'] as num?)?.toInt() ?? 1,
+      reacted:
+          json['reacted'] as bool? ?? json['user_reacted'] as bool? ?? false,
+      users: (json['users'] as List?)
+          ?.map((e) => ChatUser.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'emoji': emoji,
+    'count': count,
+    'reacted': reacted,
+    if (users != null) 'users': users!.map((u) => u.toJson()).toList(),
+  };
 }
 
-/// 被回复消息的摘要(in_reply_to 字段,服务端只给精简形状)
-class ChatMessageReplyRef {
-  final int id;
-  final String? excerpt;
-  final ChatUser? user;
-
-  const ChatMessageReplyRef({required this.id, this.excerpt, this.user});
-
-  factory ChatMessageReplyRef.fromJson(Map<String, dynamic> json) {
-    final user = json['user'];
-    return ChatMessageReplyRef(
-      id: json['id'] as int? ?? 0,
-      excerpt: json['excerpt'] as String?,
-      user: user is Map<String, dynamic> ? ChatUser.fromJson(user) : null,
-    );
-  }
-}
-
-/// 消息上的 thread 摘要(thread 字段;开启消息串的消息带回复数)
-class ChatThreadRef {
-  final int id;
-  final String? title;
-  final int replyCount;
-  final DateTime? lastReplyCreatedAt;
-
-  /// 最后回复摘要与作者(官方入口卡样式用)
-  final String? lastReplyExcerpt;
-  final ChatUser? lastReplyUser;
-
-  /// 参与者头像(preview.participant_users,最多几个)
-  final List<ChatUser> participants;
-
-  const ChatThreadRef({
-    required this.id,
-    this.title,
-    this.replyCount = 0,
-    this.lastReplyCreatedAt,
-    this.lastReplyExcerpt,
-    this.lastReplyUser,
-    this.participants = const [],
-  });
-
-  factory ChatThreadRef.fromJson(Map<String, dynamic> json) {
-    final preview = json['preview'] as Map<String, dynamic>?;
-    final lastReplyUser = preview?['last_reply_user'];
-    return ChatThreadRef(
-      id: json['id'] as int? ?? 0,
-      title: json['title'] as String?,
-      replyCount:
-          json['reply_count'] as int? ??
-          preview?['reply_count'] as int? ??
-          0,
-      lastReplyCreatedAt: TimeUtils.parseUtcTime(
-        preview?['last_reply_created_at'] as String?,
-      ),
-      lastReplyExcerpt: preview?['last_reply_excerpt'] as String?,
-      lastReplyUser: lastReplyUser is Map<String, dynamic>
-          ? ChatUser.fromJson(lastReplyUser)
-          : null,
-      participants: (preview?['participant_users'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map(ChatUser.fromJson)
-          .toList(),
-    );
-  }
-}
-
-/// 消息发送状态(仅客户端使用,服务端消息恒为 sent)
-enum ChatMessageSendState { sent, staged, failed }
-
-/// 我对某条消息的收藏(bookmark 字段,仅收藏过时下发)
-class ChatMessageBookmark {
-  final int id;
-  final String? name;
-  final DateTime? reminderAt;
-
-  const ChatMessageBookmark({required this.id, this.name, this.reminderAt});
-
-  factory ChatMessageBookmark.fromJson(Map<String, dynamic> json) {
-    return ChatMessageBookmark(
-      id: json['id'] as int? ?? 0,
-      name: json['name'] as String?,
-      reminderAt: TimeUtils.parseUtcTime(json['reminder_at'] as String?),
-    );
-  }
-}
-
-/// Chat 消息
+/// Chat 消息数据模型
 class ChatMessage {
   final int id;
-  final int channelId;
-
-  /// 原始 markdown
   final String message;
+  final String? cooked;
+  final DateTime createdAt;
+  final int chatChannelId;
+  final ChatUser? user;
+  final int? inReplyToId;
 
-  /// 服务端 cook 出的 HTML;staged 消息为本地 cook 产物
-  final String cooked;
+  /// 消息摘要（Discourse excerpt，用于 in_reply_to 预览）
   final String? excerpt;
-  final DateTime? createdAt;
-  final DateTime? deletedAt;
-  final int? deletedById;
-  final bool edited;
+
+  /// Discourse 嵌套的被回复消息摘要（可能不在当前消息窗口内）。
+  /// 仅作预览；完整消息以列表内查找结果为准。
+  final ChatMessage? inReplyTo;
   final int? threadId;
 
-  /// thread 摘要(仅串首消息带;回复数驱动"N 条回复"入口)
-  final ChatThreadRef? thread;
-  final ChatUser? user;
-  final List<ChatUser> mentionedUsers;
-  final List<ChatMessageReaction> reactions;
-  final List<ChatUpload> uploads;
-  final ChatMessageReplyRef? inReplyTo;
-  final bool streaming;
+  /// 消息串元数据（仅原消息/OM 会带完整 thread 对象）
+  final ChatThread? thread;
 
-  /// 乐观发送:客户端生成的 staged_id(uuid);服务端 sent 广播原样带回,
-  /// 用于把本地临时消息原地替换为真实消息
-  final String? stagedId;
-  final ChatMessageSendState sendState;
+  /// 非原消息时服务端可能只下发 thread_title
+  final String? threadTitle;
+  final List<Map<String, dynamic>>? uploads;
+  final List<ChatMessageReaction>? reactions;
+  final bool edited;
+  final bool deleted;
+  final DateTime? deletedAt;
+  final int? deletedById;
+  final bool bookmarked;
 
-  /// 可用举报类型的 nameKey(如 off_topic/inappropriate/spam);
-  /// 空 = 不可举报(自己的消息/已举报过/无权限,服务端已算好)
-  final List<String> availableFlags;
+  /// Discourse 书签 ID（删除书签时需要）
+  final int? bookmarkId;
 
-  /// 我对这条消息的举报状态(ReviewableScore.statuses 数值,pending=0)
-  final int? userFlagStatus;
-
-  /// 我的收藏(null=未收藏)
-  final ChatMessageBookmark? bookmark;
-
-  /// 是否被置顶(站点开 chat_pinned_messages 时下发)
+  /// 是否置顶（需站点开启 chat_pinned_messages）
   final bool pinned;
+
+  /// 服务端下发的可用举报类型符号列表（如 off_topic / spam）
+  final List<String>? availableFlags;
 
   const ChatMessage({
     required this.id,
-    required this.channelId,
     required this.message,
-    required this.cooked,
-    this.excerpt,
-    this.createdAt,
-    this.deletedAt,
-    this.deletedById,
-    this.edited = false,
+    this.cooked,
+    required this.createdAt,
+    required this.chatChannelId,
+    this.user,
+    this.inReplyToId,
+    this.inReplyTo,
     this.threadId,
     this.thread,
-    this.user,
-    this.mentionedUsers = const [],
-    this.reactions = const [],
-    this.uploads = const [],
-    this.inReplyTo,
-    this.streaming = false,
-    this.stagedId,
-    this.sendState = ChatMessageSendState.sent,
-    this.availableFlags = const [],
-    this.userFlagStatus,
-    this.bookmark,
+    this.threadTitle,
+    this.uploads,
+    this.reactions,
+    this.edited = false,
+    this.deleted = false,
+    this.deletedAt,
+    this.deletedById,
+    this.bookmarked = false,
+    this.bookmarkId,
     this.pinned = false,
+    this.availableFlags,
+    this.excerpt,
   });
 
-  bool get isDeleted => deletedAt != null;
-  bool get isStaged => sendState == ChatMessageSendState.staged;
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    // Discourse message serializer 在有书签时返回 bookmark 对象（含 id）
+    final bookmarkObj = json['bookmark'] is Map
+        ? Map<String, dynamic>.from(json['bookmark'] as Map)
+        : null;
+    final parsedBookmarkId =
+        (bookmarkObj?['id'] as num?)?.toInt() ??
+        (json['bookmark_id'] as num?)?.toInt();
 
-  factory ChatMessage.fromJson(
-    Map<String, dynamic> json, {
-    int? fallbackChannelId,
-  }) {
-    final user = json['user'];
-    final inReplyTo = json['in_reply_to'];
-    final thread = json['thread'];
+    // 嵌套 in_reply_to 只解析一层，避免循环引用
+    ChatMessage? nestedReply;
+    if (json['in_reply_to'] is Map) {
+      final replyJson = Map<String, dynamic>.from(json['in_reply_to'] as Map);
+      // 去掉更深一层的 in_reply_to，防止无限递归
+      replyJson.remove('in_reply_to');
+      nestedReply = ChatMessage.fromJson(replyJson);
+    }
+
+    ChatThread? thread;
+    if (json['thread'] is Map) {
+      thread = ChatThread.fromJson(
+        Map<String, dynamic>.from(json['thread'] as Map),
+      );
+    }
+
     return ChatMessage(
-      id: json['id'] as int? ?? 0,
-      channelId:
-          json['chat_channel_id'] as int? ??
-          json['channel_id'] as int? ??
-          fallbackChannelId ??
-          0,
-      message: json['message'] as String? ?? '',
-      cooked: json['cooked'] as String? ?? '',
-      excerpt: json['excerpt'] as String?,
-      createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
-      deletedAt: TimeUtils.parseUtcTime(json['deleted_at'] as String?),
-      deletedById: json['deleted_by_id'] as int?,
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      message: json['message']?.toString() ?? '',
+      cooked: json['cooked']?.toString(),
+      createdAt:
+          TimeUtils.parseUtcTime(json['created_at']?.toString()) ??
+          DateTime.now(),
+      chatChannelId: (json['chat_channel_id'] as num?)?.toInt() ?? 0,
+      user: json['user'] is Map
+          ? ChatUser.fromJson(Map<String, dynamic>.from(json['user'] as Map))
+          : null,
+      // Discourse 序列化的是嵌套 in_reply_to 对象，不一定带顶层 in_reply_to_id
+      inReplyToId: (json['in_reply_to_id'] as num?)?.toInt() ?? nestedReply?.id,
+      inReplyTo: nestedReply,
+      threadId: (json['thread_id'] as num?)?.toInt() ?? thread?.id,
+      thread: thread,
+      threadTitle: json['thread_title']?.toString() ?? thread?.title,
+      uploads: (json['uploads'] as List?)
+          ?.map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+      reactions: (json['reactions'] as List?)
+          ?.map(
+            (e) => ChatMessageReaction.fromJson(
+              Map<String, dynamic>.from(e as Map),
+            ),
+          )
+          .toList(),
       edited: json['edited'] as bool? ?? false,
-      threadId: json['thread_id'] as int?,
-      thread: thread is Map<String, dynamic>
-          ? ChatThreadRef.fromJson(thread)
+      // Discourse 用 deleted_at 表示删除，没有单独的 deleted 布尔字段
+      deleted: json['deleted'] as bool? ?? json['deleted_at'] != null,
+      deletedAt: json['deleted_at'] != null
+          ? TimeUtils.parseUtcTime(json['deleted_at']?.toString())
           : null,
-      user: user is Map<String, dynamic> ? ChatUser.fromJson(user) : null,
-      mentionedUsers: (json['mentioned_users'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map(ChatUser.fromJson)
-          .toList(),
-      reactions: (json['reactions'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map(ChatMessageReaction.fromJson)
-          .toList(),
-      uploads: (json['uploads'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map(ChatUpload.fromJson)
-          .toList(),
-      inReplyTo: inReplyTo is Map<String, dynamic>
-          ? ChatMessageReplyRef.fromJson(inReplyTo)
-          : null,
-      streaming: json['streaming'] as bool? ?? false,
-      availableFlags: (json['available_flags'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
-      userFlagStatus: json['user_flag_status'] as int?,
-      bookmark: json['bookmark'] is Map<String, dynamic>
-          ? ChatMessageBookmark.fromJson(json['bookmark'] as Map<String, dynamic>)
-          : null,
+      deletedById: (json['deleted_by_id'] as num?)?.toInt(),
+      bookmarked:
+          (json['bookmarked'] as bool?) ??
+          (bookmarkObj != null || parsedBookmarkId != null),
+      bookmarkId: parsedBookmarkId,
       pinned: json['pinned'] as bool? ?? false,
+      availableFlags: (json['available_flags'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
+      excerpt: json['excerpt']?.toString(),
     );
   }
-
-  static const _unset = Object();
 
   ChatMessage copyWith({
     int? id,
     String? message,
     String? cooked,
     DateTime? createdAt,
-    DateTime? deletedAt,
-    bool? edited,
+    int? chatChannelId,
+    ChatUser? user,
+    int? inReplyToId,
+    ChatMessage? inReplyTo,
+    int? threadId,
+    ChatThread? thread,
+    String? threadTitle,
+    List<Map<String, dynamic>>? uploads,
     List<ChatMessageReaction>? reactions,
-    List<ChatUpload>? uploads,
-    String? stagedId,
-    ChatMessageSendState? sendState,
-    Object? bookmark = _unset,
+    bool? edited,
+    bool? deleted,
+    DateTime? deletedAt,
+    int? deletedById,
+    bool? bookmarked,
+    int? bookmarkId,
+    bool clearBookmarkId = false,
     bool? pinned,
+    List<String>? availableFlags,
+    String? excerpt,
   }) {
     return ChatMessage(
       id: id ?? this.id,
-      channelId: channelId,
       message: message ?? this.message,
       cooked: cooked ?? this.cooked,
-      excerpt: excerpt,
       createdAt: createdAt ?? this.createdAt,
-      deletedAt: deletedAt ?? this.deletedAt,
-      deletedById: deletedById,
-      edited: edited ?? this.edited,
-      threadId: threadId,
-      thread: thread,
-      user: user,
-      mentionedUsers: mentionedUsers,
-      reactions: reactions ?? this.reactions,
+      chatChannelId: chatChannelId ?? this.chatChannelId,
+      user: user ?? this.user,
+      inReplyToId: inReplyToId ?? this.inReplyToId,
+      inReplyTo: inReplyTo ?? this.inReplyTo,
+      threadId: threadId ?? this.threadId,
+      thread: thread ?? this.thread,
+      threadTitle: threadTitle ?? this.threadTitle,
       uploads: uploads ?? this.uploads,
-      inReplyTo: inReplyTo,
-      streaming: streaming,
-      stagedId: stagedId ?? this.stagedId,
-      sendState: sendState ?? this.sendState,
-      availableFlags: availableFlags,
-      userFlagStatus: userFlagStatus,
-      bookmark: identical(bookmark, _unset)
-          ? this.bookmark
-          : bookmark as ChatMessageBookmark?,
+      reactions: reactions ?? this.reactions,
+      edited: edited ?? this.edited,
+      deleted: deleted ?? this.deleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedById: deletedById ?? this.deletedById,
+      bookmarked: bookmarked ?? this.bookmarked,
+      bookmarkId: clearBookmarkId ? null : (bookmarkId ?? this.bookmarkId),
       pinned: pinned ?? this.pinned,
-    );
-  }
-}
-
-/// 消息列表响应(GET /chat/api/channels/:id/messages)
-class ChatMessagesResponse {
-  final List<ChatMessage> messages;
-  final bool canLoadMorePast;
-  final bool canLoadMoreFuture;
-  final int? targetMessageId;
-
-  const ChatMessagesResponse({
-    required this.messages,
-    required this.canLoadMorePast,
-    required this.canLoadMoreFuture,
-    this.targetMessageId,
-  });
-
-  factory ChatMessagesResponse.fromJson(
-    Map<String, dynamic> json, {
-    required int channelId,
-  }) {
-    final meta = json['meta'] as Map<String, dynamic>? ?? const {};
-    return ChatMessagesResponse(
-      messages: (json['messages'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map((m) => ChatMessage.fromJson(m, fallbackChannelId: channelId))
-          .toList(),
-      canLoadMorePast: meta['can_load_more_past'] as bool? ?? false,
-      canLoadMoreFuture: meta['can_load_more_future'] as bool? ?? false,
-      targetMessageId: meta['target_message_id'] as int?,
+      availableFlags: availableFlags ?? this.availableFlags,
+      excerpt: excerpt ?? this.excerpt,
     );
   }
 }
