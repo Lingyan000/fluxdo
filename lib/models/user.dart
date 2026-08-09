@@ -68,26 +68,6 @@ class User {
   /// 当前用户是否可创建直接消息
   final bool? canDirectMessage;
 
-  // Discourse Chat 相关
-  /// 当前用户是否具备 chat 能力（站点开启且在允许组内）
-  final bool? canChat;
-  /// 当前用户是否已开启个人 chat（can_chat && user_option.chat_enabled）
-  final bool? hasChatEnabled;
-  /// 当前用户是否可创建直接消息
-  final bool? canDirectMessage;
-  /// 是否可与该用户发起 Chat DM（user_card.can_chat_user）
-  final bool? canChatUser;
-
-  // Discourse Chat 相关
-  /// 当前用户是否具备 chat 能力（站点开启且在允许组内）
-  final bool? canChat;
-  /// 当前用户是否已开启个人 chat（can_chat && user_option.chat_enabled）
-  final bool? hasChatEnabled;
-  /// 当前用户是否可创建直接消息
-  final bool? canDirectMessage;
-  /// 是否可与该用户发起 Chat DM（user_card.can_chat_user）
-  final bool? canChatUser;
-
   // 积分相关
   final int? gamificationScore;
 
