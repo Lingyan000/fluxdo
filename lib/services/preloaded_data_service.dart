@@ -272,6 +272,18 @@ class PreloadedDataService {
     return _siteSettings?['ai_embeddings_semantic_search_enabled'] == true;
   }
 
+  // ---- discourse-chat 插件开关 ----
+
+  /// 仅依赖启动/预加载时的 siteSettings 快照，不在运行期反复探测。
+  /// preload 未就绪或无该字段时按未开启处理。
+  bool get chatEnabled => _siteSettings?['chat_enabled'] == true;
+
+  /// 异步确保预加载完成后读取 [chatEnabled]。
+  Future<bool> isChatEnabled() async {
+    await _ensureLoaded();
+    return chatEnabled;
+  }
+
   // ---- discourse-signatures 插件开关（均为 client:true，preload 可读）----
   // 同步读取：签名渲染在 build 中门禁，preload 未就绪时按插件未启用处理。
 

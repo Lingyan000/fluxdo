@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../models/user.dart';
-import '../../pages/chat/channel/chat_channel_page.dart';
+import '../../pages/chat/chat_message_page.dart';
+import '../../providers/chat_providers.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../services/app_error_handler.dart';
@@ -52,9 +53,10 @@ bool canShowUserCardPreview(BuildContext context) {
       preloaded.siteSettingsSync?['hide_user_profiles_from_public'] == true;
   if (!hideProfilesFromPublic) return true;
 
-  final currentUser = ProviderScope.containerOf(context, listen: false)
-      .read(currentUserProvider)
-      .value;
+  final currentUser = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(currentUserProvider).value;
   return currentUser != null || preloaded.currentUserSync != null;
 }
 
@@ -83,24 +85,25 @@ void showUserCard({
   if (!canShowUserCardPreview(context)) return;
 
   final anchorContext = context;
-  final menuNavigatorKey =
-      PlatformUtils.isDesktop ? GlobalKey<NavigatorState>() : null;
+  final menuNavigatorKey = PlatformUtils.isDesktop
+      ? GlobalKey<NavigatorState>()
+      : null;
 
   Widget buildCard(VoidCallback onClose) => _UserCardContent(
-        username: username,
-        topicId: topicId,
-        topicTitle: topicTitle,
-        postNumber: postNumber,
-        avatarFallbackUrl: avatarFallbackUrl,
-        nameFallback: nameFallback,
-        flairUrl: flairUrl,
-        flairName: flairName,
-        flairBgColor: flairBgColor,
-        flairColor: flairColor,
-        anchorContext: anchorContext,
-        menuNavigatorKey: menuNavigatorKey,
-        onClose: onClose,
-      );
+    username: username,
+    topicId: topicId,
+    topicTitle: topicTitle,
+    postNumber: postNumber,
+    avatarFallbackUrl: avatarFallbackUrl,
+    nameFallback: nameFallback,
+    flairUrl: flairUrl,
+    flairName: flairName,
+    flairBgColor: flairBgColor,
+    flairColor: flairColor,
+    anchorContext: anchorContext,
+    menuNavigatorKey: menuNavigatorKey,
+    onClose: onClose,
+  );
 
   if (PlatformUtils.isDesktop) {
     // 桌面端：非模态浮层，不挡背景滚动（对齐网页版 PC）。
@@ -118,51 +121,20 @@ void showUserCard({
     entry = OverlayEntry(
       builder: (ctx) {
         final animatedCard = _CardEntryAnimation(child: buildCard(close));
-        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位。
-        // 边界处理：锚点在下半屏 → 卡片底对齐锚点底向上生长；右侧放不下
-        // 宽度 → 挂到锚点左侧。maxHeight 按实际可用空间收紧,不再溢出屏幕。
-        final screen = MediaQuery.of(ctx).size;
-        final alignBottom = anchorRect.center.dy > screen.height * 0.55;
-        final placeLeft =
-            anchorRect.right + _kGap + _kFloatingWidth >
-            screen.width - _kScreenMargin;
-        final availableHeight = alignBottom
-            ? anchorRect.bottom - _kScreenMargin
-            : screen.height - anchorRect.top - _kScreenMargin;
-        final maxHeight = availableHeight
-            .clamp(200.0, screen.height * 0.8)
-            .toDouble();
+        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位
         final Widget positioned = layerLink != null
             ? CompositedTransformFollower(
                 link: layerLink,
                 showWhenUnlinked: false,
-                targetAnchor: placeLeft
-                    ? (alignBottom
-                          ? Alignment.bottomLeft
-                          : Alignment.topLeft)
-                    : (alignBottom
-                          ? Alignment.bottomRight
-                          : Alignment.topRight),
-                followerAnchor: placeLeft
-                    ? (alignBottom
-                          ? Alignment.bottomRight
-                          : Alignment.topRight)
-                    : (alignBottom
-                          ? Alignment.bottomLeft
-                          : Alignment.topLeft),
-                offset: Offset(placeLeft ? -_kGap : _kGap, alignBottom ? 8 : -8),
+                targetAnchor: Alignment.topRight,
+                followerAnchor: Alignment.topLeft,
+                offset: const Offset(_kGap, -8),
                 child: Align(
-                  alignment: alignBottom
-                      ? (placeLeft
-                            ? Alignment.bottomRight
-                            : Alignment.bottomLeft)
-                      : (placeLeft
-                            ? Alignment.topRight
-                            : Alignment.topLeft),
+                  alignment: Alignment.topLeft,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: _kFloatingWidth,
-                      maxHeight: maxHeight,
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.8,
                     ),
                     child: animatedCard,
                   ),
@@ -195,10 +167,14 @@ void showUserCard({
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (dialogContext, _, _) =>
-          _DockedLayer(child: buildCard(() => Navigator.of(dialogContext).pop())),
+      pageBuilder: (dialogContext, _, _) => _DockedLayer(
+        child: buildCard(() => Navigator.of(dialogContext).pop()),
+      ),
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
@@ -235,7 +211,8 @@ class _UserCardMenuNavigatorHost extends StatefulWidget {
       _UserCardMenuNavigatorHostState();
 }
 
-class _UserCardMenuNavigatorHostState extends State<_UserCardMenuNavigatorHost> {
+class _UserCardMenuNavigatorHostState
+    extends State<_UserCardMenuNavigatorHost> {
   late final _UserCardMenuNavigatorObserver _observer =
       _UserCardMenuNavigatorObserver(_setMenuActive);
   bool _menuActive = false;
@@ -254,8 +231,9 @@ class _UserCardMenuNavigatorHostState extends State<_UserCardMenuNavigatorHost> 
         clipBehavior: Clip.none,
         observers: [_observer],
         onGenerateRoute: (_) => PageRouteBuilder<void>(
-          settings:
-              const RouteSettings(name: _UserCardMenuNavigator._hostRouteName),
+          settings: const RouteSettings(
+            name: _UserCardMenuNavigator._hostRouteName,
+          ),
           opaque: false,
           transitionDuration: Duration.zero,
           reverseTransitionDuration: Duration.zero,
@@ -332,8 +310,10 @@ class _CardEntryAnimationState extends State<_CardEntryAnimation>
     duration: const Duration(milliseconds: 180),
     vsync: this,
   )..forward();
-  late final Animation<double> _anim =
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+  late final Animation<double> _anim = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
 
   @override
   void dispose() {
@@ -369,9 +349,16 @@ class _DockedLayer extends StatelessWidget {
         child: Padding(
           // 顶部多留出头像戳出的高度，避免被状态栏/安全区裁剪
           padding: const EdgeInsets.fromLTRB(
-              _kScreenMargin, _kAvatarOverflow + 6, _kScreenMargin, _kScreenMargin),
+            _kScreenMargin,
+            _kAvatarOverflow + 6,
+            _kScreenMargin,
+            _kScreenMargin,
+          ),
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: _kDockedMaxWidth, maxHeight: maxHeight),
+            constraints: BoxConstraints(
+              maxWidth: _kDockedMaxWidth,
+              maxHeight: maxHeight,
+            ),
             child: child,
           ),
         ),
@@ -408,8 +395,12 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    final maxWidth = math.min(_kFloatingWidth, constraints.maxWidth - _kScreenMargin * 2);
-    final maxHeight = constraints.maxHeight - safeInsets.vertical - _kScreenMargin * 2;
+    final maxWidth = math.min(
+      _kFloatingWidth,
+      constraints.maxWidth - _kScreenMargin * 2,
+    );
+    final maxHeight =
+        constraints.maxHeight - safeInsets.vertical - _kScreenMargin * 2;
     return BoxConstraints(
       minWidth: 0,
       maxWidth: maxWidth,
@@ -438,8 +429,10 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
       return Offset(leftX, clampY(anchorRect.top));
     }
     // 再次下方/上方，水平以锚点居中并 clamp
-    final dx = (anchorRect.center.dx - childSize.width / 2)
-        .clamp(_kScreenMargin, size.width - childSize.width - _kScreenMargin);
+    final dx = (anchorRect.center.dx - childSize.width / 2).clamp(
+      _kScreenMargin,
+      size.width - childSize.width - _kScreenMargin,
+    );
     final belowTop = anchorRect.bottom + _kGap;
     if (belowTop + childSize.height <= bottomLimit) {
       return Offset(dx, belowTop);
@@ -450,7 +443,8 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_FloatingLayoutDelegate oldDelegate) =>
-      anchorRect != oldDelegate.anchorRect || safeInsets != oldDelegate.safeInsets;
+      anchorRect != oldDelegate.anchorRect ||
+      safeInsets != oldDelegate.safeInsets;
 }
 
 /// 用户卡片内容
@@ -495,6 +489,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   bool _isFollowed = false;
   bool _followLoading = false;
+  bool _isOpeningChat = false;
 
   // normal / mute / ignore
   String _notificationLevel = 'normal';
@@ -519,8 +514,8 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         _notificationLevel = user.ignored == true
             ? 'ignore'
             : user.muted == true
-                ? 'mute'
-                : 'normal';
+            ? 'mute'
+            : 'normal';
         _loading = false;
       });
     } catch (e, s) {
@@ -546,27 +541,41 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     );
   }
 
-  /// 发起私聊(chat 插件 DM):创建/复用 1:1 频道并进入
-  Future<void> _openChat() async {
-    final anchorContext = widget.anchorContext;
-    widget.onClose();
+  /// 打开 / 创建与该用户的 Chat 直接消息（对齐用户主页 `_openChatWithUser`）。
+  ///
+  /// 显示条件用 `can_chat_user`：站点开启 chat + 双方可聊等服务端判断。
+  Future<void> _openChatWithUser() async {
+    final user = _user;
+    if (user == null || _isOpeningChat) return;
+
+    setState(() => _isOpeningChat = true);
     try {
-      final channel = await ProviderScope.containerOf(
-        anchorContext,
-        listen: false,
-      ).read(discourseServiceProvider).createDirectMessageChannel(
-        targetUsernames: [widget.username],
-        upsert: true,
+      final channelId = await ref.read(
+        createDirectMessageProvider((
+          usernames: [user.username],
+          name: null,
+        )).future,
       );
-      if (!anchorContext.mounted) return;
-      await Navigator.push(
-        anchorContext,
+      if (!mounted) return;
+
+      // 先关卡片，再进聊天页，避免浮层挡导航。
+      widget.onClose();
+      final navContext = widget.anchorContext;
+      if (!navContext.mounted) return;
+
+      final title = user.name?.isNotEmpty == true ? user.name! : user.username;
+      await Navigator.of(navContext).push(
         MaterialPageRoute(
-          builder: (_) => ChatChannelPage(channelId: channel.id),
+          builder: (_) =>
+              ChatMessagePage(channelId: channelId, channelTitle: title),
         ),
       );
-    } catch (e) {
-      ToastService.showError(e.toString());
+    } on DioException catch (_) {
+      // 网络错误已由 ErrorInterceptor 处理
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      if (mounted) setState(() => _isOpeningChat = false);
     }
   }
 
@@ -721,7 +730,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       child: hasBg
           ? DecoratedBox(
               decoration: BoxDecoration(
-                image: DecorationImage(image: discourseImageProvider(bg), fit: BoxFit.cover),
+                image: DecorationImage(
+                  image: discourseImageProvider(bg),
+                  fit: BoxFit.cover,
+                ),
               ),
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -759,7 +771,6 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   bool _hasBio(User user) => user.bio != null && user.bio!.trim().isNotEmpty;
 
-
   /// 大头像（带白色描边 + flair），点击进个人页
   Widget _buildAvatar(ThemeData theme, User? user) {
     // 与各调用方传入的 fallback 尺寸保持一致（144），保证 loading 前后 URL 相同、命中缓存不重载
@@ -789,12 +800,14 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final displayName = (user?.name?.isNotEmpty ?? false)
         ? user!.name!
         : (widget.nameFallback?.isNotEmpty ?? false)
-            ? widget.nameFallback!
-            : widget.username;
+        ? widget.nameFallback!
+        : widget.username;
 
     // 背景图上给文字加阴影，保证可读
     final shadows = hasBg
-        ? <Shadow>[Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 6)]
+        ? <Shadow>[
+            Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 6),
+          ]
         : null;
 
     return Padding(
@@ -839,7 +852,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
               if (user != null) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(4),
@@ -860,21 +876,28 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     );
   }
 
-  /// 简介：高度随内容自适应，超过封顶高度时裁剪 + 底部渐隐
-  /// （之前硬裁剪会把第 4 行拦腰切半截）。
+  /// 简介：高度随内容自适应，超过约 3 行才裁剪。
+  /// 用 ConstrainedBox(maxHeight) + 内层不可滚动 ScrollView 让子节点按自然高度布局，
+  /// 短简介收缩、长简介封顶裁剪，且不触发 RenderFlex 溢出报错。
   Widget _buildBio(ThemeData theme, User user) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: _ClampedFadeBox(
-        maxHeight: 66,
-        // 用户卡 bio 属只读预览：走新引擎 FluxdoRender，关闭划词选区。
-        child: FluxdoRenderCallbacks.generic(
-          heroTagNamespace: 'user_card_bio_${user.username}',
-        ).render(
-          cookedHtml: user.bio!,
-          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-          compact: true,
-          selectionEnabled: false,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 66),
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          // 用户卡 bio 属只读预览：走新引擎 FluxdoRender，关闭划词选区。
+          child:
+              FluxdoRenderCallbacks.generic(
+                heroTagNamespace: 'user_card_bio_${user.username}',
+              ).render(
+                cookedHtml: user.bio!,
+                baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+                  height: 1.4,
+                ),
+                compact: true,
+                selectionEnabled: false,
+              ),
         ),
       ),
     );
@@ -885,11 +908,15 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final color = isSuspended ? theme.colorScheme.error : Colors.orange;
     final label = isSuspended
         ? (user.isSuspendedForever
-            ? S.current.userProfile_permanentlySuspended
-            : S.current.userProfile_suspendedUntil(TimeUtils.formatFullDate(user.suspendedTill)))
+              ? S.current.userProfile_permanentlySuspended
+              : S.current.userProfile_suspendedUntil(
+                  TimeUtils.formatFullDate(user.suspendedTill),
+                ))
         : (user.isSilencedForever
-            ? S.current.userProfile_permanentlySilenced
-            : S.current.userProfile_silencedUntil(TimeUtils.formatFullDate(user.silencedTill)));
+              ? S.current.userProfile_permanentlySilenced
+              : S.current.userProfile_silencedUntil(
+                  TimeUtils.formatFullDate(user.silencedTill),
+                ));
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(10),
@@ -900,12 +927,19 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       ),
       child: Row(
         children: [
-          Icon(isSuspended ? Symbols.block_rounded : Symbols.mic_off_rounded, size: 16, color: color),
+          Icon(
+            isSuspended ? Symbols.block_rounded : Symbols.mic_off_rounded,
+            size: 16,
+            color: color,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w500),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -917,22 +951,26 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildLocationWebsite(ThemeData theme, User user) {
     final items = <Widget>[];
     void add(IconData icon, String text) {
-      items.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 220),
-            child: Text(
-              text,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      items.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-        ],
-      ));
+          ],
+        ),
+      );
     }
 
     if (user.location?.isNotEmpty ?? false) {
@@ -941,8 +979,8 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final site = (user.websiteName?.isNotEmpty ?? false)
         ? user.websiteName!
         : (user.website?.isNotEmpty ?? false)
-            ? user.website!
-            : null;
+        ? user.website!
+        : null;
     if (site != null) add(Symbols.link_rounded, site);
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -956,16 +994,31 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildFacts(ThemeData theme, User user) {
     final items = <Widget>[];
     if (user.lastPostedAt != null) {
-      items.add(_metaItem(theme, S.current.userCard_lastPosted,
-          TimeUtils.formatRelativeTime(user.lastPostedAt!)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userCard_lastPosted,
+          TimeUtils.formatRelativeTime(user.lastPostedAt!),
+        ),
+      );
     }
     if (user.createdAt != null) {
-      items.add(_metaItem(theme, S.current.userProfile_joinDate,
-          TimeUtils.formatShortDate(user.createdAt)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_joinDate,
+          TimeUtils.formatShortDate(user.createdAt),
+        ),
+      );
     }
     if ((user.timeRead ?? 0) > 0) {
-      items.add(_metaItem(theme, S.current.profileStats_timeRead,
-          NumberUtils.formatDurationLong(user.timeRead!)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.profileStats_timeRead,
+          NumberUtils.formatDurationLong(user.timeRead!),
+        ),
+      );
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -979,17 +1032,35 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildStatsRow(ThemeData theme, User user) {
     final items = <Widget>[];
     if (user.totalFollowing != null) {
-      items.add(_metaItem(theme, S.current.userProfile_following,
-          NumberUtils.formatCount(user.totalFollowing!), bold: true));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_following,
+          NumberUtils.formatCount(user.totalFollowing!),
+          bold: true,
+        ),
+      );
     }
     if (user.totalFollowers != null) {
-      items.add(_metaItem(theme, S.current.userProfile_followers,
-          NumberUtils.formatCount(user.totalFollowers!), bold: true));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_followers,
+          NumberUtils.formatCount(user.totalFollowers!),
+          bold: true,
+        ),
+      );
     }
     if (user.gamificationScore != null) {
-      items.add(_metaItem(theme, S.current.userCard_score,
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userCard_score,
           NumberUtils.formatCount(user.gamificationScore!),
-          bold: true, valueColor: theme.colorScheme.primary));
+          bold: true,
+          valueColor: theme.colorScheme.primary,
+        ),
+      );
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -1000,14 +1071,21 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   }
 
   /// 标签（灰）+ 值 的行内项
-  Widget _metaItem(ThemeData theme, String label, String value,
-      {bool bold = false, Color? valueColor}) {
+  Widget _metaItem(
+    ThemeData theme,
+    String label,
+    String value, {
+    bool bold = false,
+    Color? valueColor,
+  }) {
     return Text.rich(
       TextSpan(
         children: [
           TextSpan(
             text: '$label ',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           TextSpan(
             text: value,
@@ -1043,10 +1121,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   }
 
   Widget _buildActions(ThemeData theme, User? user) {
-    final isLoggedIn = ref.watch(
-      currentUserProvider.select((value) => value.value != null),
-    );
+    final currentUser = ref.watch(currentUserProvider).value;
+    final isLoggedIn = currentUser != null;
     final canMessage = isLoggedIn && user?.canSendPrivateMessageToUser == true;
+    // Discourse user_card.can_chat_user：站点 chat + 双方可聊等综合判断。
     final canChat = isLoggedIn && user?.canChatUser == true;
     final canFollow = isLoggedIn && user?.canFollow == true;
     final canMute = isLoggedIn && user?.canMuteUser == true;
@@ -1060,63 +1138,79 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
     final primary = <Widget>[];
     if (canChat) {
-      primary.add(FilledButton.icon(
-        onPressed: _openChat,
-        icon: const Icon(Symbols.chat_rounded, size: 18),
-        label: Text(S.current.userCard_chat),
-      ));
+      primary.add(
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _isOpeningChat ? null : _openChatWithUser,
+            icon: _isOpeningChat
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Symbols.chat_rounded, size: 18),
+            label: Text(S.current.chat_start),
+          ),
+        ),
+      );
     }
     if (canMessage) {
-      primary.add(canChat
-          ? FilledButton.tonalIcon(
-              onPressed: _composeMessage,
-              icon: const Icon(Symbols.mail_rounded, size: 18),
-              label: Text(S.current.userProfile_message),
-            )
-          : FilledButton.icon(
-              onPressed: _composeMessage,
-              icon: const Icon(Symbols.mail_rounded, size: 18),
-              label: Text(S.current.userProfile_message),
-            ));
+      primary.add(
+        Expanded(
+          child: canChat
+              ? FilledButton.tonalIcon(
+                  onPressed: _composeMessage,
+                  icon: const Icon(Symbols.mail_rounded, size: 18),
+                  label: Text(S.current.userProfile_message),
+                )
+              : FilledButton.icon(
+                  onPressed: _composeMessage,
+                  icon: const Icon(Symbols.mail_rounded, size: 18),
+                  label: Text(S.current.userProfile_message),
+                ),
+        ),
+      );
     }
     if (canFollow) {
-      primary.add(_isFollowed
-          ? OutlinedButton.icon(
-              onPressed: _followLoading ? null : _toggleFollow,
-              icon: const Icon(Symbols.how_to_reg_rounded, size: 18),
-              label: Text(S.current.userProfile_followed),
-            )
-          : FilledButton.tonalIcon(
-              onPressed: _followLoading ? null : _toggleFollow,
-              icon: const Icon(Symbols.person_add_alt_rounded, size: 18),
-              label: Text(S.current.userProfile_follow),
-            ));
+      primary.add(
+        Expanded(
+          child: _isFollowed
+              ? OutlinedButton.icon(
+                  onPressed: _followLoading ? null : _toggleFollow,
+                  icon: const Icon(Symbols.how_to_reg_rounded, size: 18),
+                  label: Text(S.current.userProfile_followed),
+                )
+              : FilledButton.tonalIcon(
+                  onPressed: _followLoading ? null : _toggleFollow,
+                  icon: const Icon(Symbols.person_add_alt_rounded, size: 18),
+                  label: Text(S.current.userProfile_follow),
+                ),
+        ),
+      );
     }
 
-    // 窄卡里三个图标+中文文案的按钮塞一行必挤(实测已关注被压到
-    // 竖排折行),每行最多两个,超出的换行铺满
-    final primaryRows = <Widget>[];
-    for (var i = 0; i < primary.length; i += 2) {
-      final rowButtons = primary.sublist(
-        i,
-        (i + 2).clamp(0, primary.length),
-      );
-      primaryRows.add(Row(
-        children: [
-          for (var j = 0; j < rowButtons.length; j++) ...[
-            if (j > 0) const SizedBox(width: 8),
-            Expanded(child: rowButtons[j]),
-          ],
-        ],
-      ));
+    // 主操作可能有 3 个（聊天/私信/关注）：两行排布，避免窄卡挤爆。
+    final primaryRows = <List<Widget>>[];
+    if (primary.length <= 2) {
+      if (primary.isNotEmpty) primaryRows.add(primary);
+    } else {
+      primaryRows.add(primary.sublist(0, 2));
+      primaryRows.add(primary.sublist(2));
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final row in primaryRows) ...[
-          row,
-          const SizedBox(height: 8),
+        for (var r = 0; r < primaryRows.length; r++) ...[
+          if (r > 0) const SizedBox(height: 8),
+          Row(
+            children: [
+              for (var i = 0; i < primaryRows[r].length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                primaryRows[r][i],
+              ],
+            ],
+          ),
         ],
         if (canFilter) ...[
           OutlinedButton.icon(
@@ -1138,6 +1232,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
           ),
           const SizedBox(height: 8),
         ],
+        if (primaryRows.isNotEmpty) const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
@@ -1162,7 +1257,9 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       tooltip: '',
       icon: const Icon(Symbols.more_horiz_rounded),
       style: IconButton.styleFrom(
-        side: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.5)),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         minimumSize: const Size(48, 40),
       ),
@@ -1171,12 +1268,28 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       itemBuilder: (context) => [
         if (canMute)
           _notificationLevel == 'mute'
-              ? _menuItem('normal', Symbols.volume_up_rounded, S.current.userProfile_restored)
-              : _menuItem('mute', Symbols.volume_off_rounded, S.current.userCard_mute),
+              ? _menuItem(
+                  'normal',
+                  Symbols.volume_up_rounded,
+                  S.current.userProfile_restored,
+                )
+              : _menuItem(
+                  'mute',
+                  Symbols.volume_off_rounded,
+                  S.current.userCard_mute,
+                ),
         if (canIgnore)
           _notificationLevel == 'ignore'
-              ? _menuItem('normal', Symbols.visibility_rounded, S.current.userProfile_restored)
-              : _menuItem('ignore', Symbols.visibility_off_rounded, S.current.userCard_ignore),
+              ? _menuItem(
+                  'normal',
+                  Symbols.visibility_rounded,
+                  S.current.userProfile_restored,
+                )
+              : _menuItem(
+                  'ignore',
+                  Symbols.visibility_off_rounded,
+                  S.current.userCard_ignore,
+                ),
       ],
     );
   }
@@ -1191,76 +1304,6 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
           Text(label),
         ],
       ),
-    );
-  }
-}
-
-/// 封顶裁剪 + 溢出时底部渐隐的容器:短内容自然高度,长内容裁到
-/// [maxHeight] 并在底缘淡出(替代硬裁剪的"半行字"观感)。
-class _ClampedFadeBox extends StatelessWidget {
-  final double maxHeight;
-  final Widget child;
-
-  const _ClampedFadeBox({required this.maxHeight, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            physics: const NeverScrollableScrollPhysics(),
-            child: _OverflowFade(maxHeight: maxHeight, child: child),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 内容高度超过 [maxHeight] 时叠加底部 18px 渐隐遮罩
-class _OverflowFade extends StatefulWidget {
-  final double maxHeight;
-  final Widget child;
-
-  const _OverflowFade({required this.maxHeight, required this.child});
-
-  @override
-  State<_OverflowFade> createState() => _OverflowFadeState();
-}
-
-class _OverflowFadeState extends State<_OverflowFade> {
-  final GlobalKey _contentKey = GlobalKey();
-  bool _overflowing = false;
-
-  @override
-  Widget build(BuildContext context) {
-    // 帧末量内容自然高度,超限则挂渐隐
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final box = _contentKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize || !mounted) return;
-      final overflowing = box.size.height > widget.maxHeight + 0.5;
-      if (overflowing != _overflowing) {
-        setState(() => _overflowing = overflowing);
-      }
-    });
-    final content = KeyedSubtree(key: _contentKey, child: widget.child);
-    if (!_overflowing) return content;
-    return ShaderMask(
-      shaderCallback: (rect) => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: const [Colors.white, Colors.white, Colors.transparent],
-        // 渐隐区间锚定可视窗口底部(rect 高是内容全高)
-        stops: [
-          0,
-          ((widget.maxHeight - 18) / rect.height).clamp(0.0, 1.0),
-          (widget.maxHeight / rect.height).clamp(0.0, 1.0),
-        ],
-      ).createShader(rect),
-      blendMode: BlendMode.dstIn,
-      child: content,
     );
   }
 }

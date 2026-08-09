@@ -5,7 +5,7 @@ import '../l10n/s.dart';
 import '../models/notification.dart';
 import '../providers/discourse_providers.dart';
 import '../pages/badge_page.dart';
-import '../pages/chat/channel/chat_channel_page.dart';
+import '../pages/chat/chat_message_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../pages/user_profile_page.dart';
 import '../services/local_notification_service.dart';
@@ -90,14 +90,19 @@ Widget? _notificationTargetPage(
     case NotificationType.chatGroupMention:
     case NotificationType.chatQuotedPost:
     case NotificationType.chatWatchedThread:
-      // Chat 通知直达聊天窗;payload 带 chat_channel_id(源码
-      // notify_mentioned/notify_watching 均写入)
+      // 聊天通知：打开频道并定位到具体消息
       final channelId = notification.data.chatChannelId;
-      if (channelId == null) return null;
-      return ChatChannelPage(
+      if (channelId == null) {
+        if (notification.topicId == null) return null;
+        return TopicDetailPage(
+          topicId: notification.topicId!,
+          scrollToPostNumber: notification.postNumber,
+        );
+      }
+      return ChatMessagePage(
         channelId: channelId,
-        // 带消息 id 时锚点定位到那条消息并高亮
-        initialMessageId: notification.data.chatMessageId,
+        channelTitle: notification.data.topicTitle ?? S.current.chat_title,
+        targetMessageId: notification.data.chatMessageId,
       );
 
     default:

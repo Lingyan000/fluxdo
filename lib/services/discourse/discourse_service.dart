@@ -24,8 +24,6 @@ import '../../models/invite_link.dart';
 import '../../models/template.dart';
 import '../../models/post_revision.dart';
 import '../../models/pending_post.dart';
-import '../../models/chat/chat_channel.dart';
-import '../../models/chat/chat_message.dart';
 
 import '../../constants.dart';
 import '../../providers/message_bus_providers.dart';

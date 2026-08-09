@@ -60,10 +60,13 @@ class User {
   final bool? canSendPrivateMessageToUser;   // 是否可以给该用户发私信
   final bool? canChatUser;                   // 是否可与该用户聊天(chat 插件 user_card 注入)
 
-  /// 该用户在某话题内的发帖数(card.json 带 include_post_count_for=topicId
-  /// 时 serializer 注入,形如 {topic_id: count};官方用它决定用户卡片
-  /// 是否显示「过滤到该用户的 N 帖」按钮)
-  final Map<int, int> topicPostCount;
+  // Discourse Chat 相关
+  /// 当前用户是否具备 chat 能力（站点开启且在允许组内）
+  final bool? canChat;
+  /// 当前用户是否已开启个人 chat（can_chat && user_option.chat_enabled）
+  final bool? hasChatEnabled;
+  /// 当前用户是否可创建直接消息
+  final bool? canDirectMessage;
 
   // 积分相关
   final int? gamificationScore;
@@ -138,7 +141,9 @@ class User {
     this.canSendPrivateMessages,
     this.canSendPrivateMessageToUser,
     this.canChatUser,
-    this.topicPostCount = const {},
+    this.canChat,
+    this.hasChatEnabled,
+    this.canDirectMessage,
     this.gamificationScore,
     this.muted,
     this.ignored,
@@ -161,9 +166,14 @@ class User {
     int? allUnreadNotificationsCount,
     int? seenNotificationId,
     int? notificationChannelPosition,
+    String? cardBackgroundUploadUrl,
     bool? muted,
     bool? ignored,
     bool? canAssign,
+    bool? canChat,
+    bool? hasChatEnabled,
+    bool? canDirectMessage,
+    bool? canChatUser,
   }) {
     return User(
       id: id,
@@ -175,7 +185,8 @@ class User {
       bio: bio,
       bioCooked: bioCooked,
       bioRaw: bioRaw,
-      cardBackgroundUploadUrl: cardBackgroundUploadUrl,
+      cardBackgroundUploadUrl:
+          cardBackgroundUploadUrl ?? this.cardBackgroundUploadUrl,
       profileBackgroundUploadUrl: profileBackgroundUploadUrl,
       unreadNotifications: unreadNotifications ?? this.unreadNotifications,
       unreadHighPriorityNotifications:
@@ -206,8 +217,10 @@ class User {
       totalFollowing: totalFollowing,
       canSendPrivateMessages: canSendPrivateMessages,
       canSendPrivateMessageToUser: canSendPrivateMessageToUser,
-      canChatUser: canChatUser,
-      topicPostCount: topicPostCount,
+      canChatUser: canChatUser ?? this.canChatUser,
+      canChat: canChat ?? this.canChat,
+      hasChatEnabled: hasChatEnabled ?? this.hasChatEnabled,
+      canDirectMessage: canDirectMessage ?? this.canDirectMessage,
       gamificationScore: gamificationScore,
       muted: muted ?? this.muted,
       ignored: ignored ?? this.ignored,
@@ -277,13 +290,9 @@ class User {
       canSendPrivateMessages: json['can_send_private_messages'] as bool?,
       canSendPrivateMessageToUser: json['can_send_private_message_to_user'] as bool?,
       canChatUser: json['can_chat_user'] as bool?,
-      topicPostCount: {
-        for (final e
-            in (json['topic_post_count'] as Map<String, dynamic>? ?? const {})
-                .entries)
-          if (int.tryParse(e.key) != null && e.value is int)
-            int.parse(e.key): e.value as int,
-      },
+      canChat: json['can_chat'] as bool?,
+      hasChatEnabled: json['has_chat_enabled'] as bool?,
+      canDirectMessage: json['can_direct_message'] as bool?,
       gamificationScore: json['gamification_score'] as int?,
       muted: json['muted'] as bool?,
       ignored: json['ignored'] as bool?,

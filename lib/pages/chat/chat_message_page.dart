@@ -597,7 +597,8 @@ class _ChatMessagePageState extends ConsumerState<ChatMessagePage> {
       final uploadResult = await service.uploadFile(pickedFile.path);
       if (!mounted) return;
       setState(() {
-        _uploadIds.add(uploadResult.id);
+        final uploadId = uploadResult.id;
+        if (uploadId != null) _uploadIds.add(uploadId);
         _isUploadingImage = false;
       });
     } catch (e) {

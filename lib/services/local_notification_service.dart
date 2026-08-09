@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/s.dart';
-import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../utils/notification_navigation.dart';
 
@@ -67,22 +66,7 @@ class LocalNotificationService {
     if (payload == null || payload.isEmpty) return;
 
     // payload 格式: "topic:{topicId}[:{postNumber}]" 或
-    // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈)或
-    // "chat:{channelId}"(聊天,直达聊天窗)。
-    if (payload.startsWith('chat:')) {
-      final channelId = int.tryParse(payload.substring(5));
-      if (channelId == null) return;
-      final chatPage = ChatChannelPage(channelId: channelId);
-      final chatContext = navigatorKey.currentContext;
-      if (chatContext != null && chatContext.mounted) {
-        openNotificationPage(chatContext, chatPage);
-        return;
-      }
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => chatPage),
-      );
-      return;
-    }
+    // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈)。
     final isMessage = payload.startsWith('message:');
     if (!isMessage && !payload.startsWith('topic:')) return;
     final parts = payload.substring(isMessage ? 8 : 6).split(':');
@@ -134,7 +118,6 @@ class LocalNotificationService {
     int? topicId,
     int? postNumber,
     bool isPrivateMessage = false,
-    int? chatChannelId,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -166,11 +149,8 @@ class LocalNotificationService {
     
     // 构建 payload 用于点击回调:私信用 message: 前缀,走私信自己的
     // 平行视界栈,不能跟普通话题共用 topic: 前缀(否则左栏会显示信息流)。
-    // chat 通知用 chat: 前缀直达聊天窗。
     String? payload;
-    if (chatChannelId != null) {
-      payload = 'chat:$chatChannelId';
-    } else if (topicId != null) {
+    if (topicId != null) {
       final prefix = isPrivateMessage ? 'message' : 'topic';
       payload = postNumber != null
           ? '$prefix:$topicId:$postNumber'

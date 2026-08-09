@@ -409,7 +409,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // (弹窗可取消)→ 用宽松版判定,与内核格式快捷键同口径。
     if (_slashOverlay == null &&
         event.logicalKey == LogicalKeyboardKey.keyK &&
-        primaryModifierHeldForReversibleAction(event)) {
+        primaryModifierHeld(event)) {
       _insertLink();
       return true;
     }

@@ -246,9 +246,14 @@ class UserApiKeyService {
   /// 通过 `auth_redirect` 让服务端把 OTP 附在 redirect_url 上(无 redirect 时
   /// JSON 只返回加密 payload,不含 OTP)。
   ///
-  /// 服务端 user_api_keys#create 不接受过期参数(表无 expires_at),
-  /// key 本身不过期;回收靠站点定时任务或手动 revoke。
-  Future<({String apiKey, String otp})> createCrossDeviceKey(Dio dio) async {
+  /// [expiresIn] 为 `null` → 不过期;否则传 `expires_in_seconds`(受站点
+  /// `max_user_api_key_expiry_days` 上限约束)。
+  Future<({String apiKey, String otp, DateTime? expiresAt})>
+  createCrossDeviceKey(Dio dio, {Duration? expiresIn}) async {
+    if (expiresIn != null && expiresIn.inSeconds <= 0) {
+      throw ArgumentError.value(expiresIn, 'expiresIn', '必须为正时长或 null');
+    }
+
     final publicKeyPem = await ensurePublicKeyPem();
     // 与浏览器授权 client_id 隔离;本路径稳定复用,重新生成会撤销上一枚分享 key
     final clientId = await _ensureQrClientId();
@@ -262,6 +267,9 @@ class UserApiKeyService {
       'nonce': nonce,
       'auth_redirect': authRedirect,
     };
+    if (expiresIn != null) {
+      data['expires_in_seconds'] = '${expiresIn.inSeconds}';
+    }
 
     try {
       final response = await dio.post(
@@ -339,11 +347,21 @@ class UserApiKeyService {
         throw StateError('一次性登录令牌解密失败');
       }
 
+      DateTime? expiresAt;
+      final expRaw = payload['expires_at'];
+      if (expRaw is String && expRaw.isNotEmpty) {
+        expiresAt = DateTime.tryParse(expRaw)?.toUtc();
+      } else if (expiresIn != null) {
+        expiresAt = DateTime.now().toUtc().add(expiresIn);
+      }
+
       _log('info', 'cross_device_key_created', '已创建跨设备 User API Key', {
+        'neverExpires': expiresAt == null,
+        'expiresAt': expiresAt?.toIso8601String(),
         'apiKeyLen': apiKey.length,
         'otpLen': otp.length,
       });
-      return (apiKey: apiKey, otp: otp);
+      return (apiKey: apiKey, otp: otp, expiresAt: expiresAt);
     } on DioException catch (e) {
       _log('warning', 'cross_device_key_failed', '创建跨设备 User API Key 失败', {
         'statusCode': e.response?.statusCode,
@@ -351,6 +369,19 @@ class UserApiKeyService {
       });
       rethrow;
     }
+  }
+
+  /// 扫码端:持久化对方分享的 User API Key(覆盖本机旧 key)。
+  Future<void> persistSharedKey(String apiKey) async {
+    final trimmed = apiKey.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(apiKey, 'apiKey', '不能为空');
+    }
+    await _storage.write(key: _keyApiKey, value: trimmed);
+    _lastSelfHealFailureAt = null;
+    _log('info', 'user_api_key_shared_persisted', '已保存扫码分享的 User API Key', {
+      'apiKeyLen': trimmed.length,
+    });
   }
 
   // ---------- 授权流程 ----------

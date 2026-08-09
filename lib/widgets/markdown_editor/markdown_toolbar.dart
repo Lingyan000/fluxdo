@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:fluxdo_render/editor.dart' show
         observeModifierKeyEvent,
-        primaryModifierHeldForReversibleAction,
+        primaryModifierHeld,
         shiftModifierHeld;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -141,7 +141,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         event.logicalKey == LogicalKeyboardKey.keyV &&
         !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
-        primaryModifierHeldForReversibleAction(event)) {
+        primaryModifierHeld(event)) {
       _handlePasteImage();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理

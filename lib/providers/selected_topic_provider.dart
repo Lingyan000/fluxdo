@@ -412,6 +412,10 @@ final selectedMessageProvider = SelectedTopicProvider((ref) {
 
 // 「我的」页右栏栈(selectedProfilePaneProvider)已退役:该页是导航
 // 枢纽,所有入口一律开新页面,不做右栏平行视界(用户拍板)。
+// 宽屏双栏方案回归后重新启用:右栏可被压入内容(草稿/设置)顶替。
+final selectedProfilePaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
 
 /// 用户资料页(全屏形态)右栏的平行视界栈,按 username family 隔离
 /// (资料页可叠开多个:话题里点头像→资料→再开别人资料)。资料页

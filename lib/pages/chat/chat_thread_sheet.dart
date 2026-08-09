@@ -396,7 +396,8 @@ class _ChatThreadSheetState extends ConsumerState<ChatThreadSheet> {
       final service = ref.read(discourseServiceProvider);
       final uploadResult = await service.uploadFile(pickedFile.path);
       setState(() {
-        _uploadIds.add(uploadResult.id);
+        final uploadId = uploadResult.id;
+        if (uploadId != null) _uploadIds.add(uploadId);
         _isUploadingImage = false;
       });
     } catch (e) {
