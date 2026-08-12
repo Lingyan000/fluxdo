@@ -71,17 +71,60 @@ enum ProgressGestureAction {
   }
 }
 
-/// 长按菜单候选功能默认列表（6 项），覆盖常用操作
-const List<ProgressGestureAction> _defaultProgressGestureMenu = [
+/// 长按菜单默认 8 坑布局（前 6 坑有动作，后 2 坑空）。
+/// 列表长度恒为 [kProgressGestureMenuMax]，`null` 表示该坑位空。
+const List<ProgressGestureAction?> _defaultProgressGestureMenu = [
   ProgressGestureAction.openTimeline,
   ProgressGestureAction.scrollToTop,
   ProgressGestureAction.reply,
   ProgressGestureAction.bookmark,
   ProgressGestureAction.share,
   ProgressGestureAction.aiAssistant,
+  null,
+  null,
 ];
 
 const int kProgressGestureMenuMax = 8;
+
+/// 规范化为固定 8 坑：保留用户指定的坑位，不因空坑自动左对齐。
+List<ProgressGestureAction?> normalizeProgressGestureMenuSlots(
+  Iterable<ProgressGestureAction?> slots,
+) {
+  final out = List<ProgressGestureAction?>.filled(kProgressGestureMenuMax, null);
+  final seen = <ProgressGestureAction>{};
+  var i = 0;
+  for (final action in slots) {
+    if (i >= kProgressGestureMenuMax) break;
+    if (action == null || action == ProgressGestureAction.none) {
+      out[i] = null;
+      i++;
+      continue;
+    }
+    if (seen.add(action)) {
+      out[i] = action;
+    } else {
+      out[i] = null;
+    }
+    i++;
+  }
+  return out;
+}
+
+int progressGestureMenuFilledCount(List<ProgressGestureAction?> slots) =>
+    slots.whereType<ProgressGestureAction>().length;
+
+List<ProgressGestureAction> progressGestureMenuOccupiedActions(
+  List<ProgressGestureAction?> slots,
+) =>
+    slots.whereType<ProgressGestureAction>().toList(growable: false);
+
+const double kReadingFontScaleMin = 0.8;
+const double kReadingFontScaleMax = 3.0;
+const double kReadingFontScaleDefault = 1.0;
+const int kReadingFontScaleDivisions = 44;
+
+double _clampReadingFontScale(double value) =>
+    value.clamp(kReadingFontScaleMin, kReadingFontScaleMax).toDouble();
 
 class AppPreferences {
   static const Object _unset = Object();
@@ -249,8 +292,8 @@ class AppPreferences {
   /// 长按菜单总开关（关闭时长按不弹出菜单）
   final bool progressGestureLongPressEnabled;
 
-  /// 长按菜单候选功能（按顺序展示在半圆菜单中）
-  final List<ProgressGestureAction> progressGestureMenuActions;
+  /// 长按菜单 8 固定坑位（`null` = 空坑；项 i 永远在第 i 坑，不自动对齐）
+  final List<ProgressGestureAction?> progressGestureMenuActions;
 
   /// 编辑器工具栏外显工具 id 列表（空 = 全部收进「更多」面板）
   final List<String> editorToolbarTools;
@@ -365,7 +408,7 @@ class AppPreferences {
     ProgressGestureAction? progressGestureSwipeRight,
     ProgressGestureAction? progressGestureSwipeUp,
     bool? progressGestureLongPressEnabled,
-    List<ProgressGestureAction>? progressGestureMenuActions,
+    List<ProgressGestureAction?>? progressGestureMenuActions,
     List<String>? editorToolbarTools,
     TopicCardStyle? topicCardStyle,
   }) {
@@ -956,23 +999,22 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   }
 
   Future<void> setProgressGestureMenuActions(
-    List<ProgressGestureAction> actions,
+    List<ProgressGestureAction?> slots,
   ) async {
-    final deduped = <ProgressGestureAction>[];
-    for (final a in actions) {
-      if (!deduped.contains(a)) deduped.add(a);
-      if (deduped.length >= kProgressGestureMenuMax) break;
-    }
-    if (const ListEquality<ProgressGestureAction>().equals(
+    final normalized = normalizeProgressGestureMenuSlots(slots);
+    if (const ListEquality<ProgressGestureAction?>().equals(
       state.progressGestureMenuActions,
-      deduped,
+      normalized,
     )) {
       return;
     }
-    state = state.copyWith(progressGestureMenuActions: deduped);
+    state = state.copyWith(progressGestureMenuActions: normalized);
+    // 固定写满 8 项：空坑用空串，避免旧版稠密列表语义把坑挤齐。
     await _prefs.setStringList(
       _progressGestureMenuActionsKey,
-      deduped.map((e) => e.name).toList(),
+      [
+        for (final a in normalized) a?.name ?? '',
+      ],
     );
   }
 
@@ -1031,17 +1073,56 @@ ProgressGestureAction _readGestureAction(
   return fallback;
 }
 
-List<ProgressGestureAction> _readGestureMenuActions(List<String>? raw) {
-  if (raw == null) return _defaultProgressGestureMenu;
-  final out = <ProgressGestureAction>[];
+List<ProgressGestureAction?> _readGestureMenuActions(List<String>? raw) {
+  if (raw == null) {
+    return List<ProgressGestureAction?>.from(_defaultProgressGestureMenu);
+  }
+
+  // 新格式：长度恒为 8，空串 = 空坑。旧稠密列表（无空串）迁移为左对齐填充。
+  final hasEmptyMarker = raw.any((e) => e.isEmpty);
+  final looksFixedWidth = raw.length == kProgressGestureMenuMax || hasEmptyMarker;
+
+  if (looksFixedWidth) {
+    final out = List<ProgressGestureAction?>.filled(kProgressGestureMenuMax, null);
+    final seen = <ProgressGestureAction>{};
+    for (var i = 0; i < raw.length && i < kProgressGestureMenuMax; i++) {
+      final name = raw[i];
+      if (name.isEmpty) {
+        out[i] = null;
+        continue;
+      }
+      ProgressGestureAction? parsed;
+      for (final a in ProgressGestureAction.values) {
+        if (a.name == name && a != ProgressGestureAction.none) {
+          parsed = a;
+          break;
+        }
+      }
+      if (parsed != null && seen.add(parsed)) {
+        out[i] = parsed;
+      } else {
+        out[i] = null;
+      }
+    }
+    return out;
+  }
+
+  // 旧稠密列表：按原顺序填入前 N 坑，剩余空坑保留，不打乱用户记忆位。
+  final out = List<ProgressGestureAction?>.filled(kProgressGestureMenuMax, null);
+  final seen = <ProgressGestureAction>{};
+  var slot = 0;
   for (final name in raw) {
+    if (slot >= kProgressGestureMenuMax) break;
+    if (name.isEmpty) continue;
     for (final a in ProgressGestureAction.values) {
-      if (a.name == name && !out.contains(a)) {
-        out.add(a);
+      if (a.name == name &&
+          a != ProgressGestureAction.none &&
+          seen.add(a)) {
+        out[slot] = a;
+        slot++;
         break;
       }
     }
-    if (out.length >= kProgressGestureMenuMax) break;
   }
   return out;
 }

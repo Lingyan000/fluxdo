@@ -2,9 +2,12 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+
+import 'radial_menu_fixed_slots.dart';
 
 /// 径向菜单项（图标 + 标签 + 选中回调）
 class RadialMenuItem {
@@ -46,14 +49,22 @@ double _wrapAngle(double a) {
 /// - State.dispose → [dispose]
 class RadialMenuSession {
   OverlayEntry? _menuEntry;
+  /// Highlight only — items listen to this so unchanged pointer moves never
+  /// rebuild the full OverlayEntry tree.
+  final ValueNotifier<int?> _highlightedIndexNotifier = ValueNotifier<int?>(
+    null,
+  );
   Offset? _menuCenter;
   Rect? _pressArea;
-  int? _highlightedIndex;
   List<RadialMenuItem> _items = const [];
   RadialMenuDirection _direction = RadialMenuDirection.up;
   double _radius = 92;
   double _sweepStart = -math.pi / 2;
   double _sweepEnd = math.pi / 2;
+  bool _fixedSlots = false;
+  int _slotCount = RadialMenuFixedSlots.maxSlots;
+  /// Parallel to [_items]: fixed-slot index for each rendered item.
+  List<int> _itemSlots = const [];
   Widget Function(BuildContext context, Rect rect, double opacity)?
   _pressAreaIndicatorBuilder;
   // true 表示已请求菜单收起：overlay 内部反向播放衍生动画，结束后才真正清理
@@ -62,6 +73,9 @@ class RadialMenuSession {
   bool get isActive => _menuEntry != null;
 
   /// 根据菜单项数取半径（项越多半圆越大，避免图标拥挤）
+  ///
+  /// 仅用于动态布局（如头像菜单）。进度条长按菜单走固定 8 槽布局，
+  /// 半径始终为 [RadialMenuFixedSlots.radius]。
   static double radiusForCount(int count) {
     if (count <= 4) return 92;
     if (count <= 6) return 108;
@@ -71,9 +85,15 @@ class RadialMenuSession {
   /// 插入菜单 overlay 并触发中等触觉反馈。
   ///
   /// [center] 扇形圆心（全局坐标）；[pressArea] 按压区域的全局矩形，
-  /// 菜单弹出后在此位置画替代显示；[radius] 缺省按项数取 [radiusForCount]。
+  /// 菜单弹出后在此位置画替代显示；[radius] 缺省：
+  /// - [fixedSlots]=true 时取 [RadialMenuFixedSlots.radius]
+  /// - 否则按项数取 [radiusForCount]
   /// [sweepStart]/[sweepEnd] 为扇形角度窗口（极轴偏角 φ，φ=0 指向展开
   /// 方向正前方、左负右正），默认 [-π/2, π/2] 完整半圆。
+  ///
+  /// [fixedSlots] 为 true 时，半圆按固定 [slotCount] 坑均分；
+  /// 每个 item 落在 [itemSlots] 指定坑（缺省 item i → slot i），
+  /// 空坑不渲染、不命中，也不自动把后面的项挤到前面。
   void open({
     required BuildContext context,
     required Offset center,
@@ -83,6 +103,11 @@ class RadialMenuSession {
     double? radius,
     double sweepStart = -math.pi / 2,
     double sweepEnd = math.pi / 2,
+    bool fixedSlots = false,
+    int slotCount = RadialMenuFixedSlots.maxSlots,
+    /// 当 [fixedSlots] 为 true 时，指定每个 item 落在哪个固定坑（0-based）。
+    /// 缺省为稠密映射 item i → slot i。稀疏布局请显式传入，长度须与 [items] 一致。
+    List<int>? itemSlots,
     Widget Function(BuildContext context, Rect rect, double opacity)?
     pressAreaIndicatorBuilder,
   }) {
@@ -96,11 +121,27 @@ class RadialMenuSession {
     _pressArea = pressArea;
     _items = items;
     _direction = direction;
-    _radius = radius ?? radiusForCount(items.length);
+    _fixedSlots = fixedSlots;
+    _slotCount = math.max(1, slotCount);
+    if (fixedSlots) {
+      if (itemSlots != null && itemSlots.length == items.length) {
+        _itemSlots = [
+          for (final s in itemSlots) s.clamp(0, _slotCount - 1),
+        ];
+      } else {
+        _itemSlots = [for (var i = 0; i < items.length; i++) i];
+      }
+    } else {
+      _itemSlots = const [];
+    }
+    _radius = radius ??
+        (fixedSlots
+            ? RadialMenuFixedSlots.radius
+            : radiusForCount(items.length));
     _sweepStart = sweepStart;
     _sweepEnd = sweepEnd;
     _pressAreaIndicatorBuilder = pressAreaIndicatorBuilder;
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
 
     final overlay = Overlay.of(context, rootOverlay: true);
     _menuEntry = OverlayEntry(builder: (_) => _buildOverlay());
@@ -112,57 +153,80 @@ class RadialMenuSession {
   void updatePointer(Offset pointer) {
     final center = _menuCenter;
     if (center == null || _menuEntry == null) return;
-    final dx = pointer.dx - center.dx;
-    final dy = pointer.dy - center.dy;
-    final distance = math.sqrt(dx * dx + dy * dy);
     int? newIndex;
-    // 极轴偏角 φ：0 = 展开方向正前方（up 为正上、down 为正下），左负右正。
-    // up: 正上为屏幕角 -π/2 → φ = angle + π/2
-    // down: 正下为屏幕角 π/2，且屏幕左侧同样映射为 φ 负 → φ = π/2 - angle
-    final up = _direction == RadialMenuDirection.up;
-    final angle = math.atan2(dy, dx);
-    final phi = up
-        ? _wrapAngle(angle + math.pi / 2)
-        : _wrapAngle(math.pi / 2 - angle);
-    // 死区三条：紧贴圆心；手指还停在按压区域上（长按起手位置，避免
-    // 倾斜窗口下菜单一弹出就误高亮端项）；落在窗口背面（偏离窗口中线
-    // 超过 π/2 或窗口半宽+余量，即明显拖回按压侧）。
-    // 窗口内及边缘附近可命中，超窗 clamp 到端项。
-    final mid = (_sweepStart + _sweepEnd) / 2;
-    final offMid = (phi - mid).abs();
-    final halfSweep = (_sweepEnd - _sweepStart) / 2;
-    final deadBeyond = math.max(halfSweep + 0.35, math.pi / 2);
-    final onPressArea =
-        _pressArea != null && _pressArea!.inflate(6).contains(pointer);
-    if (distance < 18 || onPressArea || offMid > deadBeyond) {
-      newIndex = null;
-    } else {
-      final n = _items.length;
-      final step = n > 1 ? (_sweepEnd - _sweepStart) / (n - 1) : 0.0;
-      if (n == 1 || step <= 1e-6) {
-        newIndex = 0;
+    if (_fixedSlots) {
+      // 固定坑：命中返回 slot，再映射回 items 下标；空坑不触发。
+      final occupied = _itemSlots.toSet();
+      final slot = RadialMenuFixedSlots.hitIndex(
+        pointer: pointer,
+        center: center,
+        occupiedSlots: occupied,
+        pressArea: _pressArea,
+        direction: _direction,
+        radius: _radius,
+        sweepStart: _sweepStart,
+        sweepEnd: _sweepEnd,
+        slotCount: _slotCount,
+      );
+      if (slot == null) {
+        newIndex = null;
       } else {
-        final normalized = (phi - _sweepStart) / step;
-        newIndex = normalized.round().clamp(0, n - 1);
+        final idx = _itemSlots.indexOf(slot);
+        newIndex = idx >= 0 ? idx : null;
+      }
+    } else {
+      final dx = pointer.dx - center.dx;
+      final dy = pointer.dy - center.dy;
+      final distance = math.sqrt(dx * dx + dy * dy);
+      // 极轴偏角 φ：0 = 展开方向正前方（up 为正上、down 为正下），左负右正。
+      // up: 正上为屏幕角 -π/2 → φ = angle + π/2
+      // down: 正下为屏幕角 π/2，且屏幕左侧同样映射为 φ 负 → φ = π/2 - angle
+      final up = _direction == RadialMenuDirection.up;
+      final angle = math.atan2(dy, dx);
+      final phi = up
+          ? _wrapAngle(angle + math.pi / 2)
+          : _wrapAngle(math.pi / 2 - angle);
+      // 死区三条：紧贴圆心；手指还停在按压区域上（长按起手位置，避免
+      // 倾斜窗口下菜单一弹出就误高亮端项）；落在窗口背面（偏离窗口中线
+      // 超过 π/2 或窗口半宽+余量，即明显拖回按压侧）。
+      // 窗口内及边缘附近可命中，超窗 clamp 到端项。
+      final mid = (_sweepStart + _sweepEnd) / 2;
+      final offMid = (phi - mid).abs();
+      final halfSweep = (_sweepEnd - _sweepStart) / 2;
+      final deadBeyond = math.max(halfSweep + 0.35, math.pi / 2);
+      final onPressArea =
+          _pressArea != null && _pressArea!.inflate(6).contains(pointer);
+      if (distance < 18 || onPressArea || offMid > deadBeyond) {
+        newIndex = null;
+      } else {
+        final n = _items.length;
+        final step = n > 1 ? (_sweepEnd - _sweepStart) / (n - 1) : 0.0;
+        if (n == 1 || step <= 1e-6) {
+          newIndex = 0;
+        } else {
+          final normalized = (phi - _sweepStart) / step;
+          newIndex = normalized.round().clamp(0, n - 1);
+        }
       }
     }
-    final changed = newIndex != _highlightedIndex;
-    _highlightedIndex = newIndex;
-    if (changed && newIndex != null) {
+    final changed = newIndex != _highlightedIndexNotifier.value;
+    if (!changed) return;
+    _highlightedIndexNotifier.value = newIndex;
+    if (newIndex != null) {
       HapticFeedback.selectionClick();
     }
-    _menuEntry?.markNeedsBuild();
+    // Highlight is driven by ValueNotifier; avoid whole OverlayEntry rebuild.
   }
 
   /// 松手：触发当前高亮项（若有）并开始收回动画
   void selectAndClose() {
-    final idx = _highlightedIndex;
+    final idx = _highlightedIndexNotifier.value;
     final items = _items;
     final hit = (idx != null && idx >= 0 && idx < items.length)
         ? items[idx]
         : null;
     // 清空高亮，让收回动画里所有项一起向中心回流（避免某一项保留放大态）
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _beginClose();
     if (hit != null) {
       HapticFeedback.mediumImpact();
@@ -172,7 +236,7 @@ class RadialMenuSession {
 
   /// 手势取消：直接开始收回动画
   void cancel() {
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _beginClose();
   }
 
@@ -182,8 +246,11 @@ class RadialMenuSession {
     _menuEntry = null;
     _menuCenter = null;
     _pressArea = null;
-    _highlightedIndex = null;
+    _highlightedIndexNotifier.value = null;
     _items = const [];
+    _itemSlots = const [];
+    _fixedSlots = false;
+    _slotCount = RadialMenuFixedSlots.maxSlots;
     _pressAreaIndicatorBuilder = null;
     _menuClosing = false;
   }
@@ -203,11 +270,14 @@ class RadialMenuSession {
       center: _menuCenter ?? Offset.zero,
       pressArea: _pressArea,
       items: _items,
-      highlightedIndex: _highlightedIndex,
+      itemSlots: _itemSlots,
+      highlightedIndexListenable: _highlightedIndexNotifier,
       radius: _radius,
       direction: _direction,
       sweepStart: _sweepStart,
       sweepEnd: _sweepEnd,
+      fixedSlots: _fixedSlots,
+      slotCount: _slotCount,
       closing: _menuClosing,
       pressAreaIndicatorBuilder: _pressAreaIndicatorBuilder,
       onClosed: dispose,
@@ -222,13 +292,16 @@ class RadialMenuOverlay extends StatefulWidget {
     required this.center,
     required this.pressArea,
     required this.items,
-    required this.highlightedIndex,
+    this.itemSlots = const [],
+    required this.highlightedIndexListenable,
     required this.radius,
     required this.closing,
     required this.onClosed,
     this.direction = RadialMenuDirection.up,
     this.sweepStart = -math.pi / 2,
     this.sweepEnd = math.pi / 2,
+    this.fixedSlots = false,
+    this.slotCount = RadialMenuFixedSlots.maxSlots,
     this.pressAreaIndicatorBuilder,
   });
 
@@ -237,7 +310,10 @@ class RadialMenuOverlay extends StatefulWidget {
   /// 按压区域的全局矩形，作为替代显示的锚点
   final Rect? pressArea;
   final List<RadialMenuItem> items;
-  final int? highlightedIndex;
+  /// 与 [items] 平行：固定坑位下每个 item 的 slot 索引。
+  final List<int> itemSlots;
+  /// 当前高亮 item 下标；由 session 的 ValueNotifier 驱动，避免整 overlay 重建。
+  final ValueListenable<int?> highlightedIndexListenable;
   final double radius;
   final RadialMenuDirection direction;
 
@@ -245,6 +321,10 @@ class RadialMenuOverlay extends StatefulWidget {
   /// 屏幕边缘时旋转/收窄窗口可让弧始终锚定圆心，而不是把圆心挪走。
   final double sweepStart;
   final double sweepEnd;
+
+  /// 固定槽位布局：半圆按 [slotCount] 坑均分，位置由 [itemSlots] 指定。
+  final bool fixedSlots;
+  final int slotCount;
 
   /// 父层请求收起菜单：动画从当前进度反向跑回 0，结束后调用 [onClosed]
   final bool closing;
@@ -309,54 +389,59 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final items = widget.items;
-    final highlightedIndex = widget.highlightedIndex;
-    final highlightedItem =
-        (highlightedIndex != null &&
-            highlightedIndex >= 0 &&
-            highlightedIndex < items.length)
-        ? items[highlightedIndex]
-        : null;
-
+    // 背景模糊单独订阅动画，避免高亮变化时连带全屏 BackdropFilter 重绘。
+    // 菜单项层订阅同一 controller；高亮只经 ValueListenable 细粒度刷新。
     return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          // 入场用 easeOutBack 让项"弹"出来一点；出场用 easeInCubic 让回缩干脆
-          final raw = _controller.value;
-          final t = widget.closing
-              ? Curves.easeInCubic.transform(raw)
-              : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
-          // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
-          final fadeT = raw;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: _maxBlur * fadeT,
-                    sigmaY: _maxBlur * fadeT,
-                  ),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: _maxDim * fadeT),
-                  ),
-                ),
-              ),
-              for (int i = 0; i < items.length; i++)
-                _buildItem(context, i, items[i], t, fadeT),
-              if (widget.pressArea != null)
-                _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
-              if (highlightedItem != null && !widget.closing)
-                _buildHeaderTooltip(context, highlightedItem, fadeT),
-            ],
-          );
-        },
+      child: Stack(
+        children: [
+          _RadialMenuBackdrop(
+            animation: _controller,
+            maxBlur: _maxBlur,
+            maxDim: _maxDim,
+          ),
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              // 入场用 easeOutBack 让项"弹"出来一点；出场用 easeInCubic 让回缩干脆
+              final raw = _controller.value;
+              final t = widget.closing
+                  ? Curves.easeInCubic.transform(raw)
+                  : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
+              // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
+              final fadeT = raw;
+              final items = widget.items;
+              return Stack(
+                children: [
+                  for (int i = 0; i < items.length; i++)
+                    _buildItem(context, i, items[i], t, fadeT),
+                  if (widget.pressArea != null)
+                    _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
+                  if (!widget.closing) _buildHeaderTooltipLayer(context, fadeT),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
   /// 扇形目标位置：第 index 项最终落点
   Offset _itemTargetPosition(int index) {
+    if (widget.fixedSlots) {
+      final slot = (index < widget.itemSlots.length)
+          ? widget.itemSlots[index]
+          : index;
+      return RadialMenuFixedSlots.positionForSlot(
+        slot: slot,
+        center: widget.center,
+        direction: widget.direction,
+        radius: widget.radius,
+        sweepStart: widget.sweepStart,
+        sweepEnd: widget.sweepEnd,
+        slotCount: widget.slotCount,
+      );
+    }
     final n = widget.items.length;
     final up = widget.direction == RadialMenuDirection.up;
     // 极轴偏角 φ：单项放窗口中点，多项沿窗口均匀分布
@@ -384,56 +469,75 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     double fadeT,
   ) {
     final theme = Theme.of(context);
-    final isHighlighted = widget.highlightedIndex == index;
     final emitter = _emitterCenter;
     final target = _itemTargetPosition(index);
     // 衍生：项的中心从按压区域 emitter 沿直线 lerp 到目标半圆位置
     final pos = Offset.lerp(emitter, target, t)!;
-    // 衍生过程中，项尺寸从 0 长到正常；高亮再额外乘 1.2
+    // Base size follows emerge animation only. Highlight scale is applied
+    // inside a tiny ValueListenableBuilder so slot hops do not re-layout peers.
     final emergeScale = t.clamp(0.0, 1.0);
-    final highlightScale = isHighlighted ? 1.2 : 1.0;
-    final scale = emergeScale * highlightScale;
-    final renderSize = _itemSize * scale;
-    if (renderSize < 0.5) {
-      // 尺寸接近 0 时直接不渲染，避免一帧闪烁
+    if (emergeScale < 0.01) {
       return const SizedBox.shrink();
     }
+    final baseSize = _itemSize * emergeScale;
+    final opacity = fadeT.clamp(0.0, 1.0);
+    // Reserve highlight max size so Positioned geometry stays stable.
+    final hostSize = baseSize * 1.2;
 
     return Positioned(
       key: ValueKey('radial_menu_item_$index'),
-      left: pos.dx - renderSize / 2,
-      top: pos.dy - renderSize / 2,
-      width: renderSize,
-      height: renderSize,
-      child: Opacity(
-        // fadeT 让收回时图标也淡出，避免到最后才"啪"一下消失
-        opacity: fadeT.clamp(0.0, 1.0),
-        child: Material(
-          color: isHighlighted
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          shape: const CircleBorder(),
-          elevation: isHighlighted ? 6 : 2,
-          shadowColor: isHighlighted
-              ? theme.colorScheme.primary.withValues(alpha: 0.4)
-              : Colors.black26,
-          child: Center(
-            child: Icon(
-              item.icon,
-              size: 24 * highlightScale,
-              color: isHighlighted
-                  ? theme.colorScheme.onPrimary
-                  : theme.colorScheme.onSurface,
-            ),
-          ),
+      left: pos.dx - hostSize / 2,
+      top: pos.dy - hostSize / 2,
+      width: hostSize,
+      height: hostSize,
+      child: Center(
+        child: ValueListenableBuilder<int?>(
+          valueListenable: widget.highlightedIndexListenable,
+          builder: (context, highlightedIndex, _) {
+            final highlighted = highlightedIndex == index;
+            final scale = highlighted ? 1.2 : 1.0;
+            final renderSize = baseSize * scale;
+            return Opacity(
+              opacity: opacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: highlighted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.surfaceContainerHighest,
+                  boxShadow: [
+                    BoxShadow(
+                      color: highlighted
+                          ? theme.colorScheme.primary.withValues(alpha: 0.28)
+                          : Colors.black.withValues(alpha: 0.16),
+                      blurRadius: highlighted ? 8 : 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: renderSize,
+                  height: renderSize,
+                  child: Center(
+                    child: Icon(
+                      item.icon,
+                      size: 24 * scale,
+                      color: highlighted
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildHeaderTooltip(
+  Widget _buildHeaderTooltipLayer(
     BuildContext context,
-    RadialMenuItem item,
     double opacity,
   ) {
     final theme = Theme.of(context);
@@ -450,51 +554,70 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
         : widget.center.dy + widget.radius + _tooltipGap;
 
     return Positioned.fill(
-      child: CustomSingleChildLayout(
-        delegate: _TooltipLayoutDelegate(
-          anchor: Offset(anchorX, anchorY),
-          growsDown: !up,
-          safeInsets: mq.padding,
-        ),
-        child: Opacity(
-          opacity: opacity,
-          child: Material(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(24),
-            elevation: 6,
-            shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 10,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    item.icon,
-                    size: 18,
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      item.label,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onPrimary,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+      child: ValueListenableBuilder<int?>(
+        valueListenable: widget.highlightedIndexListenable,
+        builder: (context, highlightedIndex, _) {
+          final items = widget.items;
+          if (highlightedIndex == null ||
+              highlightedIndex < 0 ||
+              highlightedIndex >= items.length) {
+            return const SizedBox.shrink();
+          }
+          final item = items[highlightedIndex];
+          return CustomSingleChildLayout(
+            delegate: _TooltipLayoutDelegate(
+              anchor: Offset(anchorX, anchorY),
+              growsDown: !up,
+              safeInsets: mq.padding,
+            ),
+            child: Opacity(
+              opacity: opacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        item.icon,
+                        size: 18,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          item.label,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.onPrimary,
+                            fontWeight: FontWeight.w600,
+                            height: 1.1,
+                            letterSpacing: 0.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -519,11 +642,18 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       child: IgnorePointer(
         child: Opacity(
           opacity: opacity,
-          child: Material(
-            color: theme.colorScheme.primary,
-            shape: const StadiumBorder(),
-            elevation: 6,
-            shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: theme.colorScheme.primary,
+              shape: const StadiumBorder(),
+              shadows: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Center(
               child: Icon(
                 Symbols.touch_app_rounded,
@@ -744,6 +874,85 @@ class _RadialLongPressMenuState extends State<RadialLongPressMenu> {
             ),
       },
       child: widget.child,
+    );
+  }
+}
+
+
+/// 径向菜单全屏背景：只跟随入场/退场动画，不响应高亮变化。
+///
+/// Windows 上 [BackdropFilter] 全屏模糊非常贵；再叠加指针移动时的
+/// 高频 rebuild 会把话题页拖成严重掉帧。背景拆成独立 State 后：
+/// - 动画 tick 才重绘模糊层
+/// - 高亮切换只重建菜单项层
+class _RadialMenuBackdrop extends StatefulWidget {
+  const _RadialMenuBackdrop({
+    required this.animation,
+    required this.maxBlur,
+    required this.maxDim,
+  });
+
+  final Animation<double> animation;
+  final double maxBlur;
+  final double maxDim;
+
+  @override
+  State<_RadialMenuBackdrop> createState() => _RadialMenuBackdropState();
+}
+
+class _RadialMenuBackdropState extends State<_RadialMenuBackdrop> {
+  /// Quantized animation bucket so we do not setState every engine tick.
+  int _paintBucket = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addListener(_onTick);
+  }
+
+  @override
+  void didUpdateWidget(covariant _RadialMenuBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeListener(_onTick);
+      widget.animation.addListener(_onTick);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _onTick() {
+    // 24 buckets over [0,1] ≈ every ~9ms at 220ms enter — plenty smooth for
+    // dim, and far cheaper than full rebuild at display refresh rate.
+    final bucket = (widget.animation.value * 24).round();
+    if (bucket == _paintBucket) return;
+    _paintBucket = bucket;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fadeT = widget.animation.value;
+    final sigma = widget.maxBlur * fadeT;
+    // 桌面端全屏高斯模糊成本远高于移动端：Windows/Linux 用纯遮罩即可。
+    final useBlur = !(defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux);
+    final dim = ColoredBox(
+      color: Colors.black.withValues(alpha: widget.maxDim * fadeT),
+    );
+    return Positioned.fill(
+      child: RepaintBoundary(
+        child: useBlur && sigma > 0.01
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                child: dim,
+              )
+            : dim,
+      ),
     );
   }
 }

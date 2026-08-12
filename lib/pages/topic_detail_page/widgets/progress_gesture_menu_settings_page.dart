@@ -1,15 +1,16 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
 import '../../../providers/preferences_provider.dart';
+import '../../../widgets/common/radial_menu_fixed_slots.dart';
 import 'progress_gesture_action_meta.dart';
 
-/// 长按菜单功能设置页：在半圆预览区里直接完成全部操作（拖动排序、拖到中央
-/// 删除区移除），下方「可添加」列表点 + 添加。
+/// 长按菜单功能设置页：
+/// - 半圆固定 8 坑，坑位不随启用数量自动对齐
+/// - 拖到指定坑 = 用户决定按钮进哪个坑
+/// - 拖到中央删除区移除；下方列表点 + 填入最左空坑
 class ProgressGestureMenuSettingsPage extends ConsumerStatefulWidget {
   const ProgressGestureMenuSettingsPage({super.key});
 
@@ -20,42 +21,61 @@ class ProgressGestureMenuSettingsPage extends ConsumerStatefulWidget {
 
 class _ProgressGestureMenuSettingsPageState
     extends ConsumerState<ProgressGestureMenuSettingsPage> {
-  late List<ProgressGestureAction> _selected;
+  late List<ProgressGestureAction?> _slots;
 
   @override
   void initState() {
     super.initState();
-    _selected = List<ProgressGestureAction>.from(
+    _slots = normalizeProgressGestureMenuSlots(
       ref.read(preferencesProvider).progressGestureMenuActions,
     );
   }
 
+  int get _filledCount => progressGestureMenuFilledCount(_slots);
+
+  Set<ProgressGestureAction> get _occupiedActions =>
+      progressGestureMenuOccupiedActions(_slots).toSet();
+
   void _commit() {
     ref
         .read(preferencesProvider.notifier)
-        .setProgressGestureMenuActions(_selected);
+        .setProgressGestureMenuActions(_slots);
   }
 
+  /// 点 +：放入最左空坑；8 坑都满则忽略。
   void _add(ProgressGestureAction action) {
-    if (_selected.contains(action)) return;
-    if (_selected.length >= kProgressGestureMenuMax) return;
-    setState(() => _selected.add(action));
-    _commit();
-  }
-
-  void _remove(int index) {
-    if (index < 0 || index >= _selected.length) return;
-    setState(() => _selected.removeAt(index));
-    _commit();
-  }
-
-  void _reorder(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _selected.length) return;
-    if (oldIndex == newIndex) return;
+    if (_occupiedActions.contains(action)) return;
+    final empty = _slots.indexWhere((e) => e == null);
+    if (empty < 0) return;
     setState(() {
-      final item = _selected.removeAt(oldIndex);
-      final clamped = newIndex.clamp(0, _selected.length);
-      _selected.insert(clamped, item);
+      _slots = List<ProgressGestureAction?>.from(_slots);
+      _slots[empty] = action;
+    });
+    _commit();
+  }
+
+  void _clearSlot(int slot) {
+    if (slot < 0 || slot >= _slots.length) return;
+    if (_slots[slot] == null) return;
+    setState(() {
+      _slots = List<ProgressGestureAction?>.from(_slots);
+      _slots[slot] = null;
+    });
+    _commit();
+  }
+
+  /// 把 [fromSlot] 的动作放到 [toSlot]。
+  /// 目标有动作时交换，保持「坑位由用户指定、不自动挤齐」。
+  void _moveSlot(int fromSlot, int toSlot) {
+    if (fromSlot == toSlot) return;
+    if (fromSlot < 0 || fromSlot >= _slots.length) return;
+    if (toSlot < 0 || toSlot >= _slots.length) return;
+    if (_slots[fromSlot] == null) return;
+    setState(() {
+      _slots = List<ProgressGestureAction?>.from(_slots);
+      final tmp = _slots[toSlot];
+      _slots[toSlot] = _slots[fromSlot];
+      _slots[fromSlot] = tmp;
     });
     _commit();
   }
@@ -66,7 +86,7 @@ class _ProgressGestureMenuSettingsPageState
         .resetProgressGestureMenuActions();
     if (!mounted) return;
     setState(() {
-      _selected = List<ProgressGestureAction>.from(
+      _slots = normalizeProgressGestureMenuSlots(
         ref.read(preferencesProvider).progressGestureMenuActions,
       );
     });
@@ -79,11 +99,11 @@ class _ProgressGestureMenuSettingsPageState
     final longPressEnabled = ref.watch(
       preferencesProvider.select((p) => p.progressGestureLongPressEnabled),
     );
-    // 长按菜单候选不包含「无」（none 仅对滑动方向有意义）
+    final occupied = _occupiedActions;
     final available = ProgressGestureAction.values
-        .where((a) => a != ProgressGestureAction.none && !_selected.contains(a))
+        .where((a) => a != ProgressGestureAction.none && !occupied.contains(a))
         .toList();
-    final atLimit = _selected.length >= kProgressGestureMenuMax;
+    final atLimit = _filledCount >= kProgressGestureMenuMax;
     final canEdit = longPressEnabled;
 
     return Scaffold(
@@ -98,7 +118,6 @@ class _ProgressGestureMenuSettingsPageState
       ),
       body: ListView(
         children: [
-          // 启用开关
           SwitchListTile(
             value: longPressEnabled,
             title: Text(l10n.progressGesture_longPressEnable),
@@ -112,7 +131,6 @@ class _ProgressGestureMenuSettingsPageState
                 .setProgressGestureLongPressEnabled(v),
           ),
           const Divider(height: 1),
-          // 预览 + 操作区（禁用时整体置灰）
           Opacity(
             opacity: canEdit ? 1.0 : 0.4,
             child: IgnorePointer(
@@ -122,17 +140,17 @@ class _ProgressGestureMenuSettingsPageState
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                     child: _PreviewArea(
-                      items: _selected,
-                      onReorder: _reorder,
-                      onRemove: _remove,
+                      slots: _slots,
+                      onMove: _moveSlot,
+                      onClear: _clearSlot,
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                     child: Text(
-                      _selected.isEmpty
+                      _filledCount == 0
                           ? l10n.progressGesture_emptySelection
-                          : '${_selected.length}/$kProgressGestureMenuMax · '
+                          : '$_filledCount/$kProgressGestureMenuMax · '
                                 '${l10n.progressGesture_longPressReorderHint}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -191,66 +209,40 @@ class _ProgressGestureMenuSettingsPageState
 
 class _PreviewArea extends StatefulWidget {
   const _PreviewArea({
-    required this.items,
-    required this.onReorder,
-    required this.onRemove,
+    required this.slots,
+    required this.onMove,
+    required this.onClear,
   });
 
-  final List<ProgressGestureAction> items;
-  final void Function(int oldIndex, int newIndex) onReorder;
-  final void Function(int index) onRemove;
+  final List<ProgressGestureAction?> slots;
+  final void Function(int fromSlot, int toSlot) onMove;
+  final void Function(int slot) onClear;
 
   @override
   State<_PreviewArea> createState() => _PreviewAreaState();
 }
 
 class _PreviewAreaState extends State<_PreviewArea> {
-  int? _draggingIndex;
-  int? _hoverSlot; // 当前手指悬停的目标 slot；null 表示无有效悬停
-  bool _hoverDelete = false; // 手指悬停在中央删除区
+  int? _draggingSlot;
+  int? _hoverSlot;
+  bool _hoverDelete = false;
 
-  double _radiusForCount(int count) {
-    if (count <= 4) return 92;
-    if (count <= 6) return 108;
-    return 128;
-  }
+  double get _previewRadius => RadialMenuFixedSlots.radius;
 
-  Offset _itemPosition(int index, int n, Offset center, double radius) {
-    final double angle;
-    if (n == 1) {
-      angle = -math.pi / 2;
-    } else {
-      final step = math.pi / (n - 1);
-      angle = -math.pi + index * step;
-    }
-    return Offset(
-      center.dx + radius * math.cos(angle),
-      center.dy + radius * math.sin(angle),
+  Offset _itemPosition(int slot, Offset center) {
+    return RadialMenuFixedSlots.positionForSlot(
+      slot: slot,
+      center: center,
+      radius: _previewRadius,
     );
   }
 
-  /// 计算项在 *预览状态* 下应该出现在哪个 slot。
-  /// 拖动时，其他项让出 _hoverSlot 的位置；被拖项站到 _hoverSlot。
-  int _previewSlotFor(int actualIndex, int n) {
-    if (_draggingIndex == null || _hoverSlot == null || _hoverDelete) {
-      return actualIndex;
-    }
-    if (actualIndex == _draggingIndex) return _hoverSlot!;
-    final logical = actualIndex < _draggingIndex!
-        ? actualIndex
-        : actualIndex - 1;
-    final hover = _hoverSlot!.clamp(0, n - 1);
-    return logical < hover ? logical : logical + 1;
-  }
-
   void _resetDragState() {
-    if (_draggingIndex == null &&
-        _hoverSlot == null &&
-        !_hoverDelete) {
+    if (_draggingSlot == null && _hoverSlot == null && !_hoverDelete) {
       return;
     }
     setState(() {
-      _draggingIndex = null;
+      _draggingSlot = null;
       _hoverSlot = null;
       _hoverDelete = false;
     });
@@ -261,11 +253,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
     required RenderBox box,
     required Offset pillCenter,
     required Rect pillRect,
-    required int n,
   }) {
     final localPos = box.globalToLocal(globalPos);
 
-    // 删除区命中
     if (pillRect.inflate(12).contains(localPos)) {
       if (!_hoverDelete || _hoverSlot != null) {
         setState(() {
@@ -276,19 +266,12 @@ class _PreviewAreaState extends State<_PreviewArea> {
       return;
     }
 
-    // slot 命中：上半圆按角度映射
-    final dx = localPos.dx - pillCenter.dx;
-    final dy = localPos.dy - pillCenter.dy;
-    int? slot;
-    if (dy < -8) {
-      final angle = math.atan2(dy, dx);
-      if (n <= 1) {
-        slot = 0;
-      } else {
-        final step = math.pi / (n - 1);
-        slot = ((angle + math.pi) / step).round().clamp(0, n - 1);
-      }
-    }
+    // 8 固定坑都可命中（含空坑），用户决定放进哪个坑。
+    final slot = RadialMenuFixedSlots.nearestSlot(
+      pointer: localPos,
+      center: pillCenter,
+      pressArea: pillRect,
+    );
 
     if (_hoverSlot != slot || _hoverDelete) {
       setState(() {
@@ -301,13 +284,10 @@ class _PreviewAreaState extends State<_PreviewArea> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final n = widget.items.length;
-    final radius = n == 0 ? 92.0 : _radiusForCount(n);
-    final height = radius + 32 + 40 + 16; // radius + item 半径 + pill + 下边距
-
-    if (n == 0) {
-      return _EmptyPreview(height: height);
-    }
+    final slots = widget.slots;
+    final filled = progressGestureMenuFilledCount(slots);
+    final radius = _previewRadius;
+    final height = radius + 32 + 40 + 16;
 
     return SizedBox(
       height: height,
@@ -331,7 +311,6 @@ class _PreviewAreaState extends State<_PreviewArea> {
                 box: box,
                 pillCenter: pillCenter,
                 pillRect: pillRect,
-                n: n,
               );
             },
             onLeave: (_) {
@@ -344,9 +323,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
             },
             onAcceptWithDetails: (details) {
               if (_hoverDelete) {
-                widget.onRemove(details.data);
+                widget.onClear(details.data);
               } else if (_hoverSlot != null) {
-                widget.onReorder(details.data, _hoverSlot!);
+                widget.onMove(details.data, _hoverSlot!);
               }
               _resetDragState();
             },
@@ -354,14 +333,31 @@ class _PreviewAreaState extends State<_PreviewArea> {
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // 半圆 items（每个用 AnimatedPositioned 让 preview 重排平滑）
-                  for (int i = 0; i < n; i++)
-                    _buildSlotItem(i, n, pillCenter, radius, theme),
-                  // 中间：拖动时是删除区，闲置时是 pill 占位
+                  // 始终画出 8 个固定坑位轮廓，空坑可见。
+                  for (int slot = 0; slot < kProgressGestureMenuMax; slot++)
+                    _buildPitMarker(
+                      slot: slot,
+                      pillCenter: pillCenter,
+                      theme: theme,
+                      occupied: slots[slot] != null,
+                      highlighted:
+                          _hoverSlot == slot &&
+                          _draggingSlot != null &&
+                          !_hoverDelete,
+                    ),
+                  // 已占用坑上的可拖动按钮
+                  for (int slot = 0; slot < slots.length; slot++)
+                    if (slots[slot] != null)
+                      _buildSlotItem(
+                        slot: slot,
+                        action: slots[slot]!,
+                        pillCenter: pillCenter,
+                        theme: theme,
+                      ),
                   Positioned.fromRect(
                     rect: pillRect,
-                    child: _draggingIndex == null
-                        ? _buildIdlePill(context, theme)
+                    child: _draggingSlot == null
+                        ? _buildIdlePill(context, theme, filled)
                         : _buildDeleteZone(
                             context,
                             theme,
@@ -377,32 +373,64 @@ class _PreviewAreaState extends State<_PreviewArea> {
     );
   }
 
-  Widget _buildSlotItem(
-    int actualIndex,
-    int n,
-    Offset pillCenter,
-    double radius,
-    ThemeData theme,
-  ) {
-    final slot = _previewSlotFor(actualIndex, n);
-    final pos = _itemPosition(slot, n, pillCenter, radius);
+  Widget _buildPitMarker({
+    required int slot,
+    required Offset pillCenter,
+    required ThemeData theme,
+    required bool occupied,
+    required bool highlighted,
+  }) {
+    final pos = _itemPosition(slot, pillCenter);
+    const size = 48.0;
+    final borderColor = highlighted
+        ? theme.colorScheme.primary
+        : theme.colorScheme.outline.withValues(alpha: occupied ? 0.0 : 0.35);
+    return Positioned(
+      left: pos.dx - size / 2,
+      top: pos.dy - size / 2,
+      width: size,
+      height: size,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: highlighted
+                ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: Border.all(
+              color: borderColor,
+              width: highlighted ? 2 : 1.2,
+              style: occupied && !highlighted
+                  ? BorderStyle.none
+                  : BorderStyle.solid,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotItem({
+    required int slot,
+    required ProgressGestureAction action,
+    required Offset pillCenter,
+    required ThemeData theme,
+  }) {
+    final pos = _itemPosition(slot, pillCenter);
     const itemSize = 48.0;
-    final action = widget.items[actualIndex];
-    return AnimatedPositioned(
-      key: ValueKey('item_$actualIndex'),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    return Positioned(
+      key: ValueKey('slot_$slot'),
       left: pos.dx - itemSize / 2,
       top: pos.dy - itemSize / 2,
       width: itemSize,
       height: itemSize,
       child: LongPressDraggable<int>(
-        data: actualIndex,
+        data: slot,
         delay: const Duration(milliseconds: 200),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         feedback: _buildItemChip(context, action, theme, dragging: true),
         childWhenDragging: _buildPlaceholder(theme),
-        onDragStarted: () => setState(() => _draggingIndex = actualIndex),
+        onDragStarted: () => setState(() => _draggingSlot = slot),
         onDragCompleted: _resetDragState,
         onDraggableCanceled: (_, _) => _resetDragState(),
         onDragEnd: (_) => _resetDragState(),
@@ -454,7 +482,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
     );
   }
 
-  Widget _buildIdlePill(BuildContext context, ThemeData theme) {
+  Widget _buildIdlePill(BuildContext context, ThemeData theme, int filled) {
     return Material(
       color: theme.colorScheme.surface,
       shape: const StadiumBorder(),
@@ -466,7 +494,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '${widget.items.length}',
+              '$filled',
               style: theme.textTheme.titleMedium?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w600,
@@ -526,46 +554,6 @@ class _PreviewAreaState extends State<_PreviewArea> {
                   : theme.colorScheme.onErrorContainer,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyPreview extends StatelessWidget {
-  const _EmptyPreview({required this.height});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SizedBox(
-      height: height,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Symbols.touch_app_rounded,
-                size: 20,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                context.l10n.progressGesture_emptySelection,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
