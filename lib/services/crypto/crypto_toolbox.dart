@@ -281,21 +281,7 @@ class CryptoToolbox {
 
   /// 解码内容是否像 UTF-8 可读文本（无明显控制字符/替换符）
   static bool _looksLikeUtf8Text(Uint8List bytes) {
-    final String decoded;
-    try {
-      decoded = utf8.decode(bytes); // 严格模式：坏序列直接失败
-    } catch (_) {
-      return false;
-    }
-    var control = 0;
-    for (final unit in decoded.codeUnits) {
-      // C0 控制字符（排除 \t\n\r）与 U+FFFD 替换符计入「不像文本」
-      if ((unit < 0x20 && unit != 0x09 && unit != 0x0a && unit != 0x0d) ||
-          unit == 0xfffd) {
-        control++;
-      }
-    }
-    return control == 0;
+    return isMostlyUtf8TextBytes(bytes);
   }
 }
 

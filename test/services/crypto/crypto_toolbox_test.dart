@@ -306,6 +306,40 @@ void main() {
       expect(suggestion.algorithmId, 'aes-256-cbc');
     });
 
+    test('Base64 keeps UTF-8 text with CESU-8 emoji and one bad byte', () {
+      final bytes = <int>[
+        ...utf8.encode('Synthetic UTF-8 text with \u4e2d\u6587 '),
+        // U+1F449 encoded as CESU-8: D83D DC49 -> ED A0 BD ED B1 89.
+        0xed, 0xa0, 0xbd, 0xed, 0xb1, 0x89,
+        ...utf8.encode(' tail with enough readable text'),
+        0xff, // one malformed trailing byte
+      ];
+      final sample = base64.encode(bytes);
+
+      expect(CryptoToolbox.suggestDecrypt(sample).algorithmId, 'base64');
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: sample,
+          algorithmId: 'base64',
+          params: const CryptoParams(),
+        ),
+        'Synthetic UTF-8 text with \u4e2d\u6587 \u{1F449} '
+        'tail with enough readable text\uFFFD',
+      );
+    });
+
+    test('Base64 keeps Latin-1 fallback for genuinely non-UTF-8 bytes', () {
+      final sample = base64.encode(<int>[0x43, 0x61, 0x66, 0xe9]);
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: sample,
+          algorithmId: 'base64',
+          params: const CryptoParams(),
+        ),
+        'Caf\u00e9',
+      );
+    });
+
     test('纯 base64 内容探测：UTF-8 文本建议 base64、二进制建议对称算法', () {
       // UTF-8 可读 → base64 编码
       expect(

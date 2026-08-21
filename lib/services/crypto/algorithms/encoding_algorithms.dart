@@ -34,14 +34,7 @@ class Base64Algorithm extends CryptoAlgorithm {
   String decrypt(String ciphertext, CryptoParams params) {
     final normalized = _normalize(ciphertext);
     try {
-      return utf8.decode(base64.decode(normalized));
-    } on FormatException {
-      // 非 UTF-8 字节也允许以 Latin-1 兜底展示（CyberChef 行为）
-      try {
-        return latin1.decode(base64.decode(normalized));
-      } catch (_) {
-        throw const CryptoException('无效的 Base64 密文');
-      }
+      return decodeUtf8Compat(base64.decode(normalized));
     } catch (_) {
       throw const CryptoException('无效的 Base64 密文');
     }
@@ -63,6 +56,79 @@ class Base64Algorithm extends CryptoAlgorithm {
     return text;
   }
 }
+
+
+/// Decode text-like Base64 payloads without corrupting valid UTF-8 when a
+/// small part of the byte stream uses CESU-8/WTF-8 or is truncated.
+String decodeUtf8Compat(List<int> bytes) {
+  final normalized = _normalizeCesu8SurrogatePairs(bytes);
+  try {
+    return utf8.decode(normalized);
+  } on FormatException {
+    final repaired = utf8.decode(normalized, allowMalformed: true);
+    if (_looksReadableUtf8(repaired)) return repaired;
+    // Keep the previous behavior for genuinely non-UTF-8 byte payloads.
+    return latin1.decode(bytes);
+  }
+}
+
+/// Heuristic used by Base64 sniffing. It accepts paired CESU-8 surrogates and
+/// a very small number of malformed bytes, while still rejecting binary data.
+bool isMostlyUtf8TextBytes(List<int> bytes) {
+  if (bytes.isEmpty) return false;
+  final normalized = _normalizeCesu8SurrogatePairs(bytes);
+  final decoded = utf8.decode(normalized, allowMalformed: true);
+  return _looksReadableUtf8(decoded);
+}
+
+bool _looksReadableUtf8(String decoded) {
+  if (decoded.isEmpty) return false;
+  var runeCount = 0;
+  var replacements = 0;
+  for (final rune in decoded.runes) {
+    runeCount++;
+    if (rune == 0xfffd) replacements++;
+    if (rune < 0x20 && rune != 0x09 && rune != 0x0a && rune != 0x0d) {
+      return false;
+    }
+  }
+  // One-off truncation should not turn an otherwise readable text payload into
+  // a symmetric-cipher suggestion. Random binary data normally fails this bar.
+  return replacements * 20 <= runeCount;
+}
+
+Uint8List _normalizeCesu8SurrogatePairs(List<int> bytes) {
+  final out = BytesBuilder(copy: false);
+  var i = 0;
+  while (i < bytes.length) {
+    if (i + 5 < bytes.length &&
+        bytes[i] == 0xed &&
+        bytes[i + 1] >= 0xa0 &&
+        bytes[i + 1] <= 0xaf &&
+        _isUtf8Continuation(bytes[i + 2]) &&
+        bytes[i + 3] == 0xed &&
+        bytes[i + 4] >= 0xb0 &&
+        bytes[i + 4] <= 0xbf &&
+        _isUtf8Continuation(bytes[i + 5])) {
+      final high = 0xd000 |
+          ((bytes[i + 1] & 0x3f) << 6) |
+          (bytes[i + 2] & 0x3f);
+      final low = 0xd000 |
+          ((bytes[i + 4] & 0x3f) << 6) |
+          (bytes[i + 5] & 0x3f);
+      final scalar =
+          0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00);
+      out.add(utf8.encode(String.fromCharCode(scalar)));
+      i += 6;
+      continue;
+    }
+    out.addByte(bytes[i]);
+    i++;
+  }
+  return out.takeBytes();
+}
+
+bool _isUtf8Continuation(int byte) => byte >= 0x80 && byte <= 0xbf;
 
 /// Hex（小写输出，解码大小写均可）
 class HexAlgorithm extends CryptoAlgorithm {
