@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -60,9 +61,12 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     // 获取下载目录，处理重名
     final dir = await _getDownloadDir();
-    var savePath = _uniquePath(dir.path, initialFileName);
+    var savePath = DownloadService.resolveAvailableSavePath(
+      directory: dir,
+      fileName: initialFileName,
+    );
     // 实际文件名可能带编号（如 "file (1).pdf"）
-    var actualFileName = savePath.split('/').last;
+    var actualFileName = p.basename(savePath);
 
     final id = DateTime.now().millisecondsSinceEpoch.toString();
     final item = DownloadItem(
@@ -88,13 +92,19 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         url,
       );
       if (headerName != null && headerName.isNotEmpty) {
-        final betterPath = _uniquePath(dir.path, headerName);
-        final betterActualName = betterPath.split('/').last;
-        if (betterActualName != actualFileName) {
-          savePath = betterPath;
-          actualFileName = betterActualName;
-          _updateItem(id, fileName: betterActualName, savePath: betterPath);
-          toastHandle.updateFileName(betterActualName);
+        final safeHeaderName = DownloadService.sanitizeFileName(headerName);
+        if (safeHeaderName != null) {
+          final betterPath = DownloadService.resolveAvailableSavePath(
+            directory: dir,
+            fileName: safeHeaderName,
+          );
+          final betterActualName = p.basename(betterPath);
+          if (betterActualName != actualFileName) {
+            savePath = betterPath;
+            actualFileName = betterActualName;
+            _updateItem(id, fileName: betterActualName, savePath: betterPath);
+            toastHandle.updateFileName(betterActualName);
+          }
         }
       }
     }
@@ -237,34 +247,23 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _prefs.setString(_storageKey, jsonStr);
   }
 
-  /// 生成不重名的文件路径：file.pdf → file (1).pdf → file (2).pdf ...
-  static String _uniquePath(String dirPath, String fileName) {
-    var path = '$dirPath/$fileName';
-    if (!File(path).existsSync()) return path;
-
-    final dot = fileName.lastIndexOf('.');
-    final name = dot > 0 ? fileName.substring(0, dot) : fileName;
-    final ext = dot > 0 ? fileName.substring(dot) : '';
-    var i = 1;
-    do {
-      path = '$dirPath/$name ($i)$ext';
-      i++;
-    } while (File(path).existsSync());
-    return path;
-  }
-
   /// 获取下载目录
   /// Android → 公共 Downloads，macOS/Linux/Windows → ~/Downloads
   /// iOS → 应用 Documents（沙盒限制，但通过 Files app 可见）
   Future<Directory> _getDownloadDir() async {
     // 优先使用系统下载目录（Android 公共 Downloads / 桌面 ~/Downloads）
     final downloadsDir = await getDownloadsDirectory();
-    if (downloadsDir != null) return downloadsDir;
+    if (downloadsDir != null) {
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+      return downloadsDir;
+    }
     // 回退到应用文档目录
     final appDir = await getApplicationDocumentsDirectory();
     final fallbackDir = Directory('${appDir.path}/Downloads');
-    if (!fallbackDir.existsSync()) {
-      fallbackDir.createSync(recursive: true);
+    if (!await fallbackDir.exists()) {
+      await fallbackDir.create(recursive: true);
     }
     return fallbackDir;
   }
