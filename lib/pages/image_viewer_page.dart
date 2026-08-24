@@ -399,6 +399,19 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 coverSource: coverSource,
                 zoomed: zoomed,
               );
+              // 源端缩略图盒子的固定宽高比:push 时源在 from,pop(divert)时
+              // 沿用 push 建的 shuttle 仍是 from。cover 裁窗须按它算,不按飞行
+              // 途中变化的画布比例(否则两端完整、中间帧被裁,见
+              // CoverContainFlightImage.sourceAspect)。
+              final BuildContext srcContext =
+                  direction == HeroFlightDirection.pop
+                      ? toContext
+                      : fromContext;
+              double? sourceAspect;
+              final ro = srcContext.findRenderObject();
+              if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                sourceAspect = ro.size.width / ro.size.height;
+              }
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
                 animation:
@@ -409,6 +422,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 // Image(fit:cover) 的可见区域对齐,否则落地瞬间「裁切一条」
                 // 突变成完整图(聊天气泡因 clamp 夹高最明显)
                 coverSource: coverSource,
+                sourceAspect: sourceAspect,
                 fallback: child,
               );
             },

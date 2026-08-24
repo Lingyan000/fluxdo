@@ -21,6 +21,7 @@ class CoverContainFlightImage extends StatefulWidget {
     this.radius = 0,
     this.circular = false,
     this.coverSource = false,
+    this.sourceAspect,
     this.fallback,
   });
 
@@ -41,6 +42,17 @@ class CoverContainFlightImage extends StatefulWidget {
   ///   84% 时,这里算出的正是那 84%);
   /// - false(contain 展示,如轮播/正文单图):贴源端就是完整图。
   final bool coverSource;
+
+  /// **源端缩略图盒子的固定宽高比**(width/height)。
+  ///
+  /// 贴源端(t=0)的 cover 裁窗必须按这个**固定**比例算,而不是飞行途中
+  /// 逐帧变化的画布 `size`。否则:盒子比例在飞行中从源端连续变到查看器,
+  /// 中途既不等于源端也不等于查看器,cover 裁窗就会把本不该裁的裁掉 ——
+  /// 表现为「两端(盒子≈源端 / t 权重归零)都完整、唯独中间帧被裁」
+  /// (真机实测:气泡盒子恰好等于图片比例、不裁切的聊天图,返回途中被裁)。
+  ///
+  /// null = 退化用当前画布比例(旧行为,读不到源端盒子时的兜底)。
+  final double? sourceAspect;
 
   /// 纹理未就绪时的退化显示(通常传 Hero child,= 无插值的旧行为;
   /// 飞行纹理走缓存几乎必然同步命中,此为极端情况兜底,防空白飞行)
@@ -105,6 +117,7 @@ class _CoverContainFlightImageState extends State<CoverContainFlightImage> {
         radius: widget.radius,
         circular: widget.circular,
         coverSource: widget.coverSource || widget.circular,
+        sourceAspect: widget.sourceAspect,
         // 飞行期这个值恒定(退场前一次性发布),故 build 时取一次即可;
         // 作显式参数传入而非在 painter 里读全局单例 —— 后者是隐式依赖,
         // 也让 shouldRepaint 无法参与判断。
@@ -122,6 +135,7 @@ class _CoverContainPainter extends CustomPainter {
     required this.radius,
     required this.circular,
     required this.coverSource,
+    this.sourceAspect,
     this.zoomFraction,
   }) : super(repaint: animation);
 
@@ -132,6 +146,9 @@ class _CoverContainPainter extends CustomPainter {
 
   /// 源端是否 cover 裁切展示(见 [CoverContainFlightImage.coverSource])
   final bool coverSource;
+
+  /// 源端缩略图盒子的固定宽高比(见 [CoverContainFlightImage.sourceAspect])
+  final double? sourceAspect;
 
   /// 放大态下「此刻看得见的那部分图」,全图归一化坐标;null = 未裁切。
   /// 见 [HeroVisibilityController.exitVisibleFraction]。
@@ -162,17 +179,31 @@ class _CoverContainPainter extends CustomPainter {
     final Rect? zoomFraction = this.zoomFraction;
     final Rect fullSrc = Rect.fromLTWH(0, 0, imgW, imgH);
 
-    // 贴源端(t=0):cover 展示 ⇒ 按画布比例裁窗口;contain 展示 ⇒ 完整图
+    // 贴源端(t=0):cover 展示 ⇒ 按**源端盒子固定比例**裁窗口;
+    // contain 展示 ⇒ 完整图。
+    //
+    // 关键:裁窗比例取 [sourceAspect](源端缩略图盒子的固定宽高比),不取
+    // 飞行途中变化的画布 `size`。用 `size` 会让裁窗随盒子比例漂移 —— 两端
+    // 因盒子≈源端 / t 权重归零而正好完整,中间帧却被裁,即真机所见「聊天图
+    // 两头完整、中间裁切」。读不到源端比例时才退化用 `size`。
     final Rect atSource;
     if (coverSource) {
-      final double coverScale = math.max(
-        size.width / imgW,
-        size.height / imgH,
-      );
+      final double boxAspect = sourceAspect ?? (size.width / size.height);
+      final double imgAspect = imgW / imgH;
+      final double winW, winH;
+      if (boxAspect >= imgAspect) {
+        // 盒子比图片扁:满宽、裁高
+        winW = imgW;
+        winH = imgW / boxAspect;
+      } else {
+        // 盒子比图片瘦:满高、裁宽
+        winH = imgH;
+        winW = imgH * boxAspect;
+      }
       atSource = Rect.fromCenter(
         center: Offset(imgW / 2, imgH / 2),
-        width: size.width / coverScale,
-        height: size.height / coverScale,
+        width: winW,
+        height: winH,
       );
     } else {
       atSource = fullSrc;
@@ -230,6 +261,7 @@ class _CoverContainPainter extends CustomPainter {
       radius != oldDelegate.radius ||
       circular != oldDelegate.circular ||
       coverSource != oldDelegate.coverSource ||
+      sourceAspect != oldDelegate.sourceAspect ||
       zoomFraction != oldDelegate.zoomFraction ||
       animation != oldDelegate.animation;
 }
@@ -450,6 +482,19 @@ class _HeroImageState extends State<HeroImage> {
               // 插值。判据走 effective* —— style 给了就以它为准。
               if (widget.flightImage != null &&
                   (widget.effectiveCover || widget.effectiveCircular)) {
+                // 源端缩略图盒子的固定宽高比:push 时源在 from,pop 时源在 to。
+                // 飞行起止两端的盒子布局在 flight 启动时已测好,此处读到的是
+                // 稳定值。push 被 pop 打断(divert)不重建 shuttle,仍持 push
+                // 时算得的 from=源端,与 pop 的 to 是同一缩略图,口径一致。
+                final BuildContext srcContext =
+                    direction == HeroFlightDirection.pop
+                        ? toContext
+                        : fromContext;
+                double? sourceAspect;
+                final ro = srcContext.findRenderObject();
+                if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                  sourceAspect = ro.size.width / ro.size.height;
+                }
                 return CoverContainFlightImage(
                   image: widget.flightImage!,
                   animation: animation,
@@ -458,6 +503,7 @@ class _HeroImageState extends State<HeroImage> {
                   // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
                   // 否则落地瞬间「裁切一块」突变成完整图
                   coverSource: true,
+                  sourceAspect: sourceAspect,
                   fallback: child,
                 );
               }
