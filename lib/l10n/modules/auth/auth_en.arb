@@ -56,5 +56,39 @@
   "oauth_noRedirectResponse": "Authorization service did not return a redirect",
   "onboarding_guestAccess": "Guest access",
   "onboarding_networkSettings": "Network settings",
-  "onboarding_slogan": "Sincere · Friendly · United · Professional"
+  "onboarding_slogan": "Sincere · Friendly · United · Professional",
+  "accountManage_title": "Account management",
+  "accountManage_currentChip": "Current",
+  "accountManage_addAccount": "Add account",
+  "accountManage_switchConfirmTitle": "Switch account",
+  "accountManage_switchConfirmMessage": "Switch to \"{username}\"? Unsaved content for the current account will be lost.",
+  "@accountManage_switchConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_switching": "Switching…",
+  "accountManage_switchDone": "Switched successfully",
+  "accountManage_switchFailed": "Switch failed, please try again later",
+  "accountManage_sessionExpired": "The saved login for \"{username}\" has expired, please log in again",
+  "@accountManage_sessionExpired": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removeConfirmTitle": "Remove account",
+  "accountManage_removeConfirmMessage": "This removes the locally saved login record for \"{username}\". It does not affect sign-in on other devices.",
+  "@accountManage_removeConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removed": "Removed",
+  "accountManage_empty": "No saved accounts"
 }

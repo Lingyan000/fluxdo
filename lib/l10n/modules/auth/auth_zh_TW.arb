@@ -63,5 +63,39 @@
   "oauth_noRedirectResponse": "授權服務未返回重定向",
   "onboarding_guestAccess": "遊客訪問",
   "onboarding_networkSettings": "網路設定",
-  "onboarding_slogan": "真誠 · 友善 · 團結 · 專業"
+  "onboarding_slogan": "真誠 · 友善 · 團結 · 專業",
+  "accountManage_title": "帳號管理",
+  "accountManage_currentChip": "目前",
+  "accountManage_addAccount": "新增帳號",
+  "accountManage_switchConfirmTitle": "切換帳號",
+  "accountManage_switchConfirmMessage": "確認切換到「{username}」嗎？目前帳號未送出的內容將不會保存。",
+  "@accountManage_switchConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_switching": "正在切換…",
+  "accountManage_switchDone": "切換成功",
+  "accountManage_switchFailed": "切換失敗，請稍後重試",
+  "accountManage_sessionExpired": "「{username}」的本機登入狀態已失效，請重新登入",
+  "@accountManage_sessionExpired": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removeConfirmTitle": "移除帳號",
+  "accountManage_removeConfirmMessage": "將移除「{username}」保存在本機的登入記錄，不影響該帳號在其他裝置上的登入。",
+  "@accountManage_removeConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removed": "已移除",
+  "accountManage_empty": "尚無已保存的帳號"
 }

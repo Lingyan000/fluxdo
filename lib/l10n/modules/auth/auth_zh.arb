@@ -70,5 +70,39 @@
   "oauth_noRedirectResponse": "授权服务未返回重定向",
   "onboarding_guestAccess": "游客访问",
   "onboarding_networkSettings": "网络设置",
-  "onboarding_slogan": "真诚 · 友善 · 团结 · 专业"
+  "onboarding_slogan": "真诚 · 友善 · 团结 · 专业",
+  "accountManage_title": "账号管理",
+  "accountManage_currentChip": "当前",
+  "accountManage_addAccount": "添加账号",
+  "accountManage_switchConfirmTitle": "切换账号",
+  "accountManage_switchConfirmMessage": "确认切换到「{username}」吗？当前账号未提交的内容将不会保存。",
+  "@accountManage_switchConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_switching": "正在切换…",
+  "accountManage_switchDone": "切换成功",
+  "accountManage_switchFailed": "切换失败，请稍后重试",
+  "accountManage_sessionExpired": "「{username}」的本机登录状态已失效，请重新登录",
+  "@accountManage_sessionExpired": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removeConfirmTitle": "移除账号",
+  "accountManage_removeConfirmMessage": "将移除「{username}」保存在本机的登录记录，不影响该账号在其他设备上的登录。",
+  "@accountManage_removeConfirmMessage": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "accountManage_removed": "已移除",
+  "accountManage_empty": "暂无已保存的账号"
 }

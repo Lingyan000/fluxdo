@@ -991,8 +991,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           handler.next(options);
         },
         onResponse: (response, handler) async {
-          final skipAuthCheck =
-              response.requestOptions.spec.skipAuthCheck;
+          final skipAuthCheck = response.requestOptions.spec.skipAuthCheck;
 
           final loggedOut = response.headers.value('discourse-logged-out');
           if (!skipAuthCheck &&
@@ -1042,8 +1041,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           handler.next(response);
         },
         onError: (error, handler) async {
-          final skipAuthCheck =
-              error.requestOptions.spec.skipAuthCheck;
+          final skipAuthCheck = error.requestOptions.spec.skipAuthCheck;
           final data = error.response?.data;
           debugPrint('[DIO] Error: ${error.response?.statusCode}');
 
@@ -1555,6 +1553,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
       force: forceBrowserSessionSync,
     );
     _authStateController.add(null);
+    // 多账号：登记/刷新本机账号快照（尽力而为，不影响登录主流程）
+    unawaited(AccountManager().syncCurrentAccount());
   }
 
   /// 保存用户名
@@ -1592,6 +1592,57 @@ mixin _AuthMixin on _DiscourseServiceBase {
       );
     } catch (e) {
       debugPrint('[DiscourseService] Logout API failed: $e');
+    }
+  }
+
+  /// 本地会话摘除（登出第四~五步的公共部分）：清内存凭证与缓存、删存储
+  /// 用户名、复位 WebView 会话态、清 Cookie（保留 cf_clearance）。
+  /// 不广播、不动多账号快照 —— 由调用方决定后续动作。
+  Future<void> _teardownLocalSession() async {
+    _clearPreviousTTokenFallback();
+    _tToken = null;
+    _username = null;
+    _cachedUserSummary = null;
+    _cachedUserSummaryUsername = null;
+    _userSummaryCacheTime = null;
+    await _storage.delete(key: DiscourseService._usernameKey);
+    _credentialsLoaded = false;
+    // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
+    // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
+    WebViewSessionCookieRefreshService.instance.resetSessionState();
+
+    // 清除 Cookie（保留 cf_clearance）
+    await _cookieSync.reset();
+    final cfClearanceCookie = await _cookieJar.getCfClearanceCookie();
+    await _cookieJar.clearAll();
+    if (cfClearanceCookie != null) {
+      await _cookieJar.restoreCfClearance(cfClearanceCookie);
+    }
+  }
+
+  /// 多账号切换用：摘除当前登录态但不撤销服务端会话、不广播 authState。
+  ///
+  /// 与 [logout](callApi:false) 的差别：服务端会话保留（目标只是换人），
+  /// 当前账号的多账号快照由 AccountManager 在摘除前自行固化。切换方随后
+  /// 回灌目标账号 Cookie，并经 finalizeNativeLoginSuccess 统一收口广播。
+  Future<void> detachSessionLocally() async {
+    // ===== 切断所有旧请求 =====
+    AuthSession().advance();
+
+    // ===== 停止后台 Service =====
+    MessageBusService().stopAll();
+    unawaited(CfClearanceRefreshService().stop());
+    WebViewAdapterSettingsService.instance.resetSessionFallback();
+    CfChallengeService().resetSessionCompatibilityDecision();
+    CfClearanceRegistry.instance.reset();
+
+    // ===== 摘除本地登录态 =====
+    try {
+      await _teardownLocalSession();
+      PreloadedDataService().reset();
+    } finally {
+      currentUserNotifier.value = null;
+      _resetStrikes();
     }
   }
 
@@ -1638,25 +1689,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
     // 的中间态(UI 仍以为在登录中)。secure storage 写入与 cookie 清理都是
     // 平台通道调用,理论上可能抛,那时也必须把广播补上。
     try {
-      _clearPreviousTTokenFallback();
-      _tToken = null;
-      _username = null;
-      _cachedUserSummary = null;
-      _cachedUserSummaryUsername = null;
-      _userSummaryCacheTime = null;
-      await _storage.delete(key: DiscourseService._usernameKey);
-      _credentialsLoaded = false;
-      // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
-      // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
-      WebViewSessionCookieRefreshService.instance.resetSessionState();
-
-      // ===== 第五步：清除 Cookie（保留 cf_clearance）=====
-      await _cookieSync.reset();
-      final cfClearanceCookie = await _cookieJar.getCfClearanceCookie();
-      await _cookieJar.clearAll();
-      if (cfClearanceCookie != null) {
-        await _cookieJar.restoreCfClearance(cfClearanceCookie);
+      // 显式登出会撤销服务端会话，该账号的本机快照一并作废
+      final logoutUsername =
+          _username ?? await _storage.read(key: DiscourseService._usernameKey);
+      if (logoutUsername != null && logoutUsername.isNotEmpty) {
+        unawaited(AccountManager().removeAccount(logoutUsername));
       }
+
+      await _teardownLocalSession();
 
       // ===== 第六步：刷新预加载数据（确保新状态就绪后再广播）=====
       //

@@ -14,6 +14,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/esc_fallback_observer.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import 'about_page.dart';
+import 'account_manage_page.dart';
 import 'appearance_page.dart';
 import 'bottom_nav_settings_page.dart';
 import 'data_management_page.dart';
@@ -343,6 +344,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       children: [
         SegmentedCardGroup(
           children: [
+            _buildOptionTile(
+              icon: Symbols.manage_accounts_rounded,
+              iconColor: Colors.green,
+              title: l10n.accountManage_title,
+              onTap: () => _openSettingsPage((_) => const AccountManagePage()),
+            ),
             _buildOptionTile(
               icon: Symbols.color_lens_rounded,
               iconColor: Colors.teal,
