@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../constants.dart';
@@ -39,6 +40,69 @@ class ShareUtils {
       return base;
     }
     return '$base?u=$username';
+  }
+
+  /// 图片扩展名 → 标准 MIME 类型(jpg 的正确 MIME 是 image/jpeg;
+  /// 直接拼 'image/$ext' 会得到非法类型,部分接收方不认)。
+  static String imageMimeType(String ext) => switch (ext.toLowerCase()) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'avif' => 'image/avif',
+        'heic' || 'heif' => 'image/heic',
+        'bmp' => 'image/bmp',
+        'svg' => 'image/svg+xml',
+        'tif' || 'tiff' => 'image/tiff',
+        _ => 'image/$ext',
+      };
+
+  /// 分享图片文件:复制为带可读文件名的临时文件再走系统分享/另存为。
+  /// 命名回退链:[fileName](接口/cooked 提供的原始文件名)→ [urlHint]
+  /// 末段 → `fluxdo_<毫秒时间戳>`;扩展名始终以 [ext](实际下载 URL)
+  /// 为准,保证与字节格式一致。临时文件由 OS 按需清理。
+  static Future<ShareOutcome> shareImageFile(
+    File file, {
+    required String ext,
+    String? fileName,
+    String? urlHint,
+    String? subject,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final base = safeFileBaseName(fileName) ??
+        safeFileBaseName(_urlLastSegment(urlHint)) ??
+        'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
+    final shareFile = File(p.join(tempDir.path, 'share', '$base.$ext'));
+    await shareFile.parent.create(recursive: true);
+    await file.copy(shareFile.path);
+    return shareOrSaveFile(
+      XFile(shareFile.path, mimeType: imageMimeType(ext)),
+      subject: subject,
+    );
+  }
+
+  /// 分享/保存命名的文件名主干:去路径与扩展名、洗掉各平台非法字符
+  /// (路径分隔/:`*?"<>|/控制字符 → 空格,连续空白压成单个);洗完为空
+  /// 返回 null,交给调用方的下一级回退。
+  static String? safeFileBaseName(String? name) {
+    if (name == null) return null;
+    var base = p.basenameWithoutExtension(name.trim());
+    base = base
+        .replaceAll(RegExp(r'[/\\:*?"<>|\x00-\x1f]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    base = base.replaceFirst(RegExp(r'^\.+'), '').trim();
+    if (base.isEmpty || base == '.' || base == '..') return null;
+    return base;
+  }
+
+  /// URL 末段(命名回退用):空串/无路径返回 null。
+  static String? _urlLastSegment(String? url) {
+    if (url == null) return null;
+    final segments = Uri.tryParse(url)?.pathSegments;
+    if (segments == null || segments.isEmpty) return null;
+    final last = segments.last.trim();
+    return last.isEmpty ? null : last;
   }
 
   /// 分享或保存文件

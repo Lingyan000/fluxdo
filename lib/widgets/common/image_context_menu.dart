@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../l10n/s.dart';
 import '../../utils/share_utils.dart';
@@ -52,6 +51,8 @@ class ImageContextMenu {
     String? quoteMarkdown,
     String? heroTag,
     ImageLiftSpec? lift,
+    /// 原始文件名(接口/cooked 提供):分享与「查看大图」的命名依据。
+    String? fileName,
   }) {
     final originalUrl = DiscourseImageUtils.getOriginalUrl(imageUrl);
 
@@ -68,6 +69,7 @@ class ImageContextMenu {
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
     } else {
       _showMobileMenu(
@@ -82,6 +84,7 @@ class ImageContextMenu {
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
         lift: lift,
+        fileName: fileName,
       );
     }
   }
@@ -98,6 +101,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
   }) {
     final overlayRenderObject = Overlay.of(context).context.findRenderObject();
     if (overlayRenderObject is! RenderBox || !overlayRenderObject.hasSize) {
@@ -112,6 +116,7 @@ class ImageContextMenu {
         onQuoteImage: onQuoteImage,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
       return;
     }
@@ -187,6 +192,7 @@ class ImageContextMenu {
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
     });
   }
@@ -203,6 +209,7 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
     VoidCallback? onClose,
   }) {
     return [
@@ -218,6 +225,7 @@ class ImageContextMenu {
               originalUrl,
               thumbnailUrl: imageUrl,
               heroTag: heroTag,
+              filenames: [fileName],
             );
           },
         ),
@@ -240,7 +248,7 @@ class ImageContextMenu {
         'share',
         Symbols.share_rounded,
         S.current.common_shareImage,
-        () => _shareImage(originalUrl),
+        () => _shareImage(originalUrl, fileName: fileName),
       ),
       if (post != null && topicId != null && onQuoteImage != null)
         _MobileAction(
@@ -298,6 +306,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
     ImageLiftSpec? lift,
   }) {
     final actions = _mobileActions(
@@ -310,6 +319,7 @@ class ImageContextMenu {
       onQuoteImage: onQuoteImage,
       quoteMarkdown: quoteMarkdown,
       heroTag: heroTag,
+      fileName: fileName,
       onClose: onClose,
     );
 
@@ -373,6 +383,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
   }) {
     switch (action) {
       case 'viewFull':
@@ -381,6 +392,7 @@ class ImageContextMenu {
           originalUrl,
           thumbnailUrl: imageUrl,
           heroTag: heroTag,
+          filenames: [fileName],
         );
       case 'copyImage':
         _copyImage(originalUrl);
@@ -388,7 +400,7 @@ class ImageContextMenu {
         Clipboard.setData(ClipboardData(text: originalUrl));
         ToastService.showSuccess(S.current.common_linkCopied);
       case 'share':
-        _shareImage(originalUrl);
+        _shareImage(originalUrl, fileName: fileName);
       case 'quote':
         if (post != null && topicId != null && onQuoteImage != null) {
           final quote = QuoteBuilder.build(
@@ -444,31 +456,24 @@ class ImageContextMenu {
   }
 
   /// 分享图片
-  static Future<void> _shareImage(String imageUrl) async {
+  static Future<void> _shareImage(String imageUrl, {String? fileName}) async {
     try {
       final file = await BlobImageCache.getFile(
         BlobImageCache.contentBucket,
         imageUrl,
       );
-      final ext = _getExtensionFromUrl(imageUrl);
-      final xFile = XFile(file.path, mimeType: 'image/$ext');
-      await ShareUtils.shareOrSaveFile(xFile);
+      // 复制为可读文件名的临时文件再分享(缓存文件按 md5 寻址):
+      // 原始文件名(接口/cooked) → URL 末段 → 时间戳,逐级回退。
+      await ShareUtils.shareImageFile(
+        file,
+        ext: BlobImageCache.httpUrlExtension(imageUrl),
+        fileName: fileName,
+        urlHint: imageUrl,
+      );
     } catch (e) {
       debugPrint('[ImageContextMenu] shareImage error: $e');
       ToastService.showError(S.current.common_shareFailed);
     }
-  }
-
-  /// 从 URL 提取文件扩展名
-  static String _getExtensionFromUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return 'png';
-    final path = uri.path.toLowerCase();
-    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'jpeg';
-    if (path.endsWith('.gif')) return 'gif';
-    if (path.endsWith('.webp')) return 'webp';
-    if (path.endsWith('.avif')) return 'avif';
-    return 'png';
   }
 }
 
