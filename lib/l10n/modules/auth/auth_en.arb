@@ -37,6 +37,7 @@
   "login_qrPickImage": "Choose from gallery",
   "login_qrRefresh": "Regenerate",
   "login_qrScanFailed": "QR login failed, please try again",
+  "login_qrScannedSuccess": "The other device has signed in",
   "login_qrScanHint": "Point the camera at the login QR code on the other device",
   "login_qrScanTitle": "Scan to sign in",
   "login_qrSecurityWarning": "This QR code contains a User API Key and a one-time login token, and is valid for about 10 minutes. Do not share it or leave it on screen in public.",

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../providers/discourse_providers.dart';
 import '../../../../providers/preferences_provider.dart';
@@ -24,15 +22,20 @@ class PostHeaderSection extends ConsumerStatefulWidget {
   final bool showStamp;
   final EdgeInsetsGeometry padding;
   final void Function(int postNumber)? onJumpToPost;
+
   /// 禁用回复历史（弹框内使用时，显示用户名文本替代可点击操作）
   final bool disableReplyHistory;
+
   /// 自定义回复指示点击回调（优先于回复历史加载）
   final void Function(int postNumber)? onReplyIndicatorTap;
+
   /// 隐藏回复指示的目标帖子号（回复此帖时不显示指示器）
   final int? hideReplyToPostNumber;
+
   /// 弹幕开关：null = 不展示；true/false = 当前是否正在显示弹幕
   final bool? danmakuActive;
   final VoidCallback? onToggleDanmaku;
+
   /// wiki 帖 version==1 时点击编辑指示器进入编辑器的回调(由上层 PostItem 传入)。
   final VoidCallback? onEditWiki;
 
@@ -62,8 +65,11 @@ class PostHeaderSection extends ConsumerStatefulWidget {
 class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   final DiscourseService _service = DiscourseService();
   List<Post>? _replyHistory;
-  final ValueNotifier<bool> _isLoadingReplyHistoryNotifier = ValueNotifier<bool>(false);
-  final ValueNotifier<bool> _showReplyHistoryNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _isLoadingReplyHistoryNotifier =
+      ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _showReplyHistoryNotifier = ValueNotifier<bool>(
+    false,
+  );
   Widget? _cachedAvatarWidget;
   int? _cachedPostId;
   bool? _cachedHasMention;
@@ -177,7 +183,8 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
     final theme = Theme.of(context);
     final post = widget.post;
     final currentUser = ref.read(currentUserProvider).value;
-    final isOwnPost = currentUser != null && currentUser.username == post.username;
+    final isOwnPost =
+        currentUser != null && currentUser.username == post.username;
     final isWhisper = post.postType == PostTypes.whisper;
 
     return Stack(
@@ -187,43 +194,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
           Positioned(
             right: 20,
             top: 10,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: widget.showStamp ? 0.12 : 0.05,
-                child: Transform.rotate(
-                  angle: -0.15,
-                  child: CustomPaint(
-                    painter: PostStampPainter(
-                      color: widget.showStamp ? Colors.green : theme.colorScheme.outline,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            widget.showStamp ? Symbols.verified_rounded : Symbols.help_rounded,
-                            color: widget.showStamp ? Colors.green : theme.colorScheme.outline,
-                            size: 28,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            widget.showStamp ? context.l10n.post_solved : context.l10n.post_unsolved,
-                            style: TextStyle(
-                              color: widget.showStamp ? Colors.green : theme.colorScheme.outline,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2,
-                              fontFamily: theme.textTheme.titleLarge?.fontFamily,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            child: PostSolutionStamp(accepted: widget.showStamp),
           ),
         Padding(
           padding: widget.padding,
@@ -237,13 +208,23 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                 isOwnPost: isOwnPost,
                 isWhisper: isWhisper,
                 cachedAvatarWidget: _cachedAvatarWidget!,
-                isLoadingReplyHistoryNotifier: widget.disableReplyHistory ? null : _isLoadingReplyHistoryNotifier,
-                onToggleReplyHistory: widget.disableReplyHistory ? null : _toggleReplyHistory,
-                onReplyIndicatorTap: widget.onReplyIndicatorTap != null && widget.post.replyToPostNumber > 0
-                    ? () => widget.onReplyIndicatorTap!(widget.post.replyToPostNumber)
+                isLoadingReplyHistoryNotifier: widget.disableReplyHistory
+                    ? null
+                    : _isLoadingReplyHistoryNotifier,
+                onToggleReplyHistory: widget.disableReplyHistory
+                    ? null
+                    : _toggleReplyHistory,
+                onReplyIndicatorTap:
+                    widget.onReplyIndicatorTap != null &&
+                        widget.post.replyToPostNumber > 0
+                    ? () => widget.onReplyIndicatorTap!(
+                        widget.post.replyToPostNumber,
+                      )
                     : null,
-                hideReplyIndicator: widget.hideReplyToPostNumber != null &&
-                    widget.post.replyToPostNumber == widget.hideReplyToPostNumber,
+                hideReplyIndicator:
+                    widget.hideReplyToPostNumber != null &&
+                    widget.post.replyToPostNumber ==
+                        widget.hideReplyToPostNumber,
                 danmakuActive: widget.danmakuActive,
                 onToggleDanmaku: widget.onToggleDanmaku,
                 buildCompactBadge: _buildCompactBadge,
@@ -272,7 +253,8 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                             RelativeTimeText(
                               dateTime: post.displayDate,
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.8),
                                 fontSize: 11,
                               ),
                             ),
@@ -323,7 +305,9 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                     Text(
                       '#${post.postNumber}',
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.4,
+                        ),
                         fontSize: 10,
                       ),
                     ),
@@ -338,7 +322,9 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                     replyHistory: _replyHistory,
                     showReplyHistoryNotifier: _showReplyHistoryNotifier,
                     onJumpToPost: widget.onJumpToPost,
-                    contentFontScale: ref.watch(preferencesProvider).contentFontScale,
+                    contentFontScale: ref
+                        .watch(preferencesProvider)
+                        .contentFontScale,
                   );
                 },
               ),

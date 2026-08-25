@@ -80,6 +80,8 @@
   "toolPanel_spoiler": "劇透",
   "toolPanel_strikethrough": "刪除線",
   "toolPanel_template": "範本",
+  "toolPanel_toc": "目錄",
+  "toolbar_tocPlaceholder": "此話題將包含目錄",
   "toolbar_attachFileTooltip": "上傳附件",
   "toolbar_boldPlaceholder": "粗體文字",
   "toolbar_codePlaceholder": "在此處鍵入或貼上程式碼",

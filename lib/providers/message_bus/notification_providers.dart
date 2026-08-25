@@ -14,17 +14,37 @@ import 'topic_tracking_providers.dart';
 /// 通知计数 Notifier
 /// 优先使用 MessageBus 推送的实时计数，初始值从 currentUser 获取。
 ///
-/// 关键：只对 currentUser 的「身份」(user.id) 建立依赖。
-/// 仅在登入 / 登出 / 切换账号（id 变化）时，才用服务端值重置计数；
-/// 同一用户的数据刷新（refreshSilently / invalidate）不会触发 rebuild，
-/// 从而保留 MessageBus 推送累积的实时计数，避免页面刷新把徽章刷回初值。
+/// 关键：收到第一条实时更新(update/markAllRead)之前,采纳 currentUser
+/// 每次 emit 的服务端计数;之后服务端值不再回刷实时值。
+///
+/// 两头都有翻车史,改动前对齐:
+/// - 只 watch user.id(e957fffe):refreshSilently 的 preloaded 计数是
+///   会话级缓存(过期),曾把 MessageBus 累积的实时徽章刷回初值;
+/// - 但 id 门控挡掉了冷启动渐进 emit(缓存用户→preloaded→接口终态):
+///   缓存用户不含计数字段(toCacheJson),先到即把计数钉死 0,后续
+///   带真实计数的 emit 因 id 未变被无视 —— 移动端首帧即 watch 必中,
+///   桌面 preloaded 同步快路径几乎必不中,表现为「手机不显示数量」。
 class NotificationCountNotifier extends Notifier<NotificationCountState> {
+  bool _liveUpdateReceived = false;
+  int? _lastUserId;
+
   @override
   NotificationCountState build() {
-    // 仅依赖 user.id：刷新同一用户不会重建，保留实时计数。
-    ref.watch(currentUserProvider.select((s) => s.value?.id));
-    final user = ref.read(currentUserProvider).value;
-    if (user == null) return const NotificationCountState();
+    final user = ref.watch(currentUserProvider).value;
+    if (user == null) {
+      _liveUpdateReceived = false;
+      _lastUserId = null;
+      return const NotificationCountState();
+    }
+    final identityChanged = user.id != _lastUserId;
+    _lastUserId = user.id;
+    if (identityChanged) {
+      _liveUpdateReceived = false;
+    }
+    // 已有实时值且同一用户:保留实时计数,忽略服务端(可能过期)值
+    if (_liveUpdateReceived) {
+      return state;
+    }
     return NotificationCountState(
       allUnread: user.allUnreadNotificationsCount,
       unread: user.unreadNotifications,
@@ -33,6 +53,7 @@ class NotificationCountNotifier extends Notifier<NotificationCountState> {
   }
 
   void update({int? allUnread, int? unread, int? highPriority}) {
+    _liveUpdateReceived = true;
     state = state.copyWith(
       allUnread: allUnread,
       unread: unread,
@@ -40,8 +61,9 @@ class NotificationCountNotifier extends Notifier<NotificationCountState> {
     );
   }
 
-  /// 标记所有已读后重置计数
+  /// 标记所有已读后重置计数(视为实时事实,服务端旧值不得复活徽章)
   void markAllRead() {
+    _liveUpdateReceived = true;
     state = const NotificationCountState();
   }
 }

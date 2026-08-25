@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "render_signet_handler.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -30,8 +29,6 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // 渲染帧标识印记(窗口级合成层,机制见 render_signet_handler.h)
-  std::unique_ptr<RenderSignetHandler> render_signet_handler_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

@@ -2,15 +2,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../models/category.dart';
 import '../../models/topic.dart';
 import '../../models/topic_card_style.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
-import '../../providers/category_provider.dart';
+import '../../providers/bookmark_sync_controller.dart';
 import '../../providers/preferences_provider.dart';
 import '../topic/topic_card_layout.dart';
+import '../topic/topic_card_prewarmer.dart';
 import '../topic/painted_topic_card.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/platform_utils.dart';
@@ -23,6 +25,8 @@ import '../desktop_refresh_indicator.dart';
 import '../../utils/responsive.dart';
 import '../topic/topic_list_skeleton.dart';
 import '../topic/topic_item_builder.dart';
+import '../../providers/discourse_providers.dart';
+import '../../services/topic_preview_preloader.dart';
 import '../topic/topic_preview_dialog.dart';
 
 class BookmarksListContent extends ConsumerWidget {
@@ -42,6 +46,8 @@ class BookmarksListContent extends ConsumerWidget {
     required this.hasMore,
     required this.isLoadMoreFailed,
     required this.isLoadingMore,
+    this.syncState = const BookmarkSyncState(),
+    this.onRetrySync,
     required this.onRetryLoadMore,
     required this.onEditBookmark,
     required this.onQuickRenameBookmark,
@@ -63,6 +69,10 @@ class BookmarksListContent extends ConsumerWidget {
   final bool hasMore;
   final bool isLoadMoreFailed;
   final bool isLoadingMore;
+
+  /// 全局同步状态:空态据此区分「正在同步」「同步失败」「真没有书签」。
+  final BookmarkSyncState syncState;
+  final VoidCallback? onRetrySync;
   final VoidCallback onRetryLoadMore;
   final Future<void> Function(Topic topic) onEditBookmark;
   final Future<bool> Function(Topic topic, String? name) onQuickRenameBookmark;
@@ -153,25 +163,49 @@ class BookmarksListContent extends ConsumerWidget {
     );
   }
 
+  /// 书签卡取排版单一入口:itemBuilder 挂载路径与列表外层的
+  /// [CardPrewarmScope] 预热路径共用,identity/宽度/theme/色带/摘要
+  /// 全同口径 —— 预热建的缓存挂载帧必命中(任一参数口径不一致,
+  /// stamp 对不上就是白热)。
+  TopicCardLayout _obtainBookmarkLayout(
+    BuildContext context,
+    Topic topic,
+    Map<int, Category>? categoryMap,
+    double? statsAvailableWidth,
+  ) {
+    final reminderAt = topic.bookmarkReminderAt;
+    final reminderExpired =
+        reminderAt != null && reminderAt.isBefore(DateTime.now());
+    final categoryId = int.tryParse(topic.categoryId);
+    // 桌面端对齐 widget 版 buildTopicItem 的列宽约束:内容居中、
+    // 卡宽 ≤ maxContentWidth;排版宽随之
+    final cardWidth = topicCardWidthFor(context);
+    return TopicCardLayout.obtain(
+      identity: bookmarkTopicIdentity(topic),
+      topic: topic,
+      width: cardWidth,
+      theme: Theme.of(context),
+      category: categoryMap?[categoryId],
+      excerptText: _cleanedExcerptOf(topic),
+      bandName: normalizeBookmarkName(topic.bookmarkName),
+      bandReminder: reminderAt == null
+          ? null
+          : (reminderExpired
+                ? context.l10n.bookmarks_expired
+                : ' ${TimeUtils.formatDetailTime(reminderAt)}'),
+      bandExpired: reminderExpired,
+      statsAvailableWidth: statsAvailableWidth ?? 460,
+      emojiUrlOf: topicCardEmojiUrlResolver,
+    );
+  }
+
   Widget _buildDataContent(
     BuildContext context,
     List<Topic> topics,
     Map<int, Category>? categoryMap,
   ) {
     if (topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Symbols.bookmark_rounded, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(
-              context.l10n.bookmarks_empty,
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+      return _buildEmptyState(context);
     }
 
     final summaries = _memoSummaries(topics);
@@ -222,58 +256,60 @@ class BookmarksListContent extends ConsumerWidget {
         // TopicCardLayout 全局缓存里一次算死,挂载帧纯绘制 1~2ms。
         // widget 版路径保留在 else 分支(kUsePaintedCard=false 一键回退)
         if (kUsePaintedTopicCard && !topic.pinned) {
-          final theme = Theme.of(context);
-          final categoryId = int.tryParse(topic.categoryId);
-          // 桌面端对齐 widget 版 buildTopicItem 的列宽约束:内容居中、
-          // 卡宽 ≤ maxContentWidth;排版宽随之
-          final viewportWidth = MediaQuery.sizeOf(context).width - 24;
           final isMobile = Responsive.isMobile(context);
-          final cardWidth = isMobile
-              ? viewportWidth
-              : (viewportWidth > Breakpoints.maxContentWidth
-                  ? Breakpoints.maxContentWidth
-                  : viewportWidth);
-          final layout = TopicCardLayout.obtain(
-            identity: bookmarkTopicIdentity(topic),
-            topic: topic,
-            width: cardWidth,
-            theme: theme,
-            category: categoryMap?[categoryId],
-            excerptText: _cleanedExcerptOf(topic),
-            bandName: normalizeBookmarkName(topic.bookmarkName),
-            bandReminder: reminderAt == null
-                ? null
-                : (reminderExpired
-                    ? context.l10n.bookmarks_expired
-                    : ' ${TimeUtils.formatDetailTime(reminderAt)}'),
-            bandExpired: reminderExpired,
-            statsAvailableWidth: statsAvailableWidth ?? 460,
-            emojiUrlOf: topicCardEmojiUrlResolver,
+          final cardWidth = topicCardWidthFor(context);
+          final layout = _obtainBookmarkLayout(
+            context,
+            topic,
+            categoryMap,
+            statsAvailableWidth,
           );
-          Widget card = PaintedTopicCard(
-            key: ValueKey(bookmarkTopicIdentity(topic)),
-            layout: layout,
-            onTap: () => onTap(topic),
-            onMiddleClick: () => onMiddleClick(topic),
-            onLongPress: enableLongPress
-                ? () => TopicPreviewDialog.show(
+          // Builder 紧贴卡片:长按预览的一镜到底动画要卡片自身的
+          // 屏幕 rect 作起点(外层 context 在桌面端 Center 包装下是
+          // 满宽,不是卡身);bottomGap 8 裁掉外壳底部间距。
+          Widget card = Builder(
+            builder: (cardContext) => PaintedTopicCard(
+              key: ValueKey(bookmarkTopicIdentity(topic)),
+              layout: layout,
+              onTap: () => onTap(topic),
+              onMiddleClick: () => onMiddleClick(topic),
+              onLongPress: enableLongPress
+                  ? () => TopicPreviewDialog.show(
                       context,
                       topic: topic,
                       onOpen: () => onTap(topic),
+                      anchorRect: topicCardAnchorRect(cardContext),
+                      // chat 书签无话题上下文:正文直接用书签 excerpt,
+                      // 不按话题 id 拉详情(那个 id 是书签 id,必 404)
+                      firstPostLoader: topic.isChatMessageBookmark
+                          ? () async => topic.excerpt ?? ''
+                          : null,
                       actions: topic.bookmarkId != null
                           ? _buildPreviewActions(context, topic)
                           : null,
                       customActionPanelBuilder: topic.bookmarkId != null
                           ? (_) => BookmarkPreviewQuickEditor(
-                                initialName: topic.bookmarkName,
-                                suggestions: bookmarkNameSuggestions,
-                                suggestionsLoader: bookmarkNameSuggestionsLoader,
-                                onSave: (value) =>
-                                    onQuickRenameBookmark(topic, value),
-                              )
+                              initialName: topic.bookmarkName,
+                              suggestions: bookmarkNameSuggestions,
+                              suggestionsLoader: bookmarkNameSuggestionsLoader,
+                              onSave: (value) =>
+                                  onQuickRenameBookmark(topic, value),
+                            )
                           : null,
                     )
-                : null,
+                  : null,
+              // 长按意图预加载:chat 书签无话题上下文(那个 id 是书签
+              // id,预取必 404),不参与
+              onPreviewIntent: enableLongPress && !topic.isChatMessageBookmark
+                  ? () => TopicPreviewPreloader.preload(
+                      ProviderScope.containerOf(
+                        context,
+                        listen: false,
+                      ).read(discourseServiceProvider),
+                      topic.id,
+                    )
+                  : null,
+            ),
           );
           if (!isMobile) {
             card = Center(
@@ -307,7 +343,8 @@ class BookmarksListContent extends ConsumerWidget {
           isSelected: false,
           onTap: () => onTap(topic),
           onMiddleClick: () => onMiddleClick(topic),
-          enableLongPress: enableLongPress,
+          // chat 书签无话题上下文,长按预览必错,禁用
+          enableLongPress: enableLongPress && !topic.isChatMessageBookmark,
           statsAvailableWidth: statsAvailableWidth,
           categoryMap: categoryMap,
           topWidget: _buildBookmarkTopBar(context, topic),
@@ -334,7 +371,30 @@ class BookmarksListContent extends ConsumerWidget {
       summaries: summaries,
       selectedBookmarkName: selectedBookmarkName,
       onSelectedBookmarkName: onSelectedBookmarkName,
-      child: listView,
+      // 空闲预热:书签卡绕开 buildTopicItem 走专用接线(色带/摘要),
+      // 排版取用经 _obtainBookmarkLayout 与 itemBuilder 同源;含两行
+      // 摘要的卡排版更贵,不预热则 miss 全落在滚入帧,叠加头像补画
+      // 潮即"拖影感"
+      child: CardPrewarmScope<Topic>(
+        items: filteredTopics,
+        signature: (
+          identityHashCode(filteredTopics),
+          identityHashCode(Theme.of(context)),
+          topicCardWidthFor(context),
+          statsAvailableWidth,
+          identityHashCode(categoryMap),
+          TopicCardStyleScope.current,
+        ),
+        warmItem: (context, topic) => topic.pinned
+            ? null
+            : _obtainBookmarkLayout(
+                context,
+                topic,
+                categoryMap,
+                statsAvailableWidth,
+              ),
+        child: listView,
+      ),
     );
 
     if (!showSummaryBar) {
@@ -357,6 +417,67 @@ class BookmarksListContent extends ConsumerWidget {
         ),
         Expanded(child: swipeRegion),
       ],
+    );
+  }
+
+  /// 空态三分:首次同步进行中 → 「正在同步」;同步失败 → 错误 + 重试;
+  /// 其余 → 真没有书签。此前失败态没有任何 UI 出口,断网首开显示
+  /// 「暂无书签」误导用户。
+  Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    if (syncState.isSyncing) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const LoadingSpinner(size: 32),
+            const SizedBox(height: 16),
+            Text(
+              context.l10n.bookmarks_initialSyncing,
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+    if (syncState.isFailed) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Symbols.sync_problem_rounded,
+              size: 64,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              context.l10n.bookmarks_syncFailed,
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (onRetrySync != null) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: onRetrySync,
+                child: Text(context.l10n.common_retry),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Symbols.bookmark_rounded, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(
+            context.l10n.bookmarks_empty,
+            style: const TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 

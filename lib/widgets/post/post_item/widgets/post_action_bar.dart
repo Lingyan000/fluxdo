@@ -10,6 +10,7 @@ import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../services/emoji_handler.dart';
+import '../../../../services/preloaded_data_service.dart';
 import '../../../../utils/platform_utils.dart';
 import 'post_reaction_picker.dart';
 
@@ -41,6 +42,14 @@ class PostActionBar extends StatefulWidget {
   final bool canBoost;
   final bool hasBoosts;
 
+  /// 操作栏左侧插槽(post-voting 问答话题的赞成/反对控件)
+  final Widget? leadingSlot;
+
+  /// post-voting(问答)话题:官方语义——答案帖无回复按钮(评论代替
+  /// 追问),答案帖默认无点赞(post_voting_enable_likes_on_answers);
+  /// 问题帖回复按钮语义变「回答」。
+  final bool isPostVotingTopic;
+
   const PostActionBar({
     super.key,
     required this.post,
@@ -63,6 +72,8 @@ class PostActionBar extends StatefulWidget {
     this.onAddBoost,
     this.canBoost = false,
     this.hasBoosts = false,
+    this.leadingSlot,
+    this.isPostVotingTopic = false,
   });
 
   @override
@@ -266,6 +277,10 @@ class _PostActionBarState extends State<PostActionBar>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        if (widget.leadingSlot != null) ...[
+          widget.leadingSlot!,
+          const SizedBox(width: 8),
+        ],
         if (leftButton != null) ...[
           leftButton,
           const SizedBox(width: 12),
@@ -356,8 +371,17 @@ class _PostActionBarState extends State<PostActionBar>
 
   List<Widget> _buildRightActions(ThemeData theme) {
     final actions = <Widget>[];
+    // 问答话题官方语义:答案帖(非首帖)隐藏点赞与回复(评论代替追问);
+    // 问题帖保留点赞,回复语义变「回答」。likes 开关按站点设置
+    // post_voting_enable_likes_on_answers(缺省 false)。
+    final isPvAnswer = widget.isPostVotingTopic && widget.post.postNumber != 1;
+    final pvLikesOnAnswers =
+        PreloadedDataService()
+                .siteSettingsSync?['post_voting_enable_likes_on_answers'] ==
+            true;
     if (!widget.isGuest) {
-      if (!widget.isOwnPost || widget.reactions.isNotEmpty) {
+      final hideLike = isPvAnswer && !pvLikesOnAnswers;
+      if ((!widget.isOwnPost || widget.reactions.isNotEmpty) && !hideLike) {
         actions.add(_buildLikeReactionArea(theme));
       }
       if (!widget.isOwnPost && widget.canBoost && !widget.hasBoosts) {
@@ -368,12 +392,16 @@ class _PostActionBarState extends State<PostActionBar>
           onTap: widget.onAddBoost,
         ));
       }
-      actions.add(_iconCircle(
-        theme,
-        tooltip: context.l10n.common_reply,
-        icon: Symbols.reply_rounded,
-        onTap: widget.onReply,
-      ));
+      if (!isPvAnswer) {
+        actions.add(_iconCircle(
+          theme,
+          tooltip: widget.isPostVotingTopic
+              ? S.current.postVoting_answer
+              : context.l10n.common_reply,
+          icon: Symbols.reply_rounded,
+          onTap: widget.onReply,
+        ));
+      }
     }
     actions.add(_iconCircle(
       theme,

@@ -30,7 +30,6 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */; };
 		A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */; };
-		A1B2C3D400000001000516E7 /* RenderSignetHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000516E7 /* RenderSignetHandler.swift */; };
 		64ECB773246C7D295B20DA98 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3B821E2474ED1A6E7625611 /* Pods_Runner.framework */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 /* End PBXBuildFile section */
@@ -66,7 +65,6 @@
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DohProxyCertHandler.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTranscodeHandler.swift; sourceTree = "<group>"; };
-		A1B2C3D400000002000516E7 /* RenderSignetHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderSignetHandler.swift; sourceTree = "<group>"; };
 		A1B2C3D400000003000NATIV /* native */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Runner/native; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
@@ -178,7 +176,6 @@
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */,
 				A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */,
-				A1B2C3D400000002000516E7 /* RenderSignetHandler.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -472,7 +469,6 @@
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */,
 				A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */,
-				A1B2C3D400000001000516E7 /* RenderSignetHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

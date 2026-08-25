@@ -20,6 +20,44 @@ import '../../services/app_error_handler.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/media_transcoder/media_compressor.dart';
 import '../../services/media_transcoder/media_transcoder.dart';
+import '../../services/preloaded_data_service.dart';
+
+/// 站点允许上传的扩展名 —— 从 preloaded siteSettings 的
+/// `authorized_extensions`(staff 追加 `authorized_extensions_for_staff`)
+/// 动态派生,与网页端 `lib/uploads.js` 的 authorizedExtensions 同口径:
+/// 小写、剥空白与点、按 `|` 拆、滤掉带 `*` 的通配项。
+/// 音视频不走这里 —— 那条走 `.xz` 改名绕白名单,见文件头注释。
+///
+/// 返回 null = 不设限(任一名单含 `*`,官方 authorizesAllExtensions
+/// 同款判定;或 siteSettings 未加载 —— 此时让服务端裁决,好过拿一份
+/// 写死的列表两头错:站点允许的选不了、列表里有的选完照样 422)。
+List<String>? attachmentAllowedExtensions() {
+  final preloaded = PreloadedDataService();
+  final base = preloaded.siteSettingsSync?['authorized_extensions'] as String?;
+  if (base == null) return null;
+  final user = preloaded.currentUserSync;
+  final isStaff = user?['admin'] == true || user?['moderator'] == true;
+  final staffExtra = isStaff
+      ? (preloaded.siteSettingsSync?['authorized_extensions_for_staff']
+            as String?)
+      : null;
+
+  if (base.contains('*') || (staffExtra?.contains('*') ?? false)) {
+    return null;
+  }
+  final exts = {
+    ..._extensionsToList(base),
+    if (staffExtra != null) ..._extensionsToList(staffExtra),
+  }.toList();
+  return exts.isEmpty ? null : exts;
+}
+
+List<String> _extensionsToList(String raw) => raw
+    .toLowerCase()
+    .replaceAll(RegExp(r'[\s.]+'), '')
+    .split('|')
+    .where((ext) => ext.isNotEmpty && !ext.contains('*'))
+    .toList();
 
 /// `upload://<base62>.<ext>` → `/uploads/short-url/<base62>.xz` 播放路径。
 String mediaShortUrlToXzPath(String shortUrl) {

@@ -1,0 +1,229 @@
+{
+  "chat_title": "聊天",
+  "chat_refresh": "重新整理",
+  "chat_newChat": "新對話",
+  "chat_startChat": "開始聊天",
+  "chat_createGroup": "建立群組 ({count})",
+  "@chat_createGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_searchUserHint": "搜尋用戶",
+  "chat_empty": "未有對話",
+  "chat_noMessages": "未有訊息，說啲嘢啦",
+  "chat_previewImage": "[圖片]",
+  "chat_previewFile": "[檔案]",
+  "chat_inputHint": "發送訊息…",
+  "chat_send": "發送",
+  "chat_resend": "重新發送",
+  "chat_discard": "捨棄",
+  "chat_edited": "(已編輯)",
+  "chat_messageDeleted": "訊息已刪除",
+  "chat_deletedOne": "1 條訊息已刪除 · 查看",
+  "chat_deletedMany": "{count} 條訊息已刪除 · 查看全部",
+  "@chat_deletedMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_deletedTag": "(已刪除)",
+  "chat_unreadDivider": "以下為新訊息",
+  "chat_menuReply": "回覆",
+  "chat_menuCopy": "複製",
+  "chat_menuEdit": "編輯",
+  "chat_menuDelete": "刪除",
+  "chat_menuRestore": "還原",
+  "chat_menuPin": "置頂",
+  "chat_menuUnpin": "取消置頂",
+  "chat_pinnedBanner": "置頂訊息",
+  "chat_pinnedCount": "{count} 條置頂",
+  "@chat_pinnedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuBookmark": "收藏",
+  "chat_menuRemoveBookmark": "取消收藏",
+  "chat_deleteConfirm": "刪除呢條訊息？",
+  "chat_editingBanner": "編輯訊息",
+  "chat_replyingTo": "回覆 {username}",
+  "@chat_replyingTo": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_moreReactions": "更多表情",
+  "chat_memberCount": "{count} 位成員",
+  "@chat_memberCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuCopyLink": "複製連結",
+  "chat_attach": "附件",
+  "chat_attachCamera": "影相",
+  "chat_attachGallery": "相簿",
+  "chat_attachFile": "檔案",
+  "chat_threadTitle": "訊息串",
+  "chat_threadReplies": "{count} 則回覆",
+  "@chat_threadReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_channelInfo": "對話詳情",
+  "chat_members": "成員",
+  "chat_memberSelf": "我",
+  "chat_addMembers": "新增成員",
+  "chat_addMembersConfirm": "新增 ({count})",
+  "chat_membersAdded": "已新增成員",
+  "chat_removeMember": "移出群組",
+  "chat_removeMemberConfirm": "將 {username} 移出群組？",
+  "chat_renameGroup": "修改群組名稱",
+  "chat_groupNameHint": "群組名稱",
+  "chat_leave": "退出對話",
+  "chat_leaveConfirm": "退出呢個對話？",
+  "chat_leaveHint": "歷史訊息保留,有新訊息時對話會重新出現。",
+  "@chat_addMembersConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_removeMemberConfirm": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_sectionChannels": "頻道",
+  "chat_sectionDirect": "直接訊息",
+  "chat_emptyChannels": "未加入任何頻道",
+  "chat_typingOne": "{username} 正在輸入…",
+  "chat_typingMany": "{count} 人正在輸入…",
+  "@chat_typingOne": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "@chat_typingMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_markRead": "標記已讀",
+  "chat_mute": "靜音",
+  "chat_unmute": "取消靜音",
+  "chat_browseChannels": "瀏覽頻道",
+  "chat_searchChannelHint": "搜尋頻道",
+  "chat_noChannelsFound": "搵唔到頻道",
+  "chat_joinChannel": "加入",
+  "chat_enterChannel": "進入",
+  "chat_upgradeToGroup": "新增成員建立群組",
+  "chat_upgradeToGroupHint": "會建立新嘅群組對話,目前對話歷史唔會遷移",
+  "chat_menuSelect": "選取",
+  "chat_selectedCount": "已選 {count} 則",
+  "chat_selectionQuote": "引用",
+  "chat_quoteCopied": "引用已複製,可貼到貼文或訊息",
+  "chat_deleteSelectedConfirm": "刪除所選 {count} 則訊息？",
+  "@chat_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_deleteSelectedConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuFlag": "檢舉",
+  "chat_flagTitle": "檢舉訊息",
+  "chat_flagSuccess": "檢舉已送出",
+  "chat_flagNoTypes": "呢條訊息目前無法檢舉",
+  "chat_flagMessageHint": "補充說明(選填)",
+  "chat_flagSubmit": "送出檢舉",
+  "chat_emoji": "表情",
+  "chat_insertTemplate": "插入範本",
+  "chat_insertDateTime": "插入日期/時間",
+  "chat_noTemplates": "冇可用範本",
+  "chat_searchAll": "搜尋訊息",
+  "chat_searchAllHint": "搜尋全部訊息",
+  "chat_searchInChannel": "喺對話入面搜尋",
+  "chat_searchInChannelHint": "搜尋呢個對話嘅訊息",
+  "chat_searchPrompt": "輸入關鍵字搜尋聊天訊息",
+  "chat_searchNoResults": "冇符合嘅訊息",
+  "chat_star": "收藏",
+  "chat_unstar": "取消收藏",
+  "chat_leaveChannel": "離開頻道",
+  "chat_summarize": "總結訊息",
+  "chat_summarizeHours": "最近 {count} 小時",
+  "chat_summarizeDays": "最近 {count} 天",
+  "@chat_summarizeHours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_summarizeDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_settingsSection": "設定",
+  "chat_muteChannel": "設為免打擾",
+  "chat_notificationLevel": "傳送推播通知",
+  "chat_levelNever": "永不",
+  "chat_levelMention": "僅限提及",
+  "chat_levelAlways": "所有訊息",
+  "chat_threadingEnabled": "啟用訊息串",
+  "chat_threadingHint": "開啟後回覆會歸入訊息串,唔會洗版主串",
+  "chat_viewMembers": "查看成員",
+  "chat_infoCategory": "類別",
+  "chat_infoRetention": "歷史記錄",
+  "chat_retentionForever": "永久保留",
+  "chat_retentionDays": "保留 {count} 天",
+  "@chat_retentionDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_reactionUsersMore": "{names} 同另外 {count} 人",
+  "@chat_reactionUsersMore": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@
   "bookmark_setReminder": "Set reminder",
   "bookmarks_cancelReminder": "Cancel reminder",
   "bookmarks_deleted": "Bookmark deleted",
+  "bookmarks_initialSyncing": "Syncing bookmarks…",
   "bookmarks_empty": "No bookmarks",
   "bookmarks_emptySearchHint": "Enter keywords to search bookmarks",
   "bookmarks_expired": " expired",

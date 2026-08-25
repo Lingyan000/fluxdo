@@ -23,7 +23,7 @@ import 'dio_http_client.dart';
 /// 让两三个图密话题就互相挤兑重下。
 ///
 /// Telegram 的收敛形态(源码实证)是**零数据库**:
-/// - 寻址:HTTP 图 = `MD5(url)` 确定性文件名,给定 URL 纯函数算路径
+/// - 寻址:HTTP 图 = `MD5(url).ext` 确定性文件名,给定 URL 纯函数算路径
 ///   (ImageLoader.getHttpFilePath);FilePathDatabase 只是"文件被移出
 ///   缓存目录"的例外覆盖表,图片显示热路径不查库;
 /// - 淘汰:每 24h 节流扫描 listFiles + stat 时间戳,按保留期删旧
@@ -99,12 +99,35 @@ class BlobImageCache {
         return dir;
       })();
 
-  /// 确定性寻址:bucket 目录 + md5(key)。无扩展名 —— Flutter codec 按
-  /// magic bytes 嗅探格式,SVG 探测也读文件头,都不依赖后缀。
+  /// 确定性寻址:bucket 目录 + `md5(key).ext`(Telegram ImageLoader
+  /// `getHttpFilePath` 同款,ext 见 [httpUrlExtension])。显示层不依赖
+  /// 后缀 —— Flutter codec 按 magic bytes 嗅探格式,SVG 探测也读文件头;
+  /// 后缀服务于系统分享/保存这类按扩展名定型的外部消费者:裸 md5 文
+  /// 件名会被分享面板当成无后缀通用文件而非图片。
   static Future<File> _fileFor(String bucket, String key) async {
     final root = _root ?? await _ensureRoot();
-    return File('${root.path}/$bucket/${md5.convert(utf8.encode(key))}');
+    final name = '${md5.convert(utf8.encode(key))}.${httpUrlExtension(key)}';
+    return File('${root.path}/$bucket/$name');
   }
+
+  /// 从 URL 提取扩展名(Telegram `ImageLoader.getHttpUrlExtension` 同款):
+  /// 取最后一段路径里最后一个 '.' 的后缀;为空、长度 >4 或含非字母数
+  /// 字(误吞域名后缀等)时回退 [defaultExt]。显示层解码不读它,它只
+  /// 决定缓存文件名(供系统分享/保存定型)。
+  static String httpUrlExtension(String url, [String defaultExt = 'jpg']) {
+    var haystack = url;
+    final segments = Uri.tryParse(url)?.pathSegments;
+    if (segments != null && segments.isNotEmpty && segments.last.length > 1) {
+      haystack = segments.last;
+    }
+    final idx = haystack.lastIndexOf('.');
+    final ext = idx == -1 ? '' : haystack.substring(idx + 1).toLowerCase();
+    final valid =
+        ext.isNotEmpty && ext.length <= 4 && _extPattern.hasMatch(ext);
+    return valid ? ext : defaultExt;
+  }
+
+  static final RegExp _extPattern = RegExp(r'^[a-z0-9]+$');
 
   /// 只读缓存:命中返回字节,miss 返回 null。不做 exists 预检 ——
   /// 直接读,读失败即 miss(省一次 stat)。

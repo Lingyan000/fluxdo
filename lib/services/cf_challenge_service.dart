@@ -26,6 +26,18 @@ import '../widgets/draggable_floating_pill.dart';
 CookieManager get _cfCookieManager =>
     WindowsWebViewEnvironmentService.instance.cookieManager;
 
+/// 「切兼容模式」询问的三种去向。
+enum _CompatPromptChoice {
+  /// 本次会话改用浏览器网络栈发主站请求。
+  enableCompat,
+
+  /// 关掉自动过盾,改为撞盾时手动点验证。
+  disableAutoVerify,
+
+  /// 什么都不做(含关闭弹窗)。
+  dismiss,
+}
+
 /// CF 验证服务
 /// 处理 Cloudflare Turnstile 验证（仅手动模式）
 class CfChallengeService {
@@ -68,6 +80,7 @@ class CfChallengeService {
     if (_isVerifying == value) return;
     _isVerifying = value;
     if (value) {
+      _verifyRound++;
       _completedVerificationResult = null;
       final current = _manualTeardownCompleter;
       if (current == null || current.isCompleted) {
@@ -109,11 +122,19 @@ class CfChallengeService {
   /// 交给 ErrorView 提供"手动验证"入口。由 PreferencesNotifier 同步维护。
   bool autoVerifyEnabled = true;
 
+  /// 请求把「自动过盾」开关持久化关闭。
+  ///
+  /// 服务层拿不到 Riverpod 容器,由 PreferencesNotifier 在初始化时注入
+  /// (它才是这个开关的真正归属方,要写 SharedPreferences)。
+  /// 未注入时只改内存态,不持久化 —— 不阻塞功能。
+  Future<void> Function()? disableAutoVerifyRequest;
+
   final _verifyCompleter = <Completer<bool>>[];
   BuildContext? _context;
   static DateTime? _lastToastAt;
   Future<bool>? _activeSessionCompatPrompt;
-  bool _sessionCompatPromptDeclined = false;
+  /// 上次拒绝「切兼容」的时刻;超过 [_sessionCompatDeclineTtl] 后可再问。
+  DateTime? _sessionCompatDeclinedAt;
   Completer<BuildContext>? _contextReadyCompleter;
   VoidCallback? _activePromoteToForeground;
   bool _pendingPromoteToForeground = false;
@@ -121,10 +142,34 @@ class CfChallengeService {
   /// 冷却机制：连续失败 N 次后进入冷却期
   DateTime? _cooldownUntil;
   int _consecutiveFailures = 0;
+
+  /// 验证轮次序号。每次真正起一轮验证(_setVerifying(true))时递增。
+  ///
+  /// 多个并发请求撞盾时会合流到同一轮验证(见 showManualVerify 的排队分支),
+  /// 但它们各自拿到结果后会**各自**走后续处置。失败计数必须按轮次去重,
+  /// 否则五个并发请求把一次时序抖动记成五次失败,瞬间打满阈值 → 冷却 +
+  /// 弹切兼容询问,而用户全程无感(实测:启动时五个首屏请求同时撞盾,
+  /// cookie 同步慢一拍,9 秒后自行恢复正常)。
+  int _verifyRound = 0;
+
+  /// 已被记过失败的轮次号,防止同一轮被多个等待者重复计数。
+  int? _failureCountedRound;
   static const _cooldownDuration = Duration(seconds: 30);
   static const _ineffectiveClearanceCooldown = Duration(seconds: 60);
   static const _maxFailuresBeforeCooldown = 3;
   static const _toastCooldown = Duration(seconds: 2);
+
+  /// 等待 navigator context 就绪的上限。
+  ///
+  /// 启动早期 context 通常几百毫秒内到位;等不到说明当前环境根本没有前台
+  /// UI(后台 isolate 等),此时应放弃验证而不是挂死。
+  static const _contextWaitTimeout = Duration(seconds: 10);
+
+  /// "切兼容模式"询问被拒绝后的静默期。
+  ///
+  /// 此前一旦拒绝就沉默到登出,用户启动时随手点了取消,之后哪怕盾天天触发
+  /// 也不再询问。给它加时效:既不反复打扰,也不永久放弃。
+  static const _sessionCompatDeclineTtl = Duration(minutes: 30);
 
   /// 检查是否在冷却期
   bool get isInCooldown {
@@ -136,15 +181,49 @@ class CfChallengeService {
     return true;
   }
 
+  /// 冷却截止时刻(仅供诊断快照读取,不参与判定——判定请用 [isInCooldown])。
+  DateTime? get cooldownUntil => _cooldownUntil;
+
+  /// 连续验证失败次数(诊断用)。
+  int get consecutiveFailures => _consecutiveFailures;
+
+  /// 本次会话是否已被用户拒绝过"切兼容模式"询问(诊断用)。
+  /// 当前是否处于「已拒绝切兼容」的静默期内(诊断用)。
+  bool get sessionCompatPromptDeclined {
+    final declinedAt = _sessionCompatDeclinedAt;
+    if (declinedAt == null) return false;
+    return DateTime.now().difference(declinedAt) < _sessionCompatDeclineTtl;
+  }
+
   /// 重置冷却期和失败计数（验证成功后调用）
   void resetCooldown() {
     _cooldownUntil = null;
     _consecutiveFailures = 0;
+    // 去重标记随计数一起清:下一轮失败要能重新记账
+    _failureCountedRound = null;
     CfChallengeLogger.logCooldown(entering: false);
   }
 
-  /// 记录一次验证失败，连续达到上限后进入冷却期
-  void startCooldown() {
+  /// 当前验证轮次号。
+  ///
+  /// 拦截器在"验证成功但后续处置失败"时把它传给 [startCooldown],
+  /// 让同一轮验证的多个等待者只记一次失败。
+  int get verifyRound => _verifyRound;
+
+  /// 记录一次验证失败，连续达到上限后进入冷却期。
+  ///
+  /// [round] 传入触发本次失败的验证轮次号(见 [verifyRound])。同一轮只记一次
+  /// —— 多个并发请求撞盾会合流到同一轮验证,却各自走后续处置,不去重会把
+  /// 一次失败放大成 N 次,瞬间打满阈值。不传则按独立失败计数(如验证本身
+  /// 被用户取消,那与并发无关)。
+  void startCooldown({int? round}) {
+    if (round != null) {
+      if (_failureCountedRound == round) {
+        debugPrint('[CfChallenge] 轮次 $round 的失败已记过，跳过重复计数');
+        return;
+      }
+      _failureCountedRound = round;
+    }
     _consecutiveFailures++;
     if (_consecutiveFailures >= _maxFailuresBeforeCooldown) {
       _cooldownUntil = DateTime.now().add(_cooldownDuration);
@@ -191,7 +270,7 @@ class CfChallengeService {
   /// 原生链路在完成验证后仍被 CF 拒绝时，询问用户是否仅在本次会话
   /// 使用浏览器网络栈。并发失败请求共享同一个弹窗结果。
   Future<bool> confirmSessionCompatibilityMode() {
-    if (_sessionCompatPromptDeclined) return Future.value(false);
+    if (sessionCompatPromptDeclined) return Future.value(false);
     final active = _activeSessionCompatPrompt;
     if (active != null) return active;
 
@@ -212,36 +291,97 @@ class CfChallengeService {
     }
     if (context == null || !context.mounted) return false;
 
-    final result = await showDialog<bool>(
+    final choice = await showDialog<_CompatPromptChoice>(
       context: context,
       useRootNavigator: true,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(S.current.cf_sessionCompatTitle),
-        content: Text(S.current.cf_sessionCompatMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(
-              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(S.current.cf_sessionCompatTitle),
+          // 三个动作横排放不下(中文约 360px、英文约 500px,而对话框可用宽度
+          // 只有 280~320px,OverflowBar 会自动竖排,把"取消"顶到最上面、
+          // 主次层级反过来)。故把第三条出路降级为正文里的文字链接:
+          // 主次分明,且它紧跟在解释文字后面,阅读顺序自然。
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(S.current.cf_sessionCompatMessage),
+              const SizedBox(height: 16),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => Navigator.of(
+                    dialogContext,
+                  ).pop(_CompatPromptChoice.disableAutoVerify),
+                  child: Text(
+                    S.current.cf_sessionCompatDisableAuto,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_CompatPromptChoice.dismiss),
+              child: Text(
+                MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+              ),
             ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(S.current.cf_sessionCompatEnable),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(_CompatPromptChoice.enableCompat),
+              child: Text(S.current.cf_sessionCompatEnable),
+            ),
+          ],
+        );
+      },
     );
-    final confirmed = result == true;
-    if (!confirmed) {
-      // 用户本次会话已经明确拒绝，不在后续 CF 失败时反复打扰。
-      _sessionCompatPromptDeclined = true;
+
+    switch (choice) {
+      case _CompatPromptChoice.enableCompat:
+        return true;
+
+      case _CompatPromptChoice.disableAutoVerify:
+        autoVerifyEnabled = false;
+        // 持久化交给设置层(它持有 SharedPreferences);未注入时只改内存态。
+        await disableAutoVerifyRequest?.call();
+        // 关掉自动过盾后不必再问兼容模式 —— 后续撞盾会静默 reject 并由
+        // ErrorView 给出手动验证入口,不再走到本询问。
+        _sessionCompatDeclinedAt = DateTime.now();
+        showGlobalMessage(
+          S.current.cf_autoVerifyDisabledHint,
+          isError: false,
+        );
+        CfChallengeLogger.log(
+          '[PROMPT] User disabled auto verify from compat prompt',
+        );
+        return false;
+
+      case _CompatPromptChoice.dismiss:
+      case null:
+        // 用户明确拒绝:进入静默期不再打扰。带时效而非永久——盾的成因
+        // (出口 IP、代理配置)可能在半小时内就变了,那时值得再问一次。
+        _sessionCompatDeclinedAt = DateTime.now();
+        return false;
     }
-    return confirmed;
   }
 
   void resetSessionCompatibilityDecision() {
-    _sessionCompatPromptDeclined = false;
+    _sessionCompatDeclinedAt = null;
   }
 
   void setContext(BuildContext context) {
@@ -273,18 +413,20 @@ class CfChallengeService {
     if (response == null) return false;
     final headers = response.headers;
 
-    // 1. 必须来自 Cloudflare
-    final server = headers.value('server') ?? '';
-    if (!server.toLowerCase().contains('cloudflare')) return false;
-
-    // 2. cf-mitigated: challenge — CF 官方权威信号, 不依赖 content-type
+    // 1. cf-mitigated: challenge — CF 官方权威信号,单独命中即判定。
+    //    不再把 server 头当前置闸:部分传输通道下响应头可能缺失/走样,
+    //    server 头一票否决会让挑战型 429 永远进不了验证自愈链路。
     final cfMitigated = headers.value('cf-mitigated') ?? '';
     if (cfMitigated.contains('challenge')) return true;
 
-    // 3. fallback: 老版本 CF 或某些路径不带 cf-mitigated, 用 body 兜底,
-    //    但 body 兜底只对 text/html 走 — 避免误判 Discourse 自己的 plaintext 403。
+    // 2. fallback: 不带 cf-mitigated 时用 body 兜底。挑战页一定是 text/html,
+    //    content-type 明确为其他类型则排除(避免误判 Discourse 自己的
+    //    plaintext/JSON 403);content-type 缺失时放行 body 判定,
+    //    isCfChallenge 的标记(cf_chl_opt 等)足够特异,不会误伤业务响应。
     final contentType = headers.value('content-type') ?? '';
-    if (!contentType.contains('text/html')) return false;
+    if (contentType.isNotEmpty && !contentType.contains('text/html')) {
+      return false;
+    }
 
     return isCfChallenge(response.data);
   }
@@ -358,11 +500,31 @@ class CfChallengeService {
       }
     }
 
-    // 启动时可能还没有可用的 context，等到 context 可用后立即弹出
+    // 启动时可能还没有可用的 context，等到 context 可用后立即弹出。
+    //
+    // 但这个等待必须有上限:后台 isolate(iOS 后台拉取)与无 UI 环境里
+    // context 永远不会到来,无限等待会让请求挂死,只能靠系统任务超时收尸
+    // (历史上后台拉取撞盾就是这个形态)。启动早期的等待仍然有效——那时
+    // context 通常在几百毫秒内就绪。
     if (ctx == null || !ctx.mounted) {
       _contextReadyCompleter ??= Completer<BuildContext>();
       debugPrint('[CfChallenge] Waiting for context to be ready...');
-      ctx = await _contextReadyCompleter!.future;
+      try {
+        ctx = await _contextReadyCompleter!.future.timeout(
+          _contextWaitTimeout,
+        );
+      } on TimeoutException {
+        debugPrint(
+          '[CfChallenge] 等待 context 超时 '
+          '(${_contextWaitTimeout.inSeconds}s),按无 UI 环境处理',
+        );
+        CfChallengeLogger.log(
+          '[VERIFY] Skipped: no UI available after '
+          '${_contextWaitTimeout.inSeconds}s',
+          level: 'warning',
+        );
+        return null;
+      }
     }
     if (!ctx.mounted) {
       debugPrint('[CfChallenge] Context no longer mounted');
@@ -437,6 +599,9 @@ class CfChallengeService {
     // 引用当前的拦截 Route，用于 cleanup
     ModalRoute? interceptorRoute;
 
+    /// 验证结束清理时放行 interceptorRoute 的 PopScope（见 cleanup 内注释）。
+    final interceptorRoutePopAllowed = ValueNotifier<bool>(false);
+
     // Page Key 用于触发内部弹窗
     final pageKey = GlobalKey<_CfChallengePageState>();
     _activePromoteToForeground = () {
@@ -465,8 +630,29 @@ class CfChallengeService {
       } else {
         removeEntry();
       }
-      if (interceptorRoute?.isActive ?? false) {
-        interceptorRoute?.navigator?.removeRoute(interceptorRoute!);
+      final routeToClose = interceptorRoute;
+      if (routeToClose != null && routeToClose.isActive) {
+        // 绝不能 removeRoute：框架 _flushHistoryUpdates 的 remove 分支不会
+        // 给下方路由补发 didPopNext（RouteObserver 也没有 didRemove 实现），
+        // 下方页面的 RouteAware 订阅者（话题详情 ScreenTrack、视频、iframe）
+        // 会永远停在「被覆盖」状态——曾表现为 CF 验证通过后 ScreenTrack 不再
+        // start，阅读时长怎么滑动都不上报。放行 PopScope 后走正常 pop，让
+        // 路由生命周期通知完整派发。canPop 变更要等下一帧重建才生效，pop
+        // 放到 post-frame。
+        interceptorRoutePopAllowed.value = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!routeToClose.isActive) return;
+          final nav = routeToClose.navigator;
+          if (nav == null) return;
+          if (routeToClose.isCurrent) {
+            nav.pop();
+          } else {
+            // 极端兜底：验证期间有别的路由压到它上面（正常不会发生——前台
+            // 验证时全屏 Overlay 拦截所有交互）。pop 动画是异步的，无法同步
+            // 回收到本 route，退化为 removeRoute。
+            nav.removeRoute(routeToClose);
+          }
+        });
       }
       _activePromoteToForeground = null;
       _pendingPromoteToForeground = false;
@@ -496,23 +682,32 @@ class CfChallengeService {
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, _, _) {
-          return PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) async {
-              if (didPop) return;
-              if (!_isVerifying) return;
+          // canPop 由 cleanup 在验证结束时放行：验证期间拦截系统返回键
+          // 弹退出确认；结束时必须让本 route 走正常 pop（而非 removeRoute），
+          // 否则下方路由永远收不到 didPopNext（见 cleanup 内注释）。
+          return ValueListenableBuilder<bool>(
+            valueListenable: interceptorRoutePopAllowed,
+            builder: (context, canPop, _) {
+              return PopScope(
+                canPop: canPop,
+                onPopInvokedWithResult: (didPop, result) async {
+                  if (didPop) return;
+                  if (!_isVerifying) return;
 
-              // 触发内部弹窗 via GlobalKey
-              pageKey.currentState?.showExitConfirmation();
+                  // 触发内部弹窗 via GlobalKey
+                  pageKey.currentState?.showExitConfirmation();
+                },
+                // 使用 IgnorePointer 让点击事件穿透到下层的 Overlay (WebView)
+                child: const IgnorePointer(child: SizedBox.expand()),
+              );
             },
-            // 使用 IgnorePointer 让点击事件穿透到下层的 Overlay (WebView)
-            child: const IgnorePointer(child: SizedBox.expand()),
           );
         },
       );
 
       Navigator.of(pageContext).push(interceptorRoute!).then((_) {
-        // Route 被 pop
+        // Route 被 pop（cleanup 走正常 pop 后在这里完成）
+        interceptorRoutePopAllowed.dispose();
       });
     }
 

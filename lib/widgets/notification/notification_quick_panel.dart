@@ -8,16 +8,21 @@ import '../../providers/shortcut_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../pages/notifications_page.dart';
 import '../../services/dynamic_content_suspension_service.dart';
+import '../../theme/theme_resolver.dart';
 import '../../utils/blur_config.dart';
+import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../common/predictive_back_overlay_handler.dart';
+import '../layout/master_detail_layout.dart';
+import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
 
 /// 通知快捷面板控制器
 /// 侧栏模式：在 widget 树中渲染（低于路由层，新页面自然覆盖）
-/// 手机模式：showModalBottomSheet
+/// 手机模式：ModalBottomSheetRoute
 class NotificationQuickPanel {
   NotificationQuickPanel._();
 
@@ -25,15 +30,79 @@ class NotificationQuickPanel {
   static final ValueNotifier<bool> _visible = ValueNotifier(false);
   static ValueNotifier<bool> get visible => _visible;
   static bool get isVisible => _visible.value;
+  static Future<void>? _mobileFuture;
+  static bool _mobileDismissPending = false;
 
-  /// 弹出或关闭快捷面板
+  /// 手机 sheet 自身的路由,由 [_MobileNotificationPanelState] 在挂载后
+  /// 回填。dismiss 必须锚定这条路由而非「navigator 栈顶」:通知条目的
+  /// 点击顺序是「先 push 详情页再关面板」,此刻栈顶是详情页,盲目 pop
+  /// 会把刚打开的详情页弹掉。
+  static ModalRoute<dynamic>? _mobileRoute;
+
+  /// 弹出或关闭快捷面板(重复触发 = 收起,两种模式同语义)
   static Future<void> show(BuildContext context) {
+    if (!Responsive.showNavigationRail(context)) {
+      final existing = _mobileFuture;
+      if (existing != null) {
+        dismiss();
+        return existing;
+      }
+
+      _mobileDismissPending = false;
+      final future = showAppBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        shortcutSurface: const ShortcutSurfaceConfig(
+          id: ShortcutSurfaceIds.notifications,
+          triggerAction: ShortcutAction.toggleNotifications,
+          repeatBehavior: ShortcutSurfaceRepeatBehavior.toggle,
+        ),
+        builder: (_) => const _MobileNotificationPanel(),
+      ).then<void>((_) {});
+      _mobileFuture = future;
+      future
+          .whenComplete(() {
+            if (identical(_mobileFuture, future)) {
+              _mobileFuture = null;
+              _mobileRoute = null;
+              _mobileDismissPending = false;
+            }
+          })
+          .ignore();
+      return future;
+    }
+
     _visible.value = !_visible.value;
     return Future.value();
   }
 
-  /// 关闭侧栏面板
+  /// 关闭当前通知面板
   static void dismiss() {
+    final route = _mobileRoute;
+    if (route == null && _mobileFuture != null) {
+      // show() 已 push 路由、但 sheet 子树还没挂载。记住这次关闭，
+      // 避免首帧前快速二次触发被吞掉。
+      _mobileDismissPending = true;
+      return;
+    }
+    if (route != null) {
+      final navigator = route.navigator;
+      if (navigator != null && route.isActive) {
+        if (route.isCurrent) {
+          navigator.pop();
+        } else {
+          // 上面已经盖了别的路由(点通知先 push 详情页):无动画抽掉
+          // sheet,详情页保持在原位。
+          navigator.removeRoute(route);
+        }
+      }
+      return;
+    }
     _visible.value = false;
   }
 }
@@ -54,6 +123,7 @@ class _SidebarNotificationPanelState
   late AnimationController _animController;
   late Animation<double> _animation;
   late final ShortcutSurfaceBinding _shortcutSurfaceBinding;
+  late final PredictiveBackOverlayHandler _predictiveBackHandler;
   final ScrollController _scrollController = ScrollController();
   bool _wasVisible = false;
   DynamicContentSuspensionLease? _dynamicContentLease;
@@ -70,6 +140,18 @@ class _SidebarNotificationPanelState
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
+    _predictiveBackHandler = PredictiveBackOverlayHandler(
+      // 分类抽屉在 Stack 里盖在本面板之上,两者同开时手势归抽屉,
+      // 这里让位(见 PredictiveBackOverlayHandler 的互斥说明)。
+      isEnabled: () =>
+          (ModalRoute.of(context)?.isCurrent ?? false) &&
+          NotificationQuickPanel.isVisible &&
+          !CategoryDrawerHost.isOpen,
+      onStart: _onPredictiveBackStart,
+      onUpdate: _onPredictiveBackUpdate,
+      onCancel: _onPredictiveBackCancel,
+      onCommit: NotificationQuickPanel.dismiss,
+    )..attach();
     _shortcutSurfaceBinding = ShortcutSurfaceBinding(
       ref: ref,
       id: ShortcutSurfaceIds.notifications,
@@ -91,6 +173,7 @@ class _SidebarNotificationPanelState
 
   @override
   void dispose() {
+    _predictiveBackHandler.dispose();
     NotificationQuickPanel._visible.removeListener(_onVisibilityChanged);
     _animController.removeStatusListener(_onAnimationStatusChanged);
     _shortcutSurfaceBinding.disposeDeferred();
@@ -98,6 +181,25 @@ class _SidebarNotificationPanelState
     _animController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onPredictiveBackStart() {
+    _animController.stop();
+    if (_dragOffset != 0) setState(() => _dragOffset = 0);
+  }
+
+  void _onPredictiveBackUpdate(double progress) {
+    _animController.value = 1.0 - progress;
+  }
+
+  void _onPredictiveBackCancel() {
+    if (NotificationQuickPanel.isVisible) {
+      _animController.animateTo(
+        1.0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   void _onAnimationStatusChanged(AnimationStatus status) {
@@ -175,6 +277,7 @@ class _SidebarNotificationPanelState
         children: [
           _NotificationHeader(
             padding: EdgeInsets.fromLTRB(20, showRail ? 16 : 12, 12, 8),
+            onClose: NotificationQuickPanel.dismiss,
           ),
           _NotificationBody(scrollController: _scrollController),
         ],
@@ -197,7 +300,7 @@ class _SidebarNotificationPanelState
             : Colors.black26;
 
         final panel = Material(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).colorScheme.overlaySurface,
           clipBehavior: Clip.antiAlias,
           elevation: 8,
           borderRadius: showRail
@@ -402,11 +505,82 @@ class _DragHandle extends StatelessWidget {
   }
 }
 
+/// 手机端通知面板作为真正的 ModalBottomSheetRoute 渲染，
+/// 让系统返回手势可以驱动路由动画并在取消时恢复。
+class _MobileNotificationPanel extends StatefulWidget {
+  const _MobileNotificationPanel();
+
+  @override
+  State<_MobileNotificationPanel> createState() =>
+      _MobileNotificationPanelState();
+}
+
+class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 回填 sheet 自身路由,供 dismiss 精确锚定(而非盲 pop 栈顶)
+    final route = ModalRoute.of(context);
+    NotificationQuickPanel._mobileRoute = route;
+    if (route != null && NotificationQuickPanel._mobileDismissPending) {
+      NotificationQuickPanel._mobileDismissPending = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (identical(NotificationQuickPanel._mobileRoute, route)) {
+          NotificationQuickPanel.dismiss();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _openAllNotifications() {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    navigator.pop();
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const NotificationsPage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height * 0.8;
+    return SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: height,
+        child: Column(
+          children: [
+            _NotificationHeader(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+              onClose: NotificationQuickPanel.dismiss,
+              onViewAll: _openAllNotifications,
+            ),
+            _NotificationBody(scrollController: _scrollController),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 共用标题栏
 class _NotificationHeader extends ConsumerWidget {
-  const _NotificationHeader({required this.padding});
+  const _NotificationHeader({
+    required this.padding,
+    required this.onClose,
+    this.onViewAll,
+  });
 
   final EdgeInsets padding;
+  final VoidCallback onClose;
+  final VoidCallback? onViewAll;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -436,12 +610,16 @@ class _NotificationHeader extends ConsumerWidget {
           ),
           const SizedBox(width: 4),
           TextButton(
-            onPressed: () {
-              NotificationQuickPanel.dismiss();
-              Navigator.of(context, rootNavigator: true).push(
-                MaterialPageRoute(builder: (_) => const NotificationsPage()),
-              );
-            },
+            onPressed:
+                onViewAll ??
+                () {
+                  onClose();
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationsPage(),
+                    ),
+                  );
+                },
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -536,17 +714,21 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
                 notification: notification,
                 systemAvatarTemplate: systemAvatarTemplate,
                 onTap: () {
-                  // 先派发跳转再关面板:跳转在本帧同步读取
-                  // context/provider,面板收起动画导致的子树卸载不影响
-                  // 已打开的弹窗/路由。siblings = 当前可见列表,弹窗内
-                  // 可上一条/下一条快速切换。
+                  // 先派发跳转再处理面板:跳转在本帧同步读取
+                  // context/provider。siblings = 当前可见列表,大屏弹窗
+                  // 内可上一条/下一条快速切换。
                   handleNotificationTap(
                     context,
                     ref,
                     notification,
                     siblings: visibleNotifications,
                   );
-                  NotificationQuickPanel.dismiss();
+                  // 大屏(弹窗落点,自带通知列表侧栏)关面板;窄屏推的
+                  // 是全屏详情路由,sheet 留在栈里垫底——返回即回到
+                  // 面板继续看下一条,不用重新拉开。
+                  if (MasterDetailLayout.canShowBothPanesFor(context)) {
+                    NotificationQuickPanel.dismiss();
+                  }
                 },
               );
             },

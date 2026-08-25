@@ -21,6 +21,16 @@ class Category {
   final int? permission; // 0 = full, 1 = create/reply, 2 = reply only, 3 = see
   final int? notificationLevel; // 0=muted, 1=regular, 2=tracking, 3=watching
 
+  /// post-voting(问答)插件分类字段:新话题默认勾选问答模式
+  final bool createAsPostVotingDefault;
+
+  /// 该分类强制所有新话题为问答模式(用户不可取消)
+  final bool onlyPostVotingInThisCategory;
+
+  /// 站点是否装了 post-voting 插件 —— 从「分类 JSON 是否下发插件注入
+  /// 字段」派生,不做站点白名单
+  final bool hasPostVotingFields;
+
   Category({
     required this.id,
     required this.name,
@@ -41,6 +51,9 @@ class Category {
     this.allowGlobalTags = true,
     this.permission,
     this.notificationLevel,
+    this.createAsPostVotingDefault = false,
+    this.onlyPostVotingInThisCategory = false,
+    this.hasPostVotingFields = false,
   });
 
   /// 是否允许在此分类创建话题
@@ -75,6 +88,11 @@ class Category {
       allowGlobalTags: json['allow_global_tags'] as bool? ?? true,
       permission: json['permission'] as int?,
       notificationLevel: json['notification_level'] as int?,
+      createAsPostVotingDefault:
+          json['create_as_post_voting_default'] as bool? ?? false,
+      onlyPostVotingInThisCategory:
+          json['only_post_voting_in_this_category'] as bool? ?? false,
+      hasPostVotingFields: json.containsKey('create_as_post_voting_default'),
     );
   }
 }

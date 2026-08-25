@@ -27,16 +27,10 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  // 渲染帧标识印记:合成层挂在顶级窗口上、Flutter 子窗口之上
-  render_signet_handler_ = std::make_unique<RenderSignetHandler>();
-  render_signet_handler_->Register(flutter_controller_->engine()->messenger(),
-                                   GetHandle());
-
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
-  render_signet_handler_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

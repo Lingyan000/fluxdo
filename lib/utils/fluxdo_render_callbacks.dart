@@ -36,6 +36,7 @@ import '../utils/link_launcher.dart';
 import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
 import '../widgets/common/image_context_menu.dart';
+import '../widgets/common/image_lift_menu.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/post/quote_image_scope.dart';
 import '../widgets/content/animated_svg_view.dart';
@@ -154,9 +155,12 @@ class FluxdoRenderCallbacks {
     int chunkIndex = 0,
     bool trimTopMargin = false,
     bool trimBottomMargin = false,
+    bool shrinkWrapWidth = false,
     QuoteRequestCallback? onQuoteRequest,
     QuoteRequestCallback? onCopyQuoteRequest,
     CopyToastCallback? onCopyToast,
+    DecryptRequestCallback? onDecryptRequest,
+    DecryptTextDetector? decryptTextDetector,
   }) {
     return FluxdoRender(
       key: key,
@@ -172,9 +176,12 @@ class FluxdoRenderCallbacks {
       chunkIndex: chunkIndex,
       trimTopMargin: trimTopMargin,
       trimBottomMargin: trimBottomMargin,
+      shrinkWrapWidth: shrinkWrapWidth,
       onQuoteRequest: onQuoteRequest,
       onCopyQuoteRequest: onCopyQuoteRequest,
       onCopyToast: onCopyToast,
+      onDecryptRequest: onDecryptRequest,
+      decryptTextDetector: decryptTextDetector,
       linkHandler: linkHandler,
       emojiImageBuilder: emojiImageBuilder,
       mentionTapHandler: mentionTapHandler,
@@ -916,6 +923,7 @@ class FluxdoRenderCallbacks {
       final galleryUrls = <String>[];
       final galleryThumbs = <String>[];
       final galleryHeroTags = <String>[];
+      final galleryFilenames = <String?>[];
       final galleryIndexByImageIndex = <int, int>{};
       for (var i = 0; i < galleryImages.length; i++) {
         final img = galleryImages[i];
@@ -929,12 +937,14 @@ class FluxdoRenderCallbacks {
         galleryUrls.add(DiscourseImageUtils.getOriginalUrl(resolvedFull));
         galleryThumbs.add(resolvedThumb);
         galleryHeroTags.add('${heroNamespace}_img_${img.indexInPost}');
+        galleryFilenames.add(img.filename);
         galleryIndexByImageIndex[img.indexInPost] = i;
       }
       return galleryCache = (
         urls: galleryUrls,
         thumbs: galleryThumbs,
         heroTags: galleryHeroTags,
+        filenames: galleryFilenames,
         indexByImageIndex: galleryIndexByImageIndex,
       );
     }
@@ -984,6 +994,7 @@ class FluxdoRenderCallbacks {
           theme: Theme.of(ctx),
           element: el,
           post: post,
+          topicId: topicId,
           htmlBuilder: (html, textStyle) => _footnoteFreeNested(
             html: html,
             textStyle: textStyle,
@@ -1022,7 +1033,9 @@ class FluxdoRenderCallbacks {
   /// - 链接:走 [onInternalLinkTap] 定制(默认 push TopicDetailPage);不追踪
   ///   点击(trackClick 需 postId)。
   /// - onebox / lazyVideo:点击数传空(无 post.linkCounts)。
-  /// - policy / poll:返回 null → 子包 fallback 占位(无 post 无法交互)。
+  /// - policy:返回 null → 子包 fallback 占位(无 post 无法交互)。
+  /// - poll:静态预览卡(从 rawHtml 解选项/属性,无投票交互)——
+  ///   编辑器岛预览等场景所见即所发。
   /// - 其余(emoji/mention/code/avatar/math/svg/video/audio/download/iframe/
   ///   localDate/imageGrid/footnote/chat)与 forPost 完全一致(共享 static)。
   factory FluxdoRenderCallbacks.generic({
@@ -1066,9 +1079,19 @@ class FluxdoRenderCallbacks {
       mathInlineBuilder: _mathInlineBuilder,
       oneboxBuilder: _oneboxHandler(const []),
       imageGridBuilder: _imageGridBuilder,
-      // 无 post → 无法做接受/撤销 + 票数交互,返回 null 让子包出 fallback 占位。
+      // 无 post → 无法做接受/撤销交互,返回 null 让子包出 fallback 占位。
       policyBuilder: (ctx, node) => null,
-      pollBuilder: (ctx, node) => null,
+      // 无 post 拿不到票数/投票交互,但 rawHtml(cooked div.poll)里
+      // 选项/属性齐全 —— 渲染静态预览卡(标题+类型徽标+选项+属性摘要)。
+      // 编辑器里插投票后看到的就是它,而不是「接入主项目」占位卡。
+      pollBuilder: (ctx, node) {
+        if (node.rawHtml.isEmpty) return null;
+        return legacy_poll.buildPollStaticPreview(
+          context: ctx,
+          theme: Theme.of(ctx),
+          element: _elementFromHtml(node.rawHtml),
+        );
+      },
       chatTranscriptBuilder: _chatTranscriptHandler(heroTagNamespace, topicId),
       svgBuilder: _svgBuilder,
       videoBuilder: _videoBuilder,
@@ -1157,6 +1180,17 @@ class FluxdoRenderCallbacks {
                 post: post,
                 topicId: topicId,
                 onQuoteImage: onQuoteImage,
+                // SVG 浮起预览复用会话级缓存(_SvgContentCache),
+                // 重挂载零 IO 零重解析。
+                lift: ImageLiftSpec(
+                  sourceContext: svgCtx,
+                  previewBuilder: (_) => DiscourseSvgView(
+                    url: resolvedUrl,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.center,
+                  ),
+                  sourceRadius: inGridTile ? 4 : 0,
+                ),
               ),
               onSecondaryTapUp: (details) => _showImageContextMenu(
                 svgCtx,
@@ -1166,15 +1200,32 @@ class FluxdoRenderCallbacks {
                 topicId: topicId,
                 onQuoteImage: onQuoteImage,
                 position: details.globalPosition,
+                lift: ImageLiftSpec(
+                  sourceContext: svgCtx,
+                  previewBuilder: (_) => DiscourseSvgView(
+                    url: resolvedUrl,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.center,
+                  ),
+                  sourceRadius: inGridTile ? 4 : 0,
+                ),
               ),
-              child: SizedBox(
-                width: dispW,
-                height: dispH,
-                child: DiscourseSvgView(
-                  url: resolvedUrl,
+              // 浮起菜单会话期间隐藏源图(语义同上 raster 分支)。
+              child: ValueListenableBuilder<BuildContext?>(
+                valueListenable: ImageLiftMenu.activeSource,
+                builder: (_, lifted, child) => Opacity(
+                  opacity: identical(lifted, svgCtx) ? 0.0 : 1.0,
+                  child: child,
+                ),
+                child: SizedBox(
                   width: dispW,
                   height: dispH,
-                  placeholderBuilder: (_) => const LoadingSpinner(size: 24),
+                  child: DiscourseSvgView(
+                    url: resolvedUrl,
+                    width: dispW,
+                    height: dispH,
+                    placeholderBuilder: (_) => const LoadingSpinner(size: 24),
+                  ),
                 ),
               ),
             ),
@@ -1273,6 +1324,7 @@ class FluxdoRenderCallbacks {
                     galleryImages: hasGallery ? gallery.urls : null,
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
+                    filenames: hasGallery ? gallery.filenames : [image.filename],
                     initialIndex: hasGallery ? galleryIndex : 0,
                     heroSourceFit: inGridTile ? BoxFit.cover : null,
                     heroSourceRadius: inGridTile ? 4 : 0,
@@ -1280,6 +1332,9 @@ class FluxdoRenderCallbacks {
                 },
                 // 长按/右键 → 图片上下文菜单(对齐 legacy LazyImage
                 // onLongPress/onSecondaryTapUp,discourse_widget_factory.dart)。
+                // 移动端长按走 X 风格浮起菜单:预览复用同一 provider
+                // (ImageCache 同 key,零闪烁),grid 瓦片 cover 裁切与
+                // 源圆角 4 一并对齐。
                 onLongPress: () => _showImageContextMenu(
                   ctx,
                   image: image,
@@ -1288,6 +1343,15 @@ class FluxdoRenderCallbacks {
                   topicId: topicId,
                   onQuoteImage: onQuoteImage,
                   heroTag: heroTag,
+                  lift: ImageLiftSpec(
+                    sourceContext: ctx,
+                    previewBuilder: (_) => Image(
+                      image: discourseImageProvider(displayUrl),
+                      fit: inGridTile ? BoxFit.cover : BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                    sourceRadius: inGridTile ? 4 : 0,
+                  ),
                 ),
                 onSecondaryTapUp: (details) => _showImageContextMenu(
                   ctx,
@@ -1298,6 +1362,15 @@ class FluxdoRenderCallbacks {
                   onQuoteImage: onQuoteImage,
                   position: details.globalPosition,
                   heroTag: heroTag,
+                  lift: ImageLiftSpec(
+                    sourceContext: ctx,
+                    previewBuilder: (_) => Image(
+                      image: discourseImageProvider(displayUrl),
+                      fit: inGridTile ? BoxFit.cover : BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                    sourceRadius: inGridTile ? 4 : 0,
+                  ),
                 ),
               );
               // 预览缩放胶囊(右上角浮层,子包统一视觉)。仅有界宽上下文
@@ -1322,7 +1395,17 @@ class FluxdoRenderCallbacks {
                   ],
                 );
               }
-              return img;
+              // 浮起菜单会话期间隐藏源图(X/iOS lift 语义:源视图被
+              // 「拿走」浮起,原位空缺,与查看大图的 Hero 飞行一致)。
+              // Opacity(0) 保布局保状态,落回/淡出时 notifier 清空即恢复。
+              return ValueListenableBuilder<BuildContext?>(
+                valueListenable: ImageLiftMenu.activeSource,
+                builder: (_, lifted, child) => Opacity(
+                  opacity: identical(lifted, ctx) ? 0.0 : 1.0,
+                  child: child,
+                ),
+                child: img,
+              );
             },
           ),
         );
@@ -1350,6 +1433,7 @@ class FluxdoRenderCallbacks {
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
     String? heroTag,
+    ImageLiftSpec? lift,
   }) {
     final scope = QuoteImageScope.maybeOf(context);
     final liveQuoteHandler = scope != null ? scope.handler : onQuoteImage;
@@ -1367,6 +1451,8 @@ class FluxdoRenderCallbacks {
       position: position,
       quoteMarkdown: _uploadMarkdownForImage(image),
       heroTag: heroTag,
+      lift: lift,
+      fileName: image.filename,
     );
   }
 
@@ -1470,6 +1556,7 @@ typedef _GalleryData = ({
   List<String> urls,
   List<String> thumbs,
   List<String> heroTags,
+  List<String?> filenames,
   Map<int, int> indexByImageIndex,
 });
 

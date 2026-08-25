@@ -1,7 +1,7 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.25+2026072418
+version: 0.2.27+2026082115
 
 environment:
   sdk: ^3.10.4
@@ -104,7 +104,6 @@ dependencies:
   # 本已是 image 等包的传递依赖,显式声明)
   archive: ^4.0.9
   html: ^0.15.5
-  dio_smart_retry: ^7.0.1
   extended_nested_scroll_view: ^6.2.1
   popover: ^0.4.0
   uuid: ^4.5.2

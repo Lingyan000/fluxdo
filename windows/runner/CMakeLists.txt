@@ -9,7 +9,6 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
-  "render_signet_handler.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -21,12 +20,6 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
-# render_signet_handler 用 C++/WinRT(Windows.UI.Composition):
-# - WinRT 错误模型是 winrt::hresult_error 异常,标准设置里的
-#   _HAS_EXCEPTIONS=0 只对 runner 撤销(不影响插件);
-# - winrt 头在 /W4 /WX 下有已知告警,用 /external 把尖括号头降噪。
-target_compile_definitions(${BINARY_NAME} PRIVATE "_HAS_EXCEPTIONS=1")
-target_compile_options(${BINARY_NAME} PRIVATE /external:W0 /external:anglebrackets)
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -49,10 +42,6 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
-# render_signet_handler 依赖:WinRT 投影 / DispatcherQueue / D3D / D2D
-# (dxguid 提供 CLSID_D2D1Blend 等效果 GUID 定义)
-target_link_libraries(${BINARY_NAME} PRIVATE
-  "windowsapp.lib" "CoreMessaging.lib" "d3d11.lib" "d2d1.lib" "dxguid.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

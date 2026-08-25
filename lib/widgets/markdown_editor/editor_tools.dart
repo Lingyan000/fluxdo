@@ -199,6 +199,32 @@ final List<EditorTool> editorTools = [
     action: (t) => t.insertSpoiler(),
   ),
   EditorTool(
+    id: 'encrypt',
+    icon: const FaIcon(FontAwesomeIcons.key),
+    label: (s) => s.crypto_encrypt,
+    action: (t) => t.insertEncryptedBlock(),
+  ),
+  EditorTool(
+    id: 'poll',
+    icon: const FaIcon(FontAwesomeIcons.squarePollVertical),
+    label: (s) => '投票',
+    action: (t) => t.insertPoll(t.context),
+  ),
+  // 目录(DiscoTOC 同款):div 标记包裹内容,阅读侧据此生成目录树。
+  // 空行让 markdown-it 结束 html_block、内部标题正常 cook;仅 1 楼生效
+  // (对齐 DiscoTOC 默认 enable_TOC_for_replies=false)。注意:富文本
+  // composer 往返会丢弃该包裹 div(通用容器拆壳),用 Markdown 模式编辑。
+  EditorTool(
+    id: 'toc',
+    icon: const FaIcon(FontAwesomeIcons.alignLeft),
+    label: (s) => s.toolPanel_toc,
+    action: (t) => t.wrapSelection(
+      '\n<div data-theme-toc="true">\n\n',
+      '\n\n</div>\n',
+      placeholder: S.current.toolbar_tocPlaceholder,
+    ),
+  ),
+  EditorTool(
     id: 'imageGrid',
     icon: const FaIcon(FontAwesomeIcons.tableColumns),
     label: (s) => s.toolPanel_imageGrid,

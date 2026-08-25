@@ -67,6 +67,8 @@
   "cf_sessionCompatTitle": "切换到临时兼容模式？",
   "cf_sessionCompatMessage": "安全验证已经完成，但当前原生网络仍未被 Cloudflare 信任。可以在本次使用期间改用浏览器内核发送主站请求，应用重启或退出登录后会自动恢复。",
   "cf_sessionCompatEnable": "本次使用兼容模式",
+  "cf_sessionCompatDisableAuto": "不想每次被打断？关闭自动验证",
+  "cf_autoVerifyDisabledHint": "已关闭自动验证，之后遇到验证时可在页面上手动点击",
   "cf_sessionCompatEnabled": "已临时切换到兼容模式",
   "cf_sessionCompatDisable": "退出临时兼容模式",
   "@cf_verifying": {

@@ -87,6 +87,7 @@ class UpdateService {
   static const String _apiUrl =
       'https://api.github.com/repos/$_repository/releases/latest';
   static const String _autoCheckUpdateKey = 'auto_check_update';
+  static const String _githubProxyKey = 'github_proxy_url';
   static const String _cacheKey = 'update_cache';
   static const String _cacheTimeKey = 'update_cache_time';
   static const String _etagKey = 'update_etag';
@@ -104,6 +105,48 @@ class UpdateService {
   /// 获取自动检查更新设置
   bool getAutoCheckUpdate() {
     return _prefs?.getBool(_autoCheckUpdateKey) ?? true;
+  }
+
+  /// 获取自定义 GitHub 反代前缀（空字符串表示未配置，直连）
+  static Future<String> getGithubProxy() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_githubProxyKey) ?? '';
+  }
+
+  /// 保存自定义 GitHub 反代前缀，传空字符串表示清除
+  static Future<void> setGithubProxy(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = normalizeGithubProxy(url);
+    if (normalized.isEmpty) {
+      await prefs.remove(_githubProxyKey);
+    } else {
+      await prefs.setString(_githubProxyKey, normalized);
+    }
+  }
+
+  /// 规范化反代前缀：去空白、补末尾斜杠
+  static String normalizeGithubProxy(String raw) {
+    var url = raw.trim();
+    if (url.isEmpty) return '';
+    if (!url.endsWith('/')) url = '$url/';
+    return url;
+  }
+
+  /// 校验反代前缀是否为合法的 http(s) 地址
+  static bool isValidGithubProxy(String raw) {
+    final uri = Uri.tryParse(normalizeGithubProxy(raw));
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
+  }
+
+  /// 将反代前缀拼接到原始下载链接前（gh-proxy 系通用格式：前缀 + 完整原始 URL）
+  static String applyGithubProxy(String url, String proxy) {
+    final prefix = normalizeGithubProxy(proxy);
+    if (prefix.isEmpty) return url;
+    // 已经带前缀的链接不重复拼接
+    if (url.startsWith(prefix)) return url;
+    return '$prefix$url';
   }
 
   /// 设置自动检查更新

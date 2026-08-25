@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../models/topic.dart';
+import '../../models/assignment.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic_vote.dart';
 import '../../models/shared_issue.dart';
@@ -23,6 +24,8 @@ import '../../models/invite_link.dart';
 import '../../models/template.dart';
 import '../../models/post_revision.dart';
 import '../../models/pending_post.dart';
+import '../../models/chat/chat_channel.dart';
+import '../../models/chat/chat_message.dart';
 
 import '../../constants.dart';
 import '../../providers/message_bus_providers.dart';
@@ -35,12 +38,13 @@ import '../network/cookie/cookie_jar_service.dart';
 import '../network/cookie/boundary_sync_service.dart';
 import '../network/cookie/session_snapshot.dart';
 import '../cf_challenge_service.dart';
+import '../cf_clearance_authority.dart';
 import '../message_bus_service.dart';
 import '../network/adapters/webview_http_adapter.dart';
 import '../network/webview/webview_adapter_settings_service.dart';
 import '../login_ready_coordinator.dart';
 import '../network/discourse_dio.dart';
-import '../network/interceptors/self_healing_interceptor.dart';
+import '../network/flux_request_spec.dart';
 import '../preloaded_data_service.dart';
 import '../webview_session_cookie_refresh_service.dart';
 import '../app_logger.dart';
@@ -71,6 +75,8 @@ part '_policy.dart';
 part '_revisions.dart';
 part '_onebox.dart';
 part '_reviewables.dart';
+part '_assign.dart';
+part '_chat.dart';
 
 /// 基类，包含所有共享字段
 abstract class _DiscourseServiceBase {
@@ -135,7 +141,9 @@ class DiscourseService extends _DiscourseServiceBase
         _PolicyMixin,
         _RevisionsMixin,
         _OneboxMixin,
-        _ReviewablesMixin {
+        _ReviewablesMixin,
+        _AssignMixin,
+        _ChatMixin {
   static const String baseUrl = AppConstants.baseUrl;
   static const String _usernameKey = 'linux_do_username';
   static const _summaryCacheDuration = Duration(minutes: 5);
@@ -208,6 +216,9 @@ class DiscourseService extends _DiscourseServiceBase
         },
       ),
       _storage = ResilientSecureStorage() {
+    // CSRF 刷新走这条主链(完整拦截器 + CF 兜底),不再自建独立 Dio。
+    // 独立 Dio 只装 3 个拦截器,在后台/会话失效窗口撞 CF 会静默失败。
+    _cookieSync.attachDio(_dio);
     _initInterceptors();
   }
 

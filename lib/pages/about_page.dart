@@ -26,6 +26,7 @@ class AboutPage extends StatefulWidget {
 class _AboutPageState extends State<AboutPage> {
   final UpdateService _updateService = UpdateService();
   String _version = '0.1.0';
+  String _githubProxy = '';
   int _versionTapCount = 0;
   DateTime? _lastVersionTapTime;
   bool _developerMode = false;
@@ -35,6 +36,7 @@ class _AboutPageState extends State<AboutPage> {
     super.initState();
     _loadVersion();
     _loadDeveloperMode();
+    _loadGithubProxy();
   }
 
   void _onVersionTap() {
@@ -92,6 +94,30 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
+  Future<void> _loadGithubProxy() async {
+    final proxy = await UpdateService.getGithubProxy();
+    if (mounted) {
+      setState(() => _githubProxy = proxy);
+    }
+  }
+
+  Future<void> _showGithubProxyDialog() async {
+    final result = await showAppDialog<String>(
+      context: context,
+      builder: (_) => _GithubProxyDialog(initialValue: _githubProxy),
+    );
+
+    if (result == null) return;
+
+    await UpdateService.setGithubProxy(result);
+    await _loadGithubProxy();
+    ToastService.showSuccess(
+      result.isEmpty
+          ? S.current.update_githubProxyCleared
+          : S.current.update_githubProxySaved,
+    );
+  }
+
   Future<void> _checkForUpdate() async {
     if (!mounted) return;
 
@@ -113,7 +139,10 @@ class _AboutPageState extends State<AboutPage> {
       final updateInfo = await _updateService.checkForUpdate();
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // 关闭加载对话框
+      // 弹框挂在根 Navigator（showAppDialog 默认 useRootNavigator: true），
+      // 平行视界下 AboutPage 在嵌套 detail Navigator 里，必须显式取根层，
+      // 否则 pop 掉的是页面本身，loading 弹框永远卡住。
+      Navigator.of(context, rootNavigator: true).pop(); // 关闭加载对话框
 
       if (updateInfo.hasUpdate) {
         showAppDialog(
@@ -136,7 +165,7 @@ class _AboutPageState extends State<AboutPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pop(); // 关闭加载对话框
+      Navigator.of(context, rootNavigator: true).pop(); // 关闭加载对话框
       _showErrorDialog(e.toString());
     }
   }
@@ -246,6 +275,15 @@ class _AboutPageState extends State<AboutPage> {
                   icon: Symbols.update_rounded,
                   title: context.l10n.about_checkUpdate,
                   onTap: _checkForUpdate,
+                ),
+                _buildListTile(
+                  context,
+                  icon: Symbols.swap_horiz_rounded,
+                  title: context.l10n.update_githubProxy,
+                  subtitle: _githubProxy.isEmpty
+                      ? context.l10n.update_githubProxyDirect
+                      : _githubProxy,
+                  onTap: _showGithubProxyDialog,
                 ),
                 _buildListTile(
                   context,
@@ -366,6 +404,81 @@ class _AboutPageState extends State<AboutPage> {
       subtitle: subtitle != null ? Text(subtitle) : null,
       trailing: const Icon(Symbols.chevron_right_rounded, size: 20, color: Colors.grey),
       onTap: onTap,
+    );
+  }
+}
+
+/// GitHub 反代配置弹窗
+///
+/// controller 由弹窗自身 State 持有，随路由真正销毁时才 dispose，
+/// 避免退场动画期间外部提前 dispose 导致重建崩溃。
+class _GithubProxyDialog extends StatefulWidget {
+  const _GithubProxyDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_GithubProxyDialog> createState() => _GithubProxyDialogState();
+}
+
+class _GithubProxyDialogState extends State<_GithubProxyDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(context.l10n.update_githubProxy),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            context.l10n.update_githubProxyDesc,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            decoration: InputDecoration(
+              labelText: context.l10n.update_githubProxy,
+              hintText: context.l10n.update_githubProxyHint,
+            ),
+            keyboardType: TextInputType.url,
+            autofocus: true,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(context.l10n.common_cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            final value = _controller.text.trim();
+            if (value.isNotEmpty && !UpdateService.isValidGithubProxy(value)) {
+              ToastService.showError(S.current.update_githubProxyInvalid);
+              return;
+            }
+            Navigator.pop(context, value);
+          },
+          child: Text(context.l10n.common_save),
+        ),
+      ],
     );
   }
 }

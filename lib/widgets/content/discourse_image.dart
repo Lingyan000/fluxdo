@@ -5,6 +5,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/image_viewer_page.dart';
 import 'svg_view.dart';
+import '../common/hero_image.dart';
 
 /// Discourse 图片组件
 ///
@@ -138,12 +139,23 @@ class _DiscourseImageState extends State<DiscourseImage> {
       imageWidget = _buildCachedImage(theme);
     }
 
-    // Hero 动画
+    // Hero 动画:走 HeroImage 统一件 —— 源端隐藏/占位/飞行起点/裁切插值
+    // 都由它保证,style 同时约束 openViewer 侧参数(见 ViewerSourceStyle)。
     if (widget.heroTag != null) {
-      imageWidget = Hero(tag: widget.heroTag!, child: imageWidget);
+      imageWidget = HeroImage(
+        heroTag: widget.heroTag!,
+        style: _viewerStyle,
+        flightImage: _resolvedUrl != null
+            ? discourseImageProvider(_resolvedUrl!)
+            : null,
+        onTap: widget.enableLightbox && !_isSvg ? _openLightbox : null,
+        child: imageWidget,
+      );
+      // HeroImage 已带 onTap,不必再套一层 GestureDetector
+      return imageWidget;
     }
 
-    // Lightbox
+    // Lightbox(无 heroTag:纯点击打开,无飞行)
     if (widget.enableLightbox && !_isSvg) {
       return GestureDetector(
         onTap: _openLightbox,
@@ -275,14 +287,26 @@ class _DiscourseImageState extends State<DiscourseImage> {
     );
   }
 
+  /// 源端展示方式:按调用方给的 fit 派生,与 openViewer 侧同源。
+  /// cover 展示才需要飞行体做窗口插值;其余按 contain 处理。
+  ViewerSourceStyle get _viewerStyle => widget.fit == BoxFit.cover
+      ? const ViewerSourceStyle.cover(radius: 0)
+      : const ViewerSourceStyle.contain();
+
   void _openLightbox() {
+    final args = _viewerStyle.openViewerArgs;
     ImageViewerPage.open(
       context,
       _resolvedUrl!,
       heroTag: widget.heroTag,
+      thumbnailUrl: _resolvedUrl,
       galleryImages: widget.galleryImages.isNotEmpty ? widget.galleryImages : null,
       initialIndex: widget.initialIndex,
       enableShare: true,
+      // 与源端同源:_viewerStyle 一处给出,两侧不可能不一致
+      heroSourceFit: args.fit,
+      heroSourceRadius: args.radius,
+      heroSourceCircular: args.circular,
     );
   }
 

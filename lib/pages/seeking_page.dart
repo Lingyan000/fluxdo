@@ -9,14 +9,16 @@ import '../models/seeking.dart';
 import '../providers/seeking_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../services/toast_service.dart';
+import '../utils/responsive.dart';
 import '../utils/time_utils.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/content/collapsed_html_content.dart';
-import '../widgets/layout/auto_restore_master_detail_route.dart';
-import '../widgets/layout/full_screen_pane_stack.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_projection_back_scope.dart';
 import '../providers/shortcut_provider.dart';
+import 'topic_detail_page/topic_detail_page.dart';
 import 'topics_screen.dart' show PaneContentWidget;
+import 'user_profile_page.dart';
 
 /// 追觅：实时监控指定用户的发帖 / 回复 / 点赞 / 表情回应 / Boost 动态。
 ///
@@ -33,13 +35,12 @@ class SeekingPage extends ConsumerStatefulWidget {
 }
 
 class _SeekingPageState extends ConsumerState<SeekingPage> {
-  static const double _parallelMasterWidth = 440;
-  static const double _parallelMinDetailWidth = 480;
+  static const double _parallelMasterWidth = PaneBreakpoints.wideMasterWidth;
+  static const double _parallelMinDetailWidth =
+      PaneBreakpoints.wideMinDetailWidth;
 
   /// 只看此人过滤（点用户头像切换）
   String? _focusUser;
-  bool? _lastCanShowParallel;
-  bool _isAutoSwitching = false;
 
   /// 桌面 ESC 两段式(右栏开→关右栏;右栏空→maybePop,底栏 tab 首路由
   /// 为 no-op)。isActive 谓词防截胡其他 tab。
@@ -120,31 +121,39 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   void _openActivity(SeekingActivity activity) {
     if (activity.topicId <= 0) return;
-    final notifier = ref.read(selectedSeekingProvider.notifier);
+    // 与其他宿主同构:宽屏写入本页平行视界栈进右栏;窄屏走真路由全屏
+    // (保原生转场/侧滑,不写栈——投影态只服务"宽屏选中后缩窄"的接续)。
     if (_canShowParallel(context)) {
-      notifier.select(
-        topicId: activity.topicId,
-        initialTitle: activity.title,
-        scrollToPostNumber: activity.postNumber,
-      );
+      ref
+          .read(selectedSeekingProvider.notifier)
+          .select(
+            topicId: activity.topicId,
+            initialTitle: activity.title,
+            scrollToPostNumber: activity.postNumber,
+          );
       return;
     }
-    _openSelectedPaneInFullScreen(
-      () => notifier.select(
-        topicId: activity.topicId,
-        initialTitle: activity.title,
-        scrollToPostNumber: activity.postNumber,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TopicDetailPage(
+          topicId: activity.topicId,
+          initialTitle: activity.title,
+          scrollToPostNumber: activity.postNumber,
+          autoSwitchToMasterDetail: true,
+          stackProvider: selectedSeekingProvider,
+        ),
       ),
     );
   }
 
   void _openProfile(String username) {
-    final notifier = ref.read(selectedSeekingProvider.notifier);
     if (_canShowParallel(context)) {
-      notifier.selectProfile(username);
+      ref.read(selectedSeekingProvider.notifier).selectProfile(username);
       return;
     }
-    _openSelectedPaneInFullScreen(() => notifier.selectProfile(username));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
+    );
   }
 
   bool _canShowParallel(BuildContext context) =>
@@ -154,73 +163,8 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
         minDetailWidth: _parallelMinDetailWidth,
       );
 
-  Widget _buildFullScreenPaneStack() => AutoRestoreMasterDetailRoute(
-    masterWidth: _parallelMasterWidth,
-    minDetailWidth: _parallelMinDetailWidth,
-    child: FullScreenPaneStack(
-      stackProvider: selectedSeekingProvider,
-      builder: (_, entry, onBack) => PaneContentWidget(
-        key: _paneKey(entry, 'fullscreen'),
-        entry: entry,
-        stackProvider: selectedSeekingProvider,
-        parentActive: true,
-        onBack: onBack,
-      ),
-    ),
-  );
-
-  void _pushFullScreenPaneStack() {
-    Navigator.of(context)
-        .push<void>(
-          MaterialPageRoute(builder: (_) => _buildFullScreenPaneStack()),
-        )
-        .whenComplete(() {
-          if (!mounted) return;
-          setState(() => _isAutoSwitching = false);
-        });
-  }
-
-  void _openSelectedPaneInFullScreen(VoidCallback selectPane) {
-    if (_isAutoSwitching) return;
-    _isAutoSwitching = true;
-    _lastCanShowParallel = false;
-    selectPane();
-    _pushFullScreenPaneStack();
-  }
-
-  void _maybePushSelectedPane(
-    SelectedTopicState selected,
-    bool canShowParallel,
-  ) {
-    if (_isAutoSwitching) return;
-    if (!widget.isActive) {
-      _lastCanShowParallel = canShowParallel;
-      return;
-    }
-
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) {
-      _lastCanShowParallel = canShowParallel;
-      return;
-    }
-
-    final previous = _lastCanShowParallel;
-    _lastCanShowParallel = canShowParallel;
-    if (canShowParallel ||
-        !selected.hasSelection ||
-        (previous != null && !previous)) {
-      return;
-    }
-
-    _isAutoSwitching = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _pushFullScreenPaneStack();
-    });
-  }
-
-  Key _paneKey(PaneEntry entry, String slot) => ValueKey(
-    'seeking_${slot}_${entry.kind}_'
+  Key _paneKey(PaneEntry entry) => ValueKey(
+    'seeking_pane_${entry.kind}_'
     '${entry.instanceId ?? entry.username ?? entry.topicId}',
   );
 
@@ -339,41 +283,60 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
     );
 
     final selected = ref.watch(selectedSeekingProvider);
-    final canShowParallel = _canShowParallel(context);
-    _maybePushSelectedPane(selected, canShowParallel);
-    _escBinding.sync(
-      context,
-      paneOpen: canShowParallel && selected.hasSelection,
-    );
-    if (!canShowParallel || !selected.hasSelection) return page;
+    // ESC:栈非空(右栏开着/投影着)都让分发落 detail scope。
+    _escBinding.sync(context, paneOpen: selected.hasSelection);
+    // 栈空:本页原样(宽屏内部自带名单/时间线双栏)。返回链 scope 常挂,
+    // 树形稳定(选中/清空只在 scope 之下换分支)。
+    if (!selected.hasSelection) {
+      return PaneProjectionBackScope(
+        stackProvider: selectedSeekingProvider,
+        isActive: widget.isActive,
+        masterWidth: _parallelMasterWidth,
+        minDetailWidth: _parallelMinDetailWidth,
+        child: page,
+      );
+    }
 
     final notifier = ref.read(selectedSeekingProvider.notifier);
-    final previousEntry = selected.isStacked
-        ? selected.stack[selected.stack.length - 2]
-        : null;
-    final master = previousEntry != null
-        ? PaneContentWidget(
-            key: _paneKey(previousEntry, 'master'),
-            entry: previousEntry,
-            stackProvider: selectedSeekingProvider,
-            truncateOnPush: true,
-            parentActive: widget.isActive,
-          )
-        : page;
-    return MasterDetailLayout(
+    // 窄屏栈非空 = 投影态:详情在本页体内全宽顶替(不 push 合成路由,
+    // 宽窄切换 State 原地保留),返回/预测返回由 scope 统一接管。
+    // 胶片带:本页列表格是 page(内部自带名单/时间线双栏),压栈时被
+    // 顶出左侧,倒二层格作预览(格子恒驻 State 全保)。
+    return PaneProjectionBackScope(
+      stackProvider: selectedSeekingProvider,
+      isActive: widget.isActive,
       masterWidth: _parallelMasterWidth,
       minDetailWidth: _parallelMinDetailWidth,
-      // 与搜索页同语义:列表态初始=masterWidth,压栈才对半分(旧的
-      // min 0.32/preferred 0.4 让初始占四成屏宽,与其他双栏页不一致)。
-      maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
-      preferredMasterRatio: selected.isStacked ? 0.5 : null,
-      master: master,
-      detail: PaneContentWidget(
-        key: _paneKey(selected.topEntry!, 'detail'),
-        entry: selected.topEntry!,
-        stackProvider: selectedSeekingProvider,
-        parentActive: widget.isActive,
-        onBack: () => selected.isStacked ? notifier.pop() : notifier.clear(),
+      child: MasterDetailLayout(
+        masterWidth: _parallelMasterWidth,
+        minDetailWidth: _parallelMinDetailWidth,
+        // 与搜索页同语义:列表态初始=masterWidth,压栈才对半分(旧的
+        // min 0.32/preferred 0.4 让初始占四成屏宽,与其他双栏页不一致)。
+        maxMasterRatio: selected.isStacked ? 0.8 : 0.52,
+        preferredMasterRatio: selected.isStacked ? 0.5 : null,
+        projectDetailWhenNarrow: true,
+        pinMaster: false,
+        master: page,
+        panes: [
+          for (var i = 0; i < selected.stack.length; i++)
+            KeyedSubtree(
+              key: _paneKey(selected.stack[i]),
+              child: PaneContentWidget(
+                entry: selected.stack[i],
+                stackProvider: selectedSeekingProvider,
+                parentActive: widget.isActive,
+                truncateOnPush: i < selected.stack.length - 1,
+                // 回调内重读 provider,不闭包捕获 build 时的快照。
+                onBack: () {
+                  if (ref.read(selectedSeekingProvider).isStacked) {
+                    notifier.pop();
+                  } else {
+                    notifier.clear();
+                  }
+                },
+              ),
+            ),
+        ],
       ),
     );
   }

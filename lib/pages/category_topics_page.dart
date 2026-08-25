@@ -15,6 +15,7 @@ import '../widgets/common/paged_list_footer.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
+import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_notification_button.dart';
 import '../widgets/common/tag_selection_sheet.dart';
@@ -26,6 +27,8 @@ import 'package:dio/dio.dart';
 import '../services/app_error_handler.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import 'create_topic_page.dart';
 import '../utils/dialog_utils.dart';
 
@@ -446,9 +449,20 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
     }
   }
 
+  /// 本页专属平行视界栈(按 categoryId family 隔离)。
+  SelectedTopicProvider get _paneProvider =>
+      selectedCategoryPaneProvider(widget.category.id);
+
   Future<void> _openTopic(Topic topic) async {
-    // 分类详情页是独立 push 的页面，不在首页 MasterDetailLayout 内，
-    // 始终 push 全屏详情页，禁用 autoSwitchToMasterDetail 防止双栏模式下自动 pop。
+    // 宽屏进右栏(本页自己是平行视界宿主),窄屏全屏 push。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ref.read(_paneProvider.notifier).select(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: topic.lastReadPostNumber,
+          );
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
@@ -468,10 +482,11 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
+    // 高亮"正在右栏的那条":watch 本页自己的栈(旧代码误 watch 首页栈)。
+    final selectedTopicId = ref.watch(_paneProvider).topicId;
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
 
-    return Scaffold(
+    final list = Scaffold(
       appBar: AppBar(
         title: Text(widget.category.name),
         centerTitle: false,
@@ -542,6 +557,11 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         ],
       ),
     );
+
+    return MasterDetailPaneHost(
+      stackProvider: _paneProvider,
+      master: list,
+    );
   }
 
   Widget _buildBody(int? selectedTopicId) {
@@ -598,7 +618,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         ? 1
         : 0;
 
-    return DesktopRefreshIndicator(
+    return TopicCardPrewarmScope(
+      topics: visible,
+      child: DesktopRefreshIndicator(
       onRefresh: _loadTopics,
       child: ListView.builder(
         controller: _scrollController,
@@ -638,6 +660,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             enableLongPress: enableLongPress,
           );
         },
+      ),
       ),
     );
   }

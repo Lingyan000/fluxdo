@@ -13,6 +13,16 @@ extension FilterMethods on TopicDetailNotifier {
     await _reloadWithFilter();
   }
 
+  /// 切换到按活动排序(post-voting 问答话题:默认视图是按票排序,
+  /// filter=activity 走时间流并恢复显示对答案的回复)
+  Future<void> showByActivity() async {
+    if (_filter == 'activity') return;
+    _filter = 'activity';
+    _usernameFilter = null;
+    _filterTopLevelReplies = false;
+    await _reloadWithFilter();
+  }
+
   /// 切换到只看题主模式
   Future<void> showAuthorOnly(String username) async {
     if (_usernameFilter == username) return;

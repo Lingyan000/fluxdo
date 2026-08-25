@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import '../../l10n/s.dart';
 import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../../utils/discourse_url_parser.dart';
 
 /// 帖子相关链接组件
@@ -68,10 +69,18 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
     return _internalLinks.length - PostLinks.maxCollapsedLinks;
   }
 
-  /// 处理链接点击
+  /// 处理链接点击:平行视界面板内压当前栈(与正文内链同语义),
+  /// 全屏页照旧 push。
   void _onLinkTap(LinkCount link) {
     final topicInfo = DiscourseUrlParser.parseTopic(link.url);
     if (topicInfo != null) {
+      if (EmbeddedStackScope.maybePushTopic(
+        context,
+        topicId: topicInfo.topicId,
+        initialTitle: link.title,
+      )) {
+        return;
+      }
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => TopicDetailPage(

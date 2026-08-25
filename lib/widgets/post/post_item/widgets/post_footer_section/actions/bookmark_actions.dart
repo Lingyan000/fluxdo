@@ -22,6 +22,14 @@ extension _PostFooterBookmarkActions on _PostFooterSectionState {
       });
       ToastService.showSuccess(S.current.common_bookmarkAdded);
 
+      // 写穿透:静默拉书签列表第一页,新书签立刻进本地缓存
+      // (否则要等下次对账才出现在书签列表)
+      unawaited(
+        refreshBookmarkListCacheSilently(
+          ProviderScope.containerOf(context, listen: false),
+        ),
+      );
+
       // 触发 Notion 自动同步:post 级 -> 只同步这一条,独立 page
       unawaited(
         NotionBookmarkAutoSync.tryTriggerPost(
@@ -54,6 +62,13 @@ extension _PostFooterBookmarkActions on _PostFooterSectionState {
       if (bookmarkId != null) {
         await _service.deleteBookmark(bookmarkId);
         if (mounted) {
+          // 写穿透:书签列表的 Hive 缓存同步删除(否则等对账才消失)
+          unawaited(
+            purgeBookmarkFromLocalCache(
+              ProviderScope.containerOf(context, listen: false),
+              bookmarkId,
+            ),
+          );
           setState(() {
             _isBookmarked = false;
             _bookmarkId = null;

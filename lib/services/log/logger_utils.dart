@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../constants.dart';
 import '../network/adapters/cronet_fallback_service.dart';
 import '../network/doh/network_settings_service.dart';
+import '../network/health/network_health_controller.dart';
 import '../network/proxy/proxy_settings_service.dart';
 import '../../l10n/s.dart';
 import 'log_writer.dart';
@@ -21,6 +22,11 @@ class LoggerUtils {
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
   static Future<String> getShareFilePath() async {
+    // 分享前补一条网络健康快照:用户反馈网络问题时,日志里往往只有"某请求
+    // 失败"的结果,没有引擎/降级/盾态/凭证这些状态,归因只能靠猜。
+    NetworkHealthController.instance.dumpToLog('log_share');
+    await LogWriter.instance.flushNow();
+
     final header = await _buildShareHeader();
     final logContent = await LogWriter.readAllContent();
 

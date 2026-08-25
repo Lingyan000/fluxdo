@@ -26,6 +26,10 @@ import '../providers/selected_topic_provider.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../utils/platform_utils.dart';
+import '../utils/responsive.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_projection_back_scope.dart';
+import 'topics_screen.dart' show PaneContentWidget;
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/grain_gradient_background.dart';
 import '../widgets/common/error_view.dart';
@@ -37,6 +41,7 @@ import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
 import '../widgets/user/ignore_duration_picker.dart';
+import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/post/post_boost/boost_content.dart';
@@ -48,11 +53,22 @@ import 'search_page.dart';
 import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
+import 'chat/channel/chat_channel_page.dart';
 import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../widgets/common/hero_image.dart';
 
 /// 用户个人页
+/// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
+///
+/// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)——
+/// 此前两处不同步:源端 borderRadius 12 而 openViewer 传 heroSourceRadius 8。
+ViewerSourceStyle _avatarStyle({required bool isSquare, required double radius}) =>
+    isSquare
+        ? ViewerSourceStyle.cover(radius: radius)
+        : const ViewerSourceStyle.circular();
+
 class UserProfilePage extends ConsumerStatefulWidget {
   final String username;
 
@@ -95,6 +111,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   /// 自己上次点开的那个"，只有这种情况下才能安全替换（否则会把资料页
   /// 这一层本身，或者别的来源压上去的层，给顶掉）。
   int? _lastOpenedTopicId;
+
+  /// 全屏形态自己的平行视界栈(按 username 隔离,叠开多个资料页互不
+  /// 串)。嵌入形态不用——压宿主的栈。
+  SelectedTopicProvider get _ownPaneProvider =>
+      selectedUserProfilePaneProvider(widget.username);
 
   void _openTopic({
     required int topicId,
@@ -139,6 +160,19 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         );
       }
       _lastOpenedTopicId = topicId;
+      return;
+    }
+
+    // 全屏形态:本页自己是平行视界宿主——宽屏点话题进右栏(select
+    // 换一项语义),窄屏真路由 push(原生转场;缩窄时右栏内容自动
+    // 转投影)。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ref.read(activePaneProvider.notifier).state = ActivePane.detail;
+      ref.read(_ownPaneProvider.notifier).select(
+            topicId: topicId,
+            initialTitle: initialTitle,
+            scrollToPostNumber: scrollToPostNumber,
+          );
       return;
     }
 
@@ -234,15 +268,19 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     enabled: () => !widget.embeddedMode || widget.parentActive,
   );
 
+  /// 全屏形态的 ESC 两段式(右栏开着=让分发落 detail scope 关右栏,
+  /// 空了=maybePop 关整页),按右栏开合在 build 里动态同步。
+  PaneHostEscBinding? _standaloneEsc;
+
   void _registerShortcuts() {
     if (!PlatformUtils.isDesktop) return;
+    // 全屏形态由 _standaloneEsc 动态注册(见 _wrapStandaloneHost),
+    // 这里只管嵌入面板形态——否则右栏开着时 context 层的 maybePop
+    // 会抢在 detail scope 前面把整页关掉。
+    if (!widget.embeddedMode) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final back = widget.embeddedMode
-          ? widget.onEmbeddedBack
-          : () {
-              if (mounted) Navigator.of(context).maybePop();
-            };
+      final back = widget.onEmbeddedBack;
       if (back == null) return;
       _shortcutScopeBinding.register(context, {
         ShortcutAction.closeOverlay: back,
@@ -278,6 +316,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   @override
   void dispose() {
     _shortcutScopeBinding.disposeDeferred();
+    _standaloneEsc?.dispose();
     _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -381,6 +420,32 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     showReplySheet(context: context, targetUsername: _user!.username);
   }
+
+  /// 发起 1:1 聊天(Chat 插件 DM;服务端 upsert 自动复用旧会话)
+  Future<void> _startChat() async {
+    if (_user == null || _isStartingChat) return;
+    setState(() => _isStartingChat = true);
+    try {
+      final service = ref.read(discourseServiceProvider);
+      final channel = await service.createDirectMessageChannel(
+        targetUsernames: [_user!.username],
+        upsert: true,
+      );
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatChannelPage(channelId: channel.id),
+        ),
+      );
+    } catch (e) {
+      ToastService.showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isStartingChat = false);
+    }
+  }
+
+  bool _isStartingChat = false;
 
   /// 打开用户内容搜索
   void _openUserSearch() {
@@ -1137,6 +1202,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  /// 宽屏排版:内容限宽居中(头图背景保持全宽出血)。嵌入面板/窄屏
+  /// 时面板宽本就有限,约束不生效,零冲突。
+  Widget _constrainWide(Widget child) {
+    if (Responsive.isMobile(context)) return child;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: Breakpoints.maxContentWidth,
+        ),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1186,6 +1265,43 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         MediaQuery.of(context).padding.top +
         36; // 36 是 TabBar 高度
 
+    // 宽窄两版排版按**本页实际可用宽度**分流(不是屏宽):嵌入面板、
+    // 压栈后收窄的左栏拿到的都是格子宽,窄了自动回竖版折叠头图形态。
+    final Widget profileBody = LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= UserProfileWideLayout.minWidth) {
+          return _buildWideBody(theme, currentUser);
+        }
+        return _buildNarrowBody(theme, currentUser, pinnedHeaderHeight);
+      },
+    );
+
+    // 嵌入形态(别的宿主的面板):本页只是一格内容,原样返回。
+    if (widget.embeddedMode) return profileBody;
+
+    // 全屏形态:本页自己是平行视界宿主——资料页作 master,宽屏点
+    // 话题/回复进右栏,缩窄时右栏内容转投影,窄屏点列表走真路由。
+    return _wrapStandaloneHost(profileBody);
+  }
+
+  /// 各 Tab 的内容页(宽窄两版共用同一份,State 级缓存不受切换影响)。
+  List<Widget> _buildTabViews() {
+    return _tabFilters.asMap().entries.map((entry) {
+      final index = entry.key;
+      final filter = entry.value;
+      return ExtendedVisibilityDetector(
+        uniqueKey: Key('tab_$index'),
+        child: _constrainWide(_buildActionList(filter)),
+      );
+    }).toList();
+  }
+
+  /// 竖版(窄):折叠头图 SliverAppBar + Tab 列表(原形态)。
+  Widget _buildNarrowBody(
+    ThemeData theme,
+    User? currentUser,
+    double pinnedHeaderHeight,
+  ) {
     return Scaffold(
       body: ScrollConfiguration(
         // 禁用 overscroll indicator：Material 3 在 Android 上默认
@@ -1204,16 +1320,648 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           ],
           body: TabBarView(
             controller: _tabController,
-            children: _tabFilters.asMap().entries.map((entry) {
-              final index = entry.key;
-              final filter = entry.value;
-              return ExtendedVisibilityDetector(
-                uniqueKey: Key('tab_$index'),
-                child: _buildActionList(filter),
-              );
-            }).toList(),
+            children: _buildTabViews(),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 宽版:左侧定宽资料栏(头图背景+用户信息全量常驻)+ 右侧 Tab 与
+  /// 列表占满剩余宽度。竖版的「头图占满首屏再折叠」在宽屏下浪费一整
+  /// 屏高度、内容被挤成一条,信息与内容改并排才用得上横向空间。
+  Widget _buildWideBody(ThemeData theme, User? currentUser) {
+    final isOwnProfile =
+        currentUser != null &&
+        _user != null &&
+        currentUser.username == _user!.username;
+    return Scaffold(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: UserProfileWideLayout.infoPanelWidth,
+            child: _buildWideInfoPanel(theme, currentUser, isOwnProfile),
+          ),
+          SizedBox(
+            width: 1,
+            child: ColoredBox(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                // Tab 行与列表同一条限宽轴线,避免"标签顶在左上角、
+                // 内容居中"的错位感。
+                Material(
+                  color: theme.scaffoldBackgroundColor,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: Breakpoints.maxContentWidth,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: _buildTabBar(theme),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: _buildTabViews(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 宽版左栏:顶部头图横幅 + 头像骑缝叠在横幅下缘,下方信息用主题
+  /// 配色正常排版。竖版那套「白字压满幅头图」平铺到整栏全高会把左栏
+  /// 闷成一大块深色(实测被否),头图只作横幅、信息区回到正常底色。
+  Widget _buildWideInfoPanel(
+    ThemeData theme,
+    User? currentUser,
+    bool isOwnProfile,
+  ) {
+    final bgUrl = _user?.backgroundUrl;
+    final hasBackground = bgUrl != null && bgUrl.isNotEmpty;
+    const bannerHeight = UserProfileWideLayout.bannerHeight;
+    const avatarRadius = UserProfileWideLayout.avatarRadius;
+    final hasBio = _user?.bio != null && _user!.bio!.isNotEmpty;
+    final hasLocation = _user?.location != null && _user!.location!.isNotEmpty;
+    final hasWebsite = _user?.website != null && _user!.website!.isNotEmpty;
+    final hasJoinedAt = _user?.createdAt != null;
+    final hasInfo = hasBio || hasLocation || hasWebsite || hasJoinedAt;
+
+    final banner = SizedBox(
+      height: bannerHeight,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 个人主页可能长时间停留,装饰背景不常驻刷新(与竖版同口径)。
+          const GrainGradientBackground(animated: false),
+          if (hasBackground)
+            Image(
+              image: discourseImageProvider(UrlHelper.resolveUrlWithCdn(bgUrl)),
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded || frame != null) {
+                  return AnimatedOpacity(
+                    opacity: frame != null ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: child,
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          // 轻压暗:保住悬浮按钮可读性,不吃头图本身。
+          Container(color: Colors.black.withValues(alpha: 0.2)),
+        ],
+      ),
+    );
+
+    return ColoredBox(
+      color: theme.scaffoldBackgroundColor,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      banner,
+                      Positioned(
+                        left: 20,
+                        bottom: -avatarRadius,
+                        child: _buildTappableAvatar(
+                          radius: avatarRadius,
+                          flairSize: 34,
+                          flairRight: -8,
+                          flairBottom: -4,
+                          borderColor: theme.scaffoldBackgroundColor,
+                          borderWidth: 4,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // 头像下半部分的骑缝空间,右侧顺势放关注按钮。
+                  SizedBox(
+                    height: avatarRadius + 12,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 20),
+                        child: _buildWideFollowButton(isOwnProfile),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                (_user?.name?.isNotEmpty == true)
+                                    ? _user!.name!
+                                    : (_user?.username ?? ''),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (_user?.status != null) ...[
+                              const SizedBox(width: 8),
+                              _buildStatusEmoji(_user!.status!),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            if (_user?.username != null)
+                              Flexible(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => copyUsernameToClipboard(
+                                    _user!.username,
+                                  ),
+                                  child: Text(
+                                    '@${_user!.username}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _getTrustLevelLabel(_user?.trustLevel ?? 0),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSecondaryContainer,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // 封禁/禁言与简介互斥(与竖版一致)。
+                        if (_user!.isSuspended || _user!.isSilenced) ...[
+                          GestureDetector(
+                            onTap: _showUserInfo,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (_user!.isSuspended) ...[
+                                  _buildRestrictionBanner(
+                                    icon: Symbols.block_rounded,
+                                    label: _user!.isSuspendedForever
+                                        ? context
+                                              .l10n
+                                              .userProfile_suspendedBannerForever
+                                        : context.l10n
+                                              .userProfile_suspendedBannerUntil(
+                                                TimeUtils.formatFullDate(
+                                                  _user!.suspendedTill,
+                                                ),
+                                              ),
+                                    reason: _user!.suspendReason,
+                                    color: Colors.redAccent,
+                                    reasonColor:
+                                        theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  if (_user!.isSilenced)
+                                    const SizedBox(height: 8),
+                                ],
+                                if (_user!.isSilenced)
+                                  _buildRestrictionBanner(
+                                    icon: Symbols.mic_off_rounded,
+                                    label: _user!.isSilencedForever
+                                        ? context
+                                              .l10n
+                                              .userProfile_silencedBannerForever
+                                        : context.l10n
+                                              .userProfile_silencedBannerUntil(
+                                                TimeUtils.formatFullDate(
+                                                  _user!.silencedTill,
+                                                ),
+                                              ),
+                                    reason: _user!.silenceReason,
+                                    color: Colors.orangeAccent,
+                                    reasonColor:
+                                        theme.colorScheme.onSurfaceVariant,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ] else
+                          InkWell(
+                            onTap: hasInfo ? _showUserInfo : null,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: hasBio
+                                        ? CollapsedHtmlContent(
+                                            html: _user!.bio!,
+                                            maxLines: 4,
+                                            overflow: TextOverflow.ellipsis,
+                                            textStyle: theme
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(height: 1.4),
+                                          )
+                                        : Text(
+                                            context.l10n.userProfile_noBio,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                          ),
+                                  ),
+                                  if (hasInfo) ...[
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Symbols.chevron_right_rounded,
+                                      size: 16,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+                        _buildWideStats(theme),
+                        if (_user?.lastPostedAt != null ||
+                            _user?.lastSeenAt != null) ...[
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Symbols.flash_on_rounded,
+                                size: 14,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 6),
+                              RelativeTimeText(
+                                dateTime:
+                                    _user?.lastSeenAt ?? _user!.lastPostedAt!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 悬浮顶栏:返回 + 操作按钮,渐变黑纱保证压图可读。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black45, Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: IconTheme(
+                    data: const IconThemeData(color: Colors.white),
+                    child: Row(
+                      children: [
+                        // 与竖版 AppBar 同一套返回键语义:嵌入预览位
+                        // (onEmbeddedBack == null)不渲染任何返回键。
+                        if (!widget.embeddedMode)
+                          const BackButton(color: Colors.white)
+                        else if (widget.onEmbeddedBack != null)
+                          BackButton(
+                            color: Colors.white,
+                            onPressed: widget.onEmbeddedBack,
+                          ),
+                        const Spacer(),
+                        ..._buildHeaderActions(isOwnProfile),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 可点开查看器的头像(带 flair/Hero,竖版头图区与宽版骑缝位共用
+  /// 同一套打开逻辑,只是尺寸与描边不同)。
+  Widget _buildTappableAvatar({
+    required double radius,
+    required double flairSize,
+    required double flairRight,
+    required double flairBottom,
+    required Color borderColor,
+    required double borderWidth,
+  }) {
+    final avatarUrl = _user?.getAvatarUrl(size: 144);
+    final isSquare = isSquareAvatarUrl(avatarUrl);
+    return GestureDetector(
+      onTap: () {
+        if (_user?.getAvatarUrl() != null) {
+          final fullUrl = _user!.getAvatarUrl(size: 360);
+          // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
+          final thumbUrl = _user!.getAvatarUrl(size: 144);
+          // 与源端同源:同一个 _avatarStyle(isSquare, radius: 12)。
+          // 此前这里写死 radius 8 而源端 borderRadius 12,两处不同步。
+          final args = _avatarStyle(
+            isSquare: isSquareAvatarUrl(thumbUrl),
+            radius: 12,
+          ).openViewerArgs;
+          ImageViewerPage.open(
+            context,
+            fullUrl,
+            heroTag: 'user_avatar_${_user!.username}',
+            thumbnailUrl: thumbUrl,
+            heroSourceFit: args.fit,
+            heroSourceRadius: args.radius,
+            heroSourceCircular: args.circular,
+          );
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
+          borderRadius: isSquare ? BorderRadius.circular(12) : null,
+          border: Border.all(color: borderColor, width: borderWidth),
+        ),
+        child: AvatarWithFlair(
+          flairSize: flairSize,
+          flairRight: flairRight,
+          flairBottom: flairBottom,
+          flairUrl: _user?.flairUrl,
+          flairName: _user?.flairName,
+          flairBgColor: _user?.flairBgColor,
+          flairColor: _user?.flairColor,
+          // HeroImage 统一件:飞行起点、源端隐藏/占位、圆角(或圆形)插值
+          // 都由它保证;style 同时约束 openViewer 侧参数
+          avatar: HeroImage(
+            heroTag: 'user_avatar_${_user?.username ?? ''}',
+            style: _avatarStyle(isSquare: isSquare, radius: 12),
+            flightImage: avatarUrl == null
+                ? null
+                : discourseImageProvider(avatarUrl),
+            child: SmartAvatar(
+              imageUrl: avatarUrl,
+              radius: radius,
+              fallbackText: _user?.username,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 宽版关注按钮:主题配色(竖版那颗白底按钮是压深色头图的样式,
+  /// 放到正常底色上会糊)。
+  Widget _buildWideFollowButton(bool isOwnProfile) {
+    if (_user == null || _user!.canFollow != true || isOwnProfile) {
+      return const SizedBox.shrink();
+    }
+    if (_isFollowLoading) {
+      return const SizedBox(
+        width: 32,
+        height: 32,
+        child: Padding(
+          padding: EdgeInsets.all(6),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return _isFollowed
+        ? FilledButton.tonalIcon(
+            onPressed: _toggleFollow,
+            icon: const Icon(Symbols.check_rounded, size: 16),
+            label: Text(context.l10n.userProfile_followed),
+          )
+        : FilledButton.icon(
+            onPressed: _toggleFollow,
+            icon: const Icon(Symbols.add_rounded, size: 16),
+            label: Text(context.l10n.userProfile_follow),
+          );
+  }
+
+  /// 宽版统计区:数值大字+标签小字上下排,Wrap 流式铺开(竖版的
+  /// 单行小字挤排是为头图区省高度,左栏不缺纵向空间)。
+  Widget _buildWideStats(ThemeData theme) {
+    final items = <Widget>[
+      if (_user?.totalFollowing != null)
+        _buildWideStat(
+          NumberUtils.formatCount(_user!.totalFollowing!),
+          context.l10n.userProfile_following,
+          _user!.totalFollowing!,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FollowListPage(
+                username: widget.username,
+                isFollowing: true,
+              ),
+            ),
+          ),
+        ),
+      if (_user?.totalFollowers != null)
+        _buildWideStat(
+          NumberUtils.formatCount(_user!.totalFollowers!),
+          context.l10n.userProfile_followers,
+          _user!.totalFollowers!,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FollowListPage(
+                username: widget.username,
+                isFollowing: false,
+              ),
+            ),
+          ),
+        ),
+      if (_summary != null) ...[
+        _buildWideStat(
+          NumberUtils.formatCount(_summary!.likesReceived),
+          context.l10n.userProfile_statsLikes,
+          _summary!.likesReceived,
+        ),
+        _buildWideStat(
+          NumberUtils.formatCount(_summary!.daysVisited),
+          context.l10n.userProfile_statsVisits,
+          _summary!.daysVisited,
+        ),
+        _buildWideStat(
+          NumberUtils.formatCount(_summary!.topicCount),
+          context.l10n.userProfile_statsTopics,
+          _summary!.topicCount,
+        ),
+        _buildWideStat(
+          NumberUtils.formatCount(_summary!.postCount),
+          context.l10n.userProfile_statsReplies,
+          _summary!.postCount,
+        ),
+      ],
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 28, runSpacing: 16, children: items);
+  }
+
+  Widget _buildWideStat(
+    String value,
+    String label,
+    int rawValue, {
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+    return Tooltip(
+      message: '$rawValue',
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: content,
+            ),
+    );
+  }
+
+  /// 全屏形态的平行视界宿主组装:栈空=资料页独占全宽(自己的宽屏
+  /// 排版,无右栏空白);点话题/回复=资料页收窄成左栏、详情从右滑入
+  /// (对半分);缩窄=详情转投影;窄屏点列表=真路由。
+  Widget _wrapStandaloneHost(Widget profileBody) {
+    final selected = ref.watch(_ownPaneProvider);
+
+    // ESC 两段式:右栏开着让分发落 detail scope(关右栏),空了才
+    // maybePop 关整页。
+    (_standaloneEsc ??= PaneHostEscBinding(ref: ref))
+        .sync(context, paneOpen: selected.hasSelection);
+
+    final notifier = ref.read(_ownPaneProvider.notifier);
+    return PaneProjectionBackScope(
+      stackProvider: _ownPaneProvider,
+      masterWidth: PaneBreakpoints.wideMasterWidth,
+      minDetailWidth: PaneBreakpoints.wideMinDetailWidth,
+      child: MasterDetailLayout(
+        masterWidth: PaneBreakpoints.wideMasterWidth,
+        minDetailWidth: PaneBreakpoints.wideMinDetailWidth,
+        // 压栈后左栏是资料页(内容不是窄列表),放宽到对半分。
+        maxMasterRatio: 0.8,
+        preferredMasterRatio: 0.5,
+        projectDetailWhenNarrow: true,
+        pinMaster: false,
+        masterFillsWhenEmpty: true,
+        master: profileBody,
+        panes: [
+          for (var i = 0; i < selected.stack.length; i++)
+            KeyedSubtree(
+              key: ValueKey(
+                'user_profile_pane_${selected.stack[i].kind}_'
+                '${selected.stack[i].instanceId ?? selected.stack[i].username ?? selected.stack[i].topicId}',
+              ),
+              child: PaneContentWidget(
+                entry: selected.stack[i],
+                stackProvider: _ownPaneProvider,
+                parentActive: true,
+                truncateOnPush: i < selected.stack.length - 1,
+                // 回调内重读 provider,不闭包捕获 build 时的快照。
+                onBack: () {
+                  if (ref.read(_ownPaneProvider).isStacked) {
+                    notifier.pop();
+                  } else {
+                    notifier.clear();
+                  }
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1231,14 +1979,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     // 横屏时屏幕高度有限，限制 expandedHeight 不超过屏幕高度的 70%
     final screenHeight = MediaQuery.of(context).size.height;
     final double expandedHeight = 410.0.clamp(0.0, screenHeight * 0.7);
-
-    // Check if there is any info to show (for the "About" popup)
-    final hasBio = _user?.bio != null && _user!.bio!.isNotEmpty;
-    final hasLocation = _user?.location != null && _user!.location!.isNotEmpty;
-    final hasWebsite = _user?.website != null && _user!.website!.isNotEmpty;
-    final hasJoinedAt = _user?.createdAt != null;
-    final hasInfo = hasBio || hasLocation || hasWebsite || hasJoinedAt;
-
+    // 头部完整内容(头像行+简介卡+双行统计+活跃胶囊)加底部间距约需 340px;
+    // 横屏被上面限高后装不下,开精简模式(隐简介卡/活跃胶囊)——否则自底
+    // 锚定的内容向上溢出,与 toolbar 返回键/操作按钮及状态栏叠印。
+    final bool compactHeader = expandedHeight < 340;
     // 检查是否是自己
     final isOwnProfile =
         currentUser != null &&
@@ -1261,134 +2005,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       leading: widget.embeddedMode && widget.onEmbeddedBack != null
           ? BackButton(onPressed: widget.onEmbeddedBack)
           : null,
-      actions: [
-        IconButton(
-          icon: const Icon(Symbols.search_rounded),
-          onPressed: () => _openUserSearch(),
-        ),
-        if (_user != null && _user!.canSendPrivateMessageToUser != false)
-          IconButton(
-            onPressed: _openMessageDialog,
-            icon: const Icon(Symbols.mail_rounded),
-            tooltip: context.l10n.userProfile_message,
-          ),
-        SwipeDismissiblePopupMenuButton<String>(
-          icon: const Icon(Symbols.more_vert_rounded),
-          onSelected: (value) {
-            switch (value) {
-              case 'about':
-                _showUserInfo();
-              case 'share':
-                _shareUser();
-              case 'level_normal':
-                _setNotificationLevel('normal');
-              case 'level_mute':
-                _setNotificationLevel('mute');
-              case 'level_ignore':
-                _setNotificationLevel('ignore');
-            }
-          },
-          itemBuilder: (context) {
-            final theme = Theme.of(context);
-            return [
-              PopupMenuItem<String>(
-                value: 'about',
-                child: Row(
-                  children: [
-                    Icon(
-                      Symbols.info_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(context.l10n.common_about),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'share',
-                child: Row(
-                  children: [
-                    Icon(
-                      Symbols.share_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(context.l10n.userProfile_shareUser),
-                  ],
-                ),
-              ),
-              // 非自己才显示订阅级别选项
-              if (!isOwnProfile && _user != null) ...[
-                const PopupMenuDivider(),
-                PopupMenuItem<String>(
-                  value: 'level_normal',
-                  child: Row(
-                    children: [
-                      Icon(
-                        Symbols.notifications_rounded,
-                        size: 20,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(context.l10n.userProfile_normal)),
-                      if (_notificationLevel == 'normal')
-                        Icon(
-                          Symbols.check_rounded,
-                          size: 18,
-                          color: theme.colorScheme.primary,
-                        ),
-                    ],
-                  ),
-                ),
-                if (_user!.canMuteUser != false)
-                  PopupMenuItem<String>(
-                    value: 'level_mute',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Symbols.notifications_off_rounded,
-                          size: 20,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(context.l10n.userProfile_mute)),
-                        if (_notificationLevel == 'mute')
-                          Icon(
-                            Symbols.check_rounded,
-                            size: 18,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                  ),
-                if (_user!.canIgnoreUser == true)
-                  PopupMenuItem<String>(
-                    value: 'level_ignore',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Symbols.visibility_off_rounded,
-                          size: 20,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(context.l10n.userProfile_ignored)),
-                        if (_notificationLevel == 'ignore')
-                          Icon(
-                            Symbols.check_rounded,
-                            size: 18,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ];
-          },
-        ),
-      ],
+      actions: _buildHeaderActions(isOwnProfile),
       // Bottom 参数承载 TabBar，并应用圆角背景，这样它会“浮”在 FlexibleSpace 背景图之上
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(36),
@@ -1399,28 +2016,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           clipBehavior: Clip.antiAlias,
           child: Material(
             color: Theme.of(context).scaffoldBackgroundColor,
-            child: TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              labelColor: theme.colorScheme.primary,
-              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-              indicatorColor: theme.colorScheme.primary,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-              indicatorSize: TabBarIndicatorSize.label,
-              dividerColor: Colors.transparent,
-              tabs: [
-                Tab(height: 36, text: context.l10n.userProfile_tabSummary),
-                Tab(height: 36, text: context.l10n.userProfile_tabActivity),
-                Tab(height: 36, text: context.l10n.userProfile_tabTopics),
-                Tab(height: 36, text: context.l10n.userProfile_tabReplies),
-                Tab(height: 36, text: context.l10n.userProfile_tabLikes),
-                Tab(height: 36, text: context.l10n.userProfile_tabReactions),
-                Tab(height: 36, text: context.l10n.userProfile_tabBoosts),
-                Tab(height: 36, text: context.l10n.userProfile_tabVotes),
-                Tab(height: 36, text: context.l10n.userProfile_tabSolved),
-              ],
-            ),
+            child: _buildTabBar(theme),
           ),
         ),
       ),
@@ -1489,411 +2085,18 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               ),
 
               // ===== 层 2: 用户信息内容 - 展开时显示，收起时淡出 =====
+              // 宽屏时信息区与下方列表同宽限居中(头图背景仍全宽出血)。
               Positioned(
                 left: 20,
                 right: 20,
-                bottom: 36 + 24, // TabBar 高度 + 间距
+                // TabBar 高度 + 间距(精简模式收紧间距,给内容让位)
+                bottom: 36 + (compactHeader ? 12 : 24),
                 child: Opacity(
                   opacity: contentOpacity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 头像、姓名、操作按钮一行
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // 1. 头像 radius=36，flair 大小 30，偏移 right=-7, bottom=-4
-                          GestureDetector(
-                            onTap: () {
-                              if (_user?.getAvatarUrl() != null) {
-                                final avatarUrl = _user!.getAvatarUrl(
-                                  size: 360,
-                                );
-                                // 与页面头像同参(144)的缩略图作飞行纹理,
-                                // 命中已解码缓存;圆形头像飞行中圆↔直角
-                                // 连续插值(方形化账号走圆角 8 插值)
-                                final thumbUrl = _user!.getAvatarUrl(size: 144);
-                                final isSquare = isSquareAvatarUrl(thumbUrl);
-                                ImageViewerPage.open(
-                                  context,
-                                  avatarUrl,
-                                  heroTag: 'user_avatar_${_user!.username}',
-                                  thumbnailUrl: thumbUrl,
-                                  heroSourceCircular: !isSquare,
-                                  heroSourceRadius: isSquare ? 8 : 0,
-                                  heroSourceFit: isSquare ? BoxFit.cover : null,
-                                );
-                              }
-                            },
-                            child: Builder(
-                              builder: (context) {
-                                // linux.do 站点定制:个别账号头像方形化,外层白边框
-                                // 得跟 SmartAvatar 里的裁切形状对齐,不然会出现
-                                // "图是方的、外层白圈还是圆的"这种两层错位。
-                                final avatarUrl = _user?.getAvatarUrl(size: 144);
-                                final isSquare = isSquareAvatarUrl(avatarUrl);
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    shape: isSquare
-                                        ? BoxShape.rectangle
-                                        : BoxShape.circle,
-                                    borderRadius: isSquare
-                                        ? BorderRadius.circular(8)
-                                        : null,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: AvatarWithFlair(
-                                    flairSize: 30,
-                                    flairRight: -7,
-                                    flairBottom: -4,
-                                    flairUrl: _user?.flairUrl,
-                                    flairName: _user?.flairName,
-                                    flairBgColor: _user?.flairBgColor,
-                                    flairColor: _user?.flairColor,
-                                    avatar: Hero(
-                                      tag: 'user_avatar_${_user?.username ?? ''}',
-                                      child: SmartAvatar(
-                                        imageUrl: avatarUrl,
-                                        radius: 36,
-                                        fallbackText: _user?.username,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-
-                          // 2. 姓名、身份信息
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Row 1: Name + Status
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        (_user?.name?.isNotEmpty == true)
-                                            ? _user!.name!
-                                            : (_user?.username ?? ''),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w600,
-                                          shadows: [
-                                            Shadow(
-                                              color: Colors.black45,
-                                              offset: Offset(0, 1),
-                                              blurRadius: 2,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    if (_user?.status != null) ...[
-                                      const SizedBox(width: 8),
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: _buildStatusEmoji(
-                                          _user!.status!,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-
-                                // Row 2: Username
-                                if (_user?.username != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      top: 2,
-                                      bottom: 6,
-                                    ),
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      // 点击 @username 复制用户名
-                                      onTap: () => copyUsernameToClipboard(
-                                        _user!.username,
-                                      ),
-                                      child: Text(
-                                        '@${_user?.username}',
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.85,
-                                          ),
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  const SizedBox(height: 6), // 占位
-                                // Row 3: Level Badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    _getTrustLevelLabel(_user?.trustLevel ?? 0),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          // 3. 操作按钮 (关注)
-                          if (_user != null && !isOwnProfile) ...[
-                            const SizedBox(width: 12),
-                            _buildFollowButton(isOwnProfile),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // 封禁/禁言状态 与 个人简介 互斥显示（与 Discourse 前端一致）
-                      if (_user!.isSuspended || _user!.isSilenced) ...[
-                        GestureDetector(
-                          onTap: _showUserInfo,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // 封禁提示
-                              if (_user!.isSuspended) ...[
-                                _buildRestrictionBanner(
-                                  icon: Symbols.block_rounded,
-                                  label: _user!.isSuspendedForever
-                                      ? context
-                                            .l10n
-                                            .userProfile_suspendedBannerForever
-                                      : context.l10n
-                                            .userProfile_suspendedBannerUntil(
-                                              TimeUtils.formatFullDate(
-                                                _user!.suspendedTill,
-                                              ),
-                                            ),
-                                  reason: _user!.suspendReason,
-                                  color: Colors.redAccent,
-                                ),
-                                if (_user!.isSilenced)
-                                  const SizedBox(height: 8),
-                              ],
-                              // 禁言提示
-                              if (_user!.isSilenced)
-                                _buildRestrictionBanner(
-                                  icon: Symbols.mic_off_rounded,
-                                  label: _user!.isSilencedForever
-                                      ? context
-                                            .l10n
-                                            .userProfile_silencedBannerForever
-                                      : context.l10n
-                                            .userProfile_silencedBannerUntil(
-                                              TimeUtils.formatFullDate(
-                                                _user!.silencedTill,
-                                              ),
-                                            ),
-                                  reason: _user!.silenceReason,
-                                  color: Colors.orangeAccent,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ] else ...[
-                        // 个人简介（非封禁/禁言状态时显示）
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: hasInfo ? _showUserInfo : null,
-                          child: Container(
-                            height: 54,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: hasBio
-                                      ? CollapsedHtmlContent(
-                                          html: _user!.bio!,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          textStyle: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.9,
-                                            ),
-                                            fontSize: 14,
-                                            height: 1.3,
-                                          ),
-                                        )
-                                      : Text(
-                                          context.l10n.userProfile_noBio,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.5,
-                                            ),
-                                            fontSize: 14,
-                                            height: 1.3,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                ),
-                                if (hasInfo) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Symbols.chevron_right_rounded,
-                                    size: 16,
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      // Stats
-                      const SizedBox(height: 16),
-                      if (_summary != null)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 第一行：关注、粉丝
-                            if (_user?.totalFollowing != null ||
-                                _user?.totalFollowers != null)
-                              Wrap(
-                                spacing: 16,
-                                children: [
-                                  if (_user?.totalFollowing != null)
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => FollowListPage(
-                                            username: widget.username,
-                                            isFollowing: true,
-                                          ),
-                                        ),
-                                      ),
-                                      child: _buildStatSlot(
-                                        NumberUtils.formatCount(
-                                          _user!.totalFollowing!,
-                                        ),
-                                        context.l10n.userProfile_following,
-                                        _user!.totalFollowing!,
-                                      ),
-                                    ),
-                                  if (_user?.totalFollowers != null)
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => FollowListPage(
-                                            username: widget.username,
-                                            isFollowing: false,
-                                          ),
-                                        ),
-                                      ),
-                                      child: _buildStatSlot(
-                                        NumberUtils.formatCount(
-                                          _user!.totalFollowers!,
-                                        ),
-                                        context.l10n.userProfile_followers,
-                                        _user!.totalFollowers!,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            // 第二行：获赞、访问、话题、回复
-                            if (_user?.totalFollowing != null ||
-                                _user?.totalFollowers != null)
-                              const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 16,
-                              children: [
-                                _buildStatSlot(
-                                  NumberUtils.formatCount(
-                                    _summary!.likesReceived,
-                                  ),
-                                  context.l10n.userProfile_statsLikes,
-                                  _summary!.likesReceived,
-                                ),
-                                _buildStatSlot(
-                                  NumberUtils.formatCount(
-                                    _summary!.daysVisited,
-                                  ),
-                                  context.l10n.userProfile_statsVisits,
-                                  _summary!.daysVisited,
-                                ),
-                                _buildStatSlot(
-                                  NumberUtils.formatCount(_summary!.topicCount),
-                                  context.l10n.userProfile_statsTopics,
-                                  _summary!.topicCount,
-                                ),
-                                _buildStatSlot(
-                                  NumberUtils.formatCount(_summary!.postCount),
-                                  context.l10n.userProfile_statsReplies,
-                                  _summary!.postCount,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-
-                      // 最近活动时间
-                      if (_user?.lastPostedAt != null ||
-                          _user?.lastSeenAt != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Symbols.flash_on_rounded,
-                                size: 12,
-                                color: Colors.white70,
-                              ),
-                              const SizedBox(width: 4),
-                              RelativeTimeText(
-                                dateTime:
-                                    _user?.lastSeenAt ?? _user!.lastPostedAt!,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
+                  child: _buildUserInfoContent(
+                    theme,
+                    currentUser,
+                    compact: compactHeader,
                   ),
                 ),
               ),
@@ -1964,6 +2167,604 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         },
       ),
     );
+  }
+
+
+  /// 用户信息列(头像/名字/简介/统计/最近活动),窄版 SliverAppBar
+  /// flexibleSpace 层2 专用(白字压深色头图);宽版左栏是同风格的另一
+  /// 套排版(见 _buildWideInfoPanel),两边各自维护。
+  ///
+  /// [compact] 精简模式(横屏等 flexibleSpace 高度受限时):隐藏简介卡/
+  /// 封禁条与最近活跃胶囊,只留头像行+统计,防止内容向上溢出叠到
+  /// toolbar/状态栏。
+  Widget _buildUserInfoContent(
+    ThemeData theme,
+    User? currentUser, {
+    bool compact = false,
+  }) {
+    final hasBio = _user?.bio != null && _user!.bio!.isNotEmpty;
+    final hasLocation = _user?.location != null && _user!.location!.isNotEmpty;
+    final hasWebsite = _user?.website != null && _user!.website!.isNotEmpty;
+    final hasJoinedAt = _user?.createdAt != null;
+    final hasInfo = hasBio || hasLocation || hasWebsite || hasJoinedAt;
+    final isOwnProfile =
+        currentUser != null &&
+        _user != null &&
+        currentUser.username == _user!.username;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 头像、姓名、操作按钮一行
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 1. 头像 radius=36，flair 大小 30，偏移 right=-7, bottom=-4
+            GestureDetector(
+              onTap: () {
+                if (_user?.getAvatarUrl() != null) {
+                  final avatarUrl = _user!.getAvatarUrl(
+                    size: 360,
+                  );
+                  // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
+                  final thumbUrl = _user!.getAvatarUrl(size: 144);
+                  // 与源端同源(同竖版口径,见 _avatarStyle)
+                  final args = _avatarStyle(
+                    isSquare: isSquareAvatarUrl(thumbUrl),
+                    radius: 12,
+                  ).openViewerArgs;
+                  ImageViewerPage.open(
+                    context,
+                    avatarUrl,
+                    heroTag: 'user_avatar_${_user!.username}',
+                    thumbnailUrl: thumbUrl,
+                    heroSourceFit: args.fit,
+                    heroSourceRadius: args.radius,
+                    heroSourceCircular: args.circular,
+                  );
+                }
+              },
+              child: Builder(
+                builder: (context) {
+                  // linux.do 站点定制:个别账号头像方形化,外层白边框
+                  // 得跟 SmartAvatar 里的裁切形状对齐,不然会出现
+                  // "图是方的、外层白圈还是圆的"这种两层错位。
+                  final avatarUrl = _user?.getAvatarUrl(size: 144);
+                  final isSquare = isSquareAvatarUrl(avatarUrl);
+                  return Container(
+                    decoration: BoxDecoration(
+                      shape: isSquare
+                          ? BoxShape.rectangle
+                          : BoxShape.circle,
+                      borderRadius: isSquare
+                          ? BorderRadius.circular(8)
+                          : null,
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 2,
+                      ),
+                    ),
+                    child: AvatarWithFlair(
+                      flairSize: 30,
+                      flairRight: -7,
+                      flairBottom: -4,
+                      flairUrl: _user?.flairUrl,
+                      flairName: _user?.flairName,
+                      flairBgColor: _user?.flairBgColor,
+                      flairColor: _user?.flairColor,
+                      // HeroImage 统一件(同竖版口径)
+                      avatar: HeroImage(
+                        heroTag: 'user_avatar_${_user?.username ?? ''}',
+                        style: _avatarStyle(isSquare: isSquare, radius: 12),
+                        flightImage: avatarUrl == null
+                            ? null
+                            : discourseImageProvider(avatarUrl),
+                        child: SmartAvatar(
+                          imageUrl: avatarUrl,
+                          radius: 36,
+                          fallbackText: _user?.username,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // 2. 姓名、身份信息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Row 1: Name + Status
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          (_user?.name?.isNotEmpty == true)
+                              ? _user!.name!
+                              : (_user?.username ?? ''),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black45,
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_user?.status != null) ...[
+                        const SizedBox(width: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: _buildStatusEmoji(
+                            _user!.status!,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  // Row 2: Username
+                  if (_user?.username != null)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        top: 2,
+                        bottom: 6,
+                      ),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        // 点击 @username 复制用户名
+                        onTap: () => copyUsernameToClipboard(
+                          _user!.username,
+                        ),
+                        child: Text(
+                          '@${_user?.username}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(
+                              alpha: 0.85,
+                            ),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(height: 6), // 占位
+                  // Row 3: Level Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _getTrustLevelLabel(_user?.trustLevel ?? 0),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 3. 操作按钮 (关注)
+            if (_user != null && !isOwnProfile) ...[
+              const SizedBox(width: 12),
+              _buildFollowButton(isOwnProfile),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+        // 封禁/禁言状态 与 个人简介 互斥显示（与 Discourse 前端一致）。
+        // 精简模式整块隐藏——简介与封禁详情仍可从「关于」弹窗查看。
+        if (!compact && (_user!.isSuspended || _user!.isSilenced)) ...[
+          GestureDetector(
+            onTap: _showUserInfo,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 封禁提示
+                if (_user!.isSuspended) ...[
+                  _buildRestrictionBanner(
+                    icon: Symbols.block_rounded,
+                    label: _user!.isSuspendedForever
+                        ? context
+                              .l10n
+                              .userProfile_suspendedBannerForever
+                        : context.l10n
+                              .userProfile_suspendedBannerUntil(
+                                TimeUtils.formatFullDate(
+                                  _user!.suspendedTill,
+                                ),
+                              ),
+                    reason: _user!.suspendReason,
+                    color: Colors.redAccent,
+                  ),
+                  if (_user!.isSilenced)
+                    const SizedBox(height: 8),
+                ],
+                // 禁言提示
+                if (_user!.isSilenced)
+                  _buildRestrictionBanner(
+                    icon: Symbols.mic_off_rounded,
+                    label: _user!.isSilencedForever
+                        ? context
+                              .l10n
+                              .userProfile_silencedBannerForever
+                        : context.l10n
+                              .userProfile_silencedBannerUntil(
+                                TimeUtils.formatFullDate(
+                                  _user!.silencedTill,
+                                ),
+                              ),
+                    reason: _user!.silenceReason,
+                    color: Colors.orangeAccent,
+                  ),
+              ],
+            ),
+          ),
+        ] else if (!compact) ...[
+          // 个人简介（非封禁/禁言状态时显示）
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: hasInfo ? _showUserInfo : null,
+            child: Container(
+              height: 54,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: hasBio
+                        ? CollapsedHtmlContent(
+                            html: _user!.bio!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textStyle: TextStyle(
+                              color: Colors.white.withValues(
+                                alpha: 0.9,
+                              ),
+                              fontSize: 14,
+                              height: 1.3,
+                            ),
+                          )
+                        : Text(
+                            context.l10n.userProfile_noBio,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(
+                                alpha: 0.5,
+                              ),
+                              fontSize: 14,
+                              height: 1.3,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                  ),
+                  if (hasInfo) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Symbols.chevron_right_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // Stats
+        const SizedBox(height: 16),
+        if (_summary != null)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 第一行：关注、粉丝
+              if (_user?.totalFollowing != null ||
+                  _user?.totalFollowers != null)
+                Wrap(
+                  spacing: 16,
+                  children: [
+                    if (_user?.totalFollowing != null)
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FollowListPage(
+                              username: widget.username,
+                              isFollowing: true,
+                            ),
+                          ),
+                        ),
+                        child: _buildStatSlot(
+                          NumberUtils.formatCount(
+                            _user!.totalFollowing!,
+                          ),
+                          context.l10n.userProfile_following,
+                          _user!.totalFollowing!,
+                        ),
+                      ),
+                    if (_user?.totalFollowers != null)
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FollowListPage(
+                              username: widget.username,
+                              isFollowing: false,
+                            ),
+                          ),
+                        ),
+                        child: _buildStatSlot(
+                          NumberUtils.formatCount(
+                            _user!.totalFollowers!,
+                          ),
+                          context.l10n.userProfile_followers,
+                          _user!.totalFollowers!,
+                        ),
+                      ),
+                  ],
+                ),
+              // 第二行：获赞、访问、话题、回复
+              if (_user?.totalFollowing != null ||
+                  _user?.totalFollowers != null)
+                const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                children: [
+                  _buildStatSlot(
+                    NumberUtils.formatCount(
+                      _summary!.likesReceived,
+                    ),
+                    context.l10n.userProfile_statsLikes,
+                    _summary!.likesReceived,
+                  ),
+                  _buildStatSlot(
+                    NumberUtils.formatCount(
+                      _summary!.daysVisited,
+                    ),
+                    context.l10n.userProfile_statsVisits,
+                    _summary!.daysVisited,
+                  ),
+                  _buildStatSlot(
+                    NumberUtils.formatCount(_summary!.topicCount),
+                    context.l10n.userProfile_statsTopics,
+                    _summary!.topicCount,
+                  ),
+                  _buildStatSlot(
+                    NumberUtils.formatCount(_summary!.postCount),
+                    context.l10n.userProfile_statsReplies,
+                    _summary!.postCount,
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+        // 最近活动时间(精简模式隐藏)
+        if (!compact &&
+            (_user?.lastPostedAt != null || _user?.lastSeenAt != null)) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Symbols.flash_on_rounded,
+                  size: 12,
+                  color: Colors.white70,
+                ),
+                const SizedBox(width: 4),
+                RelativeTimeText(
+                  dateTime:
+                      _user?.lastSeenAt ?? _user!.lastPostedAt!,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Tab 栏本体(样式统一)。窄版挂在 SliverAppBar.bottom 的圆角容器里,
+  /// 宽版直接放右栏顶部。
+  Widget _buildTabBar(ThemeData theme) {
+    return TabBar(
+      controller: _tabController,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      labelColor: theme.colorScheme.primary,
+      unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+      indicatorColor: theme.colorScheme.primary,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+      indicatorSize: TabBarIndicatorSize.label,
+      dividerColor: Colors.transparent,
+      tabs: [
+        Tab(height: 36, text: context.l10n.userProfile_tabSummary),
+        Tab(height: 36, text: context.l10n.userProfile_tabActivity),
+        Tab(height: 36, text: context.l10n.userProfile_tabTopics),
+        Tab(height: 36, text: context.l10n.userProfile_tabReplies),
+        Tab(height: 36, text: context.l10n.userProfile_tabLikes),
+        Tab(height: 36, text: context.l10n.userProfile_tabReactions),
+        Tab(height: 36, text: context.l10n.userProfile_tabBoosts),
+        Tab(height: 36, text: context.l10n.userProfile_tabVotes),
+        Tab(height: 36, text: context.l10n.userProfile_tabSolved),
+      ],
+    );
+  }
+
+  /// 顶部操作按钮(搜索/私信/聊天/更多)。窄版在 SliverAppBar.actions,
+  /// 宽版在左侧资料栏顶行。
+  List<Widget> _buildHeaderActions(bool isOwnProfile) {
+    return <Widget>[
+      IconButton(
+        icon: const Icon(Symbols.search_rounded),
+        onPressed: () => _openUserSearch(),
+      ),
+      if (_user != null && _user!.canSendPrivateMessageToUser != false)
+        IconButton(
+          onPressed: _openMessageDialog,
+          icon: const Icon(Symbols.mail_rounded),
+          tooltip: context.l10n.userProfile_message,
+        ),
+      if (_user != null && !isOwnProfile)
+        IconButton(
+          onPressed: _isStartingChat ? null : _startChat,
+          icon: const Icon(Symbols.forum_rounded),
+          tooltip: context.l10n.chat_title,
+        ),
+      SwipeDismissiblePopupMenuButton<String>(
+        icon: const Icon(Symbols.more_vert_rounded),
+        onSelected: (value) {
+          switch (value) {
+            case 'about':
+              _showUserInfo();
+            case 'share':
+              _shareUser();
+            case 'level_normal':
+              _setNotificationLevel('normal');
+            case 'level_mute':
+              _setNotificationLevel('mute');
+            case 'level_ignore':
+              _setNotificationLevel('ignore');
+          }
+        },
+        itemBuilder: (context) {
+          final theme = Theme.of(context);
+          return [
+            PopupMenuItem<String>(
+              value: 'about',
+              child: Row(
+                children: [
+                  Icon(
+                    Symbols.info_rounded,
+                    size: 20,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(context.l10n.common_about),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'share',
+              child: Row(
+                children: [
+                  Icon(
+                    Symbols.share_rounded,
+                    size: 20,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(context.l10n.userProfile_shareUser),
+                ],
+              ),
+            ),
+            // 非自己才显示订阅级别选项
+            if (!isOwnProfile && _user != null) ...[
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'level_normal',
+                child: Row(
+                  children: [
+                    Icon(
+                      Symbols.notifications_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(context.l10n.userProfile_normal)),
+                    if (_notificationLevel == 'normal')
+                      Icon(
+                        Symbols.check_rounded,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                  ],
+                ),
+              ),
+              if (_user!.canMuteUser != false)
+                PopupMenuItem<String>(
+                  value: 'level_mute',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Symbols.notifications_off_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(context.l10n.userProfile_mute)),
+                      if (_notificationLevel == 'mute')
+                        Icon(
+                          Symbols.check_rounded,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                    ],
+                  ),
+                ),
+              if (_user!.canIgnoreUser == true)
+                PopupMenuItem<String>(
+                  value: 'level_ignore',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Symbols.visibility_off_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(context.l10n.userProfile_ignored)),
+                      if (_notificationLevel == 'ignore')
+                        Icon(
+                          Symbols.check_rounded,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ];
+        },
+      ),
+    ];
   }
 
   Widget _buildStatSlot(String value, String label, int rawValue) {
@@ -2048,6 +2849,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     required String label,
     required String? reason,
     required Color color,
+    Color? reasonColor,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2082,7 +2884,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: reasonColor ?? Colors.white.withValues(alpha: 0.8),
                 fontSize: 12,
                 height: 1.4,
               ),
@@ -2862,7 +3664,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       },
       child: M3eRefreshIndicator(
         onRefresh: () => _loadVotes(),
-        child: ListView.builder(
+        child: TopicCardPrewarmScope(
+          topics: topics,
+          child: ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: topics.length + 1,
           itemBuilder: (context, index) {
@@ -2887,6 +3691,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               enableLongPress: enableLongPress,
             );
           },
+          ),
         ),
       ),
     );

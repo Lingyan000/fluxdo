@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 
 import '../../../../models/topic.dart';
+import '../../../../providers/discourse_providers.dart';
 import '../../../../providers/selected_topic_provider.dart';
+import '../../../../services/app_error_handler.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../services/toast_service.dart';
 import '../../../../widgets/common/smart_avatar.dart';
@@ -30,6 +33,9 @@ Widget buildPolicy({
   required ThemeData theme,
   required dom.Element element,
   required Post post,
+  // 落地 provider 时按它找活跃话题实例(activeParamsFor);
+  // 为 null 时(分享截图等无话题上下文场景)只本地乐观更新不落地
+  int? topicId,
   required Widget Function(String html, TextStyle? textStyle) htmlBuilder,
 }) {
   var bodyHtml = element.innerHtml;
@@ -46,6 +52,7 @@ Widget buildPolicy({
 
   return _PolicyWidget(
     initialPost: post,
+    topicId: topicId,
     bodyHtml: bodyHtml,
     acceptLabel:
         (acceptLabel == null || acceptLabel.isEmpty) ? '接受' : acceptLabel,
@@ -55,9 +62,13 @@ Widget buildPolicy({
   );
 }
 
-class _PolicyWidget extends StatefulWidget {
+class _PolicyWidget extends ConsumerStatefulWidget {
   /// 首次 mount 时的 Post；后续以 [CurrentPostScope.of] 为准
   final Post initialPost;
+
+  /// 落地 provider 时按它找活跃话题实例(TopicDetailNotifier.activeParamsFor);
+  /// null = 无话题上下文(分享截图等),只本地乐观更新不落地
+  final int? topicId;
   final String bodyHtml;
   final String acceptLabel;
   final String revokeLabel;
@@ -65,6 +76,7 @@ class _PolicyWidget extends StatefulWidget {
 
   const _PolicyWidget({
     required this.initialPost,
+    required this.topicId,
     required this.bodyHtml,
     required this.acceptLabel,
     required this.revokeLabel,
@@ -72,10 +84,10 @@ class _PolicyWidget extends StatefulWidget {
   });
 
   @override
-  State<_PolicyWidget> createState() => _PolicyWidgetState();
+  ConsumerState<_PolicyWidget> createState() => _PolicyWidgetState();
 }
 
-class _PolicyWidgetState extends State<_PolicyWidget> {
+class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
   // 本地乐观状态（初值跟随 post；操作后实时 flip）
   late bool _accepted;
   late bool _revoked;
@@ -143,6 +155,30 @@ class _PolicyWidgetState extends State<_PolicyWidget> {
   bool get _hasFooter =>
       _canAccept || _canRevoke || _hasAnyUsers;
 
+  /// accept/revoke 成功后回写 provider(post-voting 控件同款):copyWith 产出
+  /// 新 post → CurrentPostScope 广播 → 滚出滚回/嵌套视图等所有同帖视图同步。
+  /// 不落地则 State 随 sliver 回收销毁后,接受/撤销状态丢失(initState 重新
+  /// 从 post 旧值 sync)。
+  void _syncToProvider() {
+    final topicId = widget.topicId;
+    if (topicId == null) return;
+    final params = TopicDetailNotifier.activeParamsFor(topicId);
+    if (params == null) return;
+    try {
+      ref.read(topicDetailProvider(params).notifier).updatePostPolicy(
+        _postId,
+        accepted: _accepted,
+        revoked: _revoked,
+        canAccept: _canAccept,
+        canRevoke: _canRevoke,
+        acceptedByCount: _hasStats ? _acceptedCount : null,
+        notAcceptedByCount: _hasStats ? _notAcceptedCount : null,
+      );
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    }
+  }
+
   Future<void> _accept() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -162,6 +198,7 @@ class _PolicyWidgetState extends State<_PolicyWidget> {
           if (_notAcceptedCount > 0) _notAcceptedCount -= 1;
         }
       });
+      _syncToProvider();
     } catch (e) {
       if (mounted) ToastService.showError('接受失败: $e');
     } finally {
@@ -187,6 +224,7 @@ class _PolicyWidgetState extends State<_PolicyWidget> {
           if (_acceptedCount > 0) _acceptedCount -= 1;
         }
       });
+      _syncToProvider();
     } catch (e) {
       if (mounted) ToastService.showError('撤销失败: $e');
     } finally {

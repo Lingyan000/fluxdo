@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart'
         ImmediateMultiDragGestureRecognizer,
         PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ import '../settings/definitions/bottom_nav_defs.dart';
 import '../settings/settings_model.dart';
 import '../settings/settings_renderer.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/responsive.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 底栏设置页
@@ -28,7 +30,11 @@ import 'package:m3e_ui/m3e_ui.dart';
 /// - 中部：可添加的候选池（点 + 加入）
 /// - 底部：手势分组（复用 [SettingsRenderer] 渲染 bottom_nav_defs 的 ActionModel）
 ///
-/// 约束：2 ≤ 已启用数量 ≤ 5；locked entry（home、profile）不可移除。
+/// 约束：2 ≤ 已启用数量 ≤ 上限；locked entry（home、profile）不可移除。
+///
+/// 上限按屏幕宽度自适应,不再是写死的 5——手机底栏是横向 `NavigationBar`,
+/// 塞太多图标会被越挤越窄;平板/桌面走的是竖排 `NavigationRail`,横向
+/// 空间宽裕,没必要卡在手机的上限,直接放开到全部已注册入口数。
 class BottomNavSettingsPage extends ConsumerStatefulWidget {
   final String? highlightId;
 
@@ -42,7 +48,24 @@ class BottomNavSettingsPage extends ConsumerStatefulWidget {
 class _BottomNavSettingsPageState
     extends ConsumerState<BottomNavSettingsPage> {
   static const int _minCount = 2;
-  static const int _maxCount = 5;
+
+  /// 搜索跳转定位:手势分组条目的锚点与高亮(与 SettingsGroupPage 同机制;
+  /// 本页布局手写,不走 SettingsGroupPage,只能自备一份)
+  final Map<String, GlobalKey> _itemKeys = {};
+  String? _highlightedId;
+
+  /// 手机横向底栏容易被挤,上限保守;平板竖排 rail 空间宽裕给到 7;
+  /// 桌面宽屏干脆不设人为上限,放开到当前全部已注册入口数。
+  int get _maxCount {
+    switch (Responsive.getDeviceType(context)) {
+      case DeviceType.mobile:
+        return 5;
+      case DeviceType.tablet:
+        return 7;
+      case DeviceType.desktop:
+        return NavEntryRegistry.buildAll().length;
+    }
+  }
 
   late List<String> _enabledIds;
 
@@ -53,6 +76,25 @@ class _BottomNavSettingsPageState
       ref.read(preferencesProvider).bottomNavIds,
     );
     _sanitize();
+    if (widget.highlightId != null) {
+      _highlightedId = widget.highlightId;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToHighlight());
+    }
+  }
+
+  void _scrollToHighlight() {
+    final key = _itemKeys[_highlightedId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.3,
+      );
+    }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
   }
 
   /// 校验 + 首页锁 0 位
@@ -179,6 +221,11 @@ class _BottomNavSettingsPageState
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
+        // 搜索定位目标(手势分组)在页尾,懒加载不挂载会导致 ensureVisible
+        // 拿不到 context;带 highlightId 时强制全量布局(与 SettingsGroupPage 同策)
+        scrollCacheExtent: widget.highlightId != null
+            ? const ScrollCacheExtent.pixels(double.maxFinite)
+            : null,
         children: [
           _SectionHeader(
             title: l10n.bottomNav_editorTitle,
@@ -246,7 +293,11 @@ class _BottomNavSettingsPageState
             ),
           const SizedBox(height: 20),
           for (final group in buildBottomNavGroups(context))
-            _GestureGroup(group: group),
+            _GestureGroup(
+              group: group,
+              itemKeys: _itemKeys,
+              highlightedId: _highlightedId,
+            ),
         ],
       ),
     );
@@ -547,15 +598,26 @@ class _AvailableTile extends StatelessWidget {
   }
 }
 
-/// 手势分组：读取 [buildBottomNavGroups] 的 SettingsGroup，
-/// 用 SettingsRenderer 渲染 items
-class _GestureGroup extends StatelessWidget {
-  const _GestureGroup({required this.group});
+/// 设置分组：读取 [buildBottomNavGroups] 的 SettingsGroup，
+/// 用 SettingsRenderer 渲染 items（先按可见性过滤，避免隐藏项零高占位
+/// 顶掉分段卡片组尾的大圆角）
+class _GestureGroup extends ConsumerWidget {
+  const _GestureGroup({
+    required this.group,
+    required this.itemKeys,
+    required this.highlightedId,
+  });
   final SettingsGroup group;
+  final Map<String, GlobalKey> itemKeys;
+  final String? highlightedId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    // 隐藏项（如依赖前置开关的条目）不进卡片组，否则零高占位会顶掉
+    // 组尾的大圆角（SegmentedCardGroup 按位置分配圆角）
+    final visibleItems =
+        group.items.where((item) => item.isVisible(ref)).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -578,7 +640,17 @@ class _GestureGroup extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SegmentedCardGroup(
             children: [
-              for (final item in group.items) SettingsRenderer(model: item),
+              for (final item in visibleItems)
+                AnimatedContainer(
+                  key: itemKeys.putIfAbsent(item.id, () => GlobalKey()),
+                  duration: const Duration(milliseconds: 500),
+                  color: highlightedId == item.id
+                      ? theme.colorScheme.primaryContainer.withValues(
+                          alpha: 0.4,
+                        )
+                      : Colors.transparent,
+                  child: SettingsRenderer(model: item),
+                ),
             ],
           ),
         ),

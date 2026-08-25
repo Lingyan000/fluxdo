@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 
 import '../../log/log_writer.dart';
 import '../adapters/adapter_log_metadata.dart';
+import '../flux_request_spec.dart';
 
 /// 网络请求日志拦截器，记录每个请求的 method/url/statusCode/duration
 class NetworkLogInterceptor extends Interceptor {
@@ -17,10 +18,10 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    if (response.requestOptions.extra['skipNetworkLog'] != true) {
+    if (!response.requestOptions.spec.skipNetworkLog) {
       // isSilent（MessageBus 长轮询等后台请求）成功属于常态，
       // 记为 debug 避免高频条目淹没日志
-      final isSilent = response.requestOptions.extra['isSilent'] == true;
+      final isSilent = response.requestOptions.spec.isSilent;
       _logRequest(
         options: response.requestOptions,
         statusCode: response.statusCode,
@@ -32,12 +33,12 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    if (err.requestOptions.extra['skipNetworkLog'] == true &&
+    if (err.requestOptions.spec.skipNetworkLog &&
         err.type == DioExceptionType.cancel) {
       handler.next(err);
       return;
     }
-    final isSilent = err.requestOptions.extra['isSilent'] == true;
+    final isSilent = err.requestOptions.spec.isSilent;
     final isTimeout =
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionTimeout ||
@@ -85,6 +86,12 @@ class NetworkLogInterceptor extends Interceptor {
     };
     if (uri.path == '/topics/timings') {
       entry.addAll(_timingsDiagnostics(options));
+    }
+    // 调用方标注的链路标签(csrf-refresh / otp-redeem / preload-home 等),
+    // 让日志里能按链路而非仅按 URL 归因。
+    final requestTag = options.spec.requestTag;
+    if (requestTag != null) {
+      entry['requestTag'] = requestTag;
     }
     final extraFields = options.extra['_networkLogFields'];
     if (extraFields is Map) {

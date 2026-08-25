@@ -14,6 +14,7 @@ import '../../utils/motion_springs.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/tag_icon_list.dart';
 import '../../utils/url_helper.dart';
+import '../common/predictive_back_overlay_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/category_topics_page.dart';
 import '../../pages/tag_topics_page.dart';
@@ -53,10 +54,8 @@ class CategoryDrawerHost {
 /// 外部只能 open/close —— 做不了"TabBarView 首缘 overscroll 逐帧
 /// 喂增量"的跟手拖出（用户点名：右滑慢慢打开，不是触发即弹）。
 /// 开着时面板/遮罩上水平拖拽关闭、点遮罩关闭、返回键关闭，语义与系统
-/// 抽屉一致。返回键有两路：LocalHistoryEntry 覆盖普通路由;首页根路由
-/// 挂着 canPop:false 的 PopScope（双击退出），其 doNotPop 判定优先于
-/// LocalHistory 内部消费，故由首页 PopScope 回调查 [CategoryDrawerHost.isOpen]
-/// 兜底关闭。
+/// 抽屉一致。返回键由 LocalHistoryEntry 消费；首页根路由仍保留 PopScope
+/// 作为抽屉动画收尾期间的兜底关闭逻辑。
 class ControlledCategoryDrawer extends StatefulWidget {
   const ControlledCategoryDrawer({super.key, required this.onPinnedSelected});
 
@@ -82,6 +81,19 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
 
   LocalHistoryEntry? _history;
   bool _removingHistory = false;
+  late final PredictiveBackOverlayHandler _predictiveBackHandler;
+
+  @override
+  void initState() {
+    super.initState();
+    _predictiveBackHandler = PredictiveBackOverlayHandler(
+      isEnabled: () => (ModalRoute.of(context)?.isCurrent ?? false) && isOpen,
+      onStart: _onPredictiveBackStart,
+      onUpdate: _onPredictiveBackUpdate,
+      onCancel: _onPredictiveBackCancel,
+      onCommit: close,
+    )..attach();
+  }
 
   /// 抽屉是否可见（含拖拽/动画中间态）
   bool get isOpen => _anim.value > 0;
@@ -105,6 +117,20 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
       target = _anim.value >= 0.5 ? 1.0 : 0.0;
     }
     _springTo(target, velocity: v);
+  }
+
+  void _onPredictiveBackStart() {
+    _anim.stop();
+  }
+
+  void _onPredictiveBackUpdate(double progress) {
+    _anim.stop();
+    _anim.value = 1.0 - progress;
+  }
+
+  void _onPredictiveBackCancel() {
+    // progress 可能已到 1.0，此时 isOpen 为 false，但取消仍应恢复抽屉。
+    _springTo(1.0);
   }
 
   void _springTo(double target, {double velocity = 0}) {
@@ -142,6 +168,7 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
 
   @override
   void dispose() {
+    _predictiveBackHandler.dispose();
     _history?.remove();
     _anim.dispose();
     super.dispose();

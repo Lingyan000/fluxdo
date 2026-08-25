@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -15,7 +16,6 @@ import '../utils/hero_visibility_controller.dart';
 import '../utils/screenshot_utils.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/shortcut_binding.dart';
@@ -82,13 +82,55 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   /// pop 前 60% 完成淡出(reverseCurve 的 t 轴仍是 parent 值,
   /// Interval(0.4,1.0) 即 parent 1→0.4 期间完成 1→0),背景先立住/
   /// 先退场,图片随后落位/飞回,分层感更自然。
-  static Animation<double> _routeFadeAnimation(Animation<double> animation) {
+  ///
+  /// **必须跨帧持有,不能每帧新建**(故有 [_RouteFade] 这层壳):
+  /// [CurvedAnimation] 用跨帧字段 `_curveDirection` 记住「进入动画时
+  /// 的方向」,`_curveDirection ?? status` 在动画中途保留旧方向,正是
+  /// 上游用来「换向不跳变」的机制;而构造函数拿**当帧 status** 初始化
+  /// 它。_ModalScopeState 用 ListenableBuilder 监听路由动画,转场树
+  /// **每帧重建**,所以在 transitionsBuilder 里 new 一份 = 每帧把方向
+  /// 记忆抹成当帧值 = 机制失效。
+  ///
+  /// 配上这里前后不对称的区间,后果是 Hero 飞行未结束就关闭时,同一帧
+  /// parent 值不变而 alpha 断崖:实测 parent 恒为 0.427,alpha 0.879 →
+  /// 0.004(reverseCurve 的 Interval(0.4,1.0) 在 0.427 处几乎为 0)。
+  /// 观感即「整页黑底瞬间消失、底页全露,图片却还在飞」的黑闪。
+  static CurvedAnimation _buildRouteFade(Animation<double> animation) {
     return CurvedAnimation(
       parent: animation,
       curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
       reverseCurve: const Interval(0.4, 1.0, curve: Curves.easeIn),
     );
   }
+
+  /// 仅供测试:查看器实际使用的淡入淡出层(黑闪回归防线)。
+  /// 走真 widget 而非只取曲线 —— 否则测不到「跨帧持有」这个关键点。
+  @visibleForTesting
+  static Widget debugRouteFade({
+    required Animation<double> animation,
+    required Widget child,
+  }) => _RouteFade(animation: animation, child: child);
+
+  /// 仅供测试:退场飞行起点的发布判据(见 [_ImageViewerPageState.
+  /// _publishExitFlightRect])。读真实现,不复刻判据。
+  @visibleForTesting
+  static bool debugIsDisplacedFromBaseline(Rect? rect, Rect? baseline) =>
+      _ImageViewerPageState._isDisplacedFromBaseline(rect, baseline);
+
+  /// 仅供测试:放大态可见窗口的归一化算式(读真实现)。
+  @visibleForTesting
+  static Rect? visibleFractionOf(Rect imageRect, Size viewport) =>
+      _ImageViewerPageState.visibleFractionOf(imageRect, viewport);
+
+  /// 仅供测试:飞行体该用真实进度还是钉在 1。
+  ///
+  /// 放大态必须用真实进度,否则取景框永不张开 —— contain 源(轮播/正文)
+  /// 一直走的就是钉住分支,所以放大后返回全程停在局部视图。
+  @visibleForTesting
+  static bool debugFlightNeedsProgress({
+    required bool coverSource,
+    required bool zoomed,
+  }) => coverSource || zoomed;
 
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
@@ -107,6 +149,17 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     double heroSourceRadius = 0,
     bool heroSourceCircular = false,
   }) {
+    // Hero 飞行是框架级硬条件:只发生在同一 Navigator 的两个 PageRoute
+    // 之间(HeroController._maybeStartHeroTransition 对非 PageRoute 直接
+    // 返回)。从弹窗(PopupRoute,如通知页面弹窗/用户卡片)里打开时
+    // from 端不是 PageRoute,飞行永远不启动——但查看器拿着 heroTag 会
+    // 走"配对 Hero"的开合/退场路径(禁用缩放预览、退场等归位飞行),
+    // 表现为闪烁/贴片静止。此时一律退化为纯淡入淡出(缩略图占位仍然
+    // 生效,只是不飞)。
+    if (ModalRoute.of(context) is! PageRoute) {
+      heroTag = null;
+      heroTags = null;
+    }
     return Navigator.push(
       context,
       PageRouteBuilder(
@@ -128,12 +181,18 @@ class ImageViewerPage extends ConsumerStatefulWidget {
             heroSourceCircular: heroSourceCircular,
           );
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
+              // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
+              // 返回一致 —— 单一分支原则。
+              transitionBuilder: (_, animation, _, child) =>
+                  _RouteFade(animation: animation, child: child),
+            ),
       ),
     );
   }
@@ -148,18 +207,67 @@ class ImageViewerPage extends ConsumerStatefulWidget {
         pageBuilder: (context, animation, secondaryAnimation) {
           return ImageViewerPage(imageBytes: bytes);
         },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: _routeFadeAnimation(animation),
-            child: child,
-          );
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              transitionBuilder: (_, animation, _, child) =>
+                  _RouteFade(animation: animation, child: child),
+            ),
       ),
     );
   }
 
   @override
   ConsumerState<ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+/// 承载查看器整页淡入淡出的壳:唯一职责是**跨帧持有那一份
+/// [CurvedAnimation]**,见 [ImageViewerPage._buildRouteFade] 的说明。
+///
+/// 转场树每帧重建,但同一路由的 [animation] 对象恒定,故本 State 只在
+/// animation 换了对象时才重建曲线(didUpdateWidget),其余帧一直复用同
+/// 一份 —— `_curveDirection` 得以跨帧存活,换向不再断崖。
+class _RouteFade extends StatefulWidget {
+  const _RouteFade({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_RouteFade> createState() => _RouteFadeState();
+}
+
+class _RouteFadeState extends State<_RouteFade> {
+  late CurvedAnimation _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+  }
+
+  @override
+  void didUpdateWidget(_RouteFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.animation, widget.animation)) {
+      _opacity.dispose();
+      _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+    }
+  }
+
+  @override
+  void dispose() {
+    // CurvedAnimation 在 parent 上挂了 status 监听,不摘会一直吊着路由动画
+    _opacity.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _opacity, child: widget.child);
 }
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
@@ -188,6 +296,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 持有 —— loading→completed 等树切换只换绘制载体,手势状态与进行
   /// 中的交互(如下滑关闭)不再随载体销毁。
   final Map<int, ImageGestureController> _gestureControllers = {};
+
+  /// 退场缩放处理。缩放是 RawGestureImage 的画布级变换,Hero 飞行只
+  /// 收缩布局盒子,两者叠加会闪烁(飞行中内容乱跳+落地突变),故飞行
+  /// 起跳前缩放必须回到 1.0 contain。两条路径:
+  /// - 按钮/程序化 pop:reverse 首帧瞬时归位(无进度可跟,跳变弱);
+  /// - 预测返回/iOS 拖拽:手势进度驱动**松弛** —— 认领后路由动画值
+  ///   即 1-进度,把 scale/offset 按 animation.value 从起始态 lerp 到
+  ///   contain。拖越多收越拢;cancel 时动画弹回 1.0,同一 lerp 自动
+  ///   恢复原缩放;commit 时残余 snap 到 1.0 再起飞。
+  ModalRoute<dynamic>? _route;
+  ValueListenable<bool>? _navUserGesture;
+
 
   ImageGestureController _obtainGestureController(
     int index, {
@@ -225,9 +345,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 构建查看器侧 Hero(单图/画廊共用)。
   ///
-  /// 源缩略图为 cover 裁剪展示(heroSourceFit == cover,目前只有网格
-  /// 瓦片)时,飞行体为 [CoverContainFlightImage] 单层裁切插值(裁切
-  /// 窗口与飞行缩放绑同一 progress,两端与真实内容像素级对齐)。
+  /// 飞行体一律用 [CoverContainFlightImage](自绘 drawImageRect,画的是干净
+  /// 的缩略图位图),**不用查看器的 child**。child 是 `GestureImageView` 的
+  /// 绘制层,带画布级变换(缩放/平移),塞进逐帧收缩的飞行盒子里不会重新
+  /// 适配,于是画面被裁切 —— 用户所见「轮播尾帧尺寸对了,但图是裁切的」。
+  ///
+  /// 两种来源的插值口径:
+  /// - cover 源(网格瓦片/圆形头像):裁切窗口随 progress 从 cover 张到
+  ///   contain,两端与真实内容像素级对齐;
+  /// - contain 源(轮播/正文单图):两端都是 contain,只有盒子比例在变,故把
+  ///   t 钉在 1(`kAlwaysCompleteAnimation`)—— 恒取全图、按真实比例 contain
+  ///   进当前飞行盒子。缩放由 Hero 盒子逐帧收缩承担,故观感是「完整大图随
+  ///   Hero 动画连续变小」,不是先跳一下再播。
   ///
   /// push 方向本 shuttle 生效(toHero=查看器优先);pop 方向源端
   /// HeroImage 的 shuttle 生效(带同款裁切插值),双向一致。
@@ -237,20 +366,62 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     required Widget child,
   }) {
     final bool coverSource =
-        (widget.heroSourceFit == BoxFit.cover || widget.heroSourceCircular) &&
-        thumbUrl != null;
+        widget.heroSourceFit == BoxFit.cover || widget.heroSourceCircular;
+    // 自绘飞行体需要一个位图源;没有缩略图只能退回 child
+    final bool useFlightImage = thumbUrl != null;
     return Hero(
       tag: tag,
-      flightShuttleBuilder: !coverSource
+      // 预测返回是 user gesture 转场,不开这个标记 Hero 不飞
+      // (与所有源端 Hero 配对开启,见 hero_image/discourse_image 等)
+      transitionOnUserGestures: true,
+      flightShuttleBuilder: !useFlightImage
           ? (_, _, _, _, _) => child
           : (flightContext, animation, direction, fromContext, toContext) {
-              // animation 为路由原始动画:push 0→1、pop 1→0,值语义
-              // 恒为「0=贴源,1=在查看器」,单套插值覆盖双向
+              // animation 为路由原始动画,值语义恒为「0=贴源,1=在查看器」。
+              //
+              // 何时需要 src 窗口随飞行插值:
+              // - cover 源(网格瓦片/圆形头像):源端是裁切展示,窗口要从
+              //   cover 张到 contain;
+              // - **放大态**(任何源):取景框要从「此刻看得见的那块」张回
+              //   完整图。这里若钉在 1,窗口永不张开 ⇒ 飞行全程都是放大态的
+              //   局部视图、落地才忽然完整(用户报的症状,contain 源尤其明显
+              //   因为它一直走的就是钉住分支)。
+              //
+              // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
+              // 比例在变,插值反而引入不必要的窗口动画。
+              final zoomed = HeroVisibilityController
+                      .instance.exitVisibleFraction !=
+                  null;
+              // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
+              // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
+              final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
+                coverSource: coverSource,
+                zoomed: zoomed,
+              );
+              // 源端缩略图盒子的固定宽高比:push 时源在 from,pop(divert)时
+              // 沿用 push 建的 shuttle 仍是 from。cover 裁窗须按它算,不按飞行
+              // 途中变化的画布比例(否则两端完整、中间帧被裁,见
+              // CoverContainFlightImage.sourceAspect)。
+              final BuildContext srcContext =
+                  direction == HeroFlightDirection.pop
+                      ? toContext
+                      : fromContext;
+              double? sourceAspect;
+              final ro = srcContext.findRenderObject();
+              if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                sourceAspect = ro.size.width / ro.size.height;
+              }
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
-                animation: animation,
+                animation:
+                    needsProgress ? animation : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
+                // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
+                // Image(fit:cover) 的可见区域对齐,否则落地瞬间「裁切一条」
+                // 突变成完整图(聊天气泡因 clamp 夹高最明显)
+                coverSource: coverSource,
+                sourceAspect: sourceAspect,
                 fallback: child,
               );
             },
@@ -349,7 +520,127 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (!identical(route, _route)) {
+      _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
+      _route = route;
+      _route?.animation?.addStatusListener(_onRouteAnimationStatus);
+    }
+    final userGesture = route?.navigator?.userGestureInProgressNotifier;
+    if (!identical(userGesture, _navUserGesture)) {
+      _navUserGesture?.removeListener(_onNavUserGestureChanged);
+      _navUserGesture = userGesture;
+      _navUserGesture?.addListener(_onNavUserGestureChanged);
+    }
+  }
+
+  /// 退场起点(按钮/程序化 pop):路由动画转 reverse 的第一帧,早于
+  /// HeroController 对 to 路由的测量与飞行起跳。
+  ///
+  /// 这里必须**同时**宣告 startPopping:它原先挂在源端
+  /// flightShuttleBuilder 的 pop 分支里,而 push 飞行未跑完就被 pop 打断
+  /// 时框架走 divert 且不重建 shuttle,那个监听器根本不会注册 ⇒ 源端
+  /// 缩略图 Opacity 锁死在 0 ⇒ 飞行体撤走瞬间是空洞(黑闪)。详见
+  /// [HeroVisibilityController.startPopping]。
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.reverse) return;
+    _publishExitFlightRect();
+    HeroVisibilityController.instance.startPopping();
+  }
+
+  /// 退场起点(预测返回/iOS 拖拽):手势置位即发布飞行矩形(早于
+  /// HeroController 测量飞行几何)。手势期不改动缩放 —— 缩放由 Hero
+  /// 飞行承载。同样要宣告 startPopping,理由同上。
+  void _onNavUserGestureChanged() {
+    if (_navUserGesture?.value == true && (_route?.isCurrent ?? false)) {
+      _publishExitFlightRect();
+      HeroVisibilityController.instance.startPopping();
+    }
+  }
+
+  /// 把「当前页图片在屏幕上的可见矩形」发布给源端 Hero 作飞行起点。
+  ///
+  /// destinationRect 是画布级变换后的目标矩形(含缩放与平移),坐标系为
+  /// 查看器绘制层的局部坐标;查看器是全屏路由,局部原点即屏幕原点,可
+  /// 直接当全局矩形用。
+  ///
+  /// **判据必须是「矩形是否偏离 contain 基线」,不能用 totalScale > 1**。
+  /// totalScale 的 1.0 不代表"贴合屏幕":双击缩放的智能档位会把小图算出
+  /// >1 的比例(`_calculateSmartScale`:正方形图在 1212x758 屏上得
+  /// 1212/758 ≈ 1.6),之后即使视觉上看着没放大,totalScale 仍停在 1.6。
+  /// 真机实测:500x500 的图、用户没主动放大,却发布了 1212x1212 的矩形
+  /// (contain 基线本应是 758x758,且它上下各溢出屏幕 191px)—— 拿它当
+  /// 飞行起点,观感就是「大图先跳成另一个尺寸,再从那儿播动画」。
+  ///
+  /// rawDestinationRect 是缩放前的 contain 基线(见 extended_image_lite
+  /// 的 `calculateFinalDestinationRect`),两者近似相等即视为未偏离,
+  /// 发布 null 走 Hero 默认的布局盒子几何。
+  void _publishExitFlightRect() {
+    final details = _gestureControllers[currentIndex]?.details;
+    final rect = details?.destinationRect;
+    final baseline = details?.rawDestinationRect;
+    final displaced = _isDisplacedFromBaseline(rect, baseline);
+    final ctrl = HeroVisibilityController.instance;
+    ctrl.setExitFlightRect(displaced ? rect : null);
+    // 一并发布「此刻看得见的那部分图」:只喂盒子不够,飞行体还要靠它把
+    // 取景框张回完整图。详见 HeroVisibilityController.exitVisibleFraction。
+    ctrl.setExitVisibleFraction(
+      displaced ? visibleFractionOf(rect!, MediaQuery.sizeOf(context)) : null,
+    );
+  }
+
+  /// 把「整张图在屏上占据的矩形」与视口求交,换算成**相对全图的归一化窗口**。
+  ///
+  /// [imageRect] 放大后通常大于屏幕、原点为负;与视口的交集即用户此刻真正
+  /// 看得见的那块;再除以 imageRect 自身尺寸得 0~1 比例 —— 飞行体拿它当 src
+  /// 窗口起点,无需知道任何像素尺寸或缩放倍率。
+  ///
+  /// 画面完全落在视口内(未被裁切)时返回 null:此时可见即完整图,飞行体
+  /// 维持原有口径。
+  @visibleForTesting
+  static Rect? visibleFractionOf(Rect imageRect, Size viewport) {
+    if (imageRect.isEmpty || !imageRect.isFinite) return null;
+    final visible = imageRect.intersect(Offset.zero & viewport);
+    if (visible.isEmpty || !visible.isFinite) return null;
+    final f = Rect.fromLTRB(
+      (visible.left - imageRect.left) / imageRect.width,
+      (visible.top - imageRect.top) / imageRect.height,
+      (visible.right - imageRect.left) / imageRect.width,
+      (visible.bottom - imageRect.top) / imageRect.height,
+    );
+    // 几乎就是完整图 ⇒ 没被裁切,不必插值
+    const eps = 0.01;
+    if (f.left <= eps &&
+        f.top <= eps &&
+        f.right >= 1 - eps &&
+        f.bottom >= 1 - eps) {
+      return null;
+    }
+    return f;
+  }
+
+  /// 可见矩形是否已偏离 contain 基线(= 用户真的缩放/平移过)。
+  /// 容差 1px:浮点与像素对齐带来的微差不算偏离。
+  static bool _isDisplacedFromBaseline(Rect? rect, Rect? baseline) {
+    if (rect == null || rect.isEmpty || !rect.isFinite) return false;
+    // 拿不到基线时保守处理:不发布,退回框架默认几何(旧行为)
+    if (baseline == null || baseline.isEmpty || !baseline.isFinite) {
+      return false;
+    }
+    const tolerance = 1.0;
+    return (rect.left - baseline.left).abs() > tolerance ||
+        (rect.top - baseline.top).abs() > tolerance ||
+        (rect.width - baseline.width).abs() > tolerance ||
+        (rect.height - baseline.height).abs() > tolerance;
+  }
+
+  @override
   void dispose() {
+    HeroVisibilityController.instance.setExitFlightRect(null);
+    _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
+    _navUserGesture?.removeListener(_onNavUserGestureChanged);
     _dynamicContentLease.release();
     HeroVisibilityController.instance.clear();
     _activeHeroPage.dispose();
@@ -375,6 +666,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       context: context,
       imageUrl: _currentImageUrl,
       showViewFullImage: false,
+      fileName: _currentFilename,
       position: position,
       onClose: () => Navigator.of(context).pop(),
     );
@@ -479,12 +771,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         throw Exception(S.current.image_fetchFailed);
       }
 
-      // 使用 putImageBytes 直接保存字节数据到相册
-      final ext = _getExtensionFromUrl(imageUrl);
-      await Gal.putImageBytes(
-        imageBytes,
-        name: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.$ext',
-      );
+      // 使用 putImageBytes 直接保存字节数据到相册;命名与分享同口径
+      // (原始文件名优先,回退时间戳)。
+      final ext = BlobImageCache.httpUrlExtension(imageUrl);
+      final name = ShareUtils.safeFileBaseName(_currentFilename) ??
+          'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
+      await Gal.putImageBytes(imageBytes, name: '$name.$ext');
 
       if (mounted) {
         ToastService.showSuccess(S.current.imageViewer_imageSaved);
@@ -655,19 +947,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 从 URL 中获取文件扩展名
-  String _getExtensionFromUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      final path = uri.path;
-      final lastDot = path.lastIndexOf('.');
-      if (lastDot != -1 && lastDot < path.length - 1) {
-        return path.substring(lastDot + 1).toLowerCase();
-      }
-    } catch (_) {}
-    return 'jpg'; // 默认返回 jpg
-  }
-
   /// 分享当前图片
   Future<void> _shareImage() async {
     if (_isSharing) return;
@@ -681,12 +960,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         imageUrl,
       );
 
-      // 分享文件
-      final xFile = XFile(
-        file.path,
-        mimeType: 'image/${_getExtensionFromUrl(imageUrl)}',
+      // 复制为可读文件名的临时文件再分享（缓存文件按 md5 寻址）：
+      // 原始文件名(接口/cooked) → URL 末段 → 时间戳,逐级回退。
+      await ShareUtils.shareImageFile(
+        file,
+        ext: BlobImageCache.httpUrlExtension(imageUrl),
+        fileName: _currentFilename,
+        urlHint: imageUrl,
       );
-      await ShareUtils.shareOrSaveFile(xFile);
     } catch (e) {
       debugPrint('Share image error: $e');
       if (mounted) {

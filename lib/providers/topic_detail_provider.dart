@@ -8,6 +8,7 @@ import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/anchor_guard_sliver.dart';
+import 'bookmark_sync_controller.dart';
 import 'core_providers.dart';
 import 'message_bus/models.dart';
 
@@ -98,7 +99,11 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   bool get isLoadMoreFailed => _isLoadMoreFailed;
   bool get isLoadPreviousFailed => _isLoadPreviousFailed;
   bool get isSummaryMode => _filter == 'summary';
+  bool get isActivityMode => _filter == 'activity';
   bool get isAuthorOnlyMode => _usernameFilter != null;
+  /// 当前按用户过滤的用户名(null = 未启用)。isAuthorOnlyMode 历史上
+  /// 只用于楼主,现已泛化为任意参与者,靠这个字段区分过滤对象。
+  String? get usernameFilter => _usernameFilter;
   bool get isTopLevelMode => _filterTopLevelReplies;
   bool get _isFilteredMode => _filter != null || _usernameFilter != null || _filterTopLevelReplies;
 
@@ -218,6 +223,45 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
 final topicDetailProvider = AsyncNotifierProvider.family.autoDispose<TopicDetailNotifier, TopicDetail, TopicDetailParams>(
   TopicDetailNotifier.new,
 );
+
+/// 话题内「只看某用户」请求(用户卡片/头像长按菜单发起,话题详情页消费)。
+///
+/// 发起方是深层弹层组件,不持有页面 State,没法直接调页面的过滤 action
+/// (那里除了改 notifier 还要做整套 UI 复位:退出嵌套视图/跳 1 楼/切换
+/// spinner)。经此桥广播,由当前活跃的详情页实例 ref.listen 消费。
+/// [username] 为 null 表示取消过滤;[seq] 单调递增,保证连续两次相同
+/// 请求也能触发 listener。
+class TopicUserFilterRequest {
+  final int seq;
+  final int topicId;
+  final String? username;
+
+  const TopicUserFilterRequest({
+    required this.seq,
+    required this.topicId,
+    this.username,
+  });
+}
+
+class TopicUserFilterRequestNotifier extends Notifier<TopicUserFilterRequest?> {
+  int _seq = 0;
+
+  @override
+  TopicUserFilterRequest? build() => null;
+
+  void request({required int topicId, String? username}) {
+    state = TopicUserFilterRequest(
+      seq: ++_seq,
+      topicId: topicId,
+      username: username,
+    );
+  }
+}
+
+final topicUserFilterRequestProvider =
+    NotifierProvider<TopicUserFilterRequestNotifier, TopicUserFilterRequest?>(
+      TopicUserFilterRequestNotifier.new,
+    );
 
 /// 话题 AI 摘要 Provider
 final topicSummaryProvider = StreamProvider.autoDispose

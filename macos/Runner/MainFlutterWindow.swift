@@ -28,12 +28,6 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger
     )
 
-    // 渲染帧标识印记(窗口级原生层,机制见 RenderSignetHandler)
-    RenderSignetHandler.shared.register(
-      messenger: flutterViewController.engine.binaryMessenger,
-      window: self
-    )
-
     // 注册 cookie 同步 channel，用于将 cookie 写入 HTTPCookieStorage.shared
     // WKWebView 的 sharedCookiesEnabled 在创建时从 HTTPCookieStorage.shared 读取 cookie
     let channel = FlutterMethodChannel(

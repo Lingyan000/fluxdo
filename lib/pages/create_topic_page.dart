@@ -85,6 +85,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   String? _templateContent;
   bool _isLoadingDraft = false;
   bool _showEmojiPanel = false;
+  bool _createAsPostVoting = false; // post-voting(问答)模式
 
   final PageController _pageController = PageController();
   int _contentLength = 0;
@@ -337,7 +338,15 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   }
 
   void _onCategorySelected(Category category) {
-    setState(() => _selectedCategory = category);
+    setState(() {
+      _selectedCategory = category;
+      // 分类联动问答默认值:强制分类锁定开;默认分类预勾选;
+      // 切到普通分类保留用户当前选择
+      if (category.onlyPostVotingInThisCategory ||
+          category.createAsPostVotingDefault) {
+        _createAsPostVoting = true;
+      }
+    });
 
     final currentContent = _contentController.text.trim();
     if (currentContent.isEmpty ||
@@ -457,6 +466,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         raw: _contentController.text,
         categoryId: _selectedCategory!.id,
         tags: _selectedTags.isNotEmpty ? _selectedTags : null,
+        createAsPostVoting: _createAsPostVoting,
       );
 
       // 发送成功后删除草稿
@@ -548,6 +558,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     bool canTagTopics,
     AsyncValue<List<String>> tagsAsync,
   ) {
+    // 站点是否装 post-voting 插件:从分类 JSON 是否下发插件字段派生
+    final sitePostVoting = categories.any((c) => c.hasPostVotingFields);
+    final locked = _selectedCategory?.onlyPostVotingInThisCategory ?? false;
     return ComposerMetaBar(
       category: _selectedCategory,
       categories: categories,
@@ -557,6 +570,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       allTags: tagsAsync.value ?? const [],
       onTagsChanged: _onTagsChanged,
       charCount: _contentLength,
+      showPostVotingToggle: sitePostVoting,
+      postVotingEnabled: _createAsPostVoting || locked,
+      postVotingLocked: locked,
+      onPostVotingChanged: (v) => setState(() => _createAsPostVoting = v),
     );
   }
 

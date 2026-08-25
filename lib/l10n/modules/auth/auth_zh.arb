@@ -51,6 +51,7 @@
   "login_qrPickImage": "从相册选择",
   "login_qrRefresh": "重新生成",
   "login_qrScanFailed": "扫码登录失败，请重试",
+  "login_qrScannedSuccess": "对方设备已登录成功",
   "login_qrScanHint": "将镜头对准另一台设备上的登录二维码",
   "login_qrScanTitle": "扫码登录",
   "login_qrSecurityWarning": "二维码含有 User API Key 与一次性登录令牌，约 10 分钟内有效。请勿分享给他人或在公共场合长时间展示。",

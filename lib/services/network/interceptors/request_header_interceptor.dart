@@ -4,6 +4,8 @@ import '../../../constants.dart';
 import '../../log/log_writer.dart';
 import '../../user_presence_service.dart';
 import '../cookie/csrf_token_service.dart';
+import '../flux_request_spec.dart';
+import '../health/network_health_controller.dart';
 
 /// 请求头拦截器
 /// 负责设置 User-Agent 和 CSRF Token
@@ -28,7 +30,7 @@ class RequestHeaderInterceptor extends Interceptor {
     }
 
     // 3. 设置 CSRF Token（未登录时无法获取，跳过）
-    final skipCsrf = options.extra['skipCsrf'] == true;
+    final skipCsrf = options.spec.skipCsrf;
     if (!skipCsrf) {
       // 非 GET 请求且 token 为空时，先从 /session/csrf 获取
       // 对齐 Discourse 前端: if (type !== "GET" && !csrfToken) { updateCsrfToken() }
@@ -41,7 +43,6 @@ class RequestHeaderInterceptor extends Interceptor {
       final csrf = _cookieSync.csrfToken;
       if (method != 'GET' && (csrf == null || csrf.isEmpty)) {
         options.headers.remove('X-CSRF-Token');
-        options.extra['_csrfUnavailable'] = true;
         LogWriter.instance.write({
           'timestamp': DateTime.now().toIso8601String(),
           'level': 'warning',
@@ -50,8 +51,11 @@ class RequestHeaderInterceptor extends Interceptor {
           'message': 'POST 前无法取得 CSRF token，已取消请求以避免 BAD CSRF',
           'method': options.method,
           'url': options.uri.toString(),
-          'isSilent': options.extra['isSilent'] == true,
+          'isSilent': options.spec.isSilent,
         });
+        // 取不到 CSRF 就取消写请求,是用户可感知的失败(发帖/点赞失效)。
+        // 记录此刻通道健康,便于区分"CF 盾挡住了刷新"与"纯粹未登录"。
+        NetworkHealthController.instance.dumpToLog('csrf_unavailable');
         handler.reject(
           DioException(
             requestOptions: options,

@@ -57,7 +57,7 @@ class NestedRootsResponse {
   final List<NestedNode> roots;
   final bool hasMoreRoots;
   final int page;
-  final int? pinnedPostNumber;
+  final List<int> pinnedPostIds;
 
   const NestedRootsResponse({
     this.topicJson,
@@ -66,7 +66,7 @@ class NestedRootsResponse {
     required this.roots,
     required this.hasMoreRoots,
     required this.page,
-    this.pinnedPostNumber,
+    this.pinnedPostIds = const [],
   });
 
   factory NestedRootsResponse.fromJson(Map<String, dynamic> json) {
@@ -82,8 +82,54 @@ class NestedRootsResponse {
           .toList(),
       hasMoreRoots: json['has_more_roots'] as bool? ?? false,
       page: json['page'] as int? ?? 0,
-      pinnedPostNumber: json['pinned_post_number'] as int?,
+      pinnedPostIds: (json['pinned_post_ids'] as List<dynamic>? ?? [])
+          .map((e) => e as int)
+          .toList(),
     );
+  }
+}
+
+/// 楼层上下文 API 响应（祖先链 + 目标帖子树），通知等带楼层进入时使用
+class NestedContextResponse {
+  final Map<String, dynamic>? topicJson;
+  final Post? opPost;
+  final List<Post> ancestorChain;
+  final bool ancestorsTruncated;
+  final NestedNode targetPost;
+
+  const NestedContextResponse({
+    this.topicJson,
+    this.opPost,
+    this.ancestorChain = const [],
+    this.ancestorsTruncated = false,
+    required this.targetPost,
+  });
+
+  factory NestedContextResponse.fromJson(Map<String, dynamic> json) {
+    final opPostJson = json['op_post'] as Map<String, dynamic>?;
+    return NestedContextResponse(
+      topicJson: json['topic'] as Map<String, dynamic>?,
+      opPost: opPostJson != null ? Post.fromJson(opPostJson) : null,
+      ancestorChain: (json['ancestor_chain'] as List<dynamic>? ?? [])
+          .map((e) => Post.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      ancestorsTruncated: json['ancestors_truncated'] as bool? ?? false,
+      targetPost:
+          NestedNode.fromJson(json['target_post'] as Map<String, dynamic>),
+    );
+  }
+
+  /// 祖先逐层包裹目标帖,构成 context 视图渲染用的单链根节点
+  NestedNode buildContextChain() {
+    var chain = targetPost;
+    for (final ancestor in ancestorChain.reversed) {
+      chain = NestedNode(
+        post: ancestor,
+        children: [chain],
+        directReplyCount: 1,
+      );
+    }
+    return chain;
   }
 }
 

@@ -22,6 +22,8 @@ import '../../../../../services/notion/notion_bookmark_auto_sync.dart';
 import '../../../../../services/toast_service.dart';
 import '../../../post_links.dart';
 import '../post_action_bar.dart';
+import '../post_voting_control.dart';
+import '../post_voting_comments_view.dart';
 import '../../../../bookmark/bookmark_edit_sheet_launcher.dart';
 import '../../../../post/post_boost/boost_actions.dart';
 import '../../../../post/post_boost/boost_list.dart';
@@ -80,6 +82,22 @@ class PostFooterSection extends ConsumerStatefulWidget {
   /// "+ Boost" 火箭按钮出现在 action bar。
   final bool? danmakuActive;
 
+  /// 当前用户是否有指定权限且这条帖子还没被指定——控制"更多"菜单
+  /// 是否显示"指定帖子"这一项(已指定的话走正文下方那个标签的
+  /// 编辑/取消,不在这里重复放)。
+  final bool canAssignPost;
+  final VoidCallback? onAssignPost;
+
+  /// post-voting(问答)话题:操作栏加赞成/反对控件 + 评论只读区
+  final bool isPostVotingTopic;
+
+  /// 话题 closed/archived(问答投票禁投判定)
+  final bool topicClosed;
+
+  /// 操作栏里是否放横排投票胶囊。短帖正文左侧已有竖排投票列时传 false
+  /// (只留评论区);长帖分段无左列,保留 footer 胶囊。
+  final bool showVotingControl;
+
   const PostFooterSection({
     super.key,
     required this.post,
@@ -104,6 +122,11 @@ class PostFooterSection extends ConsumerStatefulWidget {
     this.highlightBoostUsername,
     this.opTopSlot,
     this.danmakuActive,
+    this.canAssignPost = false,
+    this.onAssignPost,
+    this.isPostVotingTopic = false,
+    this.topicClosed = false,
+    this.showVotingControl = true,
   });
 
   @override
@@ -350,7 +373,29 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
             canBoost: _canBoost,
             // 弹幕模式下 BoostList 不显示，把"+ Boost"按钮的位置让给 action bar
             hasBoosts: _boosts.isNotEmpty && !(widget.danmakuActive == true),
+            isPostVotingTopic: widget.isPostVotingTopic,
+            // 问答话题:操作栏左侧赞成/反对控件(官方首帖也可投,不按楼层区分)。
+            // 短帖正文左侧已有竖排投票列时不再放胶囊(showVotingControl=false)
+            leadingSlot: (widget.isPostVotingTopic && widget.showVotingControl)
+                ? PostVotingControl(
+                    post: widget.post,
+                    topicId: widget.topicId,
+                    topicClosed: widget.topicClosed,
+                  )
+                : null,
           ),
+          // 问答话题:评论区(官方语义——问题帖与顶层答案帖下方,
+          // 评论代替对答案的追问;含点赞/加载更多/添加评论)
+          if (widget.isPostVotingTopic &&
+              widget.post.replyToPostNumber == 0 &&
+              !widget.post.isDeleted)
+            PostVotingCommentsView(
+              postId: widget.post.id,
+              postUsername: widget.post.username,
+              comments: widget.post.postVotingComments ?? const [],
+              commentsCount: widget.post.postVotingCommentsCount,
+              topicClosed: widget.topicClosed,
+            ),
           // Boost 气泡列表 / 弹幕
           if (_boosts.isNotEmpty) _buildBoostArea(context),
           ValueListenableBuilder<bool>(

@@ -40,6 +40,11 @@ class ApkDownloadService {
   Stream<ApkDownloadProgress> downloadAndInstall(ApkAsset asset) async* {
     _cancelled = false;
 
+    // 应用用户配置的 GitHub 反代前缀（未配置时保持直连）
+    final githubProxy = await UpdateService.getGithubProxy();
+    final downloadUrl =
+        UpdateService.applyGithubProxy(asset.downloadUrl, githubProxy);
+
     // 阶段 1：获取 SHA256 校验和（如果有）
     String? expectedSha256;
     if (asset.sha256Url != null) {
@@ -49,7 +54,9 @@ class ApkDownloadService {
       );
 
       try {
-        expectedSha256 = await _fetchSha256Checksum(asset.sha256Url!);
+        expectedSha256 = await _fetchSha256Checksum(
+          UpdateService.applyGithubProxy(asset.sha256Url!, githubProxy),
+        );
       } catch (e) {
         // SHA256 获取失败不影响下载
       }
@@ -65,7 +72,7 @@ class ApkDownloadService {
 
     try {
       final otaEvent = OtaUpdate().execute(
-        asset.downloadUrl,
+        downloadUrl,
         destinationFilename: asset.name,
         sha256checksum: expectedSha256,
       );

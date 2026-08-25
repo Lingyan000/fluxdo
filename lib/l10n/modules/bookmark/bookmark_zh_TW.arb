@@ -22,6 +22,7 @@
   "bookmark_setReminder": "設定提醒",
   "bookmarks_cancelReminder": "取消提醒",
   "bookmarks_deleted": "已刪除書籤",
+  "bookmarks_initialSyncing": "正在同步書籤…",
   "bookmarks_empty": "暫無書籤",
   "bookmarks_emptySearchHint": "輸入關鍵詞搜尋書籤",
   "bookmarks_expired": " 已過期",

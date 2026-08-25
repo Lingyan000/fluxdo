@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../l10n/s.dart';
 import '../../utils/share_utils.dart';
@@ -10,6 +9,7 @@ import '../../pages/image_viewer_page.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/toast_service.dart';
 import 'app_bottom_sheet.dart';
+import 'image_lift_menu.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/quote_builder.dart';
 import '../content/discourse_html_content/image_utils.dart';
@@ -31,7 +31,11 @@ class ImageContextMenu {
   /// [onQuoteImage] 引用回调（打开回复框），为 null 时隐藏「引用」选项
   /// [position] 鼠标全局位置（桌面端右键时传入，用于定位 Popup Menu）
   /// [onClose] 关闭回调（图片查看页内传入，显示「关闭」选项）
-  /// [heroTag] 源缩略图的 Hero tag（「查看大图」打开查看器时飞行转场用）
+  /// [heroTag] 源缩略图的 Hero tag(「查看大图」打开查看器时飞行转场用)
+  /// [lift] X 风格浮起菜单源信息(移动端长按):源图 context + 预览
+  /// 内容。非 null 且非桌面右键路径时用「长按浮起 + 底部动作面板」呈现
+  /// (对齐 X/iOS 系统上下文菜单动效),取不到源矩形时回退底部弹层;
+  /// null(如图片查看页,图已全屏,X 本就只用底部菜单)走底部弹层。
   static void show({
     required BuildContext context,
     required String imageUrl,
@@ -46,6 +50,9 @@ class ImageContextMenu {
     // cooked 里找不到匹配 img)降级用 `![image](CDN 完整 URL)`。
     String? quoteMarkdown,
     String? heroTag,
+    ImageLiftSpec? lift,
+    /// 原始文件名(接口/cooked 提供):分享与「查看大图」的命名依据。
+    String? fileName,
   }) {
     final originalUrl = DiscourseImageUtils.getOriginalUrl(imageUrl);
 
@@ -62,6 +69,7 @@ class ImageContextMenu {
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
     } else {
       _showMobileMenu(
@@ -75,10 +83,11 @@ class ImageContextMenu {
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        lift: lift,
+        fileName: fileName,
       );
     }
   }
-
   /// 桌面端：在鼠标位置弹出 Popup Menu
   static void _showDesktopMenu({
     required BuildContext context,
@@ -92,6 +101,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
   }) {
     final overlayRenderObject = Overlay.of(context).context.findRenderObject();
     if (overlayRenderObject is! RenderBox || !overlayRenderObject.hasSize) {
@@ -106,6 +116,7 @@ class ImageContextMenu {
         onQuoteImage: onQuoteImage,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
       return;
     }
@@ -181,11 +192,109 @@ class ImageContextMenu {
         onClose: onClose,
         quoteMarkdown: quoteMarkdown,
         heroTag: heroTag,
+        fileName: fileName,
       );
     });
   }
 
-  /// 移动端：底部弹出菜单
+  /// 移动端动作(浮起菜单与底部弹层共用同一份顺序与语义)。
+
+  static List<_MobileAction> _mobileActions({
+    required BuildContext context,
+    required String originalUrl,
+    required String imageUrl,
+    required bool showViewFullImage,
+    Post? post,
+    int? topicId,
+    void Function(String quote, Post post)? onQuoteImage,
+    String? quoteMarkdown,
+    String? heroTag,
+    String? fileName,
+    VoidCallback? onClose,
+  }) {
+    return [
+      if (showViewFullImage)
+        _MobileAction(
+          'viewFull',
+          Symbols.zoom_in_rounded,
+          S.current.image_viewFull,
+          () {
+            if (!context.mounted) return;
+            ImageViewerPage.open(
+              context,
+              originalUrl,
+              thumbnailUrl: imageUrl,
+              heroTag: heroTag,
+              filenames: [fileName],
+            );
+          },
+        ),
+      _MobileAction(
+        'copyImage',
+        Symbols.content_copy_rounded,
+        S.current.image_copyImage,
+        () => _copyImage(originalUrl),
+      ),
+      _MobileAction(
+        'copyLink',
+        Symbols.link_rounded,
+        S.current.image_copyLink,
+        () {
+          Clipboard.setData(ClipboardData(text: originalUrl));
+          ToastService.showSuccess(S.current.common_linkCopied);
+        },
+      ),
+      _MobileAction(
+        'share',
+        Symbols.share_rounded,
+        S.current.common_shareImage,
+        () => _shareImage(originalUrl, fileName: fileName),
+      ),
+      if (post != null && topicId != null && onQuoteImage != null)
+        _MobileAction(
+          'quote',
+          Symbols.format_quote_rounded,
+          S.current.common_quote,
+          () => onQuoteImage(
+                QuoteBuilder.build(
+                  markdown: quoteMarkdown ?? '![image]($originalUrl)',
+                  displayName: post.name,
+                  username: post.username,
+                  postNumber: post.postNumber,
+                  topicId: topicId,
+                ),
+                post,
+              ),
+        ),
+      if (post != null && topicId != null)
+        _MobileAction(
+          'copyQuote',
+          Symbols.copy_all_rounded,
+          S.current.common_copyQuote,
+          () {
+            final quote = QuoteBuilder.build(
+              markdown: quoteMarkdown ?? '![image]($originalUrl)',
+              displayName: post.name,
+              username: post.username,
+              postNumber: post.postNumber,
+              topicId: topicId,
+            );
+            Clipboard.setData(ClipboardData(text: quote));
+            ToastService.showSuccess(S.current.common_quoteCopied);
+          },
+        ),
+      if (onClose != null)
+        _MobileAction(
+          'close',
+          Symbols.close_rounded,
+          S.current.common_close,
+          onClose,
+        ),
+    ];
+  }
+
+  /// 移动端:优先 X 风格浮起菜单(长按浮起 + 底部动作面板同时出现),
+  /// 无浮起源信息或浮起失败时回退底部弹层。
   static void _showMobileMenu({
     required BuildContext context,
     required String originalUrl,
@@ -197,7 +306,49 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
+    ImageLiftSpec? lift,
   }) {
+    final actions = _mobileActions(
+      context: context,
+      originalUrl: originalUrl,
+      imageUrl: imageUrl,
+      showViewFullImage: showViewFullImage,
+      post: post,
+      topicId: topicId,
+      onQuoteImage: onQuoteImage,
+      quoteMarkdown: quoteMarkdown,
+      heroTag: heroTag,
+      fileName: fileName,
+      onClose: onClose,
+    );
+
+    if (lift != null && lift.sourceContext.mounted) {
+      // 点预览图 = 查看大图(iOS 语义:点预览打开内容)。
+      VoidCallback? previewTap = lift.onPreviewTap;
+      if (previewTap == null) {
+        for (final action in actions) {
+          if (action.id == 'viewFull') previewTap = action.run;
+        }
+      }
+      final opened = ImageLiftMenu.show(
+        context: lift.sourceContext,
+        previewBuilder: lift.previewBuilder,
+        sourceRadius: lift.sourceRadius,
+        onPreviewTap: previewTap,
+        actions: [
+          for (final action in actions)
+            ImageLiftAction(
+              icon: action.icon,
+              label: action.label,
+              onTap: action.run,
+            ),
+        ],
+      );
+      if (opened) return;
+      // 浮起失败(源图已卸载等)→ 回退底部弹层。
+    }
+
     AppBottomSheet.show(
       context: context,
       contentPadding: EdgeInsets.zero,
@@ -205,85 +356,13 @@ class ImageContextMenu {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (showViewFullImage)
+            for (final action in actions)
               ListTile(
-                leading: const Icon(Symbols.zoom_in_rounded),
-                title: Text(S.current.image_viewFull),
+                leading: Icon(action.icon),
+                title: Text(action.label),
                 onTap: () {
                   Navigator.pop(ctx);
-                  ImageViewerPage.open(
-                    context,
-                    originalUrl,
-                    thumbnailUrl: imageUrl,
-                    heroTag: heroTag,
-                  );
-                },
-              ),
-            ListTile(
-              leading: const Icon(Symbols.content_copy_rounded),
-              title: Text(S.current.image_copyImage),
-              onTap: () {
-                Navigator.pop(ctx);
-                _copyImage(originalUrl);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Symbols.link_rounded),
-              title: Text(S.current.image_copyLink),
-              onTap: () {
-                Navigator.pop(ctx);
-                Clipboard.setData(ClipboardData(text: originalUrl));
-                ToastService.showSuccess(S.current.common_linkCopied);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Symbols.share_rounded),
-              title: Text(S.current.common_shareImage),
-              onTap: () {
-                Navigator.pop(ctx);
-                _shareImage(originalUrl);
-              },
-            ),
-            if (post != null && topicId != null && onQuoteImage != null)
-              ListTile(
-                leading: const Icon(Symbols.format_quote_rounded),
-                title: Text(S.current.common_quote),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  final quote = QuoteBuilder.build(
-                    markdown: quoteMarkdown ?? '![image]($originalUrl)',
-                    displayName: post.name,
-                    username: post.username,
-                    postNumber: post.postNumber,
-                    topicId: topicId,
-                  );
-                  onQuoteImage(quote, post);
-                },
-              ),
-            if (post != null && topicId != null)
-              ListTile(
-                leading: const Icon(Symbols.copy_all_rounded),
-                title: Text(S.current.common_copyQuote),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  final quote = QuoteBuilder.build(
-                    markdown: quoteMarkdown ?? '![image]($originalUrl)',
-                    displayName: post.name,
-                    username: post.username,
-                    postNumber: post.postNumber,
-                    topicId: topicId,
-                  );
-                  Clipboard.setData(ClipboardData(text: quote));
-                  ToastService.showSuccess(S.current.common_quoteCopied);
-                },
-              ),
-            if (onClose != null)
-              ListTile(
-                leading: const Icon(Symbols.close_rounded),
-                title: Text(S.current.common_close),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  onClose();
+                  action.run();
                 },
               ),
           ],
@@ -304,6 +383,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     String? quoteMarkdown,
     String? heroTag,
+    String? fileName,
   }) {
     switch (action) {
       case 'viewFull':
@@ -312,6 +392,7 @@ class ImageContextMenu {
           originalUrl,
           thumbnailUrl: imageUrl,
           heroTag: heroTag,
+          filenames: [fileName],
         );
       case 'copyImage':
         _copyImage(originalUrl);
@@ -319,7 +400,7 @@ class ImageContextMenu {
         Clipboard.setData(ClipboardData(text: originalUrl));
         ToastService.showSuccess(S.current.common_linkCopied);
       case 'share':
-        _shareImage(originalUrl);
+        _shareImage(originalUrl, fileName: fileName);
       case 'quote':
         if (post != null && topicId != null && onQuoteImage != null) {
           final quote = QuoteBuilder.build(
@@ -375,32 +456,37 @@ class ImageContextMenu {
   }
 
   /// 分享图片
-  static Future<void> _shareImage(String imageUrl) async {
+  static Future<void> _shareImage(String imageUrl, {String? fileName}) async {
     try {
       final file = await BlobImageCache.getFile(
         BlobImageCache.contentBucket,
         imageUrl,
       );
-      final ext = _getExtensionFromUrl(imageUrl);
-      final xFile = XFile(file.path, mimeType: 'image/$ext');
-      await ShareUtils.shareOrSaveFile(xFile);
+      // 复制为可读文件名的临时文件再分享(缓存文件按 md5 寻址):
+      // 原始文件名(接口/cooked) → URL 末段 → 时间戳,逐级回退。
+      await ShareUtils.shareImageFile(
+        file,
+        ext: BlobImageCache.httpUrlExtension(imageUrl),
+        fileName: fileName,
+        urlHint: imageUrl,
+      );
     } catch (e) {
       debugPrint('[ImageContextMenu] shareImage error: $e');
       ToastService.showError(S.current.common_shareFailed);
     }
   }
+}
 
-  /// 从 URL 提取文件扩展名
-  static String _getExtensionFromUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return 'png';
-    final path = uri.path.toLowerCase();
-    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'jpeg';
-    if (path.endsWith('.gif')) return 'gif';
-    if (path.endsWith('.webp')) return 'webp';
-    if (path.endsWith('.avif')) return 'avif';
-    return 'png';
-  }
+/// 移动端动作模型(浮起菜单与底部弹层共用同一份顺序与语义)。
+class _MobileAction {
+  const _MobileAction(this.id, this.icon, this.label, this.run);
+
+  final String id;
+  final IconData icon;
+  final String label;
+
+  /// 纯动作,不含任何菜单关闭逻辑(关闭由菜单外壳负责)。
+  final VoidCallback run;
 }
 
 /// Popup Menu 菜单项行（图标 + 文字）

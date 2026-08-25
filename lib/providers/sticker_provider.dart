@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/sticker.dart';
+import '../services/app_logger.dart';
 import '../services/sticker_market_service.dart';
 import '../services/sticker_thumbnail_provider.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
@@ -19,7 +20,18 @@ final stickerMarketServiceProvider = Provider<StickerMarketService>((ref) {
 /// 市场全部非归档分组
 final stickerGroupsProvider = FutureProvider<List<StickerGroup>>((ref) async {
   final service = ref.watch(stickerMarketServiceProvider);
-  return service.getAllGroups();
+  try {
+    return await service.getAllGroups();
+  } catch (e, st) {
+    AppLogger.error(
+      '加载表情包分组列表失败',
+      tag: 'Sticker',
+      error: e,
+      stackTrace: st,
+      fields: {'baseUrl': service.baseUrl},
+    );
+    rethrow;
+  }
 });
 
 /// 分组详情（按 groupId 懒加载）
@@ -30,9 +42,20 @@ final stickerGroupsProvider = FutureProvider<List<StickerGroup>>((ref) async {
 final stickerGroupDetailProvider =
     FutureProvider.family<StickerGroupDetail, String>((ref, groupId) async {
       final service = ref.watch(stickerMarketServiceProvider);
-      final detail = await service.getGroupDetail(groupId);
-      unawaited(_prefetchFirstScreenThumbnails(groupId, detail.emojis));
-      return detail;
+      try {
+        final detail = await service.getGroupDetail(groupId);
+        unawaited(_prefetchFirstScreenThumbnails(groupId, detail.emojis));
+        return detail;
+      } catch (e, st) {
+        AppLogger.error(
+          '加载表情包分组详情失败',
+          tag: 'Sticker',
+          error: e,
+          stackTrace: st,
+          fields: {'groupId': groupId, 'baseUrl': service.baseUrl},
+        );
+        rethrow;
+      }
     });
 
 /// 当前活跃 prefetch 的 groupId。每次新组进来就覆盖,旧组 task 通过
@@ -137,6 +160,13 @@ class MarketGroupsNotifier
       _isLoadMoreFailed = false;
       state = AsyncValue.data(results[1] as List<StickerGroup>);
     } catch (e, st) {
+      AppLogger.error(
+        '加载表情包市场首页失败',
+        tag: 'Sticker',
+        error: e,
+        stackTrace: st,
+        fields: {'baseUrl': _service.baseUrl},
+      );
       state = AsyncValue.error(e, st);
     }
   }
@@ -157,9 +187,18 @@ class MarketGroupsNotifier
 
       // 单次提交新页面，避免滚动过程中连续多次 rebuild 整个列表。
       state = AsyncValue.data([...state.value!, ...newGroups]);
-    } catch (e) {
+    } catch (e, st) {
       _isLoadMoreFailed = true;
-      debugPrint('[MarketGroups] 加载第${_loadedPages + 1}页失败: $e');
+      AppLogger.warning(
+        '加载表情包市场分页失败',
+        tag: 'Sticker',
+        fields: {
+          'page': _loadedPages + 1,
+          'baseUrl': _service.baseUrl,
+          'error': e.toString(),
+          'stackTrace': st.toString(),
+        },
+      );
     } finally {
       _isLoadingMore = false;
       _emitCurrentData();

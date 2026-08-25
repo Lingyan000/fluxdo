@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/site_customization.dart';
 import '../constants.dart';
+import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/webview_page.dart';
 import '../providers/preferences_provider.dart';
@@ -173,7 +174,25 @@ Future<void> launchContentLink(
     }
   }
 
-  // 2. 解析话题链接
+  // 2. 聊天链接(/chat/c/...):进原生频道页,消息 id 作定位锚点。
+  //    必须在话题分支之前——thread 形态 /chat/c/-/:cid/t/:tid/:mid 里的
+  //    "/t/数字" 会被话题正则误命中抢走
+  final chatInfo = DiscourseUrlParser.parseChat(url);
+  if (chatInfo != null && isInternalUrlString(url)) {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatChannelPage(
+          channelId: chatInfo.channelId,
+          threadId: chatInfo.threadId,
+          initialMessageId: chatInfo.messageId,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // 3. 解析话题链接
   final topicInfo = DiscourseUrlParser.parseTopic(url);
   if (topicInfo != null && isInternalUrlString(url)) {
     if (onInternalLinkTap != null) {
@@ -189,6 +208,7 @@ Future<void> launchContentLink(
     WebViewPage.open(context, fullUrl);
     return;
   }
+
 
   // 3. 图片直链(站点自己的域名/CDN/S3 CDN)→ 直接用内置查看器打开,
   //    与网页端一致(点图直接看大图,不当"外部链接"走离站确认弹窗)。

@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "Added to float",
   "topicDetail_aiAssistant": "AI Assistant",
   "topicDetail_authorOnly": "OP only",
+  "topicDetail_userOnly": "Only @{username}",
+  "@topicDetail_userOnly": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_browseMoreInCategory": "Want to read more? Browse the {category} category",
   "@topicDetail_browseMoreInCategory": {
     "placeholders": {
@@ -18,10 +26,20 @@
   "topicDetail_exportArticle": "Export article",
   "topicDetail_filter": "Filter",
   "topicDetail_generateShareImage": "Generate share image",
+  "topicDetail_toc": "Table of Contents",
+  "topicDetail_tocCollapse": "Collapse TOC",
+  "topicDetail_tocExpand": "Expand TOC",
+  "topicDetail_sortByActivity": "Sort by activity",
   "topicDetail_hotOnly": "Hot only",
   "topicDetail_loadFailedTapRetry": "Failed to load, tap to retry",
   "topicDetail_loading": "Loading...",
   "topicDetail_moreOptions": "More options",
+  "topicDetail_markUnread": "Mark unread",
+  "topicDetail_markUnreadLast": "Last post unread",
+  "topicDetail_markUnreadLastDesc": "Back to unread list, continue next time",
+  "topicDetail_markUnreadAll": "All unread",
+  "topicDetail_markUnreadAllDesc": "Clear reading progress, start over next time",
+  "topicDetail_markUnreadSuccess": "Marked as unread",
   "topicDetail_openInBrowser": "Open in browser",
   "topicDetail_readLaterFull": "Float is full (max {max})",
   "topicDetail_relatedTopics": "Related Topics",

@@ -105,6 +105,7 @@
   "userProfile_location": "Location",
   "userProfile_message": "Message",
   "userCard_viewProfile": "View profile",
+  "userCard_chat": "Chat",
   "avatarMenu_viewProfile": "View Profile",
   "avatarMenu_mention": "Mention",
   "avatarMenu_copyUsername": "Copy Username",
@@ -112,6 +113,17 @@
   "userCard_lastPosted": "Last post",
   "userCard_mute": "Mute",
   "userCard_ignore": "Ignore",
+  "userCard_filterPosts": "View {count} posts",
+  "@userCard_filterPosts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userCard_cancelFilterPosts": "Show all posts",
+  "avatarMenu_filterPosts": "Only This User",
+  "avatarMenu_cancelFilterPosts": "Show All",
   "userCard_referenceTopicTitle": "Re: {title}",
   "@userCard_referenceTopicTitle": {
     "placeholders": {

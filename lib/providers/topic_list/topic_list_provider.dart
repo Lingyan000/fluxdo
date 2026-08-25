@@ -520,6 +520,34 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
           .updateTopicRead(topicId, highestSeen, topic.highestPostNumber);
     }
   }
+
+  /// 标记话题为未读:已读游标显式回退到 highest - 1(与服务端
+  /// destroy_last_for 一致)。_syncFromTrackingState 的单调合并只认
+  /// 前进方向,回退必须在这里直写列表项;tracking 侧由调用方另行回退,
+  /// 两头游标落到同一位置后,后续合并两边等值不会互相顶回。
+  /// [all] = true 清空整个游标,回 unseen/NEW 语义(unread 恒 0,
+  /// 对齐 lib/unread.rb:没读过的话题不走未读计数)。
+  void markUnread(int topicId, {bool all = false}) {
+    final topics = state.value;
+    if (topics == null) return;
+
+    final index = topics.indexWhere((t) => t.id == topicId);
+    if (index == -1) return;
+
+    final topic = topics[index];
+    final highest = topic.highestPostNumber;
+    final lastRead = all ? null : (highest > 1 ? highest - 1 : null);
+
+    final newList = [...topics];
+    newList[index] = topic.copyWith(
+      unseen: all,
+      unread: lastRead == null ? 0 : (highest - lastRead).clamp(0, highest),
+      newPosts: 0,
+      lastReadPostNumber: lastRead,
+      clearLastRead: lastRead == null,
+    );
+    state = AsyncValue.data(newList);
+  }
 }
 
 final topicListProvider =

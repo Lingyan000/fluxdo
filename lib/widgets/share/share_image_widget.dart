@@ -12,7 +12,6 @@ import '../../utils/time_utils.dart';
 import '../common/smart_avatar.dart';
 import '../common/flair_badge.dart';
 import '../common/emoji_text.dart';
-import '../render_signet/render_signet_layer.dart';
 import 'share_image_preview.dart';
 
 /// 分享图片 Widget
@@ -124,8 +123,6 @@ class ShareImageWidget extends ConsumerWidget {
               ],
             ),
           ),
-          // 分享图标识印记:离屏截图,原生窗口层盖不到,必须内联绘制
-          const Positioned.fill(child: RenderSignetLayer.inline()),
         ],
       ),
     );

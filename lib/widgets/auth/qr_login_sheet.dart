@@ -93,10 +93,17 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   bool _loading = false;
   bool _approved = false;
 
+  /// 扫码端已完成登录(分享 key 从本人 Apps 列表消失)。
+  bool _consumed = false;
+
   /// OTP 扫码窗口截止(生成时刻 + 10 分钟)。这是二维码的真实有效期。
   DateTime? _otpDeadline;
 
   Timer? _ticker;
+
+  /// 轮询扫码结果:分享 key 消失 = 对方已登录并自我吊销。
+  Timer? _pollTimer;
+  bool _pollInFlight = false;
 
   @override
   void initState() {
@@ -107,6 +114,13 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _pollTimer?.cancel();
+    // 码未被消费就关闭弹层:尽力撤销刚创建的 key,不留孤儿凭据。
+    // (重新生成无需处理——同 client_id 再 create 时服务端 destroy_all 旧 key)
+    final leftoverKey = _payload?.apiKey;
+    if (!_consumed && leftoverKey != null && leftoverKey.isNotEmpty) {
+      unawaited(QrLoginService.instance.revokeSharedKey(leftoverKey));
+    }
     _setSecureScreen(false);
     super.dispose();
   }
@@ -170,8 +184,10 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
         _payload = result.payload;
         _otpDeadline = DateTime.now().add(_kOtpWindow);
         _loading = false;
+        _consumed = false;
       });
       _restartTicker();
+      _restartPolling();
     } on QrLoginException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -200,7 +216,34 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {});
-      if (_qrExpired) _ticker?.cancel();
+      if (_qrExpired) {
+        _ticker?.cancel();
+        _pollTimer?.cancel();
+      }
+    });
+  }
+
+  /// 每 3 秒查一次分享 key 是否仍存活;消失 = 扫码端已登录并自我吊销。
+  /// (Discourse 无扫码回执机制,轮询本人 /u/:username.json 的
+  /// user_api_keys 是唯一可用信号;仅本人可见,无隐私外泄)
+  void _restartPolling() {
+    _pollTimer?.cancel();
+    final username = _payload?.username ?? '';
+    if (username.isEmpty) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (!mounted || _pollInFlight || _consumed || _qrExpired) return;
+      _pollInFlight = true;
+      try {
+        final alive = await QrLoginService.instance.isSharedKeyAlive(
+          username: username,
+        );
+        if (!mounted || alive != false) return;
+        _pollTimer?.cancel();
+        _ticker?.cancel();
+        setState(() => _consumed = true);
+      } finally {
+        _pollInFlight = false;
+      }
     });
   }
 
@@ -343,14 +386,26 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
           Center(
             child: Stack(
               children: [
-                _QrCard(data: _raw!, dimmed: _qrExpired),
-                if (_qrExpired)
+                _QrCard(data: _raw!, dimmed: _qrExpired || _consumed),
+                if (_consumed)
+                  Positioned.fill(child: _buildConsumedOverlay(theme, scheme))
+                else if (_qrExpired)
                   Positioned.fill(child: _buildExpiredOverlay(theme, scheme)),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          if (!_qrExpired)
+          if (_consumed)
+            Center(
+              child: Text(
+                context.l10n.login_qrScannedSuccess,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else if (!_qrExpired)
             Center(
               child: Text(
                 context.l10n.login_qrOtpWindowRemaining(
@@ -373,11 +428,16 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
           ],
           const SizedBox(height: 12),
           Center(
-            child: TextButton.icon(
-              onPressed: _confirmAndGenerate,
-              icon: const Icon(Symbols.refresh_rounded, size: 18),
-              label: Text(context.l10n.login_qrRefresh),
-            ),
+            child: _consumed
+                ? FilledButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: Text(context.l10n.common_done),
+                  )
+                : TextButton.icon(
+                    onPressed: _confirmAndGenerate,
+                    icon: const Icon(Symbols.refresh_rounded, size: 18),
+                    label: Text(context.l10n.login_qrRefresh),
+                  ),
           ),
         ],
       ],
@@ -397,6 +457,43 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
           child: Text(context.l10n.common_retry),
         ),
       ],
+    );
+  }
+
+  /// 扫码成功覆盖层:对方设备已用此码完成登录。
+  Widget _buildConsumedOverlay(ThemeData theme, ColorScheme scheme) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: Material(
+          color: scheme.scrim.withValues(alpha: 0.45),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Symbols.check_circle_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    context.l10n.login_qrScannedSuccess,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

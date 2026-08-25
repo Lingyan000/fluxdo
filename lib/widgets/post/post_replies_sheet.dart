@@ -18,9 +18,12 @@ import '../common/app_bottom_sheet.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'post_item/quote_selection_helper.dart';
+import '../crypto/crypto_decrypt_sheet.dart';
+import '../../services/crypto/crypto_cipher_format.dart';
 import 'post_item/widgets/post_footer_section/post_footer_section.dart';
 import 'post_item/widgets/post_header_section.dart';
 import 'reply_sheet.dart';
+import 'small_action_item.dart';
 
 /// 打开帖子递归回复弹框
 void showPostRepliesSheet({
@@ -269,7 +272,9 @@ class _PostRepliesSheetContentState
     // 构建 Discourse 引用格式
     final quote = QuoteBuilder.build(
       markdown: markdown,
-      displayName: post.name,
+      displayName: (post.name?.isNotEmpty ?? false)
+          ? post.name!
+          : post.username,
       username: post.username,
       postNumber: post.postNumber,
       topicId: widget.topicId,
@@ -465,6 +470,13 @@ class _PostRepliesSheetContentState
 
   /// 帖子内容：头部 + 正文（可引用） + 操作栏
   Widget _buildPostContent(Post post) {
+    // 跟 post_item.dart / nested_post_card.dart 是各自独立的第三套渲染
+    // 管线,同样的指定/取消指定等系统帖判断这里也要补一份,否则这个"查看
+    // 回复"面板里系统帖照样会被当成能点赞/回复的普通帖子。
+    if (post.postType == PostTypes.smallAction ||
+        (post.actionCode?.isNotEmpty ?? false)) {
+      return SmallActionItem(post: post, topicId: widget.topicId);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -505,6 +517,14 @@ class _PostRepliesSheetContentState
                 onCopyToast: () => ToastService.showSuccess(
                   S.current.common_copiedToClipboard,
                 ),
+                onDecryptRequest: (plainText) => showCryptoDecryptSheet(
+                  context: context,
+                  initialCiphertext: plainText,
+                  onQuoteReply: _isLoggedIn
+                      ? (plaintext) => _handleQuoteSelection(plaintext, post)
+                      : null,
+                ),
+                decryptTextDetector: isDecryptableText,
               ),
         ),
         PostFooterSection(

@@ -27,7 +27,7 @@ extension _FilterActions on _TopicDetailPageState {
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
     final wasSummaryMode = notifier.isSummaryMode;
-    final wasAuthorOnlyMode = notifier.isAuthorOnlyMode;
+    final wasUsernameFilter = notifier.usernameFilter;
     final wasTopLevelMode = notifier.isTopLevelMode;
 
     setState(() => _isSwitchingMode = true);
@@ -46,7 +46,7 @@ extension _FilterActions on _TopicDetailPageState {
           _shouldFallbackFilter(
             detail,
             wasSummaryMode,
-            wasAuthorOnlyMode,
+            wasUsernameFilter,
             wasTopLevelMode,
           );
       if (!hasTarget || shouldFallback) {
@@ -65,7 +65,7 @@ extension _FilterActions on _TopicDetailPageState {
   bool _shouldFallbackFilter(
     TopicDetail detail,
     bool wasSummaryMode,
-    bool wasAuthorOnlyMode,
+    String? wasUsernameFilter,
     bool wasTopLevelMode,
   ) {
     if (wasSummaryMode) {
@@ -76,11 +76,11 @@ extension _FilterActions on _TopicDetailPageState {
       }
     }
 
-    if (wasAuthorOnlyMode) {
-      final author = detail.createdBy?.username;
-      if (author == null || author.isEmpty) return true;
+    if (wasUsernameFilter != null && wasUsernameFilter.isNotEmpty) {
+      // 服务端 username_filters 恒保留 1 楼(主帖作者未必是被过滤用户),
+      // 判定"过滤是否真的生效"时要把主帖排除在外。
       final hasOtherUsers = detail.postStream.posts.any(
-        (p) => p.username != author,
+        (p) => p.postNumber != 1 && p.username != wasUsernameFilter,
       );
       if (hasOtherUsers) return true;
     }
@@ -106,6 +106,28 @@ extension _FilterActions on _TopicDetailPageState {
     _controller.resetVisibility();
 
     await notifier.showTopReplies();
+
+    if (mounted) {
+      setState(() => _isSwitchingMode = false);
+      _scheduleCheckTitleVisibility();
+    }
+  }
+
+  /// 问答话题:切到按活动排序(默认视图为按票,activity 走时间流)
+  Future<void> _handleShowByActivity() async {
+    final params = _params;
+    final notifier = ref.read(topicDetailProvider(params).notifier);
+
+    setState(() {
+      _isSwitchingMode = true;
+      _isNestedView = false;
+    });
+
+    _controller.prepareJumpToPost(1);
+    _controller.skipNextJumpHighlight = true;
+    _controller.resetVisibility();
+
+    await notifier.showByActivity();
 
     if (mounted) {
       setState(() => _isSwitchingMode = false);
@@ -165,10 +187,20 @@ extension _FilterActions on _TopicDetailPageState {
   Future<void> _handleShowAuthorOnly() async {
     final params = _params;
     final detail = ref.read(topicDetailProvider(params)).value;
-    final notifier = ref.read(topicDetailProvider(params).notifier);
 
     final authorUsername = detail?.createdBy?.username;
     if (authorUsername == null || authorUsername.isEmpty) return;
+
+    await _handleShowUserOnly(authorUsername);
+  }
+
+  /// 只看指定用户的帖子(username_filters,对齐官方 filterParticipant)。
+  /// 「只看作者」是它的特例;用户卡片/头像菜单的「只看 TA」传任意参与者。
+  Future<void> _handleShowUserOnly(String username) async {
+    if (username.isEmpty) return;
+    final params = _params;
+    final notifier = ref.read(topicDetailProvider(params).notifier);
+    if (notifier.usernameFilter == username) return;
 
     // 四项互斥单选：激活内容筛选时退出树形视图
     setState(() {
@@ -180,7 +212,7 @@ extension _FilterActions on _TopicDetailPageState {
     _controller.skipNextJumpHighlight = true;
     _controller.resetVisibility();
 
-    await notifier.showAuthorOnly(authorUsername);
+    await notifier.showAuthorOnly(username);
 
     if (mounted) {
       setState(() => _isSwitchingMode = false);
@@ -195,9 +227,16 @@ extension _FilterActions on _TopicDetailPageState {
     final detail = ref.read(topicDetailProvider(params)).value;
     final hasActiveFilter =
         notifier.isSummaryMode ||
+        notifier.isActivityMode ||
         notifier.isAuthorOnlyMode ||
         notifier.isTopLevelMode ||
         _isNestedView;
+    // 用户过滤分两种:过滤对象=楼主 → 命中「只看作者」项;过滤对象=
+    // 其他参与者(用户卡片发起) → 单列一项显示具体用户名
+    final userFilter = notifier.usernameFilter;
+    final isAuthorFilter =
+        userFilter != null && userFilter == detail?.createdBy?.username;
+    final isOtherUserFilter = userFilter != null && !isAuthorFilter;
 
     AppBottomSheet.show(
       context: context,
@@ -207,6 +246,23 @@ extension _FilterActions on _TopicDetailPageState {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 问答话题:默认按票排序,可切按活动(时间流)
+            if (detail?.isPostVoting ?? false)
+              ListTile(
+                leading: const Icon(Symbols.history_rounded),
+                title: Text(context.l10n.topicDetail_sortByActivity),
+                trailing: notifier.isActivityMode
+                    ? Icon(Symbols.check_rounded, color: theme.colorScheme.primary)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (notifier.isActivityMode) {
+                    _handleCancelFilter();
+                  } else {
+                    _handleShowByActivity();
+                  }
+                },
+              ),
             if (detail?.hasSummary ?? false)
               ListTile(
                 leading: Icon(
@@ -230,21 +286,34 @@ extension _FilterActions on _TopicDetailPageState {
             ListTile(
               leading: Icon(
                 Symbols.person_rounded,
-                fill: notifier.isAuthorOnlyMode ? 1 : 0,
+                fill: isAuthorFilter ? 1 : 0,
               ),
               title: Text(context.l10n.topicDetail_authorOnly),
-              trailing: notifier.isAuthorOnlyMode
+              trailing: isAuthorFilter
                   ? Icon(Symbols.check_rounded, color: theme.colorScheme.primary)
                   : null,
               onTap: () {
                 Navigator.pop(ctx);
-                if (notifier.isAuthorOnlyMode) {
+                if (isAuthorFilter) {
                   _handleCancelFilter();
                 } else {
                   _handleShowAuthorOnly();
                 }
               },
             ),
+            if (isOtherUserFilter)
+              ListTile(
+                leading: const Icon(Symbols.person_search_rounded, fill: 1),
+                title: Text(context.l10n.topicDetail_userOnly(userFilter)),
+                trailing: Icon(
+                  Symbols.check_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleCancelFilter();
+                },
+              ),
             ListTile(
               leading: Icon(
                 notifier.isTopLevelMode

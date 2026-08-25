@@ -6,9 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/sticker.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/discourse_cache_manager.dart';
+import '../../utils/error_utils.dart';
+import '../../utils/dialog_utils.dart';
 import '../../utils/load_more_coordinator.dart';
 import '../common/app_bottom_sheet.dart';
 import '../common/cached_image.dart';
+import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../common/paged_list_footer.dart';
 import '../../../../../l10n/s.dart';
@@ -95,14 +98,15 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
         return groupsAsync.when(
           data: (groups) => _buildGroupList(groups),
           loading: () => const Center(child: LoadingSpinner()),
-          error: (err, stack) => _buildError(),
+          error: (err, stack) => _buildError(err, stack),
         );
       })(),
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(Object error, StackTrace stackTrace) {
     final theme = Theme.of(context);
+    final errorInfo = ErrorUtils.getErrorInfo(error);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -113,16 +117,50 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
             S.current.sticker_marketLoadFailed,
             style: TextStyle(color: theme.colorScheme.error),
           ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              errorInfo.message,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
-          TextButton(
-            onPressed: () {
-              _loadMoreCoordinator.resetCooldown();
-              ref.read(marketGroupsProvider.notifier).refresh();
-            },
-            child: Text(S.current.common_retry),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: () {
+                  _loadMoreCoordinator.resetCooldown();
+                  ref.read(marketGroupsProvider.notifier).refresh();
+                },
+                child: Text(S.current.common_retry),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => _showErrorDetails(error, stackTrace),
+                child: Text(S.current.common_viewDetails),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  void _showErrorDetails(Object error, StackTrace stackTrace) {
+    final details = ErrorUtils.getErrorDetails(error, stackTrace);
+    showAppBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ErrorDetailsSheet(details: details),
     );
   }
 

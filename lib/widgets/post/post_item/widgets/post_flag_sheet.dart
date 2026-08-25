@@ -222,36 +222,62 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
     final isSelected = _selectedType?.id == type.id;
     final description = _replaceDescription(type.description);
 
-    return InkWell(
-      onTap: () => setState(() => _selectedType = type),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
-              : theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.3,
-                ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              isSelected ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
-              size: 20,
-              color: isSelected
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
+    // Material 承载底色+圆角,InkWell hover 同圆角裁剪(否则 hover
+    // 高亮矩形盖到 margin 区,视觉双层)
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: isSelected
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => setState(() => _selectedType = type),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : Colors.transparent,
+              ),
             ),
-            const SizedBox(width: 12),
-            Expanded(child: _buildDescriptionText(description, theme)),
-          ],
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  isSelected ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
+                  size: 20,
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 举报项标题(之前只渲染了描述,标题一直缺失)
+                      if (type.name.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            // 标题同样可能带 %{username} 占位符,和描述走同一套替换
+                            _replaceDescription(type.name),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      _buildDescriptionText(description, theme),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

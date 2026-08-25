@@ -10,9 +10,9 @@ import 'user_api_key_service.dart';
 /// 扫码登录 payload。
 ///
 /// 由**已登录设备**在用户二次确认后向服务端创建 User API Key(+OTP),
-/// 封装进二维码; **待登录设备**扫码后保存 API Key,用 OTP 兑换 `_t`,
-/// 再走与密码/浏览器授权一致的 [DiscourseService.finalizeNativeLoginSuccess]
-/// 收口。
+/// 封装进二维码; **待登录设备**扫码后用 OTP 兑换 `_t`,随即撤销该 key
+/// (用完即焚,兼作展示端可轮询的成功信号),再走与密码/浏览器授权一致的
+/// [DiscourseService.finalizeNativeLoginSuccess] 收口。
 ///
 /// 协议 (v2):
 /// ```
@@ -203,8 +203,10 @@ class QrLoginService {
       final userApiKeyService = UserApiKeyService();
       final service = DiscourseService();
 
-      // 先兑换 OTP,成功后才落 API Key:兑换失败(OTP 已消费/过期)时
-      // 不能在本机残留对方的 key,否则后续自愈可能静默用它拉起会话
+      // 先兑换 OTP 拿 _t;兑换与 key 存活解耦(服务端只查 Redis OTP)。
+      // 成功后立刻撤销二维码里的 key:
+      // 1. 用完即焚——key 是永久零权限凭据,不落盘、不留在服务端
+      // 2. 兼作成功信号——展示端轮询该 key 从自己 Apps 列表消失即知扫码登录完成
       final token = await userApiKeyService.redeemOtp(service.dio, payload.otp);
       if (token == null || token.isEmpty) {
         throw const QrLoginException(
@@ -212,7 +214,7 @@ class QrLoginService {
           '登录令牌兑换失败,二维码可能已失效,请让对方重新生成',
         );
       }
-      await userApiKeyService.persistSharedKey(payload.apiKey);
+      await userApiKeyService.revokeKey(service.dio, payload.apiKey);
 
       var username = payload.username;
       if (username.isEmpty) {
@@ -252,6 +254,48 @@ class QrLoginService {
       });
       throw QrLoginException(QrLoginError.applyFailed, '登录失败: $e');
     }
+  }
+
+  /// 展示端:查询自己账号名下的扫码分享 key 是否仍存活。
+  ///
+  /// 数据源 = `/u/:username.json` 的 `user_api_keys`(user_serializer 私有
+  /// 属性,仅本人可见,只列 revoked_at 为空的 key)。扫码端登录成功后会立刻
+  /// 自我吊销那枚 key → 它从列表消失 = 对方已登录,这是展示端唯一可轮询的
+  /// 成功信号(服务端无推送/回执机制)。
+  ///
+  /// 返回 true=仍在等待扫码;false=key 已消失(登录完成/被撤销);
+  /// null=查询失败(网络等),调用方应忽略本轮。
+  Future<bool?> isSharedKeyAlive({required String username, Dio? dio}) async {
+    final name = username.trim();
+    if (name.isEmpty) return null;
+    try {
+      final response = await (dio ?? DiscourseService().dio).get(
+        '/u/$name.json',
+        options: Options(
+          extra: const {'skipAuthCheck': true, 'skipCsrf': true},
+        ),
+      );
+      final data = response.data;
+      final user = data is Map<String, dynamic> ? data['user'] : null;
+      if (user is! Map<String, dynamic>) return null;
+      // 序列化器在无存活 key 时置 null,视同"已消失"
+      final keys = user['user_api_keys'];
+      if (keys is! List) return false;
+      return keys.any(
+        (k) =>
+            k is Map &&
+            k['application_name'] == UserApiKeyService.qrApplicationName,
+      );
+    } catch (e) {
+      debugPrint('[QrLogin] 轮询分享 key 状态失败(忽略): $e');
+      return null;
+    }
+  }
+
+  /// 展示端:撤销未被消费的分享 key(弹层关闭/二维码过期时清理)。
+  /// 自我吊销带 key 头即可,不依赖 scope;key 已被扫码端撤销时服务端 403,静默。
+  Future<void> revokeSharedKey(String apiKey, {Dio? dio}) async {
+    await UserApiKeyService().revokeKey(dio ?? DiscourseService().dio, apiKey);
   }
 
   /// 从图片字节解码二维码文本(相册/截图兜底,全平台可用)。

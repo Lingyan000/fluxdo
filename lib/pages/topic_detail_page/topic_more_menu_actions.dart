@@ -4,6 +4,8 @@ void handleTopicDetailMoreMenuSelection(
   required void Function() onBookmark,
   required void Function() onReadLater,
   required void Function() onSubscribe,
+  required void Function() onMarkUnread,
+  required void Function() onMarkUnreadAll,
   required void Function() onShareLink,
   required void Function() onShareImage,
   required void Function() onExport,
@@ -23,6 +25,12 @@ void handleTopicDetailMoreMenuSelection(
       return;
     case 'subscribe':
       onSubscribe();
+      return;
+    case 'mark_unread':
+      onMarkUnread();
+      return;
+    case 'mark_unread_all':
+      onMarkUnreadAll();
       return;
     case 'share_link':
       onShareLink();

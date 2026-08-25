@@ -143,6 +143,7 @@ abstract final class AppIcons {
   static const logout = Symbols.logout_rounded;
   static const lock = Symbols.lock_rounded;
   static const lockOpen = Symbols.lock_open_rounded;
+  static const key = Symbols.key_rounded;
   static const shield = Symbols.shield_rounded;
   static const security = Symbols.security_rounded;
   static const verifiedUser = Symbols.verified_user_rounded;

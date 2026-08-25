@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../l10n/ai_l10n.dart';
 import '../models/ai_provider.dart';
 import '../services/toast_delegate.dart';
+import '../utils/dialog_utils.dart';
 import '../utils/model_capabilities.dart';
 
 /// 编辑已有模型，返回编辑后的 [AiModel]，取消返回 null。
@@ -12,7 +13,7 @@ Future<AiModel?> showModelDetailSheet(
   BuildContext context, {
   required AiModel model,
 }) {
-  return showModalBottomSheet<AiModel>(
+  return showAppBottomSheet<AiModel>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
@@ -33,7 +34,7 @@ Future<AiModel?> showModelDetailSheet(
 
 /// 新建模型，返回创建的 [AiModel]，取消返回 null。
 Future<AiModel?> showCreateModelSheet(BuildContext context) {
-  return showModalBottomSheet<AiModel>(
+  return showAppBottomSheet<AiModel>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Theme.of(context).colorScheme.surface,

@@ -12,6 +12,7 @@ import 'search_filter_panel.dart';
 import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
 import 'search_preview_dialog.dart';
+import '../topic/topic_preview_dialog.dart' show topicCardAnchorRect;
 import '../../providers/preferences_provider.dart';
 
 /// 用户内容搜索结果视图
@@ -320,55 +321,64 @@ class _UserContentSearchViewState extends ConsumerState<UserContentSearchView> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: searchState.results.length + 1,
-            itemBuilder: (context, index) {
-              if (index == searchState.results.length) {
-                return PagedListFooter(
-                  hasMore: searchState.hasMore,
-                  isLoadingMore:
-                      searchState.isLoading && searchState.results.isNotEmpty,
-                  isLoadMoreFailed: searchState.isLoadMoreFailed,
-                  onRetry: _retryLoadMore,
-                );
-              }
+          child: SearchPostPrewarmScope(
+            posts: searchState.results,
+            child: ListView.builder(
+              controller: _scrollController,
+              addAutomaticKeepAlives: false,
+              padding: const EdgeInsets.all(16),
+              itemCount: searchState.results.length + 1,
+              itemBuilder: (context, index) {
+                if (index == searchState.results.length) {
+                  return PagedListFooter(
+                    hasMore: searchState.hasMore,
+                    isLoadingMore:
+                        searchState.isLoading && searchState.results.isNotEmpty,
+                    isLoadMoreFailed: searchState.isLoadMoreFailed,
+                    onRetry: _retryLoadMore,
+                  );
+                }
 
-              final post = searchState.results[index];
-              final enableLongPress = ref
-                  .watch(preferencesProvider)
-                  .longPressPreview;
-              return SearchPostCard(
-                post: post,
-                onTap: () {
-                  final topic = post.topic;
-                  if (topic != null) {
-                    _openTopic(
-                      topicId: topic.id,
-                      title: topic.title,
-                      scrollToPostNumber: post.postNumber,
-                    );
-                  }
-                },
-                onLongPress: enableLongPress
-                    ? () => SearchPreviewDialog.show(
-                        context,
-                        post: post,
-                        onOpen: () {
-                          final topic = post.topic;
-                          if (topic != null) {
-                            _openTopic(
-                              topicId: topic.id,
-                              title: topic.title,
-                              scrollToPostNumber: post.postNumber,
-                            );
-                          }
-                        },
-                      )
-                    : null,
-              );
-            },
+                final post = searchState.results[index];
+                final enableLongPress = ref
+                    .watch(preferencesProvider)
+                    .longPressPreview;
+                // Builder 紧贴卡片:一镜到底要卡片自身的屏幕 rect 作
+                // 起点;bottomGap 8 裁掉外壳底部间距
+                return Builder(
+                  builder: (cardContext) => SearchPostCard(
+                    post: post,
+                    onTap: () {
+                      final topic = post.topic;
+                      if (topic != null) {
+                        _openTopic(
+                          topicId: topic.id,
+                          title: topic.title,
+                          scrollToPostNumber: post.postNumber,
+                        );
+                      }
+                    },
+                    onLongPress: enableLongPress
+                        ? () => SearchPreviewDialog.show(
+                            context,
+                            post: post,
+                            onOpen: () {
+                              final topic = post.topic;
+                              if (topic != null) {
+                                _openTopic(
+                                  topicId: topic.id,
+                                  title: topic.title,
+                                  scrollToPostNumber: post.postNumber,
+                                );
+                              }
+                            },
+                            anchorRect: topicCardAnchorRect(cardContext),
+                          )
+                        : null,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],

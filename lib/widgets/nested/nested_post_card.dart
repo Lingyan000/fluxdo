@@ -8,12 +8,19 @@ import '../../providers/nested_topic_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../providers/topic_session_provider.dart';
+import '../../services/toast_service.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../../utils/code_selection_context.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/responsive.dart';
 import '../../utils/time_utils.dart';
+import '../post/post_item/quote_selection_helper.dart';
+import '../crypto/crypto_decrypt_sheet.dart';
+import '../../services/crypto/crypto_cipher_format.dart';
 import '../post/post_item/widgets/post_footer_section/post_footer_section.dart';
+import '../post/post_item/widgets/post_stamp_painter.dart';
 import '../post/post_signature_block.dart';
+import '../post/small_action_item.dart';
 import '../common/radial_long_press_menu.dart';
 import '../common/smart_avatar.dart';
 import '../user/avatar_action_menu.dart';
@@ -63,11 +70,20 @@ class NestedPostCard extends ConsumerStatefulWidget {
   final void Function(int postNumber) onJumpToPost;
   final void Function(int postId, bool accepted)? onSolutionChanged;
 
+  /// 划词引用（与平铺视图 PostItem 同链路;null 时选区 toolbar 自动降级只留复制）
+  final void Function(String selectedText, Post post)? onQuoteSelection;
+
   /// 父节点竖线是否高亮
   final bool parentLineHighlighted;
 
   /// 展开/折叠状态存储（跨滚动回收保持状态）
   final Map<int, bool>? expansionState;
+
+  /// context 定位模式的目标楼层:命中节点短暂高亮并挂载 [highlightKey]
+  final int? highlightPostNumber;
+
+  /// 命中 [highlightPostNumber] 的节点挂载此 key,供外层 ensureVisible 滚动定位
+  final GlobalKey? highlightKey;
 
   const NestedPostCard({
     super.key,
@@ -85,8 +101,11 @@ class NestedPostCard extends ConsumerStatefulWidget {
     required this.onRefreshPost,
     required this.onJumpToPost,
     this.onSolutionChanged,
+    this.onQuoteSelection,
     this.parentLineHighlighted = false,
     this.expansionState,
+    this.highlightPostNumber,
+    this.highlightKey,
   });
 
   @override
@@ -97,6 +116,10 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   late bool _expanded;
   late bool _collapsed;
   late List<NestedNode> _children;
+
+  /// 解决方案盖章状态(镜像平铺 PostItem._acceptedAnswer 模式:
+  /// 菜单采纳/取消后由 footer 回调即时更新,provider 同步兜底重建一致性)
+  late bool _acceptedAnswer;
   bool _isLoadingMore = false;
   bool _hasMore = false;
   int _page = 0;
@@ -107,11 +130,8 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   /// didUpdateWidget，两处都手动失效即可安全复用
   List<NestedNode>? _visibleChildrenCache;
 
-  List<NestedNode> get _visibleChildren =>
-      _visibleChildrenCache ??= BlockedUserFilter.visibleNestedNodes(
-        _children,
-        widget.blockedUsernames,
-      );
+  List<NestedNode> get _visibleChildren => _visibleChildrenCache ??=
+      BlockedUserFilter.visibleNestedNodes(_children, widget.blockedUsernames);
 
   @override
   void didUpdateWidget(covariant NestedPostCard oldWidget) {
@@ -120,6 +140,10 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         !identical(oldWidget.node, widget.node)) {
       _visibleChildrenCache = null;
     }
+    // provider 同步解决方案状态后(node 换新)回填盖章
+    if (!identical(oldWidget.node, widget.node)) {
+      _acceptedAnswer = widget.node.post.acceptedAnswer;
+    }
   }
 
   @override
@@ -127,7 +151,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
     super.initState();
     _children = List.from(widget.node.children);
     _hasMore = widget.node.hasMoreChildren;
-
+    _acceptedAnswer = widget.node.post.acceptedAnswer;
     // 从状态存储恢复，否则有预加载子节点就展开
     final cached = widget.expansionState?[widget.node.post.postNumber];
     if (cached != null) {
@@ -249,6 +273,15 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
     // 已删除帖子
     final bool isDeletedPlaceholder = widget.node.isDeletedPlaceholder;
 
+    // discourse-assign 等插件产生的指定/取消指定系统帖(post_type=small_action
+    // 或 whisper,带 action_code)——这条树状嵌套视图是跟 post_item.dart 完全
+    // 独立的第二套渲染管线,之前没做这个判断,系统帖会被当成普通帖子走完整的
+    // header+正文+点赞/回复/更多操作栏,而这些系统帖根本不支持这些互动。
+    final bool isSmallAction =
+        !isDeletedPlaceholder &&
+        (post.postType == PostTypes.smallAction ||
+            (post.actionCode?.isNotEmpty ?? false));
+
     // 帖子内容列
     final Widget contentColumn = isDeletedPlaceholder
         ? _buildDeletedLabel(theme)
@@ -257,6 +290,14 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
             username: post.username,
             replyCount: _replyCount,
             onTap: _toggleExpanded,
+          )
+        : isSmallAction
+        ? SmallActionItem(
+            post: post,
+            topicId: widget.topicId,
+            onEdit: widget.isLoggedIn && post.canEdit
+                ? () => widget.onEdit(post)
+                : null,
           )
         : _buildArticle(theme, post, isMobile: isMobile);
 
@@ -522,6 +563,28 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       );
     }
 
+    // context 定位:命中目标楼层短暂底色高亮(渐隐),并挂 key 供滚动定位
+    if (widget.highlightPostNumber == post.postNumber) {
+      card = KeyedSubtree(
+        key: widget.highlightKey,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 1.0, end: 0.0),
+          duration: const Duration(milliseconds: 2500),
+          curve: Curves.easeOut,
+          builder: (context, value, child) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer.withValues(
+                alpha: 0.35 * value,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: child,
+          ),
+          child: card,
+        ),
+      );
+    }
+
     return card;
   }
 
@@ -529,63 +592,111 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   Widget _buildArticle(ThemeData theme, Post post, {bool isMobile = false}) {
     final isOp = widget.detail.createdBy?.username == post.username;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    // 解决方案水印章:与平铺 PostHeaderSection 同款(nested API 带
+    // accepted_answer/can_accept_answer,OP 帖走 PostItem 已有,树节点补齐)
+    final showStamp = _acceptedAnswer || post.canAcceptAnswer;
+
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        // Header
-        _buildHeader(theme, post, isOp, isMobile: isMobile),
-        const SizedBox(height: 4),
-        // Content
-        FluxdoRenderCallbacks.forPost(
-          post: post,
-          topicId: widget.topicId,
-        ).render(
-          cookedHtml: post.cooked,
-          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
-            height: 1.5,
-            fontSize:
-                (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                ref.watch(preferencesProvider).contentFontScale,
+        if (showStamp)
+          Positioned(
+            right: 20,
+            top: 10,
+            child: PostSolutionStamp(accepted: _acceptedAnswer),
           ),
-          selectionEnabled: false,
-        ),
-        // 用户签名
-        if (PostSignatureBlock.shouldRender(
-          ref,
-          post,
-          categoryId: widget.detail.categoryId,
-        ))
-          PostSignatureBlock(
-            post: post,
-            categoryId: widget.detail.categoryId,
-            fontSize: 11,
-            spacing: 6,
-          ),
-        // 完整操作栏（复用 PostFooterSection，隐藏回复展开按钮）
-        PostFooterSection(
-          post: post,
-          topicId: widget.topicId,
-          topicHasAcceptedAnswer: widget.detail.hasAcceptedAnswer,
-          acceptedAnswers: widget.detail.acceptedAnswers,
-          padding: const EdgeInsets.only(top: 4),
-          onReply: widget.isLoggedIn
-              ? ({initialContent}) => widget.onReply(
-                  post.postNumber == 1 ? null : post,
-                  initialContent: initialContent,
-                )
-              : null,
-          onEdit: widget.isLoggedIn && post.canEdit
-              ? () => widget.onEdit(post)
-              : null,
-          onShareAsImage: null,
-          onRefreshPost: widget.onRefreshPost,
-          onJumpToPost: widget.onJumpToPost,
-          onSolutionChanged: widget.onSolutionChanged,
-          topicTitle: widget.detail.title,
-          isPrivateMessageTopic: widget.detail.isPrivateMessage,
-          isPmWithNonHumanUser: widget.detail.pmWithNonHumanUser,
-          hideRepliesButton: true,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            _buildHeader(theme, post, isOp, isMobile: isMobile),
+            const SizedBox(height: 4),
+            // Content(自研逻辑选区,与平铺 PostItem 同链路:
+            // toolbar「引用」→ onQuoteSelection,未登录/未接线自动降级只留复制)
+            Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) =>
+                  CodeSelectionContextTracker.instance.clear(),
+              child:
+                  FluxdoRenderCallbacks.forPost(
+                    post: post,
+                    topicId: widget.topicId,
+                  ).render(
+                    cookedHtml: post.cooked,
+                    baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                      fontSize:
+                          (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                          ref.watch(preferencesProvider).contentFontScale,
+                    ),
+                    selectionEnabled: true,
+                    selectionScopeId: post.id,
+                    onQuoteRequest: widget.onQuoteSelection == null
+                        ? null
+                        : (plainText) =>
+                              widget.onQuoteSelection!(plainText, post),
+                    onCopyQuoteRequest: (plainText) =>
+                        QuoteSelectionHelper.copyQuoteToClipboard(
+                          selectedText: plainText,
+                          post: post,
+                          topicId: widget.topicId,
+                        ),
+                    onCopyToast: () => ToastService.showSuccess(
+                      context.l10n.common_copiedToClipboard,
+                    ),
+                    onDecryptRequest: (plainText) => showCryptoDecryptSheet(
+                      context: context,
+                      initialCiphertext: plainText,
+                      onQuoteReply: widget.onQuoteSelection == null
+                          ? null
+                          : (plaintext) =>
+                              widget.onQuoteSelection!(plaintext, post),
+                    ),
+                    decryptTextDetector: isDecryptableText,
+                  ),
+            ),
+            // 用户签名
+            if (PostSignatureBlock.shouldRender(
+              ref,
+              post,
+              categoryId: widget.detail.categoryId,
+            ))
+              PostSignatureBlock(
+                post: post,
+                categoryId: widget.detail.categoryId,
+                fontSize: 11,
+                spacing: 6,
+              ),
+            // 完整操作栏（复用 PostFooterSection，隐藏回复展开按钮）
+            PostFooterSection(
+              post: post,
+              topicId: widget.topicId,
+              topicHasAcceptedAnswer: widget.detail.hasAcceptedAnswer,
+              acceptedAnswers: widget.detail.acceptedAnswers,
+              padding: const EdgeInsets.only(top: 4),
+              onReply: widget.isLoggedIn
+                  ? ({initialContent}) => widget.onReply(
+                      post.postNumber == 1 ? null : post,
+                      initialContent: initialContent,
+                    )
+                  : null,
+              onEdit: widget.isLoggedIn && post.canEdit
+                  ? () => widget.onEdit(post)
+                  : null,
+              onShareAsImage: null,
+              onRefreshPost: widget.onRefreshPost,
+              onJumpToPost: widget.onJumpToPost,
+              onSolutionChanged: widget.onSolutionChanged,
+              onAcceptedAnswerChanged: (accepted) {
+                setState(() => _acceptedAnswer = accepted);
+              },
+              topicTitle: widget.detail.title,
+              isPrivateMessageTopic: widget.detail.isPrivateMessage,
+              isPmWithNonHumanUser: widget.detail.pmWithNonHumanUser,
+              hideRepliesButton: true,
+            ),
+          ],
         ),
       ],
     );
@@ -792,8 +903,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
             onRefreshPost: widget.onRefreshPost,
             onJumpToPost: widget.onJumpToPost,
             onSolutionChanged: widget.onSolutionChanged,
+            onQuoteSelection: widget.onQuoteSelection,
             parentLineHighlighted: _depthLineHovered,
             expansionState: widget.expansionState,
+            highlightPostNumber: widget.highlightPostNumber,
+            highlightKey: widget.highlightKey,
           ),
         if (_hasMore)
           isMobile
@@ -899,6 +1013,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         onRefreshPost: widget.onRefreshPost,
         onJumpToPost: widget.onJumpToPost,
         onSolutionChanged: widget.onSolutionChanged,
+        onQuoteSelection: widget.onQuoteSelection,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

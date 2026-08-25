@@ -2,6 +2,414 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.27] - 2026-08-21
+
+
+### 🌟 新功能
+
+- 搜索卡片长按预览:一镜到底 + 排版对齐话题预览 by @Lingyan000
+
+- 密文嗅探增强:Base32 + 内容探测建议 + enc 块语言信号 + 折行/分隔形态 by @Lingyan000
+
+- 话题卡长按预览一镜到底:壳从卡片连续变形,内容嵌壳随飞 by @Lingyan000
+
+- 加解密工具箱:划词解密 + 编辑器加密 + 算法选择器 by @Lingyan000
+
+- 图片长按浮起菜单:对齐 X/iOS 系统上下文菜单动效 by @Lingyan000
+
+- 底部弹框支持预测式返回:慢划边缘跟手下滑 by @Lingyan000
+
+- 「切兼容模式」询问增加第二条出路:关闭自动过盾 by @Lingyan000
+
+- Spoiler 揭开涟漪动画 + 移除二次点击回遮(fluxdo_render:Telegram startRipple 同款圆形裁剪扩散 + 遮罩淡出) by @Lingyan000
+
+- 放大态返回让 Hero 承载缩放:删掉「先归位再起飞」两段动作 by @Lingyan000
+
+- 悬浮胶囊底栏:选中态改满槽极淡底,几何锁比例 by @Lingyan000
+
+- 树形视图话题内跳转:统一分发到 context 定位,对齐 Discourse nested 路由重定向 by @Lingyan000
+
+- 话题目录(TOC)面板:对齐 DiscoTOC 的目录树与锚点跳转 by @Lingyan000
+
+- 恢复层落地:单一重放引擎 + 限流/瞬态两个策略,退役 dio_smart_retry by @Lingyan000
+
+- 网络健康快照:五处状态源聚合为单一只读视图 + 日志导出 by @Lingyan000
+
+- 主题系统扩展:中性/纯黑独立开关 + 自定义背景透明模式 + 调色板主题色彩 by @Lingyan000
+
+- 查看器预测返回缩放松弛:跟手渐进归位替代瞬时跳变 by @Lingyan000
+
+- 话题内支持只看任意用户:用户卡片/头像菜单过滤入口 + 卡片按钮排版优化 by @Lingyan000
+
+- 更新系统支持自定义 GitHub 反代前缀 by @Lingyan000
+
+
+### 🐛 修复
+
+- 修公平运存检测不到:补 KILL 特征串+回执改发本次 callback by @Lingyan000
+
+- 修 HyperOS 小窗空白只剩底栏:钳制虚报的 captionBar 顶 padding by @Lingyan000
+
+- 飞行体贴源端按源端展示方式算,不再被放大态覆盖 by @Lingyan000
+
+- 放大后返回:飞行中取景框张回完整图,不再落地才突变 by @Lingyan000
+
+- 聊天图片返回尾帧停在裁切态:补 heroSourceFit 告知查看器 by @Lingyan000
+
+- 加解密嗅探鲁棒性:摩斯 Unicode 变体识别 + URL 编码嗅探 by @Lingyan000
+
+- 修聊天跳转消息:原地定位替代整页替换,首次点击不再卡住 by @Lingyan000
+
+- 修富文本无法开启:行内 spoiler 整段写回被 cook 块规则吞成 div(fluxdo_render:命中形态段落行尾补双空格保行内 span) by @Lingyan000
+
+- 补轮播放大态返回的飞行起点:大图不再瞬间变小 by @Lingyan000
+
+- 修代码块内部分选中复制被强包 ```lang(fluxdo_render:选区覆盖完整块才带语言,部分选中复制为纯文本) by @Lingyan000
+
+- 修轮播图返回:尾帧铺满槽位、且图被裁切 by @Lingyan000
+
+- 修复投票/政策操作后滚出滚回状态丢失 by @Lingyan000
+
+- 修复 cf_clearance 被旧值覆盖导致的 CF 验证循环:被拒值墓碑 + 防旧盖新守卫 by @Lingyan000
+
+- 修复 CF 验证通过后 ScreenTrack 无法恢复阅读时长上报 by @Lingyan000
+
+- 修 CF 失败计数口径:按验证轮次而非并发请求个数 by @Lingyan000
+
+- 修 Hero 飞行被 pop 打断时源端锁死不可见的黑闪 by @Lingyan000
+
+- 修 Hero 飞行未完成时关闭图片查看器的黑闪 by @Lingyan000
+
+- 表格图片 cell 崩溃+缩略图(fluxdo_render:行弃 IntrinsicHeight 竖线通高绘制 + 列宽补采 <img width>) by @Lingyan000
+
+- 消除返回重播:commit 自己收尾,不触发框架的二次 reverse by @Lingyan000
+
+- 修进度条概率跳顶/跳底:弹簧过冲期冻结 eyeline 上报,整流刷新落地重锚视口 by @Lingyan000
+
+- 修树形视图帖子不展示解决方案标识:树节点补齐水印章与三轨状态同步 by @Lingyan000
+
+- 恢复层不再重放 FormData/Stream 请求体;清理死参数与冗余重试 by @Lingyan000
+
+- 连划黑底根因:手势期冻结分支剥掉了背景填充,露出 Navigator 黑底 by @Lingyan000
+
+- 修自定义底栏重新登录后跳到第二个 tab:当前页改按稳定 id 跟踪 by @Lingyan000
+
+- 连划黑底:OnBackInvokedCallback 常驻注册(原生终点闸门) by @Lingyan000
+
+- 修退出登录卡「正在退出…」真凶:mounted 失效导致 loading 关不掉 by @Lingyan000
+
+- 修退出登录卡「正在退出…」:异常路径下 loading 永不关闭 by @Lingyan000
+
+- 修退出登录一直 loading:自愈误接手登出 401 触发 sweep 重放 by @Lingyan000
+
+- CF 验证两处放弃时机修正:无 UI 环境不再挂死,拒绝记忆改带时效 by @Lingyan000
+
+- 资料页横屏头部溢出叠印:高度受限时精简头部(隐简介卡/活跃胶囊),骨架屏同步 by @Lingyan000
+
+- 修拦截器链两处时序错误:自愈注册顺序 + 429/5xx 丢 response by @Lingyan000
+
+- 修长帖内容字体大小设置不生效:chunk 渲染漏传 baseTextStyle(含 contentFontScale),回退成了默认字号 by @Lingyan000
+
+- 修 div[align]/center 容器内列表/表格不居中(fluxdo_render:对齐下放覆盖 list/table + cell align) by @Lingyan000
+
+- 附件下载图标垂直居中 by @Lingyan000
+
+- 连划黑边 logcat 定案:双击退出模式静默认领被 popDisposition 拒绝 by @Lingyan000
+
+- 修 CF 挑战型 429 无法自愈:判定去 server 头前置闸 + CSRF 刷新失败冷却 by @Lingyan000
+
+- 查看器缩放松弛补完:commit 后骑退场动画收拢,消灭松手 snap by @Lingyan000
+
+- 修 iOS 概率启动泛紫:校准层图块避开 GPU 不可用窗口期 by @Lingyan000
+
+- 嵌套 Navigator 弹层 ESC 隐形:先关弹框不再误关平行视界层 by @Lingyan000
+
+- 连划黑底最后一环:手势进行中禁撤 OnBackInvokedCallback 注册 by @Lingyan000
+
+- 表情包加载失败可诊断:结构化日志落盘 + 界面查看详情入口 by @Lingyan000
+
+- 全屏侧滑返回让位平台视图:WebView 区域落点不参赛 by @Lingyan000
+
+- 预测返回两残余症状定案:陈旧 cancel 毒计数 + 根路由退场窗口无人认领 by @Lingyan000
+
+- 连划黑边与锁屏后预测返回失效的共同上游:引擎回调注册态失守 by @Lingyan000
+
+
+### ⚡ 性能
+
+- 主贴 cooked 改走 posts#by_number 单帖接口:只回一帖 JSON,比 TopicView(20 楼 chunk)轻量得多 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 六处图片源端全部迁到 HeroImage 统一件 by @Lingyan000
+
+- 源端展示方式收成单一描述:ViewerSourceStyle by @Lingyan000
+
+- 放大态返回的飞行起点收口成共享函数,补齐漏掉的四处 by @Lingyan000
+
+- 余下 6 处底部弹框迁到统一入口,一并拿到预测返回 by @Lingyan000
+
+- 返回转场统一为 Cupertino 单分支:消灭同页面两种退出动画 by @Lingyan000
+
+- CSRF 刷新迁主链,自建迷你 Dio 退役 by @Lingyan000
+
+- 会话自愈与引擎降级迁入恢复层,两个旧拦截器退役 by @Lingyan000
+
+- 请求语义读取侧收口到 FluxRequestSpec by @Lingyan000
+
+- 渲染校准层 v2 形态:超周期去周期化 + 饱和避让 + 提取器自适应限幅 by @Lingyan000
+
+
+### 📝 文档
+
+- 起草 v0.2.27 版本亮点 by @Lingyan000
+
+- 记录 CF 盾不迁恢复层的定案与边界(评估后放弃 M5-b) by @Lingyan000
+
+
+### ✅ 测试
+
+- 补网络层三条跨层契约测试:限流重试/静默原始错误/OTP 兑换豁免 by @Lingyan000
+
+
+### 🎨 样式
+
+- 功能设置页重新分类 + 设置搜索定位修复 by @Lingyan000
+
+
+### 🔧 其他
+
+- 🔥 移除渲染校准层 by @Lingyan000
+
+- 💄 预览细节打磨:圆角随位同步定形 + loading 换骨架屏 by @Lingyan000
+
+- 💄 预览弹窗改版:轻量排版 + 长按意图预加载正文 by @Lingyan000
+
+- 💬 补「关闭自动验证」链接的引导语文案 by @Lingyan000
+
+- ⏪ 撤销连划黑底的全部无效修复,保留锁屏与 Hero 相关成果 by @Lingyan000
+
+- 🔍 预测返回黑底染色探针:分层判定黑区归属(默认关闭) by @Lingyan000
+
+- 🧹 清理误诊期的冗余改动与错误因果注释 by @Lingyan000
+
+- 🧹 清理请求 extra 死键,并让 requestTag 诊断口真正可用 by @Lingyan000
+
+- 💄 搜索胶囊 Hero 飞行体插值化:消除起飞/落地两端跳变 by @Lingyan000
+
+- ⬆️ fluxdo_render:编辑器软换行吞 mark + 投影原子性失配修复 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.26...v0.2.27
+
+## [0.2.26] - 2026-08-07
+
+
+### 🌟 新功能
+
+- 话题/帖子指定功能(discourse-assign):数据层+弹窗+三管线系统帖识别+siteSettings 门控 (#363) ([#363](https://github.com/lingyan000/fluxdo/pull/363)) by @homo11451419
+
+- 话题标记为未读:二级菜单双语义(回退一层/清空进度)+上报侧 abandon+双头游标显式回退 by @Lingyan000
+
+- 平行视界大修:胶片带层间动画+同树投影+ESC 路由级兜底+资料页宽版排版 by @Lingyan000
+
+- 投票饼图对齐网页版 + 问答评论输入桌面/移动分流 by @Lingyan000
+
+- 问答话题(post-voting)全套:创建/赞成反对/专属排版/评论 by @Lingyan000
+
+- 投票构建器:创建/编辑全表单化 + 编辑器预览卡 + 饼图结果 by @Lingyan000
+
+- 树形视图三连:通知 context 定位视图+失败自动回落平铺+正文划词引用 by @Lingyan000
+
+- Hero 路由接入预测返回跟手飞行:认领手势与预览解耦 by @Lingyan000
+
+- 增强 Android 预测式返回支持 (#370) by @yorkyang2333
+
+- Chat 移动端打磨:长按气泡壳/键盘面板协作/内边距收紧 + 已读上报官方化 by @Lingyan000
+
+- Chat DM 全量落地:频道/消息流/表情包直发/删除展开/置顶/收藏/用户卡片 by @Lingyan000
+
+- Hashtag 药丸宿主接线:分类真图标 + 平行视界导航 by @Lingyan000
+
+- 话题列表未读实时同步:双向单调合并追踪状态 (#366) ([#366](https://github.com/lingyan000/fluxdo/pull/366)) by @homo11451419
+
+- 跨设备扫码登录:key+OTP 协议 + 平台自适应弹层 (#358) ([#358](https://github.com/lingyan000/fluxdo/pull/358)) by @stevessr
+
+- 帖子纪念日/生日图标 + Premium 头衔渐变 + 徽章 tooltip 修复 (#356) ([#356](https://github.com/lingyan000/fluxdo/pull/356)) by @homo11451419
+
+- 编辑器即时渲染模式:composerLiveRender 设置 + fluxdo_render ir 内核 by @Lingyan000
+
+- 校准提取器小截图增强:方差加权投票 + 全块共识复核 by @Lingyan000
+
+- 平行视界统一化:空态铺底/ESC 体系/草稿页独立双栏 by @Lingyan000
+
+- 播放器移动端手势补全 + M3E 形态 + 交互修复 by @Lingyan000
+
+- 渲染管线校准层:全屏/分享图合成一致性 by @Lingyan000
+
+- 播放器重做:六端统一自绘控制层 + media_kit 桌面后端 by @Lingyan000
+
+- 图片查看器开合转场:裁切插值飞行体 + 动图退役帧修复 by @Lingyan000
+
+- 页面弹窗新增全屏打开按钮 by @Lingyan000
+
+- 富文本编辑器体验与稳定性修复批次 (#355) ([#355](https://github.com/lingyan000/fluxdo/pull/355)) by @homo11451419
+
+- 通知落点重构:大屏页面弹窗 + 通知翻页/列表,点击零延迟 by @Lingyan000
+
+- 全屏侧滑返回开关:页面任意位置右滑返回上一页,默认关闭 by @Lingyan000
+
+- 平行视界与追觅功能 (#340) by @homo11451419
+
+- 话题详情底部推荐话题(相关/建议),阅读设置可关 by @Lingyan000
+
+
+### 🐛 修复
+
+- 通知链路四修:弹窗二跳全屏化/查看器 Hero 退化/移动端面板保留/横屏 Rail 让位 by @Lingyan000
+
+- Details 折叠块在楼层上方展开时标题被顶出视口:锚定哨兵补齐三处 by @Lingyan000
+
+- 连划返回黑边:转场期静默认领 + windowBackground 主题化 by @Lingyan000
+
+- 正文轮播图桌面端鼠标/触控板无法拖拽翻页 by @Lingyan000
+
+- 图片查看器放大后返回闪烁:退场瞬间缩放归位 by @Lingyan000
+
+- 移动端通知徽章不显示:计数 provider 改「实时更新前跟随服务端」 by @Lingyan000
+
+- Commit 收尾窗口锁屏毒化手势计数:代打 cancel 收紧到活跃 phase by @Lingyan000
+
+- 饼图判定改以 API poll.chart_type 为主源 by @Lingyan000
+
+- 内联图标行内上飘修复:字形 span 改回 WidgetSpan 行中线对齐 by @Lingyan000
+
+- 个人页头像预测返回不飞:源端 Hero 补 transitionOnUserGestures by @Lingyan000
+
+- 后台/锁屏打断预测返回手势后永久失效:代打 cancel 归零手势态 by @Lingyan000
+
+- 播放器音量/亮度 HUD:100% 文本折行修复 by @Lingyan000
+
+- 预测返回 commit 收尾动画被吞:静态背景判定改用 phase 而非 isCurrent by @Lingyan000
+
+- 聊天输入框表情后光标错位:WidgetSpan 等长补位(U+2060 零宽填充,boost 输入条同款) by @Lingyan000
+
+- 修复预测返回交互回归 by @Lingyan000
+
+- 面板容器闪白底(panelBgColor 默认纯白,深色主题跟 scaffold 底色)+返回键拦截失效(面板态提为页面状态驱动 canPop) by @Lingyan000
+
+- 长按副本矩形外扩气泡壳内边距(短消息竖排/长消息菜单叠压根修)+菜单钉屏下缘 by @Lingyan000
+
+- 聊天列表下拉刷新失灵:TabBarView 内列表 depth=1,补 notificationPredicate by @Lingyan000
+
+- 举报标题补显 + 底栏上限自适应 + 编辑器附件上传(白名单动态派生) (#367) ([#367](https://github.com/lingyan000/fluxdo/pull/367)) by @homo11451419
+
+- 修复 Windows render-signet 大色块:图块笔刷禁用拉伸 by @Lingyan000
+
+- 修复创建帖子编辑区顶底跳跃:光标跟随锚定正文输入框 (#337) by @Lingyan000
+
+- Win+V 贴图/插链接失效:可逆修饰键路径改用宽松版判定 by @Lingyan000
+
+- IOS 校准层回退内联:原生 CALayer 路径下线止血 by @Lingyan000
+
+- 修复 macOS 启动时未恢复窗口状态 + 隐藏启动消除闪跳 (#343) ([#343](https://github.com/lingyan000/fluxdo/pull/343)) by @Yuv96
+
+- 登录收尾刷新与元素生死解耦:修复扫码登录后无登录态需重启 by @Lingyan000
+
+- Preloaded 链路补强:解析失败不再静默 + 当前用户渐进 emit by @Lingyan000
+
+- 提取器共识复核补 ratio 下限:堵错误缩放档混叠假阳性 by @Lingyan000
+
+- 规避桌面端原生崩溃:CF WebView 定位/后台缓存清理/cookie 同步节流 ([#364](https://github.com/lingyan000/fluxdo/pull/364)) by @homo11451419
+
+- 帧监控 revision 通知避开 build 阶段:persistentCallbacks 推迟帧后合并 by @Lingyan000
+
+- 修 Android 偶现启动白屏:内联校准层改「消饱和+单极性」 by @Lingyan000
+
+- 播放器移动端交互修正:双击全区播停 + 紧凑单行条 + 防闪现 by @Lingyan000
+
+- 修话题列表透明 gif 头像双影:动图首帧就绪后收起静态打底层 by @Lingyan000
+
+- 修 Windows 校准层编译错:ABI 枚举缺命名空间限定 by @Lingyan000
+
+- 修复第一页未加载时话题详情页 AppBar 不变色 by @Lingyan000
+
+- 划词引用反查修复:meta 遮罩去噪 + 全选快路径 + 引用头对齐官方 (#352) ([#352](https://github.com/lingyan000/fluxdo/pull/352)) by @homo11451419
+
+- 双栏初次加载后点 boost 触发假跳转+帖子高亮 by @Lingyan000
+
+- 性能与桌面交互修复 (#341) by @homo11451419
+
+- 锚定哨兵盲区:视口停在推荐区等单盒 sliver 时新帖落地无补偿 by @Lingyan000
+
+- 在底部看帖时收到新回复,列表闪跳到最后一帖 by @Lingyan000
+
+- 内容与媒体功能 (#339) ([#339](https://github.com/lingyan000/fluxdo/pull/339)) by @homo11451419
+
+- 话题内跳转帖子触底回弹:落点改 jumpTo,不留 animateTo 动画窗口 by @Lingyan000
+
+- Windows 网络与 WebView 稳定性 (#338) ([#338](https://github.com/lingyan000/fluxdo/pull/338)) by @homo11451419
+
+- 「我的」页下拉刷新同屏双 loading by @Lingyan000
+
+- 分类/标签话题列表从详情返回后滚动位置跳回第一页底部 by @Lingyan000
+
+- M3E 下拉刷新圆片阴影被 SizeTransition 裁剪截断 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 话题卡排版空闲预热:滚入帧零排版 + 头像/emoji 预解码 + 字形预烤 by @Lingyan000
+
+- 首次进入外观设置页掉帧 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 书签同步重构:全局同步控制器+首次流式同步+增删写穿闭环 by @Lingyan000
+
+- 渲染校准层下沉窗口级合成:修桌面 WebView 交互与全屏混合开销 by @Lingyan000
+
+
+### 📝 文档
+
+- V0.2.26 版本亮点 by @Lingyan000
+
+
+### 🔧 其他
+
+- 💄 长按菜单重做:位置跟随就地展开+消息卡充实+双卡菜单+频道页拆分归目录 by @Lingyan000
+
+- 💄 聊天移动端体验打磨:长按菜单收进屏内+输入条悬浮内容透穿+键盘/表情面板交互修正 by @Lingyan000
+
+- 💄 附件入口移到输入框右侧([表情][输入框][附件][发送]),图标换回形针 + 注释中性化 by @Lingyan000
+
+- 💄 移动端聊天打磨:长按按压反馈/弹出动画蓄势/底部沉浸/输入条图标语义 by @Lingyan000
+
+- 🔒️ User API Key 用完即焚:登录收口即撤销 + 展示端轮询感知扫码成功 by @Lingyan000
+
+- ⬆️ 更新 flutter 到 3.44.8 by @Lingyan000
+
+- ⬆️ fluxdo_render:裸链接改文字同步改写 href by @Lingyan000
+
+- ⬆️ fluxdo_render:IME 纯上屏路径补规则命中后的 reconcile by @Lingyan000
+
+- ⬆️ fluxdo_render:移动端 IME 整窗清空落地,输入法「清空」键生效 by @Lingyan000
+
+- ⬆️ fluxdo_render:Win+V 修法换抖动阈值判据 by @Lingyan000
+
+- 🔧 忽略内嵌 webview 插件 example 的 ephemeral 生成物与 Windows lock,并停止跟踪机器相关 symlink by @Lingyan000
+
+- ⬆️ macOS Podfile.lock:补播放器重做新增原生 pod(media_kit_video/screen_brightness/volume_controller) by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.25...v0.2.26
+
 ## [0.2.25] - 2026-07-24
 
 

@@ -217,4 +217,10 @@ class TimeUtils {
     final formatter = DateFormat('MM-dd HH:mm');
     return formatter.format(time);
   }
+
+  /// 时:分(聊天气泡内联时间;日期已由分隔线承载)
+  static String formatClockTime(DateTime? time) {
+    if (time == null) return '';
+    return DateFormat('HH:mm').format(time);
+  }
 }

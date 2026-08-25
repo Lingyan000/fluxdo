@@ -1,12 +1,20 @@
+import 'package:dio/dio.dart';
+
 import '../../../l10n/s.dart';
 import '../../../models/pending_post.dart';
 
 /// 429 Rate Limit 异常（重试耗尽后抛出）
+///
+/// [response] 保留服务端原始响应,供调用方提取业务报错文案(如打赏接口把
+/// 错误信息放在自定义字段里)。ErrorInterceptor 必须通过 handler.reject
+/// 携带原 response 传递本异常,不能 throw——throw 会让 DioException 丢掉
+/// response,下游拦截器与调用方只能看到 statusCode=null。
 class RateLimitException implements Exception {
   final int? retryAfterSeconds;
   final String? message;
+  final Response<dynamic>? response;
 
-  RateLimitException([this.retryAfterSeconds, this.message]);
+  RateLimitException([this.retryAfterSeconds, this.message, this.response]);
 
   @override
   String toString() => message ?? S.current.error_rateLimitedRetryLater;
@@ -15,7 +23,9 @@ class RateLimitException implements Exception {
 /// 服务器错误异常（502/503/504 重试耗尽后抛出）
 class ServerException implements Exception {
   final int statusCode;
-  ServerException(this.statusCode);
+  final Response<dynamic>? response;
+
+  ServerException(this.statusCode, [this.response]);
 
   @override
   String toString() => '${S.current.error_serviceUnavailableRetry} ($statusCode)';

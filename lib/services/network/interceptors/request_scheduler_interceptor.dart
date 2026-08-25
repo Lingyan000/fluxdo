@@ -9,6 +9,7 @@ import '../../browser_trust_coordinator.dart';
 import '../../cf_challenge_service.dart';
 import '../exceptions/api_exception.dart';
 import '../cookie/cookie_jar_service.dart';
+import '../flux_request_spec.dart';
 import '../request_scheduler_config.dart';
 
 /// 请求优先级
@@ -133,12 +134,12 @@ class RequestSchedulerInterceptor extends Interceptor {
   /// 推断请求优先级
   _Priority _inferPriority(RequestOptions options) {
     // 显式指定优先级
-    final explicit = options.extra['priority'];
-    if (explicit is String) {
+    final explicit = options.spec.explicitPriority;
+    if (explicit != null) {
       switch (explicit) {
-        case 'high':
+        case FluxRequestPriority.high:
           return _Priority.high;
-        case 'low':
+        case FluxRequestPriority.low:
           return _Priority.low;
         default:
           return _Priority.normal;
@@ -146,7 +147,7 @@ class RequestSchedulerInterceptor extends Interceptor {
     }
 
     // isSilent 标记 → low
-    if (options.extra['isSilent'] == true) {
+    if (options.spec.isSilent) {
       return _Priority.low;
     }
 
@@ -169,7 +170,7 @@ class RequestSchedulerInterceptor extends Interceptor {
     RequestInterceptorHandler handler,
   ) async {
     // 内部请求（如 CSRF 刷新）跳过调度，避免与调用方死锁
-    if (options.extra['skipScheduler'] == true) {
+    if (options.spec.skipScheduler) {
       handler.next(options);
       return;
     }
@@ -180,7 +181,7 @@ class RequestSchedulerInterceptor extends Interceptor {
     // 进入挑战循环。
     //
     // 仅 CfChallengeInterceptor 内部 retry（标记 skipCfBlock=true）能绕过。
-    if (options.extra['skipCfBlock'] != true &&
+    if (!options.spec.skipCfBlock &&
         CfChallengeService().isVerifying) {
       handler.reject(
         DioException(
@@ -322,9 +323,10 @@ class RequestSchedulerInterceptor extends Interceptor {
   }
 
   Future<void> _waitForBrowserTrustIfNeeded(RequestOptions options) async {
-    if (options.extra['skipBrowserTrustGate'] == true ||
-        options.extra['skipCfBlock'] == true ||
-        options.extra['isCfChallengePlatform'] == true) {
+    // CF 验证自身的重试请求不等信任门(避免与验证流程互锁)。
+    // challenge-platform 请求现全部在 WebView 内发起,不经过 dio,
+    // 故此处不再需要判定它。
+    if (options.spec.skipCfBlock) {
       return;
     }
 

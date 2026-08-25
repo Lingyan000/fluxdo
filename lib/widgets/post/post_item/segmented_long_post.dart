@@ -235,6 +235,7 @@ class NewEngineChunkSegment extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     FrameJankMonitor.noteBuild(
       'chk#${post.postNumber}:$chunkIndex/'
       '${(chunk.html.length / 1000).toStringAsFixed(1)}k',
@@ -242,6 +243,13 @@ class NewEngineChunkSegment extends ConsumerWidget {
     Widget content = FluxdoRender(
           cookedHtml: chunk.html,
           parsedNodes: parsedNodes,
+          // 正文字号注入 contentFontScale(与 PostItem 短帖路径一致):
+          // 不传时 NodeFactory 回退 theme.bodyMedium,长帖 chunk 的字号设置失效。
+          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+            height: 1.5,
+            fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                ref.watch(preferencesProvider).contentFontScale,
+          ),
           imageIndexOffset: imageIndexOffset,
           footnotesHtml: footnotesHtml,
           // 同 post 各 chunk 共享一个选区作用域 → 选区可跨 chunk。
@@ -471,6 +479,12 @@ class LongPostFooterSegment extends ConsumerWidget {
   /// OP 帖专属插槽: 仅在 postNumber == 1 时透传给 PostFooterSection
   final Widget? opTopSlot;
 
+  /// post-voting(问答)话题:footer 显示赞成/反对控件与评论区
+  final bool isPostVotingTopic;
+
+  /// 话题 closed/archived(问答投票禁投判定)
+  final bool topicClosed;
+
   const LongPostFooterSegment({
     super.key,
     required this.post,
@@ -494,6 +508,8 @@ class LongPostFooterSegment extends ConsumerWidget {
     this.isPmWithNonHumanUser = false,
     this.onShowPostDetail,
     this.opTopSlot,
+    this.isPostVotingTopic = false,
+    this.topicClosed = false,
   });
 
   @override
@@ -559,6 +575,8 @@ class LongPostFooterSegment extends ConsumerWidget {
             isPmWithNonHumanUser: isPmWithNonHumanUser,
             onShowPostDetail: onShowPostDetail,
             opTopSlot: opTopSlot,
+            isPostVotingTopic: isPostVotingTopic,
+            topicClosed: topicClosed,
           ),
         ],
       ),

@@ -1,0 +1,229 @@
+{
+  "chat_title": "聊天",
+  "chat_refresh": "刷新",
+  "chat_newChat": "新会话",
+  "chat_startChat": "开始聊天",
+  "chat_createGroup": "建群 ({count})",
+  "@chat_createGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_searchUserHint": "搜索用户",
+  "chat_empty": "还没有会话",
+  "chat_noMessages": "还没有消息，说点什么吧",
+  "chat_previewImage": "[图片]",
+  "chat_previewFile": "[文件]",
+  "chat_inputHint": "发消息…",
+  "chat_send": "发送",
+  "chat_resend": "重发",
+  "chat_discard": "丢弃",
+  "chat_edited": "(已编辑)",
+  "chat_messageDeleted": "消息已删除",
+  "chat_deletedOne": "1 条消息已删除 · 查看",
+  "chat_deletedMany": "{count} 条消息已删除 · 查看全部",
+  "@chat_deletedMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_deletedTag": "(已删除)",
+  "chat_unreadDivider": "以下为新消息",
+  "chat_menuReply": "回复",
+  "chat_menuCopy": "复制",
+  "chat_menuEdit": "编辑",
+  "chat_menuDelete": "删除",
+  "chat_menuRestore": "恢复",
+  "chat_menuPin": "置顶",
+  "chat_menuUnpin": "取消置顶",
+  "chat_pinnedBanner": "置顶消息",
+  "chat_pinnedCount": "{count} 条置顶",
+  "@chat_pinnedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuBookmark": "收藏",
+  "chat_menuRemoveBookmark": "取消收藏",
+  "chat_deleteConfirm": "删除这条消息？",
+  "chat_editingBanner": "编辑消息",
+  "chat_replyingTo": "回复 {username}",
+  "@chat_replyingTo": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_moreReactions": "更多表情",
+  "chat_memberCount": "{count} 位成员",
+  "@chat_memberCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuCopyLink": "复制链接",
+  "chat_attach": "附件",
+  "chat_attachCamera": "拍照",
+  "chat_attachGallery": "相册",
+  "chat_attachFile": "文件",
+  "chat_threadTitle": "消息串",
+  "chat_threadReplies": "{count} 条回复",
+  "@chat_threadReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_channelInfo": "会话详情",
+  "chat_members": "成员",
+  "chat_memberSelf": "我",
+  "chat_addMembers": "添加成员",
+  "chat_addMembersConfirm": "添加 ({count})",
+  "chat_membersAdded": "已添加成员",
+  "chat_removeMember": "移出群聊",
+  "chat_removeMemberConfirm": "将 {username} 移出群聊？",
+  "chat_renameGroup": "修改群名",
+  "chat_groupNameHint": "群聊名称",
+  "chat_leave": "退出会话",
+  "chat_leaveConfirm": "退出这个会话？",
+  "chat_leaveHint": "历史消息保留,有新消息时会话会重新出现。",
+  "@chat_addMembersConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_removeMemberConfirm": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_sectionChannels": "频道",
+  "chat_sectionDirect": "直接消息",
+  "chat_emptyChannels": "还没有加入的频道",
+  "chat_typingOne": "{username} 正在输入…",
+  "chat_typingMany": "{count} 人正在输入…",
+  "@chat_typingOne": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "@chat_typingMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_markRead": "标记已读",
+  "chat_mute": "静音",
+  "chat_unmute": "取消静音",
+  "chat_browseChannels": "浏览频道",
+  "chat_searchChannelHint": "搜索频道",
+  "chat_noChannelsFound": "没有找到频道",
+  "chat_joinChannel": "加入",
+  "chat_enterChannel": "进入",
+  "chat_upgradeToGroup": "添加成员建群",
+  "chat_upgradeToGroupHint": "将创建一个新的群聊,当前对话历史不迁移",
+  "chat_menuSelect": "选择",
+  "chat_selectedCount": "已选 {count} 条",
+  "chat_selectionQuote": "引用",
+  "chat_quoteCopied": "引用已复制,可粘贴到帖子或消息",
+  "chat_deleteSelectedConfirm": "删除所选 {count} 条消息？",
+  "@chat_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_deleteSelectedConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_menuFlag": "举报",
+  "chat_flagTitle": "举报消息",
+  "chat_flagSuccess": "举报已提交",
+  "chat_flagNoTypes": "该消息当前不可举报",
+  "chat_flagMessageHint": "补充说明(可选)",
+  "chat_flagSubmit": "提交举报",
+  "chat_emoji": "表情",
+  "chat_insertTemplate": "插入模板",
+  "chat_insertDateTime": "插入日期/时间",
+  "chat_noTemplates": "没有可用模板",
+  "chat_searchAll": "搜索消息",
+  "chat_searchAllHint": "搜索全部消息",
+  "chat_searchInChannel": "在会话中搜索",
+  "chat_searchInChannelHint": "搜索本会话消息",
+  "chat_searchPrompt": "输入关键词搜索聊天消息",
+  "chat_searchNoResults": "没有匹配的消息",
+  "chat_star": "收藏",
+  "chat_unstar": "取消收藏",
+  "chat_leaveChannel": "离开频道",
+  "chat_summarize": "总结消息",
+  "chat_summarizeHours": "最近 {count} 小时",
+  "chat_summarizeDays": "最近 {count} 天",
+  "@chat_summarizeHours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@chat_summarizeDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_settingsSection": "设置",
+  "chat_muteChannel": "设为免打扰",
+  "chat_notificationLevel": "发送推送通知",
+  "chat_levelNever": "从不",
+  "chat_levelMention": "仅限提及",
+  "chat_levelAlways": "所有消息",
+  "chat_threadingEnabled": "启用消息串",
+  "chat_threadingHint": "开启后回复将归入消息串,不刷屏主流",
+  "chat_viewMembers": "查看成员",
+  "chat_infoCategory": "类别",
+  "chat_infoRetention": "历史记录",
+  "chat_retentionForever": "永久保留",
+  "chat_retentionDays": "保留 {count} 天",
+  "@chat_retentionDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_reactionUsersMore": "{names} 和另外 {count} 人",
+  "@chat_reactionUsersMore": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

@@ -16,9 +16,11 @@ import 'package:m3e_ui/m3e_ui.dart';
 /// 发起:登录页按钮 → [start] 拉起系统浏览器打开 /user-api-key/new。
 /// 回程:系统浏览器授权后 302 到 discourse://auth_redirect,OS 深链拉回 App,
 /// DeepLinkService 分发到 [handleCallback]:
-/// 1. 解密 payload,持久化 User API Key(供开了 write scope 的站点做 _t 自愈)
+/// 1. 解密 payload,校验 nonce(key 先暂存,供本流程兑换)
 /// 2. App 无登录态时,用随行 OTP 兑换 _t(纯 dio,走主 dio 的 rhttp 通道过 CF),
 ///    再走 finalizeNativeLoginSuccess 完成与密码登录一致的收口(预加载 → 广播)
+/// 3. 收口后 key 用完即焚(burnAfterLoginIfUseless):scopes 无 write 时该 key
+///    是永久零权限凭据,立即 revoke+清除;开了 write 的站点则保留作 _t 自愈
 ///
 /// 全程无可见 WebView / WebView 适配器:OTP 兑换的 CSRF 与 POST 都走主 dio,
 /// 过 CF 靠 rhttp 的 Chrome TLS 指纹 + CfChallengeInterceptor 失效兜底。
@@ -91,9 +93,11 @@ class UserApiKeyLoginFlow {
         return;
       }
 
-      // 已有登录态:只是补授权(存 key,供支持的站点自愈),不动现有会话
+      // 已有登录态:只是补授权。scopes 含 write 才值得留 key 做自愈;
+      // 否则(linux.do 现状)立即焚毁,不留永久零权限凭据
       final existingToken = await CookieJarService().getTToken();
       if (existingToken != null && existingToken.isNotEmpty) {
+        await userApiKeyService.burnAfterLoginIfUseless(DiscourseService().dio);
         ToastService.showSuccess('授权成功');
         onFlowFinished?.call(true);
         return;
@@ -102,6 +106,7 @@ class UserApiKeyLoginFlow {
       // 无登录态:用随行 OTP 兑换 _t 完成登录(纯 dio)
       final otp = result.otp;
       if (otp == null) {
+        await userApiKeyService.burnAfterLoginIfUseless(DiscourseService().dio);
         ToastService.showError('授权成功,但未收到登录令牌,请重试');
         onFlowFinished?.call(false);
         return;
@@ -113,6 +118,7 @@ class UserApiKeyLoginFlow {
         final service = DiscourseService();
         final token = await userApiKeyService.redeemOtp(service.dio, otp);
         if (token == null) {
+          await userApiKeyService.burnAfterLoginIfUseless(service.dio);
           ToastService.showError('登录令牌兑换失败,请重试');
           onFlowFinished?.call(false);
           return;
@@ -140,12 +146,15 @@ class UserApiKeyLoginFlow {
 
         if (username.isEmpty) {
           // _t 已落 jar 但确认请求失败;不带空用户名走收口(会写坏本地状态)
+          await userApiKeyService.burnAfterLoginIfUseless(service.dio);
           ToastService.showError('登录状态确认失败,请重试');
           onFlowFinished?.call(false);
           return;
         }
 
         await service.finalizeNativeLoginSuccess(username);
+        // _t 已到手且与 key 存活解耦;零 scope key 用完即焚
+        await userApiKeyService.burnAfterLoginIfUseless(service.dio);
         ToastService.showSuccess('登录成功');
         onFlowFinished?.call(true);
       } finally {

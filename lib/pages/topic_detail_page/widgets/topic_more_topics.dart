@@ -7,6 +7,7 @@ import '../../../models/category.dart';
 import '../../../models/topic.dart';
 import '../../../providers/category_provider.dart';
 import '../../../providers/preferences_provider.dart';
+import '../../../providers/selected_topic_provider.dart';
 import '../../../utils/number_utils.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/category_tags_line.dart';
@@ -105,14 +106,25 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
           _MoreTopicTile(
             topic: topic,
             category: categoryMap?[int.tryParse(topic.categoryId)],
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => TopicDetailPage(
-                  topicId: topic.id,
-                  initialTitle: topic.title,
+            // 平行视界面板内=压当前栈(与正文内链同语义);
+            // 全屏话题页=照旧全屏 push。
+            onTap: () {
+              if (EmbeddedStackScope.maybePushTopic(
+                context,
+                topicId: topic.id,
+                initialTitle: topic.title,
+              )) {
+                return;
+              }
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TopicDetailPage(
+                    topicId: topic.id,
+                    initialTitle: topic.title,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         _BrowseMoreLine(category: categoryMap?[detail.categoryId]),
       ],
@@ -322,6 +334,7 @@ class _MoreTopicTile extends StatelessWidget {
         size: 12,
         color: metaColor,
         gap: 3,
+        textStyle: rightStyle,
       ));
       rightSpans.add(TextSpan(
         text: NumberUtils.formatCount(density.replyCount),

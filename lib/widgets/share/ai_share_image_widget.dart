@@ -11,7 +11,6 @@ import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/url_helper.dart';
 import '../../utils/time_utils.dart';
 import '../common/emoji_text.dart';
-import '../render_signet/render_signet_layer.dart';
 import 'share_image_preview.dart';
 
 /// AI 分享图片 Widget
@@ -116,8 +115,6 @@ class AiShareImageWidget extends StatelessWidget {
               ],
             ),
           ),
-          // 分享图标识印记:离屏截图,原生窗口层盖不到,必须内联绘制
-          const Positioned.fill(child: RenderSignetLayer.inline()),
         ],
       ),
     );

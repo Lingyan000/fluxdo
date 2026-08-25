@@ -18,11 +18,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../../services/media_transcoder/media_transcoder.dart';
+import '../../utils/dialog_utils.dart';
 import 'debug_voice_sample.dart';
 
 /// 弹出录音面板;完成返回录音文件路径(m4a),取消返回 null。
+///
+/// isDismissible/enableDrag 均为 false:录音在途误关会丢录音。
+///
+/// 注意这两个参数**不影响** popGestureEnabled(实测:两者为 false 时它
+/// 仍为 true,手势照样能把面板拖走)—— 想挡住预测返回手势得靠 PopScope。
+/// 故内层用 PopScope(canPop: 非录音/试听态) 让「有内容可丢」时否决手势,
+/// 与 reply_sheet 的做法同构。
 Future<String?> showVoiceRecorderSheet(BuildContext context) {
-  return showModalBottomSheet<String>(
+  return showAppBottomSheet<String>(
     context: context,
     isDismissible: false,
     enableDrag: false,
@@ -227,110 +235,116 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('语音消息', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              switch (_phase) {
-                _Phase.idle => '点击开始录制(最长 10 分钟)',
-                _Phase.recording => '录制中…',
-                _Phase.recorded => '试听确认后发送',
-              },
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!,
-                  style:
-                      theme.textTheme.bodySmall?.copyWith(color: scheme.error)),
-            ],
-            const SizedBox(height: 20),
-            Text(
-              _fmt(_elapsed),
-              style: theme.textTheme.displaySmall?.copyWith(
-                fontFeatures: const [FontFeature.tabularFigures()],
+    return PopScope(
+      // 录制中/已录待发时否决返回:此时有内容可丢。isDismissible/enableDrag
+      // 为 false 只挡点击遮罩与下拉,**挡不住预测返回手势**(实测两者为
+      // false 时 popGestureEnabled 仍为 true),必须靠 PopScope。
+      canPop: _phase == _Phase.idle,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('语音消息', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                switch (_phase) {
+                  _Phase.idle => '点击开始录制(最长 10 分钟)',
+                  _Phase.recording => '录制中…',
+                  _Phase.recorded => '试听确认后发送',
+                },
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
-            ),
-            const SizedBox(height: 20),
-            // 主按钮:录制/停止(录制中带幅度脉冲圈)
-            if (_phase != _Phase.recorded)
-              GestureDetector(
-                onTap: _phase == _Phase.recording ? _stop : _start,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  width: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
-                  height: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _phase == _Phase.recording
-                        ? scheme.errorContainer
-                        : scheme.primaryContainer,
-                  ),
-                  child: Icon(
-                    _phase == _Phase.recording
-                        ? Icons.stop_rounded
-                        : Icons.mic_rounded,
-                    size: 34,
-                    color: _phase == _Phase.recording
-                        ? scheme.onErrorContainer
-                        : scheme.onPrimaryContainer,
-                  ),
-                ),
-              )
-            else
-              // 试听行
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  StreamBuilder<PlayerState>(
-                    stream: _player?.playerStateStream,
-                    builder: (context, snap) {
-                      final playing = (snap.data?.playing ?? false) &&
-                          snap.data?.processingState !=
-                              ProcessingState.completed;
-                      return IconButton.filledTonal(
-                        iconSize: 32,
-                        icon: Icon(playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded),
-                        onPressed: _togglePreview,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            if (kDebugMode && _phase == _Phase.idle) ...[
-              const SizedBox(height: 10),
-              TextButton.icon(
-                icon: const Icon(Icons.science_outlined, size: 16),
-                label: const Text('生成测试音频(debug)',
-                    style: TextStyle(fontSize: 12)),
-                onPressed: _debugSynthesize,
-              ),
-            ],
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                TextButton(onPressed: _cancel, child: const Text('取消')),
-                const Spacer(),
-                if (_phase == _Phase.recorded) ...[
-                  TextButton(onPressed: _retake, child: const Text('重录')),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.send_rounded, size: 18),
-                    label: const Text('发送'),
-                    onPressed: () => Navigator.of(context).pop(_path),
-                  ),
-                ],
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!,
+                    style:
+                        theme.textTheme.bodySmall?.copyWith(color: scheme.error)),
               ],
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                _fmt(_elapsed),
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 主按钮:录制/停止(录制中带幅度脉冲圈)
+              if (_phase != _Phase.recorded)
+                GestureDetector(
+                  onTap: _phase == _Phase.recording ? _stop : _start,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
+                    height: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _phase == _Phase.recording
+                          ? scheme.errorContainer
+                          : scheme.primaryContainer,
+                    ),
+                    child: Icon(
+                      _phase == _Phase.recording
+                          ? Icons.stop_rounded
+                          : Icons.mic_rounded,
+                      size: 34,
+                      color: _phase == _Phase.recording
+                          ? scheme.onErrorContainer
+                          : scheme.onPrimaryContainer,
+                    ),
+                  ),
+                )
+              else
+                // 试听行
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    StreamBuilder<PlayerState>(
+                      stream: _player?.playerStateStream,
+                      builder: (context, snap) {
+                        final playing = (snap.data?.playing ?? false) &&
+                            snap.data?.processingState !=
+                                ProcessingState.completed;
+                        return IconButton.filledTonal(
+                          iconSize: 32,
+                          icon: Icon(playing
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded),
+                          onPressed: _togglePreview,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              if (kDebugMode && _phase == _Phase.idle) ...[
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  icon: const Icon(Icons.science_outlined, size: 16),
+                  label: const Text('生成测试音频(debug)',
+                      style: TextStyle(fontSize: 12)),
+                  onPressed: _debugSynthesize,
+                ),
+              ],
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  TextButton(onPressed: _cancel, child: const Text('取消')),
+                  const Spacer(),
+                  if (_phase == _Phase.recorded) ...[
+                    TextButton(onPressed: _retake, child: const Text('重录')),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.send_rounded, size: 18),
+                      label: const Text('发送'),
+                      onPressed: () => Navigator.of(context).pop(_path),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

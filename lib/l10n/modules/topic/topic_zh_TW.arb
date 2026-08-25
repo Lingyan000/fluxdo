@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "已加入浮窗",
   "topicDetail_aiAssistant": "AI 助手",
   "topicDetail_authorOnly": "只看題主",
+  "topicDetail_userOnly": "只看 @{username}",
+  "@topicDetail_userOnly": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_browseMoreInCategory": "想閱讀更多？瀏覽 {category} 分類",
   "@topicDetail_browseMoreInCategory": {
     "placeholders": {
@@ -17,10 +25,20 @@
   "topicDetail_editTopic": "編輯話題",
   "topicDetail_exportArticle": "匯出文章",
   "topicDetail_generateShareImage": "生成分享圖片",
+  "topicDetail_toc": "目錄",
+  "topicDetail_tocCollapse": "收合目錄",
+  "topicDetail_tocExpand": "展開目錄",
+  "topicDetail_sortByActivity": "按活動排序",
   "topicDetail_hotOnly": "只看熱門",
   "topicDetail_loadFailedTapRetry": "載入失敗，點選重試",
   "topicDetail_loading": "載入中...",
   "topicDetail_moreOptions": "更多選項",
+  "topicDetail_markUnread": "標記為未讀",
+  "topicDetail_markUnreadLast": "最後一層未讀",
+  "topicDetail_markUnreadLastDesc": "回到未讀列表，下次接續閱讀",
+  "topicDetail_markUnreadAll": "全部未讀",
+  "topicDetail_markUnreadAllDesc": "清空閱讀進度，下次從頭讀",
+  "topicDetail_markUnreadSuccess": "已標記為未讀",
   "topicDetail_openInBrowser": "在瀏覽器開啟",
   "topicDetail_readLaterFull": "浮窗已滿（最多 {max} 個）",
   "@topicDetail_readLaterFull": {

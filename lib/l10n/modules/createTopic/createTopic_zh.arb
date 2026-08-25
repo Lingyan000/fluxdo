@@ -8,6 +8,7 @@
       }
     }
   },
+  "createTopic_postVoting": "问答",
   "createTopic_confirmPublish": "确定发布",
   "createTopic_contentHint": "正文内容 (支持 Markdown)...",
   "createTopic_continueEditing": "继续编辑",

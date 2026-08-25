@@ -9,6 +9,8 @@ extension _ScrollActions on _TopicDetailPageState {
 
     _scheduleCheckTitleVisibility();
     _controller.handleScroll();
+    // TOC scroll-spy(内部节流;无目录时零开销)
+    _tocController.scheduleSpyUpdate();
 
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));
@@ -61,10 +63,10 @@ extension _ScrollActions on _TopicDetailPageState {
     final posts = detail.postStream.posts;
     final stream = detail.postStream.stream;
 
-    final post = posts.firstWhere(
-      (p) => p.postNumber == postNumber,
-      orElse: () => posts.first,
-    );
+    // 迟到上报(16ms 节流/postFrame 跨帧)撞上整流刷新换窗时,postNumber
+    // 可能已不在当前窗口;回退 posts.first 会把进度甩到窗口首帖,直接丢弃
+    final post = posts.where((p) => p.postNumber == postNumber).firstOrNull;
+    if (post == null) return;
 
     final streamIndex = stream.indexOf(post.id);
     if (streamIndex != -1) {
@@ -247,7 +249,7 @@ extension _ScrollActions on _TopicDetailPageState {
     }
     _controller.updateSelectedPostIndicator(targetPostNumber);
     _selectShortcutPostNumber(detail, targetPostNumber);
-    await _scrollToPost(targetPostNumber);
+    await _jumpToPostInTopic(targetPostNumber);
   }
 
   int _resolveNavigationAnchorPostNumber(List<Post> posts, int delta) {

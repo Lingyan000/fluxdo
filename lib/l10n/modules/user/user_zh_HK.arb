@@ -139,6 +139,7 @@
   "userProfile_location": "位置",
   "userProfile_message": "私信",
   "userCard_viewProfile": "查看資料",
+  "userCard_chat": "私聊",
   "avatarMenu_viewProfile": "進入主頁",
   "avatarMenu_mention": "@用戶",
   "avatarMenu_copyUsername": "複製用戶名",
@@ -146,6 +147,17 @@
   "userCard_lastPosted": "最後發佈",
   "userCard_mute": "免打擾",
   "userCard_ignore": "忽略",
+  "userCard_filterPosts": "只看 TA 的 {count} 帖",
+  "@userCard_filterPosts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "userCard_cancelFilterPosts": "顯示全部帖子",
+  "avatarMenu_filterPosts": "只看此人",
+  "avatarMenu_cancelFilterPosts": "取消只看",
   "userCard_referenceTopicTitle": "回覆:{title}",
   "@userCard_referenceTopicTitle": {
     "placeholders": {

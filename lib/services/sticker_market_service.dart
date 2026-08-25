@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/sticker.dart';
+import 'app_logger.dart';
 
 /// 顶层函数，供 compute() 在后台 Isolate 中解析分组详情
 StickerGroupDetail _parseGroupDetail(Map<String, dynamic> data) {
@@ -191,12 +192,23 @@ class StickerMarketService {
       await _prefs.setInt(timestampKey, DateTime.now().millisecondsSinceEpoch);
 
       return data;
-    } catch (e) {
+    } catch (e, st) {
       // 网络失败时尝试使用过期缓存
       if (cached != null) {
-        debugPrint('[StickerMarketService] 网络请求失败，使用过期缓存: $e');
+        AppLogger.warning(
+          '表情包市场请求失败，已回退过期缓存',
+          tag: 'StickerMarket',
+          fields: {'url': url, 'cacheKey': cacheKey, 'error': e.toString()},
+        );
         return json.decode(cached) as Map<String, dynamic>;
       }
+      AppLogger.error(
+        '表情包市场请求失败且无缓存可用',
+        tag: 'StickerMarket',
+        error: e,
+        stackTrace: st,
+        fields: {'url': url, 'cacheKey': cacheKey},
+      );
       rethrow;
     }
   }

@@ -30,6 +30,10 @@ import 'storage/resilient_secure_storage.dart';
 ///   请求会被 ensure_allowed! 拒(仅能授权时随 create 返回一枚一次性 OTP),
 ///   故 POST /user-api-key/otp 的长期自愈在 linux.do 现配置下不可用——授权登录
 ///   本身不受影响。selfHeal/requestOtp 对开了 write 的站点仍有效,403 时静默降级。
+/// - **用完即焚**:兑换 `_t` 与 key 存活完全解耦(session#one_time_password 只查
+///   Redis),且零 scope key 也能自我吊销(allow? 的 is_revoke_self_request? 豁免)。
+///   scopes 无 write 时 key 落地即纯负债(永久有效+零用途+用户 Apps 列表常驻),
+///   登录收口后立即 revoke+清除;将来站点放开 write 则自动改为保留([keyWorthKeeping])。
 /// - auth_redirect 用 discourse://auth_redirect(站点 allowed_user_api_auth_redirects
 ///   默认白名单,无需站方配置);App 已在 Android/iOS/macOS/Linux 注册 discourse
 ///   scheme,系统浏览器授权后深链回 App(DiscourseHub 同款流程)
@@ -51,6 +55,17 @@ class UserApiKeyService {
   static const String authRedirect = 'discourse://auth_redirect';
   static const String applicationName = 'FluxDO';
   static const String scopes = 'one_time_password';
+
+  /// 跨设备扫码 key 的 application_name。展示端靠它在
+  /// /u/:username.json 的 user_api_keys 列表里识别自己那枚分享 key
+  /// (轮询其消失 = 扫码端已登录并自我吊销)。
+  static const String qrApplicationName = '$applicationName QR Login';
+
+  /// scopes 是否含 write(决定 key 是否值得留作 _t 自愈弹药)。
+  /// linux.do 现配置只允许 one_time_password → key 兑换后即为
+  /// 零 scope 永久凭据,纯负债,应当用完即焚。
+  static bool get keyWorthKeeping =>
+      scopes.split(',').map((s) => s.trim()).contains('write');
 
   /// 自愈冷却:失败后短期内不再重试,避免 key 已撤销时反复打服务端
   static const Duration _selfHealCooldown = Duration(minutes: 10);
@@ -76,23 +91,47 @@ class UserApiKeyService {
     _lastSelfHealFailureAt = null;
   }
 
+  /// 撤销一枚指定的 User API Key(服务端 revoked_at 置位)。
+  ///
+  /// 关键依据(discourse user_api_key.rb#allow?):即使 scope 的
+  /// RouteMatcher 全空(one_time_password),自我吊销请求
+  /// `POST /user-api-key/revoke`(带 User-Api-Key 头、不带 id)
+  /// 永远豁免——`is_revoke_self_request?`。带 key 头亦豁免 CSRF。
+  /// 因此"零权限 key 焚毁自己"在任何站点配置下都可行。
+  Future<bool> revokeKey(Dio dio, String apiKey) async {
+    if (apiKey.isEmpty) return false;
+    try {
+      await dio.post(
+        '/user-api-key/revoke',
+        options: Options(
+          headers: {'User-Api-Key': apiKey},
+          extra: const {'skipAuthCheck': true, 'skipCsrf': true},
+        ),
+      );
+      _log('info', 'user_api_key_revoked', '已撤销 User API Key');
+      return true;
+    } catch (e) {
+      _log('warning', 'user_api_key_revoke_failed', '撤销 User API Key 失败(忽略)', {
+        'error': e.toString(),
+      });
+      return false;
+    }
+  }
+
   /// 显式登出时尽力撤销服务端 key(失败不阻塞登出)
   Future<void> revokeAndClear(Dio dio) async {
     final key = await readApiKey();
     if (key != null && key.isNotEmpty) {
-      try {
-        await dio.post(
-          '/user-api-key/revoke',
-          options: Options(
-            headers: {'User-Api-Key': key},
-            extra: const {'skipAuthCheck': true, 'skipCsrf': true},
-          ),
-        );
-      } catch (e) {
-        debugPrint('[UserApiKey] 撤销 key 失败(忽略): $e');
-      }
+      await revokeKey(dio, key);
     }
     await clearKey();
+  }
+
+  /// 授权登录收口后的"用完即焚":scopes 无 write(本地无自愈价值)时
+  /// 撤销并清除刚拿到的 key,不给服务端留永久零权限凭据。
+  Future<void> burnAfterLoginIfUseless(Dio dio) async {
+    if (keyWorthKeeping) return;
+    await revokeAndClear(dio);
   }
 
   Future<String> _ensureClientId() async {
@@ -216,7 +255,7 @@ class UserApiKeyService {
     final nonce = const Uuid().v4();
 
     final data = <String, dynamic>{
-      'application_name': '$applicationName QR Login',
+      'application_name': qrApplicationName,
       'client_id': clientId,
       'scopes': scopes,
       'public_key': publicKeyPem,
@@ -312,19 +351,6 @@ class UserApiKeyService {
       });
       rethrow;
     }
-  }
-
-  /// 扫码端:持久化对方分享的 User API Key(覆盖本机旧 key)。
-  Future<void> persistSharedKey(String apiKey) async {
-    final trimmed = apiKey.trim();
-    if (trimmed.isEmpty) {
-      throw ArgumentError.value(apiKey, 'apiKey', '不能为空');
-    }
-    await _storage.write(key: _keyApiKey, value: trimmed);
-    _lastSelfHealFailureAt = null;
-    _log('info', 'user_api_key_shared_persisted', '已保存扫码分享的 User API Key', {
-      'apiKeyLen': trimmed.length,
-    });
   }
 
   // ---------- 授权流程 ----------
@@ -517,6 +543,7 @@ class UserApiKeyService {
             'skipCsrf': true,
             'skipAuthCheck': true,
             'skipRedirect': true,
+            'requestTag': 'otp-redeem',
           },
         ),
       );

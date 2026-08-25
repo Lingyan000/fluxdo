@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../constants.dart';
 import '../../auth_session.dart';
 import '../../log/log_writer.dart';
+import '../../cf_clearance_authority.dart';
 import 'cookie_jar_service.dart';
 import 'cookie_logger.dart';
 import 'raw_cookie_writer.dart';
@@ -197,6 +198,33 @@ class BoundarySyncService {
             !allowLowConfidenceSessionCookies) {
           debugPrint('[BoundarySync] ${wc.name}: 跳过低置信度会话 Cookie 快照');
           continue;
+        }
+
+        // 在位值粘性闸门（对 cf_clearance 无条件生效）：不判候选值死活
+        // （判不了——有效值也会撞盾、残留旧值的 expires 经常比新值更晚），
+        // 只看 jar 当前在位值死没死：活着（未过期、未临期、未被撞）就不许
+        // 任何异值顶替；空/过期/临期/刚被撞才放开替换。相对 0.2.26 的
+        // 「sync 无条件放行」只做了这一个收窄：恢复路径（jar 空/验证取消）
+        // 同样畅通，而 2026-08-19「残留旧值顶替过盾成果」与 2026-08-22
+        // 「恢复被墓碑堵死」两类事故同时从机制上消失。判定见
+        // CfClearanceAuthority。
+        if (wc.name == 'cf_clearance') {
+          final decision = await CfClearanceAuthority.instance
+              .evaluateReplacement(value);
+          if (decision == CfClearanceReplaceDecision.skipHealthyIncumbent) {
+            LogWriter.instance.write({
+              'timestamp': DateTime.now().toIso8601String(),
+              'level': 'info',
+              'type': 'cookie_trace',
+              'event': 'cf_clearance_rotation_skipped',
+              'message': '[BoundarySync] cf_clearance 在位值健康，'
+                  '跳过异值替换（valueLength=${value.length}）',
+              'name': wc.name,
+              'valueLength': value.length,
+              'url': url,
+            });
+          }
+          if (decision != CfClearanceReplaceDecision.allow) continue;
         }
 
         // domain 处理：优先用平台返回值，旧 Android 兜底

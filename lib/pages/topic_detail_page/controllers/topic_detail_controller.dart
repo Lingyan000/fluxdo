@@ -109,6 +109,12 @@ class TopicDetailController extends ChangeNotifier {
   /// stream 索引
   final ValueNotifier<int> streamIndexNotifier = ValueNotifier<int>(1);
 
+  /// 视口当前帖号(eyeline 上报)的细粒度通知 —— TOC 显隐门控等用;
+  /// 独立 ValueNotifier 是因为滚动期它高频变化,不能走 ChangeNotifier
+  /// 的 notifyListeners(会整树 rebuild)。
+  final ValueNotifier<int?> viewportPostNumberNotifier =
+      ValueNotifier<int?>(null);
+
   Timer? _screenTrackThrottleTimer;
   bool _trackEnabled;
 
@@ -278,6 +284,24 @@ class TopicDetailController extends ChangeNotifier {
     if (postIndex == -1) return false;
 
     final scrollIndex = scrollIndexForPostIndex(postIndex);
+    await scrollController.jumpToRenderedScrollIndex(scrollIndex);
+    return scrollController.isIndexStateInLayoutRange(scrollIndex);
+  }
+
+  /// 滚动到长帖的指定 chunk 段（TOC 标题跳转用）。
+  ///
+  /// [chunkIndex] 为 null 时等同 [scrollToPost]（短帖整帖一段）;
+  /// 长帖分段序为 header + chunk×N + footer,目标段 = 帖首段 + 1 + chunk。
+  Future<bool> scrollToPostChunk(
+    int postNumber,
+    int? chunkIndex,
+    List<Post> posts,
+  ) async {
+    final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
+    if (postIndex == -1) return false;
+
+    var scrollIndex = scrollIndexForPostIndex(postIndex);
+    if (chunkIndex != null) scrollIndex += 1 + chunkIndex;
     await scrollController.jumpToRenderedScrollIndex(scrollIndex);
     return scrollController.isIndexStateInLayoutRange(scrollIndex);
   }
@@ -470,6 +494,7 @@ class TopicDetailController extends ChangeNotifier {
   void updateViewportPostNumber(int postNumber) {
     if (_scrollState.viewportPostNumber != postNumber) {
       _scrollState = _scrollState.copyWith(viewportPostNumber: postNumber);
+      viewportPostNumberNotifier.value = postNumber;
     }
   }
 
@@ -539,6 +564,7 @@ class TopicDetailController extends ChangeNotifier {
     // 可见性相关
     _screenTrackThrottleTimer?.cancel();
     streamIndexNotifier.dispose();
+    viewportPostNumberNotifier.dispose();
 
     super.dispose();
   }

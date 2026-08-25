@@ -298,6 +298,24 @@ class PreloadedDataService {
     return raw.split('|').map(int.tryParse).whereType<int>().toList();
   }
 
+  // ---- discourse-assign 插件开关（均为 client:true，preload 可读）----
+
+  /// 指定功能总开关(assign_enabled)。站点未装插件时该键不存在,
+  /// 视为未启用——入口显隐以「assignEnabled && can_assign」为准。
+  bool get assignEnabled => _siteSettings?['assign_enabled'] == true;
+
+  /// 指定状态字段开关(enable_assign_status)。关闭时官方 Web 端弹窗
+  /// 不显示状态下拉。
+  bool get assignStatusEnabled =>
+      _siteSettings?['enable_assign_status'] == true;
+
+  /// 指定状态可选值(assign_statuses,竖线分隔;首项为默认状态)。
+  List<String> get assignStatuses {
+    final raw = _siteSettings?['assign_statuses'] as String?;
+    if (raw == null || raw.isEmpty) return const [];
+    return raw.split('|').where((s) => s.isNotEmpty).toList();
+  }
+
   /// 获取可用的回应表情列表
   Future<List<String>> getEnabledReactions() async {
     await _ensureLoaded();
@@ -504,7 +522,11 @@ class PreloadedDataService {
         AppConstants.baseUrl,
         options: Options(
           headers: {'Accept': 'text/html'},
-          extra: {if (AppConstants.skipCsrfForHomeRequest) 'skipCsrf': true},
+          extra: {
+            if (AppConstants.skipCsrfForHomeRequest) 'skipCsrf': true,
+            // 诊断标注:首页 HTML 是 CF 盾高发路径,日志里需可辨识
+            'requestTag': 'preload-home',
+          },
         ),
       );
 

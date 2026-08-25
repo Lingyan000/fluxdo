@@ -8,6 +8,7 @@ import '../../../../utils/url_helper.dart';
 import '../image_utils.dart';
 import '../../lazy_load_scope.dart';
 import 'image_carousel_builder.dart';
+import '../../../common/hero_image.dart';
 
 /// 构建 Discourse 图片网格 (d-image-grid)
 /// 支持 grid 和 carousel 两种模式
@@ -167,6 +168,10 @@ class _GridImageTileState extends State<_GridImageTile> {
 
   String get _cacheKey => 'grid_tile_${widget.heroTag}';
 
+  /// 源端展示方式:瓦片是 cover 裁切 + 圆角 4。一处给出,同时约束源端
+  /// 与 openViewer 两侧参数(见 ViewerSourceStyle)。
+  static const _gridStyle = ViewerSourceStyle.cover(radius: 4);
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -269,13 +274,16 @@ class _GridImageTileState extends State<_GridImageTile> {
       height: displayHeight,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: GestureDetector(
+        // HeroImage 统一件:源端隐藏/占位/飞行起点/裁切插值都由它保证;
+        // _gridStyle 同时约束 openViewer 侧参数(见 ViewerSourceStyle)
+        child: HeroImage(
+          heroTag: widget.heroTag,
+          style: _gridStyle,
+          flightImage: discourseImageProvider(displayUrl),
           onTap: () => _openViewer(context, fullUrl),
-          child: Hero(
-            tag: widget.heroTag,
-            // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
-            // 不连带整个帖子 segment 每帧重绘
-            child: RepaintBoundary(
+          // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
+          // 不连带整个帖子 segment 每帧重绘
+          child: RepaintBoundary(
               child: Image(
                 image: ResizeImage(
                   discourseImageProvider(displayUrl),
@@ -320,7 +328,6 @@ class _GridImageTileState extends State<_GridImageTile> {
               ),
             ),
           ),
-        ),
       ),
     );
   }
@@ -345,10 +352,10 @@ class _GridImageTileState extends State<_GridImageTile> {
       heroTags: widget.heroTags,
       initialIndex: widget.index >= 0 ? widget.index : 0,
       filenames: widget.filenames,
-      // 网格瓦片是 cover 裁剪 + 圆角 4:启用飞行 crossfade,
-      // 消除起飞/落地瞬间「裁剪图↔完整图」跳变
-      heroSourceFit: BoxFit.cover,
-      heroSourceRadius: 4,
+      // 与源端同源:_gridStyle 一处给出,两侧不可能不一致
+      heroSourceFit: _gridStyle.openViewerArgs.fit,
+      heroSourceRadius: _gridStyle.openViewerArgs.radius,
+      heroSourceCircular: _gridStyle.openViewerArgs.circular,
     );
   }
 

@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../flux_request_spec.dart';
+
 /// 重定向拦截器
 /// 手动处理 301/302/307/308 重定向，确保重定向时使用正确的 cookie
 class RedirectInterceptor extends Interceptor {
@@ -16,7 +18,7 @@ class RedirectInterceptor extends Interceptor {
     ResponseInterceptorHandler handler,
   ) async {
     // 检查是否跳过重定向处理
-    if (response.requestOptions.extra['skipRedirect'] == true) {
+    if (response.requestOptions.spec.skipRedirect) {
       return handler.next(response);
     }
 

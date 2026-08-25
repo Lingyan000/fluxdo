@@ -57,6 +57,9 @@ class _ReadLaterOverlayState extends ConsumerState<ReadLaterOverlay> {
   );
 
   void _openTopic(ReadLaterItem item) {
+    // 全局浮层(根 navigator 上下文,任何页面之上都能开),不属于任何
+    // 平行视界面板——与通知同类的"全局入口",打开话题维持全屏 push,
+    // 不参与压栈收敛。
     Navigator.of(context).pop();
     navigatorKey.currentState?.push(
       MaterialPageRoute(

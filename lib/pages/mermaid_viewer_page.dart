@@ -4,6 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
+import 'package:common_ui/common_ui.dart';
 import 'image_viewer_page.dart';
 
 /// Mermaid 矢量查看页 —— WebView 顶级文档加载 kroki SVG。
@@ -69,8 +70,15 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
           imageUrl: widget.fallbackImageUrl,
           enableShare: true,
         ),
-        transitionsBuilder: (_, animation, _, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            buildPredictiveBackPageTransitions(
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+              transitionBuilder: (_, animation, _, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            ),
       ),
     );
   }

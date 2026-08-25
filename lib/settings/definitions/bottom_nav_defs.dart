@@ -16,6 +16,47 @@ List<SettingsGroup> buildBottomNavGroups(BuildContext context) {
   final l10n = context.l10n;
   return [
     SettingsGroup(
+      title: l10n.bottomNav_appearanceGroup,
+      icon: Symbols.palette_rounded,
+      items: [
+        SwitchModel(
+          id: 'bottomNavLabelless',
+          title: l10n.bottomNav_labelless,
+          subtitle: l10n.bottomNav_labellessDesc,
+          icon: Symbols.label_off_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).bottomNavLabelless,
+          onChanged: (ref, value) => ref
+              .read(preferencesProvider.notifier)
+              .setBottomNavLabelless(value),
+        ),
+        SwitchModel(
+          id: 'bottomNavFloating',
+          title: l10n.bottomNav_floating,
+          subtitle: l10n.bottomNav_floatingDesc,
+          icon: Symbols.dock_to_bottom_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).bottomNavFloating,
+          onChanged: (ref, value) => ref
+              .read(preferencesProvider.notifier)
+              .setBottomNavFloating(value),
+        ),
+        SwitchModel(
+          id: 'bottomNavFloatingBlur',
+          title: l10n.bottomNav_floatingBlur,
+          subtitle: l10n.bottomNav_floatingBlurDesc,
+          icon: Symbols.blur_on_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).bottomNavFloatingBlur,
+          onChanged: (ref, value) => ref
+              .read(preferencesProvider.notifier)
+              .setBottomNavFloatingBlur(value),
+          // 仅悬浮底栏开启时显示（前置关闭时展示无意义）
+          enabledWhen: (ref) =>
+              ref.watch(preferencesProvider).bottomNavFloating,
+        ),
+      ],
+    ),
+    SettingsGroup(
       title: l10n.bottomNav_gesturesGroup,
       icon: Symbols.touch_app_rounded,
       items: [

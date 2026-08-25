@@ -21,6 +21,15 @@ class CategoryLinkInfo {
   final int categoryId;
 }
 
+/// 聊天链接解析结果(/chat/c/:slug/:channelId[/t/:threadId][/:messageId])
+class ChatLinkInfo {
+  final int channelId;
+  final int? threadId;
+  final int? messageId;
+
+  const ChatLinkInfo({required this.channelId, this.threadId, this.messageId});
+}
+
 class DiscourseUrlParser {
   DiscourseUrlParser._();
 
@@ -52,6 +61,18 @@ class DiscourseUrlParser {
   );
 
   static final _tagRegex = RegExp(r'/tag/([^/?#]+)', caseSensitive: false);
+
+  /// 聊天链接:官方 chat_message.url 口径
+  /// - `/chat/c/:slug/:channelId/t/:threadId/:messageId?`(thread 内消息)
+  /// - `/chat/c/:slug/:channelId/:messageId?`(频道消息;slug 常为 "-")
+  static final _chatThreadRegex = RegExp(
+    r'/chat/c/[^/?#]+/(\d+)/t/(\d+)(?:/(\d+))?(?:[/?#]|$)',
+    caseSensitive: false,
+  );
+  static final _chatChannelRegex = RegExp(
+    r'/chat/c/[^/?#]+/(\d+)(?:/(\d+))?(?:[/?#]|$)',
+    caseSensitive: false,
+  );
 
   /// 解析话题链接，返回 [TopicLinkInfo] 或 null
   ///
@@ -112,6 +133,27 @@ class DiscourseUrlParser {
     final match = _tagRegex.firstMatch(url);
     final encoded = match?.group(1);
     return encoded == null ? null : Uri.decodeComponent(encoded);
+  }
+
+  /// 解析聊天链接,返回 [ChatLinkInfo] 或 null(thread 形态优先匹配,
+  /// 否则 /t/:threadId 会被当成 messageId)
+  static ChatLinkInfo? parseChat(String url) {
+    final threadMatch = _chatThreadRegex.firstMatch(url);
+    if (threadMatch != null) {
+      return ChatLinkInfo(
+        channelId: int.parse(threadMatch.group(1)!),
+        threadId: int.parse(threadMatch.group(2)!),
+        messageId: int.tryParse(threadMatch.group(3) ?? ''),
+      );
+    }
+    final channelMatch = _chatChannelRegex.firstMatch(url);
+    if (channelMatch != null) {
+      return ChatLinkInfo(
+        channelId: int.parse(channelMatch.group(1)!),
+        messageId: int.tryParse(channelMatch.group(2) ?? ''),
+      );
+    }
+    return null;
   }
 
   static bool isHomepage(String url) {

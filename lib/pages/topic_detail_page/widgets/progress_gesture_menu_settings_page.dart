@@ -456,7 +456,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
 
   Widget _buildIdlePill(BuildContext context, ThemeData theme) {
     return Material(
-      color: theme.colorScheme.surface,
+      color: theme.colorScheme.surfaceContainerHighest,
       shape: const StadiumBorder(),
       elevation: 2,
       shadowColor: Colors.black26,

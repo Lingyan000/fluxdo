@@ -8,6 +8,9 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/widgets/markdown_editor/debug_voice_sample.dart';
 import 'package:fluxdo/widgets/markdown_editor/voice_recorder_sheet.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -52,7 +55,15 @@ void main() {
         _FakePathProvider(Directory.systemTemp.path);
 
     String? sent;
-    await tester.pumpWidget(MaterialApp(
+    // 录音面板走统一入口 showAppBottomSheet(为拿到预测返回手势),该入口
+    // 会读 preferencesProvider 判断模糊开关 → 需 ProviderScope,且要
+    // override sharedPreferencesProvider(测试环境裸用它会抛
+    // UnimplementedError),与 test/providers/preferences_provider_test 同法
+    SharedPreferences.setMockInitialValues(const {});
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
       home: Scaffold(
         body: Builder(
           builder: (ctx) => Center(
@@ -65,7 +76,7 @@ void main() {
           ),
         ),
       ),
-    ));
+    )));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 

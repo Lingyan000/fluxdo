@@ -19,12 +19,20 @@ import '../../../utils/responsive.dart';
 import '../../../utils/scroll_busy_signal.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/anchor_guard_sliver.dart';
+import '../../../widgets/post/post_item/widgets/post_voting_answer_header.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show BlockNode, HtmlChunk, ParagraphWarmup, ParagraphWarmupProbe;
+    show
+        BlockNode,
+        HeadingAnchorRegistry,
+        HeadingAnchorScope,
+        HtmlChunk,
+        ParagraphWarmup,
+        ParagraphWarmupProbe;
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/render_parse_cache.dart';
 import '../../../widgets/post/post_item/segmented_long_post.dart';
+import '../../../widgets/post/small_action_item.dart' show PostTypes;
 import '../../../widgets/post/quote_image_scope.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
@@ -111,6 +119,19 @@ class TopicPostList extends StatefulWidget {
   final String? highlightBoostUsername;
   final bool hideHeaderTitle;
 
+  /// 当前用户是否有指定权限(discourse-assign can_assign)——控制每条
+  /// 帖子"更多"菜单里"指定帖子"这一项是否显示。
+  final bool canAssignPost;
+
+  /// 话题目录(TOC)的标题锚点注册表;非 null 时给 1 楼各段包
+  /// HeadingAnchorScope,标题挂载即注册(跳转/高亮定位用)。
+  final HeadingAnchorRegistry? headingAnchorRegistry;
+
+  /// 问答话题排序(「N 个回答」头部的按票数/按活动 pill):
+  /// null = 非问答话题不渲染头部
+  final bool isActivitySort;
+  final ValueChanged<bool>? onAnswerSortChanged;
+
   const TopicPostList({
     super.key,
     required this.detail,
@@ -122,6 +143,7 @@ class TopicPostList extends StatefulWidget {
     required this.highlightPostNumber,
     this.highlightBoostUsername,
     this.hideHeaderTitle = false,
+    this.canAssignPost = false,
     required this.isLoggedIn,
     required this.hasMoreBefore,
     required this.hasMoreAfter,
@@ -159,6 +181,9 @@ class TopicPostList extends StatefulWidget {
     this.onShowPostDetail,
     this.onWithdrawPendingPost,
     this.onWithdrawAndEditPendingPost,
+    this.isActivitySort = false,
+    this.onAnswerSortChanged,
+    this.headingAnchorRegistry,
   });
 
   @override
@@ -412,6 +437,13 @@ class _TopicPostListState extends State<TopicPostList> {
 
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
+    // 弹簧过冲(BouncingScrollPhysics 出界回弹)期间冻结上报:出界时
+    // remainingScroll 被压出正常区间,progress 被 clamp 到 0/1,eyeline
+    // 钉死在视口顶/底;过冲还会把列表边缘帖(最后一帖等)拉进视口,
+    // closest 兜底必命中它 —— 进度条瞬跳到 N/N(或视口顶帖),回弹才
+    // 恢复;visiblePosts 误报更会经 screenTrack 把末帖标记已读,污染
+    // 服务端 lastRead。回界后滚动通知会再次触发本方法,无需补偿。
+    if (position.outOfRange) return;
     final viewportHeight = position.viewportDimension;
 
     // 视口可见区域的上下边界
@@ -765,7 +797,16 @@ class _TopicPostListState extends State<TopicPostList> {
       final longPostCache = _longPostDataFor(post);
       newEngineData = longPostCache.newEngineData;
       longChunks = longPostCache.chunks;
-      final useLongSegments = longChunks.isNotEmpty;
+      // discourse-assign 等插件的指定/取消指定系统帖,cooked 里塞几十个
+      // emoji <img> 就很容易超过长帖分段阈值——这条 chunk 化直出路径是
+      // topic_post_list.dart 自己直接调 LongPostHeaderSegment/Footer,完全
+      // 绕过 PostItem.build() 里"是不是系统操作帖"的判断,系统帖一旦被
+      // 判成"长帖"就会被当成能点赞/回复的普通帖子整个渲染出来。系统帖
+      // 永远走 shortPost(内部再分流到 SmallActionItem),不参与长帖分段。
+      final bool isSystemActionPost =
+          post.postType == PostTypes.smallAction ||
+          (post.actionCode?.isNotEmpty ?? false);
+      final useLongSegments = !isSystemActionPost && longChunks.isNotEmpty;
 
       postIndexToScrollIndex[postIndex] = segments.length;
       postNumberToIndex[post.postNumber] = postIndex;
@@ -1357,6 +1398,16 @@ class _TopicPostListState extends State<TopicPostList> {
     final Widget? opSlot = (post.postNumber == 1 && detail.sharedIssueVisible)
         ? SharedIssueButton(topic: detail, onChanged: onSharedIssueChanged)
         : null;
+    // 问答话题:「N 个回答」头部渲染在第一个答案上方(问题帖紧邻其后
+    // 的那一帖;仅问题帖已加载时才有可见的问题/答案分界)。挂在该帖
+    // 首个段(shortPost 或长帖 header)顶部。
+    final bool showAnswerHeader =
+        detail.isPostVoting &&
+        post.postNumber != 1 &&
+        postIndex > 0 &&
+        posts_[postIndex - 1].postNumber == 1 &&
+        (segment.type == _PostRenderSegmentType.shortPost ||
+            segment.type == _PostRenderSegmentType.longHeader);
     final Widget child;
 
     switch (segment.type) {
@@ -1390,6 +1441,8 @@ class _TopicPostListState extends State<TopicPostList> {
           onQuoteImage: onQuoteImage,
           onExpandHiddenPost: onExpandHiddenPost,
           useReplyDialog: useReplyDialog,
+          assignmentInfo: detail.indirectlyAssignedTo[post.id],
+          canAssignPost: widget.canAssignPost,
           topicTitle: detail.title,
           isPrivateMessageTopic: detail.isPrivateMessage,
           isPmWithNonHumanUser: detail.pmWithNonHumanUser,
@@ -1397,6 +1450,8 @@ class _TopicPostListState extends State<TopicPostList> {
               ? () => widget.onShowPostDetail!(post)
               : null,
           opTopSlot: opSlot,
+          isPostVotingTopic: detail.isPostVoting,
+          topicClosed: detail.closed || detail.archived,
         );
 
         // OP 楼的 opSlot 依赖整个 detail 对象,签名无法稳定,不缓存
@@ -1425,6 +1480,8 @@ class _TopicPostListState extends State<TopicPostList> {
           pmNonHuman: detail.pmWithNonHumanUser,
           canShareAsImage: onShareAsImage != null,
           canShowDetail: widget.onShowPostDetail != null,
+          isPostVoting: detail.isPostVoting,
+          topicClosed: detail.closed || detail.archived,
         );
         final cached = _shortPostCache[post.id];
         if (cached != null && cached.signature == signature) {
@@ -1528,6 +1585,8 @@ class _TopicPostListState extends State<TopicPostList> {
               ? () => widget.onShowPostDetail!(post)
               : null,
           opTopSlot: opSlot,
+          isPostVotingTopic: detail.isPostVoting,
+          topicClosed: detail.closed || detail.archived,
         );
         break;
       case _PostRenderSegmentType.gapBefore:
@@ -1546,6 +1605,14 @@ class _TopicPostListState extends State<TopicPostList> {
         break;
     }
 
+    // TOC 锚点作用域只挂 1 楼:节点 id 跨帖重复,其他楼的标题不能进
+    // 注册表(见 HeadingAnchorRegistrar/headingAnchorKey)。
+    final anchorRegistry = widget.headingAnchorRegistry;
+    final scopedChild =
+        anchorRegistry != null && segment.post.postNumber == 1
+            ? HeadingAnchorScope(registry: anchorRegistry, child: child)
+            : child;
+
     final wrapped = _wrapContent(
       context,
       AutoScrollTag(
@@ -1556,7 +1623,21 @@ class _TopicPostListState extends State<TopicPostList> {
         // 常驻 DecoratedBoxTransition 包装(项目不用包的 highlight 功能,
         // 楼层高亮是 PostItem 自己的 highlight 参数),每帖少一层
         // transition + tween 求值
-        builder: (context, animation) => child,
+        builder: (context, animation) => showAnswerHeader
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PostVotingAnswerHeader(
+                    // 答案数 = 总帖数 - 1(减问题帖,官方同口径)
+                    answerCount: (detail.postsCount - 1).clamp(0, 999999),
+                    isActivityMode: widget.isActivitySort,
+                    onSortChanged: (byActivity) =>
+                        widget.onAnswerSortChanged?.call(byActivity),
+                  ),
+                  scopedChild,
+                ],
+              )
+            : scopedChild,
       ),
     );
 

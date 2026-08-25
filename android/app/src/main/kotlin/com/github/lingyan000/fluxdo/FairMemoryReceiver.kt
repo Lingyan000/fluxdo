@@ -11,7 +11,6 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
-import android.os.RemoteException
 import android.util.Log
 import io.flutter.embedding.engine.FlutterEngine
 
@@ -19,12 +18,17 @@ import io.flutter.embedding.engine.FlutterEngine
  * 金标联盟「公平运行内存机制」接入(ITGSA,vivo/小米/OPPO/荣耀等)。
  *
  * 契约(小米 HyperOS 开发者文档 pId=2304):应用 PSS 或 Java 堆触达系统
- * 阈值时,系统发 [ITGSA_ACTION] 广播(common/extra 双 Bundle),应用须在
+ * 阈值时,系统发 [ACTION_TRIM] 广播(common/extra 双 Bundle),应用须在
  * 3 秒内通过随广播下发的 Binder callback 回执,并尽力释放内存;持续增长
- * 触达查杀线会再收一次(reason/action 字段区分),之后进程被杀。
+ * 触达查杀线会再收一次 [ACTION_KILL](reason/action 字段区分),之后进程被杀。
  *
  * 实现要点:
  * - 先回执再释放:3 秒是硬限,释放动作 best-effort 异步做,不阻塞回执;
+ * - 回执必须发往"本次广播携带的 callback binder"。每次广播的回调对象
+ *   由发送方现场生成;缓存复用首个 callback 的旧实现会在系统/检测工具
+ *   换用新 binder 后把回执送进死信箱,对端永远等不到 ack → 判定"未适配";
+ * - 同时监听 TRIM 与 KILL:KILL 是查杀前最后通牒(对齐 Bettbox 等已验证
+ *   可检测的实现);
  * - 释放通路 = Flutter 标准 memoryPressure:把厂商广播翻译成
  *   SystemChannel.sendMemoryPressureWarning(),Dart 侧统一走
  *   didHaveMemoryPressure(imageCache 框架自清 + 解析/flatten 缓存),
@@ -32,12 +36,15 @@ import io.flutter.embedding.engine.FlutterEngine
  * - RECEIVER_EXPORTED 照文档要求(厂商系统侧发送方非本应用);伪造广播
  *   的危害上限只是"缓存被清一次 + 向伪造 binder 回执一个 result=0",
  *   无敏感数据外泄,可接受;
+ * - 动态注册仅进程存活期有效:系统/检测工具探针只有在进程活着时才能
+ *   触达本接收器,检测时需保证 App 存活(前台或保活服务运行中)。
  * - 非金标联盟 ROM(原生 Android/三星/海外机型)永远收不到该广播,
  *   注册本身零成本,无需机型判断。
  */
-object FairMemoryReceiver : IBinder.DeathRecipient {
+object FairMemoryReceiver {
     private const val TAG = "FairMemory"
-    private const val ITGSA_ACTION = "itgsa.intent.action.TRIM"
+    private const val ACTION_TRIM = "itgsa.intent.action.TRIM"
+    private const val ACTION_KILL = "itgsa.intent.action.KILL"
     private val TRANSACTION_EXCEPTION_REPLY = IBinder.FIRST_CALL_TRANSACTION
 
     /** notifyType=1000:物理内存(PSS)异常,extra 携带 pss/pssLimit(kB) */
@@ -48,7 +55,6 @@ object FairMemoryReceiver : IBinder.DeathRecipient {
     private const val NOTIFY_TYPE_JAVA_HEAP = 2000
 
     private var initialized = false
-    private var remote: IBinder? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 主 engine 引用:收到预警时向 Dart 转发标准 memoryPressure。
@@ -70,7 +76,10 @@ object FairMemoryReceiver : IBinder.DeathRecipient {
         if (initialized) return
         val thread = HandlerThread(TAG).also { it.start() }
         val handler = Handler(thread.looper)
-        val filter = IntentFilter(ITGSA_ACTION)
+        val filter = IntentFilter().apply {
+            addAction(ACTION_TRIM)
+            addAction(ACTION_KILL)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(
                 receiver, filter, null, handler, Context.RECEIVER_EXPORTED
@@ -79,19 +88,20 @@ object FairMemoryReceiver : IBinder.DeathRecipient {
             context.registerReceiver(receiver, filter, null, handler)
         }
         initialized = true
-        Log.i(TAG, "公平内存接收器已注册")
+        Log.i(TAG, "公平内存接收器已注册(TRIM+KILL)")
     }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != ITGSA_ACTION) return
+            val intentAction = intent.action
+            if (intentAction != ACTION_TRIM && intentAction != ACTION_KILL) return
             try {
                 val data = intent.extras ?: return
                 val common = data.getBundle("common") ?: return
                 val notifyType = common.getInt("notifyType")
                 val notifyId = common.getInt("notifyId")
                 val reason = common.getString("reason")
-                val action = common.getString("action")
+                val subAction = common.getString("action")
                 val callback = common.getBinder("callback")
 
                 // extra 仅作观测(阈值由系统动态定,应用侧不做数值决策);
@@ -106,15 +116,15 @@ object FairMemoryReceiver : IBinder.DeathRecipient {
                 }
                 Log.i(
                     TAG,
-                    "收到公平内存广播: notifyType=$notifyType notifyId=$notifyId " +
-                        "reason=$reason action=$action $detail"
+                    "收到公平内存广播: $intentAction notifyType=$notifyType " +
+                        "notifyId=$notifyId reason=$reason action=$subAction $detail"
                 )
 
                 if (callback == null) {
                     Log.w(TAG, "广播缺少 callback binder,跳过回执")
-                } else if (checkRemote(callback)) {
-                    // 回执在前(3 秒硬限内完成),释放在后
-                    reply(notifyType, notifyId, 0, null)
+                } else {
+                    // 回执在前(3 秒硬限内完成),发往本次广播携带的 callback
+                    reply(callback, notifyType, notifyId, 0, null)
                 }
                 dispatchMemoryPressure()
             } catch (e: Throwable) {
@@ -134,54 +144,30 @@ object FairMemoryReceiver : IBinder.DeathRecipient {
         }
     }
 
-    override fun binderDied() {
-        synchronized(this) {
-            remote?.let {
-                try {
-                    it.unlinkToDeath(this, 0)
-                } catch (_: Throwable) {
-                }
-            }
-            remote = null
-        }
-    }
-
-    private fun checkRemote(callback: IBinder): Boolean {
-        synchronized(this) {
-            if (remote == null) {
-                try {
-                    remote = callback
-                    callback.linkToDeath(this, 0)
-                } catch (e: RemoteException) {
-                    remote = null
-                    return false
-                }
-            }
-        }
-        return true
-    }
-
     /** Binder 回执(文档协议:notifyType/notifyId/result/extra 顺序,oneway)。 */
-    private fun reply(notifyType: Int, notifyId: Int, result: Int, extra: Bundle?) {
-        synchronized(this) {
-            val target = remote ?: return
-            val data = Parcel.obtain()
-            val replyParcel = Parcel.obtain()
-            try {
-                data.writeInt(notifyType)
-                data.writeInt(notifyId)
-                data.writeInt(result)
-                data.writeBundle(extra ?: Bundle())
-                target.transact(
-                    TRANSACTION_EXCEPTION_REPLY, data, replyParcel, IBinder.FLAG_ONEWAY
-                )
-                replyParcel.readException()
-            } catch (e: Throwable) {
-                Log.e(TAG, "回执失败: ${e.message}", e)
-            } finally {
-                replyParcel.recycle()
-                data.recycle()
-            }
+    private fun reply(
+        callback: IBinder,
+        notifyType: Int,
+        notifyId: Int,
+        result: Int,
+        extra: Bundle?
+    ) {
+        val data = Parcel.obtain()
+        val replyParcel = Parcel.obtain()
+        try {
+            data.writeInt(notifyType)
+            data.writeInt(notifyId)
+            data.writeInt(result)
+            data.writeBundle(extra ?: Bundle())
+            callback.transact(
+                TRANSACTION_EXCEPTION_REPLY, data, replyParcel, IBinder.FLAG_ONEWAY
+            )
+            replyParcel.readException()
+        } catch (e: Throwable) {
+            Log.e(TAG, "回执失败: ${e.message}", e)
+        } finally {
+            replyParcel.recycle()
+            data.recycle()
         }
     }
 }

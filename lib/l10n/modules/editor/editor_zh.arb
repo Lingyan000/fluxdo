@@ -80,6 +80,8 @@
   "toolPanel_spoiler": "剧透",
   "toolPanel_strikethrough": "删除线",
   "toolPanel_template": "模板",
+  "toolPanel_toc": "目录",
+  "toolbar_tocPlaceholder": "此话题将包含目录",
   "toolbar_attachFileTooltip": "上传附件",
   "toolbar_boldPlaceholder": "粗体文本",
   "toolbar_codePlaceholder": "在此处键入或粘贴代码",

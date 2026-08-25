@@ -101,6 +101,9 @@ extension _UserActions on _TopicDetailPageState {
 
   /// 等待键盘完全收起后再滚动到指定帖子
   void _scrollAfterKeyboardDismiss(int postNumber) {
+    // 树形视图:新帖已就地插入树中(根回复 prepend/子回复自动展开),
+    // 对齐 Discourse nested 的 skipJumpOnSave,不做跳转
+    if (_isNestedView) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (MediaQuery.of(context).viewInsets.bottom > 0) {
@@ -142,8 +145,7 @@ extension _UserActions on _TopicDetailPageState {
                     : () async {
                         setState(() => isDeleting = true);
                         try {
-                          await DiscourseService()
-                              .deleteReviewable(pending.id);
+                          await DiscourseService().deleteReviewable(pending.id);
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext, true);
                           }
@@ -554,9 +556,25 @@ extension _UserActions on _TopicDetailPageState {
 
   void _handleSolutionChanged(int postId, bool accepted) {
     final params = _params;
+    Post? sourcePost;
+    if (_isNestedView) {
+      // 树形帖子在独立 provider:同步盖章状态;帖子对象供平铺侧 banner 反查
+      // (目标帖可能不在平铺加载窗口里)
+      sourcePost = _findPostInNestedTree(postId);
+      ref
+          .read(nestedTopicProvider(_activeNestedParams).notifier)
+          .updatePostSolution(postId, accepted);
+    }
+    sourcePost ??= ref
+        .read(topicDetailProvider(params))
+        .value
+        ?.postStream
+        .posts
+        .where((p) => p.id == postId)
+        .firstOrNull;
     ref
         .read(topicDetailProvider(params).notifier)
-        .updatePostSolution(postId, accepted);
+        .updatePostSolution(postId, accepted, sourcePost: sourcePost);
   }
 
   void _handleRefreshPost(int postId) {
@@ -578,6 +596,71 @@ extension _UserActions on _TopicDetailPageState {
       debugPrint('[TopicDetail] 更新订阅级别失败: $e');
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    }
+  }
+
+  /// 标记话题为未读并退出话题页(对齐官方 deferTopic 链路:
+  /// 1. abandon 阅读追踪——丢弃未上报的 timings,并抑制在途请求的
+  ///    onTimingsSent 回调,否则本地积攒的阅读时间会立刻把话题标回已读;
+  /// 2. DELETE /t/:id/timings(带 last=1 回退一层;[all] 时不带,
+  ///    服务端删全部 PostTiming + TopicUser,话题回 NEW 态从头读);
+  /// 3. 本地 tracking + 已挂载的列表 provider 两头显式回退游标
+  ///    (双游标单调合并只认前进方向,回退必须直写);
+  /// 4. 离开话题页(留在页内继续滚动会立即重新上报已读)。
+  Future<void> _handleMarkUnread(TopicDetail detail, {bool all = false}) async {
+    _screenTrack.abandon();
+    try {
+      await ref
+          .read(discourseServiceProvider)
+          .markTopicUnread(widget.topicId, all: all);
+    } on DioException catch (e) {
+      debugPrint('[TopicDetail] 标记未读失败: ${e.response?.statusCode}');
+      // 恢复追踪,页面还在
+      if (mounted && _controller.trackEnabled) {
+        _screenTrack.start(widget.topicId);
+      }
+      return;
+    } catch (e, s) {
+      if (mounted && _controller.trackEnabled) {
+        _screenTrack.start(widget.topicId);
+      }
+      AppErrorHandler.handleUnexpected(e, s);
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 服务端回退基准:优先 highest_post_number(与 destroy_last_for 同
+    // 口径,含小动作楼层),缺失时退回 postsCount
+    final highest = detail.highestPostNumber > 0
+        ? detail.highestPostNumber
+        : detail.postsCount;
+    final container = _providerContainer;
+    container
+        .read(topicTrackingStateProvider.notifier)
+        .markTopicUnread(
+          widget.topicId,
+          highestPostNumber: highest,
+          categoryId: detail.categoryId,
+          notificationLevel: detail.notificationLevel.value,
+          all: all,
+        );
+    // 只回写已挂载的列表 provider(与 onTimingsSent 同一取用纪律:
+    // 绝不为本地字段更新触发未打开分类的网络初始化)
+    final pinnedIds = container.read(pinnedCategoriesProvider);
+    for (final categoryId in [null, ...pinnedIds]) {
+      final provider = topicListProvider(categoryId);
+      if (!container.exists(provider)) continue;
+      container.read(provider.notifier).markUnread(widget.topicId, all: all);
+    }
+
+    ToastService.showSuccess(S.current.topicDetail_markUnreadSuccess);
+    // 直接离开话题页(不走 _handleCloseShortcut:搜索态下它只退搜索)。
+    // 嵌入模式语义同 ESC:压栈时 pop 一层,基础层清空右栏回空态。
+    if (widget.embeddedMode) {
+      widget.onEmbeddedBack?.call();
+    } else {
+      unawaited(Navigator.of(context).maybePop());
     }
   }
 
@@ -954,7 +1037,9 @@ extension _UserActions on _TopicDetailPageState {
               final postNumber = int.tryParse(controller.text.trim());
               Navigator.pop(context);
               if (postNumber != null && postNumber > 0) {
-                _scrollToPost(postNumber.clamp(1, detail.postsCount));
+                unawaited(
+                  _jumpToPostInTopic(postNumber.clamp(1, detail.postsCount)),
+                );
               }
             },
             child: Text(context.l10n.topic_jump),
@@ -983,7 +1068,7 @@ extension _UserActions on _TopicDetailPageState {
         (maxReadPostNumber < detail.postsCount ? maxReadPostNumber + 1 : null);
 
     if (targetPostNumber != null) {
-      await _scrollToPost(targetPostNumber);
+      await _jumpToPostInTopic(targetPostNumber);
     }
   }
 
@@ -1134,25 +1219,30 @@ extension _UserActions on _TopicDetailPageState {
             S.current.post_replySent,
             type: ToastType.success,
             actionLabel: S.current.post_replySentAction,
-            onAction: () => _scrollToPost(newPost.postNumber),
+            onAction: () => unawaited(_jumpToPostInTopic(newPost.postNumber)),
           );
         }
       }
     }
   }
 
+  /// 当前活跃的嵌套视图 family 参数(context 定位模式带目标楼层)
+  NestedTopicParams get _activeNestedParams => NestedTopicParams(
+    topicId: widget.topicId,
+    targetPostNumber: _nestedTargetPostNumber,
+  );
+
   /// 回复成功后更新嵌套视图
   void _updateNestedViewAfterReply(Post newPost) {
     if (!_isNestedView) return;
-    final nestedParams = NestedTopicParams(topicId: widget.topicId);
     ref
-        .read(nestedTopicProvider(nestedParams).notifier)
+        .read(nestedTopicProvider(_activeNestedParams).notifier)
         .addNewPost(newPost, isOwnPost: true);
   }
 
   /// MessageBus created 事件：获取完整帖子数据并更新嵌套视图
   Future<void> _handleNestedCreated(int postId, int? userId) async {
-    final nestedParams = NestedTopicParams(topicId: widget.topicId);
+    final nestedParams = _activeNestedParams;
     final nestedNotifier = ref.read(nestedTopicProvider(nestedParams).notifier);
 
     // 去重：如果已存在（自己回复时 _updateNestedViewAfterReply 可能已处理）
@@ -1214,7 +1304,7 @@ extension _UserActions on _TopicDetailPageState {
       FrameJankMonitor.logEvent(
         'MSGBUS',
         '积压批量 ${updates.length} 条(${networkPostIds.length} 帖需刷新),'
-        '坍缩为一次整流刷新',
+            '坍缩为一次整流刷新',
       );
       // 旧积压全部作废:整流刷新拉回的就是最终态
       _deferredPostUpdates.clear();
@@ -1345,16 +1435,51 @@ extension _UserActions on _TopicDetailPageState {
       _resolvedViewportPostNumber,
     );
     if (refreshStream) {
-      notifier.refreshWithPostNumber(anchor);
+      unawaited(_reloadStreamKeepingViewport(notifier, anchor));
     } else {
       notifier.reloadTopicMetadata();
+    }
+  }
+
+  /// 整流刷新(reload_topic refresh_stream / 积压坍缩)落地后按锚点重定位。
+  ///
+  /// 与手动刷新 [_handleRefresh] 对齐：刷新只替换数据而不重定位时，
+  /// center 由陈旧的 initialCenterPostNumber（初次定位楼层，阅读中不
+  /// 更新）计算，大概率错锚到新窗口首/末帖 —— 视口被甩到窗口边缘，
+  /// eyeline 随即上报错误楼层，进度条跳到顶部/底部，跳幅是窗口偏移
+  /// 量而非实际阅读位移。state 落地与 prepareRefresh 的标脏在同一
+  /// 微任务链内，合并为一帧 build，错锚帧不会上屏。
+  Future<void> _reloadStreamKeepingViewport(
+    TopicDetailNotifier notifier,
+    int anchor,
+  ) async {
+    await notifier.refreshWithPostNumber(anchor);
+    if (!mounted) return;
+    final updated = ref.read(topicDetailProvider(_params)).value;
+    if (updated == null) return;
+    // 刷新在途(网络往返)期间用户可能已继续滚动:落地时重取当前位置,
+    // 仍在新窗口内就按新位置重锚,避免把用户拽回刷新前的楼层。
+    final currentAnchor = _controller.getRefreshAnchorPostNumber(
+      _resolvedViewportPostNumber,
+    );
+    final posts = updated.postStream.posts;
+    final effectiveAnchor =
+        posts.any((p) => p.postNumber == currentAnchor) ? currentAnchor : anchor;
+    if (posts.any((p) => p.postNumber == effectiveAnchor)) {
+      _controller.prepareRefresh(effectiveAnchor, skipHighlight: true);
+    } else {
+      _controller.clearJumpTarget();
     }
   }
 
   /// 切换嵌套视图
   void _toggleNestedView() {
     if (_isNestedView) {
-      setState(() => _isNestedView = false);
+      setState(() {
+        _isNestedView = false;
+        _nestedAutoEnabled = false;
+        _nestedTargetPostNumber = null;
+      });
       _scheduleCheckTitleVisibility();
       return;
     }
@@ -1365,7 +1490,11 @@ extension _UserActions on _TopicDetailPageState {
         notifier.isSummaryMode ||
         notifier.isAuthorOnlyMode ||
         notifier.isTopLevelMode;
-    setState(() => _isNestedView = true);
+    setState(() {
+      _isNestedView = true;
+      // 手动开启:失败时显示错误页可重试,不做静默回落
+      _nestedAutoEnabled = false;
+    });
     if (hadFilter) {
       unawaited(notifier.cancelFilter());
     }

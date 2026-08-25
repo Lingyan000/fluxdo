@@ -12,7 +12,10 @@ import '../widgets/post/reply_sheet.dart';
 import '../services/toast_service.dart';
 import '../widgets/common/relative_time_text.dart';
 import '../l10n/s.dart';
+import '../providers/selected_topic_provider.dart';
 import '../utils/dialog_utils.dart';
+import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/master_detail_pane_host.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'create_topic_page.dart';
 
@@ -41,7 +44,7 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
   Widget build(BuildContext context) {
     final pendingAsync = ref.watch(pendingPostsProvider);
 
-    return Scaffold(
+    final list = Scaffold(
       appBar: AppBar(title: Text(context.l10n.review_myPending)),
       body: DesktopRefreshIndicator(
         onRefresh: _onRefresh,
@@ -97,9 +100,26 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
         ),
       ),
     );
+
+    return MasterDetailPaneHost(
+      stackProvider: selectedPendingPaneProvider,
+      master: list,
+      emptyDetail: MasterDetailEmptyState(
+        icon: Symbols.pending_actions_rounded,
+        message: context.l10n.layout_selectTopicHint,
+      ),
+    );
   }
 
   void _openTopic(PendingPost pending) {
+    // 宽屏进右栏,窄屏全屏 push(平行视界宿主标准分流)。
+    if (MasterDetailLayout.canShowBothPanesFor(context)) {
+      ref.read(selectedPendingPaneProvider.notifier).select(
+            topicId: pending.topicId!,
+            initialTitle: pending.title,
+          );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(

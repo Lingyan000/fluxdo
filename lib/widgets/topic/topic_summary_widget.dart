@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../providers/discourse_providers.dart';
+import '../../providers/selected_topic_provider.dart';
 import '../common/error_view.dart';
 import '../common/relative_time_text.dart';
 import '../markdown_editor/markdown_renderer.dart';
@@ -212,7 +213,16 @@ class TopicSummaryWidget extends ConsumerWidget {
                 // 当前话题链接 → 跳转到对应帖子
                 onJumpToPost!(postNumber);
               } else {
-                // 其他话题链接 → 打开新的话题详情页
+                // 其他话题链接:平行视界面板内压当前栈(与正文内链
+                // 同语义),全屏页照旧 push。
+                if (EmbeddedStackScope.maybePushTopic(
+                  context,
+                  topicId: linkTopicId,
+                  initialTitle: topicSlug,
+                  scrollToPostNumber: postNumber,
+                )) {
+                  return;
+                }
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => TopicDetailPage(

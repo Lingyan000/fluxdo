@@ -50,10 +50,12 @@ void main() {
       ),
     );
 
+    // 滚动平移层的 child 是投影开合层(AnimatedSlide),再往里才是底栏
+    // 本体;AnimatedSlide 自身也由 FractionalTranslation 实现,不能只按
+    // 类型找。
     final bottomNavTranslation = find.byWidgetPredicate(
       (widget) =>
-          widget is FractionalTranslation &&
-          widget.child is AdaptiveBottomNavigation,
+          widget is FractionalTranslation && widget.child is AnimatedSlide,
     );
 
     expect(find.byType(NavigationBar), findsOneWidget);

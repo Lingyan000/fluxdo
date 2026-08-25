@@ -14,12 +14,17 @@
 // 2. 新增 FullscreenSwipeBackTransitionsBuilder 装饰器,把探测器插进
 //    任意 inner builder 的转场树;fullscreenDialog 与官方约定一致不挂
 //    水平返回手势。
+// 3. 落点命中平台视图(WebView 等)时不参赛。平台视图的手势代理只有
+//    在竞技场独占时才立即获胜并实时转发触摸给原生视图;返回手势一旦
+//    入场,裁决要拖到抬手 sweep,原生视图整个拖拽期间收不到事件,
+//    上下左右滚动全部失效。这些区域让位后仍可用屏幕左缘官方手势返回。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 const double _kMinFlingVelocity = 1.0; // Screen widths per second.
@@ -183,9 +188,27 @@ class _FullscreenBackGestureDetectorState<T>
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (widget.enabledCallback()) {
+    if (widget.enabledCallback() && !_hitsPlatformView(event)) {
       _recognizer.addPointer(event);
     }
+  }
+
+  /// 落点是否命中平台视图(WebView 等原生视图)。
+  ///
+  /// 平台视图的手势代理只有独占竞技场时才立即获胜并实时转发触摸;
+  /// 返回手势参赛会把裁决拖到抬手,原生视图整个拖拽期间收不到事件,
+  /// 内部滚动全部失效,因此这里直接弃权(左缘官方手势仍可用)。
+  bool _hitsPlatformView(PointerDownEvent event) {
+    final result = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(result, event.position, event.viewId);
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is PlatformViewRenderBox ||
+          target is RenderDarwinPlatformView) {
+        return true;
+      }
+    }
+    return false;
   }
 
   double _convertToLogical(double value) {

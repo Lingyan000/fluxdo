@@ -4,6 +4,14 @@
   "topicDetail_addToReadLaterSuccess": "已加入浮窗",
   "topicDetail_aiAssistant": "AI 助手",
   "topicDetail_authorOnly": "只看题主",
+  "topicDetail_userOnly": "只看 @{username}",
+  "@topicDetail_userOnly": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_browseMoreInCategory": "想阅读更多？浏览 {category} 分类",
   "@topicDetail_browseMoreInCategory": {
     "placeholders": {
@@ -18,10 +26,20 @@
   "topicDetail_exportArticle": "导出文章",
   "topicDetail_filter": "筛选",
   "topicDetail_generateShareImage": "生成分享图片",
+  "topicDetail_toc": "目录",
+  "topicDetail_tocCollapse": "收起目录",
+  "topicDetail_tocExpand": "展开目录",
+  "topicDetail_sortByActivity": "按活动排序",
   "topicDetail_hotOnly": "只看热门",
   "topicDetail_loadFailedTapRetry": "加载失败，点击重试",
   "topicDetail_loading": "加载中...",
   "topicDetail_moreOptions": "更多选项",
+  "topicDetail_markUnread": "标记为未读",
+  "topicDetail_markUnreadLast": "最后一层未读",
+  "topicDetail_markUnreadLastDesc": "回到未读列表，下次接着读",
+  "topicDetail_markUnreadAll": "全部未读",
+  "topicDetail_markUnreadAllDesc": "清空阅读进度，下次从头读",
+  "topicDetail_markUnreadSuccess": "已标记为未读",
   "topicDetail_openInBrowser": "在浏览器打开",
   "topicDetail_readLaterFull": "浮窗已满（最多 {max} 个）",
   "@topicDetail_readLaterFull": {

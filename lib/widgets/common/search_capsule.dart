@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -85,8 +87,17 @@ class SearchCapsule extends StatelessWidget {
   }
 }
 
-/// Hero flight 期间的静态胶囊（两端都是灰底圆角胶囊，用无 TextField 的
-/// 静态版飞行，避免输入框参与 flight 造成焦点/光标闪烁）
+/// Hero flight 期间的插值胶囊。
+///
+/// 旧版是 `const SearchCapsule()` 静态飞行体,与两端真实视觉都不匹配:
+/// - 搜索页端没有左侧图标(在 AppBar actions),hint 文案也不同 →
+///   pop 起飞瞬间图标凭空出现+文案跳变(每次都有的小闪);
+/// - 首页端胶囊随头部 morph 变形(收缩态=纯图标无灰底),shuttle 却
+///   永远是完整灰胶囊 → 头部收着时落地瞬间灰底消失/图标跳大跳位
+///   (「有时候」的大闪)。
+///
+/// 现从 Hero 两端捕获真实参数插值:animation 语义两方向恒为
+/// 0=首页端、1=搜索页端(与查看器 Hero 同约定)。
 Widget searchCapsuleFlightShuttle(
   BuildContext flightContext,
   Animation<double> animation,
@@ -94,5 +105,114 @@ Widget searchCapsuleFlightShuttle(
   BuildContext fromHeroContext,
   BuildContext toHeroContext,
 ) {
-  return const SearchCapsule();
+  // 首页端 Hero child 就是 SearchCapsule 本体,morph 态参数直接读;
+  // 搜索页端 child 是 TextField 容器,读不到 → null 即用整行态默认
+  SearchCapsule? homeEnd;
+  final fromChild = (fromHeroContext.widget as Hero).child;
+  final toChild = (toHeroContext.widget as Hero).child;
+  if (fromChild is SearchCapsule) {
+    homeEnd = fromChild;
+  } else if (toChild is SearchCapsule) {
+    homeEnd = toChild;
+  }
+  return _SearchCapsuleFlight(animation: animation, homeEnd: homeEnd);
+}
+
+class _SearchCapsuleFlight extends StatelessWidget {
+  const _SearchCapsuleFlight({required this.animation, this.homeEnd});
+
+  final Animation<double> animation;
+  final SearchCapsule? homeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hintStyle = TextStyle(
+      color: colorScheme.onSurfaceVariant,
+      fontSize: 14,
+    );
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final v = animation.value.clamp(0.0, 1.0);
+          // 几何:首页真实 morph 态 → 搜索页态(整行胶囊规格)
+          final double bgOpacity = lerpDouble(
+            homeEnd?.backgroundOpacity ?? 1.0,
+            1.0,
+            v,
+          )!;
+          final double iconSize = lerpDouble(
+            homeEnd?.iconSize ?? 20.0,
+            20.0,
+            v,
+          )!;
+          final double iconLeft = lerpDouble(
+            homeEnd?.iconLeftPadding ?? 16.0,
+            16.0,
+            v,
+          )!;
+          final double homeHintOpacity =
+              (homeEnd?.hintOpacity ?? 1.0) * (1.0 - v);
+
+          Widget hintLayer(double left, String text, double opacity) {
+            if (opacity <= 0) return const SizedBox.shrink();
+            return Positioned.fill(
+              left: left,
+              right: 12,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Opacity(
+                  opacity: opacity,
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
+                    style: hintStyle,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return Material(
+            color: colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.5 * bgOpacity,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                // 图标:首页端常驻,搜索页端没有 → 随 v 渐隐
+                Positioned.fill(
+                  left: iconLeft,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Opacity(
+                      opacity: 1.0 - v,
+                      child: Icon(
+                        Symbols.search_rounded,
+                        size: iconSize,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                // 双 hint 交叉淡化(两端文案不同)
+                hintLayer(
+                  iconLeft + iconSize + 8,
+                  S.current.topics_searchHint,
+                  homeHintOpacity,
+                ),
+                // 搜索页 hint 左缘 = 容器 8 + 文本 8 = 16
+                hintLayer(16, S.current.search_hintText, v),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }

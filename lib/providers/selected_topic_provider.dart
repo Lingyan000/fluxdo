@@ -410,12 +410,18 @@ final selectedMessageProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
-/// 「我的」页右栏的平行视界栈。
-///
-/// 「我的」在宽屏是"左资料 + 右卡片"的双栏,右栏这一半可以被压进来的
-/// 内容(草稿列表 / 设置)顶替 —— 这样从「我的」点草稿就是右半边显示
-/// 草稿列表,而不是整屏跳走。
-final selectedProfilePaneProvider = SelectedTopicProvider((ref) {
+// 「我的」页右栏栈(selectedProfilePaneProvider)已退役:该页是导航
+// 枢纽,所有入口一律开新页面,不做右栏平行视界(用户拍板)。
+
+/// 用户资料页(全屏形态)右栏的平行视界栈,按 username family 隔离
+/// (资料页可叠开多个:话题里点头像→资料→再开别人资料)。资料页
+/// 自己是宿主:宽屏点话题/回复列表进右栏,缩窄投影,窄屏真路由。
+/// 嵌入形态(在别的宿主栈里)不用它——压宿主的栈。
+final selectedUserProfilePaneProvider = StateNotifierProvider.family<
+  SelectedTopicNotifier,
+  SelectedTopicState,
+  String
+>((ref, _) {
   return SelectedTopicNotifier();
 });
 
@@ -427,6 +433,59 @@ final selectedSearchProvider = SelectedTopicProvider((ref) {
 /// 追觅（视奸）面板自己的平行视界栈。不能复用首页或搜索栈，否则切换
 /// 导航项时两个页面会互相继承对方正在查看的话题/资料。
 final selectedSeekingProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 草稿页右栏的平行视界栈——独立于首页/私信/搜索，草稿页自己是宿主。
+final selectedDraftPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 浏览历史页右栏的平行视界栈。
+final selectedHistoryPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 「我的话题」页右栏的平行视界栈。
+final selectedMyTopicsPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 待审帖列表页右栏的平行视界栈。
+final selectedPendingPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 徽章详情页右栏的平行视界栈(获得者话题列表)。
+final selectedBadgePaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 关注/粉丝列表页右栏的平行视界栈(点用户开资料)。
+final selectedFollowPaneProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
+/// 分类话题页右栏的平行视界栈,按 categoryId family 隔离(分类页可
+/// 叠开多个:话题里点分类→再点别的分类,共享单例会互相踩栈)。普通
+/// family 而非 autoDispose:宿主组件链(PaneHost/投影 scope)吃的是
+/// SelectedTopicProvider(non-autodispose)类型;残留代价只是每个访问
+/// 过的分类一个空栈对象。同一分类叠开两层共享一份栈,极罕见,
+/// clearOnInit 兜底。
+final selectedCategoryPaneProvider = StateNotifierProvider.family<
+  SelectedTopicNotifier,
+  SelectedTopicState,
+  int
+>((ref, _) {
+  return SelectedTopicNotifier();
+});
+
+/// 标签话题页右栏的平行视界栈(按 tagName family 隔离,见分类页注释)。
+final selectedTagPaneProvider = StateNotifierProvider.family<
+  SelectedTopicNotifier,
+  SelectedTopicState,
+  String
+>((ref, _) {
   return SelectedTopicNotifier();
 });
 

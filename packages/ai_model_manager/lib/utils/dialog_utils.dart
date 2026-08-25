@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:common_ui/common_ui.dart';
 
 import '../providers/ai_provider_providers.dart';
 
@@ -251,6 +252,26 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     return _buildAnimatedBlurBarrier(
       barrier: barrier,
       animation: animation!,
+    );
+  }
+
+  /// Android 预测返回手势:慢划边缘时 sheet 跟手下滑,与手指下拉关闭同
+  /// 一套动画。与主 app 的同名 route 保持一致(本文件是那份的子包副本)。
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return wrapPredictiveBackForModalRoute(
+      route: this,
+      child: super.buildTransitions(
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      ),
     );
   }
 }

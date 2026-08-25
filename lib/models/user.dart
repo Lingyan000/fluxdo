@@ -58,6 +58,12 @@ class User {
   // 私信相关
   final bool? canSendPrivateMessages;        // 当前用户是否可以发送私信
   final bool? canSendPrivateMessageToUser;   // 是否可以给该用户发私信
+  final bool? canChatUser;                   // 是否可与该用户聊天(chat 插件 user_card 注入)
+
+  /// 该用户在某话题内的发帖数(card.json 带 include_post_count_for=topicId
+  /// 时 serializer 注入,形如 {topic_id: count};官方用它决定用户卡片
+  /// 是否显示「过滤到该用户的 N 帖」按钮)
+  final Map<int, int> topicPostCount;
 
   // 积分相关
   final int? gamificationScore;
@@ -77,6 +83,20 @@ class User {
   // 角色（来自 /session/current.json 的 current_user）
   final bool admin;
   final bool moderator;
+
+  /// discourse-assign 插件加的字段(add_to_serializer(:current_user, :can_assign))
+  /// 只在 CurrentUserSerializer 里有,/u/username.json 这种公开资料接口没有——
+  /// 见 core_providers.dart _mergeUser 里用预加载数据兜底。
+  final bool canAssign;
+
+  /// 隐私:隐藏公开资料与在线状态(user_option.hide_presence)。
+  /// true 时客户端不得上报 presence(正在输入/在线)——对齐网页版
+  /// chat.js 的前置判断。
+  final bool hidePresence;
+
+  /// 聊天草稿(current_user.chat_drafts,最近 20 条原始 JSON:
+  /// {channel_id, data, thread_id});chat 层自行解析,登录会话期有效
+  final List<Map<String, dynamic>> chatDrafts;
 
 
   User({
@@ -117,6 +137,8 @@ class User {
     this.totalFollowing,
     this.canSendPrivateMessages,
     this.canSendPrivateMessageToUser,
+    this.canChatUser,
+    this.topicPostCount = const {},
     this.gamificationScore,
     this.muted,
     this.ignored,
@@ -128,6 +150,9 @@ class User {
     this.silencedTill,
     this.admin = false,
     this.moderator = false,
+    this.canAssign = false,
+    this.hidePresence = false,
+    this.chatDrafts = const [],
   });
 
   User copyWith({
@@ -138,6 +163,7 @@ class User {
     int? notificationChannelPosition,
     bool? muted,
     bool? ignored,
+    bool? canAssign,
   }) {
     return User(
       id: id,
@@ -180,6 +206,8 @@ class User {
       totalFollowing: totalFollowing,
       canSendPrivateMessages: canSendPrivateMessages,
       canSendPrivateMessageToUser: canSendPrivateMessageToUser,
+      canChatUser: canChatUser,
+      topicPostCount: topicPostCount,
       gamificationScore: gamificationScore,
       muted: muted ?? this.muted,
       ignored: ignored ?? this.ignored,
@@ -191,6 +219,9 @@ class User {
       silencedTill: silencedTill,
       admin: admin,
       moderator: moderator,
+      canAssign: canAssign ?? this.canAssign,
+      hidePresence: hidePresence,
+      chatDrafts: chatDrafts,
     );
   }
 
@@ -245,6 +276,14 @@ class User {
       totalFollowing: json['total_following'] as int?,
       canSendPrivateMessages: json['can_send_private_messages'] as bool?,
       canSendPrivateMessageToUser: json['can_send_private_message_to_user'] as bool?,
+      canChatUser: json['can_chat_user'] as bool?,
+      topicPostCount: {
+        for (final e
+            in (json['topic_post_count'] as Map<String, dynamic>? ?? const {})
+                .entries)
+          if (int.tryParse(e.key) != null && e.value is int)
+            int.parse(e.key): e.value as int,
+      },
       gamificationScore: json['gamification_score'] as int?,
       muted: json['muted'] as bool?,
       ignored: json['ignored'] as bool?,
@@ -256,6 +295,14 @@ class User {
       silencedTill: TimeUtils.parseUtcTime(json['silenced_till'] as String?),
       admin: json['admin'] as bool? ?? false,
       moderator: json['moderator'] as bool? ?? false,
+      canAssign: json['can_assign'] as bool? ?? false,
+      hidePresence:
+          (json['user_option'] as Map<String, dynamic>?)?['hide_presence']
+                  as bool? ??
+              false,
+      chatDrafts: (json['chat_drafts'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
     );
   }
 
@@ -275,6 +322,7 @@ class User {
     'gamification_score': gamificationScore,
     'admin': admin,
     'moderator': moderator,
+    'can_assign': canAssign,
   };
 
   /// 从缓存 JSON 恢复（不再调用 resolveUrl/fixHtml，直接读取）
@@ -294,6 +342,7 @@ class User {
       gamificationScore: json['gamification_score'] as int?,
       admin: json['admin'] as bool? ?? false,
       moderator: json['moderator'] as bool? ?? false,
+      canAssign: json['can_assign'] as bool? ?? false,
     );
   }
 

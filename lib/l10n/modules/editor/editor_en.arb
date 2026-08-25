@@ -52,6 +52,8 @@
   "toolPanel_spoiler": "Spoiler",
   "toolPanel_strikethrough": "Strikethrough",
   "toolPanel_template": "Template",
+  "toolPanel_toc": "Table of Contents",
+  "toolbar_tocPlaceholder": "This topic will contain a table of contents",
   "toolbar_attachFileTooltip": "Upload attachment",
   "toolbar_boldPlaceholder": "Bold text",
   "toolbar_codePlaceholder": "Type or paste code here",

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../settings/settings_model.dart';
@@ -70,6 +71,12 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
     final theme = Theme.of(context);
     final listView = ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      // 搜索跳转定位依赖 GlobalKey.currentContext,而懒加载列表不会为视口外
+      // 的条目挂载 Element,ensureVisible 拿不到 context 会静默失败。带
+      // highlightId 进来时强制全量布局(设置页条目有限,代价可控)保证可达。
+      scrollCacheExtent: widget.highlightId != null
+          ? const ScrollCacheExtent.pixels(double.maxFinite)
+          : null,
       children: [
         for (final group in groups)
           if (_hasVisibleItems(group)) ...[
@@ -96,11 +103,11 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   }
 
   Widget _buildGroupItems(ThemeData theme, SettingsGroup group) {
-    final effectiveItems = group.items.where((item) {
-      if (item is PlatformConditionalModel) return item.shouldShow;
-      return true;
-    }).toList();
-
+    // 先按 isVisible 过滤（含 SwitchModel.enabledWhen / PlatformConditionalModel）：
+    // 隐藏项若留在分段卡片组里会以零高占位，顶掉组尾的大圆角。
+    final effectiveItems = group.items
+        .where((item) => item.isVisible(ref))
+        .toList();
     if (!group.wrapInCard) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,10 +143,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   }
 
   bool _hasVisibleItems(SettingsGroup group) {
-    return group.items.any((item) {
-      if (item is PlatformConditionalModel) return item.shouldShow;
-      return true;
-    });
+    return group.items.any((item) => item.isVisible(ref));
   }
 
   Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {

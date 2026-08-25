@@ -156,6 +156,10 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
       allUnreadNotificationsCount: preloadedUser.allUnreadNotificationsCount,
       seenNotificationId: preloadedUser.seenNotificationId,
       notificationChannelPosition: preloadedUser.notificationChannelPosition,
+      // can_assign 只在 CurrentUserSerializer(预加载/会话数据)里有,
+      // /u/username.json 这条公开资料接口不带,live fetch 那份永远是
+      // 默认值 false——用预加载兜底,否则第二次刷新就把权限位冲没了。
+      canAssign: user.canAssign || preloadedUser.canAssign,
     );
   }
 

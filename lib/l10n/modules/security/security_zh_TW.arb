@@ -67,6 +67,8 @@
   "cf_sessionCompatTitle": "切換到臨時相容模式？",
   "cf_sessionCompatMessage": "安全驗證已經完成，但目前原生網路仍未被 Cloudflare 信任。可以在本次使用期間改用瀏覽器核心傳送主站請求，應用程式重新啟動或登出後會自動恢復。",
   "cf_sessionCompatEnable": "本次使用相容模式",
+  "cf_sessionCompatDisableAuto": "不想每次被打斷？關閉自動驗證",
+  "cf_autoVerifyDisabledHint": "已關閉自動驗證，之後遇到驗證時可在頁面上手動點擊",
   "cf_sessionCompatEnabled": "已暫時切換到相容模式",
   "cf_sessionCompatDisable": "退出暫時相容模式",
   "@cf_verifying": {

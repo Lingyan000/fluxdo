@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../cf_challenge_service.dart';
 import '../../cf_challenge_logger.dart';
 import '../../cf_clearance_refresh_service.dart';
+import '../../cf_clearance_authority.dart';
 import '../../app_logger.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
@@ -13,9 +14,31 @@ import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
 import '../exceptions/api_exception.dart';
+import '../flux_request_spec.dart';
+import '../health/network_health_controller.dart';
 
 /// Cloudflare 验证拦截器
-/// 处理 CF Turnstile 验证
+///
+/// **为什么它不在恢复层里**(2026-08 评估结论,别再迁):
+///
+/// 恢复层的契约是"策略只产决策、Coordinator 统一执行重放",这对无状态恢复
+/// (限流等待、瞬态重放、会话自愈、引擎降级)成立,但 CF 的重试**之后**还有
+/// 三段有状态处置:
+/// 1. 重试成功 → 广播 [CfChallengeService.clearanceResolvedAt],
+///    BrowserTrustCoordinator 靠它 force 重跑被同一次 CF 挡下的 bootstrap;
+/// 2. 重试仍被拦 → 在同一上下文里判断能否切兼容、弹询问、撤 skipWebViewAdapter,
+///    **换传输方式再重放一次**;
+/// 3. 兼容重放失败 → 回滚 sessionFallback,否则后续请求全锁死在坏通道上。
+///
+/// 第 2、3 步要求"拿到重试结果后决定下一次用什么传输方式,并在失败时回滚
+/// 副作用",而策略拿不到重试结果——重放执行权在 Coordinator 手里。硬迁的
+/// 三条路都有害:为单个策略给 RecoveryDecision 加变体会污染通用抽象;策略
+/// 自己调 dio.fetch 违反"重放只有一处"这条铁律(等于把六个重放入口的病灶
+/// 重新引入);拆成多策略靠预算串联会丢掉回滚的时序保证。
+///
+/// 所以现状是**终态**:恢复层管无状态重放,本拦截器管需要 UI 交互与传输
+/// 切换的有状态恢复。分界由 RateLimitPolicy 的 isChallengeResponse 钩子
+/// 划定——挑战型 429 放行给这里,真限流归恢复层。
 class CfChallengeInterceptor extends Interceptor {
   CfChallengeInterceptor({required this.dio, required this.cookieJarService});
 
@@ -79,15 +102,16 @@ class CfChallengeInterceptor extends Interceptor {
   }
 
   bool _shouldShowActionPrompt(RequestOptions options) {
-    if (options.extra['isSilent'] == true) return false;
-    if (options.extra.containsKey('showErrorToast')) {
-      return options.extra['showErrorToast'] == true;
+    final spec = options.spec;
+    if (spec.isSilent) return false;
+    if (spec.hasExplicitErrorToast) {
+      return spec.showErrorToast;
     }
     return _mutationMethods.contains(options.method.toUpperCase());
   }
 
   String _requestMode(RequestOptions options) {
-    if (options.extra['isSilent'] == true) return 'silent';
+    if (options.spec.isSilent) return 'silent';
     return _shouldShowActionPrompt(options) ? 'action' : 'data';
   }
 
@@ -111,7 +135,7 @@ class CfChallengeInterceptor extends Interceptor {
     final statusCode = err.response?.statusCode;
 
     // 检查是否标记跳过 CF 验证（防止重试后再次触发）
-    final skipCfChallenge = err.requestOptions.extra['skipCfChallenge'] == true;
+    final skipCfChallenge = err.requestOptions.spec.skipCfChallenge;
 
     // CF 速率限制规则的 action 配为 managed_challenge / js_challenge / challenge 时,
     // 触发后返回 429 + cf-mitigated: challenge + 挑战页,而不是 403。
@@ -130,13 +154,16 @@ class CfChallengeInterceptor extends Interceptor {
 
       final requestUrl = err.requestOptions.uri.toString();
       final requestMethod = err.requestOptions.method.toUpperCase();
-      final requestTag = err.requestOptions.extra['requestTag']?.toString();
+      final requestTag = err.requestOptions.spec.requestTag;
       final logMessage =
           'CF Challenge detected: $requestMethod $requestUrl '
-          '(status=$statusCode, silent=${err.requestOptions.extra['isSilent'] == true}, '
-          'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.extra['skipCsrf'] == true})';
+          '(status=$statusCode, silent=${err.requestOptions.spec.isSilent}, '
+          'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.spec.skipCsrf})';
       debugPrint('[Dio] $logMessage');
       AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
+      // 撞盾是排查网络问题的关键时刻:把此刻的通道健康全貌拍进日志,
+      // 免得事后只有"某请求 403"这一条结果、没有引擎/降级/凭证状态。
+      NetworkHealthController.instance.dumpToLog('cf_challenge_detected');
       // 命中 CF 盾时立即重读系统代理状态:若用户刚开/关了系统代理,
       // 下一个请求就能用一致的出口重试,而不是等 10s 周期刷新。
       SystemProxyService.instance.refresh();
@@ -144,8 +171,18 @@ class CfChallengeInterceptor extends Interceptor {
         url: requestUrl,
         statusCode: statusCode!,
       );
+      // 记录在位值被撞：本次请求携带的 cf_clearance 已被 CF 挑战（= 已死），
+      // 打开换届窗口——之后 sync 可以替换它（过盾新值继位，或 Turnstile
+      // 最新铸值无缝补位）。这里不做任何候选值判定、不分 403/429：
+      // 撞了就过盾，语义见 CfClearanceAuthority。
+      CfClearanceAuthority.instance.noteIncumbentChallenged(
+        CfClearanceAuthority.extractFromCookieHeader(
+          err.requestOptions.headers['Cookie']?.toString() ??
+              err.requestOptions.headers['cookie']?.toString(),
+        ),
+      );
       final cfService = CfChallengeService();
-      final isSilent = err.requestOptions.extra['isSilent'] == true;
+      final isSilent = err.requestOptions.spec.isSilent;
       final shouldShowActionPrompt = _shouldShowActionPrompt(
         err.requestOptions,
       );
@@ -169,6 +206,12 @@ class CfChallengeInterceptor extends Interceptor {
         );
       }
 
+      // 注:这里刻意**不**用 NetworkHealthController.hasForegroundUi 提前判掉
+      // 无 UI 环境。它的判据是 navigatorKey.currentContext,而主 isolate 启动
+      // 早期那也是 null —— 提前 reject 会毁掉"启动时撞盾、等 context 就绪后
+      // 补弹验证"这条路径(启动窗口恰恰是验证最该成功的时候)。
+      // 无 UI 环境由 showManualVerify 内部的 10s context 等待上限收口。
+
       if (cfService.isInCooldown) {
         debugPrint('[Dio] CF Challenge in cooldown, rejecting request');
         CfChallengeLogger.log(
@@ -190,10 +233,17 @@ class CfChallengeInterceptor extends Interceptor {
       // vendored 插件的 aliveGuard/TextureBridge 修复落地后恢复。)
       final result = await cfService.showManualVerify(null, !isSilent);
 
+      // 本次验证的轮次号。多个并发请求撞盾会合流到同一轮验证,却各自走下面
+      // 的处置分支 —— 失败计数必须带上轮次去重,否则一次时序抖动会被记成
+      // N 次失败(实测:启动时五个首屏请求同时撞盾,cookie 同步慢一拍,
+      // 计数瞬间打满阈值 → 进冷却 + 弹切兼容询问,而 9 秒后一切自愈,
+      // 用户全程无感却被弹窗打断)。
+      final verifyRound = cfService.verifyRound;
+
       if (result == true) {
         final syncOk = await _syncCookiesOnce();
         if (!syncOk) {
-          cfService.startCooldown();
+          cfService.startCooldown(round: verifyRound);
           debugPrint(
             '[Dio] cf_clearance not found after sync, entering cooldown',
           );
@@ -212,10 +262,10 @@ class CfChallengeInterceptor extends Interceptor {
         // 各自重试自己的原始请求（每个请求 URL/参数不同，无法共享）
         final retryOptions = err.requestOptions;
         try {
-          retryOptions.extra['skipCfChallenge'] = true;
+          retryOptions.extra[FluxRequestKeys.skipCfChallenge] = true;
           // 绕过 RequestScheduler 的 CF 冻结判定。retry 时序上 isVerifying 已经
           // 复位为 false，但加这个标记是双保险，防止未来逻辑变更引入 race。
-          retryOptions.extra['skipCfBlock'] = true;
+          retryOptions.extra[FluxRequestKeys.skipCfBlock] = true;
           // 清除原始请求中残留的 cookie header，并补上最新 Cookie。
           // 这样即使 dio.fetch 不重新经过 CookieManager，也不会继续发送旧值。
           await _refreshCookieHeader(retryOptions);
@@ -262,8 +312,9 @@ class CfChallengeInterceptor extends Interceptor {
                 await cfService.confirmSessionCompatibilityMode();
             if (shouldFallback) {
               webViewSettings.enableSessionFallback();
-              retryOptions.extra['_cfSessionCompatRetry'] = true;
-              retryOptions.extra.remove('skipWebViewAdapter');
+              // 撤销原请求的"禁走 WebView 适配器"标记,这一行才是让重放
+              // 真正改走浏览器网络栈的开关。
+              retryOptions.extra.remove(FluxRequestKeys.skipWebViewAdapter);
               try {
                 final fallbackResponse = await dio.fetch(retryOptions);
                 CfChallengeService.showGlobalMessage(
@@ -317,6 +368,15 @@ class CfChallengeInterceptor extends Interceptor {
               // 多少次都一样,立即熔断进入冷却,阻断验证无限循环。
               if (CfChallengeService.isCfChallengeResponse(e.response)) {
                 cfService.startIneffectiveClearanceCooldown();
+                // 刚铸出的 clearance 重试仍被撞：同样标记为已死（它可能是
+                // IP 绑定类的确定性无效），放开换届，让下一次验证/新铸值
+                // 补位，而不是把它留在 jar 里反复撞。
+                CfClearanceAuthority.instance.noteIncumbentChallenged(
+                  CfClearanceAuthority.extractFromCookieHeader(
+                    retryOptions.headers['Cookie']?.toString() ??
+                        retryOptions.headers['cookie']?.toString(),
+                  ),
+                );
                 CfChallengeLogger.log(
                   '[INTERCEPTOR] Verified clearance ineffective for Dio '
                   '(retry ${e.response?.statusCode}), entering cooldown: '

@@ -36,6 +36,9 @@ class ResolvedUploadUrl {
 
 /// 上传结果
 class UploadResult {
+  /// 上传记录主键。发帖走 Markdown 短链引用不需要它;Chat 插件发消息
+  /// 走 `upload_ids` 数组关联附件,只能靠这个 id,不认短链。
+  final int? id;
   final String shortUrl;
   final String? url;
   final String originalFilename;
@@ -48,6 +51,7 @@ class UploadResult {
   final String? extension;
 
   UploadResult({
+    this.id,
     required this.shortUrl,
     this.url,
     required this.originalFilename,
@@ -253,6 +257,16 @@ mixin _UploadsMixin on _DiscourseServiceBase {
   /// 上传文件（内置速率限制重试，支持图片和附件）。
   /// [filenameOverride]/[contentTypeOverride]:媒体改名上传用(见
   /// [uploadMediaAsXz]),不影响常规路径。
+  ///
+  /// **为什么这里手写重试而不交给恢复层**:dio 的 [FormData] 是一次性的,
+  /// `finalize()` 之后二次使用会抛
+  /// `StateError('The FormData has already been finalized')`。恢复层重放的是
+  /// 同一个 RequestOptions,请求体已被消费,重放必然炸——那会把一个本可恢复
+  /// 的 429 变成硬失败,还丢掉错误类型。
+  ///
+  /// 所以重试必须由调用方做:**循环体内每轮重建 FormData**。恢复层那侧有
+  /// 对应护栏(RecoveryCoordinator._canReplayBody 直接不认领 FormData/Stream
+  /// 请求体),契约见 test/services/network/recovery/non_replayable_body_test.dart。
   Future<UploadResult> uploadFile(
     String filePath, {
     String? filenameOverride,
@@ -292,6 +306,7 @@ mixin _UploadsMixin on _DiscourseServiceBase {
           final shortUrl = data['short_url'] as String?;
           if (shortUrl != null) {
             return UploadResult(
+              id: data['id'] as int?,
               shortUrl: shortUrl,
               url: data['url'] as String?,
               originalFilename:
@@ -309,6 +324,7 @@ mixin _UploadsMixin on _DiscourseServiceBase {
           final url = data['url'] as String?;
           if (url != null) {
             return UploadResult(
+              id: data['id'] as int?,
               shortUrl: url,
               url: url,
               originalFilename:
@@ -328,8 +344,8 @@ mixin _UploadsMixin on _DiscourseServiceBase {
       } on DioException catch (e) {
         debugPrint('[DiscourseService] Upload image failed: $e');
 
-        // ErrorInterceptor 将 429 throw 为 RateLimitException，
-        // Dio 会将其包装在 DioException.error 中
+        // ErrorInterceptor 把 429 转成 DioException.error = RateLimitException
+        // (response 保留),这里按类型判定重试
         final innerError = e.error;
         if (innerError is RateLimitException && attempt < maxRetries) {
           final waitSeconds = innerError.retryAfterSeconds ?? 10;
@@ -391,7 +407,14 @@ mixin _UploadsMixin on _DiscourseServiceBase {
     );
   }
 
-  /// 批量解析 short_url（内置速率限制重试，对齐 uploadFile）
+  /// 批量解析 short_url。
+  ///
+  /// 限流重试交给恢复层(RateLimitPolicy 按 Retry-After 等待后重放):这个
+  /// 请求的体是普通 Map,可以安全重放 —— 与 [uploadFile] 的 FormData 不同,
+  /// 那边必须自己循环重建请求体。
+  ///
+  /// 曾经这里也有一份手写的 maxRetries=3 循环,与恢复层职责重叠:同一个 429
+  /// 先被恢复层退避重试、失败后再进本循环等 5 秒重试,最坏叠成十几次尝试。
   Future<List<Map<String, dynamic>>> lookupUrls(List<String> shortUrls) async {
     final missingUrls = shortUrls
         .where((url) => !_urlCache.containsKey(url))
@@ -399,58 +422,40 @@ mixin _UploadsMixin on _DiscourseServiceBase {
 
     if (missingUrls.isEmpty) return [];
 
-    const maxRetries = 3;
-    for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        final response = await _dio.post(
-          '/uploads/lookup-urls',
-          data: {'short_urls': missingUrls},
-        );
+    try {
+      final response = await _dio.post(
+        '/uploads/lookup-urls',
+        data: {'short_urls': missingUrls},
+      );
 
-        final List<dynamic> uploads = response.data;
-        final result = <Map<String, dynamic>>[];
+      final List<dynamic> uploads = response.data;
+      final result = <Map<String, dynamic>>[];
 
-        for (final item in uploads) {
-          if (item is Map<String, dynamic>) {
-            result.add(item);
-            final shortUrl = item['short_url'] as String?;
-            final url = item['url'] as String?;
-            if (shortUrl != null && url != null) {
-              _urlCache[shortUrl] = ResolvedUploadUrl(
-                url: url,
-                shortPath: item['short_path'] as String?,
-              );
-            }
+      for (final item in uploads) {
+        if (item is Map<String, dynamic>) {
+          result.add(item);
+          final shortUrl = item['short_url'] as String?;
+          final url = item['url'] as String?;
+          if (shortUrl != null && url != null) {
+            _urlCache[shortUrl] = ResolvedUploadUrl(
+              url: url,
+              shortPath: item['short_path'] as String?,
+            );
           }
         }
-        // 请求成功但未返回的短链 = 上传不存在(已删除/失效),写负缓存
-        // 会话内不再重试(对齐官方 MISSING);网络失败(catch 分支)不写,
-        // 临时性失败下次仍可重试。
-        for (final url in missingUrls) {
-          _urlCache.putIfAbsent(url, () => ResolvedUploadUrl.missing);
-        }
-        return result;
-      } on DioException catch (e) {
-        // ErrorInterceptor 将 429 throw 为 RateLimitException，
-        // Dio 会将其包装在 DioException.error 中
-        final innerError = e.error;
-        if (innerError is RateLimitException && attempt < maxRetries) {
-          final waitSeconds = innerError.retryAfterSeconds ?? 5;
-          debugPrint(
-            '[DiscourseService] lookupUrls 速率限制，等待 ${waitSeconds}s 后重试 '
-            '(${attempt + 1}/$maxRetries)',
-          );
-          await Future.delayed(Duration(seconds: waitSeconds));
-          continue;
-        }
-        debugPrint('[DiscourseService] lookupUrls failed: $e');
-        return [];
-      } catch (e) {
-        debugPrint('[DiscourseService] lookupUrls failed: $e');
-        return [];
       }
+      // 请求成功但未返回的短链 = 上传不存在(已删除/失效),写负缓存
+      // 会话内不再重试(对齐官方 MISSING);网络失败(catch 分支)不写,
+      // 临时性失败下次仍可重试。
+      for (final url in missingUrls) {
+        _urlCache.putIfAbsent(url, () => ResolvedUploadUrl.missing);
+      }
+      return result;
+    } catch (e) {
+      // 解析失败不影响正文渲染:返回空表让调用方走原始 URL 兜底。
+      debugPrint('[DiscourseService] lookupUrls failed: $e');
+      return [];
     }
-    return [];
   }
 
   /// 微批量合并窗口内待解析的 short_url（与 _pendingLookupCompleter 同生命周期）

@@ -29,6 +29,7 @@ class DraggableDivider extends StatefulWidget {
     this.onResizeEnd,
     this.hitWidth = 16,
     this.cursor = SystemMouseCursors.resizeColumn,
+    this.showIdleLine = true,
   });
 
   /// 拖动开始回调，用于记录初始状态
@@ -45,6 +46,12 @@ class DraggableDivider extends StatefulWidget {
 
   /// 拖动时的光标样式
   final MouseCursor cursor;
+
+  /// 静止态是否画 1px 细线。宿主自己在接缝处画线时(胶片带按格子
+  /// 实时位置画)传 false——本柄挂在**终态**栏宽处,层间动画期格子
+  /// 还在飞,这条静止线会劈在运动画面中间;悬停/拖拽的高亮线不受
+  /// 影响(那是交互反馈,理应贴手)。
+  final bool showIdleLine;
 
   @override
   State<DraggableDivider> createState() => _DraggableDividerState();
@@ -95,9 +102,12 @@ class _DraggableDividerState extends State<DraggableDivider> {
     } else if (_hovering) {
       lineWidth = 2;
       lineColor = colorScheme.primary.withAlpha(140);
-    } else {
+    } else if (widget.showIdleLine) {
       lineWidth = 1;
       lineColor = colorScheme.outlineVariant;
+    } else {
+      lineWidth = 0;
+      lineColor = Colors.transparent;
     }
 
     return MouseRegion(

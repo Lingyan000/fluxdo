@@ -6,8 +6,12 @@ import '../../providers/topic_search_provider.dart';
 import '../../utils/load_more_coordinator.dart';
 import '../common/paged_list_footer.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
+import '../../providers/selected_topic_provider.dart';
 import 'search_list_skeleton.dart';
 import 'search_post_card.dart';
+import 'search_preview_dialog.dart';
+import '../../providers/preferences_provider.dart';
+import '../topic/topic_preview_dialog.dart' show topicCardAnchorRect;
 
 /// 话题内搜索结果视图
 class TopicSearchView extends ConsumerStatefulWidget {
@@ -177,46 +181,96 @@ class _TopicSearchViewState extends ConsumerState<TopicSearchView> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: searchState.results.length + 1,
-            itemBuilder: (context, index) {
-              if (index == searchState.results.length) {
-                return PagedListFooter(
-                  hasMore: searchState.hasMore,
-                  isLoadingMore:
-                      searchState.isLoading && searchState.results.isNotEmpty,
-                  isLoadMoreFailed: searchState.isLoadMoreFailed,
-                  onRetry: _retryLoadMore,
-                );
-              }
+          child: SearchPostPrewarmScope(
+            posts: searchState.results,
+            child: ListView.builder(
+              controller: _scrollController,
+              addAutomaticKeepAlives: false,
+              padding: const EdgeInsets.all(16),
+              itemCount: searchState.results.length + 1,
+              itemBuilder: (context, index) {
+                if (index == searchState.results.length) {
+                  return PagedListFooter(
+                    hasMore: searchState.hasMore,
+                    isLoadingMore:
+                        searchState.isLoading && searchState.results.isNotEmpty,
+                    isLoadMoreFailed: searchState.isLoadMoreFailed,
+                    onRetry: _retryLoadMore,
+                  );
+                }
 
-              final post = searchState.results[index];
-              return SearchPostCard(
-                post: post,
-                onTap: () {
-                  // 优先使用话题内跳转
-                  if (widget.onJumpToPost != null) {
-                    widget.onJumpToPost!(post.postNumber);
-                  } else {
-                    // 否则打开新页面
-                    final topic = post.topic;
-                    if (topic != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TopicDetailPage(
+                final post = searchState.results[index];
+                // Builder 紧贴卡片:一镜到底要卡片自身的屏幕 rect 作
+                // 起点;bottomGap 8 裁掉外壳底部间距
+                final enableLongPress = ref
+                    .watch(preferencesProvider)
+                    .longPressPreview;
+                return Builder(
+                  builder: (cardContext) => SearchPostCard(
+                    post: post,
+                    onTap: () {
+                      // 优先使用话题内跳转
+                      if (widget.onJumpToPost != null) {
+                        widget.onJumpToPost!(post.postNumber);
+                      } else {
+                        // 跨话题:平行视界面板内压当前栈,全屏页照旧 push
+                        final topic = post.topic;
+                        if (topic != null) {
+                          if (EmbeddedStackScope.maybePushTopic(
+                            context,
                             topicId: topic.id,
                             scrollToPostNumber: post.postNumber,
-                          ),
-                        ),
-                      );
-                    }
-                  }
-                },
-              );
-            },
+                          )) {
+                            return;
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TopicDetailPage(
+                                topicId: topic.id,
+                                scrollToPostNumber: post.postNumber,
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    onLongPress: enableLongPress
+                        ? () => SearchPreviewDialog.show(
+                            context,
+                            post: post,
+                            onOpen: () {
+                              if (widget.onJumpToPost != null) {
+                                widget.onJumpToPost!(post.postNumber);
+                                return;
+                              }
+                              final topic = post.topic;
+                              if (topic != null) {
+                                if (EmbeddedStackScope.maybePushTopic(
+                                  context,
+                                  topicId: topic.id,
+                                  scrollToPostNumber: post.postNumber,
+                                )) {
+                                  return;
+                                }
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => TopicDetailPage(
+                                      topicId: topic.id,
+                                      scrollToPostNumber: post.postNumber,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            anchorRect: topicCardAnchorRect(cardContext),
+                          )
+                        : null,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],

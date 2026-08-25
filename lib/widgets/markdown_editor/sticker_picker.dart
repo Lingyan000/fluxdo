@@ -10,7 +10,9 @@ import '../../providers/sticker_provider.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
+import '../../utils/error_utils.dart';
 import '../common/cached_image.dart';
+import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'sticker_market_sheet.dart';
 import '../../../../../l10n/s.dart';
@@ -255,7 +257,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
               recentStickers,
             ),
             loading: () => const Center(child: LoadingSpinner()),
-            error: (err, stack) => _buildError(),
+            error: (err, stack) => _buildError(err, stack),
           );
         })(),
       ),
@@ -300,8 +302,9 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(Object error, StackTrace stackTrace) {
     final theme = Theme.of(context);
+    final errorInfo = ErrorUtils.getErrorInfo(error);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -312,13 +315,47 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             S.current.sticker_loadFailed,
             style: TextStyle(color: theme.colorScheme.error),
           ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              errorInfo.message,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => ref.invalidate(stickerGroupsProvider),
-            child: Text(S.current.common_retry),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: () => ref.invalidate(stickerGroupsProvider),
+                child: Text(S.current.common_retry),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => _showErrorDetails(error, stackTrace),
+                child: Text(S.current.common_viewDetails),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  void _showErrorDetails(Object error, StackTrace stackTrace) {
+    final details = ErrorUtils.getErrorDetails(error, stackTrace);
+    showAppBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ErrorDetailsSheet(details: details),
     );
   }
 
@@ -630,13 +667,36 @@ class _StickerGroupSliverContent extends ConsumerWidget {
         child: SizedBox(
           height: 80,
           child: Center(
-            child: TextButton(
-              onPressed: () =>
-                  ref.invalidate(stickerGroupDetailProvider(groupId)),
-              child: Text(
-                S.current.common_loadFailedTapRetry,
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () =>
+                      ref.invalidate(stickerGroupDetailProvider(groupId)),
+                  child: Text(
+                    S.current.common_loadFailedTapRetry,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Symbols.info_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: S.current.common_viewDetails,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    final details = ErrorUtils.getErrorDetails(err, stack);
+                    showAppBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => ErrorDetailsSheet(details: details),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
         ),

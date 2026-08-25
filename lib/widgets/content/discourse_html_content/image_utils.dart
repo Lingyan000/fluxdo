@@ -372,6 +372,9 @@ class DiscourseImageUtils {
     List<String?>? filenames,
     BoxFit? heroSourceFit,
     double heroSourceRadius = 0,
+    // 此前漏透:走这条路的源端(网格/轮播/正文)拿不到圆形插值,
+    // 圆形头像只能绕道 ImageViewerPage.open。
+    bool heroSourceCircular = false,
   }) {
     return ImageViewerPage.open(
       context,
@@ -386,6 +389,7 @@ class DiscourseImageUtils {
       filenames: filenames,
       heroSourceFit: heroSourceFit,
       heroSourceRadius: heroSourceRadius,
+      heroSourceCircular: heroSourceCircular,
     );
   }
 

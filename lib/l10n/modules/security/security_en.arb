@@ -46,6 +46,8 @@
   "cf_sessionCompatTitle": "Switch to temporary compatibility mode?",
   "cf_sessionCompatMessage": "Security verification completed, but Cloudflare still does not trust the native connection. Main-site requests can use the browser engine for this session. Restarting the app or signing out restores the original mode.",
   "cf_sessionCompatEnable": "Use for this session",
+  "cf_sessionCompatDisableAuto": "Prefer not to be interrupted? Turn off auto verification",
+  "cf_autoVerifyDisabledHint": "Auto verification is off. Tap verify on the page when a challenge appears.",
   "cf_sessionCompatEnabled": "Temporary compatibility mode enabled",
   "cf_sessionCompatDisable": "Exit temporary compatibility mode"
 }

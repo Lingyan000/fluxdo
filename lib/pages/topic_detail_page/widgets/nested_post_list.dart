@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
@@ -31,12 +32,22 @@ class NestedPostList extends ConsumerStatefulWidget {
   final void Function(int count, bool userCreated)? onSharedIssueChanged;
   final void Function(TopicNotificationLevel)? onNotificationLevelChanged;
   final void Function(int postId, bool accepted)? onSolutionChanged;
+  final void Function(String selectedText, Post post)? onQuoteSelection;
   final bool Function(ScrollNotification) onScrollNotification;
   final bool hideHeaderTitle;
 
   /// 可见帖子上报（走 ScreenTrack 上报链路）
   final void Function(Set<int> visiblePostNumbers)? onVisiblePostsChanged;
 
+  /// context 定位模式:「查看完整话题」（切回根帖子列表）
+  final VoidCallback? onViewFullTopic;
+
+  /// context 定位模式:「查看更早的上下文」（祖先链被截断时,以最顶端祖先为新目标）
+  final void Function(int postNumber)? onViewParentContext;
+
+  /// 同目标重跳令牌:页内再次跳转同一楼层时递增,
+  /// 触发重新滚动定位 + 高亮重播（目标未变时 provider 不重建,需显式驱动）
+  final int relocateToken;
   const NestedPostList({
     super.key,
     required this.nestedState,
@@ -55,9 +66,13 @@ class NestedPostList extends ConsumerStatefulWidget {
     this.onSharedIssueChanged,
     this.onNotificationLevelChanged,
     this.onSolutionChanged,
+    this.onQuoteSelection,
     required this.onScrollNotification,
     this.hideHeaderTitle = false,
     this.onVisiblePostsChanged,
+    this.relocateToken = 0,
+    this.onViewFullTopic,
+    this.onViewParentContext,
   });
 
   @override
@@ -70,10 +85,67 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   /// 当前正在渲染的根帖子号集合（SliverList.builder 渲染时收集）
   final Set<int> _builtPostNumbers = {};
 
+  /// context 定位:目标帖子的 key(挂在命中节点上,供 ensureVisible)。
+  /// 同目标重跳时换新:KeyedSubtree 随 key 变更整棵重建,高亮渐隐动画重播。
+  GlobalKey _contextTargetKey = GlobalKey();
+
+  /// 已滚动定位过的目标楼层(避免重建时重复滚动)
+  int? _scrolledToTarget;
+  int _scrollAttempts = 0;
+  static const _maxScrollAttempts = 20;
+
   @override
   void initState() {
     super.initState();
     widget.scrollController.addListener(_onScroll);
+    _scheduleScrollToTarget();
+  }
+
+  @override
+  void didUpdateWidget(covariant NestedPostList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.nestedState.targetPostNumber !=
+        oldWidget.nestedState.targetPostNumber) {
+      _scheduleScrollToTarget();
+    }
+    // 同目标重跳:重置定位守卫并换 key(重播高亮),再跑一次定位
+    if (widget.relocateToken != oldWidget.relocateToken) {
+      _scrolledToTarget = null;
+      _contextTargetKey = GlobalKey();
+      _scheduleScrollToTarget();
+    }
+  }
+
+  /// 首帧后滚动到 context 目标帖子;子树异步展开时 key 可能未挂上,重试几帧
+  void _scheduleScrollToTarget() {
+    final target = widget.nestedState.targetPostNumber;
+    if (!widget.nestedState.contextMode ||
+        target == null ||
+        _scrolledToTarget == target) {
+      return;
+    }
+    _scrollAttempts = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryScrollToTarget());
+  }
+
+  void _tryScrollToTarget() {
+    if (!mounted) return;
+    final target = widget.nestedState.targetPostNumber;
+    if (target == null || _scrolledToTarget == target) return;
+
+    final ctx = _contextTargetKey.currentContext;
+    if (ctx != null) {
+      _scrolledToTarget = target;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        alignment: 0.2,
+      );
+    } else if (_scrollAttempts < _maxScrollAttempts) {
+      _scrollAttempts++;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _tryScrollToTarget());
+    }
   }
 
   @override
@@ -117,6 +189,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
     // OP 也算可见
     final ns = widget.nestedState;
+    final contextMode = ns.contextMode;
     final opPost =
         ns.opPost != null &&
             !BlockedUserFilter.isBlockedUsername(
@@ -130,6 +203,8 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       widget.blockedUsernames,
     );
     if (opPost != null) _builtPostNumbers.add(opPost.postNumber);
+    final contextChain = contextMode ? ns.contextChain : null;
+    if (contextChain != null) _collectVisiblePostNumbers(contextChain);
     final p = widget.params;
 
     return NotificationListener<ScrollNotification>(
@@ -170,6 +245,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
                 onRefreshPost: widget.onRefreshPost,
                 onJumpToPost: widget.onJumpToPost,
                 onSolutionChanged: widget.onSolutionChanged,
+                onQuoteSelection: widget.onQuoteSelection,
                 topicTitle: widget.detail.title,
                 isPrivateMessageTopic: widget.detail.isPrivateMessage,
                 isPmWithNonHumanUser: widget.detail.pmWithNonHumanUser,
@@ -219,7 +295,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             ),
           ),
 
-          if (ns.newRootPostIds.isNotEmpty)
+          if (contextMode)
+            SliverToBoxAdapter(child: _buildContextBanner(context)),
+
+          if (!contextMode && ns.newRootPostIds.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -236,23 +315,16 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
               ),
             ),
 
-          SliverList.builder(
-            itemCount:
-                roots.length + (ns.hasMoreRoots || ns.isLoadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index >= roots.length) {
-                return _buildLoadMore(context);
-              }
-              // 收集可见帖子号（含子节点）
-              _collectVisiblePostNumbers(roots[index]);
-              return NestedPostCard(
-                node: roots[index],
+          if (contextMode && contextChain != null)
+            SliverToBoxAdapter(
+              child: NestedPostCard(
+                node: contextChain,
                 topicId: widget.topicId,
                 detail: widget.detail,
                 params: p,
                 depth: 0,
                 maxDepth: maxDepth,
-                isLastChild: index == roots.length - 1,
+                isLastChild: true,
                 isLoggedIn: widget.isLoggedIn,
                 blockedUsernames: widget.blockedUsernames,
                 onReply: widget.onReply,
@@ -260,13 +332,46 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
                 onRefreshPost: widget.onRefreshPost,
                 onJumpToPost: widget.onJumpToPost,
                 onSolutionChanged: widget.onSolutionChanged,
+                onQuoteSelection: widget.onQuoteSelection,
                 expansionState: _expansionState,
-              );
-            },
-          ),
+                highlightPostNumber: ns.targetPostNumber,
+                highlightKey: _contextTargetKey,
+              ),
+            )
+          else
+            SliverList.builder(
+              itemCount:
+                  roots.length + (ns.hasMoreRoots || ns.isLoadingMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= roots.length) {
+                  return _buildLoadMore(context);
+                }
+                // 收集可见帖子号（含子节点）
+                _collectVisiblePostNumbers(roots[index]);
+                return NestedPostCard(
+                  node: roots[index],
+                  topicId: widget.topicId,
+                  detail: widget.detail,
+                  params: p,
+                  depth: 0,
+                  maxDepth: maxDepth,
+                  isLastChild: index == roots.length - 1,
+                  isLoggedIn: widget.isLoggedIn,
+                  blockedUsernames: widget.blockedUsernames,
+                  onReply: widget.onReply,
+                  onEdit: widget.onEdit,
+                  onRefreshPost: widget.onRefreshPost,
+                  onJumpToPost: widget.onJumpToPost,
+                  onSolutionChanged: widget.onSolutionChanged,
+                  onQuoteSelection: widget.onQuoteSelection,
+                  expansionState: _expansionState,
+                );
+              },
+            ),
 
-          // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现)
-          if (!ns.hasMoreRoots)
+          // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现;
+          // context 定位模式只展示局部,不放推荐区)
+          if (!contextMode && !ns.hasMoreRoots)
             SliverToBoxAdapter(
               child: MoreTopicsSection(detail: widget.detail),
             ),
@@ -275,6 +380,65 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             child: SizedBox(
               height: MediaQuery.of(context).padding.bottom + 100,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// context 定位模式的提示条:正在查看部分回复 + 返回完整话题/查看更早上下文
+  Widget _buildContextBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    final ns = widget.nestedState;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Symbols.account_tree_rounded,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.l10n.nested_contextBanner,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: [
+              if (widget.onViewFullTopic != null)
+                ActionChip(
+                  avatar: const Icon(Symbols.arrow_back_rounded, size: 16),
+                  label: Text(context.l10n.nested_contextViewFullTopic),
+                  onPressed: widget.onViewFullTopic,
+                ),
+              if (ns.ancestorsTruncated &&
+                  ns.topAncestorPostNumber != null &&
+                  widget.onViewParentContext != null)
+                ActionChip(
+                  avatar: const Icon(Symbols.arrow_upward_rounded, size: 16),
+                  label: Text(context.l10n.nested_contextViewParent),
+                  onPressed: () => widget.onViewParentContext!(
+                    ns.topAncestorPostNumber!,
+                  ),
+                ),
+            ],
           ),
         ],
       ),

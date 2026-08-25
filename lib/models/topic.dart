@@ -116,6 +116,8 @@ class Poll {
   final String results;
   final List<PollOption> options;
   final int voters;
+  final String? chartType; // 'bar' | 'pie'(API 直接下发,饼图判定主源)
+  final String? title;
 
   Poll({
     required this.id,
@@ -125,6 +127,8 @@ class Poll {
     required this.results,
     required this.options,
     required this.voters,
+    this.chartType,
+    this.title,
   });
 
   factory Poll.fromJson(Map<String, dynamic> json) {
@@ -140,6 +144,62 @@ class Poll {
               .toList() ??
           [],
       voters: json['voters'] as int? ?? 0,
+      chartType: json['chart_type'] as String?,
+      title: json['title'] as String?,
+    );
+  }
+}
+
+/// post-voting(问答)话题里答案帖下的评论(独立模型,非 post;
+/// 帖子 JSON 预载前 5 条,本期只读展示)
+class PostVotingComment {
+  final int id;
+  final int? userId;
+  final String? name;
+  final String username;
+  final DateTime? createdAt;
+  final String raw;
+  final String cooked;
+  final int voteCount;
+  final bool userVoted;
+
+  PostVotingComment({
+    required this.id,
+    this.userId,
+    this.name,
+    required this.username,
+    this.createdAt,
+    required this.raw,
+    required this.cooked,
+    this.voteCount = 0,
+    this.userVoted = false,
+  });
+
+  factory PostVotingComment.fromJson(Map<String, dynamic> json) {
+    return PostVotingComment(
+      id: json['id'] as int? ?? 0,
+      userId: json['user_id'] as int?,
+      name: json['name'] as String?,
+      username: json['username'] as String? ?? '',
+      createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
+      raw: json['raw'] as String? ?? '',
+      cooked: json['cooked'] as String? ?? '',
+      voteCount: (json['post_voting_vote_count'] as num?)?.toInt() ?? 0,
+      userVoted: json['user_voted'] as bool? ?? false,
+    );
+  }
+
+  PostVotingComment copyWith({int? voteCount, bool? userVoted}) {
+    return PostVotingComment(
+      id: id,
+      userId: userId,
+      name: name,
+      username: username,
+      createdAt: createdAt,
+      raw: raw,
+      cooked: cooked,
+      voteCount: voteCount ?? this.voteCount,
+      userVoted: userVoted ?? this.userVoted,
     );
   }
 }
@@ -270,11 +330,20 @@ class Topic {
   final int? bookmarkId; // 书签 ID（用于编辑/删除）
   final String? bookmarkName; // 书签备注名称
   final DateTime? bookmarkReminderAt; // 书签提醒时间
-  final String? bookmarkableType; // 书签类型（Post/Topic）
+  final String? bookmarkableType; // 书签类型（Post/Topic/ChatMessage）
+
+  /// chat 消息书签(服务端下发 'ChatMessage';'Chat::Message' 为创建
+  /// API 入参形态,双认兜底)
+  bool get isChatMessageBookmark =>
+      bookmarkableType == 'ChatMessage' || bookmarkableType == 'Chat::Message';
+  final String? bookmarkableUrl; // 书签目标 URL（chat 书签跳转用）
 
   // 已解决问题相关
   final bool hasAcceptedAnswer; // 话题是否有被接受的答案
   final bool canHaveAnswer; // 话题是否可以有解决方案（用于显示未解决状态）
+
+  // post-voting(问答)话题标记(插件字段,未装插件时不下发)
+  final bool isPostVoting;
 
   Topic({
     required this.id,
@@ -305,8 +374,10 @@ class Topic {
     this.bookmarkName,
     this.bookmarkReminderAt,
     this.bookmarkableType,
+    this.bookmarkableUrl,
     this.hasAcceptedAnswer = false,
     this.canHaveAnswer = false,
+    this.isPostVoting = false,
   });
 
   Topic copyWith({
@@ -314,6 +385,7 @@ class Topic {
     int? unread,
     int? newPosts,
     int? lastReadPostNumber,
+    bool clearLastRead = false,
     int? highestPostNumber,
   }) {
     return Topic(
@@ -338,15 +410,19 @@ class Topic {
       unseen: unseen ?? this.unseen,
       unread: unread ?? this.unread,
       newPosts: newPosts ?? this.newPosts,
-      lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
+      lastReadPostNumber: clearLastRead
+          ? null
+          : (lastReadPostNumber ?? this.lastReadPostNumber),
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       bookmarkedPostNumber: bookmarkedPostNumber,
       bookmarkId: bookmarkId,
       bookmarkName: bookmarkName,
       bookmarkReminderAt: bookmarkReminderAt,
       bookmarkableType: bookmarkableType,
+      bookmarkableUrl: bookmarkableUrl,
       hasAcceptedAnswer: hasAcceptedAnswer,
       canHaveAnswer: canHaveAnswer,
+      isPostVoting: isPostVoting,
     );
   }
 
@@ -397,9 +473,13 @@ class Topic {
       bookmarkReminderAt: TimeUtils.parseUtcTime(
         json['_bookmark_reminder_at'] as String?,
       ),
-      bookmarkableType: json['_bookmarkable_type'] as String?,
+      bookmarkableType:
+          (json['_bookmarkable_type'] ?? json['bookmarkable_type']) as String?,
+      bookmarkableUrl:
+          (json['_bookmarkable_url'] ?? json['bookmarkable_url']) as String?,
       hasAcceptedAnswer: json['has_accepted_answer'] as bool? ?? false,
       canHaveAnswer: json['can_have_answer'] as bool? ?? false,
+      isPostVoting: json['is_post_voting'] as bool? ?? false,
     );
   }
 }
@@ -667,7 +747,17 @@ class Post {
   final List<PostReaction>? reactions; // 回应/表情
   final PostReaction? currentUserReaction; // 当前用户的回应
   final List<Poll>? polls; // 投票列表
-  final Map<String, List<String>>? pollsVotes; // 用户投票记录 {pollName: [optionId]}
+  // 用户投票记录 {pollName: [optionId]}。非 final:投票落地(applyPollUpdate)
+  // 需要原地写 —— 服务端只在用户已有投票记录时才下发 polls_votes,首次投票
+  // 时该字段为 null,若不可写,投票结果无处落地,widget 重建后即丢投票状态。
+  Map<String, List<String>>? pollsVotes;
+
+  // post-voting(问答)话题字段(仅问答话题下发)
+  final int postVotingVoteCount; // 帖子总票数(up-down,可为负)
+  final String? postVotingUserVotedDirection; // 当前用户投票方向 'up'/'down'/null
+  final bool postVotingHasVotes; // 是否有任何投票(投票人入口显隐)
+  final List<PostVotingComment>? postVotingComments; // 预载评论(前5条)
+  final int postVotingCommentsCount; // 评论总数
 
   // small_action 相关字段
   final String? actionCode; // 操作代码，如 "pinned.enabled", "closed.enabled"
@@ -811,6 +901,11 @@ class Post {
     this.currentUserReaction,
     this.polls,
     this.pollsVotes,
+    this.postVotingVoteCount = 0,
+    this.postVotingUserVotedDirection,
+    this.postVotingHasVotes = false,
+    this.postVotingComments,
+    this.postVotingCommentsCount = 0,
     this.actionCode,
     this.actionCodeWho,
     this.actionCodePath,
@@ -914,6 +1009,16 @@ class Post {
           (value as List<dynamic>).map((e) => e.toString()).toList(),
         ),
       ),
+      postVotingVoteCount:
+          (json['post_voting_vote_count'] as num?)?.toInt() ?? 0,
+      postVotingUserVotedDirection:
+          json['post_voting_user_voted_direction'] as String?,
+      postVotingHasVotes: json['post_voting_has_votes'] as bool? ?? false,
+      postVotingComments: (json['comments'] as List<dynamic>?)
+          ?.whereType<Map<String, dynamic>>()
+          .map(PostVotingComment.fromJson)
+          .toList(),
+      postVotingCommentsCount: (json['comments_count'] as num?)?.toInt() ?? 0,
       actionCode: json['action_code'] as String?,
       actionCodeWho: json['action_code_who'] as String?,
       actionCodePath: json['action_code_path'] as String?,
@@ -1039,6 +1144,8 @@ class Post {
           currentUserReaction == other.currentUserReaction &&
           listEquals(boosts, other.boosts) &&
           canBoost == other.canBoost &&
+          postVotingVoteCount == other.postVotingVoteCount &&
+          postVotingUserVotedDirection == other.postVotingUserVotedDirection &&
           version == other.version &&
           publicVersion == other.publicVersion &&
           wiki == other.wiki &&
@@ -1092,6 +1199,12 @@ class Post {
     PostReaction? currentUserReaction,
     List<Poll>? polls,
     Map<String, List<String>>? pollsVotes,
+    int? postVotingVoteCount,
+    String? postVotingUserVotedDirection,
+    bool clearPostVotingDirection = false,
+    bool? postVotingHasVotes,
+    List<PostVotingComment>? postVotingComments,
+    int? postVotingCommentsCount,
     String? actionCode,
     String? actionCodeWho,
     String? actionCodePath,
@@ -1179,6 +1292,15 @@ class Post {
           : (currentUserReaction ?? this.currentUserReaction),
       polls: polls ?? this.polls,
       pollsVotes: pollsVotes ?? this.pollsVotes,
+      postVotingVoteCount: postVotingVoteCount ?? this.postVotingVoteCount,
+      postVotingUserVotedDirection: clearPostVotingDirection
+          ? null
+          : (postVotingUserVotedDirection ??
+              this.postVotingUserVotedDirection),
+      postVotingHasVotes: postVotingHasVotes ?? this.postVotingHasVotes,
+      postVotingComments: postVotingComments ?? this.postVotingComments,
+      postVotingCommentsCount:
+          postVotingCommentsCount ?? this.postVotingCommentsCount,
       actionCode: actionCode ?? this.actionCode,
       actionCodeWho: actionCodeWho ?? this.actionCodeWho,
       actionCodePath: actionCodePath ?? this.actionCodePath,
@@ -1256,6 +1378,27 @@ class Post {
 
   /// 今天是否是用户生日(birthdate 年份可能是隐私假值,只比月/日)
   bool get isTodayBirthday => _isTodayMonthDay(userBirthdate);
+
+  /// 投票/撤票成功后把最新 poll 与我的选择落地到本实例(原地更新)。
+  ///
+  /// 投票交互在渲染层 _PollWidget 内完成,不走 provider:widget 自己 setState,
+  /// 重建(滚出 cacheExtent 再滚回、重进话题)时从 post 现读 —— 所以必须在这里
+  /// 落地,否则 State 销毁后投票状态丢失。
+  ///
+  /// - [updatedPoll] 覆盖 [polls] 中同名 poll(票数/状态);
+  /// - [votes] 拷贝写入 [pollsVotes](防调用方后续 mutate 同一 List 污染 post);
+  ///   服务端只在用户已有投票记录时才下发 polls_votes,首次投票时该字段为 null,
+  ///   这里 ??= 初始化,修复「首投后滚出滚回丢投票状态」。
+  ///
+  /// copyWith 浅拷贝会带着这两个引用走,provider 后续换实例不丢已落地数据。
+  void applyPollUpdate(String pollName, Poll updatedPoll, List<String> votes) {
+    final list = polls;
+    if (list != null) {
+      final index = list.indexWhere((p) => p.name == pollName);
+      if (index >= 0) list[index] = updatedPoll;
+    }
+    (pollsVotes ??= {})[pollName] = List.from(votes);
+  }
 }
 
 /// Policy 用户摘要（精简字段：id / username / avatar_template）
@@ -1633,6 +1776,7 @@ class TopicDetail {
   final DateTime? createdAt;
   final bool visible;
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
+  final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
 
   // 投票相关字段
   final bool canVote; // 是否可以投票
@@ -1662,6 +1806,9 @@ class TopicDetail {
   final String archetype; // 'regular' 或 'private_message'
   final bool pmWithNonHumanUser; // 私信对象是否包含非真人用户
 
+  // post-voting(问答)话题(插件字段,未装插件/普通话题不下发)
+  final bool isPostVoting;
+
   // 话题权限（来自 details）
   final bool canEdit; // 是否可以编辑话题元数据（标题、分类、标签）
 
@@ -1687,6 +1834,20 @@ class TopicDetail {
   final List<Topic> suggestedTopics;
   final List<Topic> relatedTopics;
 
+  // 指定(discourse-assign 插件)相关字段。站点未装插件时恒为 null。
+  final TopicUser? assignedToUser;
+  final String? assignedToGroupName;
+  final String? assignmentNote;
+  final String? assignmentStatus;
+
+  /// 帖子级(非整个话题)的指定——key 是 post.id。插件的
+  /// `indirectly_assigned_to` 字段(见 DiscourseAssign::Helpers.
+  /// build_indirectly_assigned_to),官方 Web 端"三个点→指定帖子"
+  /// 指定的就是这个,跟上面几个话题级字段是两回事。
+  final Map<int, PostAssignmentInfo> indirectlyAssignedTo;
+
+  bool get isAssigned => assignedToUser != null || assignedToGroupName != null;
+
   bool get hasAcceptedAnswer => acceptedAnswers.isNotEmpty;
   int? get acceptedAnswerPostNumber =>
       acceptedAnswers.isEmpty ? null : acceptedAnswers.first.postNumber;
@@ -1711,6 +1872,7 @@ class TopicDetail {
     this.createdAt,
     this.visible = true,
     this.lastReadPostNumber,
+    this.highestPostNumber = 0,
     this.canVote = false,
     this.voteCount = 0,
     this.userVoted = false,
@@ -1725,6 +1887,7 @@ class TopicDetail {
     this.notificationLevel = TopicNotificationLevel.regular,
     this.archetype = 'regular',
     this.pmWithNonHumanUser = false,
+    this.isPostVoting = false,
     this.canEdit = false,
     this.bookmarked = false,
     this.bookmarkId,
@@ -1734,6 +1897,11 @@ class TopicDetail {
     this.pendingPosts = const [],
     this.suggestedTopics = const [],
     this.relatedTopics = const [],
+    this.assignedToUser,
+    this.assignedToGroupName,
+    this.assignmentNote,
+    this.assignmentStatus,
+    this.indirectlyAssignedTo = const {},
   });
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
@@ -1878,6 +2046,7 @@ class TopicDetail {
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       visible: json['visible'] as bool? ?? true,
       lastReadPostNumber: json['last_read_post_number'] as int?,
+      highestPostNumber: json['highest_post_number'] as int? ?? 0,
       canVote: json['can_vote'] as bool? ?? false,
       voteCount: json['vote_count'] as int? ?? 0,
       userVoted: json['user_voted'] as bool? ?? false,
@@ -1897,6 +2066,7 @@ class TopicDetail {
       hasSummary: json['has_summary'] as bool? ?? false,
       archetype: json['archetype'] as String? ?? 'regular',
       pmWithNonHumanUser: json['pm_with_non_human_user'] as bool? ?? false,
+      isPostVoting: json['is_post_voting'] as bool? ?? false,
       notificationLevel: TopicNotificationLevel.fromValue(
         (json['details'] as Map<String, dynamic>?)?['notification_level']
             as int?,
@@ -1915,7 +2085,74 @@ class TopicDetail {
           .toList(),
       suggestedTopics: parseSuggestedTopicList(json['suggested_topics']),
       relatedTopics: parseSuggestedTopicList(json['related_topics']),
+      assignedToUser: _tryParseAssignedToUser(json['assigned_to_user']),
+      assignedToGroupName: _tryParseAssignedToGroupName(
+        json['assigned_to_group'],
+      ),
+      assignmentNote: json['assignment_note'] as String?,
+      assignmentStatus: json['assignment_status'] as String?,
+      indirectlyAssignedTo: _tryParseIndirectlyAssignedTo(
+        json['indirectly_assigned_to'],
+      ),
     );
+  }
+
+  /// discourse-assign 插件的 DiscourseAssign::Helpers.build_assigned_to_user
+  /// 只吐 {username, name, avatar_template} 三个字段,没有 id——之前直接
+  /// 套用通用的 TopicUser.fromJson(要求 json['id'] as int)必炸,炸了又被
+  /// try/catch 悄悄吞掉,导致界面上"指定了但什么都不显示"。这里按插件
+  /// 实际响应形状手动解析,id 该字段本来就拿不到,给个占位值。
+  static TopicUser? _tryParseAssignedToUser(dynamic raw) {
+    if (raw is! Map) return null;
+    final username = raw['username'];
+    if (username is! String || username.isEmpty) return null;
+    return TopicUser(
+      id: -1,
+      username: username,
+      name: raw['name'] as String?,
+      avatarTemplate: raw['avatar_template'] as String? ?? '',
+    );
+  }
+
+  static String? _tryParseAssignedToGroupName(dynamic raw) {
+    if (raw is! Map) return null;
+    final name = raw['name'];
+    return name is String ? name : null;
+  }
+
+  /// `indirectly_assigned_to` 是个 {post_id字符串: {assigned_to, post_number,
+  /// assignment_note, assignment_status}} 的 map(见插件 Helpers.
+  /// build_indirectly_assigned_to),key 是字符串形式的 post id。
+  static Map<int, PostAssignmentInfo> _tryParseIndirectlyAssignedTo(
+    dynamic raw,
+  ) {
+    if (raw is! Map) return const {};
+    final result = <int, PostAssignmentInfo>{};
+    for (final entry in raw.entries) {
+      final postId = int.tryParse(entry.key.toString());
+      final value = entry.value;
+      if (postId == null || value is! Map) continue;
+      final assignedRaw = value['assigned_to'];
+      TopicUser? assignedToUser;
+      String? assignedToGroupName;
+      if (assignedRaw is Map) {
+        if (assignedRaw.containsKey('username')) {
+          assignedToUser = _tryParseAssignedToUser(assignedRaw);
+        } else {
+          assignedToGroupName = _tryParseAssignedToGroupName(assignedRaw);
+        }
+      }
+      if (assignedToUser == null && assignedToGroupName == null) continue;
+      result[postId] = PostAssignmentInfo(
+        postId: postId,
+        postNumber: value['post_number'] as int?,
+        assignedToUser: assignedToUser,
+        assignedToGroupName: assignedToGroupName,
+        note: value['assignment_note'] as String?,
+        status: value['assignment_status'] as String?,
+      );
+    }
+    return result;
   }
 
   /// 创建修改后的副本
@@ -1934,6 +2171,7 @@ class TopicDetail {
     DateTime? createdAt,
     bool? visible,
     int? lastReadPostNumber,
+    int? highestPostNumber,
     bool? canVote,
     int? voteCount,
     bool? userVoted,
@@ -1948,6 +2186,7 @@ class TopicDetail {
     TopicNotificationLevel? notificationLevel,
     String? archetype,
     bool? pmWithNonHumanUser,
+    bool? isPostVoting,
     bool? canEdit,
     bool? bookmarked,
     int? bookmarkId,
@@ -1976,6 +2215,7 @@ class TopicDetail {
       createdAt: createdAt ?? this.createdAt,
       visible: visible ?? this.visible,
       lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
+      highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       canVote: canVote ?? this.canVote,
       voteCount: voteCount ?? this.voteCount,
       userVoted: userVoted ?? this.userVoted,
@@ -1991,6 +2231,7 @@ class TopicDetail {
       notificationLevel: notificationLevel ?? this.notificationLevel,
       archetype: archetype ?? this.archetype,
       pmWithNonHumanUser: pmWithNonHumanUser ?? this.pmWithNonHumanUser,
+      isPostVoting: isPostVoting ?? this.isPostVoting,
       canEdit: canEdit ?? this.canEdit,
       bookmarked: bookmarked ?? this.bookmarked,
       bookmarkId: clearBookmarkId ? null : (bookmarkId ?? this.bookmarkId),
@@ -2004,8 +2245,37 @@ class TopicDetail {
       pendingPosts: pendingPosts ?? this.pendingPosts,
       suggestedTopics: suggestedTopics ?? this.suggestedTopics,
       relatedTopics: relatedTopics ?? this.relatedTopics,
+      // 指定字段不提供 copyWith 覆写(始终透传旧值):指定/取消指定后
+      // 一律整页重拉(assign_sheet _refetch),本地不拼状态。
+      assignedToUser: assignedToUser,
+      assignedToGroupName: assignedToGroupName,
+      assignmentNote: assignmentNote,
+      assignmentStatus: assignmentStatus,
+      indirectlyAssignedTo: indirectlyAssignedTo,
     );
   }
+}
+
+/// 帖子级指定信息(discourse-assign 插件,`indirectly_assigned_to`)。
+class PostAssignmentInfo {
+  final int postId;
+  final int? postNumber;
+  final TopicUser? assignedToUser;
+  final String? assignedToGroupName;
+  final String? note;
+  final String? status;
+
+  const PostAssignmentInfo({
+    required this.postId,
+    this.postNumber,
+    this.assignedToUser,
+    this.assignedToGroupName,
+    this.note,
+    this.status,
+  });
+
+  String get displayName =>
+      assignedToUser?.displayName ?? assignedToGroupName ?? '';
 }
 
 /// 话题 AI 摘要
@@ -2074,6 +2344,15 @@ Map<String, dynamic> normalizeBookmarkListEntry(
   }
   if (map['bookmarkable_type'] != null) {
     map['_bookmarkable_type'] = map['bookmarkable_type'];
+  }
+  if (map['bookmarkable_url'] != null) {
+    map['_bookmarkable_url'] = map['bookmarkable_url'];
+  }
+  // chat 书签没有 topic_id,fancy_title 是频道名;excerpt 已是 cooked 摘要
+  // 服务端 polymorphic_name 映射后是 'ChatMessage'(无冒号,
+  // chat/message.rb polymorphic_class_mapping),不是 Ruby 类名 Chat::Message
+  if (map['bookmarkable_type'] == 'ChatMessage' && map['title'] == null) {
+    map['title'] = map['fancy_title'];
   }
 
   // 帖子书签：保留 linked_post_number 供跳转使用

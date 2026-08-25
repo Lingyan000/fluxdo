@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +17,11 @@ import '../../providers/app_icon_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/app_background_service.dart';
 import '../../services/toast_service.dart';
+import '../../theme/app_background.dart';
+import '../../theme/app_palettes.dart';
+import '../../theme/theme_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../utils/platform_utils.dart';
@@ -63,24 +69,20 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           builder: (context, ref) {
             final themeState = ref.watch(themeProvider);
             final currentMode = themeState.mode;
-            final effectiveSeed = themeState.useDynamicColor
-                ? (themeState.dynamicPrimary ?? themeState.seedColor)
-                : themeState.seedColor;
             final theme = Theme.of(context);
             final l10n = context.l10n;
 
-            // 为每种模式生成预览配色
-            final variant = themeState.schemeVariant;
-            final lightScheme = SeedColorScheme.from(
-              seedColor: effectiveSeed,
-              brightness: Brightness.light,
-              variant: variant,
+            // 卡片预览实时反映中性/纯黑开关（透明不影响卡片预览）
+            final preview = ThemeResolver.resolve(
+              mode: currentMode,
+              neutral: themeState.neutralEnabled,
+              black: themeState.blackEnabled,
+              transparent: false,
+              seed: themeState.effectiveSeedColor,
+              variant: themeState.schemeVariant,
             );
-            final darkScheme = SeedColorScheme.from(
-              seedColor: effectiveSeed,
-              brightness: Brightness.dark,
-              variant: variant,
-            );
+            final lightScheme = preview.light;
+            final darkScheme = preview.dark;
 
             final modes = [
               (
@@ -132,6 +134,46 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
               ),
             );
           },
+        ),
+      ],
+    ),
+
+    // ── 表面质感 ───────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_surfaceStyle,
+      icon: Symbols.contrast_rounded,
+      items: [
+        SwitchModel(
+          id: 'neutral',
+          title: l10n.appearance_neutral,
+          subtitle: l10n.appearance_neutralDesc,
+          icon: Symbols.format_color_reset_rounded,
+          getValue: (ref) => ref.watch(themeProvider).neutralEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setNeutralEnabled(v),
+        ),
+        SwitchModel(
+          id: 'black',
+          title: l10n.appearance_modeBlack,
+          subtitle: l10n.appearance_blackDesc,
+          icon: Symbols.dark_mode_rounded,
+          getValue: (ref) => ref.watch(themeProvider).blackEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setBlackEnabled(v),
+        ),
+      ],
+    ),
+
+    // ── 自定义背景 ──────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_customBackground,
+      icon: Symbols.wallpaper_rounded,
+      wrapInCard: false,
+      items: [
+        CustomModel(
+          id: 'customBackground',
+          title: l10n.appearance_customBackground,
+          builder: (context, ref) => const _BackgroundSection(),
         ),
       ],
     ),
@@ -197,8 +239,7 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                           child: _AppIconCard(
                             label: options[i].$2,
                             assetPath: options[i].$3,
-                            isSelected:
-                                iconState.currentStyle == options[i].$1,
+                            isSelected: iconState.currentStyle == options[i].$1,
                             isChanging: iconState.isChanging,
                             onTap: () async {
                               final success = await ref
@@ -800,10 +841,10 @@ class _AppIconCard extends StatelessWidget {
   }
 }
 
-/// 主题模式选择卡片
-///
-/// 顶部绘制一个迷你 "屏幕" 模拟该模式下的配色，
-/// 底部显示图标和文字，选中态高亮边框 + 勾选角标。
+// ══════════════════════════════════════════════════════════════════
+// 主题模式卡片（浅色/深色/跟随系统）
+// ══════════════════════════════════════════════════════════════════
+
 class _ThemeModeCard extends StatelessWidget {
   final ThemeMode mode;
   final IconData icon;
@@ -1102,6 +1143,196 @@ class _SplitThemePreviewPainter extends CustomPainter {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 自定义背景：透明开关 + 背景图/遮罩/模糊控制
+// ══════════════════════════════════════════════════════════════════
+
+/// 透明模式是独立功能：开启时若没有背景图先拉起选图，
+/// 用户取消则保持关闭；开启后展开背景控制项。
+class _BackgroundSection extends ConsumerWidget {
+  const _BackgroundSection();
+
+  Future<void> _onTransparentChanged(WidgetRef ref, bool value) async {
+    final notifier = ref.read(themeProvider.notifier);
+    if (!value) {
+      await notifier.setTransparentEnabled(false);
+      return;
+    }
+    if (ref.read(themeProvider).background.hasImage) {
+      await notifier.setTransparentEnabled(true);
+      return;
+    }
+    final path = await AppBackgroundService.importFromGallery();
+    if (path != null) {
+      await notifier.setBackgroundImage(path);
+      await notifier.setTransparentEnabled(true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
+    final transparent = ref.watch(themeProvider).transparentEnabled;
+
+    // 用 Material 而不是 Container：InkWell 的 hover/水波画在最近的
+    // Material 祖先上，Container 会让它漏到外层，在圆角外溢出
+    return Material(
+      color: cs.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          SwitchListTile(
+            secondary: Icon(
+              Symbols.opacity_rounded,
+              color: transparent ? cs.primary : cs.onSurfaceVariant,
+            ),
+            title: Text(l10n.appearance_styleTransparent),
+            subtitle: Text(l10n.appearance_transparentDesc),
+            value: transparent,
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              _onTransparentChanged(ref, v);
+            },
+          ),
+          if (transparent)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _BackgroundControls(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 透明模式的背景控制：换图、遮罩透明度（明暗分开记忆）、背景模糊。
+class _BackgroundControls extends ConsumerWidget {
+  const _BackgroundControls();
+
+  Future<void> _changeImage(WidgetRef ref) async {
+    final path = await AppBackgroundService.importFromGallery();
+    if (path == null) return;
+    final old = ref.read(themeProvider).background.imagePath;
+    await ref.read(themeProvider.notifier).setBackgroundImage(path);
+    // 旧文件异步清理，失败也无碍
+    unawaited(AppBackgroundService.delete(old));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final l10n = context.l10n;
+    final background = ref.watch(themeProvider).background;
+    final brightness = theme.brightness;
+    final imageFile = background.hasImage ? File(background.imagePath!) : null;
+    final imageExists = imageFile != null && imageFile.existsSync();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── 背景图：缩略图 + 更换按钮；文件丢失时给重选入口 ──
+        Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: imageExists
+                    ? Image.file(
+                        imageFile,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      )
+                    : ColoredBox(
+                        color: cs.surfaceContainerHighest,
+                        child: Icon(
+                          Symbols.broken_image_rounded,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                imageExists
+                    ? l10n.appearance_bgImage
+                    : l10n.appearance_bgMissing,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: imageExists ? cs.onSurface : cs.error,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _changeImage(ref),
+              child: Text(l10n.appearance_bgChange),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // ── 遮罩透明度（按当前亮度调节，明暗分开记忆）──
+        _SliderRow(
+          icon: Symbols.opacity_rounded,
+          label: l10n.appearance_bgScrim,
+          value: background.scrimFor(brightness),
+          max: 1,
+          onChanged: (v) => ref
+              .read(themeProvider.notifier)
+              .setBackgroundScrim(v, brightness),
+        ),
+        // ── 背景模糊 ──
+        _SliderRow(
+          icon: Symbols.blur_on_rounded,
+          label: l10n.appearance_bgBlur,
+          value: background.blurSigma,
+          max: AppBackground.maxBlurSigma,
+          onChanged: (v) =>
+              ref.read(themeProvider.notifier).setBackgroundBlur(v),
+        ),
+      ],
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double value;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  const _SliderRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: cs.onSurfaceVariant),
+        const SizedBox(width: 12),
+        Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        Expanded(
+          child: Slider(
+            value: value.clamp(0.0, max),
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 主题色选择器
 // ══════════════════════════════════════════════════════════════════
 
@@ -1148,72 +1379,72 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
     final themeState = ref.watch(themeProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final isDynamic = themeState.useDynamicColor;
+    final source = themeState.accentSource;
+    final isDynamic = source == AccentSource.dynamic;
+    final isCustom = source == AccentSource.custom;
     final currentColor = themeState.seedColor;
     final variant = themeState.schemeVariant;
     final customColors = themeState.customColors;
     final dynamicPrimary = themeState.dynamicPrimary;
 
-    final effectiveSeed = isDynamic
-        ? (dynamicPrimary ?? cs.primary)
-        : currentColor;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── 配色风格横向滚动 ──
-        Text(
-          context.l10n.appearance_schemeVariant,
-          style: theme.textTheme.titleSmall?.copyWith(
-            color: cs.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 76,
-          child: ShaderMask(
-            shaderCallback: (Rect rect) {
-              return const LinearGradient(
-                colors: [Colors.black, Colors.black, Colors.transparent],
-                stops: [0.0, 0.88, 1.0],
-              ).createShader(rect);
-            },
-            blendMode: BlendMode.dstIn,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // 首次构建后自动滚动到选中项
-                if (!_didInitialScroll) {
-                  _didInitialScroll = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _scrollToSelectedVariant(variant);
-                  });
-                }
-                return ListView.separated(
-                  controller: _variantScrollCtrl,
-                  scrollDirection: Axis.horizontal,
-                  itemCount: DynamicSchemeVariant.values.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  // 右侧额外留白让渐隐效果下最后一项完整可见
-                  padding: const EdgeInsets.only(right: 48),
-                  itemBuilder: (context, index) {
-                    final v = DynamicSchemeVariant.values[index];
-                    return _VariantChip(
-                      variant: v,
-                      seedColor: effectiveSeed,
-                      isSelected: v == variant,
-                      label: _variantLabel(context, v),
-                      onTap: () {
-                        ref.read(themeProvider.notifier).setSchemeVariant(v);
-                        _scrollToSelectedVariant(v);
-                      },
-                    );
-                  },
-                );
-              },
+        // ── 配色风格横向滚动（对任意来源的种子色生效）──
+        ...[
+          Text(
+            context.l10n.appearance_schemeVariant,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: cs.onSurfaceVariant,
             ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 76,
+            child: ShaderMask(
+              shaderCallback: (Rect rect) {
+                return const LinearGradient(
+                  colors: [Colors.black, Colors.black, Colors.transparent],
+                  stops: [0.0, 0.88, 1.0],
+                ).createShader(rect);
+              },
+              blendMode: BlendMode.dstIn,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 首次构建后自动滚动到选中项
+                  if (!_didInitialScroll) {
+                    _didInitialScroll = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _scrollToSelectedVariant(variant);
+                    });
+                  }
+                  return ListView.separated(
+                    controller: _variantScrollCtrl,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: DynamicSchemeVariant.values.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
+                    // 右侧额外留白让渐隐效果下最后一项完整可见
+                    padding: const EdgeInsets.only(right: 48),
+                    itemBuilder: (context, index) {
+                      final v = DynamicSchemeVariant.values[index];
+                      return _VariantChip(
+                        variant: v,
+                        seedColor: themeState.effectiveSeedColor,
+                        isSelected: v == variant,
+                        label: _variantLabel(context, v),
+                        onTap: () {
+                          ref.read(themeProvider.notifier).setSchemeVariant(v);
+                          _scrollToSelectedVariant(v);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
 
         // ── 颜色网格 ──
         LayoutBuilder(
@@ -1237,21 +1468,24 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                   variant: variant,
                   onTap: () {
                     setState(() => _removableColor = null);
-                    ref.read(themeProvider.notifier).setUseDynamicColor(true);
+                    ref.read(themeProvider.notifier).selectDynamicColor();
                   },
                 ),
-                // 预设色
-                for (final color in ThemeNotifier.presetColors)
+                // 内置调色板
+                for (final palette in AppPalettes.builtins)
                   _ColorSwatchCard(
                     size: itemWidth,
-                    seedColor: color,
+                    seedColor: palette.seedColor,
+                    tooltip: _paletteLabel(context, palette.id),
                     isSelected:
-                        !isDynamic &&
-                        color.toARGB32() == currentColor.toARGB32(),
+                        source == AccentSource.palette &&
+                        themeState.paletteId == palette.id,
                     variant: variant,
                     onTap: () {
                       setState(() => _removableColor = null);
-                      ref.read(themeProvider.notifier).setSeedColor(color);
+                      ref
+                          .read(themeProvider.notifier)
+                          .selectPalette(palette.id);
                     },
                   ),
                 // 自定义色
@@ -1267,14 +1501,14 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                           size: itemWidth,
                           seedColor: color,
                           isSelected:
-                              !isDynamic &&
+                              isCustom &&
                               color.toARGB32() == currentColor.toARGB32(),
                           variant: variant,
                           onTap: () {
                             setState(() => _removableColor = null);
                             ref
                                 .read(themeProvider.notifier)
-                                .setSeedColor(color);
+                                .selectCustomColor(color);
                           },
                           onLongPress: () =>
                               setState(() => _removableColor = color),
@@ -1549,7 +1783,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
     ).then((color) {
       if (color != null) {
         ref.read(themeProvider.notifier).addCustomColor(color);
-        ref.read(themeProvider.notifier).setSeedColor(color);
+        ref.read(themeProvider.notifier).selectCustomColor(color);
       }
       // 延迟释放 controller，等待退场动画结束
       // （.then 在 didPop 时触发，此时退场动画仍在进行，
@@ -1582,6 +1816,28 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
       DynamicSchemeVariant.fruitSalad => l10n.schemeVariant_fruitSalad,
     };
   }
+}
+
+/// 调色板名字（色卡 tooltip 用）。
+String _paletteLabel(BuildContext context, String paletteId) {
+  final l10n = context.l10n;
+  return switch (paletteId) {
+    'default' => l10n.appearance_colorDefault,
+    'ocean' => l10n.appearance_colorOcean,
+    'sakura' => l10n.appearance_colorSakura,
+    'spring' => l10n.appearance_colorSpring,
+    'autumn' => l10n.appearance_colorAutumn,
+    'purple' => l10n.appearance_colorPurple,
+    'green' => l10n.appearance_colorGreen,
+    'orange' => l10n.appearance_colorOrange,
+    'pink' => l10n.appearance_colorPink,
+    'teal' => l10n.appearance_colorTeal,
+    'red' => l10n.appearance_colorRed,
+    'indigo' => l10n.appearance_colorIndigo,
+    'amber' => l10n.appearance_colorAmber,
+    'cyan' => l10n.appearance_colorCyan,
+    _ => paletteId,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1690,6 +1946,7 @@ class _ColorSwatchCard extends StatelessWidget {
   final bool isDynamic;
   final Color? dynamicPrimary;
   final DynamicSchemeVariant variant;
+  final String? tooltip;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -1700,6 +1957,7 @@ class _ColorSwatchCard extends StatelessWidget {
     this.isDynamic = false,
     this.dynamicPrimary,
     required this.variant,
+    this.tooltip,
     required this.onTap,
     this.onLongPress,
   });
@@ -1715,7 +1973,7 @@ class _ColorSwatchCard extends StatelessWidget {
       brightness: Theme.of(context).brightness,
     );
 
-    return GestureDetector(
+    final card = GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
       onSecondaryTap: PlatformUtils.isDesktop ? onLongPress : null,
@@ -1790,6 +2048,13 @@ class _ColorSwatchCard extends StatelessWidget {
         ),
       ),
     );
+
+    // 调色板色卡带名字提示；其余色卡无 tooltip 时直接返回
+    final tip = tooltip;
+    if (tip != null) {
+      return Tooltip(message: tip, child: card);
+    }
+    return card;
   }
 
   static Widget _colorDot(Color color) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,6 +48,7 @@ class TopicCardInteractiveSurface extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onMiddleClick,
+    this.onPreviewIntent,
   });
 
   final BorderRadius borderRadius;
@@ -54,6 +57,10 @@ class TopicCardInteractiveSurface extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onMiddleClick;
 
+  /// 预览意图出现时的回调(预加载正文):移动端 = 按住不动 250ms
+  /// (长按判定前 ~250ms 的提前量);桌面端 = 右键按下。与 [onLongPress]
+  /// 成对使用,仅在 onLongPress 非空时有意义
+  final VoidCallback? onPreviewIntent;
   @override
   Widget build(BuildContext context) {
     if (!PlatformUtils.isDesktop) {
@@ -61,6 +68,7 @@ class TopicCardInteractiveSurface extends StatelessWidget {
         borderRadius: borderRadius,
         onTap: onTap,
         onLongPress: onLongPress,
+        onPreviewIntent: onPreviewIntent,
         child: child,
       );
     }
@@ -74,6 +82,10 @@ class TopicCardInteractiveSurface extends StatelessWidget {
           onTap: onTap,
           onLongPress: onLongPress,
           onSecondaryTap: onLongPress,
+          // 右键按下即视为预览意图(按下→弹起的间隔就是预加载窗口)
+          onSecondaryTapDown: onPreviewIntent == null
+              ? null
+              : (_) => onPreviewIntent!(),
           child: child,
         ),
         onMiddleClick,
@@ -88,12 +100,14 @@ class _MobileTopicTapSurface extends StatefulWidget {
     required this.child,
     this.onTap,
     this.onLongPress,
+    this.onPreviewIntent,
   });
 
   final BorderRadius borderRadius;
   final Widget child;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onPreviewIntent;
 
   @override
   State<_MobileTopicTapSurface> createState() => _MobileTopicTapSurfaceState();
@@ -101,6 +115,32 @@ class _MobileTopicTapSurface extends StatefulWidget {
 
 class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
   bool _pressed = false;
+
+  /// 预览意图计时器:落指 250ms 未抬手/未被抢走即判定为长按意图,
+  /// 提前触发预加载(长按判定要 ~500ms,弹窗打开再隔帧 —— 这
+  /// ~300ms 就是正文预加载的窗口)。普通点按(<200ms 抬手)与滚动
+  /// (tapCancel)都会取消,不会误触发
+  Timer? _previewIntentTimer;
+
+  void _armPreviewIntent() {
+    if (widget.onPreviewIntent == null) return;
+    _previewIntentTimer?.cancel();
+    _previewIntentTimer = Timer(
+      const Duration(milliseconds: 250),
+      widget.onPreviewIntent!,
+    );
+  }
+
+  void _cancelPreviewIntent() {
+    _previewIntentTimer?.cancel();
+    _previewIntentTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelPreviewIntent();
+    super.dispose();
+  }
 
   void _setPressed(bool value) {
     if (_pressed == value || !mounted) return;
@@ -137,26 +177,35 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
         onPointerUp: (_) => _setPressed(false),
         onPointerCancel: (_) => _setPressed(false),
         child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTapDown: (_) => _setPressed(true),
-        onTapCancel: () => _setPressed(false),
-        onTapUp: (_) => _setPressed(false),
-        onTap: widget.onTap == null ? null : _handleTap,
-        onLongPressStart: widget.onLongPress == null
-            ? null
-            : (_) => _setPressed(true),
-        onLongPress: widget.onLongPress == null ? null : _handleLongPress,
-        onLongPressEnd: widget.onLongPress == null
-            ? null
-            : (_) => _setPressed(false),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: _pressed ? overlayColor : Colors.transparent,
-            borderRadius: widget.borderRadius,
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTapDown: (_) {
+            _setPressed(true);
+            _armPreviewIntent();
+          },
+          onTapCancel: () {
+            _setPressed(false);
+            _cancelPreviewIntent();
+          },
+          onTapUp: (_) {
+            _setPressed(false);
+            _cancelPreviewIntent();
+          },
+          onTap: widget.onTap == null ? null : _handleTap,
+          onLongPressStart: widget.onLongPress == null
+              ? null
+              : (_) => _setPressed(true),
+          onLongPress: widget.onLongPress == null ? null : _handleLongPress,
+          onLongPressEnd: widget.onLongPress == null
+              ? null
+              : (_) => _setPressed(false),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _pressed ? overlayColor : Colors.transparent,
+              borderRadius: widget.borderRadius,
+            ),
+            child: widget.child,
           ),
-          child: widget.child,
-        ),
         ),
       ),
     );
@@ -175,6 +224,9 @@ class TopicCard extends ConsumerWidget {
   final VoidCallback? onTap;
   final VoidCallback? onMiddleClick;
   final VoidCallback? onLongPress;
+
+  /// 预览意图回调(预加载正文),见 TopicCardInteractiveSurface
+  final VoidCallback? onPreviewIntent;
   final bool isSelected;
   final Color? highlightColor;
   final Widget? topWidget;
@@ -198,6 +250,7 @@ class TopicCard extends ConsumerWidget {
     this.onTap,
     this.onMiddleClick,
     this.onLongPress,
+    this.onPreviewIntent,
     this.isSelected = false,
     this.highlightColor,
     this.topWidget,
@@ -264,59 +317,60 @@ class TopicCard extends ConsumerWidget {
     return PerfSpanBox(
       label: 'card#${topic.id}',
       child: Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: _clipCardIfNeeded(
-        borderRadius: cardRadius,
-        shouldClip: topWidget != null,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: isSelected
-                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-                : (highlightColor ?? theme.cardTheme.color),
-            borderRadius: cardRadius,
-            border: isSelected
-                ? Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                  )
-                : null,
-          ),
-          child: TopicCardInteractiveSurface(
-            borderRadius: cardRadius,
-            onTap: onTap,
-            onLongPress: onLongPress,
-            onMiddleClick: onMiddleClick,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 顶部附属区域（如书签元信息色带）
-                if (topWidget != null) ...[topWidget!],
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child: messageStyle
-                      ? _buildMessageBody(
-                          context,
-                          isUnread: isUnread,
-                          isFullyRead: isFullyRead,
-                          metaColor: metaColor,
-                          unreadIndicator: unreadIndicator,
-                        )
-                      : _buildNormalBody(
-                          context,
-                          style: style,
-                          titleStyle: titleStyle,
-                          titleColor: titleColor,
-                          metaColor: metaColor,
-                          isUnread: isUnread,
-                          isFullyRead: isFullyRead,
-                          unreadIndicator: unreadIndicator,
-                          category: category,
-                        ),
-                ),
-              ],
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _clipCardIfNeeded(
+          borderRadius: cardRadius,
+          shouldClip: topWidget != null,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
+                  : (highlightColor ?? theme.cardTheme.color),
+              borderRadius: cardRadius,
+              border: isSelected
+                  ? Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                    )
+                  : null,
+            ),
+            child: TopicCardInteractiveSurface(
+              borderRadius: cardRadius,
+              onTap: onTap,
+              onLongPress: onLongPress,
+              onPreviewIntent: onPreviewIntent,
+              onMiddleClick: onMiddleClick,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 顶部附属区域（如书签元信息色带）
+                  if (topWidget != null) ...[topWidget!],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    child: messageStyle
+                        ? _buildMessageBody(
+                            context,
+                            isUnread: isUnread,
+                            isFullyRead: isFullyRead,
+                            metaColor: metaColor,
+                            unreadIndicator: unreadIndicator,
+                          )
+                        : _buildNormalBody(
+                            context,
+                            style: style,
+                            titleStyle: titleStyle,
+                            titleColor: titleColor,
+                            metaColor: metaColor,
+                            isUnread: isUnread,
+                            isFullyRead: isFullyRead,
+                            unreadIndicator: unreadIndicator,
+                            category: category,
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -407,8 +461,7 @@ class TopicCard extends ConsumerWidget {
         if (middleWidget != null) ...[const SizedBox(height: 4), middleWidget!],
         const SizedBox(height: 8),
         metadata(
-          withAvatarInline:
-              style.avatarLayout == TopicCardAvatarLayout.inline,
+          withAvatarInline: style.avatarLayout == TopicCardAvatarLayout.inline,
         ),
       ],
     );
@@ -899,6 +952,7 @@ class TopicCard extends ConsumerWidget {
             size: 13,
             color: effectiveColor,
             gap: 3,
+            textStyle: theme.textTheme.labelSmall,
           ),
           TextSpan(
             text: NumberUtils.formatCount(count),
@@ -919,6 +973,7 @@ class CompactTopicCard extends ConsumerWidget {
   final VoidCallback? onTap;
   final VoidCallback? onMiddleClick;
   final VoidCallback? onLongPress;
+  final VoidCallback? onPreviewIntent;
   final bool isSelected;
   final Color? highlightColor;
   final Map<int, Category>? categoryMap;
@@ -929,6 +984,7 @@ class CompactTopicCard extends ConsumerWidget {
     this.onTap,
     this.onMiddleClick,
     this.onLongPress,
+    this.onPreviewIntent,
     this.isSelected = false,
     this.highlightColor,
     this.categoryMap,
@@ -996,6 +1052,7 @@ class CompactTopicCard extends ConsumerWidget {
             borderRadius: cardRadius,
             onTap: onTap,
             onLongPress: onLongPress,
+            onPreviewIntent: onPreviewIntent,
             onMiddleClick: onMiddleClick,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1122,6 +1179,9 @@ class CompactTopicCard extends ConsumerWidget {
                               alpha: 0.7,
                             ),
                             gap: 2,
+                            textStyle: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                            ),
                           ),
                           TextSpan(
                             text: '${topic.postsCount - 1}',

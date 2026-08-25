@@ -44,6 +44,7 @@
   "login_qrPickImage": "從相簿選擇",
   "login_qrRefresh": "重新生成",
   "login_qrScanFailed": "掃碼登錄失敗，請重試",
+  "login_qrScannedSuccess": "對方裝置已登錄成功",
   "login_qrScanHint": "將鏡頭對準另一台裝置上的登錄二維碼",
   "login_qrScanTitle": "掃碼登錄",
   "login_qrSecurityWarning": "二維碼含有 User API Key 同一次性登入令牌，約 10 分鐘內有效。請勿分享畀其他人或喺公共場合長時間展示。",

@@ -11,18 +11,17 @@ import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
-import '../widgets/layout/auto_restore_master_detail_route.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/layout/pane_projection_back_scope.dart';
+import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../l10n/s.dart';
-import 'settings_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'topics_screen.dart' show PaneContentWidget;
-import 'user_profile_page.dart';
 
 /// 内部 tab 动作：外层根据当前激活 filter 派发给对应子 widget。
 /// 用 nonce 让连续同类事件也能触发 Riverpod 监听。
@@ -57,37 +56,40 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  /// 桌面 ESC 两段式:右栏开着→分发落 detail scope(关右栏);右栏空→
+  /// 桌面 ESC 两段式:右栏/投影开着→分发落 detail scope(关右栏);空态→
   /// 注册 maybePop。底栏 tab 形态是首路由,maybePop 为 no-op。
   late final PaneHostEscBinding _escBinding = PaneHostEscBinding(
     ref: ref,
     enabled: () => widget.isActive,
   );
 
-  /// 用持久化 GlobalKey 做 master/detail 槽位间的话题面板"挪动"已回退——
-  /// 实测多切换几个私信会命中 Flutter 框架级断言
-  /// `'_elements.contains(element)': is not true`（红屏崩溃），比原来要
-  /// 解决的销毁重建竞态更严重。理由详见 topics_screen.dart 同名注释。
-  Key _keyForTopic(int topicId) => ValueKey('topic_$topicId');
-
-  /// 平行视界压栈时：左侧显示栈里"上一层"内容而不是简单隐藏，右侧显示
-  /// 新顶替的内容；列表用 Offstage 保留，退回最底层时原样恢复。
-  Widget _buildMasterPane(SelectedTopicState selectedMessage, Widget list) {
-    if (!selectedMessage.isStacked) return list;
-    final previous = selectedMessage.stack[selectedMessage.stack.length - 2];
-    return Stack(
-      children: [
-        Offstage(offstage: true, child: list),
-        PaneContentWidget(
-          key: previous.kind == PaneKind.topic
-              ? _keyForTopic(previous.topicId!)
-              : ValueKey('master_${previous.kind}_${previous.username}'),
-          entry: previous,
-          stackProvider: selectedMessageProvider,
-          truncateOnPush: true,
-          parentActive: widget.isActive,
-        ),
-      ],
+  /// 平行视界第 [index] 层格(0=栈底):胶片带模型,每层一格恒驻,
+  /// 压栈=倒二格滑去左栏当预览(State 全保),退栈=滑回。
+  Widget _buildPaneCell(SelectedTopicState selectedMessage, int index) {
+    final entry = selectedMessage.stack[index];
+    final isTop = index == selectedMessage.stack.length - 1;
+    final key = entry.kind == PaneKind.topic
+        ? ValueKey('pm_pane_${entry.topicId}_${entry.instanceId ?? ''}')
+        : ValueKey('pm_pane_${entry.kind}_${entry.username}');
+    return KeyedSubtree(
+      key: key,
+      child: PaneContentWidget(
+        entry: entry,
+        stackProvider: selectedMessageProvider,
+        parentActive: widget.isActive,
+        truncateOnPush: !isTop,
+        // 基础层也给 clear：ESC/返回按钮清空右栏回到空态，与
+        // search/seeking 一致（平行视界 ESC 统一）。回调内重读
+        // provider，不闭包捕获 build 时的快照。
+        onBack: () {
+          final notifier = ref.read(selectedMessageProvider.notifier);
+          if (ref.read(selectedMessageProvider).isStacked) {
+            notifier.pop();
+          } else {
+            notifier.clear();
+          }
+        },
+      ),
     );
   }
 
@@ -97,79 +99,10 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     PrivateMessageFilter.archive,
   ];
 
-  bool? _lastCanShowDetailPane;
-  bool _isAutoSwitching = false;
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _filters.length, vsync: this);
-  }
-
-  /// 双栏→单栏（窗口缩小）时自动把当前栈顶层 push 成全屏详情页，而不是
-  /// 让选中状态"静默消失"、只剩下私信列表——之前这里完全没做，缩小窗口
-  /// 就直接掉回私信列表本身，而不是栈顶（最新压的那层，比如内部链接点
-  /// 开的话题）。逻辑对齐 topics_screen.dart 的 `_maybePushDetail`。
-  void _maybePushDetail(SelectedTopicState selectedMessage, bool canShowDetailPane) {
-    if (_isAutoSwitching) return;
-    if (!widget.isActive) {
-      _lastCanShowDetailPane = canShowDetailPane;
-      return;
-    }
-
-    final previous = _lastCanShowDetailPane;
-    _lastCanShowDetailPane = canShowDetailPane;
-
-    if (!canShowDetailPane &&
-        selectedMessage.hasSelection &&
-        (previous == null || previous == true)) {
-      final topicId = selectedMessage.topicId;
-      if (topicId == null) {
-        final username = selectedMessage.username;
-        final isSettings = selectedMessage.kind == PaneKind.settings;
-        if (username == null && !isSettings) return;
-        _isAutoSwitching = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final navigator = Navigator.of(context);
-          // 不清空栈状态，回宽屏时自动恢复（理由见 topics_screen.dart
-          // 同名方法的注释）。
-          navigator
-              .push(MaterialPageRoute(
-                builder: (_) => AutoRestoreMasterDetailRoute(
-                  child: isSettings
-                      ? const SettingsPage()
-                      : UserProfilePage(username: username!),
-                ),
-              ))
-              .whenComplete(() {
-            if (mounted) setState(() => _isAutoSwitching = false);
-          });
-        });
-        return;
-      }
-
-      _isAutoSwitching = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final navigator = Navigator.of(context);
-        // 同上：不清空栈状态。
-        navigator
-            .push(MaterialPageRoute(
-              builder: (_) => TopicDetailPage(
-                topicId: topicId,
-                initialTitle: selectedMessage.initialTitle,
-                scrollToPostNumber: selectedMessage.scrollToPostNumber,
-                autoSwitchToMasterDetail: true,
-                restoreExistingPaneStack: true,
-                stackProvider: selectedMessageProvider,
-              ),
-            ))
-            .whenComplete(() {
-          if (mounted) setState(() => _isAutoSwitching = false);
-        });
-      });
-    }
   }
 
   @override
@@ -258,45 +191,30 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
     );
 
     // 平行视界：宽屏双栏下私信列表跟话题列表一样，走独立的
-    // selectedMessageProvider 导航栈，不再单独弹全屏详情页。
-    final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+    // selectedMessageProvider 导航栈;窄屏栈非空时详情在本页体内全宽
+    // 投影(栈是唯一真相,不 push 合成路由,宽窄切换 State 原地保留)。
     final selectedMessage = ref.watch(selectedMessageProvider);
-    _maybePushDetail(selectedMessage, canShowDetailPane);
-    _escBinding.sync(
-      context,
-      paneOpen: canShowDetailPane && selectedMessage.hasSelection,
-    );
-    if (!canShowDetailPane) return listScaffold;
+    // ESC:栈非空(右栏开着/投影着)都让分发落 detail scope。
+    _escBinding.sync(context, paneOpen: selectedMessage.hasSelection);
 
     // 左栏本质是不是"列表"（私信列表）——决定给窄栏还是对半分。
     final masterIsListLike = !selectedMessage.isStacked;
-    return MasterDetailLayout(
-      maxMasterRatio: masterIsListLike
-          ? MasterDetailLayout.defaultMaxMasterRatio
-          : 0.8,
-      preferredMasterRatio: masterIsListLike ? 0.25 : 0.5,
-      master: _buildMasterPane(selectedMessage, listScaffold),
-      detail: selectedMessage.hasSelection
-          ? PaneContentWidget(
-              key: selectedMessage.kind == PaneKind.topic
-                  ? _keyForTopic(selectedMessage.topicId!)
-                  : ValueKey('${selectedMessage.kind}_${selectedMessage.username}'),
-              entry: selectedMessage.topEntry!,
-              stackProvider: selectedMessageProvider,
-              parentActive: widget.isActive,
-              // 基础层也给 clear：ESC/返回按钮清空右栏回到空态，与
-              // search/seeking 一致（平行视界 ESC 统一）。回调内重读
-              // provider，不闭包捕获 build 时的快照。
-              onBack: () {
-                final notifier = ref.read(selectedMessageProvider.notifier);
-                if (ref.read(selectedMessageProvider).isStacked) {
-                  notifier.pop();
-                } else {
-                  notifier.clear();
-                }
-              },
-            )
-          : null,
+    return PaneProjectionBackScope(
+      stackProvider: selectedMessageProvider,
+      isActive: widget.isActive,
+      child: MasterDetailLayout(
+        maxMasterRatio: masterIsListLike
+            ? MasterDetailLayout.defaultMaxMasterRatio
+            : 0.8,
+        preferredMasterRatio: masterIsListLike ? 0.25 : 0.5,
+        projectDetailWhenNarrow: true,
+        pinMaster: false,
+        master: listScaffold,
+        panes: [
+          for (var i = 0; i < selectedMessage.stack.length; i++)
+            _buildPaneCell(selectedMessage, i),
+        ],
+      ),
     );
   }
 }
@@ -464,7 +382,10 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
             );
           }
 
-          return ListView.builder(
+          return TopicCardPrewarmScope(
+            topics: topics,
+            messageStyle: true,
+            child: ListView.builder(
             controller: _scrollController,
             // 底部让出 extendBody 注入的底栏高度
             padding: EdgeInsets.fromLTRB(
@@ -494,6 +415,7 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
                 messageStyle: true,
               );
             },
+            ),
           );
         },
         loading: () => const TopicListSkeleton(messageStyle: true),
