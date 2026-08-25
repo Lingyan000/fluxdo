@@ -38,7 +38,7 @@ import '../network/cookie/cookie_jar_service.dart';
 import '../network/cookie/boundary_sync_service.dart';
 import '../network/cookie/session_snapshot.dart';
 import '../cf_challenge_service.dart';
-import '../cf_clearance_registry.dart';
+import '../cf_clearance_authority.dart';
 import '../message_bus_service.dart';
 import '../network/adapters/webview_http_adapter.dart';
 import '../network/webview/webview_adapter_settings_service.dart';
