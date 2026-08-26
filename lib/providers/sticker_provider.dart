@@ -115,7 +115,21 @@ Future<void> _prefetchFirstScreenThumbnails(
   }
 }
 
+/// 市场分类（topic）列表（市场面板的分类 chips 数据源）
+final marketTopicsProvider =
+    FutureProvider.autoDispose<List<StickerMarketTopic>>((ref) async {
+      final service = ref.watch(stickerMarketServiceProvider);
+      final index = await service.getIndex();
+      return index.topics;
+    });
+
 /// 市场分组分页加载（供市场浏览面板使用）
+///
+/// 两种模式：
+/// - 浏览模式：按页懒加载当前分类（topic）的分组，滚动到底自动翻页；
+/// - 搜索模式：查询非空时先按已加载结果即时过滤，同时并行拉全当前
+///   分类的剩余页再全量过滤（全市场 ~300 组，全量拉取代价可忽略，
+///   页数据本就有 24h 缓存）。
 final marketGroupsProvider =
     StateNotifierProvider.autoDispose<
       MarketGroupsNotifier,
@@ -127,66 +141,151 @@ final marketGroupsProvider =
 
 class MarketGroupsNotifier
     extends StateNotifier<AsyncValue<List<StickerGroup>>> {
+  MarketGroupsNotifier(this._service) : super(const AsyncValue.loading()) {
+    _loadFirstPage();
+  }
+
   final StickerMarketService _service;
+
+  /// 当前分类 id（'all' = 全部）
+  String _topic = 'all';
+  String _query = '';
   int _loadedPages = 0;
   int _totalPages = 0;
   bool _isLoadingMore = false;
   bool _isLoadMoreFailed = false;
 
-  MarketGroupsNotifier(this._service) : super(const AsyncValue.loading()) {
-    _loadFirstPage();
-  }
+  /// 浏览模式下已加载的分组（未过滤；搜索过滤在其上进行）
+  List<StickerGroup> _groups = [];
 
-  bool get hasMore => _loadedPages < _totalPages;
+  /// 单飞序号：分类切换/搜索拉全量页是异步的，过期结果按序号丢弃
+  int _seq = 0;
+
+  bool get isSearchMode => _query.isNotEmpty;
+  bool get hasMore => !isSearchMode && _loadedPages < _totalPages;
   bool get isLoadingMore => _isLoadingMore;
   bool get isLoadMoreFailed => _isLoadMoreFailed;
 
-  void _emitCurrentData() {
-    final groups = state.value;
-    if (groups != null && mounted) {
-      state = AsyncValue.data(List<StickerGroup>.of(groups));
-    }
+  void _emit(List<StickerGroup> groups, {bool loading = false}) {
+    if (!mounted) return;
+    state = loading
+        ? const AsyncValue.loading()
+        : AsyncValue.data(List<StickerGroup>.of(groups));
+  }
+
+  List<StickerGroup> _applyQuery() {
+    if (_query.isEmpty) return _groups;
+    final q = _query.toLowerCase();
+    return _groups.where((g) => g.name.toLowerCase().contains(q)).toList();
   }
 
   Future<void> _loadFirstPage() async {
+    final seq = ++_seq;
+    _emit(const [], loading: true);
     try {
-      // 并行请求索引和第一页
-      final results = await Future.wait([
-        _service.getIndex(),
-        _service.getGroupsPage(1),
-      ]);
-      _totalPages = (results[0] as StickerMarketIndex).totalPages;
+      final (groups, totalPages) = await _service.getGroupsPageWithMeta(
+        1,
+        topic: _topic,
+      );
+      if (seq != _seq || !mounted) return;
+      _groups = groups;
       _loadedPages = 1;
+      _totalPages = totalPages;
       _isLoadMoreFailed = false;
-      state = AsyncValue.data(results[1] as List<StickerGroup>);
+      _emit(_applyQuery());
     } catch (e, st) {
+      if (seq != _seq || !mounted) return;
       AppLogger.error(
         '加载表情包市场首页失败',
         tag: 'Sticker',
         error: e,
         stackTrace: st,
-        fields: {'baseUrl': _service.baseUrl},
+        fields: {'baseUrl': _service.baseUrl, 'topic': _topic},
       );
       state = AsyncValue.error(e, st);
     }
   }
 
+  /// 切换分类。清空搜索词（UI 侧同步清空输入框），重载该分类第一页。
+  Future<void> setTopic(String topic) async {
+    if (topic == _topic) return;
+    _topic = topic;
+    _query = '';
+    _groups = [];
+    _loadedPages = 0;
+    _totalPages = 0;
+    _isLoadingMore = false;
+    _isLoadMoreFailed = false;
+    await _loadFirstPage();
+  }
+
+  /// 设置搜索词。空串退出搜索模式回到浏览态；非空先即时过滤已加载
+  /// 结果，缺页时后台拉全再全量过滤。
+  Future<void> setQuery(String rawQuery) async {
+    final query = rawQuery.trim();
+    if (query == _query) return;
+    _query = query;
+    final seq = ++_seq;
+    if (_query.isEmpty) {
+      _emit(_groups);
+      return;
+    }
+
+    // 先展示已加载部分的过滤结果（首键即有反馈）
+    _emit(_applyQuery());
+    if (_loadedPages >= _totalPages) return;
+
+    try {
+      final missingPages = [
+        for (var p = _loadedPages + 1; p <= _totalPages; p++) p,
+      ];
+      final fetched = await Future.wait(
+        missingPages.map((p) => _service.getGroupsPage(p, topic: _topic)),
+      );
+      if (seq != _seq || !mounted) return;
+      for (final pageGroups in fetched) {
+        _groups.addAll(pageGroups);
+      }
+      _loadedPages = _totalPages;
+    } catch (e, st) {
+      if (seq != _seq || !mounted) return;
+      AppLogger.warning(
+        '表情包市场搜索拉全量页失败，按已加载结果过滤',
+        tag: 'Sticker',
+        fields: {
+          'topic': _topic,
+          'query': _query,
+          'error': e.toString(),
+          'stackTrace': st.toString(),
+        },
+      );
+    }
+    _emit(_applyQuery());
+  }
+
   Future<void> loadMore() async {
-    if (_isLoadingMore || !hasMore || state is! AsyncData || _isLoadMoreFailed) return;
+    if (_isLoadingMore ||
+        !hasMore ||
+        state is! AsyncData ||
+        _isLoadMoreFailed) {
+      return;
+    }
     _isLoadingMore = true;
     _isLoadMoreFailed = false;
-    _emitCurrentData();
+    _emit(_applyQuery());
     try {
       final nextPage = _loadedPages + 1;
-      final newGroups = await _service.getGroupsPage(nextPage);
+      final (newGroups, totalPages) = await _service.getGroupsPageWithMeta(
+        nextPage,
+        topic: _topic,
+      );
       _loadedPages = nextPage;
-      if (newGroups.isEmpty) {
-        _totalPages = nextPage;
-      }
+      _totalPages = totalPages;
+      _groups.addAll(newGroups);
       if (!mounted) return;
 
       // 单次提交新页面，避免滚动过程中连续多次 rebuild 整个列表。
-      state = AsyncValue.data([...state.value!, ...newGroups]);
+      _emit(_applyQuery());
     } catch (e, st) {
       _isLoadMoreFailed = true;
       AppLogger.warning(
@@ -194,6 +293,7 @@ class MarketGroupsNotifier
         tag: 'Sticker',
         fields: {
           'page': _loadedPages + 1,
+          'topic': _topic,
           'baseUrl': _service.baseUrl,
           'error': e.toString(),
           'stackTrace': st.toString(),
@@ -201,19 +301,22 @@ class MarketGroupsNotifier
       );
     } finally {
       _isLoadingMore = false;
-      _emitCurrentData();
+      _emit(_applyQuery());
     }
   }
 
   Future<void> retryLoadMore() async {
     if (!_isLoadMoreFailed) return;
     _isLoadMoreFailed = false;
-    _emitCurrentData();
+    _emit(_applyQuery());
     await loadMore();
   }
 
+  /// 重载当前分类第一页（错误重试入口）。同时退出搜索模式。
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
+    _seq++; // 作废在飞的搜索/翻页请求
+    _query = '';
+    _groups = [];
     _loadedPages = 0;
     _totalPages = 0;
     _isLoadingMore = false;

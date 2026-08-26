@@ -31,6 +31,8 @@
   "sticker_groupEmpty": "該分組暫無表情包",
   "sticker_loadFailed": "加載表情包失敗",
   "sticker_marketEmpty": "暫無可用的表情包",
+  "sticker_marketSearchEmpty": "未找到相符的表情包",
+  "sticker_marketSearchHint": "搜尋表情包...",
   "sticker_marketLoadFailed": "加載市場失敗",
   "sticker_marketTitle": "表情包市場",
   "sticker_noStickers": "還沒有表情包",

@@ -29,10 +29,12 @@ class StickerMarketService {
   late final Dio _dio;
 
   StickerMarketService(this._prefs) {
-    _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-    ));
+    _dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    );
   }
 
   /// 当前 baseUrl
@@ -75,15 +77,36 @@ class StickerMarketService {
   }
 
   /// 获取单页分组数据
-  Future<List<StickerGroup>> getGroupsPage(int page) async {
+  ///
+  /// [topic] 为市场分类 id；'all'（全部）走顶层 `page-N.json`，
+  /// 其余分类走 `{topic}-page-N.json`（与 index.json topics[].pages 对应）。
+  Future<List<StickerGroup>> getGroupsPage(
+    int page, {
+    String topic = 'all',
+  }) async {
+    final (groups, _) = await getGroupsPageWithMeta(page, topic: topic);
+    return groups;
+  }
+
+  /// 获取单页分组数据 + 该分类的分页元信息（totalPages）。
+  ///
+  /// 每个分类的页文件自带该分类的 totalPages（与「全部」的互不相同），
+  /// 分类切换后必须以页文件里的元信息为准，不能沿用索引顶层值。
+  Future<(List<StickerGroup>, int totalPages)> getGroupsPageWithMeta(
+    int page, {
+    String topic = 'all',
+  }) async {
     final data = await _fetchWithCache(
-      'page_$page',
-      '$baseUrl/assets/market/index/page-$page.json',
+      topic == 'all' ? 'page_$page' : 'page_${topic}_$page',
+      topic == 'all'
+          ? '$baseUrl/assets/market/index/page-$page.json'
+          : '$baseUrl/assets/market/index/$topic-page-$page.json',
     );
     final list = data['groups'] as List<dynamic>? ?? [];
-    return list
+    final groups = list
         .map((item) => StickerGroup.fromJson(item as Map<String, dynamic>))
         .toList();
+    return (groups, data['totalPages'] as int? ?? 1);
   }
 
   /// 获取分组详情
@@ -132,8 +155,7 @@ class StickerMarketService {
     return raw
         .map((s) {
           try {
-            return StickerItem.fromJson(
-                json.decode(s) as Map<String, dynamic>);
+            return StickerItem.fromJson(json.decode(s) as Map<String, dynamic>);
           } catch (_) {
             return null;
           }
@@ -159,8 +181,9 @@ class StickerMarketService {
     list.insert(0, encoded);
 
     // 限制数量
-    final trimmed =
-        list.length > _maxRecentStickers ? list.sublist(0, _maxRecentStickers) : list;
+    final trimmed = list.length > _maxRecentStickers
+        ? list.sublist(0, _maxRecentStickers)
+        : list;
     await _prefs.setStringList(_recentStickersKey, trimmed);
   }
 

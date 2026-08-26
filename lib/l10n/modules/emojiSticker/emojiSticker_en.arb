@@ -24,6 +24,8 @@
   "sticker_groupEmpty": "No stickers in this group",
   "sticker_loadFailed": "Failed to load stickers",
   "sticker_marketEmpty": "No stickers available",
+  "sticker_marketSearchEmpty": "No matching sticker packs",
+  "sticker_marketSearchHint": "Search sticker packs...",
   "sticker_marketLoadFailed": "Failed to load market",
   "sticker_marketTitle": "Sticker market",
   "sticker_noStickers": "No stickers yet",

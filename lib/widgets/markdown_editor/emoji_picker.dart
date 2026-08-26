@@ -722,8 +722,9 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                 child: Container(
                   height: 36,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.5),
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: TextField(
@@ -747,8 +748,10 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                       ),
                       suffixIcon: _query.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Symbols.cancel_rounded,
-                                  size: 16),
+                              icon: const Icon(
+                                Symbols.cancel_rounded,
+                                size: 16,
+                              ),
                               color: theme.colorScheme.onSurfaceVariant,
                               onPressed: () => _searchController.clear(),
                             )
@@ -765,18 +768,14 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
               ? Center(
                   child: Text(
                     S.current.emoji_searchPrompt,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
               : results.isEmpty
               ? Center(
                   child: Text(
                     S.current.emoji_searchNotFound,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
               : GridView.builder(
@@ -786,12 +785,11 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                     12,
                     12 + widget.bottomPadding,
                   ),
-                  gridDelegate:
-                      const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 40,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                      ),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 40,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                  ),
                   itemCount: results.length,
                   itemBuilder: (context, index) {
                     final emoji = results[index];
@@ -920,7 +918,10 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                         ),
                         suffixIcon: _query.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(Symbols.cancel_rounded, size: 18),
+                                icon: const Icon(
+                                  Symbols.cancel_rounded,
+                                  size: 18,
+                                ),
                                 color: theme.colorScheme.onSurfaceVariant,
                                 onPressed: () => _searchController.clear(),
                               )
