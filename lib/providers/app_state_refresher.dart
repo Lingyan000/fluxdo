@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/auth_session.dart';
 import 'core_providers.dart';
 import 'bookmark_name_suggestions_provider.dart';
 import 'bookmark_sync_controller.dart';
@@ -20,6 +21,7 @@ class AppStateRefresher {
   AppStateRefresher._();
 
   static DateTime? _lastRefreshTime;
+  static int _refreshEpoch = 0;
 
   /// 调用方用 [ProviderScope.containerOf] 取 container 后传入，
   /// 避免 [Future.delayed] 闭包持有的 [WidgetRef] 在延迟期间随 widget unmount 失效，
@@ -34,6 +36,7 @@ class AppStateRefresher {
       return;
     }
     _lastRefreshTime = now;
+    final refreshEpoch = ++_refreshEpoch;
 
     // 第一批：主页渲染必需（用户信息 + 分类 + 话题列表）
     for (final refresh in _coreRefreshers) {
@@ -42,6 +45,8 @@ class AppStateRefresher {
     _refreshTopicTabs(container);
     // 第二批：延迟 1 秒执行，避免并发请求过多触发风控
     Future.delayed(const Duration(seconds: 1), () {
+      // 切换账号后，上一轮延迟刷新不能再把旧账号请求重新唤醒。
+      if (refreshEpoch != _refreshEpoch) return;
       for (final refresh in _deferredRefreshers) {
         refresh(container);
       }
@@ -49,10 +54,18 @@ class AppStateRefresher {
   }
 
   static Future<void> resetForLogout(ProviderContainer container) async {
-    container.read(currentUserProvider.notifier).clearCache();
-    container.read(userSummaryProvider.notifier).clearCache();
+    // 先使已有的延迟刷新失效，避免退出/重新登录窗口中的旧闭包重新
+    // invalidate provider，把旧账号请求带入新会话。
+    _refreshEpoch++;
+    final generation = AuthSession().generation;
+    await Future.wait([
+      container.read(currentUserProvider.notifier).clearCache(),
+      container.read(userSummaryProvider.notifier).clearCache(),
+    ]);
+    if (!AuthSession().isValid(generation)) return;
     container.read(bookmarkNameSuggestionsProvider.notifier).clearCache();
     container.read(bookmarkSyncControllerProvider.notifier).reset();
+    container.invalidate(currentUsernameProvider);
     // 登出时 invalidate 所有（不会发请求，因为数据被清空了）
     for (final refresh in _coreRefreshers) {
       refresh(container);
@@ -84,10 +97,17 @@ class AppStateRefresher {
   /// 与 [resetForLogout] 的差别：不重置筛选/排序、不禁用 LDC/CDK
   /// （新账号可能仍在用），只做身份缓存清理 + 全量 invalidate。
   static Future<void> resetForAccountSwitch(ProviderContainer container) async {
-    container.read(currentUserProvider.notifier).clearCache();
-    container.read(userSummaryProvider.notifier).clearCache();
+    // 清理尚未执行的上一账号延迟刷新；refreshAll 完成后会再建立新 epoch。
+    _refreshEpoch++;
+    final generation = AuthSession().generation;
+    await Future.wait([
+      container.read(currentUserProvider.notifier).clearCache(),
+      container.read(userSummaryProvider.notifier).clearCache(),
+    ]);
+    if (!AuthSession().isValid(generation)) return;
     container.read(bookmarkNameSuggestionsProvider.notifier).clearCache();
     container.read(bookmarkSyncControllerProvider.notifier).reset();
+    container.invalidate(currentUsernameProvider);
     refreshAll(container, force: true);
   }
 

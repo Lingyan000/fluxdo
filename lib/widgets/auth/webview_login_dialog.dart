@@ -413,7 +413,14 @@ document.close();
     required String? secondFactorToken,
   }) async {
     final controller = _controller;
-    if (controller == null || _finished) return;
+    if (controller == null ||
+        _finished ||
+        !AuthSession().isValid(_flowGeneration)) {
+      if (!_finished && !AuthSession().isValid(_flowGeneration)) {
+        _finishCanceled();
+      }
+      return;
+    }
     if (mounted) setState(() => _processing = true);
 
     // 记录参数, CSRF 403 自动重验证后用同样参数重跑
@@ -423,6 +430,10 @@ document.close();
     // 方案 A: fetch 发出前确保登录 WebView store 有 cf_clearance (只灌一次)
     await _primeCookiesFromJar();
     if (_finished) return;
+    if (!AuthSession().isValid(_flowGeneration)) {
+      _finishCanceled();
+      return;
+    }
 
     final id = jsonEncode(widget.identifier);
     final pwd = jsonEncode(widget.password);
@@ -501,6 +512,10 @@ document.close();
   /// 的 cookie store, 再调一次 __fluxdoLogin。只重试一次, 仍失败 toast 原错。
   Future<void> _handleCsrfFailure(int status) async {
     if (_finished) return;
+    if (!AuthSession().isValid(_flowGeneration)) {
+      _finishCanceled();
+      return;
+    }
     if (_cfRetryUsed) {
       _finishFailure(
         LoginErrorKind.network,
@@ -517,6 +532,10 @@ document.close();
     // 1. 拉起 CF 手动验证页, 用户过完后 sync cookie 到 jar
     final ok = await CfChallengeService().showManualVerify(context, true);
     if (_finished) return;
+    if (!AuthSession().isValid(_flowGeneration)) {
+      _finishCanceled();
+      return;
+    }
     if (ok != true) {
       _finishFailure(
         LoginErrorKind.network,
@@ -529,6 +548,10 @@ document.close();
     //    session cookie 只在登录成功收口时同步，避免旧会话回写。
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     if (_finished) return;
+    if (!AuthSession().isValid(_flowGeneration)) {
+      _finishCanceled();
+      return;
+    }
     for (var i = 0; i < 3; i++) {
       await BoundarySyncService.instance.syncFromWebView(
         cookieNames: null,
@@ -538,6 +561,10 @@ document.close();
       final clearance = await CookieJarService().getCfClearance();
       if (clearance != null && clearance.isNotEmpty) break;
       await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!AuthSession().isValid(_flowGeneration)) {
+        _finishCanceled();
+        return;
+      }
     }
     if (_finished) return;
 
@@ -590,13 +617,25 @@ document.close();
       final controller = _controller;
       var bootstrapped = false;
       if (controller != null) {
+        final cancellationSignal = AuthSession().cancelToken.whenCancel
+            .then<void>((_) {});
         final bootstrapResult = await WebViewSessionCookieRefreshService
             .instance
             .runOnController(
               controller,
               reason: 'native_login_success',
               pluginCandidates: PreloadedDataService().pluginCandidatesSync,
+              isCancelled: () => !AuthSession().isValid(_flowGeneration),
+              cancellationSignal: cancellationSignal,
             );
+        if (!AuthSession().isValid(_flowGeneration)) {
+          if (mounted) {
+            Navigator.of(
+              context,
+            ).pop(const WebViewLoginDialogResult.canceled());
+          }
+          return;
+        }
         bootstrapped = bootstrapResult.ok;
       }
       await BoundarySyncService.instance.syncFromWebView(
@@ -607,16 +646,28 @@ document.close();
         requestGeneration: _flowGeneration,
         trusted: true,
       );
+      if (!AuthSession().isValid(_flowGeneration)) {
+        if (mounted) {
+          Navigator.of(context).pop(const WebViewLoginDialogResult.canceled());
+        }
+        return;
+      }
       final runtimeDetails = await CookieJarService()
           .getCookieDiagnosticsForRequest(
             Uri.parse(AppConstants.baseUrl),
             names: const {'_rt'},
           );
+      if (!AuthSession().isValid(_flowGeneration)) {
+        if (mounted) {
+          Navigator.of(context).pop(const WebViewLoginDialogResult.canceled());
+        }
+        return;
+      }
       final hasRuntimeCookie = runtimeDetails.any(
         (cookie) => (cookie['valueLength'] as int? ?? 0) > 0,
       );
       final tToken = await CookieJarService().getTToken();
-      if (hasRuntimeCookie) {
+      if (hasRuntimeCookie && AuthSession().isValid(_flowGeneration)) {
         WebViewSessionCookieRefreshService.instance.markSynced(
           reason: 'native_login_success',
           tToken: tToken,
@@ -627,6 +678,12 @@ document.close();
         reason: 'native_login_success',
         bootstrapOk: bootstrapped,
       );
+      if (!AuthSession().isValid(_flowGeneration)) {
+        if (mounted) {
+          Navigator.of(context).pop(const WebViewLoginDialogResult.canceled());
+        }
+        return;
+      }
     } catch (e) {
       debugPrint('[WebViewLogin] syncFromWebView 失败: $e');
     }

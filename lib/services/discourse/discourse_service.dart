@@ -48,6 +48,7 @@ import '../network/discourse_dio.dart';
 import '../network/flux_request_spec.dart';
 import '../preloaded_data_service.dart';
 import '../webview_session_cookie_refresh_service.dart';
+import '../network/cookie/webview_cookie_priming.dart';
 import '../app_logger.dart';
 import '../log/log_writer.dart';
 import '../network/exceptions/api_exception.dart';
@@ -119,6 +120,7 @@ abstract class _DiscourseServiceBase {
   Never _throwApiError(DioException e);
   Future<void> _loadStoredCredentials();
   Future<void> finalizeNativeLoginSuccess(String identifier);
+  Future<void> saveUsername(String username, {int? requestGeneration});
 }
 
 /// Linux.do API 服务

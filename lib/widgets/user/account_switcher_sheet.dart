@@ -138,6 +138,7 @@ class _AccountSwitcherBodyState extends State<_AccountSwitcherBody> {
       children: [
         for (final account in _accounts)
           _AccountTile(
+            key: ValueKey('account-switcher-tile-${account.username}'),
             account: account,
             isCurrent: account.username == _currentUsername,
             onTap: account.username == _currentUsername
@@ -193,6 +194,7 @@ class _AccountSwitcherBodyState extends State<_AccountSwitcherBody> {
 
 class _AccountTile extends StatelessWidget {
   const _AccountTile({
+    super.key,
     required this.account,
     required this.isCurrent,
     required this.onTap,
@@ -214,12 +216,16 @@ class _AccountTile extends StatelessWidget {
         template.replaceAll('{size}', '96'),
       );
       avatar = CircleAvatar(
+        key: ValueKey('account-switcher-avatar-${account.username}-$url'),
         radius: 20,
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
         foregroundImage: NetworkImage(url),
       );
     } else {
       avatar = CircleAvatar(
+        key: ValueKey(
+          'account-switcher-avatar-${account.username}-placeholder',
+        ),
         radius: 20,
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
         child: Text(

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'discourse/discourse_service.dart';
+import 'auth_session.dart';
+import 'account_manager.dart';
 import 'local_notification_service.dart' show navigatorKey;
 import 'network/cookie/cookie_jar_service.dart';
 import 'toast_service.dart';
@@ -78,9 +80,14 @@ class UserApiKeyLoginFlow {
   Future<void> handleCallback(Uri uri) async {
     if (_handling) return;
     _handling = true;
+    var requestGeneration = AuthSession().generation;
     try {
       final userApiKeyService = UserApiKeyService();
-      final result = await userApiKeyService.handleAuthRedirect(uri);
+      final result = await userApiKeyService.handleAuthRedirect(
+        uri,
+        requestGeneration: requestGeneration,
+      );
+      if (!AuthSession().isValid(requestGeneration)) return;
       // 冷启动 getInitialLink 会重放上次的 auth_redirect 深链;非本次授权流程
       // (nonce 已消费/不匹配)静默忽略,不弹 toast、不通知登录页。
       if (result.stale) {
@@ -95,12 +102,27 @@ class UserApiKeyLoginFlow {
 
       // 已有登录态:只是补授权。scopes 含 write 才值得留 key 做自愈;
       // 否则(linux.do 现状)立即焚毁,不留永久零权限凭据
+      if (!AuthSession().isValid(requestGeneration)) return;
       final existingToken = await CookieJarService().getTToken();
+      if (!AuthSession().isValid(requestGeneration)) return;
       if (existingToken != null && existingToken.isNotEmpty) {
-        await userApiKeyService.burnAfterLoginIfUseless(DiscourseService().dio);
-        ToastService.showSuccess('授权成功');
-        onFlowFinished?.call(true);
-        return;
+        // 添加账号流程已经切到隐藏 guest profile。即使旧版本/平台 cookie
+        // 清理不完整，也不能把新授权误当作当前账号的补授权。
+        final guestSession = await AccountManager().isGuestSession();
+        if (!AuthSession().isValid(requestGeneration)) return;
+        if (guestSession) {
+          await DiscourseService().detachSessionLocally();
+          // detachSessionLocally 会主动推进 generation；后续兑换属于隐藏
+          // guest 流程的新会话，使用推进后的 generation 继续校验。
+          requestGeneration = AuthSession().generation;
+        } else {
+          await userApiKeyService.burnAfterLoginIfUseless(
+            DiscourseService().dio,
+          );
+          ToastService.showSuccess('授权成功');
+          onFlowFinished?.call(true);
+          return;
+        }
       }
 
       // 无登录态:用随行 OTP 兑换 _t 完成登录(纯 dio)
@@ -116,7 +138,12 @@ class UserApiKeyLoginFlow {
       _showLoading('正在完成登录…');
       try {
         final service = DiscourseService();
-        final token = await userApiKeyService.redeemOtp(service.dio, otp);
+        final token = await userApiKeyService.redeemOtp(
+          service.dio,
+          otp,
+          requestGeneration: requestGeneration,
+        );
+        if (!AuthSession().isValid(requestGeneration)) return;
         if (token == null) {
           await userApiKeyService.burnAfterLoginIfUseless(service.dio);
           ToastService.showError('登录令牌兑换失败,请重试');
@@ -133,6 +160,7 @@ class UserApiKeyLoginFlow {
               extra: const {'skipAuthCheck': true, 'skipCsrf': true},
             ),
           );
+          if (!AuthSession().isValid(requestGeneration)) return;
           final data = response.data;
           final currentUser = data is Map<String, dynamic>
               ? data['current_user']
@@ -152,6 +180,7 @@ class UserApiKeyLoginFlow {
           return;
         }
 
+        if (!AuthSession().isValid(requestGeneration)) return;
         await service.finalizeNativeLoginSuccess(username);
         // _t 已到手且与 key 存活解耦;零 scope key 用完即焚
         await userApiKeyService.burnAfterLoginIfUseless(service.dio);

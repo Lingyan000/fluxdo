@@ -18,7 +18,9 @@ final bookmarksPageLoaderProvider = Provider<BookmarkPageLoader>((ref) {
 
 /// 当前账号 username，作为本地书签缓存的隔离键；抽出来便于测试注入。
 final currentUsernameProvider = FutureProvider<String?>((ref) async {
-  return ref.read(discourseServiceProvider).getUsername();
+  // 这里是本地缓存的身份边界，不能通过 getUsername() 回退到可能尚未
+  // 清掉的全局 preload；切换/guest 窗口必须立即得到 null。
+  return ref.read(discourseServiceProvider).getCurrentUsername();
 });
 
 /// 删除书签后的本地缓存写穿透(全入口统一收口):
@@ -235,10 +237,7 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
       final records = await _repo.readByIds(accountId, ids);
       if (!ref.mounted) return;
       final current = state.value ?? const <Topic>[];
-      final merged = <Topic>[
-        ...current,
-        ...records.map((r) => r.topic),
-      ];
+      final merged = <Topic>[...current, ...records.map((r) => r.topic)];
       _loadedCount = merged.length;
       state = AsyncValue.data(List<Topic>.unmodifiable(merged));
     } catch (_) {

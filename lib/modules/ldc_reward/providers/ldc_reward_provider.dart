@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/s.dart';
+import '../../../services/account_manager.dart';
+import '../../../services/auth_session.dart';
 import '../../../providers/secret_store_provider.dart';
 import '../../../providers/theme_provider.dart' show sharedPreferencesProvider;
+import '../../../providers/core_providers.dart';
 import '../models/ldc_reward_credentials.dart';
 import '../models/reward_request.dart';
 import '../models/reward_result.dart';
@@ -17,9 +20,15 @@ final ldcRewardCredentialsProvider =
 final ldcRewardCredentialStoreProvider = Provider<LdcRewardCredentialStore>((
   ref,
 ) {
+  // 未解析出当前用户时也不能回退到 device key；guest 是独立的默认
+  // profile，保证登录切换窗口不会短暂暴露上一个账号的打赏凭证。
+  final username = ref.watch(
+    currentUserProvider.select((value) => value.value?.username),
+  );
   return LdcRewardCredentialStore(
     secretStore: ref.watch(secretStoreProvider),
     preferences: ref.watch(sharedPreferencesProvider),
+    accountId: username ?? AccountManager.guestAccountId,
   );
 });
 
@@ -28,8 +37,12 @@ class LdcRewardCredentialsNotifier
   Future<void> _mutationQueue = Future.value();
 
   @override
-  Future<LdcRewardCredentials?> build() =>
-      ref.watch(ldcRewardCredentialStoreProvider).load();
+  Future<LdcRewardCredentials?> build() async {
+    final generation = AuthSession().generation;
+    final store = ref.watch(ldcRewardCredentialStoreProvider);
+    final credentials = await store.load();
+    return AuthSession().isValid(generation) ? credentials : null;
+  }
 
   /// 保存凭证
   Future<void> save(String clientId, String clientSecret) {
@@ -37,16 +50,24 @@ class LdcRewardCredentialsNotifier
       clientId: clientId,
       clientSecret: clientSecret,
     );
+    final generation = AuthSession().generation;
+    final store = ref.read(ldcRewardCredentialStoreProvider);
     return _enqueueMutation(() async {
-      await ref.read(ldcRewardCredentialStoreProvider).save(credentials);
+      if (!AuthSession().isValid(generation)) return;
+      await store.save(credentials);
+      if (!AuthSession().isValid(generation)) return;
       state = AsyncData(credentials);
     });
   }
 
   /// 清除凭证
   Future<void> clear() {
+    final generation = AuthSession().generation;
+    final store = ref.read(ldcRewardCredentialStoreProvider);
     return _enqueueMutation(() async {
-      await ref.read(ldcRewardCredentialStoreProvider).clear();
+      if (!AuthSession().isValid(generation)) return;
+      await store.clear();
+      if (!AuthSession().isValid(generation)) return;
       state = const AsyncData(null);
     });
   }

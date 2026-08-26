@@ -8,6 +8,7 @@ import 'package:pointycastle/export.dart';
 import 'package:uuid/uuid.dart';
 
 import '../constants.dart';
+import 'auth_session.dart';
 import 'log/log_writer.dart';
 import 'network/cookie/cookie_jar_service.dart';
 import 'storage/resilient_secure_storage.dart';
@@ -45,6 +46,7 @@ class UserApiKeyService {
   static const _keyPrivateKey = 'user_api_key_rsa_private';
   static const _keyApiKey = 'user_api_key_key';
   static const _keyClientId = 'user_api_key_client_id';
+
   /// 跨设备扫码专用 client_id(与浏览器授权 client 隔离)。
   /// 稳定复用,使服务端 create 时 destroy_all 只清掉上一枚分享 key。
   static const _keyQrClientId = 'user_api_key_qr_client_id';
@@ -75,6 +77,7 @@ class UserApiKeyService {
 
   DateTime? _lastSelfHealFailureAt;
   Future<Map<String, dynamic>?>? _activeSelfHeal;
+  int? _activeSelfHealGeneration;
 
   // ---------- 存储 ----------
 
@@ -303,10 +306,15 @@ class UserApiKeyService {
         redirectUrl = response.headers.value('location');
       }
       if (redirectUrl == null || redirectUrl.isEmpty) {
-        _log('warning', 'cross_device_key_no_redirect', '创建跨设备 key 未返回 redirect_url', {
-          'statusCode': response.statusCode,
-          'hasPayload': map?['payload'] != null,
-        });
+        _log(
+          'warning',
+          'cross_device_key_no_redirect',
+          '创建跨设备 key 未返回 redirect_url',
+          {
+            'statusCode': response.statusCode,
+            'hasPayload': map?['payload'] != null,
+          },
+        );
         throw StateError('服务端未返回授权结果');
       }
 
@@ -381,9 +389,14 @@ class UserApiKeyService {
   /// 返回 stale=true 表示"非本次授权流程"(冷启动重放的旧回调、nonce 已消费/
   /// 不匹配等)——调用方应静默忽略,不提示用户。ok/otp 仅在 stale=false 时有意义。
   Future<({bool ok, String? otp, bool stale})> handleAuthRedirect(
-    Uri uri,
-  ) async {
+    Uri uri, {
+    int? requestGeneration,
+  }) async {
+    bool isCurrent() =>
+        requestGeneration == null || AuthSession().isValid(requestGeneration);
+
     final pendingNonce = await _storage.read(key: _keyPendingNonce);
+    if (!isCurrent()) return (ok: false, otp: null, stale: true);
 
     final payloadParam = uri.queryParameters['payload'];
     if (payloadParam == null || payloadParam.isEmpty) {
@@ -392,6 +405,7 @@ class UserApiKeyService {
     }
 
     final decrypted = await _decrypt(payloadParam);
+    if (!isCurrent()) return (ok: false, otp: null, stale: true);
     if (decrypted == null) {
       // 解密失败多为残留回调(公钥已轮换),静默忽略
       _log('info', 'auth_redirect_decrypt_failed', '授权回调 payload 解密失败,忽略');
@@ -416,6 +430,7 @@ class UserApiKeyService {
     }
     // 确认是本次授权流程,消费 nonce(此后失败才提示用户)
     await _storage.delete(key: _keyPendingNonce);
+    if (!isCurrent()) return (ok: false, otp: null, stale: true);
 
     final key = payload['key'] as String?;
     if (key == null || key.isEmpty) {
@@ -424,12 +439,14 @@ class UserApiKeyService {
     }
 
     await _storage.write(key: _keyApiKey, value: key);
+    if (!isCurrent()) return (ok: false, otp: null, stale: true);
     _lastSelfHealFailureAt = null;
 
     String? otp;
     final otpParam = uri.queryParameters['oneTimePassword'];
     if (otpParam != null && otpParam.isNotEmpty) {
       otp = await _decrypt(otpParam);
+      if (!isCurrent()) return (ok: false, otp: null, stale: true);
     }
 
     _log('info', 'user_api_key_authorized', '授权成功,User API Key 已保存', {
@@ -443,10 +460,15 @@ class UserApiKeyService {
 
   /// 用 API key 静默补发 OTP。
   /// 服务端 302 到 auth_redirect?oneTimePassword=<加密>,从 Location 头解析。
-  Future<String?> requestOtp(Dio dio) async {
+  Future<String?> requestOtp(Dio dio, {int? requestGeneration}) async {
+    final generation = requestGeneration ?? AuthSession().generation;
+    bool isCurrent() => AuthSession().isValid(generation);
+
     final apiKey = await readApiKey();
+    if (!isCurrent()) return null;
     if (apiKey == null || apiKey.isEmpty) return null;
     final publicKeyPem = await ensurePublicKeyPem();
+    if (!isCurrent()) return null;
 
     try {
       final response = await dio.post(
@@ -468,32 +490,45 @@ class UserApiKeyService {
         ),
       );
 
+      if (!isCurrent()) return null;
       final location = response.headers.value('location');
       if (location == null || location.isEmpty) {
-        _log('warning', 'otp_request_no_location',
-            'OTP 补发响应无 Location(status=${response.statusCode})');
+        _log(
+          'warning',
+          'otp_request_no_location',
+          'OTP 补发响应无 Location(status=${response.statusCode})',
+        );
         return null;
       }
       final otpParam = Uri.parse(location).queryParameters['oneTimePassword'];
       if (otpParam == null || otpParam.isEmpty) {
-        _log('warning', 'otp_request_no_otp_param', 'Location 无 oneTimePassword');
+        _log(
+          'warning',
+          'otp_request_no_otp_param',
+          'Location 无 oneTimePassword',
+        );
         return null;
       }
       final otp = await _decrypt(otpParam);
+      if (!isCurrent()) return null;
       if (otp == null) {
         _log('warning', 'otp_decrypt_failed', 'OTP 解密失败');
       }
       return otp;
     } on DioException catch (e) {
       final status = e.response?.statusCode;
+      if (!isCurrent()) return null;
       // 403 = key 已撤销 / scope 不足 / 用户组不满足,key 已不可用则清除
       if (status == 403) {
-        _log('warning', 'otp_request_rejected',
-            'OTP 补发被拒(403),清除本地 key', {'statusCode': status});
+        _log('warning', 'otp_request_rejected', 'OTP 补发被拒(403),清除本地 key', {
+          'statusCode': status,
+        });
         await clearKey();
       } else {
-        _log('warning', 'otp_request_failed', 'OTP 补发请求失败',
-            {'statusCode': status, 'errorType': e.type.toString()});
+        _log('warning', 'otp_request_failed', 'OTP 补发请求失败', {
+          'statusCode': status,
+          'errorType': e.type.toString(),
+        });
       }
       return null;
     }
@@ -508,7 +543,14 @@ class UserApiKeyService {
   ///   CfChallengeInterceptor 会在 cf_clearance 失效时兜底(前台弹 CF 验证)。
   /// - CSRF 用主 dio 手动 GET /session/csrf 取,POST 时 skipCsrf + 手动带
   ///   X-CSRF-Token,避免 RequestHeaderInterceptor 回落到独立 dio 刷新。
-  Future<String?> redeemOtp(Dio dio, String otp) async {
+  Future<String?> redeemOtp(
+    Dio dio,
+    String otp, {
+    int? requestGeneration,
+  }) async {
+    final generation = requestGeneration ?? AuthSession().generation;
+    bool isCurrent() => AuthSession().isValid(generation);
+
     // OTP 令牌是 hex,直接拼路径(路由约束 [0-9a-f]+)
     if (!RegExp(r'^[0-9a-f]+$').hasMatch(otp)) {
       _log('warning', 'otp_redeem_bad_format', 'OTP 格式异常,拒绝兑换');
@@ -516,10 +558,12 @@ class UserApiKeyService {
     }
 
     final beforeToken = await _cookieJar.getTToken();
+    if (!isCurrent()) return null;
     try {
       // 1. 主 dio 取 CSRF(GET 无需 CSRF;skipCsrf 避免触发独立 dio 刷新;
       //    过 CF 靠 rhttp 指纹 + CfChallengeInterceptor 兜底)
       final csrf = await _fetchCsrfViaMainDio(dio);
+      if (!isCurrent()) return null;
       if (csrf == null || csrf.isEmpty) {
         _log('warning', 'otp_redeem_no_csrf', 'OTP 兑换取 CSRF 失败');
         return null;
@@ -535,10 +579,7 @@ class UserApiKeyService {
           followRedirects: false,
           validateStatus: (status) =>
               status != null && (status < 400 || status == 302),
-          headers: {
-            'X-CSRF-Token': csrf,
-            'X-Requested-With': 'XMLHttpRequest',
-          },
+          headers: {'X-CSRF-Token': csrf, 'X-Requested-With': 'XMLHttpRequest'},
           extra: const {
             'skipCsrf': true,
             'skipAuthCheck': true,
@@ -549,17 +590,24 @@ class UserApiKeyService {
       );
 
       // 成功路径:302 → / 且 Set-Cookie _t(由 AppCookieManager 落 jar)
+      if (!isCurrent()) return null;
       final afterToken = await _cookieJar.getTToken();
-      final ok = afterToken != null &&
+      if (!isCurrent()) return null;
+      final ok =
+          afterToken != null &&
           afterToken.isNotEmpty &&
           afterToken != beforeToken;
-      _log(ok ? 'info' : 'warning', 'otp_redeem_finished',
-          ok ? 'OTP 兑换成功,已获得新 _t' : 'OTP 兑换后未见新 _t', {
-        'statusCode': response.statusCode,
-        'hadTokenBefore': beforeToken != null && beforeToken.isNotEmpty,
-        'hasTokenAfter': afterToken != null && afterToken.isNotEmpty,
-        'tokenChanged': afterToken != beforeToken,
-      });
+      _log(
+        ok ? 'info' : 'warning',
+        'otp_redeem_finished',
+        ok ? 'OTP 兑换成功,已获得新 _t' : 'OTP 兑换后未见新 _t',
+        {
+          'statusCode': response.statusCode,
+          'hadTokenBefore': beforeToken != null && beforeToken.isNotEmpty,
+          'hasTokenAfter': afterToken != null && afterToken.isNotEmpty,
+          'tokenChanged': afterToken != beforeToken,
+        },
+      );
       return ok ? afterToken : null;
     } on DioException catch (e) {
       _log('warning', 'otp_redeem_failed', 'OTP 兑换请求失败', {
@@ -598,20 +646,30 @@ class UserApiKeyService {
   /// `_t` 猝死后的静默自愈:补发 OTP → 兑换新 _t → 验证会话。
   /// 成功返回 /session/current.json 的 current_user JSON,失败返回 null。
   /// 单飞 + 失败冷却,不会并发或高频打服务端。
-  Future<Map<String, dynamic>?> selfHeal(Dio dio) {
+  Future<Map<String, dynamic>?> selfHeal(Dio dio, {int? requestGeneration}) {
+    final generation = requestGeneration ?? AuthSession().generation;
     final inFlight = _activeSelfHeal;
-    if (inFlight != null) return inFlight;
+    if (inFlight != null && _activeSelfHealGeneration == generation) {
+      return inFlight;
+    }
 
-    final future = _selfHealImpl(dio);
+    final future = _selfHealImpl(dio, generation);
     _activeSelfHeal = future;
+    _activeSelfHealGeneration = generation;
     future.whenComplete(() {
-      if (identical(_activeSelfHeal, future)) _activeSelfHeal = null;
+      if (identical(_activeSelfHeal, future)) {
+        _activeSelfHeal = null;
+        _activeSelfHealGeneration = null;
+      }
     });
     return future;
   }
 
-  Future<Map<String, dynamic>?> _selfHealImpl(Dio dio) async {
+  Future<Map<String, dynamic>?> _selfHealImpl(Dio dio, int generation) async {
+    bool isCurrent() => AuthSession().isValid(generation);
+
     if (!await hasKey()) return null;
+    if (!isCurrent()) return null;
 
     final lastFailure = _lastSelfHealFailureAt;
     if (lastFailure != null &&
@@ -622,13 +680,15 @@ class UserApiKeyService {
 
     _log('info', 'self_heal_started', '开始 User API Key 会话自愈');
 
-    final otp = await requestOtp(dio);
+    final otp = await requestOtp(dio, requestGeneration: generation);
+    if (!isCurrent()) return null;
     if (otp == null) {
       _lastSelfHealFailureAt = DateTime.now();
       return null;
     }
 
-    final newToken = await redeemOtp(dio, otp);
+    final newToken = await redeemOtp(dio, otp, requestGeneration: generation);
+    if (!isCurrent()) return null;
     if (newToken == null) {
       _lastSelfHealFailureAt = DateTime.now();
       return null;
@@ -643,6 +703,7 @@ class UserApiKeyService {
           extra: const {'skipAuthCheck': true, 'skipCsrf': true},
         ),
       );
+      if (!isCurrent()) return null;
       final data = response.data;
       final currentUser = data is Map<String, dynamic>
           ? data['current_user']
@@ -659,6 +720,7 @@ class UserApiKeyService {
         'statusCode': e.response?.statusCode,
       });
     }
+    if (!isCurrent()) return null;
     _lastSelfHealFailureAt = DateTime.now();
     return null;
   }

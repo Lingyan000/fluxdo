@@ -163,11 +163,22 @@ class _AccountManagePageState extends ConsumerState<AccountManagePage> {
   }
 
   Future<void> _addAccount() async {
-    await _manager.syncCurrentAccount(); // 新登录会覆盖 jar 会话,先把当前账号固化
-    if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+    // 先进入隐藏 guest profile，清掉当前 jar/WebView cookie；否则 API key
+    // 回调会把当前账号的 _t 误判为「已有登录态」，最终出现重复登录/重叠身份。
+    await _manager.prepareForNewLogin();
+    if (!mounted) {
+      await _manager.completeNewLogin(success: false);
+      return;
+    }
+    var success = false;
+    try {
+      final result = await Navigator.of(
+        context,
+      ).push<bool>(MaterialPageRoute(builder: (_) => const LoginPage()));
+      success = result == true;
+    } finally {
+      await _manager.completeNewLogin(success: success);
+    }
     if (!mounted) return;
     await _reload();
   }
@@ -187,7 +198,10 @@ class _AccountManagePageState extends ConsumerState<AccountManagePage> {
                 SegmentedCardGroup(
                   children: [
                     for (final account in _accounts)
-                      _buildAccountTile(theme, l10n, account),
+                      KeyedSubtree(
+                        key: ValueKey('account-tile-${account.username}'),
+                        child: _buildAccountTile(theme, l10n, account),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -320,12 +334,14 @@ class _AccountManagePageState extends ConsumerState<AccountManagePage> {
         template.replaceAll('{size}', '96'),
       );
       return CircleAvatar(
+        key: ValueKey('account-avatar-${account.username}-$url'),
         radius: 20,
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
         foregroundImage: NetworkImage(url),
       );
     }
     return CircleAvatar(
+      key: ValueKey('account-avatar-${account.username}-placeholder'),
       radius: 20,
       backgroundColor: theme.colorScheme.surfaceContainerHighest,
       child: Text(

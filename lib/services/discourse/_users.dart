@@ -20,21 +20,31 @@ mixin _UsersMixin on _DiscourseServiceBase {
 
   /// 获取缓存的用户名
   Future<String?> getUsername() async {
-    if (_username != null && _username!.isNotEmpty) return _username;
-
-    _username = await _storage.read(key: DiscourseService._usernameKey);
+    final generation = AuthSession().generation;
+    // 添加账号期间使用隐藏 guest profile。即使旧平台 cookie 或 preload
+    // 尚未完全清掉，也不能把上一账号重新当成当前身份返回给草稿/私信等调用方。
+    if (await AccountManager().isGuestSession()) {
+      if (AuthSession().isValid(generation)) _username = null;
+      return null;
+    }
+    // 内存 username 可能来自上一代会话；以持久化 identity 为准，避免
+    // 旧请求恢复 preload 后又把旧账号写回当前状态。
+    final storedUsername = await _storage.read(
+      key: DiscourseService._usernameKey,
+    );
+    if (!AuthSession().isValid(generation)) return null;
+    _username = storedUsername;
     if (_username != null && _username!.isNotEmpty) return _username;
 
     try {
       final preloaded = PreloadedDataService();
       final currentUser = await preloaded.getCurrentUser();
+      if (!AuthSession().isValid(generation)) return null;
       if (currentUser != null && currentUser['username'] != null) {
-        _username = currentUser['username'] as String;
-        await _storage.write(
-          key: DiscourseService._usernameKey,
-          value: _username!,
-        );
-        return _username;
+        final username = currentUser['username'] as String;
+        await saveUsername(username, requestGeneration: generation);
+        if (!AuthSession().isValid(generation)) return null;
+        return username;
       }
     } catch (e) {
       debugPrint('[DIO] Failed to get username from preloaded: $e');
@@ -45,24 +55,34 @@ mixin _UsersMixin on _DiscourseServiceBase {
 
   /// 获取用户信息
   Future<User> getUser(String username, {bool isSilent = false}) async {
-    final activeRequest = _activeUserRequests[username];
+    final generation = AuthSession().generation;
+    final requestKey = '$generation:$username';
+    final activeRequest = _activeUserRequests[requestKey];
     if (activeRequest != null) return activeRequest;
 
     late final Future<User> request;
-    request = _fetchUser(username, isSilent: isSilent).whenComplete(() {
-      if (identical(_activeUserRequests[username], request)) {
-        _activeUserRequests.remove(username);
-      }
-    });
-    _activeUserRequests[username] = request;
+    request = _fetchUser(username, isSilent: isSilent, generation: generation)
+        .whenComplete(() {
+          if (identical(_activeUserRequests[requestKey], request)) {
+            _activeUserRequests.remove(requestKey);
+          }
+        });
+    _activeUserRequests[requestKey] = request;
     return request;
   }
 
-  Future<User> _fetchUser(String username, {required bool isSilent}) async {
+  Future<User> _fetchUser(
+    String username, {
+    required bool isSilent,
+    required int generation,
+  }) async {
     final response = await _dio.get(
       '/u/$username.json',
       options: _userRequestOptions(isSilent),
     );
+    if (!AuthSession().isValid(generation)) {
+      throw StateError('当前会话已切换，丢弃旧用户响应');
+    }
     final data = response.data as Map<String, dynamic>;
     return User.fromJson(data['user'] ?? data);
   }
@@ -86,19 +106,29 @@ mixin _UsersMixin on _DiscourseServiceBase {
 
   /// 从预加载数据获取当前用户
   Future<User?> getPreloadedCurrentUser() async {
+    final generation = AuthSession().generation;
+    if (await AccountManager().isGuestSession()) return null;
     try {
       final preloaded = PreloadedDataService();
       final currentUserData = await preloaded.getCurrentUser();
+      final storedUsername = await _storage.read(
+        key: DiscourseService._usernameKey,
+      );
+      if (!AuthSession().isValid(generation)) return null;
       if (currentUserData != null) {
         final user = User.fromJson(currentUserData);
-        currentUserNotifier.value = user;
-        if (user.username.isNotEmpty) {
-          _username = user.username;
-          await _storage.write(
-            key: DiscourseService._usernameKey,
-            value: _username!,
-          );
+        if (storedUsername == null ||
+            storedUsername.isEmpty ||
+            user.username != storedUsername) {
+          return null;
         }
+        if (user.username.isNotEmpty) {
+          await saveUsername(user.username, requestGeneration: generation);
+          if (!AuthSession().isValid(generation)) return null;
+          _username = user.username;
+        }
+        if (!AuthSession().isValid(generation)) return null;
+        currentUserNotifier.value = user;
         return user;
       }
     } catch (e) {
@@ -110,10 +140,15 @@ mixin _UsersMixin on _DiscourseServiceBase {
   /// 获取当前用户信息
   /// 网络错误时会抛出异常，由调用方决定如何处理
   Future<User?> getCurrentUser() async {
+    final generation = AuthSession().generation;
     final username = await getUsername();
-    if (username == null) return null;
+    if (!AuthSession().isValid(generation) || username == null) return null;
 
     final user = await getUser(username);
+    if (!AuthSession().isValid(generation) ||
+        await _storage.read(key: DiscourseService._usernameKey) != username) {
+      return null;
+    }
     currentUserNotifier.value = user;
     return user;
   }
@@ -132,21 +167,32 @@ mixin _UsersMixin on _DiscourseServiceBase {
       return _cachedUserSummary!;
     }
 
-    final activeRequest = _activeUserSummaryRequests[username];
+    final generation = AuthSession().generation;
+    final requestKey = '$generation:$username';
+    final activeRequest = _activeUserSummaryRequests[requestKey];
     if (activeRequest != null) return activeRequest;
 
     late final Future<UserSummary> request;
-    request = _fetchUserSummary(username).whenComplete(() {
-      if (identical(_activeUserSummaryRequests[username], request)) {
-        _activeUserSummaryRequests.remove(username);
-      }
-    });
-    _activeUserSummaryRequests[username] = request;
+    request = _fetchUserSummary(username, generation: generation).whenComplete(
+      () {
+        if (identical(_activeUserSummaryRequests[requestKey], request)) {
+          _activeUserSummaryRequests.remove(requestKey);
+        }
+      },
+    );
+    _activeUserSummaryRequests[requestKey] = request;
     return request;
   }
 
-  Future<UserSummary> _fetchUserSummary(String username) async {
+  Future<UserSummary> _fetchUserSummary(
+    String username, {
+    required int generation,
+  }) async {
     final response = await _dio.get('/u/$username/summary.json');
+    if (!AuthSession().isValid(generation) ||
+        await _storage.read(key: DiscourseService._usernameKey) != username) {
+      throw StateError('当前会话已切换，丢弃旧用户统计响应');
+    }
     final summary = UserSummary.fromJson(response.data);
 
     _cachedUserSummary = summary;
@@ -341,10 +387,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
 
   /// 拉书签接口并返回原始 JSON map，给本地缓存对账层使用——
   /// 需要保留每条书签自身的 updated_at 等字段，无法通过 [TopicListResponse] 转回。
-  Future<Map<String, dynamic>> getUserBookmarksRaw({
-    int page = 0,
-    int? limit,
-  }) {
+  Future<Map<String, dynamic>> getUserBookmarksRaw({int page = 0, int? limit}) {
     return _getUserBookmarksRaw(page: page, limit: limit);
   }
 

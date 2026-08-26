@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../constants.dart';
+import 'auth_session.dart';
 import '../utils/frame_jank_monitor.dart';
 import 'log/log_writer.dart';
 import 'network/cookie/boundary_sync_service.dart';
@@ -93,6 +94,7 @@ class WebViewSessionCookieRefreshService {
   final CookieJarService _jar = CookieJarService();
 
   Future<SessionBootstrapResult>? _activeRefresh;
+  int? _activeRefreshGeneration;
   DateTime? _lastAttemptAt;
   DateTime? _lastSuccessAt;
   String? _lastSuccessToken;
@@ -168,6 +170,7 @@ class WebViewSessionCookieRefreshService {
     String reason = 'unknown',
     bool force = false,
   }) async {
+    final generation = AuthSession().generation;
     final startedAt = DateTime.now();
     _logEnsureEvent(
       event: 'webview_session_sync_started',
@@ -177,6 +180,9 @@ class WebViewSessionCookieRefreshService {
 
     if (!_jar.isInitialized) {
       await _jar.initialize();
+    }
+    if (!AuthSession().isValid(generation)) {
+      return const SessionBootstrapResult.failure(phase: 'cancelled');
     }
 
     final tToken = await _jar.getTToken();
@@ -213,7 +219,7 @@ class WebViewSessionCookieRefreshService {
     }
 
     final active = _activeRefresh;
-    if (active != null) {
+    if (active != null && _activeRefreshGeneration == generation) {
       _logEnsureEvent(
         event: 'webview_session_sync_join_active',
         reason: reason,
@@ -267,8 +273,11 @@ class WebViewSessionCookieRefreshService {
 
     _lastAttemptAt = now;
     late final Future<SessionBootstrapResult> future;
-    future = _refreshBrowserSession(reason: reason)
+    future = _refreshBrowserSession(reason: reason, generation: generation)
         .then((result) {
+          if (!AuthSession().isValid(generation)) {
+            return const SessionBootstrapResult.failure(phase: 'cancelled');
+          }
           // 失败退避计数:这里只会看到真正执行过的尝试(no_t / TTL /
           // cooldown / join 都在上面早退,不进本回调)。
           if (result.ok) {
@@ -293,9 +302,11 @@ class WebViewSessionCookieRefreshService {
         .whenComplete(() {
           if (identical(_activeRefresh, future)) {
             _activeRefresh = null;
+            _activeRefreshGeneration = null;
           }
         });
     _activeRefresh = future;
+    _activeRefreshGeneration = generation;
     return future;
   }
 
@@ -310,12 +321,19 @@ class WebViewSessionCookieRefreshService {
 
   Future<SessionBootstrapResult> _refreshBrowserSession({
     required String reason,
+    required int generation,
   }) async {
     debugPrint('[WebViewSessionSync] 开始运行轻量会话 bootstrap: reason=$reason');
 
     try {
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       WebViewCookiePriming.instance.invalidate();
       await WebViewCookiePriming.instance.prime(AppConstants.baseUrl);
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
     } catch (e) {
       debugPrint('[WebViewSessionSync] WebView cookie priming 失败，继续尝试: $e');
     }
@@ -334,6 +352,7 @@ class WebViewSessionCookieRefreshService {
         cookieNames: null,
         allowLowConfidenceSessionCookies: true,
         trusted: true,
+        requestGeneration: generation,
       );
     }
 
@@ -366,6 +385,9 @@ class WebViewSessionCookieRefreshService {
       // WebView 创建/销毁占用平台主线程,与掉帧时间轴对齐归因
       FrameJankMonitor.logEvent('WEBVIEW', 'SessionSync run(): $reason');
       await webView.run();
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       final c = webView.webViewController;
       if (c == null) {
         debugPrint('[WebViewSessionSync] Headless WebView controller 为空');
@@ -385,6 +407,10 @@ class WebViewSessionCookieRefreshService {
         );
       }
 
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
+
       try {
         await loadCompleter.future.timeout(const Duration(seconds: 8));
       } on TimeoutException {
@@ -399,7 +425,11 @@ class WebViewSessionCookieRefreshService {
         c,
         reason: reason,
         pluginCandidates: PreloadedDataService().pluginCandidatesSync,
+        isCancelled: () => !AuthSession().isValid(generation),
       );
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       if (!bootstrap.ok) {
         await syncCookies();
         await logCookieSummary(reason: reason, bootstrapOk: false);
@@ -412,9 +442,14 @@ class WebViewSessionCookieRefreshService {
       }
 
       await syncCookies();
+      if (!AuthSession().isValid(generation)) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       await logCookieSummary(reason: reason, bootstrapOk: true);
       final tToken = await _jar.getTToken();
-      if (tToken != null && tToken.isNotEmpty) {
+      if (AuthSession().isValid(generation) &&
+          tToken != null &&
+          tToken.isNotEmpty) {
         _lastSuccessAt = DateTime.now();
         _lastSuccessToken = tToken;
         debugPrint('[WebViewSessionSync] 浏览器会话 cookie 已同步');

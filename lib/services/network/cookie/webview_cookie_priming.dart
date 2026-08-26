@@ -8,6 +8,7 @@ import 'cookie_logger.dart';
 import 'cookie_store_observer.dart';
 import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
+import '../../auth_session.dart';
 
 /// WV 启动重灌服务。
 ///
@@ -49,6 +50,7 @@ class WebViewCookiePriming {
   // ---------------------------------------------------------------------------
 
   bool _isPrimed = false;
+  int? _primedGeneration;
 
   static const Duration _variantCleanupRetryDelay = Duration(milliseconds: 120);
   static const int _variantCleanupMaxAttempts = 2;
@@ -56,6 +58,7 @@ class WebViewCookiePriming {
   /// 当前进行中的 prime Future（用于同 url 并发去重）。
   Future<void>? _primingFuture;
   String? _primingUrl;
+  int? _primingGeneration;
 
   // ---------------------------------------------------------------------------
   // 公开 API
@@ -68,17 +71,21 @@ class WebViewCookiePriming {
   ///
   /// 详见 §5.2 接口契约。
   Future<void> prime(String url) async {
-    if (_isPrimed) return;
+    final generation = AuthSession().generation;
+    if (_isPrimed && _primedGeneration == generation) return;
 
     // 同 url 并发去重
     final existing = _primingFuture;
-    if (existing != null && _primingUrl == url) {
+    if (existing != null &&
+        _primingUrl == url &&
+        _primingGeneration == generation) {
       return existing;
     }
 
-    final future = _primeInternal(url);
+    final future = _primeInternal(url, generation: generation);
     _primingFuture = future;
     _primingUrl = url;
+    _primingGeneration = generation;
 
     try {
       await future;
@@ -86,6 +93,7 @@ class WebViewCookiePriming {
       if (identical(_primingFuture, future)) {
         _primingFuture = null;
         _primingUrl = null;
+        _primingGeneration = null;
       }
     }
   }
@@ -93,6 +101,7 @@ class WebViewCookiePriming {
   /// 标记 WV 状态为"未就绪"。
   void invalidate() {
     _isPrimed = false;
+    _primedGeneration = null;
   }
 
   /// 等待当前正在进行的 priming 完成（如有）。
@@ -105,25 +114,29 @@ class WebViewCookiePriming {
   @visibleForTesting
   void resetForTest() {
     _isPrimed = false;
+    _primedGeneration = null;
     _primingFuture = null;
     _primingUrl = null;
+    _primingGeneration = null;
   }
 
   // ---------------------------------------------------------------------------
   // 内部实现
   // ---------------------------------------------------------------------------
 
-  Future<void> _primeInternal(String url) async {
+  Future<void> _primeInternal(String url, {required int generation}) async {
     final stopwatch = Stopwatch()..start();
     CookieLogger.priming(event: 'invoked', url: url, isPrimed: _isPrimed);
     // 注册 url 到 observer, 后续 WV 外部 cookie 变化时会对该 url sweep
     CookieStoreObserver.instance.registerUrl(url);
     try {
+      if (!AuthSession().isValid(generation)) return;
       // 1. 确保 jar 已初始化（兜底，调用方应该已经初始化）
       if (!_jar.isInitialized) {
         await _jar.initialize();
       }
       await _jar.enforceAuthCookiePolicy(reason: 'webview_priming');
+      if (!AuthSession().isValid(generation)) return;
 
       // 2. 从 jar 读"当前 url 适用的所有 cookie" (RFC 6265 domain matching)
       // 不再按 criticalCookieNames 过滤 — 该列表 hard-code 维护不可持续
@@ -133,6 +146,7 @@ class WebViewCookiePriming {
       // 全量同步到 WV 即可。
       final uri = Uri.parse(url);
       final jarCookies = await _jar.loadCanonicalCookiesForRequest(uri);
+      if (!AuthSession().isValid(generation)) return;
 
       // 3. per-cookie 严格 "先 nuke 后写" 流程, 保证写入后 each name 恰好 1 条:
       //
@@ -152,6 +166,7 @@ class WebViewCookiePriming {
       var skippedRaceRemoved = 0;
       final mismatched = <String, int>{};
       for (final initialCookie in jarCookies) {
+        if (!AuthSession().isValid(generation)) return;
         if (initialCookie.value.isEmpty) {
           skippedEmpty++;
           continue;
@@ -181,6 +196,7 @@ class WebViewCookiePriming {
         // - value 变了: 用最新值 (新值更准)
         // - value 未变: 用原快照 (最常见)
         final fresh = await _jar.getCanonicalCookie(initialCookie.name);
+        if (!AuthSession().isValid(generation)) return;
         if (fresh == null || fresh.value.isEmpty) {
           skippedRaceRemoved++;
           debugPrint('[Priming] ${initialCookie.name} 在 priming 期间被外部删除, 跳过');
@@ -197,6 +213,7 @@ class WebViewCookiePriming {
         // a) 再次 race check: 上面读取是 async, 期间外部又可能删 cookie
         // 例如 sweep 跑到一半 cf_challenge_service 介入, 我们要尊重那个删除
         final reFresh = await _jar.getCanonicalCookie(cookie.name);
+        if (!AuthSession().isValid(generation)) return;
         if (reFresh == null || reFresh.value.isEmpty) {
           skippedRaceRemoved++;
           attempted--;
@@ -211,7 +228,9 @@ class WebViewCookiePriming {
         final writeResult = await _writeCookieWithVariantCleanup(
           url,
           writeCookie,
+          generation: generation,
         );
+        if (!AuthSession().isValid(generation)) return;
         if (writeResult.skipped) {
           skippedRaceRemoved++;
           attempted--;
@@ -256,7 +275,9 @@ class WebViewCookiePriming {
       var verified = 0;
       final missingNames = <String>[];
       final currentJar = await _jar.loadCanonicalCookiesForRequest(uri);
+      if (!AuthSession().isValid(generation)) return;
       for (final cookie in currentJar) {
+        if (!AuthSession().isValid(generation)) return;
         if (cookie.value.isEmpty || _isExpired(cookie)) continue;
         final count = await _writer.countCookiesByName(url, cookie.name);
         if (count >= 1) {
@@ -266,7 +287,9 @@ class WebViewCookiePriming {
         }
       }
 
+      if (!AuthSession().isValid(generation)) return;
       _isPrimed = true;
+      _primedGeneration = generation;
       final hasMismatch = mismatched.isNotEmpty || missingNames.isNotEmpty;
       debugPrint(
         '[Priming] WV primed for $url: '
@@ -287,8 +310,10 @@ class WebViewCookiePriming {
             : null,
       );
     } catch (e, s) {
+      if (!AuthSession().isValid(generation)) return;
       debugPrint('[Priming] prime $url failed: $e\n$s');
       _isPrimed = false;
+      _primedGeneration = null;
       CookieLogger.priming(
         event: 'failed',
         url: url,
@@ -301,20 +326,53 @@ class WebViewCookiePriming {
 
   Future<_PrimeWriteResult> _writeCookieWithVariantCleanup(
     String url,
-    CanonicalCookie cookie,
-  ) async {
+    CanonicalCookie cookie, {
+    required int generation,
+  }) async {
     var written = false;
     var postCount = 0;
     for (var attempt = 1; attempt <= _variantCleanupMaxAttempts; attempt++) {
+      if (!AuthSession().isValid(generation)) {
+        return _PrimeWriteResult(
+          written: written,
+          postCount: postCount,
+          attempts: attempt,
+          skipped: true,
+        );
+      }
       await _sentinel.sweep(
         url,
         cookie.name,
         intent: SweepIntent.delete,
         force: true,
       );
+      if (!AuthSession().isValid(generation)) {
+        return _PrimeWriteResult(
+          written: written,
+          postCount: postCount,
+          attempts: attempt,
+          skipped: true,
+        );
+      }
       final fresh = await _jar.getCanonicalCookie(cookie.name);
+      if (!AuthSession().isValid(generation)) {
+        return _PrimeWriteResult(
+          written: written,
+          postCount: postCount,
+          attempts: attempt,
+          skipped: true,
+        );
+      }
       if (fresh == null || fresh.value.isEmpty || _isExpired(fresh)) {
         postCount = await _writer.countCookiesByName(url, cookie.name);
+        return _PrimeWriteResult(
+          written: written,
+          postCount: postCount,
+          attempts: attempt,
+          skipped: true,
+        );
+      }
+      if (!AuthSession().isValid(generation)) {
         return _PrimeWriteResult(
           written: written,
           postCount: postCount,
@@ -327,6 +385,14 @@ class WebViewCookiePriming {
         fresh.toSetCookieHeader(),
         writeSharedStorage: fresh.name != 'cf_clearance',
       );
+      if (!AuthSession().isValid(generation)) {
+        return _PrimeWriteResult(
+          written: written,
+          postCount: postCount,
+          attempts: attempt,
+          skipped: true,
+        );
+      }
       written = written || ok;
       postCount = await _writer.countCookiesByName(url, fresh.name);
       if (postCount == 1) {

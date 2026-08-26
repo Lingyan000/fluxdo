@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'auth_session.dart';
 import 'network/discourse_dio.dart';
 import 'network/exceptions/oauth_exception.dart';
 import '../l10n/s.dart';
@@ -26,7 +27,15 @@ class CdkOAuthService {
     return response.data['data'] as String;
   }
 
-  Future<void> callback(String code, String state) async {
+  Future<void> callback(
+    String code,
+    String state, {
+    int? requestGeneration,
+  }) async {
+    if (requestGeneration != null &&
+        !AuthSession().isValid(requestGeneration)) {
+      return;
+    }
     // X-Requested-With: XMLHttpRequest 是 cdk.linux.do CSRF 校验的唯一依据,
     // 缺这个头服务端直接 403 "CSRF 验证失败"。
     // 实测最小集 = cookie + UA + content-type + X-Requested-With。
@@ -38,6 +47,10 @@ class CdkOAuthService {
         extra: {'skipCsrf': true},
       ),
     );
+    if (requestGeneration != null &&
+        !AuthSession().isValid(requestGeneration)) {
+      return;
+    }
   }
 
   Future<void> logout() async {
@@ -64,12 +77,14 @@ class CdkOAuthService {
   }
 
   Future<CdkUserInfo?> getUserInfo() async {
+    final generation = AuthSession().generation;
     try {
       final response = await _dio.get(
         '$baseUrl/api/v1/oauth/user-info',
         options: Options(extra: {'skipCsrf': true, 'showErrorToast': false}),
       );
       final cdkData = response.data['data'];
+      if (!AuthSession().isValid(generation)) return null;
       return CdkUserInfo.fromJson(cdkData);
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
@@ -81,15 +96,18 @@ class CdkOAuthService {
   }
 
   Future<bool> authorize(BuildContext context) async {
+    final generation = AuthSession().generation;
     final String authUrl;
     try {
       authUrl = await getAuthUrl();
     } on DioException {
       throw Exception(S.current.oauth_getAuthUrlFailed);
     }
+    if (!AuthSession().isValid(generation)) return false;
 
     // step1 → step2: 模拟"业务页加载完成 → 跳转到 OAuth 同意页"的导航延迟
     await OAuthFlowHelper.humanGap(minMs: 800, maxMs: 1500);
+    if (!AuthSession().isValid(generation)) return false;
 
     final Response response;
     try {
@@ -104,9 +122,12 @@ class CdkOAuthService {
     } on DioException {
       throw Exception(S.current.oauth_networkError);
     }
+    if (!AuthSession().isValid(generation)) return false;
 
     final document = html_parser.parse(response.data);
-    final approveLink = document.querySelector('a[href*="/oauth2/approve/"]')?.attributes['href'];
+    final approveLink = document
+        .querySelector('a[href*="/oauth2/approve/"]')
+        ?.attributes['href'];
 
     if (!context.mounted) return false;
     if (approveLink == null) {
@@ -118,8 +139,10 @@ class CdkOAuthService {
       barrierDismissible: false,
       builder: (context) => _AuthDialog(
         onApprove: () async {
+          if (!AuthSession().isValid(generation)) return false;
           // 用户点击同意 → 浏览器发起 approve 请求, 模拟手指反应 + 浏览器导航延迟
           await OAuthFlowHelper.humanGap(minMs: 600, maxMs: 1200);
+          if (!AuthSession().isValid(generation)) return false;
 
           final approveResponse = await _dio.get(
             'https://connect.linux.do$approveLink',
@@ -133,6 +156,7 @@ class CdkOAuthService {
               },
             ),
           );
+          if (!AuthSession().isValid(generation)) return false;
 
           final location = approveResponse.headers.value('location');
           if (location == null) {
@@ -150,7 +174,7 @@ class CdkOAuthService {
           // approve → callback: 浏览器跳回业务方 + 业务方 JS 提交 code 的延迟
           await OAuthFlowHelper.humanGap(minMs: 400, maxMs: 900);
 
-          await callback(code, state);
+          await callback(code, state, requestGeneration: generation);
           return true;
         },
       ),

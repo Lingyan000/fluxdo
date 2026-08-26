@@ -177,15 +177,20 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// WebView JS 全流程登录成功后, 由 login_page 在 dialog 已把会话 cookie
   /// syncFromWebView 落 jar 之后显式调用 (public)。dio 版 [loginWithPassword]
   /// 成功路径也复用它。
+  @override
   Future<void> finalizeNativeLoginSuccess(String identifier) async {
-    AuthSession().advance();
+    final loginGeneration = AuthSession().advance();
 
     final token = await _cookieJar.getTToken() ?? '';
     if (token.isEmpty) {
       debugPrint('[DiscourseLogin] 警告: 登录成功但 jar 没拿到 _t');
     }
 
-    await saveUsername(identifier);
+    await saveUsername(identifier, requestGeneration: loginGeneration);
+    if (!AuthSession().isValid(loginGeneration)) {
+      debugPrint('[DiscourseLogin] 登录收尾期间会话已切换，丢弃旧收尾: $identifier');
+      return;
+    }
     if (token.isNotEmpty) setToken(token);
     final forceBrowserSessionSync = !WebViewSessionCookieRefreshService.instance
         .hasFreshSyncForToken(token);
@@ -196,6 +201,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
             hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
             refreshPreloadedData: PreloadedDataService().refresh,
             notifyLoginReady: (t) {
+              if (!AuthSession().isValid(loginGeneration)) return;
               loginReadyNotified = true;
               onLoginSuccess(
                 t,
@@ -209,7 +215,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
       debugPrint('[DiscourseLogin] PreloadedData 收尾失败/超时: $e');
     } finally {
       // 兜底广播, 避免 UI 卡在"同步登录中"
-      if (!loginReadyNotified) {
+      if (!loginReadyNotified && AuthSession().isValid(loginGeneration)) {
         onLoginSuccess(token, forceBrowserSessionSync: forceBrowserSessionSync);
       }
     }

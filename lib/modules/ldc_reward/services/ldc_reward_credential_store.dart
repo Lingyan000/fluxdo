@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../services/account_manager.dart';
 import '../../../services/storage/secret_store.dart';
 import '../models/ldc_reward_credentials.dart';
 
@@ -14,12 +15,13 @@ class LdcRewardCredentialStore {
   LdcRewardCredentialStore({
     required SecretStore secretStore,
     required SharedPreferences preferences,
+    this.accountId,
   }) : _secretStore = secretStore,
        _preferences = preferences;
 
   static const _legacyClientIdKey = 'ldc_reward_client_id';
   static const _legacyClientSecretKey = 'ldc_reward_client_secret';
-  static const _secretKey = SecretKey(
+  static const _deviceSecretKey = SecretKey(
     namespace: 'ldc_reward',
     name: 'credentials',
     fallbackPolicy: SecretFallbackPolicy.deny,
@@ -27,19 +29,38 @@ class LdcRewardCredentialStore {
 
   final SecretStore _secretStore;
   final SharedPreferences _preferences;
+  final String? accountId;
+
+  SecretKey get _secretKey => accountId == null
+      ? _deviceSecretKey
+      : SecretKey(
+          namespace: 'ldc_reward',
+          name: 'credentials',
+          accountId: accountId,
+          fallbackPolicy: SecretFallbackPolicy.deny,
+        );
 
   Future<LdcRewardCredentials?> load() async {
     final encoded = await _secretStore.read(_secretKey);
     if (encoded != null && encoded.isNotEmpty) {
-      await _clearLegacy();
+      if (accountId == null) await _clearLegacy();
       return _decode(encoded);
     }
 
-    final legacy = _readLegacy();
+    // guest 只是登录前的隔离边界，不能把旧的 device 凭证归属给 guest；
+    // 等真实账号出现后再执行一次迁移。
+    if (accountId == AccountManager.guestAccountId) return null;
+
+    // 账号作用域启用后，旧的 device 级凭证只迁移一次到当前账号；之后
+    // 每个账号使用自己的 SecretKey，清除一个账号不会影响其它账号。
+    final legacySecret = accountId == null
+        ? null
+        : await _secretStore.read(_deviceSecretKey);
+    final legacy = legacySecret == null ? _readLegacy() : _decode(legacySecret);
     if (legacy == null) return null;
 
     await save(legacy);
-    await _clearLegacy();
+    await _clearLegacy(clearDeviceSecret: legacySecret != null);
     return legacy;
   }
 
@@ -55,7 +76,7 @@ class LdcRewardCredentialStore {
 
   Future<void> clear() async {
     await _secretStore.delete(_secretKey);
-    await _clearLegacy();
+    if (accountId == null) await _clearLegacy();
   }
 
   LdcRewardCredentials? _readLegacy() {
@@ -84,10 +105,14 @@ class LdcRewardCredentialStore {
     return LdcRewardCredentials(clientId: clientId, clientSecret: clientSecret);
   }
 
-  Future<void> _clearLegacy() async {
-    await Future.wait([
+  Future<void> _clearLegacy({bool clearDeviceSecret = false}) async {
+    final operations = <Future<void>>[
       _preferences.remove(_legacyClientIdKey),
       _preferences.remove(_legacyClientSecretKey),
-    ]);
+    ];
+    if (clearDeviceSecret) {
+      operations.add(_secretStore.delete(_deviceSecretKey));
+    }
+    await Future.wait(operations);
   }
 }

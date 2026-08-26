@@ -441,6 +441,41 @@ class CookieJarService {
     return const [];
   }
 
+  /// 恢复一组带完整 domain/path/origin 语义的 cookie。
+  ///
+  /// 多账号快照会包含 credit/cdk 等子域 cookie，不能统一用
+  /// [AppConstants.baseUrl] 写回，否则 host-only cookie 会被错误地归到主域。
+  /// 按每条 cookie 的 origin 分组交给 EnhancedPersistCookieJar，保留其
+  /// freshness、partition 和持久化策略。
+  Future<void> restoreCanonicalCookies(
+    Iterable<CanonicalCookie> cookies, {
+    bool trusted = true,
+  }) async {
+    if (!_initialized) await initialize();
+    final jar = _cookieJar;
+    if (jar is! EnhancedPersistCookieJar) {
+      for (final cookie in cookies) {
+        final uri =
+            Uri.tryParse(cookie.originUrl ?? '') ??
+            Uri.parse(AppConstants.baseUrl);
+        await jar?.saveFromResponse(uri, [cookie.toIoCookie()]);
+      }
+      return;
+    }
+
+    final grouped = <Uri, List<CanonicalCookie>>{};
+    for (final cookie in cookies) {
+      final uri =
+          Uri.tryParse(cookie.originUrl ?? '') ??
+          Uri.parse(AppConstants.baseUrl);
+      grouped.putIfAbsent(uri, () => []).add(cookie);
+    }
+    for (final entry in grouped.entries) {
+      await jar.saveCanonicalCookies(entry.key, entry.value, trusted: trusted);
+    }
+    await enforceAuthCookiePolicy(reason: 'account_snapshot_restore');
+  }
+
   /// 设置 Cookie
   Future<void> setCookie(
     String name,
@@ -783,7 +818,19 @@ class CookieJarService {
   /// 从 jar 中扫描已知的相关域名
   Future<Set<String>> getKnownHostsForDomain(String baseDomain) async {
     if (!_initialized) await initialize();
-    final hosts = <String>{baseDomain};
+    // credit/cdk/connect 的部分 cookie 只存在于 WebView cookie store，
+    // 不一定会先落入持久 jar。把固定服务域名加入清理范围，避免添加账号
+    // 时只清掉 linux.do，旧账号仍通过子域 cookie 被复用。
+    final rootDomain = baseDomain.toLowerCase().replaceFirst(
+      RegExp(r'^\.'),
+      '',
+    );
+    final hosts = <String>{
+      rootDomain,
+      'credit.$rootDomain',
+      'cdk.$rootDomain',
+      'connect.$rootDomain',
+    };
 
     final jar = _cookieJar;
     if (jar is EnhancedPersistCookieJar) {
@@ -793,7 +840,7 @@ class CookieJarService {
           final d = cookie.normalizedDomain;
           if (d != null &&
               d.isNotEmpty &&
-              (d == baseDomain || d.endsWith('.$baseDomain'))) {
+              (d == rootDomain || d.endsWith('.$rootDomain'))) {
             hosts.add(d);
           }
         }

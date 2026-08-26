@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/ldc_reward/models/ldc_reward_credentials.dart';
 import 'package:fluxdo/modules/ldc_reward/services/ldc_reward_credential_store.dart';
+import 'package:fluxdo/services/account_manager.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,6 +77,38 @@ void main() {
     expect(loaded?.clientSecret, 'new-secret');
     expect(prefs.getString('ldc_reward_client_id'), isNull);
     expect(prefs.getString('ldc_reward_client_secret'), isNull);
+  });
+
+  test('不同账号的打赏凭证互相隔离', () async {
+    final store = InMemorySecretStore();
+    final prefs = await createPreferences({});
+    final accountA = LdcRewardCredentialStore(
+      secretStore: store,
+      preferences: prefs,
+      accountId: 'alice@example',
+    );
+    final accountB = LdcRewardCredentialStore(
+      secretStore: store,
+      preferences: prefs,
+      accountId: 'bob/example',
+    );
+
+    await accountA.save(
+      const LdcRewardCredentials(clientId: 'a-id', clientSecret: 'a-secret'),
+    );
+    await accountB.save(
+      const LdcRewardCredentials(clientId: 'b-id', clientSecret: 'b-secret'),
+    );
+
+    expect((await accountA.load())?.clientId, 'a-id');
+    expect((await accountB.load())?.clientId, 'b-id');
+    await accountA.clear();
+    expect((await accountA.load()), isNull);
+    expect((await accountB.load())?.clientSecret, 'b-secret');
+    expect(
+      AccountManager.accountScopedKey('ldc_enabled', 'bob/example'),
+      'ldc_enabled::bob%2Fexample',
+    );
   });
 
   test('旧凭证不完整时不会迁移', () async {

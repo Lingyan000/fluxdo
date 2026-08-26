@@ -18,6 +18,16 @@ mixin _AuthMixin on _DiscourseServiceBase {
   String? _previousTTokenFallback;
   DateTime? _previousTTokenFallbackAt;
   Future<bool?>? _activeProbe;
+  // SecureStorage 本身不保证跨调用顺序。把 username 的写入/删除串起来，
+  // 并在旧 generation 的写入完成后补删，避免旧登录收尾恰好晚于切换清理，
+  // 又把旧账号写回当前 profile。
+  Future<void> _usernameStorageTail = Future<void>.value();
+
+  Future<void> _enqueueUsernameStorage(Future<void> Function() operation) {
+    final result = _usernameStorageTail.then((_) => operation());
+    _usernameStorageTail = result.then<void>((_) {}, onError: (_) {});
+    return result;
+  }
 
   void _resetStrikes() {
     _authStrikeCount = 0;
@@ -333,9 +343,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
   }) async {
     final strikeSnapshot = _authStrikeCount;
     final requestGeneration =
-        signalRequestOptions?.extra['_sessionGeneration'] as int?;
-    if (requestGeneration != null &&
-        !AuthSession().isValid(requestGeneration)) {
+        signalRequestOptions?.extra['_sessionGeneration'] as int? ??
+        AuthSession().generation;
+    if (!AuthSession().isValid(requestGeneration)) {
       return null;
     }
 
@@ -345,13 +355,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
       signalRequestOptions: signalRequestOptions,
     );
     if (recoveredUser != null) {
+      if (!AuthSession().isValid(requestGeneration)) return null;
       currentUserNotifier.value = recoveredUser;
       if (recoveredUser.username.isNotEmpty) {
-        _username = recoveredUser.username;
-        await _storage.write(
-          key: DiscourseService._usernameKey,
-          value: recoveredUser.username,
+        await saveUsername(
+          recoveredUser.username,
+          requestGeneration: requestGeneration,
         );
+        if (!AuthSession().isValid(requestGeneration)) return null;
       }
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
@@ -427,13 +438,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
       if (currentUser is Map<String, dynamic>) {
         // 会话有效，恢复
         final user = User.fromJson(currentUser);
+        if (!AuthSession().isValid(requestGeneration)) return null;
         currentUserNotifier.value = user;
         if (user.username.isNotEmpty) {
-          _username = user.username;
-          await _storage.write(
-            key: DiscourseService._usernameKey,
-            value: user.username,
+          await saveUsername(
+            user.username,
+            requestGeneration: requestGeneration,
           );
+          if (!AuthSession().isValid(requestGeneration)) return null;
         }
         final liveToken = await _cookieJar.getTToken();
         if (liveToken != null && liveToken.isNotEmpty) {
@@ -462,13 +474,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
         failedJarTToken: probeJarTToken,
       );
       if (recoveredByPrevious != null) {
+        if (!AuthSession().isValid(requestGeneration)) return null;
         currentUserNotifier.value = recoveredByPrevious;
         if (recoveredByPrevious.username.isNotEmpty) {
-          _username = recoveredByPrevious.username;
-          await _storage.write(
-            key: DiscourseService._usernameKey,
-            value: recoveredByPrevious.username,
+          await saveUsername(
+            recoveredByPrevious.username,
+            requestGeneration: requestGeneration,
           );
+          if (!AuthSession().isValid(requestGeneration)) return null;
         }
         LogWriter.instance.write({
           'timestamp': DateTime.now().toIso8601String(),
@@ -489,15 +502,17 @@ mixin _AuthMixin on _DiscourseServiceBase {
       final healedUser = await _recoverViaUserApiKeySelfHeal(
         source: source,
         triggerInfo: triggerInfo,
+        requestGeneration: requestGeneration,
       );
       if (healedUser != null) {
+        if (!AuthSession().isValid(requestGeneration)) return null;
         currentUserNotifier.value = healedUser;
         if (healedUser.username.isNotEmpty) {
-          _username = healedUser.username;
-          await _storage.write(
-            key: DiscourseService._usernameKey,
-            value: healedUser.username,
+          await saveUsername(
+            healedUser.username,
+            requestGeneration: requestGeneration,
           );
+          if (!AuthSession().isValid(requestGeneration)) return null;
         }
         _resetStrikes();
         return true;
@@ -518,6 +533,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         S.current.auth_loginExpiredRelogin,
         source: 'probe_confirmed',
         triggerInfo: triggerInfo,
+        requestGeneration: requestGeneration,
       );
       return false;
     } on DioException catch (e) {
@@ -531,13 +547,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
           failedJarTToken: probeJarTToken,
         );
         if (recoveredByPrevious != null) {
+          if (!AuthSession().isValid(requestGeneration)) return null;
           currentUserNotifier.value = recoveredByPrevious;
           if (recoveredByPrevious.username.isNotEmpty) {
-            _username = recoveredByPrevious.username;
-            await _storage.write(
-              key: DiscourseService._usernameKey,
-              value: recoveredByPrevious.username,
+            await saveUsername(
+              recoveredByPrevious.username,
+              requestGeneration: requestGeneration,
             );
+            if (!AuthSession().isValid(requestGeneration)) return null;
           }
           LogWriter.instance.write({
             'timestamp': DateTime.now().toIso8601String(),
@@ -559,15 +576,17 @@ mixin _AuthMixin on _DiscourseServiceBase {
         final healedUser404 = await _recoverViaUserApiKeySelfHeal(
           source: source,
           triggerInfo: triggerInfo,
+          requestGeneration: requestGeneration,
         );
         if (healedUser404 != null) {
+          if (!AuthSession().isValid(requestGeneration)) return null;
           currentUserNotifier.value = healedUser404;
           if (healedUser404.username.isNotEmpty) {
-            _username = healedUser404.username;
-            await _storage.write(
-              key: DiscourseService._usernameKey,
-              value: healedUser404.username,
+            await saveUsername(
+              healedUser404.username,
+              requestGeneration: requestGeneration,
             );
+            if (!AuthSession().isValid(requestGeneration)) return null;
           }
           _resetStrikes();
           return true;
@@ -587,6 +606,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           S.current.auth_loginExpiredRelogin,
           source: 'probe_confirmed',
           triggerInfo: triggerInfo,
+          requestGeneration: requestGeneration,
         );
         return false;
       }
@@ -618,6 +638,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           S.current.auth_loginExpiredRelogin,
           source: 'probe_escalated',
           triggerInfo: triggerInfo,
+          requestGeneration: requestGeneration,
         );
         return false;
       }
@@ -822,12 +843,19 @@ mixin _AuthMixin on _DiscourseServiceBase {
   Future<User?> _recoverViaUserApiKeySelfHeal({
     required String source,
     String? triggerInfo,
+    int? requestGeneration,
   }) async {
+    final generation = requestGeneration ?? AuthSession().generation;
     try {
-      final currentUserJson = await UserApiKeyService().selfHeal(_dio);
+      final currentUserJson = await UserApiKeyService().selfHeal(
+        _dio,
+        requestGeneration: generation,
+      );
+      if (!AuthSession().isValid(generation)) return null;
       if (currentUserJson == null) return null;
 
       final newToken = await _cookieJar.getTToken();
+      if (!AuthSession().isValid(generation)) return null;
       if (!_hasTokenValue(newToken)) return null;
 
       _tToken = newToken;
@@ -1031,8 +1059,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
           if (username != null &&
               username.isNotEmpty &&
               username != _username) {
-            _username = username;
-            _storage.write(key: DiscourseService._usernameKey, value: username);
+            final requestGeneration =
+                response.requestOptions.extra['_sessionGeneration'] as int? ??
+                AuthSession().generation;
+            unawaited(
+              saveUsername(username, requestGeneration: requestGeneration),
+            );
           }
 
           debugPrint(
@@ -1378,7 +1410,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
     String? triggerInfo,
     bool? sentHasT,
     int? sentTLen,
+    int? requestGeneration,
   }) async {
+    final generation = requestGeneration ?? AuthSession().generation;
+    if (!AuthSession().isValid(generation)) return;
     if (_isLoggingOut) return;
     _isLoggingOut = true;
 
@@ -1387,7 +1422,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
     // 成功则本次失效对用户完全透明，不登出不打扰。
     // selfHeal 内部有单飞合流与失败冷却窗口，不会形成恢复风暴。
     try {
-      final restoredUser = await UserApiKeyService().selfHeal(_dio);
+      final restoredUser = await UserApiKeyService().selfHeal(
+        _dio,
+        requestGeneration: generation,
+      );
+      if (!AuthSession().isValid(generation)) {
+        _isLoggingOut = false;
+        return;
+      }
       final restoredUsername = restoredUser?['username']?.toString();
       if (restoredUsername != null && restoredUsername.isNotEmpty) {
         await finalizeNativeLoginSuccess(restoredUsername);
@@ -1408,9 +1450,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
       debugPrint('[Auth] User API Key 自动恢复异常: $e');
     }
 
+    if (!AuthSession().isValid(generation)) {
+      _isLoggingOut = false;
+      return;
+    }
+
     // ===== 第一步：立即切断所有在途请求 =====
     // 先于 logout 执行，防止用户在失效状态下继续操作产生更多 403
-    AuthSession().advance();
+    final logoutGeneration = AuthSession().advance();
 
     // 收集 _t cookie 诊断信息（不含实际值，仅状态）
     final jarTToken = await _cookieJar.getTToken();
@@ -1445,6 +1492,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
     });
 
     await AuthIssueNoticeService.instance.recordPassiveLogout();
+    if (!AuthSession().isValid(logoutGeneration)) {
+      _isLoggingOut = false;
+      return;
+    }
     await logout(callApi: false, refreshPreload: true);
     _isLoggingOut = false;
     _authErrorController.add(message);
@@ -1459,11 +1510,16 @@ mixin _AuthMixin on _DiscourseServiceBase {
   /// 除了检查本地 _t cookie，还会请求 /session/current.json 做服务端验证，
   /// 避免本地有 cookie 但服务端已撤销 session 的"假在线"状态。
   /// 网络异常时保守返回 true（保留本地状态）。
-  Future<bool> isLoggedIn() async {
+  Future<bool> isLoggedIn({int? requestGeneration}) async {
+    bool isCurrent() =>
+        requestGeneration == null || AuthSession().isValid(requestGeneration);
+
     final tToken = await _cookieJar.getTToken();
+    if (!isCurrent()) return false;
     if (tToken == null || tToken.isEmpty) return false;
 
     final username = await _storage.read(key: DiscourseService._usernameKey);
+    if (!isCurrent()) return false;
     if (username == null || username.isEmpty) return false;
 
     // 服务端验证
@@ -1475,6 +1531,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           extra: const {'skipAuthCheck': true, 'skipCsrf': true},
         ),
       );
+      if (!isCurrent()) return false;
       final data = response.data;
       if (data is Map<String, dynamic> && data['current_user'] is Map) {
         _tToken = tToken;
@@ -1502,10 +1559,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'jarTHash': _safeTokenHash(tToken),
         ..._sentTDiagnostics(response.requestOptions),
       });
+      if (!isCurrent()) return false;
       await logout(callApi: false, refreshPreload: false);
       return false;
     } on DioException catch (e) {
       final status = e.response?.statusCode;
+      if (!isCurrent()) return false;
       // 404 = 无用户 / 401/403 = 明确拒绝
       if (status == 404 || status == 401 || status == 403) {
         LogWriter.instance.write({
@@ -1524,14 +1583,17 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'jarTHash': _safeTokenHash(tToken),
           ..._sentTDiagnostics(e.response?.requestOptions ?? e.requestOptions),
         });
+        if (!isCurrent()) return false;
         await logout(callApi: false, refreshPreload: false);
         return false;
       }
       // 网络异常/CF 验证等 → 保守保留本地状态
+      if (!isCurrent()) return false;
       _tToken = tToken;
       _username = username;
       return true;
     } catch (_) {
+      if (!isCurrent()) return false;
       _tToken = tToken;
       _username = username;
       return true;
@@ -1558,13 +1620,25 @@ mixin _AuthMixin on _DiscourseServiceBase {
     );
     _authStateController.add(null);
     // 多账号：登记/刷新本机账号快照（尽力而为，不影响登录主流程）
-    unawaited(AccountManager().syncCurrentAccount());
+    unawaited(AccountManager().markLoginSucceeded());
+    unawaited(AccountManager().syncCurrentAccount(captureBrowserCookies: true));
   }
 
   /// 保存用户名
-  Future<void> saveUsername(String username) async {
-    _username = username;
-    await _storage.write(key: DiscourseService._usernameKey, value: username);
+  @override
+  Future<void> saveUsername(String username, {int? requestGeneration}) async {
+    final generation = requestGeneration ?? AuthSession().generation;
+    await _enqueueUsernameStorage(() async {
+      if (!AuthSession().isValid(generation)) return;
+      await _storage.write(key: DiscourseService._usernameKey, value: username);
+      if (!AuthSession().isValid(generation)) {
+        // 旧写入可能在 detach 的 delete 之后才从平台通道返回；当前串行
+        // 队列保证这里的补删不会误删随后排队的新账号用户名。
+        await _storage.delete(key: DiscourseService._usernameKey);
+        return;
+      }
+      _username = username;
+    });
   }
 
   /// 登出 API 调用的总超时。
@@ -1609,11 +1683,14 @@ mixin _AuthMixin on _DiscourseServiceBase {
     _cachedUserSummary = null;
     _cachedUserSummaryUsername = null;
     _userSummaryCacheTime = null;
-    await _storage.delete(key: DiscourseService._usernameKey);
+    await _enqueueUsernameStorage(
+      () => _storage.delete(key: DiscourseService._usernameKey),
+    );
     _credentialsLoaded = false;
     // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
     // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
     WebViewSessionCookieRefreshService.instance.resetSessionState();
+    WebViewCookiePriming.instance.invalidate();
 
     // 清除 Cookie（保留 cf_clearance）
     await _cookieSync.reset();
