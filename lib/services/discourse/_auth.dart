@@ -1638,7 +1638,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
     unawaited(CfClearanceRefreshService().stop());
     WebViewAdapterSettingsService.instance.resetSessionFallback();
     CfChallengeService().resetSessionCompatibilityDecision();
-    CfClearanceRegistry.instance.reset();
+    CfClearanceAuthority.instance.reset();
 
     // ===== 摘除本地登录态 =====
     try {
