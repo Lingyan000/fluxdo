@@ -52,7 +52,18 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     // 接口,若等它们串行完成才给首值,头像/发帖入口要白等数秒。
     // 渐进 emit:缓存 → preloaded → 接口终态。
     final prefs = await SharedPreferences.getInstance();
-    final cached = prefs.getString(_cacheKey);
+    // 缓存必须校验用户名:多账号切换后这里可能还留着上一个账号的用户,
+    // 直接 emit 会让"手动刷新仍显示上一个账号"。缓存用户与当前登录
+    // 用户名不一致时视为脏缓存,清掉并走接口取新账号数据。
+    final currentUsername = await service.getCurrentUsername();
+    final cachedUsername = prefs.getString(_cacheUserKey);
+    final cached = (cachedUsername != null && cachedUsername == currentUsername)
+        ? prefs.getString(_cacheKey)
+        : null;
+    if (cachedUsername != null && cachedUsername != currentUsername) {
+      await prefs.remove(_cacheKey);
+      await prefs.remove(_cacheUserKey);
+    }
     User? cachedUser;
     if (cached != null) {
       try {

@@ -13,6 +13,7 @@ import 'category_provider.dart';
 import 'message_bus/notification_providers.dart';
 import 'message_bus/topic_tracking_providers.dart';
 import 'ldc_providers.dart';
+import 'chat_providers.dart';
 import 'cdk_providers.dart';
 
 class AppStateRefresher {
@@ -23,10 +24,13 @@ class AppStateRefresher {
   /// 调用方用 [ProviderScope.containerOf] 取 container 后传入，
   /// 避免 [Future.delayed] 闭包持有的 [WidgetRef] 在延迟期间随 widget unmount 失效，
   /// 进而抛 StateError 中断后续 invalidate（曾导致登录后 ProfilePage 卡 loading）。
-  static void refreshAll(ProviderContainer container) {
-    // 去抖：2 秒内重复调用直接跳过（如 authStateProvider listener + _goToLogin 同时触发）
+  static void refreshAll(ProviderContainer container, {bool force = false}) {
+    // 去抖：2 秒内重复调用直接跳过（如 authStateProvider listener + _goToLogin 同时触发）。
+    // 多账号切换等关键路径用 force=true 绕过去抖，确保切换后状态必然刷新。
     final now = DateTime.now();
-    if (_lastRefreshTime != null && now.difference(_lastRefreshTime!) < const Duration(seconds: 2)) {
+    if (!force &&
+        _lastRefreshTime != null &&
+        now.difference(_lastRefreshTime!) < const Duration(seconds: 2)) {
       return;
     }
     _lastRefreshTime = now;
@@ -58,8 +62,12 @@ class AppStateRefresher {
     }
     // 重置筛选/排序/标签（会通过 signal listener 触发话题列表刷新，
     // 无需再手动 invalidate 话题列表）
-    container.read(topicFilterProvider.notifier).setFilter(TopicListFilter.latest);
-    container.read(topicSortOrderProvider.notifier).setOrder(TopicSortOrder.defaultOrder);
+    container
+        .read(topicFilterProvider.notifier)
+        .setFilter(TopicListFilter.latest);
+    container
+        .read(topicSortOrderProvider.notifier)
+        .setOrder(TopicSortOrder.defaultOrder);
     container.read(topicSortAscendingProvider.notifier).setAscending(false);
     final pinnedIds = container.read(pinnedCategoriesProvider);
     container.read(tabTagsProvider(null).notifier).state = [];
@@ -69,6 +77,18 @@ class AppStateRefresher {
     container.read(activeCategorySlugsProvider.notifier).reset();
     await container.read(ldcUserInfoProvider.notifier).disable();
     await container.read(cdkUserInfoProvider.notifier).disable();
+  }
+
+  /// 多账号切换后调用：清掉与「上一个账号」绑定的本地缓存并整体刷新。
+  ///
+  /// 与 [resetForLogout] 的差别：不重置筛选/排序、不禁用 LDC/CDK
+  /// （新账号可能仍在用），只做身份缓存清理 + 全量 invalidate。
+  static Future<void> resetForAccountSwitch(ProviderContainer container) async {
+    container.read(currentUserProvider.notifier).clearCache();
+    container.read(userSummaryProvider.notifier).clearCache();
+    container.read(bookmarkNameSuggestionsProvider.notifier).clearCache();
+    container.read(bookmarkSyncControllerProvider.notifier).reset();
+    refreshAll(container, force: true);
   }
 
   /// 刷新话题列表各 tab
@@ -90,7 +110,7 @@ class AppStateRefresher {
   /// 第一批：主页渲染必需的 provider
   /// 用户信息、分类列表（tab 栏依赖）
   static final List<void Function(ProviderContainer container)>
-      _coreRefreshers = [
+  _coreRefreshers = [
     (c) => c.invalidate(currentUserProvider),
     (c) => c.invalidate(categoriesProvider),
     (c) => c.invalidate(topicTrackingStateMetaProvider),
@@ -99,7 +119,7 @@ class AppStateRefresher {
 
   /// 第二批：非首屏必需，延迟执行以降低并发请求量
   static final List<void Function(ProviderContainer container)>
-      _deferredRefreshers = [
+  _deferredRefreshers = [
     (c) => c.invalidate(userSummaryProvider),
     (c) => c.invalidate(notificationListProvider),
     (c) => c.invalidate(tagsProvider),
@@ -120,5 +140,9 @@ class AppStateRefresher {
     (c) => c.invalidate(messageBusInitProvider),
     (c) => c.invalidate(ldcUserInfoProvider),
     (c) => c.invalidate(cdkUserInfoProvider),
+    // 多账号切换相关：私信收件箱/已发送、聊天频道列表都是按账号返回的
+    (c) => c.invalidate(pmInboxProvider),
+    (c) => c.invalidate(pmSentProvider),
+    (c) => c.invalidate(chatChannelsProvider),
   ];
 }

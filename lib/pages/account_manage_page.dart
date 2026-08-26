@@ -7,6 +7,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../services/account_manager.dart';
 import '../l10n/s.dart';
+import '../providers/app_state_refresher.dart';
 import '../services/toast_service.dart';
 import '../utils/url_helper.dart';
 import 'login_page.dart';
@@ -72,19 +73,27 @@ class _AccountManagePageState extends ConsumerState<AccountManagePage> {
     if (confirmed != true || !mounted) return;
 
     // 全屏进度遮罩：切换涉及预加载刷新，秒级耗时
+    // M3E 进度遮罩：LoadingSpinner 是项目内 Material 3 Expressive
+    // 不定态指示器（morph 形状 + 弹簧节奏），替代裸 CircularProgressIndicator。
     unawaited(
       showDialog(
         context: context,
         barrierDismissible: false,
+        barrierColor: Theme.of(
+          context,
+        ).colorScheme.scrim.withValues(alpha: 0.4),
         builder: (_) => PopScope(
           canPop: false,
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(context.l10n.accountManage_switching),
+                const LoadingSpinner(),
+                const SizedBox(height: 24),
+                Text(
+                  context.l10n.accountManage_switching,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ],
             ),
           ),
@@ -94,6 +103,12 @@ class _AccountManagePageState extends ConsumerState<AccountManagePage> {
 
     try {
       await _manager.switchToAccount(account.username);
+      if (!mounted) return;
+      // 清理与上一个账号绑定的缓存并强制全量刷新（绕过 refreshAll 去抖），
+      // 否则部分界面会残留上一账号数据，手动刷新也可能拿到脏缓存。
+      await AppStateRefresher.resetForAccountSwitch(
+        ProviderScope.containerOf(context, listen: false),
+      );
       if (!mounted) return;
       ToastService.showSuccess(context.l10n.accountManage_switchDone);
     } on AccountSessionExpiredException {

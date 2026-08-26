@@ -1450,6 +1450,10 @@ mixin _AuthMixin on _DiscourseServiceBase {
     _authErrorController.add(message);
   }
 
+  /// 当前登录用户名（本地存储；多账号切换后即新账号用户名）。
+  Future<String?> getCurrentUsername() =>
+      _storage.read(key: DiscourseService._usernameKey);
+
   /// 检查是否已登录
   ///
   /// 除了检查本地 _t cookie，还会请求 /session/current.json 做服务端验证，
