@@ -13,7 +13,7 @@ import 'category_provider.dart';
 import 'message_bus/notification_providers.dart';
 import 'message_bus/topic_tracking_providers.dart';
 import 'ldc_providers.dart';
-import 'chat_providers.dart';
+import 'chat/chat_channels_provider.dart';
 import 'cdk_providers.dart';
 
 class AppStateRefresher {
