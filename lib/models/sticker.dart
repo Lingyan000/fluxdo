@@ -4,27 +4,17 @@ class StickerMarketIndex {
   final int pageSize;
   final int totalGroups;
 
-  /// 市场 topic（分类）列表，首项恒为「全部」。
-  /// 来自 index.json 的 topics 字段；旧版索引无此字段时为空列表。
-  final List<StickerMarketTopic> topics;
-
   const StickerMarketIndex({
     required this.totalPages,
     required this.pageSize,
     required this.totalGroups,
-    this.topics = const [],
   });
 
   factory StickerMarketIndex.fromJson(Map<String, dynamic> json) {
-    final rawTopics = json['topics'] as List<dynamic>? ?? [];
     return StickerMarketIndex(
       totalPages: json['totalPages'] as int? ?? 0,
       pageSize: json['pageSize'] as int? ?? 0,
       totalGroups: json['totalGroups'] as int? ?? 0,
-      topics: rawTopics
-          .whereType<Map<String, dynamic>>()
-          .map(StickerMarketTopic.fromJson)
-          .toList(),
     );
   }
 }

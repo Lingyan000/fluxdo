@@ -116,11 +116,12 @@ Future<void> _prefetchFirstScreenThumbnails(
 }
 
 /// 市场分类（topic）列表（市场面板的分类 chips 数据源）
+///
+/// 唯一来源是服务端 topics.json，分类增删不需要发版。
 final marketTopicsProvider =
     FutureProvider.autoDispose<List<StickerMarketTopic>>((ref) async {
       final service = ref.watch(stickerMarketServiceProvider);
-      final index = await service.getIndex();
-      return index.topics;
+      return service.getTopics();
     });
 
 /// 市场分组分页加载（供市场浏览面板使用）

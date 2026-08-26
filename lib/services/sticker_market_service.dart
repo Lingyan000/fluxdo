@@ -62,6 +62,22 @@ class StickerMarketService {
     return StickerMarketIndex.fromJson(data);
   }
 
+  /// 获取市场分类列表
+  ///
+  /// 分类唯一来源是独立的 topics.json（与 index.json 解耦，分类可独立
+  /// 于分组数据更新）。
+  Future<List<StickerMarketTopic>> getTopics() async {
+    final data = await _fetchWithCache(
+      'topics',
+      '$baseUrl/assets/market/index/topics.json',
+    );
+    final list = data['topics'] as List<dynamic>? ?? [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(StickerMarketTopic.fromJson)
+        .toList();
+  }
+
   /// 获取全部非归档分组
   Future<List<StickerGroup>> getAllGroups() async {
     final index = await getIndex();
@@ -78,8 +94,7 @@ class StickerMarketService {
 
   /// 获取单页分组数据
   ///
-  /// [topic] 为市场分类 id；'all'（全部）走顶层 `page-N.json`，
-  /// 其余分类走 `{topic}-page-N.json`（与 index.json topics[].pages 对应）。
+  /// 其余分类走 `{topic}-page-N.json`（分类清单见 topics.json）。
   Future<List<StickerGroup>> getGroupsPage(
     int page, {
     String topic = 'all',
