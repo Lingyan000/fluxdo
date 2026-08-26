@@ -974,7 +974,7 @@ extension _UserActions on _TopicDetailPageState {
     final isSelf = participant.id == currentUser.id;
     final canRemove = isSelf
         ? detail.canRemoveSelfId == participant.id
-        : currentUser.admin && detail.canRemoveAllowedUsers;
+        : detail.canRemoveAllowedUsers;
     if (!canRemove) return;
 
     final confirmed = await showAppDialog<bool>(
