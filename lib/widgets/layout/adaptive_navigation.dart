@@ -20,6 +20,7 @@ class AdaptiveDestination {
     required this.icon,
     required this.selectedIcon,
     required this.label,
+    this.onLongPress,
   });
 
   /// 稳定 id（home / profile / notifications / ...），用于 NavActionBus 定向派发
@@ -28,6 +29,9 @@ class AdaptiveDestination {
   final Widget icon;
   final Widget selectedIcon;
   final String label;
+
+  /// 可选长按动作（如「我的」长按弹账号切换面板）。null 时无长按手势。
+  final VoidCallback? onLongPress;
 }
 
 /// 侧边导航栏组件 (平板/桌面)
@@ -107,6 +111,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
                 extended: extended,
                 colorScheme: colorScheme,
                 onTap: () => onDestinationSelected(index),
+                onLongPress: dest.onLongPress,
               );
             }),
             if (categoryShortcuts != null)
@@ -139,6 +144,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
                 extended: extended,
                 colorScheme: colorScheme,
                 onTap: () => onDestinationSelected(index),
+                onLongPress: dest.onLongPress,
               );
             }),
             // 底部导航项
@@ -159,6 +165,7 @@ class AdaptiveNavigationRail extends StatelessWidget {
                 extended: extended,
                 colorScheme: colorScheme,
                 onTap: () => onDestinationSelected(index),
+                onLongPress: dest.onLongPress,
               );
             }),
             const SizedBox(height: 16),
@@ -188,6 +195,7 @@ class _NavigationRailItem extends StatelessWidget {
     required this.extended,
     required this.colorScheme,
     required this.onTap,
+    this.onLongPress,
   });
 
   final Widget icon;
@@ -196,6 +204,7 @@ class _NavigationRailItem extends StatelessWidget {
   final bool extended;
   final ColorScheme colorScheme;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +223,7 @@ class _NavigationRailItem extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: SizedBox(
             height: 56,
             child: extended
@@ -405,11 +415,19 @@ class _AdaptiveBottomNavigationState
           ? NavigationDestinationLabelBehavior.alwaysHide
           : null,
       destinations: widget.destinations.map((d) {
+        // NavigationDestination 不暴露长按：把手势包在图标上（图标占
+        // 条目上半部，长按命中足够；点按仍由内部 InkWell 处理）。
+        Widget maybeLongPress(Widget child) => d.onLongPress == null
+            ? child
+            : GestureDetector(
+                onLongPress: d.onLongPress,
+                behavior: HitTestBehavior.translucent,
+                child: child,
+              );
         return NavigationDestination(
-          icon: d.icon,
-          selectedIcon: _ActiveDestinationIcon(
-            dest: d,
-            defaultIcon: d.selectedIcon,
+          icon: maybeLongPress(d.icon),
+          selectedIcon: maybeLongPress(
+            _ActiveDestinationIcon(dest: d, defaultIcon: d.selectedIcon),
           ),
           label: d.label,
         );
@@ -637,7 +655,9 @@ class _FloatingBottomBarShell extends StatelessWidget {
             maxWidth,
           );
           return Padding(
-            padding: const EdgeInsets.only(bottom: _CapsuleMetrics.bottomMargin),
+            padding: const EdgeInsets.only(
+              bottom: _CapsuleMetrics.bottomMargin,
+            ),
             child: Align(
               // 槽位约束是 looseConstraints.tighten(width)：maxHeight 几乎
               // 是整个页面高，Expand 类组件（Center）会把胶囊顶到屏幕中间。
@@ -723,14 +743,8 @@ class _CapsuleBorderPainter extends CustomPainter {
         Offset(inner.center.dx, inner.top),
         Offset(inner.center.dx, inner.bottom),
         isDark
-            ? [
-                const Color(0x0AFFFFFF),
-                const Color(0x14FFFFFF),
-              ]
-            : [
-                const Color(0x11000000),
-                const Color(0x20000000),
-              ],
+            ? [const Color(0x0AFFFFFF), const Color(0x14FFFFFF)]
+            : [const Color(0x11000000), const Color(0x20000000)],
       );
     canvas.drawRRect(rrect, paint);
   }
@@ -874,6 +888,7 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
                             selected: i == widget.selectedIndex,
                             labelless: widget.labelless,
                             onTap: () => widget.onDestinationSelected(i),
+                            onLongPress: widget.destinations[i].onLongPress,
                           ),
                         ),
                     ],
@@ -899,12 +914,14 @@ class _CapsuleNavItem extends StatelessWidget {
     required this.selected,
     required this.labelless,
     required this.onTap,
+    this.onLongPress,
   });
 
   final AdaptiveDestination dest;
   final bool selected;
   final bool labelless;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -931,6 +948,7 @@ class _CapsuleNavItem extends StatelessWidget {
           // 墨水跟随 pill 的 stadium 造型（pill 铺满整个条目）
           customBorder: const StadiumBorder(),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: labelless
               // 无字态：图标在条目内居中
               ? Center(child: icon)

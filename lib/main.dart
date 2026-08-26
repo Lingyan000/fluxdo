@@ -26,6 +26,7 @@ import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/anchor_guard_sliver.dart';
+import 'widgets/user/account_switcher_sheet.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
@@ -1546,6 +1547,10 @@ class _MainPageState extends ConsumerState<MainPage>
               // 同一 IconData 用 fill:1 表达选中态，避免不同字形错位
               : Icon(e.selectedIconData, fill: 1),
           label: e.label(context),
+          // 长按「我的」：快速切换账号（profile 仅登录态可见，无需再判空）
+          onLongPress: e.id == NavEntryIds.profile
+              ? () => unawaited(AccountSwitcherSheet.show(context))
+              : null,
         ),
     ];
 

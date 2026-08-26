@@ -143,11 +143,7 @@ void main() {
     final box = capsuleOf(tester);
     expect(box.size.width, lessThan(1200), reason: '宽屏不拉满');
     final left = box.localToGlobal(Offset.zero).dx;
-    expect(
-      left,
-      closeTo((1200 - box.size.width) / 2, 0.5),
-      reason: '水平居中悬浮',
-    );
+    expect(left, closeTo((1200 - box.size.width) / 2, 0.5), reason: '水平居中悬浮');
   });
 
   testWidgets('选中 pill 铺满整个条目槽位（非 M3 的只包图标短胶囊）', (tester) async {
@@ -199,11 +195,7 @@ void main() {
       closeTo(1.6, 0.02),
       reason: '无字态同比例 —— 槽宽不是硬编码常量，随高一起收',
     );
-    expect(
-      bare.width,
-      lessThan(labeled.width),
-      reason: '无字态更矮，槽宽也应更窄',
-    );
+    expect(bare.width, lessThan(labeled.width), reason: '无字态更矮，槽宽也应更窄');
   });
 
   testWidgets('切换选中项时 pill 滑动到新槽位', (tester) async {
@@ -225,5 +217,62 @@ void main() {
         .dx;
 
     expect(endX, greaterThan(startX), reason: 'pill 随选中项右移');
+  });
+
+  testWidgets('长按条目触发 onLongPress，点按仍正常切换', (tester) async {
+    tester.view.physicalSize = screen;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({
+      'pref_bottom_nav_floating': true,
+      'pref_bottom_nav_labelless': false,
+      'pref_bottom_nav_floating_blur': true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+
+    var longPressed = false;
+    int? switchedTo;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          home: Scaffold(
+            extendBody: true,
+            bottomNavigationBar: AdaptiveBottomNavigation(
+              selectedIndex: 0,
+              onDestinationSelected: (i) => switchedTo = i,
+              destinations: [
+                const AdaptiveDestination(
+                  id: 'home',
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: '标签0',
+                ),
+                AdaptiveDestination(
+                  id: 'profile',
+                  icon: const Icon(Icons.person_outline),
+                  selectedIcon: const Icon(Icons.person),
+                  label: '标签1',
+                  onLongPress: () => longPressed = true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('标签1'));
+    await tester.pumpAndSettle();
+    expect(longPressed, isTrue);
+    // 长按不产生 tab 切换
+    expect(switchedTo, isNull);
+
+    // 点按路径不受长按手势接入影响
+    await tester.tap(find.text('标签1'));
+    await tester.pumpAndSettle();
+    expect(switchedTo, 1);
   });
 }
