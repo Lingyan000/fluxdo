@@ -676,11 +676,6 @@ document.close();
         controller: controller,
         cookieNames: const {_cookieName},
         trusted: true,
-        // 防旧盖新：WebView cookie store 里残留的旧 pre-clearance（CHIPS
-        // 分区副本删不掉）expires 早于 jar 里手动验证刚拿到的有效值时，
-        // 不允许覆盖——否则验证通过 → retry 200 → 此处同步旧值 → 下一次
-        // timings POST 立刻 403，形成「过一次盾只管一次」的循环。
-        freshnessGuardNames: const {_cookieName},
       );
 
       if (!_canHandleGeneration(gen)) return false;

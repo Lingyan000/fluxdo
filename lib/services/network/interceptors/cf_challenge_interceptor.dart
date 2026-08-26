@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../cf_challenge_service.dart';
 import '../../cf_challenge_logger.dart';
 import '../../cf_clearance_refresh_service.dart';
-import '../../cf_clearance_registry.dart';
+import '../../cf_clearance_authority.dart';
 import '../../app_logger.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
@@ -171,13 +171,15 @@ class CfChallengeInterceptor extends Interceptor {
         url: requestUrl,
         statusCode: statusCode!,
       );
-      // 墓碑：本次请求携带的 cf_clearance 已被 CF 明确拒绝，登记后任何
-      // 同步来源都不得再把它写回 jar（这块反反复复的「旧值复活」病——
-      // 2026-08-19 实锤的「过一次盾只管一次」循环——根因就是被拒值被
-      // Turnstile WebView 残留副本等路径反复写回）。
-      CfClearanceRegistry.instance.markRejectedFromCookieHeader(
-        err.requestOptions.headers['Cookie']?.toString() ??
-            err.requestOptions.headers['cookie']?.toString(),
+      // 记录在位值被撞：本次请求携带的 cf_clearance 已被 CF 挑战（= 已死），
+      // 打开换届窗口——之后 sync 可以替换它（过盾新值继位，或 Turnstile
+      // 最新铸值无缝补位）。这里不做任何候选值判定、不分 403/429：
+      // 撞了就过盾，语义见 CfClearanceAuthority。
+      CfClearanceAuthority.instance.noteIncumbentChallenged(
+        CfClearanceAuthority.extractFromCookieHeader(
+          err.requestOptions.headers['Cookie']?.toString() ??
+              err.requestOptions.headers['cookie']?.toString(),
+        ),
       );
       final cfService = CfChallengeService();
       final isSilent = err.requestOptions.spec.isSilent;
@@ -366,11 +368,14 @@ class CfChallengeInterceptor extends Interceptor {
               // 多少次都一样,立即熔断进入冷却,阻断验证无限循环。
               if (CfChallengeService.isCfChallengeResponse(e.response)) {
                 cfService.startIneffectiveClearanceCooldown();
-                // 刚铸出的 clearance 对 Dio 同样无效：一并墓碑，防止它被
-                // 任何同步路径当作「新值」再写回 jar 后反复撞盾。
-                CfClearanceRegistry.instance.markRejectedFromCookieHeader(
-                  retryOptions.headers['Cookie']?.toString() ??
-                      retryOptions.headers['cookie']?.toString(),
+                // 刚铸出的 clearance 重试仍被撞：同样标记为已死（它可能是
+                // IP 绑定类的确定性无效），放开换届，让下一次验证/新铸值
+                // 补位，而不是把它留在 jar 里反复撞。
+                CfClearanceAuthority.instance.noteIncumbentChallenged(
+                  CfClearanceAuthority.extractFromCookieHeader(
+                    retryOptions.headers['Cookie']?.toString() ??
+                        retryOptions.headers['cookie']?.toString(),
+                  ),
                 );
                 CfChallengeLogger.log(
                   '[INTERCEPTOR] Verified clearance ineffective for Dio '

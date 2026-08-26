@@ -8,23 +8,11 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../constants.dart';
 import '../../auth_session.dart';
 import '../../log/log_writer.dart';
-import '../../cf_clearance_registry.dart';
+import '../../cf_clearance_authority.dart';
 import 'cookie_jar_service.dart';
 import 'cookie_logger.dart';
 import 'raw_cookie_writer.dart';
 import 'strategy/platform_cookie_strategy.dart';
-
-/// 新鲜度守卫（freshnessGuardNames）的判定结果。
-enum FreshnessOverwrite {
-  /// 允许写入。
-  allow,
-
-  /// 值与 jar 当前值相同，幂等跳过。
-  skipSameValue,
-
-  /// WebView 这枚的 expires 不晚于 jar 当前值 = 旧盖新，拒绝。
-  skipStale,
-}
 
 /// 边界同步服务：在登录成功、CF 验证成功等关键时机，
 /// 从 WebView CookieManager 读取 cookie 写入 CookieJar。
@@ -95,12 +83,6 @@ class BoundarySyncService {
   /// [trusted] 标记为权威写入（CF challenge 确认后），让写入升 version 盖过旧值。
   /// [acceptValues] cookie 名 → 只接受的值；用于 challenge 场景按确认的 fresh 值
   ///   过滤，排除 WebView 中可能残留的旧变体。
-  /// [freshnessGuardNames] cookie 名集合：对这些名启用「防旧盖新」守卫——
-  ///   写入前与 jar 当前 canonical 值比对，值相同（幂等）或 WebView 这枚的
-  ///   expires 不晚于 jar 当前值时跳过。用于 cf_clearance 这类多处签发、
-  ///   WebView 侧长期残留旧副本（CHIPS 分区副本删不掉）的 cookie：防止
-  ///   手动验证刚拿到的有效值被旧副本覆盖（「过一次盾只管一次」循环，
-  ///   2026-08-19 日志实锤）。任一侧 expires 缺失时放行，保守不挡正常同步。
   Future<void> syncFromWebView({
     String? currentUrl,
     InAppWebViewController? controller,
@@ -110,7 +92,6 @@ class BoundarySyncService {
     int? requestGeneration,
     bool trusted = false,
     Map<String, String>? acceptValues,
-    Set<String>? freshnessGuardNames,
   }) async {
     final url = currentUrl ?? AppConstants.baseUrl;
     final uri = Uri.parse(url);
@@ -219,65 +200,31 @@ class BoundarySyncService {
           continue;
         }
 
-        // 墓碑闸（对所有同步路径生效，不依赖 freshnessGuardNames 选择加入）：
-        // 被 CF 明确拒绝（403/429 challenge）过的 cf_clearance 永远不会重新
-        // 有效，任何来源（Turnstile WebView 残留副本、session bootstrap 全量
-        // 同步、启动预载 hydrate……）都不得再把它写回 jar。这是「旧值复活」
-        // 循环病的根修，判定见 CfClearanceRegistry。
-        if (wc.name == 'cf_clearance' &&
-            CfClearanceRegistry.instance.isRejected(value)) {
-          LogWriter.instance.write({
-            'timestamp': DateTime.now().toIso8601String(),
-            'level': 'warning',
-            'type': 'cookie_trace',
-            'event': 'rejected_clearance_blocked',
-            'message': '[BoundarySync] cf_clearance 已被 CF 拒过（墓碑在册），'
-                '拒绝从 WebView 复活写回 jar',
-            'name': wc.name,
-            'valueLength': value.length,
-            'url': url,
-          });
-          continue;
-        }
-
-        // 防旧盖新守卫（freshnessGuardNames）：WebView cookie store 里可能
-        // 长期残留旧副本（cf_clearance 的 CHIPS 分区副本用常规删除清不掉），
-        // 无差别覆盖会把 jar 里更新的有效值盖掉——手动 CF 验证刚拿到的
-        // clearance 被 Turnstile WebView 的残留旧副本覆盖后，下一次 Dio
-        // 请求立刻 403，形成「过一次盾只管一次」的循环（2026-08-19 日志
-        // 实锤：验证→retry 200→load_stop 同步旧值→1s 后再 403，三轮一致）。
-        // 值相同=幂等跳过；值不同但 WebView 这枚 expires 不晚于 jar=拒绝；
-        // 任一侧 expires 缺失=放行（无法证明更旧，保守不挡正常同步）。
-        if (freshnessGuardNames != null &&
-            freshnessGuardNames.contains(wc.name)) {
-          final existing = await _jar.getCanonicalCookie(wc.name);
-          final decision = freshnessOverwriteDecision(
-            jarValue: existing?.value,
-            jarExpires: existing?.expiresAt?.toLocal(),
-            webViewValue: value,
-            webViewExpires: CookieJarService.parseWebViewCookieExpires(
-              wc.expiresDate,
-            ),
-          );
-          if (decision == FreshnessOverwrite.skipStale) {
-            final jarExpires = existing!.expiresAt!.toLocal();
-            final webViewExpires =
-                CookieJarService.parseWebViewCookieExpires(wc.expiresDate)!;
+        // 在位值粘性闸门（对 cf_clearance 无条件生效）：不判候选值死活
+        // （判不了——有效值也会撞盾、残留旧值的 expires 经常比新值更晚），
+        // 只看 jar 当前在位值死没死：活着（未过期、未临期、未被撞）就不许
+        // 任何异值顶替；空/过期/临期/刚被撞才放开替换。相对 0.2.26 的
+        // 「sync 无条件放行」只做了这一个收窄：恢复路径（jar 空/验证取消）
+        // 同样畅通，而 2026-08-19「残留旧值顶替过盾成果」与 2026-08-22
+        // 「恢复被墓碑堵死」两类事故同时从机制上消失。判定见
+        // CfClearanceAuthority。
+        if (wc.name == 'cf_clearance') {
+          final decision = await CfClearanceAuthority.instance
+              .evaluateReplacement(value);
+          if (decision == CfClearanceReplaceDecision.skipHealthyIncumbent) {
             LogWriter.instance.write({
               'timestamp': DateTime.now().toIso8601String(),
-              'level': 'warning',
+              'level': 'info',
               'type': 'cookie_trace',
-              'event': 'stale_cookie_overwrite_blocked',
-              'message': '[BoundarySync] ${wc.name}: WebView 副本 expires '
-                  '(${webViewExpires.toIso8601String()}) 不晚于 jar 当前值 '
-                  '(${jarExpires.toIso8601String()})，跳过旧盖新',
+              'event': 'cf_clearance_rotation_skipped',
+              'message': '[BoundarySync] cf_clearance 在位值健康，'
+                  '跳过异值替换（valueLength=${value.length}）',
               'name': wc.name,
-              'webViewExpires': webViewExpires.toIso8601String(),
-              'jarExpires': jarExpires.toIso8601String(),
+              'valueLength': value.length,
               'url': url,
             });
           }
-          if (decision != FreshnessOverwrite.allow) continue;
+          if (decision != CfClearanceReplaceDecision.allow) continue;
         }
 
         // domain 处理：优先用平台返回值，旧 Android 兜底
@@ -412,34 +359,6 @@ class BoundarySyncService {
     } catch (e) {
       CookieLogger.error(operation: 'boundary_sync', error: e.toString());
     }
-  }
-
-  /// 新鲜度守卫的判定结果（见 [freshnessOverwriteDecision]）。
-  ///
-  /// WebView cookie store 里可能长期残留旧副本（cf_clearance 的 CHIPS 分区
-  /// 副本用常规删除清不掉），无差别覆盖会把 jar 里更新的有效值盖掉——
-  /// 手动 CF 验证刚拿到的 clearance 被 Turnstile WebView 的残留旧副本覆盖
-  /// 后，下一次 Dio 请求立刻 403，形成「过一次盾只管一次」的循环
-  /// （2026-08-19 日志实锤：验证→retry 200→load_stop 同步旧值→1s 后再 403，
-  /// 三轮一致）。
-  static FreshnessOverwrite freshnessOverwriteDecision({
-    required String? jarValue,
-    required DateTime? jarExpires,
-    required String webViewValue,
-    required DateTime? webViewExpires,
-  }) {
-    final existing = jarValue ?? '';
-    if (existing.isEmpty) return FreshnessOverwrite.allow;
-    // 值相同 = 幂等跳过（jar 已有同值，重复写只会无谓升 version）。
-    if (existing == webViewValue) return FreshnessOverwrite.skipSameValue;
-    // 值不同但 WebView 这枚 expires 不晚于 jar 当前值 = 旧盖新，拒绝。
-    // 任一侧 expires 缺失时放行（无法证明更旧，保守不挡正常同步）。
-    if (jarExpires != null &&
-        webViewExpires != null &&
-        !webViewExpires.isAfter(jarExpires)) {
-      return FreshnessOverwrite.skipStale;
-    }
-    return FreshnessOverwrite.allow;
   }
 
   bool _isLowConfidenceWebViewCookie(Cookie cookie) {
