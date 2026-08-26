@@ -111,7 +111,11 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.error_rounded, size: 48, color: theme.colorScheme.outline),
+          Icon(
+            Symbols.error_rounded,
+            size: 48,
+            color: theme.colorScheme.outline,
+          ),
           const SizedBox(height: 12),
           Text(
             S.current.sticker_marketLoadFailed,
@@ -310,7 +314,7 @@ class _StickerGroupTile extends ConsumerWidget {
       ),
       child: Center(
         child: Text(
-          group.name.isNotEmpty ? group.name[0] : '?',
+          group.name.isNotEmpty ? group.name.characters.first : '?',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

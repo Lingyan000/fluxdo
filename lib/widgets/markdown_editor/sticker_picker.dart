@@ -536,8 +536,9 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   }
 
   Widget _buildFallbackIcon(String name) {
+    // characters.first:名字以 🍟 等增补平面 emoji 开头时 name[0] 会切开代理对
     return Text(
-      name.isNotEmpty ? name[0] : '?',
+      name.isNotEmpty ? name.characters.first : '?',
       style: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w600,

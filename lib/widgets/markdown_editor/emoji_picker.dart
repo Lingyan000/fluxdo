@@ -592,7 +592,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 extension StringExtension on String {
   String capitalize() {
     if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1)}";
+    // 按字素簇取首字符:分组名可能以增补平面 emoji 开头(如 "🍟 藤田言音"),
+    // this[0] 会把代理对从中间切开,渲染成乱码。
+    final chars = characters;
+    return "${chars.first.toUpperCase()}${chars.skip(1).join()}";
   }
 }
 
