@@ -13,6 +13,7 @@ import '../../providers/preferences_provider.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../utils/blur_config.dart';
 import 'fading_edge_scroll_view.dart';
+import 'predictive_back_overlay_handler.dart';
 
 /// X(Twitter)风格「长按浮起」图片上下文菜单的动作项。
 class ImageLiftAction {
@@ -311,14 +312,102 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
 
   /// 淡出后待执行的动作回调。
   VoidCallback? _pendingCallback;
+  /// 返回键消费项:挂源页面路由的 local history,系统返回(按钮/
+  /// 手势 commit/页面返回入口)优先关菜单而非 pop 页面。
+  LocalHistoryEntry? _historyEntry;
+  bool _removingHistory = false;
+
+  /// Android 预测返回手势:跟手进度(非 null 表示手势进行中/回弹中)。
+  PredictiveBackOverlayHandler? _backHandler;
+  double? _backProgress;
+  bool _backResetAnimating = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _master.addStatusListener(_onMasterStatus);
+    _attachBackHandling();
     // 首帧:预览盖在源图上(像素级重合)、遮罩全透明、面板移出屏外,
     // 测得面板高度与预览目标矩形后再开始浮起动画,延迟一帧不可感知。
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureAndOpen());
+  }
+
+  /// 返回拦截:LocalHistoryEntry(所有 pop 路径先关菜单) + 预测返回
+  /// 手势(Android 13+ 跟手动画,commit 关菜单/cancel 回弹)。
+  void _attachBackHandling() {
+    final route = ModalRoute.of(widget.sourceContext);
+    if (route == null) return;
+    _historyEntry = LocalHistoryEntry(
+      onRemove: () {
+        _historyEntry = null;
+        if (!_removingHistory) _requestClose();
+      },
+    );
+    route.addLocalHistoryEntry(_historyEntry!);
+    _backHandler = PredictiveBackOverlayHandler(
+      isEnabled:
+          () =>
+              route.isCurrent &&
+              (_phase == _LiftPhase.open || _phase == _LiftPhase.opening),
+      onStart: _onBackStart,
+      onUpdate: _onBackUpdate,
+      onCancel: _onBackCancel,
+      onCommit: _onBackCommit,
+    )..attach();
+  }
+
+  void _detachHistory() {
+    final entry = _historyEntry;
+    if (entry == null) return;
+    _historyEntry = null;
+    _removingHistory = true;
+    entry.remove();
+    _removingHistory = false;
+  }
+
+  // ---- Android 预测返回手势:跟手进度叠加在现有动画输出之上 ----
+
+  void _onBackStart() {
+    // 手势接管:opening 动画若在进行先停住,进度由手势驱动。
+    _master.stop();
+    _dragReset.stop();
+    setState(() => _backProgress = 0);
+  }
+
+  void _onBackUpdate(double progress) {
+    if (_backProgress == null) return;
+    setState(() => _backProgress = progress);
+  }
+
+  void _onBackCancel() {
+    final start = _backProgress ?? 0;
+    // 恢复 opening(手势开始于 opening 阶段时从断点继续)。
+    if (_phase == _LiftPhase.opening) _master.forward();
+    if (start <= 0) {
+      setState(() => _backProgress = null);
+      return;
+    }
+    // 跟手进度回弹到 0(复用 _dragReset 通道)。
+    _backResetAnimating = true;
+    _dragResetAnim = Tween<double>(begin: start, end: 0).animate(
+      CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic),
+    );
+    _dragReset
+      ..duration = const Duration(milliseconds: 220)
+      ..forward(from: 0).whenCompleteOrCancel(() {
+        if (mounted) {
+          setState(() {
+            _backProgress = null;
+            _backResetAnimating = false;
+          });
+        }
+      });
+  }
+
+  void _onBackCommit() {
+    setState(() => _backProgress = null);
+    _close();
   }
 
   @override
@@ -327,6 +416,8 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
       ImageLiftMenu._activeSource.value = null;
     }
+    _backHandler?.dispose();
+    _detachHistory();
     WidgetsBinding.instance.removeObserver(this);
     _master.dispose();
     _dragReset.dispose();
@@ -501,6 +592,8 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
       ImageLiftMenu._activeSource.value = null;
     }
+    // 菜单已关:返回消费项同步摘除,避免占用页面的返回拦截。
+    _detachHistory();
     widget.onDismissed();
     _pendingCallback?.call();
     _pendingCallback = null;
@@ -608,11 +701,11 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
             : _dragOffset;
 
         // 浮起进度(带微量过冲):opening 弹簧 0→1,closing 1→弹簧(0)。
-        final double liftT;
+        double liftT;
         // 遮罩/阴影/模糊进度:快速淡入,收回时快速淡出。
-        final double scrimT;
+        double scrimT;
         // 面板位移(向下为正,px)。
-        final double panelOffset;
+        double panelOffset;
         switch (_phase) {
           case _LiftPhase.waitingMeasure:
             liftT = 0;
@@ -637,6 +730,17 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
             liftT = 1;
             scrimT = 1 - m;
             panelOffset = drag;
+        }
+
+        // Android 预测返回手势的跟手进度:线性叠加在现有动画输出上 ——
+        // 预览缩回源位、面板下滑、遮罩淡出,commit 关菜单/cancel 回弹。
+        final backP = _backResetAnimating && _dragResetAnim != null
+            ? _dragResetAnim!.value
+            : (_backProgress ?? 0);
+        if (backP > 0) {
+          liftT *= (1 - backP);
+          scrimT *= (1 - backP);
+          panelOffset += _panelHeight * backP;
         }
 
         // 目标矩形从当前 MediaQuery 派生:窗口尺寸变化触发本视图重建,

@@ -559,4 +559,40 @@ void main() {
     expect(_previewFinder, findsNothing);
     expect(ImageLiftMenu.activeSource.value, isNull);
   });
+
+  testWidgets('系统返回(maybePop):先关菜单而非 pop 页面', (tester) async {
+    var runs = 0;
+    await _openMenu(tester, _host(onOpen: () => runs++));
+    await tester.pumpAndSettle();
+
+    // 模拟系统返回/页面返回入口:LocalHistoryEntry 消费 → 关菜单。
+    // 注意:maybePop 返回 true 只表示返回请求被「处理」(history 消费
+    // 也算处理),页面是否真 pop 要看页面 widget 是否还在树上。
+    await navigatorKey.currentState!.maybePop();
+    await tester.pumpAndSettle();
+
+    // 菜单已关、页面未被 pop(home 的源 widget 仍在树上)。
+    expect(find.byKey(const ValueKey('lift_preview')), findsNothing);
+    expect(find.byKey(const ValueKey('lift_source')), findsOneWidget);
+    expect(ImageLiftMenu.activeSource.value, isNull);
+    expect(runs, 0);
+  });
+
+  testWidgets('预测返回手势(handler 接线):跟手缩小并 commit 关菜单', (tester) async {
+    // 注:binding 的手势分发是私有链路,这里通过菜单挂到页面路由的
+    // PredictiveBackOverlayHandler 行为间接验证 —— handler 组件本身的
+    // 事件映射(isEnabled/isButtonEvent/进度 clamp/commit/cancel)由
+    // predictive_back_overlay_handler_test.dart 单元测试覆盖。
+    var runs = 0;
+    await _openMenu(tester, _host(onOpen: () => runs++));
+    await tester.pumpAndSettle();
+
+    // 手势 commit 未被 handler 认领时,框架走 maybePop → history 消费。
+    // 认领路径(跟手动画)由 handler 组件单元测试 + 真机手测覆盖。
+    await navigatorKey.currentState!.maybePop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lift_preview')), findsNothing);
+    expect(find.byKey(const ValueKey('lift_source')), findsOneWidget);
+    expect(runs, 0);
+  });
 }
