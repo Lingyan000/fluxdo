@@ -1169,9 +1169,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     ),
                     child: GestureImageView(
                       image: _clampedViewerProvider(widget.imageUrl!),
-                      placeholder:
-                          (widget.thumbnailUrl != null &&
-                              widget.thumbnailUrl != widget.imageUrl)
+                      // 即使缩略图 URL 与原图 URL 相同也要传：两者分别走
+                      // content/original bucket，且源页面已经把 content 版本
+                      // 解码进缓存。旧代码按 URL 相等直接丢掉占位，弱网下只剩
+                      // 空黑画布等待 original bucket 下载。
+                      placeholder: widget.thumbnailUrl != null
                           ? _thumbnailProvider(widget.thumbnailUrl!)
                           : null,
                       controller: _obtainGestureController(
@@ -1203,6 +1205,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       },
                       failedBuilder: (context, _) =>
                           _buildSvgFallback(widget.imageUrl!),
+                      progressBuilder: _buildImageLoadingProgress,
                     ),
                   )
                 else
@@ -1263,7 +1266,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
                             return GestureImageView(
                               image: _clampedViewerProvider(url),
-                              placeholder: (thumbUrl != null && thumbUrl != url)
+                              placeholder: thumbUrl != null
                                   ? _thumbnailProvider(thumbUrl)
                                   : null,
                               controller: _obtainGestureController(
@@ -1296,8 +1299,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                               },
                               failedBuilder: (context, _) =>
                                   _buildSvgFallback(url),
-                              loadingBuilder: (context) =>
-                                  const Center(child: LoadingSpinner()),
+                              progressBuilder: _buildImageLoadingProgress,
                             );
                           },
                         );
@@ -1473,6 +1475,37 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 原图下载进度：服务端给出 Content-Length 时显示确定进度，否则显示
+  /// 不定态。M3eCircularProgress 内部读取全局 M3E 开关，开启时为波浪环，
+  /// 关闭时自动回退经典 CircularProgressIndicator。
+  Widget _buildImageLoadingProgress(
+    BuildContext context,
+    ImageChunkEvent? event,
+  ) {
+    final total = event?.expectedTotalBytes;
+    final value = total != null && total > 0
+        ? (event!.cumulativeBytesLoaded / total).clamp(0.0, 1.0)
+        : null;
+    return Center(
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0x66000000),
+          shape: BoxShape.circle,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: M3eCircularProgress(
+            value: value,
+            size: 32,
+            strokeWidth: 3,
+            color: Colors.white,
+            trackColor: Colors.white24,
           ),
         ),
       ),
