@@ -28,13 +28,15 @@ class StickerMarketService {
   final SharedPreferences _prefs;
   late final Dio _dio;
 
-  StickerMarketService(this._prefs) {
-    _dio = Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
-      ),
-    );
+  StickerMarketService(this._prefs, {Dio? dio}) {
+    _dio =
+        dio ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 15),
+          ),
+        );
   }
 
   /// 当前 baseUrl
@@ -126,9 +128,14 @@ class StickerMarketService {
 
   /// 获取分组详情
   Future<StickerGroupDetail> getGroupDetail(String groupId) async {
+    // 市场分组 id 通常已经包含 `group-` 前缀，不能再次拼接成
+    // `group-group-*.json`；兼容仍使用裸 id 的旧数据。
+    final groupFileName = groupId.startsWith('group-')
+        ? '$groupId.json'
+        : 'group-$groupId.json';
     final data = await _fetchWithCache(
       'group_$groupId',
-      '$baseUrl/assets/market/group-$groupId.json',
+      '$baseUrl/assets/market/$groupFileName',
     );
     return compute(_parseGroupDetail, data);
   }
