@@ -189,8 +189,10 @@ mixin _UsersMixin on _DiscourseServiceBase {
     required int generation,
   }) async {
     final response = await _dio.get('/u/$username/summary.json');
-    if (!AuthSession().isValid(generation) ||
-        await _storage.read(key: DiscourseService._usernameKey) != username) {
+    // summary.json can be requested for any public profile.  The requested
+    // username therefore must not be compared with the logged-in username;
+    // only invalidate a response that crossed an account/session boundary.
+    if (!AuthSession().isValid(generation)) {
       throw StateError('当前会话已切换，丢弃旧用户统计响应');
     }
     final summary = UserSummary.fromJson(response.data);
