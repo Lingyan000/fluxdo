@@ -1511,7 +1511,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
   /// 避免本地有 cookie 但服务端已撤销 session 的"假在线"状态。
   /// 网络异常时保守返回 true（保留本地状态）。
   /// [logoutOnInvalid] 关闭时只返回 false，不主动清空本地会话，供账号切换
-  /// 在失败时回滚旧账号使用；[expectedUsername] 用于校验快照没有串号。
+  /// 在失败时回滚旧账号使用；[expectedUsername] 同时作为切换事务提交前的
+  /// 临时身份，并用于校验快照没有串号。
   Future<bool> isLoggedIn({
     int? requestGeneration,
     bool logoutOnInvalid = true,
@@ -1531,8 +1532,17 @@ mixin _AuthMixin on _DiscourseServiceBase {
     if (!isCurrent()) return false;
     if (tToken == null || tToken.isEmpty) return false;
 
-    final username = await _storage.read(key: DiscourseService._usernameKey);
+    final storedUsername = await _storage.read(
+      key: DiscourseService._usernameKey,
+    );
     if (!isCurrent()) return false;
+    // 多账号切换会先 detach 当前会话；此时用户名存储已被刻意清空，目标
+    // 会话尚未 finalize。校验目标快照时必须使用调用方提供的预期用户名，
+    // 不能因为「尚未提交」而把一枚有效的 _t 误判为过期。
+    final expected = expectedUsername?.trim();
+    final username = expected != null && expected.isNotEmpty
+        ? expected
+        : storedUsername;
     if (username == null || username.isEmpty) return false;
 
     // 服务端验证
@@ -1554,7 +1564,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
             (liveUsername != null && liveUsername.isNotEmpty)
             ? liveUsername
             : username;
-        if (expectedUsername != null && resolvedUsername != expectedUsername) {
+        if (expected != null &&
+            expected.isNotEmpty &&
+            resolvedUsername.toLowerCase() != expected.toLowerCase()) {
           LogWriter.instance.write({
             'timestamp': DateTime.now().toIso8601String(),
             'level': 'warning',
