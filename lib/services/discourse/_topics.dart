@@ -280,6 +280,7 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     required String raw,
     required int categoryId,
     List<String>? tags,
+    String? featuredLink,
     bool createAsPostVoting = false,
   }) async {
     final data = <String, dynamic>{
@@ -291,6 +292,10 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
     if (tags != null && tags.isNotEmpty) {
       data['tags[]'] = tags;
+    }
+
+    if (featuredLink != null && featuredLink.isNotEmpty) {
+      data['featured_link'] = featuredLink;
     }
 
     // post-voting(问答)话题:插件只认字符串 'true',且仅对新话题生效

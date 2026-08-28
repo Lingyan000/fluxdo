@@ -389,6 +389,31 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
+  /// 宿主直接修改 controller 后同步富文本文档。
+  ///
+  /// 创建话题页的标题 onebox 会把 URL 追加到 controller；富文本编辑器
+  /// 内部有独立的 EditorState，不能只依赖 controller listener，否则提交
+  /// 前 flush 会把这次追加覆盖掉。
+  Future<void> syncFromController() async {
+    final editor = _editor;
+    if (editor == null || !mounted) return;
+
+    final raw = widget.controller.text;
+    final revision = editor.docRevision;
+    _serializeDebounce?.cancel();
+    final doc = await markdownToDoc(raw);
+    if (!mounted ||
+        editor != _editor ||
+        editor.docRevision != revision ||
+        widget.controller.text != raw ||
+        doc == null) {
+      return;
+    }
+
+    final gapped = insertEscapeGaps(doc, editor.nextBlockId);
+    editor.replaceBlockRange(0, editor.blocks.length - 1, gapped);
+  }
+
   // -----------------------------------------------------------------
   // 斜杠菜单(段首 `/` 唤起块插入 —— 类 Notion)
   // -----------------------------------------------------------------

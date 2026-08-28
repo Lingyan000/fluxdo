@@ -18,5 +18,26 @@ void main() {
       expect(DiscourseUrlParser.isHomepage('https://linux.do/'), isTrue);
       expect(DiscourseUrlParser.isHomepage('/latest'), isFalse);
     });
+
+    test('解析标题中的绝对 URL', () {
+      final result = DiscourseUrlParser.parseTitleUrl(
+        ' https://example.com/article?id=42#comments ',
+      );
+
+      expect(result?.url, 'https://example.com/article?id=42#comments');
+      expect(result?.uri.host, 'example.com');
+    });
+
+    test('标题包含其它文字或非 HTTP(S) 协议时不解析', () {
+      expect(
+        DiscourseUrlParser.parseTitleUrl('看这篇 https://example.com/article'),
+        isNull,
+      );
+      expect(
+        DiscourseUrlParser.parseTitleUrl('mailto:user@example.com'),
+        isNull,
+      );
+      expect(DiscourseUrlParser.parseTitleUrl('https://'), isNull);
+    });
   });
 }

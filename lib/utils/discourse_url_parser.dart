@@ -30,6 +30,14 @@ class ChatLinkInfo {
   const ChatLinkInfo({required this.channelId, this.threadId, this.messageId});
 }
 
+/// 标题中可自动解析的绝对 URL。
+class TitleUrlInfo {
+  final String url;
+  final Uri uri;
+
+  const TitleUrlInfo({required this.url, required this.uri});
+}
+
 class DiscourseUrlParser {
   DiscourseUrlParser._();
 
@@ -133,6 +141,23 @@ class DiscourseUrlParser {
     final match = _tagRegex.firstMatch(url);
     final encoded = match?.group(1);
     return encoded == null ? null : Uri.decodeComponent(encoded);
+  }
+
+  /// 解析标题中的单独 HTTP(S) URL。
+  ///
+  /// Discourse 只有在标题内容本身就是 URL 时才会触发行内 onebox，
+  /// 因此带有空格或其它文字的标题不应被当作 URL 处理。
+  static TitleUrlInfo? parseTitleUrl(String value) {
+    final url = value.trim();
+    if (url.isEmpty || RegExp(r'\s').hasMatch(url)) return null;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) return null;
+
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') return null;
+
+    return TitleUrlInfo(url: url, uri: uri);
   }
 
   /// 解析聊天链接,返回 [ChatLinkInfo] 或 null(thread 形态优先匹配,
