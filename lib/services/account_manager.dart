@@ -89,6 +89,11 @@ class AccountManager {
   final _storage = ResilientSecureStorage();
   Future<void> _operationTail = Future<void>.value();
 
+  // Storage calls are asynchronous. Keep the in-process value in sync with
+  // the auth boundary so a login-success notification cannot race the guest
+  // flag deletion and make CurrentUserNotifier briefly return null.
+  bool? _guestModeOverride;
+
   /// 让所有会改动当前认证上下文的操作严格串行。
   Future<T> _exclusive<T>(Future<T> Function() operation) {
     final result = _operationTail.then((_) => operation());
@@ -137,12 +142,18 @@ class AccountManager {
 
   /// 添加账号流程是否处在 guest profile。
   Future<bool> isGuestSession() async {
+    final override = _guestModeOverride;
+    if (override != null) return override;
     final value = await _storage.read(key: _guestModeKey);
     return value == '1';
   }
 
   /// 登录成功后清掉 guest 标记。幂等，冷启动 API key 回调也可以调用。
   Future<void> markLoginSucceeded() async {
+    // This assignment intentionally happens before the first await. The
+    // auth-state event is emitted synchronously by DiscourseService, while
+    // the secure-storage cleanup below may still be in flight.
+    _guestModeOverride = false;
     await _exclusive(() async {
       await Future.wait([
         _storage.delete(key: _guestModeKey),
@@ -487,6 +498,7 @@ class AccountManager {
   /// pending username 写入安全存储，支持系统浏览器 API key 回调期间进程被重建。
   Future<void> prepareForNewLogin() async {
     await _exclusive(() async {
+      _guestModeOverride = true;
       final current = await getCurrentUsername();
       if (current != null && current.isNotEmpty && current != guestAccountId) {
         await _storage.write(key: _pendingNewLoginKey, value: current);
@@ -518,6 +530,7 @@ class AccountManager {
 
   /// 添加账号页面退出时收口。取消/失败则恢复进入添加流程前的账号。
   Future<void> completeNewLogin({required bool success}) async {
+    _guestModeOverride = false;
     await _exclusive(() async {
       final previous = await _storage.read(key: _pendingNewLoginKey);
       await _storage.delete(key: _pendingNewLoginKey);
@@ -569,38 +582,140 @@ class AccountManager {
     await _deleteSnapshot(username);
   }
 
-  Future<void> _switchToAccountLocked(String username) async {
+  Future<Map<String, dynamic>> _readRequiredSnapshot(String username) async {
     final snapshot = await _readSnapshot(username);
     final cookies = snapshot?['cookies'];
+    if (snapshot == null ||
+        cookies is! List ||
+        cookies.isEmpty ||
+        !_snapshotHasSessionCookie(cookies)) {
+      throw AccountSessionExpiredException(username);
+    }
+    return snapshot;
+  }
+
+  /// 从快照恢复一个完整会话，并在提交前确认服务端返回的确实是目标账号。
+  ///
+  /// [detachSessionLocally] 会清空当前会话且不可逆，因此切换流程必须把
+  /// 「摘除 → 回灌 → 校验 → finalize」包在可回滚的事务里。校验时禁止
+  /// [DiscourseService.isLoggedIn] 直接 logout；否则一次切换窗口内的 401
+  /// 会把刚保存的旧账号也一起清掉。
+  Future<void> _restoreAccountSnapshotLocked(
+    String username,
+    Map<String, dynamic> snapshot, {
+    required bool notifyAuthState,
+  }) async {
+    final cookies = snapshot['cookies'];
     if (cookies is! List ||
         cookies.isEmpty ||
         !_snapshotHasSessionCookie(cookies)) {
-      await _removeAccountLocked(username);
       throw AccountSessionExpiredException(username);
-    }
-
-    final current = await getCurrentUsername();
-    if (current != null && current.isNotEmpty && current != username) {
-      await _syncCurrentAccountLocked(captureBrowserCookies: true);
     }
 
     await DiscourseService().detachSessionLocally();
+    final restoreGeneration = AuthSession().generation;
     await _restoreSessionCookies(cookies, username);
-    await _restoreBrowserCookies(snapshot?['webview_cookies'], username);
+    await _restoreBrowserCookies(snapshot['webview_cookies'], username);
+
     final restoredToken = await CookieJarService().getTToken();
     if (restoredToken == null || restoredToken.isEmpty) {
-      await _removeAccountLocked(username);
       throw AccountSessionExpiredException(username);
     }
-    WebViewCookiePriming.instance.invalidate();
-    await DiscourseService().finalizeNativeLoginSuccess(username);
 
-    // 头像/快照只允许来自新账号。_currentAvatarFor 会拒绝仍残留的旧 preload。
-    await _syncCurrentAccountLocked(captureBrowserCookies: true);
+    final sessionIsValid = await DiscourseService().isLoggedIn(
+      requestGeneration: restoreGeneration,
+      logoutOnInvalid: false,
+      expectedUsername: username,
+    );
+    if (!sessionIsValid) {
+      throw AccountSessionExpiredException(username);
+    }
+
+    WebViewCookiePriming.instance.invalidate();
+    await DiscourseService().finalizeNativeLoginSuccess(
+      username,
+      notifyAuthState: notifyAuthState,
+    );
+
+    // finalize 期间可能被旧请求/服务端失效信号打断；不要让这种半恢复
+    // 状态提交给 UI，交给上层 catch 回滚到切换前的快照。
+    final activeUsername = await getCurrentUsername();
+    final activeToken = await CookieJarService().getTToken();
+    if (activeUsername != username ||
+        activeToken == null ||
+        activeToken.isEmpty) {
+      throw AccountSessionExpiredException(username);
+    }
+  }
+
+  Future<void> _switchToAccountLocked(
+    String username, {
+    bool notifyAuthState = true,
+  }) async {
+    late final Map<String, dynamic> snapshot;
+    try {
+      snapshot = await _readRequiredSnapshot(username);
+    } on AccountSessionExpiredException {
+      await _removeAccountLocked(username);
+      rethrow;
+    }
+
+    final current = await getCurrentUsername();
+    Map<String, dynamic>? previousSnapshot;
+    if (current != null && current.isNotEmpty && current != username) {
+      // 先把旧账号固化到最新快照，确保目标恢复失败时仍有可回滚边界。
+      await _syncCurrentAccountLocked(captureBrowserCookies: true);
+      previousSnapshot = await _readSnapshot(current);
+    }
+
+    var transitionStarted = false;
+    try {
+      transitionStarted = true;
+      await _restoreAccountSnapshotLocked(
+        username,
+        snapshot,
+        notifyAuthState: notifyAuthState,
+      );
+
+      // 头像/快照只允许来自新账号。_currentAvatarFor 会拒绝仍残留的旧 preload。
+      await _syncCurrentAccountLocked(captureBrowserCookies: true);
+    } catch (error, stackTrace) {
+      if (transitionStarted &&
+          current != null &&
+          current.isNotEmpty &&
+          current != username &&
+          previousSnapshot != null) {
+        try {
+          await _restoreAccountSnapshotLocked(
+            current,
+            previousSnapshot,
+            // 普通切换失败时 UI 仍处于旧账号，不再额外广播一次 authState；
+            // 这样不会在回滚完成前触发第二轮 currentUser 清空/刷新。
+            notifyAuthState: false,
+          );
+        } catch (rollbackError, rollbackStackTrace) {
+          debugPrint(
+            '[AccountManager] 切换失败后回滚 $current 也失败: '
+            '$rollbackError\n$rollbackStackTrace',
+          );
+        }
+      }
+
+      if (error is AccountSessionExpiredException) {
+        try {
+          await _removeAccountLocked(username);
+        } catch (removeError) {
+          debugPrint('[AccountManager] 清理过期账号 $username 失败: $removeError');
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   /// 切换到目标账号。
   Future<void> switchToAccount(String username) async {
-    await _exclusive(() => _switchToAccountLocked(username));
+    await _exclusive(
+      () => _switchToAccountLocked(username, notifyAuthState: false),
+    );
   }
 }

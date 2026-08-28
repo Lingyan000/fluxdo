@@ -1510,9 +1510,22 @@ mixin _AuthMixin on _DiscourseServiceBase {
   /// 除了检查本地 _t cookie，还会请求 /session/current.json 做服务端验证，
   /// 避免本地有 cookie 但服务端已撤销 session 的"假在线"状态。
   /// 网络异常时保守返回 true（保留本地状态）。
-  Future<bool> isLoggedIn({int? requestGeneration}) async {
+  /// [logoutOnInvalid] 关闭时只返回 false，不主动清空本地会话，供账号切换
+  /// 在失败时回滚旧账号使用；[expectedUsername] 用于校验快照没有串号。
+  Future<bool> isLoggedIn({
+    int? requestGeneration,
+    bool logoutOnInvalid = true,
+    String? expectedUsername,
+  }) async {
     bool isCurrent() =>
         requestGeneration == null || AuthSession().isValid(requestGeneration);
+
+    Future<bool> rejectInvalidSession() async {
+      if (logoutOnInvalid && isCurrent()) {
+        await logout(callApi: false, refreshPreload: false);
+      }
+      return false;
+    }
 
     final tToken = await _cookieJar.getTToken();
     if (!isCurrent()) return false;
@@ -1537,9 +1550,23 @@ mixin _AuthMixin on _DiscourseServiceBase {
         _tToken = tToken;
         final liveUsername = (data['current_user'] as Map)['username']
             ?.toString();
-        _username = (liveUsername != null && liveUsername.isNotEmpty)
+        final resolvedUsername =
+            (liveUsername != null && liveUsername.isNotEmpty)
             ? liveUsername
             : username;
+        if (expectedUsername != null && resolvedUsername != expectedUsername) {
+          LogWriter.instance.write({
+            'timestamp': DateTime.now().toIso8601String(),
+            'level': 'warning',
+            'type': 'auth',
+            'event': 'auth_session_username_mismatch',
+            'message': '登录态检查返回了非预期账号',
+            'expectedUsername': expectedUsername,
+            'actualUsername': resolvedUsername,
+          });
+          return await rejectInvalidSession();
+        }
+        _username = resolvedUsername;
         _resetStrikes();
         return true;
       }
@@ -1549,7 +1576,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'level': 'warning',
         'type': 'auth',
         'event': 'auth_session_check_failed',
-        'message': '登录态检查返回 200 但无 current_user，执行登出',
+        'message': logoutOnInvalid
+            ? '登录态检查返回 200 但无 current_user，执行登出'
+            : '登录态检查返回 200 但无 current_user，保留本地会话',
         'statusCode': response.statusCode,
         'memHasToken': _tToken != null && _tToken!.isNotEmpty,
         'memTLen': _tokenLength(_tToken),
@@ -1559,9 +1588,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'jarTHash': _safeTokenHash(tToken),
         ..._sentTDiagnostics(response.requestOptions),
       });
-      if (!isCurrent()) return false;
-      await logout(callApi: false, refreshPreload: false);
-      return false;
+      return await rejectInvalidSession();
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (!isCurrent()) return false;
@@ -1572,7 +1599,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'level': 'warning',
           'type': 'auth',
           'event': 'auth_session_check_failed',
-          'message': '登录态检查被服务端拒绝，执行登出',
+          'message': logoutOnInvalid
+              ? '登录态检查被服务端拒绝，执行登出'
+              : '登录态检查被服务端拒绝，保留本地会话',
           'statusCode': status,
           'errorType': e.type.toString(),
           'memHasToken': _tToken != null && _tToken!.isNotEmpty,
@@ -1583,9 +1612,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'jarTHash': _safeTokenHash(tToken),
           ..._sentTDiagnostics(e.response?.requestOptions ?? e.requestOptions),
         });
-        if (!isCurrent()) return false;
-        await logout(callApi: false, refreshPreload: false);
-        return false;
+        return await rejectInvalidSession();
       }
       // 网络异常/CF 验证等 → 保守保留本地状态
       if (!isCurrent()) return false;
@@ -1609,7 +1636,11 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
   /// 登录成功后通知监听者（应在预加载数据就绪后调用）
   /// 会话写入由显式边界同步统一处理。
-  void onLoginSuccess(String tToken, {bool forceBrowserSessionSync = true}) {
+  void onLoginSuccess(
+    String tToken, {
+    bool forceBrowserSessionSync = true,
+    bool notifyAuthState = true,
+  }) {
     _clearPreviousTTokenFallback();
     _tToken = tToken;
     _credentialsLoaded = false;
@@ -1618,9 +1649,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
       reason: 'login_success',
       force: forceBrowserSessionSync,
     );
-    _authStateController.add(null);
     // 多账号：登记/刷新本机账号快照（尽力而为，不影响登录主流程）
     unawaited(AccountManager().markLoginSucceeded());
+    if (notifyAuthState) _authStateController.add(null);
     unawaited(AccountManager().syncCurrentAccount(captureBrowserCookies: true));
   }
 
@@ -1705,7 +1736,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
   ///
   /// 与 [logout](callApi:false) 的差别：服务端会话保留（目标只是换人），
   /// 当前账号的多账号快照由 AccountManager 在摘除前自行固化。切换方随后
-  /// 回灌目标账号 Cookie，并经 finalizeNativeLoginSuccess 统一收口广播。
+  /// 回灌目标账号 Cookie，并经 finalizeNativeLoginSuccess 统一收口；是否广播
+  /// authState 由切换方决定，避免 UI 刷新两次。
   Future<void> detachSessionLocally() async {
     // ===== 切断所有旧请求 =====
     AuthSession().advance();

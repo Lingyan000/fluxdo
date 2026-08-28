@@ -173,12 +173,16 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
 
   /// 收口对齐 webview_login_page 的 _finalizeLoginBeforeExit + _finalizeLoginBootstrap:
   /// AuthSession.advance → 从 jar 拿 _t → saveUsername/setToken → LoginReadyCoordinator
+  /// →（普通登录时）广播登录成功。
   ///
   /// WebView JS 全流程登录成功后, 由 login_page 在 dialog 已把会话 cookie
   /// syncFromWebView 落 jar 之后显式调用 (public)。dio 版 [loginWithPassword]
   /// 成功路径也复用它。
   @override
-  Future<void> finalizeNativeLoginSuccess(String identifier) async {
+  Future<void> finalizeNativeLoginSuccess(
+    String identifier, {
+    bool notifyAuthState = true,
+  }) async {
     final loginGeneration = AuthSession().advance();
 
     final token = await _cookieJar.getTToken() ?? '';
@@ -206,6 +210,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
               onLoginSuccess(
                 t,
                 forceBrowserSessionSync: forceBrowserSessionSync,
+                notifyAuthState: notifyAuthState,
               );
             },
           )
@@ -216,7 +221,11 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
     } finally {
       // 兜底广播, 避免 UI 卡在"同步登录中"
       if (!loginReadyNotified && AuthSession().isValid(loginGeneration)) {
-        onLoginSuccess(token, forceBrowserSessionSync: forceBrowserSessionSync);
+        onLoginSuccess(
+          token,
+          forceBrowserSessionSync: forceBrowserSessionSync,
+          notifyAuthState: notifyAuthState,
+        );
       }
     }
   }

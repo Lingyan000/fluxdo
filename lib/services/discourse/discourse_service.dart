@@ -119,7 +119,10 @@ abstract class _DiscourseServiceBase {
   Exception _handleDioError(DioException error);
   Never _throwApiError(DioException e);
   Future<void> _loadStoredCredentials();
-  Future<void> finalizeNativeLoginSuccess(String identifier);
+  Future<void> finalizeNativeLoginSuccess(
+    String identifier, {
+    bool notifyAuthState = true,
+  });
   Future<void> saveUsername(String username, {int? requestGeneration});
 }
 
