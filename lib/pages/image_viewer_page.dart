@@ -132,6 +132,22 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     required bool zoomed,
   }) => coverSource || zoomed;
 
+  /// 初始页缩略图选择规则。公开给测试，避免回归成画廊汇总 URL 覆盖
+  /// 点击入口实际显示 URL 的旧行为。
+  @visibleForTesting
+  static String? debugThumbnailUrlForIndex({
+    required int index,
+    required int initialIndex,
+    String? thumbnailUrl,
+    List<String>? thumbnailUrls,
+  }) {
+    if (index == initialIndex && thumbnailUrl != null) return thumbnailUrl;
+    if (thumbnailUrls != null && index < thumbnailUrls.length) {
+      return thumbnailUrls[index];
+    }
+    return null;
+  }
+
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
   static Future<void> open(
@@ -308,7 +324,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   ModalRoute<dynamic>? _route;
   ValueListenable<bool>? _navUserGesture;
 
-
   ImageGestureController _obtainGestureController(
     int index, {
     required bool inPageView,
@@ -389,9 +404,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               //
               // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
               // 比例在变,插值反而引入不必要的窗口动画。
-              final zoomed = HeroVisibilityController
-                      .instance.exitVisibleFraction !=
-                  null;
+              final zoomed =
+                  HeroVisibilityController.instance.exitVisibleFraction != null;
               // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
               // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
               final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
@@ -404,8 +418,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               // CoverContainFlightImage.sourceAspect)。
               final BuildContext srcContext =
                   direction == HeroFlightDirection.pop
-                      ? toContext
-                      : fromContext;
+                  ? toContext
+                  : fromContext;
               double? sourceAspect;
               final ro = srcContext.findRenderObject();
               if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
@@ -413,8 +427,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               }
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
-                animation:
-                    needsProgress ? animation : kAlwaysCompleteAnimation,
+                animation: needsProgress ? animation : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
                 // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
@@ -721,9 +734,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       preloadUrls.add(images[currentIndex + 1]);
     }
     for (final url in preloadUrls) {
-      unawaited(
-        BlobImageCache.precache(BlobImageCache.originalBucket, url),
-      );
+      unawaited(BlobImageCache.precache(BlobImageCache.originalBucket, url));
     }
   }
 
@@ -774,7 +785,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       // 使用 putImageBytes 直接保存字节数据到相册;命名与分享同口径
       // (原始文件名优先,回退时间戳)。
       final ext = BlobImageCache.httpUrlExtension(imageUrl);
-      final name = ShareUtils.safeFileBaseName(_currentFilename) ??
+      final name =
+          ShareUtils.safeFileBaseName(_currentFilename) ??
           'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
       await Gal.putImageBytes(imageBytes, name: '$name.$ext');
 
@@ -1015,8 +1027,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             slideAxis: SlideAxis.both,
             slideType: SlideType.onlyImage,
             slideEndHandler: (offset, {required state, required details}) =>
-                _slideShouldPop(offset, details, state.pageSize,
-                    SlideAxis.both),
+                _slideShouldPop(
+                  offset,
+                  details,
+                  state.pageSize,
+                  SlideAxis.both,
+                ),
             slidePageBackgroundHandler: (Offset offset, Size pageSize) {
               double progress = offset.distance / (pageSize.height);
               return Colors.black.withValues(
@@ -1144,8 +1160,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           slideAxis: SlideAxis.vertical, // 仅垂直滑动关闭，避免与左右切换图片冲突
           slideType: SlideType.onlyImage,
           slideEndHandler: (offset, {required state, required details}) =>
-              _slideShouldPop(offset, details, state.pageSize,
-                  SlideAxis.vertical),
+              _slideShouldPop(
+                offset,
+                details,
+                state.pageSize,
+                SlideAxis.vertical,
+              ),
           // 只处理背景透明度，不干预关闭逻辑，让库自己处理 pop
           slidePageBackgroundHandler: (Offset offset, Size pageSize) {
             // 使用垂直偏移量计算背景透明度（与 slideAxis: vertical 匹配）
@@ -1512,15 +1532,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 获取指定索引的缩略图 URL
-  String? _getThumbnailForIndex(int index) {
-    if (widget.thumbnailUrls != null && index < widget.thumbnailUrls!.length) {
-      return widget.thumbnailUrls![index];
-    } else if (index == widget.initialIndex && widget.thumbnailUrl != null) {
-      return widget.thumbnailUrl;
-    }
-    return null;
-  }
+  /// 获取指定索引的缩略图 URL。
+  ///
+  /// 初始页必须优先使用点击入口显式传入的 [ImageViewerPage.thumbnailUrl]：
+  /// 它是源端当下真正显示的 srcset 档位 URL，且对应位图已在 ImageCache。
+  /// [ImageViewerPage.thumbnailUrls] 来自全帖画廊汇总，可能仍是 cooked 的
+  /// 默认 src，和当前源端按 DPR 选出的 srcset URL 不同；旧顺序在画廊模式
+  /// 会覆盖掉正确 URL，导致查看器重新下载另一个“缩略图”，于是先黑很久，
+  /// 下载完才显示缩略图。
+  String? _getThumbnailForIndex(int index) =>
+      ImageViewerPage.debugThumbnailUrlForIndex(
+        index: index,
+        initialIndex: widget.initialIndex,
+        thumbnailUrl: widget.thumbnailUrl,
+        thumbnailUrls: widget.thumbnailUrls,
+      );
 
   /// 构建图片解码 fallback 组件（SVG / AVIF）
   Widget _buildSvgFallback(String imageUrl) {
