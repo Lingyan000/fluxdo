@@ -52,7 +52,7 @@ Future<void> _waitForEmbeddedBrowserTeardown() async {
 /// [topicId] 话题 ID (回复话题/帖子时必需)
 /// [categoryId] 分类 ID（可选，用于用户搜索）
 /// [replyToPost] 可选，被回复的帖子
-/// [targetUsername] 可选，私信目标用户名 (创建私信时必需)
+/// [targetUsername] 可选，私信目标用户名（创建时作为预选收件人）
 /// [draftKey] 可选，恢复已有草稿时传入原草稿 key（草稿列表入口使用）
 /// [preloadedDraftFuture] 预加载的草稿 Future（在点击回复按钮时就发起请求）
 /// [initialContent] 可选，预填内容（划词引用时使用）
@@ -66,7 +66,7 @@ Future<Post?> showReplySheet({
   int? categoryId,
   Post? replyToPost,
   String? targetUsername,
-  /// 新建私信（无预设收件人）：收件人由用户在编辑器内搜索添加
+  /// 新建私信（可无预设收件人）：收件人由用户在编辑器内搜索增删
   bool composePrivateMessage = false,
   String? draftKey,
   Future<Draft?>? preloadedDraftFuture,
@@ -228,8 +228,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   bool get _isPrivateMessage =>
       widget.targetUsername != null || widget.composePrivateMessage;
 
-  /// 收件人可编辑：新建私信场景（已指定对象的「发私信给某人」不改收件人）
-  bool get _canEditRecipients => widget.composePrivateMessage;
+  /// 所有新建私信入口都允许继续增删收件人；已有私信话题回复不走这里。
+  bool get _canEditRecipients => _isPrivateMessage && !_isEditMode;
 
   /// 是否在私信话题中（创建新私信 或 回复已有私信话题）
   bool get _isInPrivateMessageContext =>
@@ -401,6 +401,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     _draftController!.scheduleSave(data);
   }
 
+  /// 收件人本身也是私信草稿的一部分；只改名单不继续输入也要及时保存。
+  void _onRecipientsChanged(List<String> recipients) {
+    setState(() => _recipients = recipients);
+    _onContentChanged();
+  }
+
   /// 加载帖子原始内容
   Future<void> _loadPostRaw() async {
     setState(() => _isLoadingRaw = true);
@@ -509,7 +515,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
 
-    // 新建私信必须有收件人（已指定对象的场景收件人固定，天然非空）
+    // 新建私信必须至少保留一个收件人。
     if (_isPrivateMessage && _recipients.isEmpty) {
       _showError(S.current.pm_noRecipient);
       return;
@@ -713,19 +719,15 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                   ),
                                 ] else if (_isPrivateMessage)
                                   Expanded(
-                                    child: _canEditRecipients
-                                        ? Text(
-                                            context.l10n.pm_newTitle,
-                                            style: theme.textTheme.titleSmall,
-                                            overflow: TextOverflow.ellipsis,
-                                          )
-                                        : Text(
-                                            context.l10n.post_sendPmTitle(
+                                    child: Text(
+                                      _recipients.isEmpty
+                                          ? context.l10n.pm_newTitle
+                                          : context.l10n.post_sendPmTitle(
                                               _recipients.join(', '),
                                             ),
-                                            style: theme.textTheme.titleSmall,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+                                      style: theme.textTheme.titleSmall,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   )
                                 else if (widget.replyToPost != null) ...[
                                   SmartAvatar(
@@ -824,14 +826,14 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                         ],
                       ),
 
-                      // 新建私信：收件人选择（已指定对象时不显示，收件人固定）
+                      // 新建私信：所有入口都可增删收件人，预设对象保留为首个 chip。
                       if (_canEditRecipients)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                           child: PmRecipientField(
                             recipients: _recipients,
-                            autofocus: true,
-                            onChanged: (v) => setState(() => _recipients = v),
+                            autofocus: widget.targetUsername == null,
+                            onChanged: _onRecipientsChanged,
                           ),
                         ),
                       // 私信标题输入框（仅私信模式）
@@ -935,8 +937,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                     ? () {
                                         if (mounted) {
                                           setState(
-                                              () => _richFallback = false);
-                                        }
+                                              () => _richFallback = false,
+                                        );
                                       }
                                     : null,
                                 mentionDataSource: (term) =>
