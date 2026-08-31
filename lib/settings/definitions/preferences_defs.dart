@@ -89,21 +89,21 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
                 .watch(preferencesProvider)
                 .blockedUsernames
                 .length;
-            if (count == 0) return l10n.preferences_blockedUsernamesEmpty;
+            // 空态回落到静态说明(见 subtitle):「未拉黑任何用户」等于没说,
+            // 而空态恰恰是最该解释这功能干什么的时刻。与上面的关键词过滤同体例。
+            if (count == 0) return null;
             return l10n.preferences_blockedUsernamesCount(count);
           },
           onTap: (context, ref) => showBlockedUsernamesDialog(context, ref),
         ),
         SwitchModel(
-          id: 'showBlockedContentInfo',
-          title: l10n.preferences_showBlockedContentInfo,
-          subtitle: l10n.preferences_showBlockedContentInfoDesc,
+          id: 'showFilterHint',
+          title: l10n.preferences_showFilterHint,
+          subtitle: l10n.preferences_showFilterHintDesc,
           icon: Symbols.visibility_rounded,
-          getValue: (ref) =>
-              ref.watch(preferencesProvider).showBlockedContentInfo,
-          onChanged: (ref, v) => ref
-              .read(preferencesProvider.notifier)
-              .setShowBlockedContentInfo(v),
+          getValue: (ref) => ref.watch(preferencesProvider).showFilterHint,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setShowFilterHint(v),
         ),
       ],
     ),

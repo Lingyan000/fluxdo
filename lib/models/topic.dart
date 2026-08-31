@@ -1526,7 +1526,16 @@ class BoostUser {
   }
 }
 
-/// 帖子流中的 gaps 数据（拉黑用户的帖子位置）
+/// 帖子流中的 gaps 数据：服务端过滤后被跳过的楼层索引（`{postId: [被跳过的 postId]}`）。
+///
+/// 来源不止一种，且结构本身不带来源标记。Discourse `TopicView` 里会置
+/// `contains_gaps` 的分支包括：论坛原生忽略（ignored users）、`filter=summary`
+/// （热门回复）、`username_filters`（只看某人）、`best`、只看某帖的回复、
+/// 回复链上溯、staff 视角未展开的已删帖。
+///
+/// 所以不能把 gaps 当成「拉黑用户的帖子位置」处理——被跳过的楼层并不在
+/// 本地，`_GapIndicator` 是它们唯一的加载入口（点击走 `fillGapBefore` /
+/// `fillGapAfter` 去请求）。抹掉 gaps 等于让这些楼层永久不可达。
 class PostStreamGaps {
   final Map<int, List<int>> before; // {postId: [gapPostIds]}
   final Map<int, List<int>> after; // {postId: [gapPostIds]}
@@ -1559,7 +1568,7 @@ class PostStreamGaps {
 class PostStream {
   final List<Post> posts;
   final List<int> stream; // 所有 post_id 的列表
-  final PostStreamGaps? gaps; // 拉黑用户帖子的 gaps 数据
+  final PostStreamGaps? gaps; // 服务端过滤后被跳过的楼层，见 PostStreamGaps
 
   /// 翻页响应(`/t/{id}/posts.json?include_suggested=true`)顶层带回的推荐
   /// 话题。大话题首屏 `/t/{id}.json` 不返回这两组(服务端见 next_page 有值

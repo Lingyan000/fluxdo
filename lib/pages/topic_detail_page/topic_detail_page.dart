@@ -2822,9 +2822,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
-    final showBlockedContentInfo = ref.watch(
-      preferencesProvider.select((p) => p.showBlockedContentInfo),
-    );
     detail = _filteredDetail(detail);
     final posts = detail.postStream.posts;
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
@@ -3033,7 +3030,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onPointerScroll: _controller.handlePointerScroll,
               onFillGapBefore: (postId) => notifier.fillGapBefore(postId),
               onFillGapAfter: (postId) => notifier.fillGapAfter(postId),
-              showBlockedContentInfo: showBlockedContentInfo,
               onExpandHiddenPost: (postId) => notifier.expandHiddenPost(postId),
               useReplyDialog: notifier.isTopLevelMode,
               onShowPostDetail: (post) => showPostRepliesSheet(
