@@ -231,17 +231,17 @@ class CryptoToolbox {
           SniffedCipherKind.opensslSalted,
         );
       case SniffedCipherKind.plainBase64:
-        // 内容探测：解码后是 UTF-8 可读文本 → 真是 base64 编码；
+        // 内容探测：解码后是可读文本 → 真是 base64 编码；
         // 二进制 → 更像加密密文裸 payload（对称算法自解析 salt|iv|ct）
         final bytes = _tryDecodeBase64(ciphertext);
-        if (bytes != null && !_looksLikeUtf8Text(bytes)) {
+        if (bytes != null && !looksLikeReadableText(bytes)) {
           return const DecryptSuggestion(
               defaultAlgorithmId, SniffedCipherKind.plainBase64);
         }
         return const DecryptSuggestion('base64', SniffedCipherKind.plainBase64);
       case SniffedCipherKind.plainHex:
         final bytes = _tryDecodeHex(ciphertext);
-        if (bytes != null && !_looksLikeUtf8Text(bytes)) {
+        if (bytes != null && !looksLikeReadableText(bytes)) {
           return const DecryptSuggestion(
               defaultAlgorithmId, SniffedCipherKind.plainHex);
         }
@@ -277,11 +277,6 @@ class CryptoToolbox {
     } catch (_) {
       return null;
     }
-  }
-
-  /// 解码内容是否像 UTF-8 可读文本（无明显控制字符/替换符）
-  static bool _looksLikeUtf8Text(Uint8List bytes) {
-    return isMostlyUtf8TextBytes(bytes);
   }
 }
 
