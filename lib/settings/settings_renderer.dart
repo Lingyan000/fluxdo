@@ -177,8 +177,10 @@ class SettingsRenderer extends ConsumerWidget {
       subtitle: displaySub != null
           ? Text(
               displaySub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines: m.wrapSubtitle ? null : 1,
+              overflow: m.wrapSubtitle
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 color: theme.colorScheme.onSurfaceVariant,

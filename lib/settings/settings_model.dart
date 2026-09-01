@@ -127,6 +127,12 @@ final class IntSliderModel extends SettingsModel {
 final class ActionModel extends SettingsModel {
   final IconData icon;
 
+  /// 是否允许副标题按内容自然换行。
+  ///
+  /// 默认单行截断——[getDynamicSubtitle] 常用来显示当前值（URL、计数），
+  /// 那类内容换行反而撑乱列表。只有静态说明文字长到一行放不下时才开。
+  final bool wrapSubtitle;
+
   /// 动态副标题（如当前 URL）
   final String? Function(WidgetRef ref)? getDynamicSubtitle;
 
@@ -137,6 +143,7 @@ final class ActionModel extends SettingsModel {
     required super.title,
     super.subtitle,
     required this.icon,
+    this.wrapSubtitle = false,
     this.getDynamicSubtitle,
     required this.onTap,
   });

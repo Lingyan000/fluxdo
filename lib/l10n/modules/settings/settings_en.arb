@@ -61,7 +61,6 @@
   "preferences_topicFilterWholeWordDesc": "When enabled, English keywords no longer match as substrings (e.g. \"ai\" will not hit \"Main thread\"). CJK keywords are unaffected.",
   "preferences_blockedUsernames": "Locally blocked users",
   "preferences_blockedUsernamesDesc": "Hide topics, replies, and Boosts from these users. The list stays only on this device and is never synced to Linux.do",
-  "preferences_blockedUsernamesEmpty": "No users locally blocked",
   "preferences_blockedUsernamesCount": "{count} users blocked",
   "@preferences_blockedUsernamesCount": {
     "placeholders": {
@@ -70,6 +69,8 @@
   },
   "preferences_blockedUsernamesHint": "Enter a username, then press Enter",
   "preferences_blockedUsernamesHelper": "Do not include @. Usernames are matched exactly, case-insensitively. This does not use Discourse ignore.",
+  "preferences_showFilterHint": "Show filter hint",
+  "preferences_showFilterHintDesc": "Show how many topics are hidden by keywords or your block list",
   "preferences_autoPanguSpacing": "Auto CJK spacing",
   "preferences_autoPanguSpacingDesc": "Auto-insert spaces between CJK and Latin text",
   "preferences_useRichComposer": "Rich composer (experimental)",

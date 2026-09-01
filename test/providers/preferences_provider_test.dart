@@ -75,6 +75,25 @@ void main() {
     );
   });
 
+  test('过滤提示开关默认开启，关闭后持久化并可恢复', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(preferencesProvider).showFilterHint, isTrue);
+
+    await container.read(preferencesProvider.notifier).setShowFilterHint(false);
+
+    expect(container.read(preferencesProvider).showFilterHint, isFalse);
+    final prefs = container.read(sharedPreferencesProvider);
+    expect(prefs.getBool('pref_show_filter_hint'), isFalse);
+
+    final reloaded = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.read(preferencesProvider).showFilterHint, isFalse);
+  });
+
   test('AI 翻译偏好可以持久化并恢复', () async {
     final container = await _createContainer();
     addTearDown(container.dispose);
