@@ -61,10 +61,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     // 获取下载目录，处理重名
     final dir = await _getDownloadDir();
-    var savePath = DownloadService.resolveAvailableSavePath(
+    var reservation = DownloadService.reserveAvailableDownload(
       directory: dir,
       fileName: initialFileName,
     );
+    var savePath = reservation.savePath;
     // 实际文件名可能带编号（如 "file (1).pdf"）
     var actualFileName = p.basename(savePath);
 
@@ -86,37 +87,41 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // 立即显示下载进度 Toast（不等待 HEAD 请求）
     final toastHandle = ToastService.showDownload(actualFileName);
 
-    // 没有建议文件名时，通过 HEAD 请求获取更准确的文件名（作为下载 loading 的一部分）
-    if (suggestedFilename == null || suggestedFilename.isEmpty) {
-      final headerName = await DownloadService.instance.fetchFileNameFromHeader(
-        url,
-      );
-      if (headerName != null && headerName.isNotEmpty) {
-        final safeHeaderName = DownloadService.sanitizeFileName(headerName);
-        if (safeHeaderName != null) {
-          final betterPath = DownloadService.resolveAvailableSavePath(
-            directory: dir,
-            fileName: safeHeaderName,
-          );
-          final betterActualName = p.basename(betterPath);
-          if (betterActualName != actualFileName) {
-            savePath = betterPath;
-            actualFileName = betterActualName;
-            _updateItem(id, fileName: betterActualName, savePath: betterPath);
-            toastHandle.updateFileName(betterActualName);
-          }
-        }
-      }
-    }
-
-    // 开始下载
+    // 从文件名改进到实际下载均由同一个异常处理覆盖，避免中途失败遗留预留文件。
     final cancelToken = CancelToken();
     _cancelTokens[id] = cancelToken;
 
     try {
+      // 没有建议文件名时，通过 HEAD 请求获取更准确的文件名（作为下载 loading 的一部分）
+      if (suggestedFilename == null || suggestedFilename.isEmpty) {
+        final headerName = await DownloadService.instance
+            .fetchFileNameFromHeader(url);
+        if (headerName != null && headerName.isNotEmpty) {
+          final safeHeaderName = DownloadService.sanitizeFileName(headerName);
+          if (safeHeaderName != null &&
+              safeHeaderName != reservation.requestedFileName) {
+            final betterReservation = DownloadService.reserveAvailableDownload(
+              directory: dir,
+              fileName: safeHeaderName,
+            );
+            try {
+              await reservation.release();
+            } catch (_) {
+              await betterReservation.release();
+              rethrow;
+            }
+            reservation = betterReservation;
+            savePath = betterReservation.savePath;
+            actualFileName = p.basename(savePath);
+            _updateItem(id, fileName: actualFileName, savePath: savePath);
+            toastHandle.updateFileName(actualFileName);
+          }
+        }
+      }
+
       await DownloadService.instance.download(
         url: url,
-        savePath: savePath,
+        reservation: reservation,
         cancelToken: cancelToken,
         onProgress: (received, total) {
           final progress = total > 0 ? received / total : -1.0;
@@ -147,6 +152,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         onAction: () => DownloadListPage.navigateTo(highlightItemId: id),
       );
     } on DioException catch (e) {
+      await _releaseQuietly(reservation);
       toastHandle.dismiss();
       if (e.type == DioExceptionType.cancel) {
         debugPrint('[DownloadProvider] 下载已取消: $actualFileName');
@@ -156,6 +162,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         ToastService.showError(S.current.myBrowser_downloadFailed);
       }
     } catch (e) {
+      await _releaseQuietly(reservation);
       toastHandle.dismiss();
       debugPrint('[DownloadProvider] 下载异常: $e');
       _updateItem(id, status: DownloadItemStatus.failed);
@@ -163,6 +170,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     } finally {
       _cancelTokens.remove(id);
       _lastProgressPublishMicros.remove(id);
+    }
+  }
+
+  Future<void> _releaseQuietly(DownloadReservation reservation) async {
+    try {
+      await reservation.release();
+    } catch (e) {
+      debugPrint('[DownloadProvider] 清理下载临时文件失败: $e');
     }
   }
 

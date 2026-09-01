@@ -87,19 +87,22 @@ void main() {
     });
 
     test('目标始终是规范化下载目录的直接子项', () {
-      final savePath = DownloadService.resolveAvailableSavePath(
+      final reservation = DownloadService.reserveAvailableDownload(
         directory: downloadDirectory,
         fileName: 'report.pdf',
       );
+      addTearDown(reservation.release);
       final canonicalDirectory = downloadDirectory.resolveSymbolicLinksSync();
 
-      expect(p.dirname(savePath), canonicalDirectory);
-      expect(p.basename(savePath), 'report.pdf');
+      expect(reservation.requestedFileName, 'report.pdf');
+      expect(p.dirname(reservation.savePath), canonicalDirectory);
+      expect(p.basename(reservation.savePath), 'report.pdf');
+      expect(p.dirname(reservation.temporaryPath), canonicalDirectory);
     });
 
     test('拒绝未经解析器处理的危险文件名', () {
       expect(
-        () => DownloadService.resolveAvailableSavePath(
+        () => DownloadService.reserveAvailableDownload(
           directory: downloadDirectory,
           fileName: '../escape.txt',
         ),
@@ -111,13 +114,111 @@ void main() {
       final occupiedPath = p.join(downloadDirectory.path, 'report.pdf');
       File(occupiedPath).writeAsStringSync('existing');
 
-      final savePath = DownloadService.resolveAvailableSavePath(
+      final reservation = DownloadService.reserveAvailableDownload(
         directory: downloadDirectory,
         fileName: 'report.pdf',
       );
+      addTearDown(reservation.release);
 
-      expect(p.basename(savePath), 'report (1).pdf');
-      expect(p.dirname(savePath), downloadDirectory.resolveSymbolicLinksSync());
+      expect(p.basename(reservation.savePath), 'report (1).pdf');
+      expect(
+        p.dirname(reservation.savePath),
+        downloadDirectory.resolveSymbolicLinksSync(),
+      );
+    });
+
+    test('并发预留同名文件时获得不同路径', () async {
+      final reservations = await Future.wait([
+        Future(
+          () => DownloadService.reserveAvailableDownload(
+            directory: downloadDirectory,
+            fileName: 'report.pdf',
+          ),
+        ),
+        Future(
+          () => DownloadService.reserveAvailableDownload(
+            directory: downloadDirectory,
+            fileName: 'report.pdf',
+          ),
+        ),
+      ]);
+      addTearDown(() async {
+        for (final reservation in reservations) {
+          await reservation.release();
+        }
+      });
+
+      expect(
+        reservations.map((reservation) => p.basename(reservation.savePath)),
+        unorderedEquals(['report.pdf', 'report (1).pdf']),
+      );
+    });
+
+    test(
+      '提交时不会跟随被替换的目标符号链接',
+      () async {
+        final outsideFile = File(
+          p.join(downloadDirectory.parent.path, 'fluxdo-outside-target.txt'),
+        )..writeAsStringSync('outside');
+        addTearDown(() {
+          if (outsideFile.existsSync()) outsideFile.deleteSync();
+        });
+        final reservation = DownloadService.reserveAvailableDownload(
+          directory: downloadDirectory,
+          fileName: 'report.pdf',
+        );
+        addTearDown(reservation.release);
+        File(reservation.temporaryPath).writeAsStringSync('downloaded');
+
+        File(reservation.savePath).deleteSync();
+        Link(reservation.savePath).createSync(outsideFile.path);
+
+        await reservation.commit();
+
+        expect(outsideFile.readAsStringSync(), 'outside');
+        expect(File(reservation.savePath).readAsStringSync(), 'downloaded');
+        expect(
+          FileSystemEntity.typeSync(reservation.savePath, followLinks: false),
+          FileSystemEntityType.file,
+        );
+      },
+      skip: Platform.isWindows ? 'Windows 创建符号链接通常需要额外权限' : false,
+    );
+
+    test('释放预留会清理占位文件和临时文件', () async {
+      final reservation = DownloadService.reserveAvailableDownload(
+        directory: downloadDirectory,
+        fileName: 'report.pdf',
+      );
+      final savePath = reservation.savePath;
+      final temporaryPath = reservation.temporaryPath;
+
+      await reservation.release();
+
+      expect(
+        FileSystemEntity.typeSync(savePath),
+        FileSystemEntityType.notFound,
+      );
+      expect(
+        FileSystemEntity.typeSync(temporaryPath),
+        FileSystemEntityType.notFound,
+      );
+    });
+
+    test('释放预留不会删除后来写入目标路径的文件', () async {
+      final reservation = DownloadService.reserveAvailableDownload(
+        directory: downloadDirectory,
+        fileName: 'report.pdf',
+      );
+      File(reservation.savePath).writeAsStringSync('other owner');
+
+      await reservation.release();
+
+      expect(File(reservation.savePath).readAsStringSync(), 'other owner');
+      expect(
+        FileSystemEntity.typeSync(reservation.temporaryPath),
+        FileSystemEntityType.notFound,
+      );
     });
   });
 }
