@@ -6,13 +6,13 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
-import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
+import '../utils/image_save_utils.dart';
 import '../utils/screenshot_utils.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
@@ -752,25 +752,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     return null;
   }
 
-  /// 保存当前图片到相册
+  /// 保存当前图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveCurrentImage() async {
     if (_isSaving) return;
 
     setState(() => _isSaving = true);
 
     try {
-      // 检查权限
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        final granted = await Gal.requestAccess();
-        if (!granted) {
-          if (mounted) {
-            ToastService.showInfo(S.current.imageViewer_grantPermission);
-          }
-          return;
-        }
-      }
-
       // 使用缓存管理器获取图片字节（优先从缓存读取）
       final imageUrl = _currentImageUrl;
       final Uint8List imageBytes = await BlobImageCache.fetch(
@@ -782,23 +770,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         throw Exception(S.current.image_fetchFailed);
       }
 
-      // 使用 putImageBytes 直接保存字节数据到相册;命名与分享同口径
-      // (原始文件名优先,回退时间戳)。
+      // 命名与分享同口径（原始文件名优先，回退时间戳）；
+      // 落点与提示由 ImageSaveUtils 按平台统一处理。
       final ext = BlobImageCache.httpUrlExtension(imageUrl);
       final name =
           ShareUtils.safeFileBaseName(_currentFilename) ??
           'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
-      await Gal.putImageBytes(imageBytes, name: '$name.$ext');
-
-      if (mounted) {
-        ToastService.showSuccess(S.current.imageViewer_imageSaved);
-      }
-    } on GalException catch (e) {
-      if (mounted) {
-        ToastService.showError(
-          S.current.imageViewer_saveFailed(e.type.message),
-        );
-      }
+      await ImageSaveUtils.saveBytes(imageBytes, fileName: '$name.$ext');
     } catch (e) {
       debugPrint('Save image error: $e');
       if (mounted) {
@@ -811,27 +789,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 保存内存图片到相册
+  /// 保存内存图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveMemoryImage() async {
     if (_isSaving || widget.imageBytes == null) return;
     setState(() => _isSaving = true);
     try {
-      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
-      if (!hasAccess) {
-        if (mounted) {
-          ToastService.showInfo(S.current.imageViewer_grantPermission);
-        }
-        return;
-      }
-      await Gal.putImageBytes(
+      await ImageSaveUtils.saveBytes(
         widget.imageBytes!,
-        name: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
+        fileName: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
       );
-      if (mounted) ToastService.showSuccess(S.current.imageViewer_imageSaved);
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.imageViewer_saveFailedRetry);
-      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -890,7 +856,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               value: 'save',
               child: _BytesMenuRow(
                 icon: Symbols.save_alt_rounded,
-                label: S.current.share_saveToGallery,
+                label: ImageSaveUtils.actionLabel,
               ),
             ),
             PopupMenuItem(
@@ -931,7 +897,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           children: [
             ListTile(
               leading: const Icon(Symbols.save_alt_rounded),
-              title: Text(S.current.share_saveToGallery),
+              title: Text(ImageSaveUtils.actionLabel),
               onTap: () {
                 Navigator.pop(ctx);
                 _saveMemoryImage();

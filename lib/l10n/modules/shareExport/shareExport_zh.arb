@@ -133,6 +133,7 @@
   "share_saveFailed": "保存失败，请重试",
   "share_savePermissionDenied": "保存失败，请授予相册权限",
   "share_saveToGallery": "保存到相册",
+  "share_saveImageToFile": "保存图片",
   "share_fileSaved": "文件已保存",
   "share_selectSaveLocation": "选择保存位置",
   "share_screenshotFailed": "截图失败",

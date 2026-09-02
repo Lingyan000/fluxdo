@@ -9,6 +9,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../l10n/s.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
+import '../../utils/image_save_utils.dart';
 import '../../utils/screenshot_utils.dart';
 import 'share_image_widget.dart';
 
@@ -313,15 +314,8 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
       if (bytes == null) {
         throw Exception(S.current.share_screenshotFailed);
       }
-
-      final success = await ScreenshotUtils.saveToGallery(bytes);
-      if (mounted) {
-        if (success) {
-          ToastService.showSuccess(S.current.share_imageSaved);
-        } else {
-          ToastService.showError(S.current.share_savePermissionDenied);
-        }
-      }
+      // 成功/失败/权限提示由 ImageSaveUtils 统一给出，这里只管 loading 状态
+      await ScreenshotUtils.saveToGallery(bytes);
     } catch (e) {
       debugPrint('[ShareImagePreview] saveImage error: $e');
       if (mounted) {
@@ -506,7 +500,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
                     icon: _isSaving
                         ? const LoadingSpinner(size: 18)
                         : const Icon(Symbols.save_alt_rounded),
-                    label: Text(context.l10n.share_saveToGallery),
+                    label: Text(ImageSaveUtils.actionLabel),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
