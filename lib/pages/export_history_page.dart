@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/s.dart';
 import '../providers/export_history_provider.dart';
+import '../services/public_file_channel.dart';
 import '../services/toast_service.dart';
 import 'package:common_ui/common_ui.dart';
 import '../storage/export_history_dao.dart';
@@ -102,7 +103,25 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
 
   Future<void> _handleLocalFile(ExportHistoryEntry entry) async {
     final path = entry.targetRef;
-    if (path.isEmpty || !File(path).existsSync()) {
+    if (path.isEmpty) {
+      ToastService.showError(S.current.exportHistory_fileNotFound);
+      return;
+    }
+    // Android 落公共目录 / SAF 另存为拿到的是 content uri，不能用 File 判断
+    // 存在性，也不能交给 OpenFilex，只能让系统按 uri 授权打开。
+    if (path.startsWith('content://')) {
+      // 落盘时没写 MIME_TYPE（避免 MediaStore 改扩展名），这里按格式补一个
+      // 系统认得的类型，否则 ACTION_VIEW 匹配不到任何应用。
+      final mime = entry.format == ExportHistoryFormat.html
+          ? 'text/html'
+          : 'text/plain';
+      final opened = await PublicFileChannel.openUri(path, mimeType: mime);
+      if (!opened && mounted) {
+        ToastService.showError(S.current.exportHistory_openFailed);
+      }
+      return;
+    }
+    if (!File(path).existsSync()) {
       ToastService.showError(S.current.exportHistory_fileNotFound);
       return;
     }

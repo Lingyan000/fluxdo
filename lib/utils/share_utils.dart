@@ -8,19 +8,31 @@ import 'package:share_plus/share_plus.dart';
 
 import '../constants.dart';
 import '../l10n/s.dart';
+import '../services/download_service.dart';
+import '../services/public_file_channel.dart';
 import '../services/toast_service.dart';
 import 'platform_utils.dart';
 
 /// 文件分享/保存结果。
 ///
-/// [finalPath] 为用户最终保存位置（桌面端"另存为"的路径）；移动端通过系统
-/// 分享面板时无法知道用户的目的地，[finalPath] 为 null 但 [shared] 为 true。
-/// 用户取消时 [shared] 为 false 且 [finalPath] 为 null。
+/// [finalPath] 为用户最终保存位置；移动端通过系统分享面板时无法知道用户的
+/// 目的地，[finalPath] 为 null 但 [shared] 为 true。用户取消时 [shared]
+/// 为 false 且 [finalPath] 为 null。
+///
+/// Android 落公共目录（MediaStore / SAF 另存为）时 [finalPath] 是 content
+/// uri 而非文件路径，见 [isContentUri]：这类引用不能用 `File()` 打开，
+/// 要走 [PublicFileChannel.openUri]。
+/// [displayName] 是文件最终落盘的名字，仅用于提示文案（MediaStore 遇同名
+/// 会自动加序号，所以未必等于请求的名字）。
 class ShareOutcome {
-  const ShareOutcome({required this.shared, this.finalPath});
+  const ShareOutcome({required this.shared, this.finalPath, this.displayName});
 
   final bool shared;
   final String? finalPath;
+  final String? displayName;
+
+  /// [finalPath] 是 Android content uri 而非可 `File()` 打开的路径。
+  bool get isContentUri => finalPath?.startsWith('content://') ?? false;
 }
 
 /// 分享链接工具类
@@ -123,8 +135,141 @@ class ShareUtils {
     return const ShareOutcome(shared: true);
   }
 
+  /// 当前平台能否走系统分享面板发送文件。
+  ///
+  /// Linux 上 share_plus 只支持文本（分享文件会抛 UnimplementedError），
+  /// 因此该平台的入口应隐藏"分享"，只留"保存"。
+  static bool get canShareFiles => !Platform.isLinux;
+
+  /// 走系统分享面板发送文件（不落地保存）。
+  ///
+  /// 与 [shareOrSaveFile] 的区别：桌面端也走分享面板而非"另存为"，
+  /// 供"保存"和"分享"已被拆成两个独立动作的入口使用。
+  static Future<ShareOutcome> shareFile(XFile file, {String? subject}) async {
+    await SharePlus.instance.share(
+      ShareParams(files: [file], subject: subject),
+    );
+    return const ShareOutcome(shared: true);
+  }
+
+  /// 把文件落地保存到本机的「公共」位置。
+  ///
+  /// - 桌面：弹"另存为"由用户选位置；
+  /// - Android 10+：MediaStore 静默写入公共「下载」目录（零权限、卸载不删），
+  ///   [ShareOutcome.finalPath] 是 content uri；Android 9 及以下没有该集合，
+  ///   回退到应用私有下载目录；
+  /// - iOS：沙盒没有公共目录，写应用 Documents/Downloads（Info.plist 已开
+  ///   UIFileSharingEnabled，用户在「文件」App 里可见）。
+  ///
+  /// 成功提示交给调用方（各入口的成功文案不同），失败提示在此统一给出。
+  static Future<ShareOutcome> saveFile(XFile file) async {
+    if (PlatformUtils.isDesktop) {
+      return _saveFileDialog(file, showSuccessToast: false);
+    }
+    if (PublicFileChannel.isSupported) {
+      try {
+        final saved = await PublicFileChannel.saveToDownloads(
+          sourcePath: file.path,
+          fileName: p.basename(file.path),
+        );
+        if (saved != null) {
+          return ShareOutcome(
+            shared: true,
+            finalPath: saved.uri,
+            displayName: saved.displayName,
+          );
+        }
+        // null = 系统版本没有 MediaStore.Downloads 集合，落到私有目录分支
+      } catch (e) {
+        debugPrint('[ShareUtils] saveToDownloads failed, fallback: $e');
+      }
+    }
+    return _saveToAppDownloads(file);
+  }
+
+  /// 「另存为」：让用户自己挑位置。
+  ///
+  /// - Android：SAF 建档（返回 content uri，已持久化授权，可长期打开）；
+  /// - iOS：UIDocumentPicker 导出（file_picker 在移动端要求传 bytes）；
+  /// - 桌面：与 [saveFile] 同为"另存为"对话框，所以桌面端不必单独暴露该入口。
+  ///
+  /// 返回 `shared == false` 表示用户取消。
+  static Future<ShareOutcome> saveFileAs(XFile file) async {
+    if (PlatformUtils.isDesktop) {
+      return _saveFileDialog(file, showSuccessToast: false);
+    }
+    final fileName = p.basename(file.path);
+    if (PublicFileChannel.isSupported) {
+      try {
+        final saved = await PublicFileChannel.saveAs(
+          sourcePath: file.path,
+          fileName: fileName,
+        );
+        if (saved == null) return const ShareOutcome(shared: false);
+        return ShareOutcome(
+          shared: true,
+          finalPath: saved.uri,
+          displayName: saved.displayName.isEmpty ? fileName : saved.displayName,
+        );
+      } catch (e) {
+        debugPrint('[ShareUtils] saveAs failed: $e');
+        ToastService.showError(S.current.share_saveFailed);
+        return const ShareOutcome(shared: false);
+      }
+    }
+    // iOS：走系统导出面板（file_picker 在移动端必须带 bytes）
+    try {
+      final ext = p.extension(fileName).replaceFirst('.', '');
+      final outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: S.current.share_selectSaveLocation,
+        fileName: fileName,
+        bytes: await File(file.path).readAsBytes(),
+        type: ext.isNotEmpty ? FileType.custom : FileType.any,
+        allowedExtensions: ext.isNotEmpty ? [ext] : null,
+      );
+      if (outputPath == null) return const ShareOutcome(shared: false);
+      // iOS 侧落点在应用沙盒外，返回值长期不保证可读，只当提示用，
+      // 不作为可打开的引用交给导出历史。
+      return ShareOutcome(shared: true, displayName: fileName);
+    } catch (e) {
+      debugPrint('[ShareUtils] saveFileAs (picker) failed: $e');
+      ToastService.showError(S.current.share_saveFailed);
+      return const ShareOutcome(shared: false);
+    }
+  }
+
+  /// 回退路径：写入应用自己的下载目录（与下载功能同一目录）。
+  static Future<ShareOutcome> _saveToAppDownloads(XFile file) async {
+    try {
+      final dir = await DownloadService.resolveDownloadDirectory();
+      final reservation = DownloadService.reserveAvailableDownload(
+        directory: dir,
+        fileName: p.basename(file.path),
+      );
+      try {
+        await File(file.path).copy(reservation.temporaryPath);
+        await reservation.commit();
+      } catch (e) {
+        await reservation.release();
+        rethrow;
+      }
+      return ShareOutcome(
+        shared: true,
+        finalPath: reservation.savePath,
+        displayName: p.basename(reservation.savePath),
+      );
+    } catch (e) {
+      debugPrint('[ShareUtils] saveFile to app downloads failed: $e');
+      ToastService.showError(S.current.share_saveFailed);
+      return const ShareOutcome(shared: false);
+    }
+  }
+
   /// 桌面端"另存为"对话框
-  static Future<ShareOutcome> _saveFileDialog(XFile file) async {
+  static Future<ShareOutcome> _saveFileDialog(
+    XFile file, {
+    bool showSuccessToast = true,
+  }) async {
     final fileName = p.basename(file.path);
     final ext = p.extension(fileName).replaceFirst('.', '');
 
@@ -142,8 +287,12 @@ class ShareUtils {
     try {
       final sourceFile = File(file.path);
       await sourceFile.copy(outputPath);
-      ToastService.show(S.current.share_fileSaved);
-      return ShareOutcome(shared: true, finalPath: outputPath);
+      if (showSuccessToast) ToastService.show(S.current.share_fileSaved);
+      return ShareOutcome(
+        shared: true,
+        finalPath: outputPath,
+        displayName: p.basename(outputPath),
+      );
     } catch (e) {
       debugPrint('[ShareUtils] saveFile failed: $e');
       ToastService.showError(S.current.share_saveFailed);

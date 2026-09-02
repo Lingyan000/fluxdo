@@ -120,7 +120,9 @@ class AppSheetScaffold extends StatelessWidget {
             if (_hasTitle && showTitleDivider)
               const Divider(height: 1, indent: 16, endIndent: 16),
             content,
-            ?footer,
+            // Column 默认按内容宽度居中,footer 里的按钮会缩成一小段;
+            // 这里给它 tight 宽约束,让 footer 自己决定要不要占满。
+            if (footer != null) SizedBox(width: double.infinity, child: footer),
           ],
         ),
       ),

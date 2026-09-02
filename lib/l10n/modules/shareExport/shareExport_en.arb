@@ -17,7 +17,26 @@
   "export_failed": "Export failed: {error}",
   "export_fetchPostsFailed": "Failed to fetch post data",
   "export_firstPostOnly": "First post only",
-  "export_format": "Export format",
+  "export_format": "File format",
+  "export_deliverTitle": "Export to",
+  "export_deliverSave": "Save to file",
+  "export_deliverSaveDescDesktop": "Choose where to save",
+  "export_deliverSaveDescMobile": "Save to the system Downloads folder",
+  "export_deliverSaveAs": "Save as…",
+  "export_deliverSaveAsDesc": "Pick the location yourself",
+  "export_deliverShare": "Share",
+  "export_deliverShareDesc": "Send via the system share sheet",
+  "export_deliverNotion": "Sync to Notion",
+  "export_deliverNotionDesc": "Create as a Notion page",
+  "export_deliverNotionUnconfigured": "Not configured yet, tap to set up",
+  "export_savedAs": "Saved: {name}",
+  "@export_savedAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "export_markdownLimit": "Markdown exports up to {max} posts",
   "export_noPostsToExport": "No posts to export",
   "export_range": "Export range",
@@ -26,6 +45,7 @@
   "exportHistory_empty": "No export records",
   "exportHistory_filterAll": "All",
   "exportHistory_fileNotFound": "File no longer exists",
+  "exportHistory_openFailed": "No app can open this file",
   "exportHistory_revealInFolder": "Show in folder",
   "exportHistory_openFile": "Open file",
   "exportHistory_openInBrowser": "Open in browser",

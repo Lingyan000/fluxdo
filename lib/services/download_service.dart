@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'network/discourse_dio.dart';
 
@@ -157,6 +158,33 @@ class DownloadService {
     } catch (_) {}
     // 兜底：用时间戳
     return 'download_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// 解析本机的「下载目录」，目录不存在时创建。
+  ///
+  /// Android → 应用外部下载目录，桌面 → ~/Downloads，
+  /// iOS → 应用 Documents/Downloads（沙盒限制，通过「文件」App 可见）。
+  /// path_provider 在部分平台会对下载目录抛 [UnsupportedError]，统一回退到
+  /// 应用文档目录，避免调用方各自兜底。
+  static Future<Directory> resolveDownloadDirectory() async {
+    Directory? downloadsDir;
+    try {
+      downloadsDir = await getDownloadsDirectory();
+    } catch (e) {
+      debugPrint('[DownloadService] 系统下载目录不可用: $e');
+    }
+    if (downloadsDir != null) {
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+      return downloadsDir;
+    }
+    final appDir = await getApplicationDocumentsDirectory();
+    final fallbackDir = Directory(p.join(appDir.path, 'Downloads'));
+    if (!await fallbackDir.exists()) {
+      await fallbackDir.create(recursive: true);
+    }
+    return fallbackDir;
   }
 
   /// 原子预留一个不重名的最终路径，并在同目录创建不可预测的临时文件。

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/download_item.dart';
@@ -262,26 +261,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _prefs.setString(_storageKey, jsonStr);
   }
 
-  /// 获取下载目录
-  /// Android → 公共 Downloads，macOS/Linux/Windows → ~/Downloads
-  /// iOS → 应用 Documents（沙盒限制，但通过 Files app 可见）
-  Future<Directory> _getDownloadDir() async {
-    // 优先使用系统下载目录（Android 公共 Downloads / 桌面 ~/Downloads）
-    final downloadsDir = await getDownloadsDirectory();
-    if (downloadsDir != null) {
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
-      }
-      return downloadsDir;
-    }
-    // 回退到应用文档目录
-    final appDir = await getApplicationDocumentsDirectory();
-    final fallbackDir = Directory('${appDir.path}/Downloads');
-    if (!await fallbackDir.exists()) {
-      await fallbackDir.create(recursive: true);
-    }
-    return fallbackDir;
-  }
+  /// 获取下载目录（与其它保存入口共用同一套解析/回退逻辑）
+  Future<Directory> _getDownloadDir() =>
+      DownloadService.resolveDownloadDirectory();
 }
 
 final downloadProvider =
