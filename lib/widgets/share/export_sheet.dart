@@ -12,6 +12,7 @@ import '../../providers/notion_config_provider.dart';
 import '../../services/notion/notion_client.dart';
 import '../../services/notion/notion_config.dart';
 import '../../services/notion/notion_sync_service.dart';
+import '../../services/public_file_channel.dart';
 import '../../services/toast_service.dart';
 import '../../storage/export_history_dao.dart';
 import '../../utils/dialog_utils.dart';
@@ -375,15 +376,19 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
           _sectionLabel(theme, context.l10n.export_deliverTitle),
           SegmentedCardGroup(
             children: [
-              _deliveryTile(
-                theme,
-                action: _ExportAction.save,
-                icon: Symbols.save_rounded,
-                title: context.l10n.export_deliverSave,
-                subtitle: PlatformUtils.isDesktop
-                    ? context.l10n.export_deliverSaveDescDesktop
-                    : context.l10n.export_deliverSaveDescMobile,
-              ),
+              // iOS 没有「公共目录」这一说:沙盒外无处可写,Documents 里躺着
+              // 数据库/cookie/日志(不能靠 UIFileSharingEnabled 整目录暴露),
+              // 所以那边只给「另存为」,由用户导出到「文件」App。
+              if (PlatformUtils.isDesktop || PublicFileChannel.isSupported)
+                _deliveryTile(
+                  theme,
+                  action: _ExportAction.save,
+                  icon: Symbols.save_rounded,
+                  title: context.l10n.export_deliverSave,
+                  subtitle: PlatformUtils.isDesktop
+                      ? context.l10n.export_deliverSaveDescDesktop
+                      : context.l10n.export_deliverSaveDescMobile,
+                ),
               // 桌面端「保存」本身就是另存为对话框，不必重复这一行
               if (!PlatformUtils.isDesktop)
                 _deliveryTile(

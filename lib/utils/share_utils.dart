@@ -139,7 +139,7 @@ class ShareUtils {
   ///
   /// Linux 上 share_plus 只支持文本（分享文件会抛 UnimplementedError），
   /// 因此该平台的入口应隐藏"分享"，只留"保存"。
-  static bool get canShareFiles => !Platform.isLinux;
+  static bool get canShareFiles => kIsWeb || !Platform.isLinux;
 
   /// 走系统分享面板发送文件（不落地保存）。
   ///
@@ -157,9 +157,11 @@ class ShareUtils {
   /// - 桌面：弹"另存为"由用户选位置；
   /// - Android 10+：MediaStore 静默写入公共「下载」目录（零权限、卸载不删），
   ///   [ShareOutcome.finalPath] 是 content uri；Android 9 及以下没有该集合，
-  ///   回退到应用私有下载目录；
-  /// - iOS：沙盒没有公共目录，写应用 Documents/Downloads（Info.plist 已开
-  ///   UIFileSharingEnabled，用户在「文件」App 里可见）。
+  ///   回退到应用私有下载目录（系统文件管理器里不可达，只能在应用内取用）；
+  /// - iOS：沙盒里没有对外可见的落点（`getDownloadsDirectory` 返回的是
+  ///   `Library/Downloads`，而 UIFileSharingEnabled 只暴露 Documents，那里
+  ///   躺着数据库/cookie/日志，不能整目录暴露）。iOS 请改用 [saveFileAs] 让
+  ///   用户导出到「文件」App。
   ///
   /// 成功提示交给调用方（各入口的成功文案不同），失败提示在此统一给出。
   static Future<ShareOutcome> saveFile(XFile file) async {

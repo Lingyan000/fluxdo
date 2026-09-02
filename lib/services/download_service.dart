@@ -162,8 +162,13 @@ class DownloadService {
 
   /// 解析本机的「下载目录」，目录不存在时创建。
   ///
-  /// Android → 应用外部下载目录，桌面 → ~/Downloads，
-  /// iOS → 应用 Documents/Downloads（沙盒限制，通过「文件」App 可见）。
+  /// 各平台落点差异很大，注意这里**不保证对用户可见**：
+  /// - 桌面 → `~/Downloads`（可见）；
+  /// - Android → 应用外部下载目录 `Android/data/<pkg>/files/Download`
+  ///   （11+ 的系统文件管理器不允许浏览，只能在应用内取用）；
+  /// - iOS → 沙盒 `Library/Downloads`（对外完全不可见）。
+  ///
+  /// 要落到用户能找到的位置，走 `ShareUtils.saveFile` / `saveFileAs`。
   /// path_provider 在部分平台会对下载目录抛 [UnsupportedError]，统一回退到
   /// 应用文档目录，避免调用方各自兜底。
   static Future<Directory> resolveDownloadDirectory() async {
