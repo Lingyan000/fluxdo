@@ -204,13 +204,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _cancelTokens[id]?.cancel();
     _cancelTokens.remove(id);
     final item = state.firstWhere((e) => e.id == id, orElse: () => state.first);
-    // 尝试删除本地文件
+    _deleteSavedFile(item);
+    state = state.where((e) => e.id != id).toList();
+    _save();
+  }
+
+  /// 删除记录对应的下载文件（下载始终落在应用目录里，是真实路径）。
+  void _deleteSavedFile(DownloadItem item) {
     try {
       final file = File(item.savePath);
       if (file.existsSync()) file.deleteSync();
     } catch (_) {}
-    state = state.where((e) => e.id != id).toList();
-    _save();
   }
 
   /// 清除已完成的记录
@@ -218,10 +222,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // 删除已完成的本地文件
     for (final item in state) {
       if (item.status == DownloadItemStatus.completed) {
-        try {
-          final file = File(item.savePath);
-          if (file.existsSync()) file.deleteSync();
-        } catch (_) {}
+        _deleteSavedFile(item);
       }
     }
     state = state

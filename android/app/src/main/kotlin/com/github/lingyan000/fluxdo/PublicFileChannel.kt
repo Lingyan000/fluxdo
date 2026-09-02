@@ -52,6 +52,7 @@ object PublicFileChannel {
                 "saveToDownloads" -> saveToDownloads(call.args(), result)
                 "saveAs" -> saveAs(call.args(), result)
                 "openUri" -> openUri(call.args(), result)
+                "shareUri" -> shareUri(call.args(), result)
                 else -> result.notImplemented()
             }
         }
@@ -288,6 +289,43 @@ object PublicFileChannel {
             result.success(true)
         } catch (e: ActivityNotFoundException) {
             Log.w(TAG, "openUri: no handler for $mime")
+            result.success(false)
+        }
+    }
+
+    /// 把 content uri 交给系统分享面板。
+    ///
+    /// share_plus 只能分享文件路径，落在公共目录/SAF 的产物只有 uri，
+    /// 分享这类内容必须走 ACTION_SEND + EXTRA_STREAM。
+    private fun shareUri(args: Map<String, Any?>, result: MethodChannel.Result) {
+        val uriString = args["uri"] as? String
+        if (uriString == null) {
+            result.error("INVALID_ARGS", "uri is null", null)
+            return
+        }
+        val activity = activityRef
+        if (activity == null) {
+            result.error("NO_ACTIVITY", "activity is null", null)
+            return
+        }
+        val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+        if (uri == null) {
+            result.success(false)
+            return
+        }
+        val mime = args["mimeType"] as? String
+            ?: activity.contentResolver.getType(uri)
+            ?: "*/*"
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            activity.startActivity(Intent.createChooser(send, null))
+            result.success(true)
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "shareUri: no handler for $mime")
             result.success(false)
         }
     }

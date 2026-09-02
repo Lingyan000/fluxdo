@@ -116,7 +116,8 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
           Symbols.folder_open_rounded,
           S.current.exportHistory_revealInFolder,
         ),
-      if (fileExists && !isUri && ShareUtils.canShareFiles)
+      // content uri 走原生 ACTION_SEND，本地路径走 share_plus
+      if (fileExists && (isUri || ShareUtils.canShareFiles))
         ('share', Symbols.share_rounded, S.current.exportHistory_shareAgain),
       (
         'delete',
@@ -165,7 +166,11 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
       case 'reveal':
         await _revealInFolder(entry.targetRef);
       case 'share':
-        await ShareUtils.shareFile(XFile(entry.targetRef));
+        if (PublicFileChannel.isContentUri(entry.targetRef)) {
+          await PublicFileChannel.shareUri(entry.targetRef);
+        } else {
+          await ShareUtils.shareFile(XFile(entry.targetRef));
+        }
       case 'delete':
         ref.read(exportHistoryProvider.notifier).remove(entry.id);
     }

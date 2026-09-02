@@ -29,6 +29,12 @@ abstract final class PublicFileChannel {
   /// 当前平台是否有原生腿。
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
+  /// 当前平台是否存在「公共下载目录」这种落点。
+  ///
+  /// 只有 Android 有（MediaStore）：桌面靠另存为对话框，iOS 沙盒里根本没有
+  /// 对外可见的目录。用它来决定要不要给「静默保存到下载目录」这个入口。
+  static bool get hasPublicDownloads => isSupported;
+
   /// 静默写入公共「下载」目录（Android 10+ 走 MediaStore，零权限）。
   ///
   /// 返回 null 表示这条路走不通（平台不支持 / Android 9 及以下没有
@@ -75,6 +81,27 @@ abstract final class PublicFileChannel {
       return false;
     }
   }
+
+  /// 把之前落盘拿到的 content uri 交给系统分享面板。
+  ///
+  /// share_plus 只吃文件路径，公共目录/SAF 的产物只有 uri，必须走原生
+  /// `ACTION_SEND`。返回是否成功唤起。
+  static Future<bool> shareUri(String uri, {String? mimeType}) async {
+    if (!isSupported) return false;
+    try {
+      final ok = await _channel.invokeMethod<bool>('shareUri', {
+        'uri': uri,
+        'mimeType': mimeType,
+      });
+      return ok ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[PublicFileChannel] shareUri failed: ${e.message}');
+      return false;
+    }
+  }
+
+  /// 这个引用是不是 Android 的 content uri（不能用 `File()` 打开）。
+  static bool isContentUri(String ref) => ref.startsWith('content://');
 
   static PublicSaveResult? _parse(Map<String, Object?>? res) {
     final uri = res?['uri'] as String?;
