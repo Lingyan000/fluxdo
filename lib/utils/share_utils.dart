@@ -227,16 +227,17 @@ class ShareUtils {
         if (saved == null) return const ShareOutcome(shared: false);
         return ShareOutcome(
           shared: true,
-          finalPath: saved.uri,
+          // iOS 导出面板的落点在沙盒外，拿不到长期可读的引用，只回名字
+          finalPath: saved.uri.isEmpty ? null : saved.uri,
           displayName: saved.displayName.isEmpty ? fileName : saved.displayName,
         );
       } catch (e) {
-        debugPrint('[ShareUtils] saveAs failed: $e');
-        ToastService.showError(S.current.share_saveFailed);
-        return const ShareOutcome(shared: false);
+        // 原生腿不可用（未注册/旧版本）才落到下面的 file_picker
+        debugPrint('[ShareUtils] native saveAs unavailable, fallback: $e');
       }
     }
-    // iOS：走系统导出面板（file_picker 在移动端必须带 bytes）
+    // 兜底：file_picker 的移动端 saveFile 必须带 bytes（大文件有内存尖峰，
+    // 所以只在原生腿走不通时用）
     try {
       final ext = p.extension(fileName).replaceFirst('.', '');
       final outputPath = await FilePicker.platform.saveFile(

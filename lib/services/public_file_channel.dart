@@ -26,8 +26,9 @@ class PublicSaveResult {
 abstract final class PublicFileChannel {
   static const MethodChannel _channel = MethodChannel('com.fluxdo/public_file');
 
-  /// 当前平台是否有原生腿。
-  static bool get isSupported => !kIsWeb && Platform.isAndroid;
+  /// 当前平台是否有原生腿（Android：MediaStore + SAF；iOS：导出面板）。
+  static bool get isSupported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// 当前平台是否存在「公共下载目录」这种落点。
   ///
@@ -37,8 +38,8 @@ abstract final class PublicFileChannel {
 
   /// 静默写入公共「下载」目录（Android 10+ 走 MediaStore，零权限）。
   ///
-  /// 返回 null 表示这条路走不通（平台不支持 / Android 9 及以下没有
-  /// MediaStore.Downloads 集合），调用方应回退到应用私有目录。
+  /// 返回 null 表示这条路走不通（Android 9 及以下没有 MediaStore.Downloads
+  /// 集合；iOS 沙盒里根本没有公共目录），调用方应换别的落点。
   /// 写入失败会抛 [PlatformException]。
   static Future<PublicSaveResult?> saveToDownloads({
     required String sourcePath,
@@ -103,12 +104,15 @@ abstract final class PublicFileChannel {
   /// 这个引用是不是 Android 的 content uri（不能用 `File()` 打开）。
   static bool isContentUri(String ref) => ref.startsWith('content://');
 
+  /// null 表示用户取消（或平台没有这条路）。
+  ///
+  /// [PublicSaveResult.uri] 允许为空：iOS 的导出面板落点在应用沙盒外，返回的
+  /// URL 长期不保证可读，所以那边只回 displayName 供提示用。
   static PublicSaveResult? _parse(Map<String, Object?>? res) {
-    final uri = res?['uri'] as String?;
-    if (uri == null || uri.isEmpty) return null;
+    if (res == null) return null;
     return PublicSaveResult(
-      uri: uri,
-      displayName: (res?['displayName'] as String?) ?? '',
+      uri: (res['uri'] as String?) ?? '',
+      displayName: (res['displayName'] as String?) ?? '',
     );
   }
 }
