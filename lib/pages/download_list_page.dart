@@ -126,7 +126,9 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                     child: SwipeActionCell(
                       key: ValueKey(item.id),
                       trailingActions: [
-                        if (item.status == DownloadItemStatus.completed)
+                        // Linux 上 share_plus 不支持分享文件,隐藏该动作
+                        if (item.status == DownloadItemStatus.completed &&
+                            ShareUtils.canShareFiles)
                           SwipeAction(
                             icon: Symbols.share_rounded,
                             color: Colors.blue,
@@ -187,8 +189,9 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
     }
     final result = await OpenFilex.open(item.savePath, type: item.mimeType);
     if (result.type != ResultType.done && mounted) {
-      // 打开失败时回退到分享/保存
-      ShareUtils.shareOrSaveFile(XFile(item.savePath));
+      // 打开失败就说打不开:原先回退成「另存为对话框」,用户想打开却被要求
+      // 再存一份,语义不通
+      ToastService.showError(S.current.exportHistory_openFailed);
     }
   }
 
@@ -198,7 +201,7 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
       ToastService.showError(S.current.myBrowser_fileNotFound);
       return;
     }
-    ShareUtils.shareOrSaveFile(XFile(item.savePath));
+    ShareUtils.shareFile(XFile(item.savePath));
   }
 
   void _confirmClear(BuildContext context) {

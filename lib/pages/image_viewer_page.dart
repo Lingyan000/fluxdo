@@ -866,13 +866,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 label: S.current.image_copyImage,
               ),
             ),
-            PopupMenuItem(
-              value: 'share',
-              child: _BytesMenuRow(
-                icon: Symbols.share_rounded,
-                label: S.current.common_shareImage,
+            // Linux 上 share_plus 不支持分享文件,隐藏该项
+            if (ShareUtils.canShareFiles)
+              PopupMenuItem(
+                value: 'share',
+                child: _BytesMenuRow(
+                  icon: Symbols.share_rounded,
+                  label: S.current.common_shareImage,
+                ),
               ),
-            ),
           ],
         ).then((value) {
           switch (value) {
@@ -911,14 +913,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 _copyMemoryImage();
               },
             ),
-            ListTile(
-              leading: const Icon(Symbols.share_rounded),
-              title: Text(S.current.common_shareImage),
-              onTap: () {
-                Navigator.pop(ctx);
-                _shareMemoryImage();
-              },
-            ),
+            if (ShareUtils.canShareFiles)
+              ListTile(
+                leading: const Icon(Symbols.share_rounded),
+                title: Text(S.current.common_shareImage),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _shareMemoryImage();
+                },
+              ),
           ],
         );
       },
@@ -1391,8 +1394,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                           ),
                         ),
 
-                        // Share button
-                        if (widget.enableShare)
+                        // Share button（Linux 上 share_plus 不支持分享文件）
+                        if (widget.enableShare && ShareUtils.canShareFiles)
                           Positioned(
                             top: MediaQuery.of(context).padding.top + 10,
                             left: 70, // 保存按钮右侧 (20 + 40 + 10)

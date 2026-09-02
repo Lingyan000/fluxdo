@@ -98,6 +98,7 @@
   "exportHistory_filterAll": "全部",
   "exportHistory_fileNotFound": "文件已不存在",
   "exportHistory_openFailed": "没有可以打开该文件的应用",
+  "exportHistory_sharedNoFile": "这条是分享出去的，本地没有保存文件",
   "exportHistory_revealInFolder": "打开所在文件夹",
   "exportHistory_openFile": "打开文件",
   "exportHistory_openInBrowser": "在浏览器中打开",

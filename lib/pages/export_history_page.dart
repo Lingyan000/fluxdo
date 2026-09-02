@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart'
     show SwipeActionCell, SwipeAction, SwipeActionScope;
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +17,6 @@ import 'package:common_ui/common_ui.dart';
 import '../storage/export_history_dao.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
-import '../utils/share_utils.dart';
 import '../utils/time_utils.dart';
 
 /// 导出历史页面：列出当前账号所有导出/同步记录。
@@ -98,6 +96,10 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
       case ExportHistoryTarget.localFile:
         await _handleLocalFile(entry);
         break;
+      case ExportHistoryTarget.shared:
+        // 分享出去的没有本地副本可打开，说清楚而不是报「文件已不存在」
+        ToastService.showInfo(S.current.exportHistory_sharedNoFile);
+        break;
     }
   }
 
@@ -131,7 +133,7 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
     }
     final result = await OpenFilex.open(path);
     if (result.type != ResultType.done && mounted) {
-      await ShareUtils.shareOrSaveFile(XFile(path));
+      ToastService.showError(S.current.exportHistory_openFailed);
     }
   }
 
@@ -412,9 +414,10 @@ class _ExportEntryCard extends StatelessWidget {
 
   IconData get _trailingIcon => switch (entry.targetType) {
     ExportHistoryTarget.notion => Symbols.north_east_rounded,
+    ExportHistoryTarget.shared => Symbols.share_rounded,
     ExportHistoryTarget.localFile => PlatformUtils.isDesktop
         ? Symbols.folder_open_rounded
-        : Symbols.ios_share_rounded,
+        : Symbols.file_open_rounded,
   };
 
   String _formatSize(int bytes) {

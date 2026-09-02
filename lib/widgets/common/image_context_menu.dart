@@ -150,13 +150,15 @@ class ImageContextMenu {
           label: ImageSaveUtils.actionLabel,
         ),
       ),
-      PopupMenuItem(
-        value: 'share',
-        child: _MenuItemRow(
-          icon: Symbols.share_rounded,
-          label: S.current.common_shareImage,
+      // Linux 上 share_plus 不支持分享文件,隐藏该项(保存仍可用)
+      if (ShareUtils.canShareFiles)
+        PopupMenuItem(
+          value: 'share',
+          child: _MenuItemRow(
+            icon: Symbols.share_rounded,
+            label: S.current.common_shareImage,
+          ),
         ),
-      ),
       if (post != null && topicId != null && onQuoteImage != null)
         PopupMenuItem(
           value: 'quote',
@@ -258,12 +260,13 @@ class ImageContextMenu {
         ImageSaveUtils.actionLabel,
         () => _saveImage(originalUrl, fileName: fileName),
       ),
-      _MobileAction(
-        'share',
-        Symbols.share_rounded,
-        S.current.common_shareImage,
-        () => _shareImage(originalUrl, fileName: fileName),
-      ),
+      if (ShareUtils.canShareFiles)
+        _MobileAction(
+          'share',
+          Symbols.share_rounded,
+          S.current.common_shareImage,
+          () => _shareImage(originalUrl, fileName: fileName),
+        ),
       if (post != null && topicId != null && onQuoteImage != null)
         _MobileAction(
           'quote',

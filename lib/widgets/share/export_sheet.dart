@@ -131,8 +131,12 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
             format: _format == ExportFormat.markdown
                 ? ExportHistoryFormat.markdown
                 : ExportHistoryFormat.html,
-            targetType: ExportHistoryTarget.localFile,
-            targetRef: result.finalPath ?? '',
+            // 分享不产生本地文件:写临时路径进历史,点开只会是「文件已不存在」,
+            // 桌面端还会把用户带到临时目录
+            targetType: isSaving
+                ? ExportHistoryTarget.localFile
+                : ExportHistoryTarget.shared,
+            targetRef: isSaving ? (result.finalPath ?? '') : '',
             status: ExportHistoryStatus.success,
             createdAt: DateTime.now(),
             size: result.byteSize,

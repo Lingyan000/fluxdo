@@ -46,6 +46,7 @@
   "exportHistory_filterAll": "All",
   "exportHistory_fileNotFound": "File no longer exists",
   "exportHistory_openFailed": "No app can open this file",
+  "exportHistory_sharedNoFile": "This one was shared, no local file was saved",
   "exportHistory_revealInFolder": "Show in folder",
   "exportHistory_openFile": "Open file",
   "exportHistory_openInBrowser": "Open in browser",

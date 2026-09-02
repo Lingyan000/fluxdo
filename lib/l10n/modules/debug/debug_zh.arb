@@ -43,6 +43,7 @@
   "appLogs_request": "请求",
   "appLogs_search": "搜索日志",
   "appLogs_sendFeedback": "私信反馈日志",
+  "appLogs_saveLogs": "保存日志",
   "appLogs_shareLogs": "分享日志",
   "appLogs_shareSubject": "应用日志",
   "appLogs_stack": "堆栈",

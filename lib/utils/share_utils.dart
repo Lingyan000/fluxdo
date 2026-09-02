@@ -87,7 +87,7 @@ class ShareUtils {
     final shareFile = File(p.join(tempDir.path, 'share', '$base.$ext'));
     await shareFile.parent.create(recursive: true);
     await file.copy(shareFile.path);
-    return shareOrSaveFile(
+    return ShareUtils.shareFile(
       XFile(shareFile.path, mimeType: imageMimeType(ext)),
       subject: subject,
     );
@@ -117,24 +117,6 @@ class ShareUtils {
     return last.isEmpty ? null : last;
   }
 
-  /// 分享或保存文件
-  ///
-  /// 桌面端弹出"另存为"对话框，移动端使用系统分享面板。
-  /// 返回 [ShareOutcome]：桌面端 `finalPath` 为用户选择的最终路径，
-  /// 移动端为 null（系统分享面板不暴露目的地）。
-  static Future<ShareOutcome> shareOrSaveFile(
-    XFile file, {
-    String? subject,
-  }) async {
-    if (PlatformUtils.isDesktop) {
-      return _saveFileDialog(file);
-    }
-    await SharePlus.instance.share(
-      ShareParams(files: [file], subject: subject),
-    );
-    return const ShareOutcome(shared: true);
-  }
-
   /// 当前平台能否走系统分享面板发送文件。
   ///
   /// Linux 上 share_plus 只支持文本（分享文件会抛 UnimplementedError），
@@ -143,8 +125,8 @@ class ShareUtils {
 
   /// 走系统分享面板发送文件（不落地保存）。
   ///
-  /// 与 [shareOrSaveFile] 的区别：桌面端也走分享面板而非"另存为"，
-  /// 供"保存"和"分享"已被拆成两个独立动作的入口使用。
+  /// 与 [saveFile] 的分工：本方法只负责"发出去"，落地保存是另一个动作。
+  /// Linux 上不可用，入口需先看 [canShareFiles]。
   static Future<ShareOutcome> shareFile(XFile file, {String? subject}) async {
     await SharePlus.instance.share(
       ShareParams(files: [file], subject: subject),
@@ -160,8 +142,8 @@ class ShareUtils {
   ///   回退到应用私有下载目录（系统文件管理器里不可达，只能在应用内取用）；
   /// - iOS：沙盒里没有对外可见的落点（`getDownloadsDirectory` 返回的是
   ///   `Library/Downloads`，而 UIFileSharingEnabled 只暴露 Documents，那里
-  ///   躺着数据库/cookie/日志，不能整目录暴露）。iOS 请改用 [saveFileAs] 让
-  ///   用户导出到「文件」App。
+  ///   躺着数据库/cookie/日志，不能整目录暴露），因此转交 [saveFileAs] 走
+  ///   系统导出面板让用户挑位置。
   ///
   /// 成功提示交给调用方（各入口的成功文案不同），失败提示在此统一给出。
   static Future<ShareOutcome> saveFile(XFile file) async {
@@ -182,11 +164,13 @@ class ShareUtils {
           );
         }
         // null = 系统版本没有 MediaStore.Downloads 集合，落到私有目录分支
+        return _saveToAppDownloads(file);
       } catch (e) {
         debugPrint('[ShareUtils] saveToDownloads failed, fallback: $e');
+        return _saveToAppDownloads(file);
       }
     }
-    return _saveToAppDownloads(file);
+    return saveFileAs(file);
   }
 
   /// 「另存为」：让用户自己挑位置。

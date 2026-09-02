@@ -98,6 +98,7 @@
   "exportHistory_filterAll": "全部",
   "exportHistory_fileNotFound": "檔案已不存在",
   "exportHistory_openFailed": "沒有可以開啟這個檔案的應用",
+  "exportHistory_sharedNoFile": "這筆是分享出去的，本機沒有儲存檔案",
   "exportHistory_revealInFolder": "開啟所在資料夾",
   "exportHistory_openFile": "開啟檔案",
   "exportHistory_openInBrowser": "在瀏覽器中開啟",
