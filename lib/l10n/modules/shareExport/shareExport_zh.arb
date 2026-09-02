@@ -132,7 +132,6 @@
   "share_loadingPost": "正在加载帖子...",
   "share_replyToTopic": "回复话题",
   "share_saveFailed": "保存失败，请重试",
-  "share_savePermissionDenied": "保存失败，请授予相册权限",
   "share_saveToGallery": "保存到相册",
   "share_saveImageToFile": "保存图片",
   "share_fileSaved": "文件已保存",

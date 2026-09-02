@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import '../l10n/s.dart';
 import '../models/topic.dart';
 import '../services/discourse/discourse_service.dart';
@@ -317,9 +315,9 @@ class ExportUtils {
     String extension,
     ExportDelivery delivery,
   ) async {
-    final tempDir = await getTemporaryDirectory();
     final safeName = _sanitizeFilename(title);
-    final file = File('${tempDir.path}/$safeName.$extension');
+    // 走统一的「待送出」目录：分享面板看到的仍是可读文件名，过期件由它自清理
+    final file = await ShareUtils.createOutboxFile('$safeName.$extension');
     await file.writeAsString(content);
     final byteSize = await file.length();
 

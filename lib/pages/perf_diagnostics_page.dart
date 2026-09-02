@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/toast_service.dart';
@@ -60,9 +59,8 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
   /// 这里没有 try/catch,异常会变成未捕获的异步错误。
   Future<void> _export({required bool share}) async {
     try {
-      final dir = await getTemporaryDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/fluxdo_perf_$stamp.txt');
+      final file = await ShareUtils.createOutboxFile('fluxdo_perf_$stamp.txt');
       await file.writeAsString(FrameJankMonitor.exportText());
       await _deliver(XFile(file.path, mimeType: 'text/plain'), share: share);
     } catch (e) {

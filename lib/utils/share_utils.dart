@@ -69,6 +69,41 @@ class ShareUtils {
         _ => 'image/$ext',
       };
 
+  /// 分享/导出用的中转文件目录名（在 `getTemporaryDirectory()` 下）。
+  static const String _kOutboxDir = 'outbox';
+
+  /// 保留时长：超过这个时间的中转文件在下次写入时被清掉。
+  static const Duration _kOutboxTtl = Duration(days: 1);
+
+  /// 建一个「待送出」的临时文件（分享面板的中转、落盘前的产物）。
+  ///
+  /// 这些文件既不属于图片缓存的分类统计、也不在「清理缓存」的口径里，此前散落
+  /// 在 temp 根目录与 temp/share 下只增不减；统一收进一个目录并在每次写入前
+  /// 清掉过期件，避免长期占着「其它数据」。
+  static Future<File> createOutboxFile(String fileName) async {
+    final tempDir = await getTemporaryDirectory();
+    final dir = Directory(p.join(tempDir.path, _kOutboxDir));
+    await dir.create(recursive: true);
+    await _pruneOutbox(dir);
+    return File(p.join(dir.path, fileName));
+  }
+
+  static Future<void> _pruneOutbox(Directory dir) async {
+    try {
+      final deadline = DateTime.now().subtract(_kOutboxTtl);
+      await for (final entity in dir.list()) {
+        if (entity is! File) continue;
+        final stat = await entity.stat();
+        if (stat.modified.isBefore(deadline)) {
+          await entity.delete().catchError((_) => entity);
+        }
+      }
+    } catch (e) {
+      // 清理是尽力而为，失败不该挡住这次分享
+      debugPrint('[ShareUtils] prune outbox failed: $e');
+    }
+  }
+
   /// 分享图片文件:复制为带可读文件名的临时文件再走系统分享/另存为。
   /// 命名回退链:[fileName](接口/cooked 提供的原始文件名)→ [urlHint]
   /// 末段 → `fluxdo_<毫秒时间戳>`;扩展名始终以 [ext](实际下载 URL)
@@ -80,12 +115,10 @@ class ShareUtils {
     String? urlHint,
     String? subject,
   }) async {
-    final tempDir = await getTemporaryDirectory();
     final base = safeFileBaseName(fileName) ??
         safeFileBaseName(_urlLastSegment(urlHint)) ??
         'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
-    final shareFile = File(p.join(tempDir.path, 'share', '$base.$ext'));
-    await shareFile.parent.create(recursive: true);
+    final shareFile = await createOutboxFile('$base.$ext');
     await file.copy(shareFile.path);
     return ShareUtils.shareFile(
       XFile(shareFile.path, mimeType: imageMimeType(ext)),

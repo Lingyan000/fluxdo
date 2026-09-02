@@ -73,7 +73,6 @@
   "share_loadingPost": "Loading post...",
   "share_replyToTopic": "Reply to topic",
   "share_saveFailed": "Save failed, please retry",
-  "share_savePermissionDenied": "Save failed, please grant gallery permission",
   "share_saveToGallery": "Save to gallery",
   "share_saveImageToFile": "Save image",
   "share_fileSaved": "File saved",
