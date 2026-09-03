@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "AppLink"
+        private const val RENDER_TAG = "RenderBackend"
         private const val RAW_COOKIE_CHANNEL = "com.fluxdo/raw_cookie"
         private const val WEBAUTHN_CHANNEL = "com.fluxdo/webauthn"
 
@@ -107,22 +108,24 @@ class MainActivity : FlutterActivity() {
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
-    // 渲染后端回退开关（设置-功能「GLES 渲染兼容模式」）。
-    // 开启后以 --impeller-backend=opengles 创建引擎，让 Impeller 走
-    // OpenGL ES 后端，绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的
+    // 渲染后端兼容开关（设置-功能「Skia/OpenGL ES 兼容模式」）。
+    // 开启后以 --enable-impeller=false 创建引擎，让 Release 版使用
+    // Skia/OpenGL ES，绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的
     // SIGABRT 竞态（mali-event-hand 线程 destroyed mutex）。
-    // flag 存在 shared_preferences 的原生文件里（键带 flutter. 前缀，
+    // 偏好存在 shared_preferences 的原生文件里（键带 flutter. 前缀，
     // 与 RenderBackendPrefs 常量一致），不经 Dart，冷启动即生效。
-    // 关闭时返回 null，由 embedding 走默认（Vulkan）创建路径。
-    // 开启时引擎由当前 Activity 创建并持有，必须随宿主销毁，避免
-    // embedding 将其视为可长期复用的外部引擎而泄漏原生/GPU 资源。
+    // 关闭时返回 null，由 embedding 走默认后端创建路径。开启时引擎
+    // 由当前 Activity 创建并持有，必须随宿主销毁，避免 embedding 将其
+    // 视为可长期复用的外部引擎而泄漏原生/GPU 资源。
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
         val useGles = getSharedPreferences(
             RENDER_GLES_PREFS_FILE, Context.MODE_PRIVATE
         ).getBoolean(RENDER_GLES_PREF_KEY, false)
+        Log.i(RENDER_TAG, "渲染兼容模式读取结果: useGles=$useGles")
         if (!useGles) return null
         ownsProvidedFlutterEngine = true
-        return FlutterEngine(context, arrayOf("--impeller-backend=opengles"))
+        Log.i(RENDER_TAG, "启用 Skia/OpenGL ES 兼容模式")
+        return FlutterEngine(context, arrayOf("--enable-impeller=false"))
     }
 
     override fun shouldDestroyEngineWithHost(): Boolean =

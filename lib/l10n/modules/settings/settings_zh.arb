@@ -186,8 +186,8 @@
   "shortcuts_toggleAiPanel": "AI 助手面板",
   "shortcuts_toggleNotifications": "通知面板",
   "shortcuts_topic": "话题",
-  "preferences_renderGlesBackend": "GLES 渲染兼容模式",
-  "preferences_renderGlesBackendDesc": "改用 OpenGL 后端渲染，可绕开部分 Mali 驱动在图片预览、切换页面时的闪退；重启应用后生效",
+  "preferences_renderGlesBackend": "Skia/OpenGL ES 渲染兼容模式",
+  "preferences_renderGlesBackendDesc": "改用 Skia（OpenGL ES）渲染，可绕开部分 Mali/Vulkan 驱动导致的闪退；重启应用后生效",
   "preferences_renderGlesRestartTitle": "需要重启应用",
   "preferences_renderGlesRestartBody": "设置已保存。渲染后端将在下次打开 FluxDO 时切换，请关闭并重新打开应用以使更改生效。"
 }

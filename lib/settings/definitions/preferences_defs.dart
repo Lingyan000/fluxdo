@@ -300,10 +300,10 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             onChanged: (ref, v) =>
                 ref.read(preferencesProvider.notifier).setCrashlytics(v),
           ),
-          // 渲染后端回退:Mali Vulkan 驱动在纹理/表面销毁时可能触发
-          // libGLES_mali.so 内的 SIGABRT(mali-event-hand 线程
-          // destroyed mutex),图片预览缩放/退场与帖子开关页最易复现。
-          // GLES 后端绕开该竞态,代价是部分 Impeller 特性降级。
+          // 渲染后端兼容模式：Release 版无法通过
+          // --impeller-backend=opengles 固定 Impeller 后端，因此改用
+          // --enable-impeller=false 强制 Skia/OpenGL ES，绕开部分 Mali
+          // Vulkan 驱动的 SIGABRT；代价是关闭 Impeller 与 HCPP。
           SwitchModel(
             id: 'renderGlesBackend',
             title: l10n.preferences_renderGlesBackend,
