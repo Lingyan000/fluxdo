@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -30,6 +32,7 @@ import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/discourse_url_parser.dart';
 import 'pending_posts_page.dart';
 
 class CreateTopicPage extends ConsumerStatefulWidget {
@@ -86,6 +89,11 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   bool _isLoadingDraft = false;
   bool _showEmojiPanel = false;
   bool _createAsPostVoting = false; // post-voting(问答)模式
+  Timer? _featuredLinkDebounce;
+  int _titleChangeGeneration = 0;
+  bool _isResolvingFeaturedLink = false;
+  bool _updatingFeaturedLinkTitle = false;
+  String? _featuredLink;
 
   final PageController _pageController = PageController();
   int _contentLength = 0;
@@ -102,6 +110,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _draftController = DraftController(draftKey: widget.draftKey);
 
     // 添加草稿自动保存监听
+    _titleController.addListener(_onTitleChanged);
     _titleController.addListener(_onDraftContentChanged);
     _contentController.addListener(_onDraftContentChanged);
 
@@ -301,7 +310,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   @override
   void dispose() {
     _shortcutSurfaceBinding.disposeDeferred();
+    _featuredLinkDebounce?.cancel();
     // 移除草稿监听器
+    _titleController.removeListener(_onTitleChanged);
     _titleController.removeListener(_onDraftContentChanged);
     _contentController.removeListener(_onDraftContentChanged);
 
@@ -335,6 +346,129 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   void _updateContentLength() {
     setState(() => _contentLength = _contentController.text.length);
+  }
+
+  bool get _featuredLinkEnabled =>
+      PreloadedDataService().siteSettingsSync?['topic_featured_link_enabled'] !=
+      false;
+
+  /// 对齐 Discourse composer：标题只包含一个 URL 时，异步取 onebox 标题，
+  /// 并把原 URL 放入正文作为首个链接。
+  void _onTitleChanged() {
+    _featuredLinkDebounce?.cancel();
+    final generation = ++_titleChangeGeneration;
+
+    // 替换为 onebox 标题时不要把刚解析出的 featured_link 清掉。
+    if (_updatingFeaturedLinkTitle) return;
+
+    final candidate = DiscourseUrlParser.parseTitleUrl(_titleController.text);
+    if (!_featuredLinkEnabled || candidate == null) {
+      if (_isResolvingFeaturedLink || _featuredLink != null) {
+        setState(() {
+          _isResolvingFeaturedLink = false;
+          _featuredLink = null;
+        });
+      }
+      return;
+    }
+
+    // 同一个 URL 已经解析过时，不重复请求。
+    if (_featuredLink == candidate.url) {
+      if (_isResolvingFeaturedLink) {
+        setState(() => _isResolvingFeaturedLink = false);
+      }
+      return;
+    }
+
+    setState(() {
+      _isResolvingFeaturedLink = true;
+      _featuredLink = null;
+    });
+    _featuredLinkDebounce = Timer(const Duration(milliseconds: 500), () {
+      unawaited(_resolveFeaturedLink(candidate, generation));
+    });
+  }
+
+  Future<void> _resolveFeaturedLink(
+    TitleUrlInfo candidate,
+    int generation,
+  ) async {
+    if (!_featuredLinkEnabled) {
+      if (mounted && generation == _titleChangeGeneration) {
+        setState(() {
+          _isResolvingFeaturedLink = false;
+          _featuredLink = null;
+        });
+      }
+      return;
+    }
+    if (!_isCurrentTitleUrl(candidate, generation)) {
+      return;
+    }
+
+    String? resolvedTitle;
+    try {
+      final boxes = await ref
+          .read(discourseServiceProvider)
+          .fetchInlineOneboxes([
+            candidate.url,
+          ], categoryId: _selectedCategory?.id)
+          .timeout(const Duration(seconds: 5));
+      resolvedTitle = boxes[candidate.url]?.title.trim();
+    } catch (_) {
+      // fetchInlineOneboxes 已将 onebox 失败降级为空结果；这里保留 URL。
+    }
+
+    if (!mounted || !_isCurrentTitleUrl(candidate, generation)) return;
+
+    _appendFeaturedLinkToContent(candidate.url);
+    setState(() {
+      _featuredLink = candidate.url;
+      _isResolvingFeaturedLink = false;
+    });
+
+    if (resolvedTitle != null && resolvedTitle.isNotEmpty) {
+      _replaceTitleWithOneboxTitle(resolvedTitle);
+    }
+  }
+
+  bool _isCurrentTitleUrl(TitleUrlInfo candidate, int generation) {
+    return mounted &&
+        generation == _titleChangeGeneration &&
+        _featuredLinkEnabled &&
+        _titleController.text.trim() == candidate.url;
+  }
+
+  void _appendFeaturedLinkToContent(String url) {
+    final current = _contentController.text;
+    if (!current.contains(url)) {
+      final trimmed = current.trimRight();
+      _contentController.text = trimmed.isEmpty ? url : '$trimmed\n\n$url';
+    }
+
+    final richEditor = _richKey.currentState;
+    if (richEditor != null) {
+      unawaited(richEditor.syncFromController());
+    }
+  }
+
+  void _replaceTitleWithOneboxTitle(String title) {
+    final resolvedTitle = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (resolvedTitle.isEmpty ||
+        resolvedTitle == _titleController.text.trim()) {
+      return;
+    }
+
+    _updatingFeaturedLinkTitle = true;
+    try {
+      _titleController.value = _titleController.value.copyWith(
+        text: resolvedTitle,
+        selection: TextSelection.collapsed(offset: resolvedTitle.length),
+        composing: TextRange.empty,
+      );
+    } finally {
+      _updatingFeaturedLinkTitle = false;
+    }
   }
 
   void _onCategorySelected(Category category) {
@@ -466,6 +600,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         raw: _contentController.text,
         categoryId: _selectedCategory!.id,
         tags: _selectedTags.isNotEmpty ? _selectedTags : null,
+        featuredLink: _featuredLink,
         createAsPostVoting: _createAsPostVoting,
       );
 
@@ -527,7 +662,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
           letterSpacing: -0.5,
         ),
         maxLines: null,
-        maxLength: 200,
+        maxLength: _featuredLinkEnabled ? null : 200,
         buildCounter:
             (
               context, {
@@ -692,7 +827,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: FilledButton(
-                onPressed: _isSubmitting ? null : _submit,
+                onPressed: (_isSubmitting || _isResolvingFeaturedLink)
+                    ? null
+                    : _submit,
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -989,7 +1126,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       bindings: {
         for (final activator in composerSubmitActivators())
           activator: () {
-            if (!_isSubmitting) _submit();
+            if (!_isSubmitting && !_isResolvingFeaturedLink) _submit();
           },
       },
       child: page,
