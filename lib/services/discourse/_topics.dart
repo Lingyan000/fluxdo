@@ -452,6 +452,28 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     }
   }
 
+  /// 归档私信（PUT /t/:id/archive-message）。
+  ///
+  /// 服务端同时处理个人归档与「当前用户所属、且在本私信收件人里」的群组
+  /// 归档；群组私信会回 `{group_name: ...}` 用于定位群组收件箱，本项目私信
+  /// 页只有收件箱/已发送/归档三档，没有群组收件箱，故不取该返回值。
+  Future<void> archivePrivateMessage(int topicId) async {
+    try {
+      await _dio.put('/t/$topicId/archive-message.json');
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 将已归档私信移回收件箱（PUT /t/:id/move-to-inbox）。
+  Future<void> movePrivateMessageToInbox(int topicId) async {
+    try {
+      await _dio.put('/t/$topicId/move-to-inbox.json');
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
   /// 更新话题元数据
   Future<void> updateTopic({
     required int topicId,

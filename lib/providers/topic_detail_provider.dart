@@ -292,6 +292,46 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     return failed;
   }
 
+  /// 归档 / 取消归档当前私信，并把 `message_archived` 同步进 detail。
+  ///
+  /// 返回操作后的归档态。调用方据此决定是留在页面还是退回私信列表。
+  Future<bool> toggleArchivePrivateMessage() async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) {
+      return false;
+    }
+
+    final service = ref.read(discourseServiceProvider);
+    final archive = !currentDetail.messageArchived;
+    if (archive) {
+      await service.archivePrivateMessage(currentDetail.id);
+    } else {
+      await service.movePrivateMessageToInbox(currentDetail.id);
+    }
+
+    // 同 removePrivateMessageParticipant:请求期间可能有别的更新落到 state。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) {
+      return archive;
+    }
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(latestDetail.copyWith(messageArchived: archive));
+    return archive;
+  }
+
+  /// MessageBus 的 archived / move_to_inbox 通知（在别的端归档时会收到）
+  /// 落到 detail 上，让菜单里的双态入口跟着翻。
+  void applyMessageArchived(bool archived) {
+    final currentDetail = state.value;
+    if (currentDetail == null ||
+        !currentDetail.isPrivateMessage ||
+        currentDetail.messageArchived == archived) {
+      return;
+    }
+    state = AsyncValue.data(currentDetail.copyWith(messageArchived: archived));
+  }
+
   @override
   Future<TopicDetail> build() async {
     debugPrint('[TopicDetailNotifier] build called with topicId=${arg.topicId}, postNumber=${arg.postNumber}');

@@ -1,8 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/topic.dart';
 
-Map<String, dynamic> _topicJson({Map<String, dynamic>? details}) {
+Map<String, dynamic> _topicJson({
+  Map<String, dynamic>? details,
+  Map<String, dynamic> extra = const {},
+}) {
   return {
+    ...extra,
     'id': 42,
     'title': 'Private message',
     'slug': 'private-message',
@@ -96,6 +100,19 @@ void main() {
     expect(detail.allowedGroups.last.id, isNull);
     expect(detail.allowedGroups.last.displayName, 'moderators');
     expect(detail.canInviteTo, isTrue);
+  });
+
+  test('解析私信归档态并支持 copyWith 翻转', () {
+    // message_archived 在顶层，不在 details 里
+    final archived = TopicDetail.fromJson(
+      _topicJson(extra: const {'message_archived': true}),
+    );
+    expect(archived.messageArchived, isTrue);
+    expect(archived.copyWith(messageArchived: false).messageArchived, isFalse);
+
+    final plain = TopicDetail.fromJson(_topicJson());
+    expect(plain.messageArchived, isFalse);
+    expect(plain.copyWith(messageArchived: true).messageArchived, isTrue);
   });
 
   test('非私信或缺少权限字段时使用安全默认值', () {

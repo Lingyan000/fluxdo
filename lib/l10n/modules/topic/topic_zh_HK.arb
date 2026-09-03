@@ -82,6 +82,12 @@
       }
     }
   },
+  "topicDetail_archiveMessage": "封存",
+  "topicDetail_archiveMessageHelp": "將私信移至封存",
+  "topicDetail_moveMessageToInbox": "移至收件箱",
+  "topicDetail_moveMessageToInboxHelp": "將私信移回收件箱",
+  "topicDetail_messageArchived": "已封存私信",
+  "topicDetail_messageMovedToInbox": "已移回收件箱",
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已從浮窗移除",
   "topicDetail_replyLabel": "回覆",

@@ -1855,6 +1855,10 @@ class TopicDetail {
   // 话题权限（来自 details）
   final bool canEdit; // 是否可以编辑话题元数据（标题、分类、标签）
 
+  /// 该私信是否已被当前用户归档（顶层 `message_archived`，非 details；
+  /// 服务端只在私信下发，见 TopicViewSerializer#include_message_archived?）。
+  final bool messageArchived;
+
   // 私信成员与移除权限（来自 details）
   final List<TopicUser> allowedUsers;
   final List<TopicGroup> allowedGroups;
@@ -1939,6 +1943,7 @@ class TopicDetail {
     this.pmWithNonHumanUser = false,
     this.isPostVoting = false,
     this.canEdit = false,
+    this.messageArchived = false,
     this.allowedUsers = const [],
     this.allowedGroups = const [],
     this.canRemoveAllowedUsers = false,
@@ -2130,6 +2135,7 @@ class TopicDetail {
         details['notification_level'] as int?,
       ),
       canEdit: details['can_edit'] as bool? ?? false,
+      messageArchived: json['message_archived'] as bool? ?? false,
       allowedUsers: (details['allowed_users'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((user) => TopicUser.fromJson(Map<String, dynamic>.from(user)))
@@ -2255,6 +2261,7 @@ class TopicDetail {
     bool? pmWithNonHumanUser,
     bool? isPostVoting,
     bool? canEdit,
+    bool? messageArchived,
     List<TopicUser>? allowedUsers,
     List<TopicGroup>? allowedGroups,
     bool? canRemoveAllowedUsers,
@@ -2306,6 +2313,7 @@ class TopicDetail {
       pmWithNonHumanUser: pmWithNonHumanUser ?? this.pmWithNonHumanUser,
       isPostVoting: isPostVoting ?? this.isPostVoting,
       canEdit: canEdit ?? this.canEdit,
+      messageArchived: messageArchived ?? this.messageArchived,
       allowedUsers: allowedUsers ?? this.allowedUsers,
       allowedGroups: allowedGroups ?? this.allowedGroups,
       canRemoveAllowedUsers:

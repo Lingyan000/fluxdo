@@ -1134,6 +1134,42 @@ extension _UserActions on _TopicDetailPageState {
     }
   }
 
+  /// 归档 / 取消归档当前私信。
+  ///
+  /// 归档后这条私信已离开收件箱，留在页上会和列表状态打架，所以直接退回
+  /// 列表（同官方 toggleArchiveMessage 的 backToInbox）；取消归档是「捞回来
+  /// 继续看」，留在原页只给个提示。
+  Future<void> _handleToggleArchiveMessage(
+    TopicDetailNotifier notifier,
+  ) async {
+    if (_isTogglingArchiveMessage) return;
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null || !detail.isPrivateMessage) return;
+
+    setState(() => _isTogglingArchiveMessage = true);
+    try {
+      final archived = await notifier.toggleArchivePrivateMessage();
+      if (!mounted) return;
+
+      _invalidatePrivateMessageLists();
+      if (archived) {
+        ToastService.showSuccess(context.l10n.topicDetail_messageArchived);
+        _leavePrivateMessagePage();
+      } else {
+        ToastService.showSuccess(context.l10n.topicDetail_messageMovedToInbox);
+      }
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTogglingArchiveMessage = false);
+      }
+    }
+  }
+
   Future<void> _handleDeletePost(Post post) async {
     final confirmed = await showAppDialog<bool>(
       context: context,

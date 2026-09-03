@@ -76,6 +76,12 @@
       }
     }
   },
+  "topicDetail_archiveMessage": "Archive",
+  "topicDetail_archiveMessageHelp": "Move message to your archive",
+  "topicDetail_moveMessageToInbox": "Move to Inbox",
+  "topicDetail_moveMessageToInboxHelp": "Move message back to Inbox",
+  "topicDetail_messageArchived": "Message archived",
+  "topicDetail_messageMovedToInbox": "Moved back to Inbox",
   "topicDetail_removeFromReadLater": "Remove from float",
   "topicDetail_removeFromReadLaterSuccess": "Removed from float",
   "topicDetail_replyLabel": "Replies",
