@@ -38,6 +38,7 @@ import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
+import 'private_message_participants.dart';
 
 /// 话题帖子列表
 /// 负责构建 CustomScrollView 及其 Slivers
@@ -59,6 +60,11 @@ class TopicPostList extends StatefulWidget {
   final int? selectedPostNumber;
   final int? highlightPostNumber;
   final bool isLoggedIn;
+  final int? removingPrivateMessageParticipantId;
+  final String? removingPrivateMessageGroupName;
+  final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
+  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
+  final VoidCallback? onInvitePrivateMessageParticipants;
   final bool hasMoreBefore;
   final bool hasMoreAfter;
 
@@ -141,6 +147,11 @@ class TopicPostList extends StatefulWidget {
     this.hideHeaderTitle = false,
     this.canAssignPost = false,
     required this.isLoggedIn,
+    this.removingPrivateMessageParticipantId,
+    this.removingPrivateMessageGroupName,
+    this.onRemovePrivateMessageParticipant,
+    this.onRemovePrivateMessageGroup,
+    this.onInvitePrivateMessageParticipants,
     required this.hasMoreBefore,
     required this.hasMoreAfter,
     required this.loadingPreviousListenable,
@@ -241,6 +252,20 @@ class _TopicPostListState extends State<TopicPostList> {
 
   int get _currentMaterializeStep =>
       ScrollBusySignal.isBusy ? _materializeBusyStep : _materializeIdleStep;
+
+  PrivateMessageParticipants _buildPrivateMessageParticipants(
+    PrivateMessageParticipantsLocation location,
+  ) {
+    return PrivateMessageParticipants.fromDetail(
+      location: location,
+      detail: detail,
+      removingParticipantId: widget.removingPrivateMessageParticipantId,
+      removingGroupName: widget.removingPrivateMessageGroupName,
+      onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
+      onRemoveGroup: widget.onRemovePrivateMessageGroup,
+      onInvite: widget.onInvitePrivateMessageParticipants,
+    );
+  }
 
   void _scheduleMaterializeStep() {
     if (_materializeTicking) return;
@@ -1319,6 +1344,18 @@ class _TopicPostListState extends State<TopicPostList> {
                 ),
               ),
 
+            // 对齐 Discourse bottom topic map：帖子流真正到底后再次展示私信成员。
+            if (!hasMoreAfter &&
+                PrivateMessageParticipants.shouldShowAtBottom(detail))
+              SliverToBoxAdapter(
+                child: _wrapContent(
+                  context,
+                  _buildPrivateMessageParticipants(
+                    PrivateMessageParticipantsLocation.bottom,
+                  ),
+                ),
+              ),
+
             SliverPadding(
               padding: EdgeInsets.only(
                 bottom: 80 + MediaQuery.of(context).padding.bottom,
@@ -1597,13 +1634,31 @@ class _TopicPostListState extends State<TopicPostList> {
         break;
     }
 
+    final childWithParticipants =
+        PrivateMessageParticipants.shouldShow(detail) &&
+            post.postNumber == 1 &&
+            (segment.type == _PostRenderSegmentType.shortPost ||
+                segment.type == _PostRenderSegmentType.longFooter)
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              child,
+              _buildPrivateMessageParticipants(
+                PrivateMessageParticipantsLocation.firstPost,
+              ),
+            ],
+          )
+        : child;
+
     // TOC 锚点作用域只挂 1 楼:节点 id 跨帖重复,其他楼的标题不能进
     // 注册表(见 HeadingAnchorRegistrar/headingAnchorKey)。
     final anchorRegistry = widget.headingAnchorRegistry;
-    final scopedChild =
-        anchorRegistry != null && segment.post.postNumber == 1
-            ? HeadingAnchorScope(registry: anchorRegistry, child: child)
-            : child;
+    final scopedChild = anchorRegistry != null && post.postNumber == 1
+        ? HeadingAnchorScope(
+            registry: anchorRegistry,
+            child: childWithParticipants,
+          )
+        : childWithParticipants;
 
     final wrapped = _wrapContent(
       context,

@@ -13,6 +13,7 @@ import '../../../widgets/post/post_item/post_item.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
+import 'private_message_participants.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
 class NestedPostList extends ConsumerStatefulWidget {
@@ -24,6 +25,11 @@ class NestedPostList extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final GlobalKey headerKey;
   final bool isLoggedIn;
+  final int? removingPrivateMessageParticipantId;
+  final String? removingPrivateMessageGroupName;
+  final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
+  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
+  final VoidCallback? onInvitePrivateMessageParticipants;
   final void Function(Post? replyToPost, {String? initialContent}) onReply;
   final void Function(Post post) onEdit;
   final void Function(int postId) onRefreshPost;
@@ -58,6 +64,11 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.scrollController,
     required this.headerKey,
     required this.isLoggedIn,
+    this.removingPrivateMessageParticipantId,
+    this.removingPrivateMessageGroupName,
+    this.onRemovePrivateMessageParticipant,
+    this.onRemovePrivateMessageGroup,
+    this.onInvitePrivateMessageParticipants,
     required this.onReply,
     required this.onEdit,
     required this.onRefreshPost,
@@ -182,6 +193,20 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     };
   }
 
+  PrivateMessageParticipants _buildPrivateMessageParticipants(
+    PrivateMessageParticipantsLocation location,
+  ) {
+    return PrivateMessageParticipants.fromDetail(
+      location: location,
+      detail: widget.detail,
+      removingParticipantId: widget.removingPrivateMessageParticipantId,
+      removingGroupName: widget.removingPrivateMessageGroupName,
+      onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
+      onRemoveGroup: widget.onRemovePrivateMessageGroup,
+      onInvite: widget.onInvitePrivateMessageParticipants,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _builtPostNumbers.clear();
@@ -256,6 +281,14 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
                         onChanged: widget.onSharedIssueChanged,
                       )
                     : null,
+              ),
+            ),
+
+          if (opPost != null &&
+              PrivateMessageParticipants.shouldShow(widget.detail))
+            SliverToBoxAdapter(
+              child: _buildPrivateMessageParticipants(
+                PrivateMessageParticipantsLocation.firstPost,
               ),
             ),
 
@@ -374,6 +407,14 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
           if (!contextMode && !ns.hasMoreRoots)
             SliverToBoxAdapter(
               child: MoreTopicsSection(detail: widget.detail),
+            ),
+
+          if (!ns.hasMoreRoots &&
+              PrivateMessageParticipants.shouldShowAtBottom(widget.detail))
+            SliverToBoxAdapter(
+              child: _buildPrivateMessageParticipants(
+                PrivateMessageParticipantsLocation.bottom,
+              ),
             ),
 
           SliverToBoxAdapter(

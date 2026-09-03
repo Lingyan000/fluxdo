@@ -960,6 +960,216 @@ extension _UserActions on _TopicDetailPageState {
     );
   }
 
+  Future<void> _handleRemovePrivateMessageParticipant(
+    TopicUser participant,
+  ) async {
+    if (_removingPrivateMessageParticipantId != null ||
+        _removingPrivateMessageGroupName != null) {
+      return;
+    }
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null || !detail.isPrivateMessage) return;
+
+    // 判据与面板同源:两个 details 权限位就是唯一真相
+    // (can_remove_allowed_users 已含 staff/房主 TL2+ 判定,
+    // can_remove_self_id 恒为当前用户 id),不再叠加客户端身份门槛,
+    // 否则 UI 与此处会各判一套。
+    final isSelf = participant.id == detail.canRemoveSelfId;
+    final canRemove = detail.canRemoveAllowedUsers || isSelf;
+    if (!canRemove) return;
+
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isSelf ? context.l10n.common_exit : context.l10n.common_remove,
+        ),
+        content: Text(
+          isSelf
+              ? context.l10n.topicDetail_leavePrivateMessageConfirm
+              : context.l10n.topicDetail_removePrivateMessageParticipantConfirm(
+                  participant.username,
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.l10n.common_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('pm-participant-confirm'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              isSelf ? context.l10n.common_exit : context.l10n.common_remove,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _removingPrivateMessageParticipantId = participant.id);
+    try {
+      await ref
+          .read(topicDetailProvider(_params).notifier)
+          .removePrivateMessageParticipant(participant);
+      if (!mounted) return;
+
+      if (isSelf) {
+        _closeRemovedPrivateMessage();
+      } else {
+        ToastService.showSuccess(
+          context.l10n.topicDetail_removedPrivateMessageParticipant(
+            participant.username,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _removingPrivateMessageParticipantId = null);
+      }
+    }
+  }
+
+  /// 移除私信群组;群组没有「退出」语义,门禁只看 can_remove_allowed_users。
+  Future<void> _handleRemovePrivateMessageGroup(TopicGroup group) async {
+    if (_removingPrivateMessageParticipantId != null ||
+        _removingPrivateMessageGroupName != null) {
+      return;
+    }
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null ||
+        !detail.isPrivateMessage ||
+        !detail.canRemoveAllowedUsers) {
+      return;
+    }
+
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.l10n.common_remove),
+        content: Text(
+          context.l10n.topicDetail_removePrivateMessageGroupConfirm(group.name),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.l10n.common_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('pm-group-confirm'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.l10n.common_remove),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _removingPrivateMessageGroupName = group.name);
+    try {
+      await ref
+          .read(topicDetailProvider(_params).notifier)
+          .removePrivateMessageGroup(group);
+      if (!mounted) return;
+      ToastService.showSuccess(
+        context.l10n.topicDetail_removedPrivateMessageGroup(group.name),
+      );
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _removingPrivateMessageGroupName = null);
+      }
+    }
+  }
+
+  /// 邀请新成员/群组加入私信。
+  Future<void> _handleInvitePrivateMessageParticipants() async {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null || !detail.isPrivateMessage || !detail.canInviteTo) {
+      return;
+    }
+
+    final result = await showInvitePrivateMessageDialog(context: context);
+    if (result == null || result.isEmpty || !mounted) return;
+
+    try {
+      final failed = await ref
+          .read(topicDetailProvider(_params).notifier)
+          .invitePrivateMessageParticipants(
+            usernames: result.usernames,
+            groupNames: result.groupNames,
+          );
+      if (!mounted) return;
+
+      if (failed.isEmpty) {
+        ToastService.showSuccess(context.l10n.pm_inviteSucceeded);
+      } else {
+        // 逐个提交,部分成功也已并入名单,这里只报失败的那几个。
+        ToastService.showError(
+          context.l10n.pm_invitePartiallyFailed(failed.join('、')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
+      }
+    }
+  }
+
+  /// 归档 / 取消归档当前私信。
+  ///
+  /// 归档后这条私信已离开收件箱，留在页上会和列表状态打架，所以直接退回
+  /// 列表（同官方 toggleArchiveMessage 的 backToInbox）；取消归档是「捞回来
+  /// 继续看」，留在原页只给个提示。
+  Future<void> _handleToggleArchiveMessage(
+    TopicDetailNotifier notifier,
+  ) async {
+    if (_isTogglingArchiveMessage) return;
+
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null || !detail.isPrivateMessage) return;
+
+    setState(() => _isTogglingArchiveMessage = true);
+    try {
+      final archived = await notifier.toggleArchivePrivateMessage();
+      if (!mounted) return;
+
+      _invalidatePrivateMessageLists();
+      if (archived) {
+        ToastService.showSuccess(context.l10n.topicDetail_messageArchived);
+        _leavePrivateMessagePage();
+      } else {
+        ToastService.showSuccess(context.l10n.topicDetail_messageMovedToInbox);
+      }
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTogglingArchiveMessage = false);
+      }
+    }
+  }
+
   Future<void> _handleDeletePost(Post post) async {
     final confirmed = await showAppDialog<bool>(
       context: context,

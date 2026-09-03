@@ -175,6 +175,163 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     ));
   }
 
+  /// 将成员移出当前私信，并同步首楼与底部的成员面板。
+  Future<void> removePrivateMessageParticipant(TopicUser participant) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) return;
+
+    final service = ref.read(discourseServiceProvider);
+    await service.removePrivateMessageParticipant(
+      currentDetail.id,
+      participant.username,
+    );
+
+    // 请求期间可能收到新回复或其他 MessageBus 更新，必须基于
+    // 最新 detail 删成员，否则会用请求前的快照把新状态整体覆盖掉。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) return;
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedUsers: latestDetail.allowedUsers
+            .where((user) => user.id != participant.id)
+            .toList(growable: false),
+        clearCanRemoveSelfId: latestDetail.canRemoveSelfId == participant.id,
+      ),
+    );
+  }
+
+  /// 将群组移出当前私信，并同步成员面板。
+  Future<void> removePrivateMessageGroup(TopicGroup group) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) return;
+
+    final service = ref.read(discourseServiceProvider);
+    await service.removePrivateMessageGroup(currentDetail.id, group.name);
+
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) return;
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedGroups: latestDetail.allowedGroups
+            .where((item) => item.name != group.name)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  /// 邀请用户/群组加入当前私信，并把新成员并入面板名单。
+  ///
+  /// 逐个提交:官方 invite 接口一次只收一个收件人(用户走 invite、群组走
+  /// invite-group),这里保持同样粒度,部分成功也把已成功的并进名单,失败
+  /// 名单原样抛给调用方提示。
+  Future<List<String>> invitePrivateMessageParticipants({
+    required List<String> usernames,
+    required List<String> groupNames,
+  }) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) {
+      return const [];
+    }
+
+    final service = ref.read(discourseServiceProvider);
+    final topicId = currentDetail.id;
+    final invitedUsers = <TopicUser>[];
+    final invitedGroups = <TopicGroup>[];
+    final failed = <String>[];
+
+    for (final username in usernames) {
+      try {
+        final user = await service.invitePrivateMessageUser(topicId, username);
+        if (user != null) invitedUsers.add(user);
+      } catch (_) {
+        failed.add(username);
+      }
+    }
+    for (final groupName in groupNames) {
+      try {
+        await service.invitePrivateMessageGroup(topicId, groupName);
+        invitedGroups.add(TopicGroup(name: groupName));
+      } catch (_) {
+        failed.add(groupName);
+      }
+    }
+
+    if (invitedUsers.isEmpty && invitedGroups.isEmpty) return failed;
+
+    // 同 removePrivateMessageParticipant:请求期间可能有别的更新落到 state,
+    // 必须基于最新 detail 追加。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != topicId) return failed;
+
+    final existingUserIds = latestDetail.allowedUsers
+        .map((user) => user.id)
+        .toSet();
+    final existingGroupNames = latestDetail.allowedGroups
+        .map((group) => group.name)
+        .toSet();
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedUsers: [
+          ...latestDetail.allowedUsers,
+          ...invitedUsers.where((user) => !existingUserIds.contains(user.id)),
+        ],
+        allowedGroups: [
+          ...latestDetail.allowedGroups,
+          ...invitedGroups.where(
+            (group) => !existingGroupNames.contains(group.name),
+          ),
+        ],
+      ),
+    );
+    return failed;
+  }
+
+  /// 归档 / 取消归档当前私信，并把 `message_archived` 同步进 detail。
+  ///
+  /// 返回操作后的归档态。调用方据此决定是留在页面还是退回私信列表。
+  Future<bool> toggleArchivePrivateMessage() async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) {
+      return false;
+    }
+
+    final service = ref.read(discourseServiceProvider);
+    final archive = !currentDetail.messageArchived;
+    if (archive) {
+      await service.archivePrivateMessage(currentDetail.id);
+    } else {
+      await service.movePrivateMessageToInbox(currentDetail.id);
+    }
+
+    // 同 removePrivateMessageParticipant:请求期间可能有别的更新落到 state。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) {
+      return archive;
+    }
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(latestDetail.copyWith(messageArchived: archive));
+    return archive;
+  }
+
+  /// MessageBus 的 archived / move_to_inbox 通知（在别的端归档时会收到）
+  /// 落到 detail 上，让菜单里的双态入口跟着翻。
+  void applyMessageArchived(bool archived) {
+    final currentDetail = state.value;
+    if (currentDetail == null ||
+        !currentDetail.isPrivateMessage ||
+        currentDetail.messageArchived == archived) {
+      return;
+    }
+    state = AsyncValue.data(currentDetail.copyWith(messageArchived: archived));
+  }
+
   @override
   Future<TopicDetail> build() async {
     debugPrint('[TopicDetailNotifier] build called with topicId=${arg.topicId}, postNumber=${arg.postNumber}');

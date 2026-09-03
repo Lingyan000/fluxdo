@@ -385,6 +385,95 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     );
   }
 
+  /// 将用户移出私信；移除自己时等价于退出该私信。
+  Future<void> removePrivateMessageParticipant(
+    int topicId,
+    String username,
+  ) async {
+    try {
+      await _dio.put(
+        '/t/$topicId/remove-allowed-user.json',
+        data: {'username': username},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 将群组移出私信（PUT /t/:id/remove-allowed-group，按群组名）。
+  Future<void> removePrivateMessageGroup(int topicId, String groupName) async {
+    try {
+      await _dio.put(
+        '/t/$topicId/remove-allowed-group.json',
+        data: {'name': groupName},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 邀请用户加入私信（POST /t/:id/invite）。
+  ///
+  /// 成功时服务端回 BasicUserSerializer（root 为 `user`），据此可直接把新
+  /// 成员并入本地名单，无需整帖重载；用户是邮箱邀请等无 user 返回的情况
+  /// 则回 null。
+  Future<TopicUser?> invitePrivateMessageUser(
+    int topicId,
+    String username,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/t/$topicId/invite.json',
+        data: {'user': username},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+      final user = (response.data as Map?)?['user'];
+      if (user is Map) {
+        return TopicUser.fromJson(Map<String, dynamic>.from(user));
+      }
+      return null;
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 邀请群组加入私信（POST /t/:id/invite-group，按群组名）。
+  Future<void> invitePrivateMessageGroup(int topicId, String groupName) async {
+    try {
+      await _dio.post(
+        '/t/$topicId/invite-group.json',
+        data: {'group': groupName},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 归档私信（PUT /t/:id/archive-message）。
+  ///
+  /// 服务端同时处理个人归档与「当前用户所属、且在本私信收件人里」的群组
+  /// 归档；群组私信会回 `{group_name: ...}` 用于定位群组收件箱，本项目私信
+  /// 页只有收件箱/已发送/归档三档，没有群组收件箱，故不取该返回值。
+  Future<void> archivePrivateMessage(int topicId) async {
+    try {
+      await _dio.put('/t/$topicId/archive-message.json');
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
+  /// 将已归档私信移回收件箱（PUT /t/:id/move-to-inbox）。
+  Future<void> movePrivateMessageToInbox(int topicId) async {
+    try {
+      await _dio.put('/t/$topicId/move-to-inbox.json');
+    } on DioException catch (e) {
+      _throwApiError(e);
+    }
+  }
+
   /// 更新话题元数据
   Future<void> updateTopic({
     required int topicId,

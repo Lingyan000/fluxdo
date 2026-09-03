@@ -23,6 +23,8 @@ class PmRecipientField extends StatefulWidget {
     required this.recipients,
     required this.onChanged,
     this.autofocus = false,
+    this.groupNames = const {},
+    this.onGroupNamesChanged,
   });
 
   /// 当前已选收件人（用户名 / 群组名）。
@@ -31,6 +33,13 @@ class PmRecipientField extends StatefulWidget {
   final ValueChanged<List<String>> onChanged;
 
   final bool autofocus;
+
+  /// [recipients] 里哪些是群组。新建私信的 `target_recipients` 用户与群组
+  /// 混着收，不需要区分；私信邀请分 invite / invite-group 两个端点，才要
+  /// 这份标记。不传即不追踪。
+  final Set<String> groupNames;
+
+  final ValueChanged<Set<String>>? onGroupNamesChanged;
 
   @override
   State<PmRecipientField> createState() => _PmRecipientFieldState();
@@ -105,9 +114,11 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
   /// 按浮层里的顺序取第 [index] 个候选加入。
   void _addAt(int index) {
     if (index < 0 || index >= _itemCount) return;
-    _add(index < _users.length
-        ? _users[index].username
-        : _groups[index - _users.length].name);
+    final isGroup = index >= _users.length;
+    _add(
+      isGroup ? _groups[index - _users.length].name : _users[index].username,
+      isGroup: isGroup,
+    );
   }
 
   void _onTermChanged(String term) {
@@ -210,7 +221,7 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
                     subtitle: (u.name == null || u.name!.isEmpty)
                         ? null
                         : Text(u.name!, overflow: TextOverflow.ellipsis),
-                    onTap: () => _add(u.username),
+                    onTap: () => _add(u.username, isGroup: false),
                   ),
                 for (final (gi, g) in _groups.indexed)
                   ListTile(
@@ -226,7 +237,7 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
                     subtitle: (g.fullName == null || g.fullName!.isEmpty)
                         ? null
                         : Text(g.fullName!, overflow: TextOverflow.ellipsis),
-                    onTap: () => _add(g.name),
+                    onTap: () => _add(g.name, isGroup: true),
                   ),
               ],
             ),
@@ -237,13 +248,16 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
     );
   }
 
-  void _add(String name) {
+  void _add(String name, {required bool isGroup}) {
     if (name.isEmpty) return;
     // 大小写不敏感去重：Discourse 用户名不区分大小写
     final exists = widget.recipients
         .any((r) => r.toLowerCase() == name.toLowerCase());
     if (!exists) {
       widget.onChanged([...widget.recipients, name]);
+      if (isGroup) {
+        widget.onGroupNamesChanged?.call({...widget.groupNames, name});
+      }
     }
     _controller.clear();
     setState(() {
@@ -259,6 +273,11 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
     widget.onChanged(
       widget.recipients.where((r) => r != name).toList(),
     );
+    if (widget.groupNames.contains(name)) {
+      widget.onGroupNamesChanged?.call(
+        widget.groupNames.where((g) => g != name).toSet(),
+      );
+    }
   }
 
   @override

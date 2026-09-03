@@ -157,6 +157,7 @@ class TopicChannelNotifier extends Notifier<TopicChannelState> {
 
         case 'remove_allowed_user':
           debugPrint('[TopicChannel] 用户被移出私信');
+          state = state.copyWith(removedFromPrivateMessage: true);
           break;
 
         case 'boost_added':
@@ -335,6 +336,12 @@ class TopicChannelNotifier extends Notifier<TopicChannelState> {
 
   void clearNotificationLevelChange() {
     state = state.copyWith(clearNotificationLevelChange: true);
+  }
+
+  /// 被移出私信是一次性信号:页面消费(离开话题)后必须复位,否则若被
+  /// 重新邀请进同一私信、channel 仍在存活期,新页面会带着旧标志挂载。
+  void clearRemovedFromPrivateMessage() {
+    state = state.copyWith(removedFromPrivateMessage: false);
   }
 
   // —— 帖子更新攒批 ——
