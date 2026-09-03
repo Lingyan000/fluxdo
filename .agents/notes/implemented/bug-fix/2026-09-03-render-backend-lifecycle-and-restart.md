@@ -47,4 +47,17 @@ HCPP 只在 Impeller Vulkan 渲染 API 下建立，因此 Skia/OpenGL ES 兼容�
 
 ## Testing
 
-已通过 Flutter 3.44.0 与 3.44.8 engine 源码对比确认 Release 后端选择条件，并通过实体设备上的 CI Flutter 3.44.0 包确认旧实现开启后仍落入 Vulkan。新的 Skia/OpenGL ES 参数和四语言文案由同一份变更提交，APK 构建与真机冷启动回归使用 CI 作为唯一构建来源。
+已通过 Flutter 3.44.0 与 3.44.8 engine 源码对比确认 Release 后端选择条件，并通过实体设备上的 CI Flutter 3.44.0 包确认旧实现开启后仍落入 Vulkan。
+
+实机回归验证在搭载天玑 9000 (Mali-G710 MC10) 的 Redmi K50 Pro（设备 `KBS4TGCMRSCY6TYX`，Android 14）上进行，使用与生产完全一致的 Flutter 3.44.0 arm64 Release CI 构建包（Run 33767910363，包名 `com.github.lingyan000.fluxdo.ci3440`）：
+
+1. **兼容模式开启验证（PID 14761，23:52:02）**：
+   - 原生日志确认：`RenderBackend: 渲染兼容模式读取结果: useGles=true`、`RenderBackend: 启用 Skia/OpenGL ES 兼容模式`。
+   - 引擎日志中 `android_context_vk_impeller` 与 `Using the Impeller rendering backend (Vulkan)` 完全消失。
+   - 打开帖子中的图片，频繁反复进入/退出图片预览，全程运行稳定，无任何闪退。
+2. **对照关闭验证（PID 15783，23:54:35）**：
+   - 原生日志确认：`RenderBackend: 渲染兼容模式读取结果: useGles=false`。
+   - 引擎恢复 Vulkan：`Using the Impeller rendering backend (Vulkan)`。
+   - 进行相同图片预览操作，14 秒内立即复现 `Fatal signal 6 (SIGABRT) in tid 15919 (mali-event-hand)`，崩溃栈指向 `libGLES_mali.so` 内的 destroyed mutex。
+
+对比严格证明：`--enable-impeller=false` 在 Release 构建下确实成功切入 Skia/OpenGL ES 并彻底阻断了该设备的 Mali Vulkan 竞态崩溃。
