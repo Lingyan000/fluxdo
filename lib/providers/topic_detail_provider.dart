@@ -197,10 +197,99 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
         allowedUsers: latestDetail.allowedUsers
             .where((user) => user.id != participant.id)
             .toList(growable: false),
-        clearCanRemoveSelfId:
-            latestDetail.canRemoveSelfId == participant.id,
+        clearCanRemoveSelfId: latestDetail.canRemoveSelfId == participant.id,
       ),
     );
+  }
+
+  /// 将群组移出当前私信，并同步成员面板。
+  Future<void> removePrivateMessageGroup(TopicGroup group) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) return;
+
+    final service = ref.read(discourseServiceProvider);
+    await service.removePrivateMessageGroup(currentDetail.id, group.name);
+
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != currentDetail.id) return;
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedGroups: latestDetail.allowedGroups
+            .where((item) => item.name != group.name)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  /// 邀请用户/群组加入当前私信，并把新成员并入面板名单。
+  ///
+  /// 逐个提交:官方 invite 接口一次只收一个收件人(用户走 invite、群组走
+  /// invite-group),这里保持同样粒度,部分成功也把已成功的并进名单,失败
+  /// 名单原样抛给调用方提示。
+  Future<List<String>> invitePrivateMessageParticipants({
+    required List<String> usernames,
+    required List<String> groupNames,
+  }) async {
+    final currentDetail = state.value;
+    if (currentDetail == null || !currentDetail.isPrivateMessage) {
+      return const [];
+    }
+
+    final service = ref.read(discourseServiceProvider);
+    final topicId = currentDetail.id;
+    final invitedUsers = <TopicUser>[];
+    final invitedGroups = <TopicGroup>[];
+    final failed = <String>[];
+
+    for (final username in usernames) {
+      try {
+        final user = await service.invitePrivateMessageUser(topicId, username);
+        if (user != null) invitedUsers.add(user);
+      } catch (_) {
+        failed.add(username);
+      }
+    }
+    for (final groupName in groupNames) {
+      try {
+        await service.invitePrivateMessageGroup(topicId, groupName);
+        invitedGroups.add(TopicGroup(name: groupName));
+      } catch (_) {
+        failed.add(groupName);
+      }
+    }
+
+    if (invitedUsers.isEmpty && invitedGroups.isEmpty) return failed;
+
+    // 同 removePrivateMessageParticipant:请求期间可能有别的更新落到 state,
+    // 必须基于最新 detail 追加。
+    final latestDetail = state.value;
+    if (latestDetail == null || latestDetail.id != topicId) return failed;
+
+    final existingUserIds = latestDetail.allowedUsers
+        .map((user) => user.id)
+        .toSet();
+    final existingGroupNames = latestDetail.allowedGroups
+        .map((group) => group.name)
+        .toSet();
+
+    AnchorGuardSliver.arm();
+    state = AsyncValue.data(
+      latestDetail.copyWith(
+        allowedUsers: [
+          ...latestDetail.allowedUsers,
+          ...invitedUsers.where((user) => !existingUserIds.contains(user.id)),
+        ],
+        allowedGroups: [
+          ...latestDetail.allowedGroups,
+          ...invitedGroups.where(
+            (group) => !existingGroupNames.contains(group.name),
+          ),
+        ],
+      ),
+    );
+    return failed;
   }
 
   @override

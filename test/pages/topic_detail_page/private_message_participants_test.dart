@@ -28,7 +28,12 @@ PrivateMessageParticipants _panel({
   required bool canRemoveAllowedUsers,
   int? removableSelfId = 1,
   int? removingParticipantId,
+  String? removingGroupName,
+  List<TopicGroup> groups = const [],
+  bool canInvite = false,
   ValueChanged<TopicUser>? onRemoveParticipant,
+  ValueChanged<TopicGroup>? onRemoveGroup,
+  VoidCallback? onInvite,
 }) {
   return PrivateMessageParticipants(
     location: PrivateMessageParticipantsLocation.firstPost,
@@ -37,10 +42,15 @@ PrivateMessageParticipants _panel({
       _user(2, 'alice', name: 'Alice'),
       _user(3, 'bob'),
     ],
+    groups: groups,
     canRemoveAllowedUsers: canRemoveAllowedUsers,
     removableSelfId: removableSelfId,
+    canInvite: canInvite,
     removingParticipantId: removingParticipantId,
+    removingGroupName: removingGroupName,
     onRemoveParticipant: onRemoveParticipant,
+    onRemoveGroup: onRemoveGroup,
+    onInvite: onInvite,
   );
 }
 
@@ -49,6 +59,8 @@ TopicDetail _detail({
   bool canRemoveAllowedUsers = false,
   int? canRemoveSelfId = 1,
   int postsCount = 1,
+  bool canInviteTo = false,
+  List<Map<String, dynamic>> allowedGroups = const [],
   List<Map<String, dynamic>> allowedUsers = const [
     {'id': 1, 'username': 'me', 'name': '我', 'avatar_template': ''},
     {'id': 2, 'username': 'alice', 'name': 'Alice', 'avatar_template': ''},
@@ -67,7 +79,9 @@ TopicDetail _detail({
     'archetype': 'private_message',
     'details': {
       'allowed_users': allowedUsers,
+      'allowed_groups': allowedGroups,
       'can_remove_allowed_users': canRemoveAllowedUsers,
+      'can_invite_to': canInviteTo,
       if (canRemoveSelfId != null) 'can_remove_self_id': canRemoveSelfId,
     },
   });
@@ -161,7 +175,10 @@ void main() {
           location: PrivateMessageParticipantsLocation.firstPost,
           detail: _detail(canRemoveAllowedUsers: true),
           removingParticipantId: null,
+          removingGroupName: null,
           onRemoveParticipant: (_) {},
+          onRemoveGroup: (_) {},
+          onInvite: () {},
         ),
       ),
     );
@@ -184,6 +201,123 @@ void main() {
       PrivateMessageParticipants.shouldShowAtBottom(_detail(postsCount: 4)),
       isTrue,
     );
+  });
+
+  testWidgets('群组排在用户之前并计入人数，可移除', (tester) async {
+    TopicGroup? removed;
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: true,
+          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
+          onRemoveParticipant: (_) {},
+          onRemoveGroup: (group) => removed = group,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 3 个用户 + 1 个群组
+    expect(find.text('4'), findsOneWidget);
+    expect(find.text('staff'), findsOneWidget);
+    expect(find.text('管理组'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('pm-group-firstPost-remove-staff')),
+    );
+    expect(removed?.name, 'staff');
+  });
+
+  testWidgets('无移除权限时群组不显示移除按钮', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: false,
+          groups: const [TopicGroup(id: 9, name: 'staff')],
+          onRemoveParticipant: (_) {},
+          onRemoveGroup: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('pm-group-firstPost-remove-staff')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('邀请入口只在 can_invite_to 为真时出现', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: false,
+          canInvite: false,
+          onRemoveParticipant: (_) {},
+          onInvite: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
+      findsNothing,
+    );
+
+    var invited = false;
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: false,
+          canInvite: true,
+          onRemoveParticipant: (_) {},
+          onInvite: () => invited = true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
+    );
+    expect(invited, isTrue);
+  });
+
+  testWidgets('移除进行中锁掉全部控件', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: true,
+          canInvite: true,
+          removingGroupName: 'staff',
+          groups: const [TopicGroup(id: 9, name: 'staff')],
+          onRemoveParticipant: (_) {},
+          onRemoveGroup: (_) {},
+          onInvite: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 正在移除的群组换成进度指示，其余按钮全部禁用
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    final invite = tester.widget<IconButton>(
+      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
+    );
+    expect(invite.onPressed, isNull);
+    final removeUser = tester.widget<IconButton>(
+      find.byKey(const ValueKey('pm-participant-firstPost-remove-2')),
+    );
+    expect(removeUser.onPressed, isNull);
+  });
+
+  test('只有群组、没有用户的私信也要显示面板', () {
+    final detail = _detail(
+      allowedUsers: const [],
+      allowedGroups: const [
+        {'id': 9, 'name': 'staff'},
+      ],
+    );
+    expect(PrivateMessageParticipants.shouldShow(detail), isTrue);
   });
 
   test('成员名单为空时两处都不展示', () {

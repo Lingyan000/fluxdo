@@ -73,6 +73,31 @@ void main() {
     expect(updated.canRemoveAllowedUsers, isTrue);
   });
 
+  test('解析群组收件人与邀请权限', () {
+    final detail = TopicDetail.fromJson(
+      _topicJson(
+        details: {
+          'allowed_users': const <Map<String, dynamic>>[],
+          'allowed_groups': const [
+            {'id': 9, 'name': 'staff', 'full_name': '管理组', 'user_count': 12},
+            {'name': 'moderators'},
+          ],
+          'can_invite_to': true,
+        },
+      ),
+    );
+
+    expect(detail.allowedGroups, hasLength(2));
+    expect(detail.allowedGroups.first.id, 9);
+    expect(detail.allowedGroups.first.name, 'staff');
+    expect(detail.allowedGroups.first.displayName, '管理组');
+    expect(detail.allowedGroups.first.userCount, 12);
+    // 邀请群组后本地追加时只有名字，id 允许缺失
+    expect(detail.allowedGroups.last.id, isNull);
+    expect(detail.allowedGroups.last.displayName, 'moderators');
+    expect(detail.canInviteTo, isTrue);
+  });
+
   test('非私信或缺少权限字段时使用安全默认值', () {
     final detail = TopicDetail.fromJson({
       ..._topicJson(),
@@ -81,7 +106,9 @@ void main() {
 
     expect(detail.isPrivateMessage, isFalse);
     expect(detail.allowedUsers, isEmpty);
+    expect(detail.allowedGroups, isEmpty);
     expect(detail.canRemoveAllowedUsers, isFalse);
     expect(detail.canRemoveSelfId, isNull);
+    expect(detail.canInviteTo, isFalse);
   });
 }

@@ -66,6 +66,22 @@
       }
     }
   },
+  "topicDetail_removePrivateMessageGroupConfirm": "確定要將群組 {name} 移出此私信嗎？",
+  "@topicDetail_removePrivateMessageGroupConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removedPrivateMessageGroup": "已將群組 {name} 移出私信",
+  "@topicDetail_removedPrivateMessageGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已從浮窗移除",
   "topicDetail_replyLabel": "回覆",

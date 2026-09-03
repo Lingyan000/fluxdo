@@ -60,6 +60,22 @@
       }
     }
   },
+  "topicDetail_removePrivateMessageGroupConfirm": "Remove group {name} from this private message?",
+  "@topicDetail_removePrivateMessageGroupConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removedPrivateMessageGroup": "Removed group {name} from the private message",
+  "@topicDetail_removedPrivateMessageGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "topicDetail_removeFromReadLater": "Remove from float",
   "topicDetail_removeFromReadLaterSuccess": "Removed from float",
   "topicDetail_replyLabel": "Replies",

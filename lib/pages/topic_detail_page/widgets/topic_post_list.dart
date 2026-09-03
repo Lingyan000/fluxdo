@@ -61,7 +61,10 @@ class TopicPostList extends StatefulWidget {
   final int? highlightPostNumber;
   final bool isLoggedIn;
   final int? removingPrivateMessageParticipantId;
+  final String? removingPrivateMessageGroupName;
   final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
+  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
+  final VoidCallback? onInvitePrivateMessageParticipants;
   final bool hasMoreBefore;
   final bool hasMoreAfter;
 
@@ -145,7 +148,10 @@ class TopicPostList extends StatefulWidget {
     this.canAssignPost = false,
     required this.isLoggedIn,
     this.removingPrivateMessageParticipantId,
+    this.removingPrivateMessageGroupName,
     this.onRemovePrivateMessageParticipant,
+    this.onRemovePrivateMessageGroup,
+    this.onInvitePrivateMessageParticipants,
     required this.hasMoreBefore,
     required this.hasMoreAfter,
     required this.loadingPreviousListenable,
@@ -254,7 +260,10 @@ class _TopicPostListState extends State<TopicPostList> {
       location: location,
       detail: detail,
       removingParticipantId: widget.removingPrivateMessageParticipantId,
+      removingGroupName: widget.removingPrivateMessageGroupName,
       onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
+      onRemoveGroup: widget.onRemovePrivateMessageGroup,
+      onInvite: widget.onInvitePrivateMessageParticipants,
     );
   }
 

@@ -16,10 +16,15 @@ class PrivateMessageParticipants extends StatelessWidget {
     super.key,
     required this.location,
     required this.participants,
+    required this.groups,
     required this.canRemoveAllowedUsers,
     required this.removableSelfId,
+    required this.canInvite,
     required this.removingParticipantId,
+    required this.removingGroupName,
     required this.onRemoveParticipant,
+    required this.onRemoveGroup,
+    required this.onInvite,
   });
 
   /// 从话题详情装配面板;权限位直接取 details 原字段,避免各调用点
@@ -28,34 +33,59 @@ class PrivateMessageParticipants extends StatelessWidget {
     required PrivateMessageParticipantsLocation location,
     required TopicDetail detail,
     required int? removingParticipantId,
+    required String? removingGroupName,
     required ValueChanged<TopicUser>? onRemoveParticipant,
+    required ValueChanged<TopicGroup>? onRemoveGroup,
+    required VoidCallback? onInvite,
   }) {
     return PrivateMessageParticipants(
       key: ValueKey('pm-participants-${location.name}'),
       location: location,
       participants: detail.allowedUsers,
+      groups: detail.allowedGroups,
       canRemoveAllowedUsers: detail.canRemoveAllowedUsers,
       removableSelfId: detail.canRemoveSelfId,
+      canInvite: detail.canInviteTo,
       removingParticipantId: removingParticipantId,
+      removingGroupName: removingGroupName,
       onRemoveParticipant: onRemoveParticipant,
+      onRemoveGroup: onRemoveGroup,
+      onInvite: onInvite,
     );
   }
 
   final PrivateMessageParticipantsLocation location;
   final List<TopicUser> participants;
 
-  /// details.can_remove_allowed_users:可移除其他成员。
+  /// details.allowed_groups:群组收件人,官方面板排在用户之前。
+  final List<TopicGroup> groups;
+
+  /// details.can_remove_allowed_users:可移除其他成员/群组。
   final bool canRemoveAllowedUsers;
 
   /// details.can_remove_self_id:可退出私信,值恒为当前用户 id。
   final int? removableSelfId;
 
-  final int? removingParticipantId;
-  final ValueChanged<TopicUser>? onRemoveParticipant;
+  /// details.can_invite_to:可邀请新成员。
+  final bool canInvite;
 
-  /// 首楼面板门禁:私信且成员名单非空。
+  final int? removingParticipantId;
+  final String? removingGroupName;
+  final ValueChanged<TopicUser>? onRemoveParticipant;
+  final ValueChanged<TopicGroup>? onRemoveGroup;
+  final VoidCallback? onInvite;
+
+  /// 面板里有几个可展示的收件人条目(用户 + 群组)。
+  int get _entryCount => participants.length + groups.length;
+
+  /// 任一移除进行中:期间锁掉所有控件,避免并发提交。
+  bool get _controlsLocked =>
+      removingParticipantId != null || removingGroupName != null;
+
+  /// 首楼面板门禁:私信且收件人名单非空(群组私信可能一个 user 都没有)。
   static bool shouldShow(TopicDetail detail) =>
-      detail.isPrivateMessage && detail.allowedUsers.isNotEmpty;
+      detail.isPrivateMessage &&
+      (detail.allowedUsers.isNotEmpty || detail.allowedGroups.isNotEmpty);
 
   /// 底部面板门禁:再加楼层数下限 —— 短私信首楼已经有一块,底部
   /// 不必紧跟着再堆一块一模一样的(官方短话题也只出一处 topic map)。
@@ -64,9 +94,10 @@ class PrivateMessageParticipants extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (participants.isEmpty) return const SizedBox.shrink();
+    if (_entryCount == 0) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
+    final showInvite = canInvite && onInvite != null;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       padding: const EdgeInsets.all(12),
@@ -100,13 +131,28 @@ class PrivateMessageParticipants extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  '${participants.length}',
+                  '$_entryCount',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSecondaryContainer,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+              if (showInvite) ...[
+                const Spacer(),
+                IconButton(
+                  key: ValueKey('pm-participants-${location.name}-invite'),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  tooltip: context.l10n.pm_inviteParticipants,
+                  onPressed: _controlsLocked ? null : onInvite,
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -114,10 +160,93 @@ class PrivateMessageParticipants extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              // 群组排在用户之前，对齐官方 private-message-map 的渲染顺序。
+              for (final group in groups) _buildGroup(context, group),
               for (final participant in participants)
                 _buildParticipant(context, participant),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 群组条目:官方 PmMapUserGroup 只认 canRemoveAllowedUsers,
+  /// 群组没有「退出」语义(自己不在名单里)。
+  Widget _buildGroup(BuildContext context, TopicGroup group) {
+    final theme = Theme.of(context);
+    final canRemove = onRemoveGroup != null && canRemoveAllowedUsers;
+    final isRemoving = removingGroupName == group.name;
+    final showFullName = group.displayName != group.name;
+
+    return Container(
+      key: ValueKey('pm-group-${location.name}-${group.name}'),
+      constraints: const BoxConstraints(maxWidth: 240),
+      padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: theme.colorScheme.secondaryContainer,
+            child: Icon(
+              Icons.group_rounded,
+              size: 16,
+              color: theme.colorScheme.onSecondaryContainer,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge,
+                ),
+                if (showFullName)
+                  Text(
+                    group.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (canRemove) ...[
+            const SizedBox(width: 4),
+            SizedBox.square(
+              dimension: 32,
+              child: isRemoving
+                  ? const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : IconButton(
+                      key: ValueKey(
+                        'pm-group-${location.name}-remove-${group.name}',
+                      ),
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      tooltip: context.l10n.common_remove,
+                      color: theme.colorScheme.error,
+                      onPressed: _controlsLocked
+                          ? null
+                          : () => onRemoveGroup!(group),
+                      icon: const Icon(Icons.group_remove_rounded, size: 18),
+                    ),
+            ),
+          ],
         ],
       ),
     );
@@ -133,7 +262,6 @@ class PrivateMessageParticipants extends StatelessWidget {
     final canRemove =
         onRemoveParticipant != null && (canRemoveAllowedUsers || isSelf);
     final isRemoving = removingParticipantId == participant.id;
-    final controlsLocked = removingParticipantId != null;
     final showUsername = participant.displayName != participant.username;
 
     return Container(
@@ -195,7 +323,7 @@ class PrivateMessageParticipants extends StatelessWidget {
                           ? context.l10n.common_exit
                           : context.l10n.common_remove,
                       color: theme.colorScheme.error,
-                      onPressed: controlsLocked
+                      onPressed: _controlsLocked
                           ? null
                           : () => onRemoveParticipant!(participant),
                       icon: Icon(

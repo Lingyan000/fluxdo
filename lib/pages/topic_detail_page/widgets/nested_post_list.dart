@@ -26,7 +26,10 @@ class NestedPostList extends ConsumerStatefulWidget {
   final GlobalKey headerKey;
   final bool isLoggedIn;
   final int? removingPrivateMessageParticipantId;
+  final String? removingPrivateMessageGroupName;
   final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
+  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
+  final VoidCallback? onInvitePrivateMessageParticipants;
   final void Function(Post? replyToPost, {String? initialContent}) onReply;
   final void Function(Post post) onEdit;
   final void Function(int postId) onRefreshPost;
@@ -62,7 +65,10 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.headerKey,
     required this.isLoggedIn,
     this.removingPrivateMessageParticipantId,
+    this.removingPrivateMessageGroupName,
     this.onRemovePrivateMessageParticipant,
+    this.onRemovePrivateMessageGroup,
+    this.onInvitePrivateMessageParticipants,
     required this.onReply,
     required this.onEdit,
     required this.onRefreshPost,
@@ -194,7 +200,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       location: location,
       detail: widget.detail,
       removingParticipantId: widget.removingPrivateMessageParticipantId,
+      removingGroupName: widget.removingPrivateMessageGroupName,
       onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
+      onRemoveGroup: widget.onRemovePrivateMessageGroup,
+      onInvite: widget.onInvitePrivateMessageParticipants,
     );
   }
 

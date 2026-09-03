@@ -251,6 +251,40 @@ class TopicUser {
       : null;
 }
 
+/// 私信收件人里的群组（details.allowed_groups，BasicGroupSerializer）。
+///
+/// `id` 允许为空：邀请群组的接口只回 success_json，本地追加时手上只有
+/// 名字；而移除群组（remove-allowed-group）与展示都只用 [name]，id 仅
+/// 用于跳转群组页，缺了不影响成员管理。
+class TopicGroup {
+  final int? id;
+  final String name;
+  final String? fullName;
+  final int? userCount;
+
+  const TopicGroup({
+    this.id,
+    required this.name,
+    this.fullName,
+    this.userCount,
+  });
+
+  /// 显示名:优先全名,空则回退群组名
+  String get displayName {
+    final n = fullName?.trim();
+    return (n != null && n.isNotEmpty) ? n : name;
+  }
+
+  factory TopicGroup.fromJson(Map<String, dynamic> json) {
+    return TopicGroup(
+      id: (json['id'] as num?)?.toInt(),
+      name: json['name'] as String? ?? '',
+      fullName: json['full_name'] as String?,
+      userCount: (json['user_count'] as num?)?.toInt(),
+    );
+  }
+}
+
 /// 话题海报（参与者）信息
 class TopicPoster {
   final int userId;
@@ -1823,8 +1857,10 @@ class TopicDetail {
 
   // 私信成员与移除权限（来自 details）
   final List<TopicUser> allowedUsers;
+  final List<TopicGroup> allowedGroups;
   final bool canRemoveAllowedUsers;
   final int? canRemoveSelfId;
+  final bool canInviteTo;
 
   // 话题书签相关
   final bool bookmarked; // 话题是否已被书签（Topic 级别）
@@ -1904,8 +1940,10 @@ class TopicDetail {
     this.isPostVoting = false,
     this.canEdit = false,
     this.allowedUsers = const [],
+    this.allowedGroups = const [],
     this.canRemoveAllowedUsers = false,
     this.canRemoveSelfId,
+    this.canInviteTo = false,
     this.bookmarked = false,
     this.bookmarkId,
     this.bookmarkName,
@@ -2096,8 +2134,13 @@ class TopicDetail {
           .whereType<Map>()
           .map((user) => TopicUser.fromJson(Map<String, dynamic>.from(user)))
           .toList(growable: false),
+      allowedGroups: (details['allowed_groups'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((group) => TopicGroup.fromJson(Map<String, dynamic>.from(group)))
+          .toList(growable: false),
       canRemoveAllowedUsers: details['can_remove_allowed_users'] == true,
       canRemoveSelfId: (details['can_remove_self_id'] as num?)?.toInt(),
+      canInviteTo: details['can_invite_to'] == true,
       bookmarked: topicBookmarked,
       bookmarkId: topicBookmarkId,
       bookmarkName: topicBookmarkName,
@@ -2213,9 +2256,11 @@ class TopicDetail {
     bool? isPostVoting,
     bool? canEdit,
     List<TopicUser>? allowedUsers,
+    List<TopicGroup>? allowedGroups,
     bool? canRemoveAllowedUsers,
     int? canRemoveSelfId,
     bool clearCanRemoveSelfId = false,
+    bool? canInviteTo,
     bool? bookmarked,
     int? bookmarkId,
     bool clearBookmarkId = false,
@@ -2262,11 +2307,13 @@ class TopicDetail {
       isPostVoting: isPostVoting ?? this.isPostVoting,
       canEdit: canEdit ?? this.canEdit,
       allowedUsers: allowedUsers ?? this.allowedUsers,
+      allowedGroups: allowedGroups ?? this.allowedGroups,
       canRemoveAllowedUsers:
           canRemoveAllowedUsers ?? this.canRemoveAllowedUsers,
       canRemoveSelfId: clearCanRemoveSelfId
           ? null
           : (canRemoveSelfId ?? this.canRemoveSelfId),
+      canInviteTo: canInviteTo ?? this.canInviteTo,
       bookmarked: bookmarked ?? this.bookmarked,
       bookmarkId: clearBookmarkId ? null : (bookmarkId ?? this.bookmarkId),
       bookmarkName: clearBookmarkName
