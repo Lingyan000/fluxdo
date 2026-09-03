@@ -62,7 +62,26 @@
   },
   "export_fetchPostsFailed": "获取帖子数据失败",
   "export_firstPostOnly": "仅主帖",
-  "export_format": "导出格式",
+  "export_format": "文件格式",
+  "export_deliverTitle": "导出到",
+  "export_deliverSave": "保存到文件",
+  "export_deliverSaveDescDesktop": "选择保存位置",
+  "export_deliverSaveDescMobile": "保存到系统「下载」目录",
+  "export_deliverSaveAs": "另存为…",
+  "export_deliverSaveAsDesc": "自己选保存位置",
+  "export_deliverShare": "分享",
+  "export_deliverShareDesc": "通过系统分享面板发送",
+  "export_deliverNotion": "同步到 Notion",
+  "export_deliverNotionDesc": "创建为 Notion 页面",
+  "export_deliverNotionUnconfigured": "尚未配置，点击前往设置",
+  "export_savedAs": "已保存: {name}",
+  "@export_savedAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "export_markdownLimit": "Markdown 格式最多导出前 {max} 条帖子",
   "@export_markdownLimit": {
     "placeholders": {
@@ -78,6 +97,8 @@
   "exportHistory_empty": "暂无导出记录",
   "exportHistory_filterAll": "全部",
   "exportHistory_fileNotFound": "文件已不存在",
+  "exportHistory_openFailed": "没有可以打开该文件的应用",
+  "exportHistory_sharedNoFile": "这条是分享出去的，本地没有保存文件",
   "exportHistory_revealInFolder": "打开所在文件夹",
   "exportHistory_openFile": "打开文件",
   "exportHistory_openInBrowser": "在浏览器中打开",
@@ -111,8 +132,8 @@
   "share_loadingPost": "正在加载帖子...",
   "share_replyToTopic": "回复话题",
   "share_saveFailed": "保存失败，请重试",
-  "share_savePermissionDenied": "保存失败，请授予相册权限",
   "share_saveToGallery": "保存到相册",
+  "share_saveImageToFile": "保存图片",
   "share_fileSaved": "文件已保存",
   "share_selectSaveLocation": "选择保存位置",
   "share_screenshotFailed": "截图失败",

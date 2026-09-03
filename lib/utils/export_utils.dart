@@ -1,7 +1,6 @@
-import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../l10n/s.dart';
 import '../models/topic.dart';
 import '../services/discourse/discourse_service.dart';
@@ -26,25 +25,42 @@ enum ExportFormat {
   final String extension;
 }
 
+/// 导出产物的去向
+enum ExportDelivery {
+  /// 落地保存到本机的公共位置（桌面另存为 / Android 公共「下载」目录 /
+  /// iOS 应用 Documents）
+  save,
+
+  /// 让用户自己挑位置（Android SAF 建档 / iOS 导出面板）
+  saveAs,
+
+  /// 走系统分享面板发送
+  share,
+}
+
 /// 导出结果。
 ///
 /// [postCount] 实际导出的帖子数。
 /// [byteSize] 生成文件的字节数。
-/// [shared] 用户是否完成了分享/保存（移动端 SharePlus 不暴露目的地，
-/// 所以这里只能反映"是否进入分享流程"；桌面端反映"是否选择了保存位置"）。
-/// [finalPath] 桌面端为用户保存的最终路径；移动端为 null。
+/// [shared] 是否完成了这次去向（保存反映"是否真的落盘"，分享只能反映
+/// "是否进入分享流程"——移动端 SharePlus 不暴露目的地）。
+/// [finalPath] 保存时为文件的最终引用（Android 公共目录下是 content uri，
+/// 见 [ShareOutcome.isContentUri]）；分享时为临时文件路径；无法回传时为 null。
+/// [displayName] 落盘后的文件名，仅用于提示文案。
 class ExportResult {
   const ExportResult({
     required this.postCount,
     required this.byteSize,
     required this.shared,
     this.finalPath,
+    this.displayName,
   });
 
   final int postCount;
   final int byteSize;
   final bool shared;
   final String? finalPath;
+  final String? displayName;
 }
 
 /// 导出工具类
@@ -66,12 +82,14 @@ class ExportUtils {
   /// [detail] - 话题详情（包含 postStream.stream 全部帖子 ID）
   /// [scope] - 导出范围
   /// [format] - 导出格式
+  /// [delivery] - 产物去向（保存到本机 / 系统分享）
   /// [onProgress] - 进度回调 (current, total)
   /// 返回 [ExportResult]，包含产物大小、最终路径及是否完成分享。
   static Future<ExportResult> exportTopic({
     required TopicDetail detail,
     required ExportScope scope,
     required ExportFormat format,
+    required ExportDelivery delivery,
     void Function(int current, int total)? onProgress,
   }) async {
     // 获取需要导出的帖子 ID 列表
@@ -117,12 +135,18 @@ class ExportUtils {
         break;
     }
 
-    final outcome = await _shareAsFile(content, detail.title, format.extension);
+    final outcome = await _deliverAsFile(
+      content,
+      detail.title,
+      format.extension,
+      delivery,
+    );
     return ExportResult(
       postCount: posts.length,
       byteSize: outcome.byteSize,
       shared: outcome.shared,
       finalPath: outcome.finalPath,
+      displayName: outcome.displayName,
     );
   }
 
@@ -282,16 +306,18 @@ class ExportUtils {
     return buffer.toString();
   }
 
-  /// 写入临时文件并触发分享/保存。返回 [_ShareOutcomeInternal]，
-  /// 其中 [_ShareOutcomeInternal.byteSize] 是产物体积。
-  static Future<_ShareOutcomeInternal> _shareAsFile(
+  /// 写入临时文件并按 [delivery] 分发（落地保存或系统分享）。
+  /// 返回 [_ShareOutcomeInternal]，其中 [_ShareOutcomeInternal.byteSize]
+  /// 是产物体积。
+  static Future<_ShareOutcomeInternal> _deliverAsFile(
     String content,
     String title,
     String extension,
+    ExportDelivery delivery,
   ) async {
-    final tempDir = await getTemporaryDirectory();
     final safeName = _sanitizeFilename(title);
-    final file = File('${tempDir.path}/$safeName.$extension');
+    // 走统一的「待送出」目录：分享面板看到的仍是可读文件名，过期件由它自清理
+    final file = await ShareUtils.createOutboxFile('$safeName.$extension');
     await file.writeAsString(content);
     final byteSize = await file.length();
 
@@ -302,12 +328,18 @@ class ExportUtils {
     };
 
     final xFile = XFile(file.path, mimeType: mimeType);
-    final outcome = await ShareUtils.shareOrSaveFile(xFile);
+    final outcome = switch (delivery) {
+      ExportDelivery.save => await ShareUtils.saveFile(xFile),
+      ExportDelivery.saveAs => await ShareUtils.saveFileAs(xFile),
+      ExportDelivery.share => await ShareUtils.shareFile(xFile),
+    };
     return _ShareOutcomeInternal(
       shared: outcome.shared,
-      // 桌面端拿到用户选的最终路径；移动端 SharePlus 无法回传，
-      // 退而求其次记录临时文件路径——下次点击仍可能命中（temp 目录被系统清空前）。
+      // 保存时是最终落点（Android 公共目录下为 content uri）；分享 / iOS 另存为
+      // 无法回传目的地，退而求其次记录临时文件路径——同一份内容，下次点击仍
+      // 可能命中（temp 目录被系统清空前）。
       finalPath: outcome.finalPath ?? file.path,
+      displayName: outcome.displayName ?? p.basename(file.path),
       byteSize: byteSize,
     );
   }
@@ -760,10 +792,12 @@ class _ShareOutcomeInternal {
   const _ShareOutcomeInternal({
     required this.shared,
     required this.finalPath,
+    required this.displayName,
     required this.byteSize,
   });
 
   final bool shared;
   final String finalPath;
+  final String displayName;
   final int byteSize;
 }

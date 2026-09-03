@@ -61,7 +61,6 @@
   "preferences_topicFilterWholeWordDesc": "開啟後英文關鍵詞不再匹配子串，如 ai 不會命中 Main thread；中文關鍵詞無影響",
   "preferences_blockedUsernames": "本機封鎖用戶",
   "preferences_blockedUsernamesDesc": "在本機隱藏這些用戶發表的話題、回覆與 Boost；名單不會同步到 Linux.do",
-  "preferences_blockedUsernamesEmpty": "未封鎖任何用戶",
   "preferences_blockedUsernamesCount": "已封鎖 {count} 位用戶",
   "@preferences_blockedUsernamesCount": {
     "placeholders": {
@@ -70,6 +69,8 @@
   },
   "preferences_blockedUsernamesHint": "輸入用戶名後按 Enter 新增",
   "preferences_blockedUsernamesHelper": "無需輸入 @；用戶名精確匹配，不區分大小寫；不會調用 Discourse 的忽略功能",
+  "preferences_showFilterHint": "顯示過濾提示",
+  "preferences_showFilterHintDesc": "話題列表頂部顯示被關鍵詞或封鎖名單隱藏的數量",
   "preferences_autoPanguSpacing": "自動混排優化",
   "preferences_autoPanguSpacingDesc": "輸入時自動插入中英文混排空格",
   "preferences_useRichComposer": "富文本編輯器(實驗性)",

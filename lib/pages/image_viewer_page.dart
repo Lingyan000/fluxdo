@@ -6,13 +6,13 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
-import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
+import '../utils/image_save_utils.dart';
 import '../utils/screenshot_utils.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
@@ -131,6 +131,22 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     required bool coverSource,
     required bool zoomed,
   }) => coverSource || zoomed;
+
+  /// 初始页缩略图选择规则。公开给测试，避免回归成画廊汇总 URL 覆盖
+  /// 点击入口实际显示 URL 的旧行为。
+  @visibleForTesting
+  static String? debugThumbnailUrlForIndex({
+    required int index,
+    required int initialIndex,
+    String? thumbnailUrl,
+    List<String>? thumbnailUrls,
+  }) {
+    if (index == initialIndex && thumbnailUrl != null) return thumbnailUrl;
+    if (thumbnailUrls != null && index < thumbnailUrls.length) {
+      return thumbnailUrls[index];
+    }
+    return null;
+  }
 
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
@@ -308,7 +324,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   ModalRoute<dynamic>? _route;
   ValueListenable<bool>? _navUserGesture;
 
-
   ImageGestureController _obtainGestureController(
     int index, {
     required bool inPageView,
@@ -389,9 +404,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               //
               // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
               // 比例在变,插值反而引入不必要的窗口动画。
-              final zoomed = HeroVisibilityController
-                      .instance.exitVisibleFraction !=
-                  null;
+              final zoomed =
+                  HeroVisibilityController.instance.exitVisibleFraction != null;
               // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
               // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
               final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
@@ -404,8 +418,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               // CoverContainFlightImage.sourceAspect)。
               final BuildContext srcContext =
                   direction == HeroFlightDirection.pop
-                      ? toContext
-                      : fromContext;
+                  ? toContext
+                  : fromContext;
               double? sourceAspect;
               final ro = srcContext.findRenderObject();
               if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
@@ -413,8 +427,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               }
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
-                animation:
-                    needsProgress ? animation : kAlwaysCompleteAnimation,
+                animation: needsProgress ? animation : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
                 // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
@@ -721,9 +734,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       preloadUrls.add(images[currentIndex + 1]);
     }
     for (final url in preloadUrls) {
-      unawaited(
-        BlobImageCache.precache(BlobImageCache.originalBucket, url),
-      );
+      unawaited(BlobImageCache.precache(BlobImageCache.originalBucket, url));
     }
   }
 
@@ -741,25 +752,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     return null;
   }
 
-  /// 保存当前图片到相册
+  /// 保存当前图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveCurrentImage() async {
     if (_isSaving) return;
 
     setState(() => _isSaving = true);
 
     try {
-      // 检查权限
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        final granted = await Gal.requestAccess();
-        if (!granted) {
-          if (mounted) {
-            ToastService.showInfo(S.current.imageViewer_grantPermission);
-          }
-          return;
-        }
-      }
-
       // 使用缓存管理器获取图片字节（优先从缓存读取）
       final imageUrl = _currentImageUrl;
       final Uint8List imageBytes = await BlobImageCache.fetch(
@@ -771,22 +770,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         throw Exception(S.current.image_fetchFailed);
       }
 
-      // 使用 putImageBytes 直接保存字节数据到相册;命名与分享同口径
-      // (原始文件名优先,回退时间戳)。
+      // 命名与分享同口径（原始文件名优先，回退时间戳）；
+      // 落点与提示由 ImageSaveUtils 按平台统一处理。
       final ext = BlobImageCache.httpUrlExtension(imageUrl);
-      final name = ShareUtils.safeFileBaseName(_currentFilename) ??
+      final name =
+          ShareUtils.safeFileBaseName(_currentFilename) ??
           'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
-      await Gal.putImageBytes(imageBytes, name: '$name.$ext');
-
-      if (mounted) {
-        ToastService.showSuccess(S.current.imageViewer_imageSaved);
-      }
-    } on GalException catch (e) {
-      if (mounted) {
-        ToastService.showError(
-          S.current.imageViewer_saveFailed(e.type.message),
-        );
-      }
+      await ImageSaveUtils.saveBytes(imageBytes, fileName: '$name.$ext');
     } catch (e) {
       debugPrint('Save image error: $e');
       if (mounted) {
@@ -799,27 +789,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 保存内存图片到相册
+  /// 保存内存图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveMemoryImage() async {
     if (_isSaving || widget.imageBytes == null) return;
     setState(() => _isSaving = true);
     try {
-      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
-      if (!hasAccess) {
-        if (mounted) {
-          ToastService.showInfo(S.current.imageViewer_grantPermission);
-        }
-        return;
-      }
-      await Gal.putImageBytes(
+      await ImageSaveUtils.saveBytes(
         widget.imageBytes!,
-        name: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
+        fileName: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
       );
-      if (mounted) ToastService.showSuccess(S.current.imageViewer_imageSaved);
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.imageViewer_saveFailedRetry);
-      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -878,7 +856,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               value: 'save',
               child: _BytesMenuRow(
                 icon: Symbols.save_alt_rounded,
-                label: S.current.share_saveToGallery,
+                label: ImageSaveUtils.actionLabel,
               ),
             ),
             PopupMenuItem(
@@ -888,13 +866,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 label: S.current.image_copyImage,
               ),
             ),
-            PopupMenuItem(
-              value: 'share',
-              child: _BytesMenuRow(
-                icon: Symbols.share_rounded,
-                label: S.current.common_shareImage,
+            // Linux 上 share_plus 不支持分享文件,隐藏该项
+            if (ShareUtils.canShareFiles)
+              PopupMenuItem(
+                value: 'share',
+                child: _BytesMenuRow(
+                  icon: Symbols.share_rounded,
+                  label: S.current.common_shareImage,
+                ),
               ),
-            ),
           ],
         ).then((value) {
           switch (value) {
@@ -919,7 +899,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           children: [
             ListTile(
               leading: const Icon(Symbols.save_alt_rounded),
-              title: Text(S.current.share_saveToGallery),
+              title: Text(ImageSaveUtils.actionLabel),
               onTap: () {
                 Navigator.pop(ctx);
                 _saveMemoryImage();
@@ -933,14 +913,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 _copyMemoryImage();
               },
             ),
-            ListTile(
-              leading: const Icon(Symbols.share_rounded),
-              title: Text(S.current.common_shareImage),
-              onTap: () {
-                Navigator.pop(ctx);
-                _shareMemoryImage();
-              },
-            ),
+            if (ShareUtils.canShareFiles)
+              ListTile(
+                leading: const Icon(Symbols.share_rounded),
+                title: Text(S.current.common_shareImage),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _shareMemoryImage();
+                },
+              ),
           ],
         );
       },
@@ -1015,8 +996,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             slideAxis: SlideAxis.both,
             slideType: SlideType.onlyImage,
             slideEndHandler: (offset, {required state, required details}) =>
-                _slideShouldPop(offset, details, state.pageSize,
-                    SlideAxis.both),
+                _slideShouldPop(
+                  offset,
+                  details,
+                  state.pageSize,
+                  SlideAxis.both,
+                ),
             slidePageBackgroundHandler: (Offset offset, Size pageSize) {
               double progress = offset.distance / (pageSize.height);
               return Colors.black.withValues(
@@ -1144,8 +1129,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           slideAxis: SlideAxis.vertical, // 仅垂直滑动关闭，避免与左右切换图片冲突
           slideType: SlideType.onlyImage,
           slideEndHandler: (offset, {required state, required details}) =>
-              _slideShouldPop(offset, details, state.pageSize,
-                  SlideAxis.vertical),
+              _slideShouldPop(
+                offset,
+                details,
+                state.pageSize,
+                SlideAxis.vertical,
+              ),
           // 只处理背景透明度，不干预关闭逻辑，让库自己处理 pop
           slidePageBackgroundHandler: (Offset offset, Size pageSize) {
             // 使用垂直偏移量计算背景透明度（与 slideAxis: vertical 匹配）
@@ -1169,9 +1158,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     ),
                     child: GestureImageView(
                       image: _clampedViewerProvider(widget.imageUrl!),
-                      placeholder:
-                          (widget.thumbnailUrl != null &&
-                              widget.thumbnailUrl != widget.imageUrl)
+                      // 即使缩略图 URL 与原图 URL 相同也要传：两者分别走
+                      // content/original bucket，且源页面已经把 content 版本
+                      // 解码进缓存。旧代码按 URL 相等直接丢掉占位，弱网下只剩
+                      // 空黑画布等待 original bucket 下载。
+                      placeholder: widget.thumbnailUrl != null
                           ? _thumbnailProvider(widget.thumbnailUrl!)
                           : null,
                       controller: _obtainGestureController(
@@ -1203,6 +1194,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       },
                       failedBuilder: (context, _) =>
                           _buildSvgFallback(widget.imageUrl!),
+                      progressBuilder: _buildImageLoadingProgress,
                     ),
                   )
                 else
@@ -1263,7 +1255,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
                             return GestureImageView(
                               image: _clampedViewerProvider(url),
-                              placeholder: (thumbUrl != null && thumbUrl != url)
+                              placeholder: thumbUrl != null
                                   ? _thumbnailProvider(thumbUrl)
                                   : null,
                               controller: _obtainGestureController(
@@ -1296,8 +1288,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                               },
                               failedBuilder: (context, _) =>
                                   _buildSvgFallback(url),
-                              loadingBuilder: (context) =>
-                                  const Center(child: LoadingSpinner()),
+                              progressBuilder: _buildImageLoadingProgress,
                             );
                           },
                         );
@@ -1403,8 +1394,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                           ),
                         ),
 
-                        // Share button
-                        if (widget.enableShare)
+                        // Share button（Linux 上 share_plus 不支持分享文件）
+                        if (widget.enableShare && ShareUtils.canShareFiles)
                           Positioned(
                             top: MediaQuery.of(context).padding.top + 10,
                             left: 70, // 保存按钮右侧 (20 + 40 + 10)
@@ -1479,15 +1470,52 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 获取指定索引的缩略图 URL
-  String? _getThumbnailForIndex(int index) {
-    if (widget.thumbnailUrls != null && index < widget.thumbnailUrls!.length) {
-      return widget.thumbnailUrls![index];
-    } else if (index == widget.initialIndex && widget.thumbnailUrl != null) {
-      return widget.thumbnailUrl;
-    }
-    return null;
+  /// 原图下载进度：服务端给出 Content-Length 时显示确定进度，否则显示
+  /// 不定态。M3eCircularProgress 内部读取全局 M3E 开关，开启时为波浪环，
+  /// 关闭时自动回退经典 CircularProgressIndicator。
+  Widget _buildImageLoadingProgress(
+    BuildContext context,
+    ImageChunkEvent? event,
+  ) {
+    final total = event?.expectedTotalBytes;
+    final value = total != null && total > 0
+        ? (event!.cumulativeBytesLoaded / total).clamp(0.0, 1.0)
+        : null;
+    return Center(
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0x66000000),
+          shape: BoxShape.circle,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: M3eCircularProgress(
+            value: value,
+            size: 32,
+            strokeWidth: 3,
+            color: Colors.white,
+            trackColor: Colors.white24,
+          ),
+        ),
+      ),
+    );
   }
+
+  /// 获取指定索引的缩略图 URL。
+  ///
+  /// 初始页必须优先使用点击入口显式传入的 [ImageViewerPage.thumbnailUrl]：
+  /// 它是源端当下真正显示的 srcset 档位 URL，且对应位图已在 ImageCache。
+  /// [ImageViewerPage.thumbnailUrls] 来自全帖画廊汇总，可能仍是 cooked 的
+  /// 默认 src，和当前源端按 DPR 选出的 srcset URL 不同；旧顺序在画廊模式
+  /// 会覆盖掉正确 URL，导致查看器重新下载另一个“缩略图”，于是先黑很久，
+  /// 下载完才显示缩略图。
+  String? _getThumbnailForIndex(int index) =>
+      ImageViewerPage.debugThumbnailUrlForIndex(
+        index: index,
+        initialIndex: widget.initialIndex,
+        thumbnailUrl: widget.thumbnailUrl,
+        thumbnailUrls: widget.thumbnailUrls,
+      );
 
   /// 构建图片解码 fallback 组件（SVG / AVIF）
   Widget _buildSvgFallback(String imageUrl) {

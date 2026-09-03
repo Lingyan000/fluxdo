@@ -22,6 +22,12 @@ import workmanager_apple
       MediaTranscodeHandler.shared.register(
         messenger: controller.binaryMessenger
       )
+      // 文件导出通道(UIDocumentPicker「另存为」,直接交文件 URL 给系统拷贝,
+      // 不必像 file_picker 那样把整份文件读成 bytes 过 Dart)
+      PublicFileHandler.shared.register(
+        messenger: controller.binaryMessenger,
+        viewController: controller
+      )
       // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
       let proxyCertChannel = FlutterMethodChannel(
         name: "com.fluxdo/proxy_cert",

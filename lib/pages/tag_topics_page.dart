@@ -412,6 +412,9 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
+    final showFilterHint = ref.watch(
+      preferencesProvider.select((p) => p.showFilterHint),
+    );
     // 话题卡自定义样式:改设置触发 rebuild(自绘排版直读全局快照)
     ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
     _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
@@ -421,7 +424,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
       wholeWord: wholeWord,
       blockedUsernames: blockedUsernames,
     );
-    final hintOffset = hidden > 0 ? 1 : 0;
+    final hintOffset = (showFilterHint && hidden > 0) ? 1 : 0;
 
     return TopicCardPrewarmScope(
       topics: visible,

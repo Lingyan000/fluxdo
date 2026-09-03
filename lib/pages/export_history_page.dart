@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/s.dart';
 import '../providers/export_history_provider.dart';
+import '../services/public_file_channel.dart';
 import '../services/toast_service.dart';
 import 'package:common_ui/common_ui.dart';
 import '../storage/export_history_dao.dart';
@@ -19,6 +20,7 @@ import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
 import '../utils/share_utils.dart';
 import '../utils/time_utils.dart';
+import '../widgets/common/app_bottom_sheet.dart';
 
 /// 导出历史页面：列出当前账号所有导出/同步记录。
 class ExportHistoryPage extends ConsumerStatefulWidget {
@@ -79,12 +81,99 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
                     child: _ExportEntryCard(
                       entry: entry,
                       onTap: () => _handleTap(entry),
+                      onLongPress: () => _showEntryActions(entry),
                     ),
                   );
                 },
               ),
             ),
     );
+  }
+
+  /// 长按菜单：动作按条目自身能力派生，不写死平台/类型清单。
+  ///
+  /// - Notion 条目 → 在浏览器打开
+  /// - 本地文件 → 打开文件；桌面还能定位到所在文件夹；能拿到真实路径时可再次
+  ///   分享（Android 公共目录/另存为拿到的是 content uri，share_plus 分享不了，
+  ///   所以那种条目没有这一项）
+  /// - 分享出去的条目 → 没有本地副本，只有删除
+  Future<void> _showEntryActions(ExportHistoryEntry entry) async {
+    final isNotion = entry.targetType == ExportHistoryTarget.notion;
+    final ref0 = entry.targetRef;
+    final isUri = ref0.startsWith('content://');
+    final hasLocalFile =
+        entry.targetType == ExportHistoryTarget.localFile && ref0.isNotEmpty;
+    final fileExists = hasLocalFile && (isUri || File(ref0).existsSync());
+
+    final actions = <(String, IconData, String)>[
+      if (isNotion && ref0.isNotEmpty)
+        ('open', Symbols.public_rounded, S.current.exportHistory_openInBrowser),
+      if (fileExists)
+        ('open', Symbols.file_open_rounded, S.current.exportHistory_openFile),
+      if (fileExists && !isUri && PlatformUtils.isDesktop)
+        (
+          'reveal',
+          Symbols.folder_open_rounded,
+          S.current.exportHistory_revealInFolder,
+        ),
+      // content uri 走原生 ACTION_SEND，本地路径走 share_plus
+      if (fileExists && (isUri || ShareUtils.canShareFiles))
+        ('share', Symbols.share_rounded, S.current.exportHistory_shareAgain),
+      (
+        'delete',
+        Symbols.delete_rounded,
+        S.current.exportHistory_deleteRecord,
+      ),
+    ];
+
+    await AppBottomSheet.show<void>(
+      context: context,
+      contentPadding: EdgeInsets.zero,
+      title: entry.sourceTitle.isEmpty
+          ? '#${entry.sourceTopicId}'
+          : entry.sourceTitle,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (id, icon, label) in actions)
+            ListTile(
+              leading: Icon(
+                icon,
+                color: id == 'delete'
+                    ? Theme.of(ctx).colorScheme.error
+                    : null,
+              ),
+              title: Text(
+                label,
+                style: id == 'delete'
+                    ? TextStyle(color: Theme.of(ctx).colorScheme.error)
+                    : null,
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _runEntryAction(id, entry);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runEntryAction(String id, ExportHistoryEntry entry) async {
+    switch (id) {
+      case 'open':
+        await _handleTap(entry);
+      case 'reveal':
+        await _revealInFolder(entry.targetRef);
+      case 'share':
+        if (PublicFileChannel.isContentUri(entry.targetRef)) {
+          await PublicFileChannel.shareUri(entry.targetRef);
+        } else {
+          await ShareUtils.shareFile(XFile(entry.targetRef));
+        }
+      case 'delete':
+        ref.read(exportHistoryProvider.notifier).remove(entry.id);
+    }
   }
 
   Future<void> _handleTap(ExportHistoryEntry entry) async {
@@ -97,12 +186,34 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
       case ExportHistoryTarget.localFile:
         await _handleLocalFile(entry);
         break;
+      case ExportHistoryTarget.shared:
+        // 分享出去的没有本地副本可打开，说清楚而不是报「文件已不存在」
+        ToastService.showInfo(S.current.exportHistory_sharedNoFile);
+        break;
     }
   }
 
   Future<void> _handleLocalFile(ExportHistoryEntry entry) async {
     final path = entry.targetRef;
-    if (path.isEmpty || !File(path).existsSync()) {
+    if (path.isEmpty) {
+      ToastService.showError(S.current.exportHistory_fileNotFound);
+      return;
+    }
+    // Android 落公共目录 / SAF 另存为拿到的是 content uri，不能用 File 判断
+    // 存在性，也不能交给 OpenFilex，只能让系统按 uri 授权打开。
+    if (path.startsWith('content://')) {
+      // 落盘时没写 MIME_TYPE（避免 MediaStore 改扩展名），这里按格式补一个
+      // 系统认得的类型，否则 ACTION_VIEW 匹配不到任何应用。
+      final mime = entry.format == ExportHistoryFormat.html
+          ? 'text/html'
+          : 'text/plain';
+      final opened = await PublicFileChannel.openUri(path, mimeType: mime);
+      if (!opened && mounted) {
+        ToastService.showError(S.current.exportHistory_openFailed);
+      }
+      return;
+    }
+    if (!File(path).existsSync()) {
       ToastService.showError(S.current.exportHistory_fileNotFound);
       return;
     }
@@ -112,7 +223,7 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
     }
     final result = await OpenFilex.open(path);
     if (result.type != ResultType.done && mounted) {
-      await ShareUtils.shareOrSaveFile(XFile(path));
+      ToastService.showError(S.current.exportHistory_openFailed);
     }
   }
 
@@ -265,10 +376,15 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ExportEntryCard extends StatelessWidget {
-  const _ExportEntryCard({required this.entry, required this.onTap});
+  const _ExportEntryCard({
+    required this.entry,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final ExportHistoryEntry entry;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   static const _kFormatBlue = Color(0xFF3B82F6);
   static const _kFormatOrange = Color(0xFFF97316);
@@ -286,6 +402,7 @@ class _ExportEntryCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           child: Row(
@@ -393,9 +510,10 @@ class _ExportEntryCard extends StatelessWidget {
 
   IconData get _trailingIcon => switch (entry.targetType) {
     ExportHistoryTarget.notion => Symbols.north_east_rounded,
+    ExportHistoryTarget.shared => Symbols.share_rounded,
     ExportHistoryTarget.localFile => PlatformUtils.isDesktop
         ? Symbols.folder_open_rounded
-        : Symbols.ios_share_rounded,
+        : Symbols.file_open_rounded,
   };
 
   String _formatSize(int bytes) {

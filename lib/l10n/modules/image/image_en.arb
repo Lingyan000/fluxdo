@@ -81,7 +81,6 @@
   "imageUpload_totalOriginalSize": "Total size: {size}",
   "imageUpload_uploadCount": "Upload {count}",
   "imageViewer_grantPermission": "Please grant gallery permission",
-  "imageViewer_imageSaved": "Image saved to gallery",
   "imageViewer_saveFailed": "Save failed: {error}",
   "imageViewer_saveFailedRetry": "Save failed, please retry",
   "image_copied": "Image copied",

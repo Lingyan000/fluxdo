@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/toast_service.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/jank_profiler.dart';
+import '../utils/share_utils.dart';
 import '../widgets/common/perf_overlay.dart';
 
 /// 性能诊断页:查看/导出 [FrameJankMonitor] 采集的掉帧记录与场景事件,
@@ -51,13 +52,32 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
     ToastService.showSuccess('诊断报告已复制');
   }
 
-  Future<void> _share() async {
-    await SharePlus.instance.share(
-      ShareParams(
-        text: FrameJankMonitor.exportText(),
-        subject: 'FluxDO 性能诊断报告',
-      ),
-    );
+  /// 导出报告为文件。
+  ///
+  /// 原先是把整份报告塞进 ShareParams.text —— Linux 与 RS5 以下 Windows 的
+  /// share_plus 把 text 拼进 `mailto:` query,一份完整报告必然超长失败,而且
+  /// 这里没有 try/catch,异常会变成未捕获的异步错误。
+  Future<void> _export({required bool share}) async {
+    try {
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final file = await ShareUtils.createOutboxFile('fluxdo_perf_$stamp.txt');
+      await file.writeAsString(FrameJankMonitor.exportText());
+      await _deliver(XFile(file.path, mimeType: 'text/plain'), share: share);
+    } catch (e) {
+      if (mounted) ToastService.showError('导出失败: $e');
+    }
+  }
+
+  /// 分享或保存同一份文件（分享在 Linux 上不可用，入口已按平台隐藏）。
+  Future<void> _deliver(XFile file, {required bool share}) async {
+    if (share) {
+      await ShareUtils.shareFile(file, subject: 'FluxDO 性能诊断报告');
+      return;
+    }
+    final outcome = await ShareUtils.saveFile(file);
+    if (outcome.shared && mounted) {
+      ToastService.showSuccess('已保存: ${outcome.displayName ?? ''}');
+    }
   }
 
   void _clear() {
@@ -65,16 +85,14 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
     ToastService.showInfo('已清空记录');
   }
 
-  Future<void> _shareSnapshot() async {
+  Future<void> _deliverSnapshot({required bool share}) async {
     final file = _snapshotFile;
     if (file == null) return;
     try {
-      final text = await file.readAsString();
-      await SharePlus.instance.share(
-        ShareParams(text: text, subject: 'FluxDO 性能诊断快照(上次会话)'),
-      );
+      // 快照本来就是磁盘上的文件,直接交出去,不必读成文本
+      await _deliver(XFile(file.path, mimeType: 'text/plain'), share: share);
     } catch (e) {
-      ToastService.showError('读取快照失败: $e');
+      if (mounted) ToastService.showError('导出快照失败: $e');
     }
   }
 
@@ -93,10 +111,16 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
             onPressed: _copy,
           ),
           IconButton(
-            tooltip: '分享报告',
-            icon: const Icon(Symbols.share_rounded),
-            onPressed: _share,
+            tooltip: '保存报告',
+            icon: const Icon(Symbols.save_alt_rounded),
+            onPressed: () => _export(share: false),
           ),
+          if (ShareUtils.canShareFiles)
+            IconButton(
+              tooltip: '分享报告',
+              icon: const Icon(Symbols.share_rounded),
+              onPressed: () => _export(share: true),
+            ),
           IconButton(
             tooltip: '清空记录',
             icon: const Icon(Symbols.delete_sweep_rounded),
@@ -226,11 +250,18 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '分享上次会话快照',
+                    tooltip: '保存上次会话快照',
                     visualDensity: VisualDensity.compact,
-                    icon: const Icon(Symbols.share_rounded, size: 18),
-                    onPressed: _shareSnapshot,
+                    icon: const Icon(Symbols.save_alt_rounded, size: 18),
+                    onPressed: () => _deliverSnapshot(share: false),
                   ),
+                  if (ShareUtils.canShareFiles)
+                    IconButton(
+                      tooltip: '分享上次会话快照',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Symbols.share_rounded, size: 18),
+                      onPressed: () => _deliverSnapshot(share: true),
+                    ),
                 ],
               ),
             ],

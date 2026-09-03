@@ -62,7 +62,26 @@
   },
   "export_fetchPostsFailed": "獲取帖子資料失敗",
   "export_firstPostOnly": "僅主帖",
-  "export_format": "匯出格式",
+  "export_format": "檔案格式",
+  "export_deliverTitle": "匯出至",
+  "export_deliverSave": "儲存為檔案",
+  "export_deliverSaveDescDesktop": "選擇儲存位置",
+  "export_deliverSaveDescMobile": "儲存到系統「下載」資料夾",
+  "export_deliverSaveAs": "另存為…",
+  "export_deliverSaveAsDesc": "自己選儲存位置",
+  "export_deliverShare": "分享",
+  "export_deliverShareDesc": "透過系統分享面板傳送",
+  "export_deliverNotion": "同步到 Notion",
+  "export_deliverNotionDesc": "建立為 Notion 頁面",
+  "export_deliverNotionUnconfigured": "尚未設定，點擊前往設定",
+  "export_savedAs": "已儲存: {name}",
+  "@export_savedAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "export_markdownLimit": "Markdown 格式最多匯出前 {max} 條帖子",
   "@export_markdownLimit": {
     "placeholders": {
@@ -78,6 +97,8 @@
   "exportHistory_empty": "暫無匯出記錄",
   "exportHistory_filterAll": "全部",
   "exportHistory_fileNotFound": "檔案已不存在",
+  "exportHistory_openFailed": "沒有可以開啟這個檔案的應用",
+  "exportHistory_sharedNoFile": "這筆是分享出去的，本機沒有儲存檔案",
   "exportHistory_revealInFolder": "開啟所在資料夾",
   "exportHistory_openFile": "開啟檔案",
   "exportHistory_openInBrowser": "在瀏覽器中開啟",
@@ -111,8 +132,8 @@
   "share_loadingPost": "正在載入帖子...",
   "share_replyToTopic": "回覆話題",
   "share_saveFailed": "儲存失敗，請重試",
-  "share_savePermissionDenied": "儲存失敗，請授予相簿許可權",
   "share_saveToGallery": "儲存到相簿",
+  "share_saveImageToFile": "儲存圖片",
   "share_fileSaved": "檔案已儲存",
   "share_selectSaveLocation": "選擇儲存位置",
   "share_screenshotFailed": "截圖失敗",

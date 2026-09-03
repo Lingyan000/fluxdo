@@ -67,6 +67,7 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           title: l10n.preferences_topicFilterKeywords,
           subtitle: l10n.preferences_topicFilterKeywordsDesc,
           icon: Symbols.filter_alt_off_rounded,
+          wrapSubtitle: true,
           getDynamicSubtitle: (ref) {
             final count = ref
                 .watch(preferencesProvider)
@@ -82,15 +83,27 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           title: l10n.preferences_blockedUsernames,
           subtitle: l10n.preferences_blockedUsernamesDesc,
           icon: Symbols.person_off_rounded,
+          wrapSubtitle: true,
           getDynamicSubtitle: (ref) {
             final count = ref
                 .watch(preferencesProvider)
                 .blockedUsernames
                 .length;
-            if (count == 0) return l10n.preferences_blockedUsernamesEmpty;
+            // 空态回落到静态说明(见 subtitle):「未拉黑任何用户」等于没说,
+            // 而空态恰恰是最该解释这功能干什么的时刻。与上面的关键词过滤同体例。
+            if (count == 0) return null;
             return l10n.preferences_blockedUsernamesCount(count);
           },
           onTap: (context, ref) => showBlockedUsernamesDialog(context, ref),
+        ),
+        SwitchModel(
+          id: 'showFilterHint',
+          title: l10n.preferences_showFilterHint,
+          subtitle: l10n.preferences_showFilterHintDesc,
+          icon: Symbols.visibility_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).showFilterHint,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setShowFilterHint(v),
         ),
       ],
     ),

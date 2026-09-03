@@ -8,7 +8,6 @@
   "dataManagement_apiKeysCount": "Contains {count} API Keys",
   "dataManagement_autoManagement": "Auto management",
   "dataManagement_backupSource": "Backup from: v{version}",
-  "dataManagement_backupSubject": "FluxDO Data Backup",
   "dataManagement_cacheManagement": "Cache management",
   "dataManagement_calculating": "Calculating...",
   "dataManagement_categoryAvatar": "Avatars",

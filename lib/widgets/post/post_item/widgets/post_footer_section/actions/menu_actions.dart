@@ -2,8 +2,14 @@ part of '../post_footer_section.dart';
 
 extension _PostFooterMenuActions on _PostFooterSectionState {
   Future<void> _sharePost() async {
-    final url =
-        '${AppConstants.baseUrl}/t/${widget.topicId}/${widget.post.postNumber}';
+    // 与话题详情页的「分享回复」同口径:走 buildShareUrl 并遵守匿名分享偏好,
+    // 否则同一个动作在两个入口生成的链接不一样(带不带 ?u=)
+    final username = ref.read(currentUserProvider).value?.username ?? '';
+    final url = ShareUtils.buildShareUrl(
+      path: '/t/topic/${widget.topicId}/${widget.post.postNumber}',
+      username: username,
+      anonymousShare: ref.read(preferencesProvider).anonymousShare,
+    );
     await SharePlus.instance.share(ShareParams(text: url));
   }
 

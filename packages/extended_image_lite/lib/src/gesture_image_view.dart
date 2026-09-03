@@ -9,6 +9,11 @@ import 'image/raw_gesture_image.dart';
 typedef GestureImageFailedBuilder =
     Widget Function(BuildContext context, ImageGestureController controller);
 
+/// 主图加载进度构建器。[event] 为 null 表示尚未收到字节进度，或服务端
+/// 没有提供可计算的总大小；调用方应回退为不定态进度。
+typedef GestureImageProgressBuilder =
+    Widget Function(BuildContext context, ImageChunkEvent? event);
+
 /// 手势图片查看组件 —— 持久层栈 + 常驻手势层。
 ///
 /// 替代旧的 `ExtendedImage(mode: gesture)` 用法。与旧架构的本质区别:
@@ -35,6 +40,7 @@ class GestureImageView extends StatefulWidget {
     this.heroBuilder,
     this.failedBuilder,
     this.loadingBuilder,
+    this.progressBuilder,
     this.onImageLoaded,
   });
 
@@ -58,8 +64,12 @@ class GestureImageView extends StatefulWidget {
   /// 主图解码失败时叠加的 fallback 层(缩略图层保持在底下)
   final GestureImageFailedBuilder? failedBuilder;
 
-  /// 无缩略图且主图未就绪时的加载指示
+  /// 无缩略图且主图未就绪时的加载指示。
   final WidgetBuilder? loadingBuilder;
+
+  /// 主图未就绪时的下载进度层。与 [loadingBuilder] 不同，即使缩略图已
+  /// 显示也会叠加，适合在缩略图上表达原图下载进度。
+  final GestureImageProgressBuilder? progressBuilder;
 
   /// 主图首帧就绪回调(供 viewer 缓存尺寸做智能双击缩放)
   final void Function(ImageInfo info)? onImageLoaded;
@@ -73,6 +83,7 @@ class _GestureImageViewState extends State<GestureImageView>
   ImageStream? _mainStream;
   ImageStreamListener? _mainListener;
   ImageInfo? _mainInfo;
+  ImageChunkEvent? _mainChunkEvent;
   bool _mainFailed = false;
   bool _mainFirstFrameNotified = false;
 
@@ -118,6 +129,7 @@ class _GestureImageViewState extends State<GestureImageView>
         // 主图换代:回到未就绪状态重新淡入
         _mainFailed = false;
         _mainFirstFrameNotified = false;
+        _mainChunkEvent = null;
         _fadeController.value = 0.0;
         _replaceMainInfo(null);
       }
@@ -136,6 +148,7 @@ class _GestureImageViewState extends State<GestureImageView>
       _mainStream = newMainStream;
       _mainListener = ImageStreamListener(
         _handleMainFrame,
+        onChunk: _handleMainChunk,
         onError: _handleMainError,
       );
       newMainStream.addListener(_mainListener!);
@@ -164,6 +177,7 @@ class _GestureImageViewState extends State<GestureImageView>
 
   void _handleMainFrame(ImageInfo info, bool synchronousCall) {
     _replaceMainInfo(info);
+    _mainChunkEvent = null;
     _mainFailed = false;
     if (!_mainFirstFrameNotified) {
       _mainFirstFrameNotified = true;
@@ -186,7 +200,15 @@ class _GestureImageViewState extends State<GestureImageView>
     }
   }
 
+  void _handleMainChunk(ImageChunkEvent event) {
+    _mainChunkEvent = event;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _handleMainError(Object exception, StackTrace? stackTrace) {
+    _mainChunkEvent = null;
     _mainFailed = true;
     if (mounted) {
       setState(() {});
@@ -297,11 +319,12 @@ class _GestureImageViewState extends State<GestureImageView>
   Widget build(BuildContext context) {
     final ImageGestureController controller = widget.controller;
     final bool showFailed = _mainFailed && widget.failedBuilder != null;
+    final bool isLoading = !showFailed && _mainInfo == null && !_mainFailed;
+    final bool showProgress = isLoading && widget.progressBuilder != null;
     final bool showLoading =
-        !showFailed &&
-        _mainInfo == null &&
+        isLoading &&
+        !showProgress &&
         _placeholderInfo == null &&
-        !_mainFailed &&
         widget.loadingBuilder != null;
 
     Widget layers = Stack(
@@ -327,7 +350,10 @@ class _GestureImageViewState extends State<GestureImageView>
             filterQuality: widget.filterQuality,
           ),
         if (showFailed) widget.failedBuilder!(context, controller),
-        if (showLoading) widget.loadingBuilder!(context),
+        if (showProgress)
+          widget.progressBuilder!(context, _mainChunkEvent)
+        else if (showLoading)
+          widget.loadingBuilder!(context),
       ],
     );
 

@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/s.dart';
 import '../migration_service.dart';
 import '../storage/resilient_secure_storage.dart';
+import '../../utils/share_utils.dart';
 
 /// 数据备份导出/导入服务
 ///
@@ -160,9 +160,10 @@ class DataBackupService {
     final exportData = await DataBackupService.exportData(prefs);
     final jsonStr = const JsonEncoder.withIndent('  ').convert(exportData);
 
-    final tempDir = await getTemporaryDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final file = File('${tempDir.path}/fluxdo_backup_$timestamp.json');
+    final file = await ShareUtils.createOutboxFile(
+      'fluxdo_backup_$timestamp.json',
+    );
     await file.writeAsString(jsonStr);
 
     return file.path;

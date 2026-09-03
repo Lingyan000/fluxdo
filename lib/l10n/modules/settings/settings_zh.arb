@@ -78,7 +78,6 @@
   "preferences_topicFilterWholeWordDesc": "开启后英文关键词不再匹配子串，如 ai 不会命中 Main thread；中文关键词无影响",
   "preferences_blockedUsernames": "本地拉黑用户",
   "preferences_blockedUsernamesDesc": "在本机隐藏这些用户发布的话题、回复和 Boost；名单不会同步到 Linux.do",
-  "preferences_blockedUsernamesEmpty": "未拉黑任何用户",
   "preferences_blockedUsernamesCount": "已拉黑 {count} 个用户",
   "@preferences_blockedUsernamesCount": {
     "placeholders": {
@@ -87,6 +86,8 @@
   },
   "preferences_blockedUsernamesHint": "输入用户名后按回车添加",
   "preferences_blockedUsernamesHelper": "无需输入 @；用户名精确匹配，不区分大小写；不会调用 Discourse 的忽略功能",
+  "preferences_showFilterHint": "显示过滤提示",
+  "preferences_showFilterHintDesc": "话题列表顶部显示被关键词或屏蔽名单隐藏的数量",
   "preferences_autoPanguSpacing": "自动混排优化",
   "preferences_autoPanguSpacingDesc": "输入时自动插入中英文混排空格",
   "preferences_useRichComposer": "富文本编辑器(实验性)",

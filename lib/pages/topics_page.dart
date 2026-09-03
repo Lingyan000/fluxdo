@@ -2876,6 +2876,9 @@ class _TopicListState extends ConsumerState<_TopicList>
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
+    final showFilterHint = ref.watch(
+      preferencesProvider.select((p) => p.showFilterHint),
+    );
     _syncAutoLoadFilter(keywords, wholeWord, blockedUsernames);
     var hiddenCount = 0;
     var hiddenByBlocked = 0;
@@ -2966,7 +2969,7 @@ class _TopicListState extends ConsumerState<_TopicList>
           widget.categoryId,
         );
         final newTopicOffset = hasNewTopics ? 1 : 0;
-        final hintOffset = hiddenCount > 0 ? 1 : 0;
+        final hintOffset = (showFilterHint && hiddenCount > 0) ? 1 : 0;
         final headerOffset = newTopicOffset + hintOffset;
         final idToIndex = _visibleIndexMapFor(topics);
         // pill/过滤提示行出现或消失 = 全列表行 index 平移(数据身份未变,
