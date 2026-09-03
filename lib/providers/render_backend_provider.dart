@@ -8,9 +8,9 @@ import 'theme_provider.dart';
 /// 渲染后端回退开关（仅 Android 生效）。
 ///
 /// 开启后，下次冷启动由 `MainActivity.provideFlutterEngine` 以
-/// `--impeller-backend=opengles` 创建引擎，让 Impeller 走 OpenGL ES 后端，
-/// 绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的 SIGABRT 竞态
-/// （mali-event-hand 线程 destroyed mutex，栈全在 libGLES_mali.so）。
+/// `--enable-impeller=false` 创建引擎，让 Flutter 使用 Skia/OpenGL ES
+/// 渲染，绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的 SIGABRT 竞态
+/// （mali-event-hand 线程 destroyed mutex）。
 ///
 /// native 侧直接读 shared_preferences 的同一份文件
 /// （"FlutterSharedPreferences"，键带 flutter. 前缀），不经过 Dart，
