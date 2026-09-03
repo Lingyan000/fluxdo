@@ -2,6 +2,7 @@ package com.github.lingyan000.fluxdo
 
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
@@ -35,6 +36,13 @@ class MainActivity : FlutterActivity() {
         private const val TAG = "AppLink"
         private const val RAW_COOKIE_CHANNEL = "com.fluxdo/raw_cookie"
         private const val WEBAUTHN_CHANNEL = "com.fluxdo/webauthn"
+
+        // 渲染后端回退开关的存储位置。shared_preferences 在 Android 侧的
+        // 原生文件名与键前缀是插件约定；键名与 Dart 侧
+        // lib/providers/render_backend_provider.dart 的 RenderBackendPrefs
+        // 保持一致。
+        const val RENDER_GLES_PREFS_FILE = "FlutterSharedPreferences"
+        const val RENDER_GLES_PREF_KEY = "flutter.renderer_gles"
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -62,6 +70,7 @@ class MainActivity : FlutterActivity() {
     private val CRASHLYTICS_CHANNEL = "com.github.lingyan000.fluxdo/crashlytics"
     private val ICON_CHANNEL = "com.github.lingyan000.fluxdo/app_icon"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var ownsProvidedFlutterEngine = false
 
     // Cookie IPC 专用后台线程。CookieManager 的 getCookie / setCookie /
     // getCookieInfo 可从任意线程调用(Chromium cookie store 在自己的 IO
@@ -97,6 +106,27 @@ class MainActivity : FlutterActivity() {
         FairMemoryReceiver.detachEngine(flutterEngine)
         super.cleanUpFlutterEngine(flutterEngine)
     }
+
+    // 渲染后端回退开关（设置-功能「GLES 渲染兼容模式」）。
+    // 开启后以 --impeller-backend=opengles 创建引擎，让 Impeller 走
+    // OpenGL ES 后端，绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的
+    // SIGABRT 竞态（mali-event-hand 线程 destroyed mutex）。
+    // flag 存在 shared_preferences 的原生文件里（键带 flutter. 前缀，
+    // 与 RenderBackendPrefs 常量一致），不经 Dart，冷启动即生效。
+    // 关闭时返回 null，由 embedding 走默认（Vulkan）创建路径。
+    // 开启时引擎由当前 Activity 创建并持有，必须随宿主销毁，避免
+    // embedding 将其视为可长期复用的外部引擎而泄漏原生/GPU 资源。
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        val useGles = getSharedPreferences(
+            RENDER_GLES_PREFS_FILE, Context.MODE_PRIVATE
+        ).getBoolean(RENDER_GLES_PREF_KEY, false)
+        if (!useGles) return null
+        ownsProvidedFlutterEngine = true
+        return FlutterEngine(context, arrayOf("--impeller-backend=opengles"))
+    }
+
+    override fun shouldDestroyEngineWithHost(): Boolean =
+        ownsProvidedFlutterEngine || super.shouldDestroyEngineWithHost()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
