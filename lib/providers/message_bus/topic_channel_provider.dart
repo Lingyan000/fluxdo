@@ -338,6 +338,12 @@ class TopicChannelNotifier extends Notifier<TopicChannelState> {
     state = state.copyWith(clearNotificationLevelChange: true);
   }
 
+  /// 被移出私信是一次性信号:页面消费(离开话题)后必须复位,否则若被
+  /// 重新邀请进同一私信、channel 仍在存活期,新页面会带着旧标志挂载。
+  void clearRemovedFromPrivateMessage() {
+    state = state.copyWith(removedFromPrivateMessage: false);
+  }
+
   // —— 帖子更新攒批 ——
   //
   // msgbus 在同一个同步循环里逐条派发消息(长时间挂后台回前台时,一次

@@ -937,8 +937,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                     ? () {
                                         if (mounted) {
                                           setState(
-                                              () => _richFallback = false,
-                                        );
+                                              () => _richFallback = false);
+                                        }
                                       }
                                     : null,
                                 mentionDataSource: (term) =>

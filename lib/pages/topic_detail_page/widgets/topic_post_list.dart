@@ -60,8 +60,6 @@ class TopicPostList extends StatefulWidget {
   final int? selectedPostNumber;
   final int? highlightPostNumber;
   final bool isLoggedIn;
-  final int? currentUserId;
-  final bool currentUserIsAdmin;
   final int? removingPrivateMessageParticipantId;
   final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
   final bool hasMoreBefore;
@@ -124,13 +122,14 @@ class TopicPostList extends StatefulWidget {
   /// 帖子"更多"菜单里"指定帖子"这一项是否显示。
   final bool canAssignPost;
 
+  /// 话题目录(TOC)的标题锚点注册表;非 null 时给 1 楼各段包
+  /// HeadingAnchorScope,标题挂载即注册(跳转/高亮定位用)。
+  final HeadingAnchorRegistry? headingAnchorRegistry;
+
   /// 问答话题排序(「N 个回答」头部的按票数/按活动 pill):
   /// null = 非问答话题不渲染头部
   final bool isActivitySort;
   final ValueChanged<bool>? onAnswerSortChanged;
-
-  /// TOC 标题锚点注册表;HeadingAnchorScope,标题挂载即注册(跳转/高亮定位用)。
-  final HeadingAnchorRegistry? headingAnchorRegistry;
 
   const TopicPostList({
     super.key,
@@ -145,8 +144,6 @@ class TopicPostList extends StatefulWidget {
     this.hideHeaderTitle = false,
     this.canAssignPost = false,
     required this.isLoggedIn,
-    this.currentUserId,
-    this.currentUserIsAdmin = false,
     this.removingPrivateMessageParticipantId,
     this.onRemovePrivateMessageParticipant,
     required this.hasMoreBefore,
@@ -253,14 +250,9 @@ class _TopicPostListState extends State<TopicPostList> {
   PrivateMessageParticipants _buildPrivateMessageParticipants(
     PrivateMessageParticipantsLocation location,
   ) {
-    return PrivateMessageParticipants(
-      key: ValueKey('pm-participants-${location.name}'),
+    return PrivateMessageParticipants.fromDetail(
       location: location,
-      participants: detail.allowedUsers,
-      currentUserId: widget.currentUserId,
-      canRemoveOtherParticipants:
-          widget.currentUserIsAdmin && detail.canRemoveAllowedUsers,
-      removableSelfId: detail.canRemoveSelfId,
+      detail: detail,
       removingParticipantId: widget.removingPrivateMessageParticipantId,
       onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
     );
@@ -456,6 +448,13 @@ class _TopicPostListState extends State<TopicPostList> {
 
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
+    // 弹簧过冲(BouncingScrollPhysics 出界回弹)期间冻结上报:出界时
+    // remainingScroll 被压出正常区间,progress 被 clamp 到 0/1,eyeline
+    // 钉死在视口顶/底;过冲还会把列表边缘帖(最后一帖等)拉进视口,
+    // closest 兜底必命中它 —— 进度条瞬跳到 N/N(或视口顶帖),回弹才
+    // 恢复;visiblePosts 误报更会经 screenTrack 把末帖标记已读,污染
+    // 服务端 lastRead。回界后滚动通知会再次触发本方法,无需补偿。
+    if (position.outOfRange) return;
     final viewportHeight = position.viewportDimension;
 
     // 视口可见区域的上下边界
@@ -1338,8 +1337,7 @@ class _TopicPostListState extends State<TopicPostList> {
 
             // 对齐 Discourse bottom topic map：帖子流真正到底后再次展示私信成员。
             if (!hasMoreAfter &&
-                detail.isPrivateMessage &&
-                detail.allowedUsers.isNotEmpty)
+                PrivateMessageParticipants.shouldShowAtBottom(detail))
               SliverToBoxAdapter(
                 child: _wrapContent(
                   context,
@@ -1628,8 +1626,7 @@ class _TopicPostListState extends State<TopicPostList> {
     }
 
     final childWithParticipants =
-        detail.isPrivateMessage &&
-            detail.allowedUsers.isNotEmpty &&
+        PrivateMessageParticipants.shouldShow(detail) &&
             post.postNumber == 1 &&
             (segment.type == _PostRenderSegmentType.shortPost ||
                 segment.type == _PostRenderSegmentType.longFooter)
@@ -1664,7 +1661,7 @@ class _TopicPostListState extends State<TopicPostList> {
         // 常驻 DecoratedBoxTransition 包装(项目不用包的 highlight 功能,
         // 楼层高亮是 PostItem 自己的 highlight 参数),每帖少一层
         // transition + tween 求值
-builder: (context, animation) => showAnswerHeader
+        builder: (context, animation) => showAnswerHeader
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

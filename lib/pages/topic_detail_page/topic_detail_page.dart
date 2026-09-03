@@ -27,7 +27,6 @@ import 'dart:math' as math;
 import '../../models/draft.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic.dart';
-import '../../models/user.dart';
 import '../../models/pending_post.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/responsive.dart';
@@ -2137,8 +2136,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final currentUser = ref.watch(currentUserProvider).value;
-    final isLoggedIn = currentUser != null;
+    final isLoggedIn = ref.watch(currentUserProvider).value != null;
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
     ref.listen<AsyncValue<void>>(authStateProvider, (_, _) {
@@ -2204,6 +2202,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
         if (next.removedFromPrivateMessage &&
             !(previous?.removedFromPrivateMessage ?? false)) {
+          ref
+              .read(topicChannelProvider(widget.topicId).notifier)
+              .clearRemovedFromPrivateMessage();
           _closeRemovedPrivateMessage();
           return;
         }
@@ -2470,7 +2471,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             detailAsync.value,
             notifier,
             isLoggedIn,
-            currentUser,
           );
         },
       ),
@@ -2645,7 +2645,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     TopicDetail? detail,
     TopicDetailNotifier notifier,
     bool isLoggedIn,
-    User? currentUser,
   ) {
     final params = _params;
     final searchState = ref.watch(topicSearchProvider(widget.topicId));
@@ -2714,13 +2713,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       );
     } else if (detail != null) {
       // 正常内容构建 (保持原有逻辑，但简化提取)
-      content = _buildPostListContent(
-        context,
-        detail,
-        notifier,
-        isLoggedIn,
-        currentUser,
-      );
+      content = _buildPostListContent(context, detail, notifier, isLoggedIn);
     }
 
     // Stack 组装
@@ -2846,7 +2839,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     TopicDetail detail,
     TopicDetailNotifier notifier,
     bool isLoggedIn,
-    User? currentUser,
   ) {
     // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（centerPostIndex/
     // dividerPostIndex/滚动映射）都基于同一份过滤后列表，语义天然一致。
@@ -2979,8 +2971,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           headerKey: _headerKey,
           hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
-          currentUserId: currentUser?.id,
-          currentUserIsAdmin: currentUser?.admin ?? false,
           removingPrivateMessageParticipantId:
               _removingPrivateMessageParticipantId,
           onRemovePrivateMessageParticipant: isLoggedIn
@@ -3033,12 +3023,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               highlightBoostUsername: widget.highlightBoostUsername,
               isLoggedIn: isLoggedIn,
               isActivitySort: notifier.isActivityMode,
-              onAnswerSortChanged: (byActivity) => byActivity
-                  ? _handleShowByActivity()
-                  : _handleCancelFilter(),
+              onAnswerSortChanged: (byActivity) =>
+                  byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
-              currentUserId: currentUser?.id,
-              currentUserIsAdmin: currentUser?.admin ?? false,
               removingPrivateMessageParticipantId:
                   _removingPrivateMessageParticipantId,
               onRemovePrivateMessageParticipant: isLoggedIn

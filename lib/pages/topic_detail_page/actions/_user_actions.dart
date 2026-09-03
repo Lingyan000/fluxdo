@@ -966,15 +966,14 @@ extension _UserActions on _TopicDetailPageState {
     if (_removingPrivateMessageParticipantId != null) return;
 
     final detail = ref.read(topicDetailProvider(_params)).value;
-    final currentUser = ref.read(currentUserProvider).value;
-    if (detail == null || !detail.isPrivateMessage || currentUser == null) {
-      return;
-    }
+    if (detail == null || !detail.isPrivateMessage) return;
 
-    final isSelf = participant.id == currentUser.id;
-    final canRemove = isSelf
-        ? detail.canRemoveSelfId == participant.id
-        : detail.canRemoveAllowedUsers;
+    // 判据与面板同源:两个 details 权限位就是唯一真相
+    // (can_remove_allowed_users 已含 staff/房主 TL2+ 判定,
+    // can_remove_self_id 恒为当前用户 id),不再叠加客户端身份门槛,
+    // 否则 UI 与此处会各判一套。
+    final isSelf = participant.id == detail.canRemoveSelfId;
+    final canRemove = detail.canRemoveAllowedUsers || isSelf;
     if (!canRemove) return;
 
     final confirmed = await showAppDialog<bool>(
@@ -1029,9 +1028,7 @@ extension _UserActions on _TopicDetailPageState {
       }
     } catch (error) {
       if (mounted) {
-        ToastService.showError(
-          context.l10n.common_operationFailed('$error'),
-        );
+        ToastService.showError(context.l10n.common_operationFailed('$error'));
       }
     } finally {
       if (mounted) {

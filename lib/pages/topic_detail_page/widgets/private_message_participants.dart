@@ -6,26 +6,61 @@ import '../../../widgets/common/smart_avatar.dart';
 
 enum PrivateMessageParticipantsLocation { firstPost, bottom }
 
+/// 底部面板的楼层数下限,对齐 Discourse showBottomTopicMap 的
+/// posts_count > MIN_POSTS_COUNT(=3)。
+const int _minPostsCountForBottomPanel = 3;
+
 /// 私信成员面板，对齐 Discourse 私信 topic map 的成员与退出入口。
 class PrivateMessageParticipants extends StatelessWidget {
   const PrivateMessageParticipants({
     super.key,
     required this.location,
     required this.participants,
-    required this.currentUserId,
-    required this.canRemoveOtherParticipants,
+    required this.canRemoveAllowedUsers,
     required this.removableSelfId,
     required this.removingParticipantId,
     required this.onRemoveParticipant,
   });
 
+  /// 从话题详情装配面板;权限位直接取 details 原字段,避免各调用点
+  /// 自行叠加客户端判据(帖子流与嵌套视图两处必须同源)。
+  factory PrivateMessageParticipants.fromDetail({
+    required PrivateMessageParticipantsLocation location,
+    required TopicDetail detail,
+    required int? removingParticipantId,
+    required ValueChanged<TopicUser>? onRemoveParticipant,
+  }) {
+    return PrivateMessageParticipants(
+      key: ValueKey('pm-participants-${location.name}'),
+      location: location,
+      participants: detail.allowedUsers,
+      canRemoveAllowedUsers: detail.canRemoveAllowedUsers,
+      removableSelfId: detail.canRemoveSelfId,
+      removingParticipantId: removingParticipantId,
+      onRemoveParticipant: onRemoveParticipant,
+    );
+  }
+
   final PrivateMessageParticipantsLocation location;
   final List<TopicUser> participants;
-  final int? currentUserId;
-  final bool canRemoveOtherParticipants;
+
+  /// details.can_remove_allowed_users:可移除其他成员。
+  final bool canRemoveAllowedUsers;
+
+  /// details.can_remove_self_id:可退出私信,值恒为当前用户 id。
   final int? removableSelfId;
+
   final int? removingParticipantId;
   final ValueChanged<TopicUser>? onRemoveParticipant;
+
+  /// 首楼面板门禁:私信且成员名单非空。
+  static bool shouldShow(TopicDetail detail) =>
+      detail.isPrivateMessage && detail.allowedUsers.isNotEmpty;
+
+  /// 底部面板门禁:再加楼层数下限 —— 短私信首楼已经有一块,底部
+  /// 不必紧跟着再堆一块一模一样的(官方短话题也只出一处 topic map)。
+  static bool shouldShowAtBottom(TopicDetail detail) =>
+      shouldShow(detail) && detail.postsCount > _minPostsCountForBottomPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -90,12 +125,13 @@ class PrivateMessageParticipants extends StatelessWidget {
 
   Widget _buildParticipant(BuildContext context, TopicUser participant) {
     final theme = Theme.of(context);
-    final isSelf =
-        participant.id == currentUserId || participant.id == removableSelfId;
-    final canRemoveSelf = isSelf && participant.id == removableSelfId;
-    final canRemoveOther = !isSelf && canRemoveOtherParticipants;
+    // 权限完全信任服务端:can_remove_allowed_users 本身已含「staff 或
+    // 房主(TL2+)」判定(TopicGuardian#can_remove_allowed_users?),再叠
+    // 客户端 admin 门槛会把版主和非管理员房主一起挡掉。
+    // 对齐 Discourse PmMapUser: canRemoveAllowedUsers || isCurrentUser。
+    final isSelf = participant.id == removableSelfId;
     final canRemove =
-        onRemoveParticipant != null && (canRemoveSelf || canRemoveOther);
+        onRemoveParticipant != null && (canRemoveAllowedUsers || isSelf);
     final isRemoving = removingParticipantId == participant.id;
     final controlsLocked = removingParticipantId != null;
     final showUsername = participant.displayName != participant.username;

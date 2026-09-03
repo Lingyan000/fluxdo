@@ -25,8 +25,6 @@ class NestedPostList extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final GlobalKey headerKey;
   final bool isLoggedIn;
-  final int? currentUserId;
-  final bool currentUserIsAdmin;
   final int? removingPrivateMessageParticipantId;
   final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
   final void Function(Post? replyToPost, {String? initialContent}) onReply;
@@ -63,8 +61,6 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.scrollController,
     required this.headerKey,
     required this.isLoggedIn,
-    this.currentUserId,
-    this.currentUserIsAdmin = false,
     this.removingPrivateMessageParticipantId,
     this.onRemovePrivateMessageParticipant,
     required this.onReply,
@@ -194,14 +190,9 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   PrivateMessageParticipants _buildPrivateMessageParticipants(
     PrivateMessageParticipantsLocation location,
   ) {
-    return PrivateMessageParticipants(
-      key: ValueKey('pm-participants-${location.name}'),
+    return PrivateMessageParticipants.fromDetail(
       location: location,
-      participants: widget.detail.allowedUsers,
-      currentUserId: widget.currentUserId,
-      canRemoveOtherParticipants:
-          widget.currentUserIsAdmin && widget.detail.canRemoveAllowedUsers,
-      removableSelfId: widget.detail.canRemoveSelfId,
+      detail: widget.detail,
       removingParticipantId: widget.removingPrivateMessageParticipantId,
       onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
     );
@@ -285,8 +276,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             ),
 
           if (opPost != null &&
-              widget.detail.isPrivateMessage &&
-              widget.detail.allowedUsers.isNotEmpty)
+              PrivateMessageParticipants.shouldShow(widget.detail))
             SliverToBoxAdapter(
               child: _buildPrivateMessageParticipants(
                 PrivateMessageParticipantsLocation.firstPost,
@@ -411,8 +401,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             ),
 
           if (!ns.hasMoreRoots &&
-              widget.detail.isPrivateMessage &&
-              widget.detail.allowedUsers.isNotEmpty)
+              PrivateMessageParticipants.shouldShowAtBottom(widget.detail))
             SliverToBoxAdapter(
               child: _buildPrivateMessageParticipants(
                 PrivateMessageParticipantsLocation.bottom,
