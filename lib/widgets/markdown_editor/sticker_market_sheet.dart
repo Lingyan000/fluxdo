@@ -194,8 +194,9 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
     );
   }
 
-  /// 分类 chips（横向滚动）。索引无 topics（旧版数据）或全部为空分类时
-  /// 整行不占位；totalGroups == 0 的空分类不展示（点了只会看到空列表）。
+  /// 分类 chips（横向滚动）。topics.json 取不到（旧版服务端 / 请求失败）或
+  /// 全部是空分类时整行不占位，此时只剩「全部」的浏览行为；totalGroups == 0
+  /// 的空分类不展示（点了只会看到空列表）。
   Widget _buildTopicChips(AsyncValue<List<StickerMarketTopic>> topicsAsync) {
     final theme = Theme.of(context);
     final topics = (topicsAsync.value ?? const <StickerMarketTopic>[])
