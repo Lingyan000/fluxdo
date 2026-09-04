@@ -192,9 +192,8 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           subtitle: l10n.preferences_composerLiveRenderDesc,
           icon: Symbols.preview_rounded,
           getValue: (ref) => ref.watch(preferencesProvider).composerLiveRender,
-          onChanged: (ref, v) => ref
-              .read(preferencesProvider.notifier)
-              .setComposerLiveRender(v),
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setComposerLiveRender(v),
           // 即时渲染(ir)是富文本编辑器的模式,源码编辑器无显形概念
           enabledWhen: (ref) => ref.watch(preferencesProvider).useRichComposer,
         ),
@@ -882,7 +881,11 @@ void _showStickerBaseUrlDialog(BuildContext context, WidgetRef ref) {
             final url = controller.text.trim();
             if (url.isNotEmpty) {
               await service.setBaseUrl(url);
-              ref.invalidate(stickerGroupsProvider);
+              // 换了站点，市场分页/分类/详情全部作废（setBaseUrl 已清网络缓存）。
+              // 订阅列表与其元信息是用户数据，不跟着清。
+              ref.invalidate(marketGroupsProvider);
+              ref.invalidate(marketTopicsProvider);
+              ref.invalidate(stickerGroupDetailProvider);
             }
             if (dialogContext.mounted) Navigator.pop(dialogContext);
           },

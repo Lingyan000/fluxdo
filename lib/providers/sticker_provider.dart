@@ -17,34 +17,26 @@ final stickerMarketServiceProvider = Provider<StickerMarketService>((ref) {
   return StickerMarketService(prefs);
 });
 
-/// 市场全部非归档分组
-final stickerGroupsProvider = FutureProvider<List<StickerGroup>>((ref) async {
-  final service = ref.watch(stickerMarketServiceProvider);
-  try {
-    return await service.getAllGroups();
-  } catch (e, st) {
-    AppLogger.error(
-      '加载表情包分组列表失败',
-      tag: 'Sticker',
-      error: e,
-      stackTrace: st,
-      fields: {'baseUrl': service.baseUrl},
-    );
-    rethrow;
-  }
-});
-
 /// 分组详情（按 groupId 懒加载）
 ///
 /// 加载完成后,异步批量 precache 第一屏 sticker 的 thumbnail —
 /// 这样用户实际打开 sticker panel / 切到这个 group 时,首屏多数 sticker 已经
 /// 在 PNG cache,只需 Flutter 内置 codec 几 ms 解出,不用等动图解码。
+///
+/// 同时把 name/icon 回填到已订阅分组的元信息缓存:老版本升级上来的订阅只有
+/// id、没有元信息,tab 栏先显示占位,详情到手即自愈;分组在市场侧改了名字
+/// 或图标也从这里跟上。
 final stickerGroupDetailProvider =
     FutureProvider.family<StickerGroupDetail, String>((ref, groupId) async {
       final service = ref.watch(stickerMarketServiceProvider);
       try {
         final detail = await service.getGroupDetail(groupId);
         unawaited(_prefetchFirstScreenThumbnails(groupId, detail.emojis));
+        unawaited(
+          ref
+              .read(subscribedStickerGroupsProvider.notifier)
+              .refreshMetaFromDetail(groupId, detail),
+        );
         return detail;
       } catch (e, st) {
         AppLogger.error(
@@ -351,30 +343,69 @@ class MarketGroupsNotifier
   }
 }
 
-/// 已订阅的分组 ID 列表（响应式）
-final subscribedStickerIdsProvider =
-    StateNotifierProvider<SubscribedStickerIdsNotifier, List<String>>((ref) {
+/// 已订阅的分组（响应式，含 tab 栏所需的 name/icon）
+///
+/// 单一数据源：订阅态判定与 tab 栏渲染都从这里派生，不再有「id 一份、
+/// 元信息另一份」两套状态。初值是 prefs 同步读，面板首帧即可用，
+/// 不发任何请求。
+final subscribedStickerGroupsProvider =
+    StateNotifierProvider<SubscribedStickerGroupsNotifier, List<StickerGroup>>((
+      ref,
+    ) {
       final service = ref.watch(stickerMarketServiceProvider);
-      return SubscribedStickerIdsNotifier(service);
+      return SubscribedStickerGroupsNotifier(service);
     });
 
-class SubscribedStickerIdsNotifier extends StateNotifier<List<String>> {
+class SubscribedStickerGroupsNotifier
+    extends StateNotifier<List<StickerGroup>> {
   final StickerMarketService _service;
 
-  SubscribedStickerIdsNotifier(this._service)
-    : super(_service.getSubscribedGroupIds());
+  SubscribedStickerGroupsNotifier(this._service)
+    : super(_service.getSubscribedGroups());
 
-  Future<void> subscribe(String groupId) async {
-    await _service.subscribe(groupId);
-    state = _service.getSubscribedGroupIds();
+  Future<void> subscribe(StickerGroup group) async {
+    await _service.subscribe(group);
+    state = _service.getSubscribedGroups();
   }
 
   Future<void> unsubscribe(String groupId) async {
     await _service.unsubscribe(groupId);
-    state = _service.getSubscribedGroupIds();
+    state = _service.getSubscribedGroups();
   }
 
-  bool isSubscribed(String groupId) => state.contains(groupId);
+  bool isSubscribed(String groupId) => state.any((g) => g.id == groupId);
+
+  /// 从分组详情回填元信息（升级迁移 + 改名换图自愈）。
+  ///
+  /// 详情只带 id/name/icon，order/topic/isArchived 沿用已有缓存值；
+  /// emojiCount 用详情里的实际条数（比市场列表的快照更准）。
+  /// 未订阅的分组不写盘 —— 详情会被市场面板之外的路径拉到。
+  Future<void> refreshMetaFromDetail(
+    String groupId,
+    StickerGroupDetail detail,
+  ) async {
+    if (!_service.isSubscribed(groupId)) return;
+    final existing = state.firstWhere(
+      (g) => g.id == groupId,
+      orElse: () => StickerGroup(
+        id: groupId,
+        name: '',
+        icon: '',
+        order: 0,
+        emojiCount: 0,
+        isArchived: false,
+      ),
+    );
+    final merged = existing.copyWith(
+      name: detail.name,
+      icon: detail.icon,
+      emojiCount: detail.emojis.length,
+    );
+    if (_service.isSubscribedMetaFresh(merged)) return;
+    await _service.cacheSubscribedGroupMeta(merged);
+    if (!mounted) return;
+    state = _service.getSubscribedGroups();
+  }
 }
 
 /// 最近使用的表情包（响应式）

@@ -21,6 +21,12 @@ class StickerMarketService {
   static const String _baseUrlKey = 'sticker_market_base_url';
   static const String _cachePrefix = 'sticker_market_';
   static const String _subscribedKey = 'sticker_subscribed_groups';
+
+  /// 已订阅分组的元信息缓存（name/icon/emojiCount）。
+  ///
+  /// 与 [_subscribedKey] 分开两个键而不是把订阅列表整体换成 JSON：订阅列表
+  /// 是用户数据、要能被旧版本读懂（降级不丢订阅），元信息只是可重建的缓存。
+  static const String _subscribedMetaKey = 'sticker_subscribed_group_meta';
   static const String _recentStickersKey = 'sticker_recent_items';
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
@@ -55,15 +61,6 @@ class StickerMarketService {
     await _clearAllCache();
   }
 
-  /// 获取市场索引
-  Future<StickerMarketIndex> getIndex() async {
-    final data = await _fetchWithCache(
-      'index',
-      '$baseUrl/assets/market/index/index.json',
-    );
-    return StickerMarketIndex.fromJson(data);
-  }
-
   /// 获取市场分类列表
   ///
   /// 分类唯一来源是独立的 topics.json（与 index.json 解耦，分类可独立
@@ -78,20 +75,6 @@ class StickerMarketService {
         .whereType<Map<String, dynamic>>()
         .map(StickerMarketTopic.fromJson)
         .toList();
-  }
-
-  /// 获取全部非归档分组
-  Future<List<StickerGroup>> getAllGroups() async {
-    final index = await getIndex();
-    final groups = <StickerGroup>[];
-
-    for (int page = 1; page <= index.totalPages; page++) {
-      groups.addAll(await getGroupsPage(page));
-    }
-
-    // 按 order 排序
-    groups.sort((a, b) => a.order.compareTo(b.order));
-    return groups;
   }
 
   /// 获取单页分组数据
@@ -142,30 +125,97 @@ class StickerMarketService {
 
   // ==================== 订阅管理 ====================
 
-  /// 获取已订阅的分组 ID 列表
+  /// 获取已订阅的分组 ID 列表（订阅顺序即展示顺序）
   List<String> getSubscribedGroupIds() {
     return _prefs.getStringList(_subscribedKey) ?? [];
   }
 
-  /// 订阅一个分组
-  Future<void> subscribe(String groupId) async {
-    final ids = getSubscribedGroupIds();
-    if (!ids.contains(groupId)) {
-      ids.add(groupId);
-      await _prefs.setStringList(_subscribedKey, ids);
-    }
+  /// 已订阅分组（含 tab 栏所需的 name/icon），按订阅顺序返回。
+  ///
+  /// 纯本地同步读，不发任何请求 —— 面板首帧就能画出 tab 栏。元信息在订阅
+  /// 那一刻就在手上（市场列表里点的就是它），所以随订阅一起落盘；元信息只是
+  /// 缓存，[_subscribedKey] 才是「订阅了什么」的真相，所以缺元信息的 id
+  /// 仍然会以占位(name/icon 空)出现在结果里，绝不会因为缓存缺失就显示成
+  /// 未订阅。占位由 [cacheSubscribedGroupMeta] 从分组详情回填。
+  List<StickerGroup> getSubscribedGroups() {
+    final metaById = _readSubscribedMeta();
+    return [
+      for (final id in getSubscribedGroupIds())
+        metaById[id] ??
+            StickerGroup(
+              id: id,
+              name: '',
+              icon: '',
+              order: 0,
+              emojiCount: 0,
+              isArchived: false,
+            ),
+    ];
   }
 
-  /// 取消订阅
+  /// 订阅一个分组，同时缓存其元信息
+  Future<void> subscribe(StickerGroup group) async {
+    final ids = getSubscribedGroupIds();
+    if (!ids.contains(group.id)) {
+      ids.add(group.id);
+      await _prefs.setStringList(_subscribedKey, ids);
+    }
+    await cacheSubscribedGroupMeta(group);
+  }
+
+  /// 取消订阅，连带清掉元信息缓存
   Future<void> unsubscribe(String groupId) async {
     final ids = getSubscribedGroupIds();
     ids.remove(groupId);
     await _prefs.setStringList(_subscribedKey, ids);
+    final metaById = _readSubscribedMeta();
+    if (metaById.remove(groupId) != null) {
+      await _writeSubscribedMeta(metaById);
+    }
   }
 
   /// 是否已订阅
   bool isSubscribed(String groupId) {
     return getSubscribedGroupIds().contains(groupId);
+  }
+
+  /// 元信息与本地缓存是否一致（tab 栏只认 name/icon/emojiCount，
+  /// 一致就不写盘、不触发 rebuild）
+  bool isSubscribedMetaFresh(StickerGroup group) {
+    final cached = _readSubscribedMeta()[group.id];
+    return cached != null &&
+        cached.name == group.name &&
+        cached.icon == group.icon &&
+        cached.emojiCount == group.emojiCount;
+  }
+
+  /// 写入/更新已订阅分组的元信息缓存
+  Future<void> cacheSubscribedGroupMeta(StickerGroup group) async {
+    final metaById = _readSubscribedMeta();
+    metaById[group.id] = group;
+    await _writeSubscribedMeta(metaById);
+  }
+
+  Map<String, StickerGroup> _readSubscribedMeta() {
+    final raw = _prefs.getStringList(_subscribedMetaKey) ?? const [];
+    final result = <String, StickerGroup>{};
+    for (final s in raw) {
+      try {
+        final group = StickerGroup.fromJson(
+          json.decode(s) as Map<String, dynamic>,
+        );
+        if (group.id.isNotEmpty) result[group.id] = group;
+      } catch (_) {
+        // 单条坏数据不该让整个 tab 栏退化成占位，跳过即可
+      }
+    }
+    return result;
+  }
+
+  Future<void> _writeSubscribedMeta(Map<String, StickerGroup> metaById) async {
+    await _prefs.setStringList(_subscribedMetaKey, [
+      for (final group in metaById.values) json.encode(group.toJson()),
+    ]);
   }
 
   // ==================== 最近使用 ====================

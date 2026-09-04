@@ -1,24 +1,3 @@
-/// 表情包市场索引信息
-class StickerMarketIndex {
-  final int totalPages;
-  final int pageSize;
-  final int totalGroups;
-
-  const StickerMarketIndex({
-    required this.totalPages,
-    required this.pageSize,
-    required this.totalGroups,
-  });
-
-  factory StickerMarketIndex.fromJson(Map<String, dynamic> json) {
-    return StickerMarketIndex(
-      totalPages: json['totalPages'] as int? ?? 0,
-      pageSize: json['pageSize'] as int? ?? 0,
-      totalGroups: json['totalGroups'] as int? ?? 0,
-    );
-  }
-}
-
 /// 市场分类（topic）
 class StickerMarketTopic {
   final String id;
@@ -64,6 +43,7 @@ class StickerGroup {
     required this.isArchived,
     this.topic = '',
   });
+
   factory StickerGroup.fromJson(Map<String, dynamic> json) {
     return StickerGroup(
       id: json['id'] as String? ?? '',
@@ -73,6 +53,30 @@ class StickerGroup {
       emojiCount: json['emojiCount'] as int? ?? 0,
       isArchived: json['isArchived'] as bool? ?? false,
       topic: json['topic'] as String? ?? '',
+    );
+  }
+
+  /// 与 [fromJson] 对称，用于把已订阅分组的元信息落本地
+  /// （tab 栏首帧要用，见 `sticker_subscribed_group_meta`）。
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'icon': icon,
+    'order': order,
+    'emojiCount': emojiCount,
+    'isArchived': isArchived,
+    'topic': topic,
+  };
+
+  StickerGroup copyWith({String? name, String? icon, int? emojiCount}) {
+    return StickerGroup(
+      id: id,
+      name: name ?? this.name,
+      icon: icon ?? this.icon,
+      order: order,
+      emojiCount: emojiCount ?? this.emojiCount,
+      isArchived: isArchived,
+      topic: topic,
     );
   }
 }

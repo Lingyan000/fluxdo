@@ -356,15 +356,18 @@ class _StickerGroupTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isSubscribed = ref.watch(
-      subscribedStickerIdsProvider.select((ids) => ids.contains(group.id)),
+      subscribedStickerGroupsProvider.select(
+        (groups) => groups.any((g) => g.id == group.id),
+      ),
     );
 
     void onToggle() async {
-      final notifier = ref.read(subscribedStickerIdsProvider.notifier);
+      final notifier = ref.read(subscribedStickerGroupsProvider.notifier);
       if (isSubscribed) {
         await notifier.unsubscribe(group.id);
       } else {
-        await notifier.subscribe(group.id);
+        // 整个 group 一起交出去:name/icon 就地落盘，表情面板首帧不用再回网络
+        await notifier.subscribe(group);
       }
     }
 
