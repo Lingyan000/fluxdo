@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -34,6 +36,12 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
     releaseDistance: 600,
   );
 
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
+  /// 当前选中分类 id（'all' = 全部）；与 notifier 同步，驱动 chip 选中态
+  String _selectedTopic = 'all';
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +50,8 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -73,6 +83,7 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(marketGroupsProvider);
+    final topicsAsync = ref.watch(marketTopicsProvider);
 
     return AppSheetScaffold(
       title: S.current.sticker_marketTitle,
@@ -90,17 +101,140 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
           child: Text(S.current.common_done),
         ),
       ],
-      child: (() {
-        final groups = groupsAsync.value;
-        if (groups != null) {
-          return _buildGroupList(groups);
-        }
-        return groupsAsync.when(
-          data: (groups) => _buildGroupList(groups),
-          loading: () => const Center(child: LoadingSpinner()),
-          error: (err, stack) => _buildError(err, stack),
-        );
-      })(),
+      child: Column(
+        children: [
+          _buildSearchField(),
+          _buildTopicChips(topicsAsync),
+          Expanded(
+            child: (() {
+              final groups = groupsAsync.value;
+              if (groups != null) {
+                return _buildGroupList(groups);
+              }
+              return groupsAsync.when(
+                data: (groups) => _buildGroupList(groups),
+                loading: () => const Center(child: LoadingSpinner()),
+                error: _buildError,
+              );
+            })(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== 搜索与分类 ====================
+
+  void _scheduleSearch() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      ref.read(marketGroupsProvider.notifier).setQuery(_searchController.text);
+    });
+  }
+
+  void _selectTopic(String topicId) {
+    if (topicId == _selectedTopic) return;
+    setState(() => _selectedTopic = topicId);
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    ref.read(marketGroupsProvider.notifier).setTopic(topicId);
+  }
+
+  Widget _buildSearchField() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _searchController,
+        builder: (context, value, _) {
+          return TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            onChanged: (_) => _scheduleSearch(),
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: S.current.sticker_marketSearchHint,
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
+              prefixIcon: const Icon(Symbols.search_rounded, size: 18),
+              suffixIcon: value.text.isEmpty
+                  ? null
+                  : IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Symbols.close_rounded, size: 16),
+                      onPressed: () {
+                        _searchDebounce?.cancel();
+                        _searchController.clear();
+                        ref.read(marketGroupsProvider.notifier).setQuery('');
+                      },
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.primary),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 分类 chips（横向滚动）。topics.json 取不到（旧版服务端 / 请求失败）或
+  /// 全部是空分类时整行不占位，此时只剩「全部」的浏览行为；totalGroups == 0
+  /// 的空分类不展示（点了只会看到空列表）。
+  Widget _buildTopicChips(AsyncValue<List<StickerMarketTopic>> topicsAsync) {
+    final theme = Theme.of(context);
+    final topics = (topicsAsync.value ?? const <StickerMarketTopic>[])
+        .where((t) => t.totalGroups > 0)
+        .toList(growable: false);
+    if (topics.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        itemCount: topics.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final topic = topics[index];
+          final selected = topic.id == _selectedTopic;
+          return ChoiceChip(
+            label: Text(topic.label),
+            selected: selected,
+            onSelected: (_) => _selectTopic(topic.id),
+            labelStyle: TextStyle(
+              fontSize: 12,
+              color: selected
+                  ? theme.colorScheme.onPrimary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            selectedColor: theme.colorScheme.primary,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            side: BorderSide(
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -111,7 +245,11 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.error_rounded, size: 48, color: theme.colorScheme.outline),
+          Icon(
+            Symbols.error_rounded,
+            size: 48,
+            color: theme.colorScheme.outline,
+          ),
           const SizedBox(height: 12),
           Text(
             S.current.sticker_marketLoadFailed,
@@ -166,9 +304,12 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
 
   Widget _buildGroupList(List<StickerGroup> groups) {
     if (groups.isEmpty) {
+      final notifier = ref.read(marketGroupsProvider.notifier);
       return Center(
         child: Text(
-          S.current.sticker_marketEmpty,
+          notifier.isSearchMode
+              ? S.current.sticker_marketSearchEmpty
+              : S.current.sticker_marketEmpty,
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -310,7 +451,7 @@ class _StickerGroupTile extends ConsumerWidget {
       ),
       child: Center(
         child: Text(
-          group.name.isNotEmpty ? group.name[0] : '?',
+          group.name.isNotEmpty ? group.name.characters.first : '?',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

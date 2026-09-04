@@ -28,11 +28,15 @@ class StickerMarketService {
   final SharedPreferences _prefs;
   late final Dio _dio;
 
-  StickerMarketService(this._prefs) {
-    _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-    ));
+  StickerMarketService(this._prefs, {Dio? dio}) {
+    _dio =
+        dio ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 15),
+          ),
+        );
   }
 
   /// 当前 baseUrl
@@ -60,6 +64,22 @@ class StickerMarketService {
     return StickerMarketIndex.fromJson(data);
   }
 
+  /// 获取市场分类列表
+  ///
+  /// 分类唯一来源是独立的 topics.json（与 index.json 解耦，分类可独立
+  /// 于分组数据更新）。
+  Future<List<StickerMarketTopic>> getTopics() async {
+    final data = await _fetchWithCache(
+      'topics',
+      '$baseUrl/assets/market/index/topics.json',
+    );
+    final list = data['topics'] as List<dynamic>? ?? [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(StickerMarketTopic.fromJson)
+        .toList();
+  }
+
   /// 获取全部非归档分组
   Future<List<StickerGroup>> getAllGroups() async {
     final index = await getIndex();
@@ -75,22 +95,47 @@ class StickerMarketService {
   }
 
   /// 获取单页分组数据
-  Future<List<StickerGroup>> getGroupsPage(int page) async {
+  ///
+  /// 其余分类走 `{topic}-page-N.json`（分类清单见 topics.json）。
+  Future<List<StickerGroup>> getGroupsPage(
+    int page, {
+    String topic = 'all',
+  }) async {
+    final (groups, _) = await getGroupsPageWithMeta(page, topic: topic);
+    return groups;
+  }
+
+  /// 获取单页分组数据 + 该分类的分页元信息（totalPages）。
+  ///
+  /// 每个分类的页文件自带该分类的 totalPages（与「全部」的互不相同），
+  /// 分类切换后必须以页文件里的元信息为准，不能沿用索引顶层值。
+  Future<(List<StickerGroup>, int totalPages)> getGroupsPageWithMeta(
+    int page, {
+    String topic = 'all',
+  }) async {
     final data = await _fetchWithCache(
-      'page_$page',
-      '$baseUrl/assets/market/index/page-$page.json',
+      topic == 'all' ? 'page_$page' : 'page_${topic}_$page',
+      topic == 'all'
+          ? '$baseUrl/assets/market/index/page-$page.json'
+          : '$baseUrl/assets/market/index/$topic-page-$page.json',
     );
     final list = data['groups'] as List<dynamic>? ?? [];
-    return list
+    final groups = list
         .map((item) => StickerGroup.fromJson(item as Map<String, dynamic>))
         .toList();
+    return (groups, data['totalPages'] as int? ?? 1);
   }
 
   /// 获取分组详情
   Future<StickerGroupDetail> getGroupDetail(String groupId) async {
+    // 市场分组 id 通常已经包含 `group-` 前缀，不能再次拼接成
+    // `group-group-*.json`；兼容仍使用裸 id 的旧数据。
+    final groupFileName = groupId.startsWith('group-')
+        ? '$groupId.json'
+        : 'group-$groupId.json';
     final data = await _fetchWithCache(
       'group_$groupId',
-      '$baseUrl/assets/market/group-$groupId.json',
+      '$baseUrl/assets/market/$groupFileName',
     );
     return compute(_parseGroupDetail, data);
   }
@@ -132,8 +177,7 @@ class StickerMarketService {
     return raw
         .map((s) {
           try {
-            return StickerItem.fromJson(
-                json.decode(s) as Map<String, dynamic>);
+            return StickerItem.fromJson(json.decode(s) as Map<String, dynamic>);
           } catch (_) {
             return null;
           }
@@ -159,8 +203,9 @@ class StickerMarketService {
     list.insert(0, encoded);
 
     // 限制数量
-    final trimmed =
-        list.length > _maxRecentStickers ? list.sublist(0, _maxRecentStickers) : list;
+    final trimmed = list.length > _maxRecentStickers
+        ? list.sublist(0, _maxRecentStickers)
+        : list;
     await _prefs.setStringList(_recentStickersKey, trimmed);
   }
 
