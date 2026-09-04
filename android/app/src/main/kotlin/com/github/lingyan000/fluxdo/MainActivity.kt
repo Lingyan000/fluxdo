@@ -165,6 +165,15 @@ class MainActivity : FlutterActivity() {
                     FluxdoApplication.setCrashlytics(enable)
                     result.success(null)
                 }
+                // 崩溃/ANR 现场的页面上下文:线上事件的 customKeys 一直是空的,
+                // ANR 主线程栈又全是 framework 帧,没有这个就不知道用户当时在哪。
+                "setCrashContext" -> {
+                    FluxdoApplication.setCrashContext(
+                        call.argument<String>("route"),
+                        call.argument<String>("routeTrail"),
+                    )
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

@@ -9,6 +9,7 @@ import '../models/topic_card_style.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/cf_challenge_service.dart';
+import '../services/crash_context_reporter.dart';
 import '../utils/blocked_user_filter.dart';
 import '../widgets/topic/topic_card_layout.dart';
 import 'theme_provider.dart';
@@ -785,6 +786,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
         'enabled': enabled,
       });
     }
+    // 关闭采集时导航上下文同步停掉
+    CrashContextReporter.setEnabled(Platform.isAndroid && enabled);
   }
 
   Future<void> setPortraitLock(bool enabled) async {
