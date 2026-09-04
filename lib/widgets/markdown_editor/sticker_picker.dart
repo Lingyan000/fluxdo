@@ -11,6 +11,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
+import '../common/app_bottom_sheet.dart';
 import '../common/cached_image.dart';
 import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -100,11 +101,26 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     // 桌面悬浮弹层:市场 sheet 在 Navigator 路由层,会被 root overlay
     // 的弹层盖住 —— 先收弹层再开 sheet
     widget.onDismissRequested?.call();
-    showAppBottomSheet(
+    // 市场面板带搜索框,必须走可拖拽外壳(expandToFill):固定高度那条分支会
+    // 叠加 viewInsets,键盘弹出时把标题栏与搜索框顶出屏幕。initialSize 沿用
+    // 原先的 0.8,打开时观感不变。
+    AppBottomSheet.showDraggable(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const StickerMarketSheet(),
+      title: S.current.sticker_marketTitle,
+      showTitleDivider: true,
+      initialSize: 0.8,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          child: Text(S.current.common_done),
+        ),
+      ],
+      bodyBuilder: (context, scrollController) =>
+          StickerMarketSheet(scrollController: scrollController),
     );
   }
 
