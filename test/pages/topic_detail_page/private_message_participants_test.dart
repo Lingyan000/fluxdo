@@ -82,7 +82,7 @@ TopicDetail _detail({
       'allowed_groups': allowedGroups,
       'can_remove_allowed_users': canRemoveAllowedUsers,
       'can_invite_to': canInviteTo,
-      if (canRemoveSelfId != null) 'can_remove_self_id': canRemoveSelfId,
+      'can_remove_self_id': ?canRemoveSelfId,
     },
   });
 }
@@ -96,11 +96,92 @@ void main() {
 
     expect(find.text('参与者'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
+    // 胶囊统一单行只显昵称，@username 不上屏（进 tooltip）
     expect(find.text('我'), findsOneWidget);
-    expect(find.text('@me'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('@alice'), findsOneWidget);
     expect(find.text('bob'), findsOneWidget);
+    expect(find.text('@me'), findsNothing);
+    expect(find.text('@alice'), findsNothing);
+  });
+
+  testWidgets('@username 与群组全名放进 tooltip', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: false,
+          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
+          onRemoveParticipant: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    String tooltipOf(Key key) => tester
+        .widget<Tooltip>(
+          find.ancestor(of: find.byKey(key), matching: find.byType(Tooltip)),
+        )
+        .message!;
+
+    // 有昵称：昵称 + @username 都在提示里
+    expect(
+      tooltipOf(const ValueKey('pm-participant-firstPost-2')),
+      'Alice · @alice',
+    );
+    // 昵称等于 username：不重复两遍
+    expect(tooltipOf(const ValueKey('pm-participant-firstPost-3')), '@bob');
+    // 群组：屏上是群组名，全名进提示
+    expect(find.text('staff'), findsOneWidget);
+    expect(find.text('管理组'), findsNothing);
+    expect(tooltipOf(const ValueKey('pm-group-firstPost-staff')), 'staff · 管理组');
+  });
+
+  testWidgets('用户胶囊可点(出卡片)，群组胶囊不可点', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          canRemoveAllowedUsers: false,
+          groups: const [TopicGroup(id: 9, name: 'staff')],
+          onRemoveParticipant: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    InkWell inkWellOf(Key key) => tester.widget<InkWell>(
+      find.descendant(of: find.byKey(key), matching: find.byType(InkWell)),
+    );
+
+    // 用户条目挂了 onTap(点开用户卡片)
+    expect(
+      inkWellOf(const ValueKey('pm-participant-firstPost-2')).onTap,
+      isNotNull,
+    );
+    // 群组没有可跳转的目标页，不给假入口
+    expect(inkWellOf(const ValueKey('pm-group-firstPost-staff')).onTap, isNull);
+  });
+
+  testWidgets('有无移除按钮、有无副名的胶囊一律等高', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        _panel(
+          // 只有自己能退出 → 1 号有按钮，2/3 号没有
+          canRemoveAllowedUsers: false,
+          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
+          onRemoveParticipant: (_) {},
+          onRemoveGroup: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final heights = [
+      const ValueKey('pm-participant-firstPost-1'), // 有按钮、无副名
+      const ValueKey('pm-participant-firstPost-2'), // 无按钮、有副名
+      const ValueKey('pm-participant-firstPost-3'), // 无按钮、无副名
+      const ValueKey('pm-group-firstPost-staff'), // 群组、有全名
+    ].map((key) => tester.getSize(find.byKey(key)).height).toSet();
+
+    expect(heights, hasLength(1), reason: '胶囊高度必须一致，实测 $heights');
   });
 
   testWidgets('普通成员只显示自己的退出按钮', (tester) async {
@@ -220,7 +301,6 @@ void main() {
     // 3 个用户 + 1 个群组
     expect(find.text('4'), findsOneWidget);
     expect(find.text('staff'), findsOneWidget);
-    expect(find.text('管理组'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('pm-group-firstPost-remove-staff')),
