@@ -89,6 +89,13 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName(releaseBuildSigningName)
+            // NDK 符号上传:不开的话 libflutter.so / libapp.so 的 native 崩溃在
+            // Crashlytics 里只有裸地址(blameFrame: address: '5148676'),栈帧全空,
+            // 完全无法归因 —— 而 native 崩溃正是当前最大头的崩溃来源。
+            configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
+                nativeSymbolUploadEnabled = true
+                unstrippedNativeLibsDir = file("build/intermediates/merged_native_libs/release/out/lib")
+            }
         }
 
         debug {
