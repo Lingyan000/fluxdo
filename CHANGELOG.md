@@ -2,6 +2,93 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.28] - 2026-09-04
+
+
+### 🌟 新功能
+
+- 表情包市场:分类浏览 + 搜索,修分组详情路径 (#392) ([#392](https://github.com/lingyan000/fluxdo/pull/392)) by @stevessr
+
+- 按分类的最小字数(warden) + 字数不足悬浮提示 by @Lingyan000
+
+- 站点插件框架 + 回复扣积分(discourse-reply-cost) by @Lingyan000
+
+- 私信成员管理:成员/群组面板 + 邀请 + 退出踢人 + 归档收件箱 (#391) ([#391](https://github.com/lingyan000/fluxdo/pull/391)) by @stevessr
+
+- 下载管理:新增「保存到文件 / 另存为」出口 by @Lingyan000
+
+- 导出历史长按菜单 + 临时文件自清理,删死文案 by @Lingyan000
+
+- 图片保存收口:桌面改另存为,补图片菜单保存项 by @Lingyan000
+
+- 导出文章:去向重排 + 保存到公共目录 by @Lingyan000
+
+- 「显示过滤提示」开关:话题列表隐藏数量可关闭 + 设置项长说明自然换行 (#350) ([#350](https://github.com/lingyan000/fluxdo/pull/350)) by @Ooxygen7
+
+
+### 🐛 修复
+
+- 表情包市场面板改可拖拽外壳,修键盘顶出标题栏 by @Lingyan000
+
+- 修 macOS 语音输入法/剪贴板管理器的 Cmd+V 粘贴失效 by @Lingyan000
+
+- 诊断报告改导出文件,底栏分享补匿名偏好 by @Lingyan000
+
+- 修 iOS 保存落点:撤销 Documents 暴露,改走另存为 by @Lingyan000
+
+- 修复下载文件名路径穿越 (#387) by @KIDA-MNESIA
+
+- 修复下载目标路径竞态 by @Lingyan000
+
+- 修复下载文件名路径穿越 by @KIDA-MNESIA
+
+- 修 Base64 CESU-8 文本误判与乱码 (#386) ([#386](https://github.com/lingyan000/fluxdo/pull/386)) by @soaringmz
+
+- 优先复用图片查看器入口缩略图 by @Lingyan000
+
+- 优化弱网查看大图：保留缩略图并显示环形进度 by @Lingyan000
+
+- 浮起菜单接管系统返回:先关菜单而非 pop 页面 by @Lingyan000
+
+- 修复 cf_clearance 同步判定改用「在位值粘性」,墓碑机制整体撤除 by @Lingyan000
+
+- 修分享图片变无后缀文件/哈希名:缓存文件名对齐 Telegram 带扩展名(md5.url-ext),出 App 边界复制可读命名临时文件(接口/cooked 原名 → URL 末段 → 时间戳),保存相册同口径 by @Lingyan000
+
+- 修 cover 源飞行「两端完整、中间帧被裁」 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 表情面板去掉全市场元信息拉取,订阅时就把 name/icon 落本地 by @Lingyan000
+
+- ️ iOS 另存为改走原生导出面板,去掉全量读入内存 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 分享/保存语义对齐:备份只落盘,删除双语义遗留函数 by @Lingyan000
+
+
+### 📝 文档
+
+- Docs: 添加 v0.2.28 版本亮点 by @Lingyan000
+
+
+### 🔧 其他
+
+- ⬆️ fluxdo_render: 修 Paragraph 缓存 UAF 崩溃 by @Lingyan000
+
+- 🔍 崩溃/ANR 现场带上当前页面与导航轨迹 by @Lingyan000
+
+- 🔍 ANR 全线程栈取证 + 开启 NDK 符号上传 by @Lingyan000
+
+- 💄 私信成员胶囊:统一单行 + 点击出用户卡片 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.27...v0.2.28
+
 ## [0.2.27] - 2026-08-21
 
 
