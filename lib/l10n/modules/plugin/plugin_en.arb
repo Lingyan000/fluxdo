@@ -1,0 +1,12 @@
+{
+  "@@locale": "en",
+  "replyCost_confirm": "This reply will cost {cost} points. Continue?",
+  "@replyCost_confirm": {
+    "placeholders": {
+      "cost": {
+        "type": "int"
+      }
+    }
+  },
+  "charCount_noPaddingWarning": "Don't use character-padding tricks"
+}

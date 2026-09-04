@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/topic.dart';
+import '../plugins/site_plugin.dart';
 
 /// 链接风险等级
 enum LinkRiskLevel {
@@ -95,10 +96,17 @@ class SiteCustomization {
   /// 链接安全配置
   final LinkSecurityConfig? linkSecurityConfig;
 
+  /// 站点插件列表
+  ///
+  /// 对应该社区自建的 Discourse 插件（非标准能力），
+  /// 由 [PluginRegistry] 在对应钩子处按顺序执行。
+  final List<SitePlugin> plugins;
+
   const SiteCustomization({
     this.avatarGlowRules = const [],
     this.userTitleStyleRules = const [],
     this.linkSecurityConfig,
+    this.plugins = const [],
   });
 
   /// 匹配头像光晕（返回光晕颜色，null 表示无光晕）

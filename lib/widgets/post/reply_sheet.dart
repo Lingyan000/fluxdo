@@ -11,6 +11,10 @@ import '../markdown_editor/rich_composer/rich_composer_editor.dart';
 import '../../providers/preferences_provider.dart';
 import '../../models/topic.dart';
 import '../../models/draft.dart';
+import '../../plugins/plugins.dart';
+import '../../providers/category_provider.dart';
+import '../../services/composer_min_length_resolver.dart';
+import '../common/character_counts_overlay.dart';
 import '../../models/pending_post.dart';
 import '../../pages/pending_posts_page.dart';
 import '../../services/local_notification_service.dart' show navigatorKey;
@@ -25,7 +29,6 @@ import 'package:dio/dio.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/network/exceptions/api_exception.dart';
 import '../../services/toast_service.dart';
-import '../../services/preloaded_data_service.dart';
 import '../common/smart_avatar.dart';
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
@@ -235,6 +238,19 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   bool get _isInPrivateMessageContext =>
       _isPrivateMessage || widget.isPrivateMessageTopic;
   bool get _isEditMode => widget.editPost != null;
+
+  /// 当前正文最小字数（含 warden 等站点插件按分类的改写）
+  ///
+  /// 计数器分母与提交校验共用，避免「计数器说够了、提交却被拦」。
+  int? _minPostLength;
+
+  /// 正文实时长度（驱动计数器）
+  int _contentLength = 0;
+
+  /// 编辑模式改的是已有楼层，是否首帖按被编辑帖子的楼层号判断；
+  /// 回复永远不是首帖。
+  bool get _isFirstPost => _isEditMode && widget.editPost!.postNumber == 1;
+
   bool get _canReviewPost =>
       !_isEditMode &&
       !_isPrivateMessage &&
@@ -275,6 +291,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     // 添加内容变化监听以触发草稿自动保存
     _contentController.addListener(_onContentChanged);
     _titleController.addListener(_onContentChanged);
+    // 字数计数器单独监听：编辑模式下 _onContentChanged 会直接 return，
+    // 但计数器在编辑帖子时同样需要实时更新
+    _contentController.addListener(_onContentLengthChanged);
+    _loadMinPostLength();
 
     // 自动聚焦（非编辑模式时立即聚焦，编辑模式在加载完成后聚焦）
     if (!_isEditMode) {
@@ -386,6 +406,29 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   }
 
   /// 内容变化时触发草稿保存
+  /// 同步正文长度到计数器
+  void _onContentLengthChanged() {
+    final length = _contentController.text.length;
+    if (length == _contentLength) return;
+    setState(() => _contentLength = length);
+  }
+
+  /// 解析当前上下文的最小正文字数（含插件按分类的改写）
+  Future<void> _loadMinPostLength() async {
+    final categoryId = widget.categoryId;
+    final category = categoryId == null
+        ? null
+        : ref.read(categoryMapProvider).value?[categoryId];
+    final min = await ComposerMinLengthResolver.resolve(
+      category: category,
+      isFirstPost: _isFirstPost,
+      isPrivateMessage: _isInPrivateMessageContext,
+      isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
+    );
+    if (!mounted) return;
+    setState(() => _minPostLength = min);
+  }
+
   void _onContentChanged() {
     if (_isEditMode || _draftController == null) return;
 
@@ -440,6 +483,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     // 移除监听器
     _contentController.removeListener(_onContentChanged);
     _titleController.removeListener(_onContentChanged);
+    _contentController.removeListener(_onContentLengthChanged);
 
     // 关闭时处理草稿：已提交则跳过，有内容则保存，无内容则删除
     if (_draftController != null && !_submitted && !_discarded) {
@@ -498,13 +542,17 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
 
-    // 最小字数校验
-    final preloaded = PreloadedDataService();
-    final minLength = widget.isPmWithNonHumanUser
-        ? 1
-        : _isInPrivateMessageContext
-        ? await preloaded.getMinPmPostLength()
-        : await preloaded.getMinPostLength();
+    // 最小字数校验：与计数器共用同一份解析结果（含 warden 按分类改写），
+    // 否则在搞七捻三（16）这类分类下会出现计数器与校验不一致
+    final minLength = _minPostLength ??
+        await ComposerMinLengthResolver.resolve(
+          category: widget.categoryId == null
+              ? null
+              : ref.read(categoryMapProvider).value?[widget.categoryId],
+          isFirstPost: _isFirstPost,
+          isPrivateMessage: _isInPrivateMessageContext,
+          isPmWithNonHumanUser: widget.isPmWithNonHumanUser,
+        );
     if (content.length < minLength) {
       ToastService.showInfo(S.current.createTopic_minContentLength(minLength));
       return;
@@ -520,6 +568,24 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       _showError(S.current.pm_noRecipient);
       return;
     }
+
+    // 站点插件发送前钩子（对齐 Discourse `composerBeforeSave`）：
+    // 如 linux.do 回复扣积分需要先弹确认框，用户取消则不发送。
+    // 放在校验之后、置 _isSubmitting 之前，避免取消后按钮卡在 loading。
+    // 前面的最小字数校验有 await，用 context 前先确认本弹框还在。
+    if (!mounted) return;
+    final pluginAllowed = await PluginRegistry.runBeforeReplySubmit(
+      ReplySubmitContext(
+        context: context,
+        topic: TopicPluginContext(
+          topicId: widget.topicId,
+          topicJson: TopicPluginData.of(widget.topicId),
+        ),
+        isEditing: _isEditMode,
+        isPrivateMessage: _isPrivateMessage,
+      ),
+    );
+    if (!pluginAllowed || !mounted) return;
 
     setState(() => _isSubmitting = true);
     // 对齐 Discourse 前端 composer.set("disableDrafts", true):
@@ -608,6 +674,16 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   }
 
   /// 构建草稿保存状态指示器
+  /// 字数不足时悬浮在正文区右下角的提示
+  ///
+  /// 对齐网页端：主题组件只吐一个 `.character-counts` div，悬浮定位由
+  /// 主题 CSS 完成。悬浮而非占独立行，既不挤压顶部标题行（那行已有
+  /// 头像/草稿状态/舍弃/AI 审阅/发送），也不受中英文文案长度差异影响。
+  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
+    length: _contentLength,
+    minimumLength: _minPostLength,
+  );
+
   Widget _buildDraftStatusIndicator(DraftSaveStatus status, ThemeData theme) {
     switch (status) {
       case DraftSaveStatus.idle:
@@ -893,6 +969,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                       controller: _contentController,
                                       focusNode: _contentFocusNode,
                                       hintText: context.l10n.editor_hintText,
+                                      bodyOverlay: _buildCharCountOverlay(),
                                       emojiPanelHeight: _emojiPanelHeight,
                                       onEmojiPanelChanged: (show) {
                                         setState(() => _showEmojiPanel = show);
@@ -924,6 +1001,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                 focusNode: _contentFocusNode,
                                 hintText: context.l10n.editor_hintText,
                                 expands: true,
+                                bodyOverlay: _buildCharCountOverlay(),
                                 emojiPanelHeight: _emojiPanelHeight,
                                 onEmojiPanelChanged: (show) {
                                   setState(() => _showEmojiPanel = show);

@@ -6,6 +6,7 @@ import '../l10n/s.dart';
 import '../models/topic.dart';
 import '../models/pending_post.dart';
 import '../models/user.dart';
+import '../plugins/plugins.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/anchor_guard_sliver.dart';
 import 'bookmark_sync_controller.dart';
@@ -345,7 +346,11 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
       final list = _activeParams[arg.topicId];
       if (list == null) return;
       list.remove(arg);
-      if (list.isEmpty) _activeParams.remove(arg.topicId);
+      if (list.isEmpty) {
+        _activeParams.remove(arg.topicId);
+        // 该话题已无存活实例，同步丢弃插件扩展字段缓存
+        TopicPluginData.forget(arg.topicId);
+      }
     });
 
     // 保持存活，防止布局切换的短暂间隙被 autoDispose 清理
@@ -372,6 +377,10 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     final detail = await service.getTopicDetail(arg.topicId, postNumber: arg.postNumber, trackVisit: true);
 
     _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
+
+    // 记录话题级插件扩展字段，供分散在深层组件里的回复入口按 topicId 取用
+    // （如 linux.do 回复扣积分的 reply_cost）
+    TopicPluginData.put(arg.topicId, detail.pluginExtras);
 
     return _withSuggestedCache(detail);
   }

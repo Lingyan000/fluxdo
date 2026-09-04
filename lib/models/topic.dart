@@ -1900,6 +1900,17 @@ class TopicDetail {
   /// 指定的就是这个,跟上面几个话题级字段是两回事。
   final Map<int, PostAssignmentInfo> indirectlyAssignedTo;
 
+  /// 站点插件扩展字段(话题详情顶层的非标准标量字段)
+  ///
+  /// 各社区自建的 Discourse 插件会往话题序列化里加自己的字段,
+  /// 例如 linux.do `discourse-reply-cost` 的 `reply_cost`。这类字段不属于
+  /// Discourse 标准能力,不为其单独扩充模型属性,统一收进这里由
+  /// `lib/plugins` 下的站点插件自行解析。
+  ///
+  /// 只保留顶层标量(数字/布尔/字符串),不含 `post_stream` 等重型结构,
+  /// 避免整份原始 JSON 常驻内存。
+  final Map<String, dynamic> pluginExtras;
+
   bool get isAssigned => assignedToUser != null || assignedToGroupName != null;
 
   bool get hasAcceptedAnswer => acceptedAnswers.isNotEmpty;
@@ -1962,7 +1973,20 @@ class TopicDetail {
     this.assignmentNote,
     this.assignmentStatus,
     this.indirectlyAssignedTo = const {},
+    this.pluginExtras = const <String, dynamic>{},
   });
+
+  /// 从话题详情原始 JSON 中挑出顶层标量字段,供站点插件读取
+  static Map<String, dynamic> _extractPluginExtras(Map<String, dynamic> json) {
+    final extras = <String, dynamic>{};
+    for (final entry in json.entries) {
+      final value = entry.value;
+      if (value is num || value is bool || value is String) {
+        extras[entry.key] = value;
+      }
+    }
+    return Map.unmodifiable(extras);
+  }
 
   factory TopicDetail.fromJson(Map<String, dynamic> json) {
     var postStream = PostStream.fromJson(
@@ -2167,6 +2191,7 @@ class TopicDetail {
       indirectlyAssignedTo: _tryParseIndirectlyAssignedTo(
         json['indirectly_assigned_to'],
       ),
+      pluginExtras: _extractPluginExtras(json),
     );
   }
 
@@ -2341,6 +2366,8 @@ class TopicDetail {
       assignmentNote: assignmentNote,
       assignmentStatus: assignmentStatus,
       indirectlyAssignedTo: indirectlyAssignedTo,
+      // 插件扩展字段只有整页重拉才会变,本地局部更新一律透传旧值
+      pluginExtras: pluginExtras,
     );
   }
 }
