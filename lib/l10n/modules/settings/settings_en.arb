@@ -168,5 +168,9 @@
   "shortcuts_switchToTopics": "Switch to Topics",
   "shortcuts_toggleAiPanel": "AI Assistant Panel",
   "shortcuts_toggleNotifications": "Notifications",
-  "shortcuts_topic": "Topic"
+  "shortcuts_topic": "Topic",
+  "preferences_renderGlesBackend": "Skia/OpenGL ES Rendering Compatibility Mode",
+  "preferences_renderGlesBackendDesc": "Use Skia (OpenGL ES) rendering to avoid crashes caused by some Mali/Vulkan drivers. Takes effect after restarting the app",
+  "preferences_renderGlesRestartTitle": "Restart Required",
+  "preferences_renderGlesRestartBody": "The setting has been saved. The rendering backend will switch the next time you open FluxDO. Close and reopen the app for the change to take effect."
 }

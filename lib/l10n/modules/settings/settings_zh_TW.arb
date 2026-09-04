@@ -153,5 +153,9 @@
   "shortcuts_switchToProfile": "切換到個人",
   "shortcuts_switchToTopics": "切換到話題",
   "shortcuts_toggleAiPanel": "AI 助手面板",
-  "shortcuts_toggleNotifications": "通知面板"
+  "shortcuts_toggleNotifications": "通知面板",
+  "preferences_renderGlesBackend": "Skia/OpenGL ES 渲染相容模式",
+  "preferences_renderGlesBackendDesc": "改用 Skia（OpenGL ES）渲染，可避開部分 Mali/Vulkan 驅動導致的閃退；重新啟動應用後生效",
+  "preferences_renderGlesRestartTitle": "需要重新啟動應用",
+  "preferences_renderGlesRestartBody": "設定已儲存。渲染後端會在下次開啟 FluxDO 時切換，請關閉並重新開啟應用以套用變更。"
 }
