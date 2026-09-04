@@ -257,6 +257,18 @@ class PreloadedDataService {
     return 20; // Discourse 默认值
   }
 
+  /// 获取帖子最大长度
+  ///
+  /// warden 等插件抬高最小字数时需要用它封顶,避免管理员误配出
+  /// 一个永远满足不了的下限。
+  Future<int> getMaxPostLength() async {
+    await _ensureLoaded();
+    final value = _siteSettings?['max_post_length'];
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? 32000;
+    return 32000; // Discourse 默认值
+  }
+
   /// 获取私信内容最小长度
   Future<int> getMinPmPostLength() async {
     await _ensureLoaded();

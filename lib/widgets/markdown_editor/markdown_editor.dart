@@ -80,6 +80,12 @@ class MarkdownEditor extends ConsumerStatefulWidget {
   /// 分类/标签/字数等元数据常驻可见可改,不随滚动离场。null 时无。
   final Widget? metaBar;
 
+  /// 悬浮在正文输入区右下角的覆盖层(如字数不足提示)。
+  ///
+  /// 只盖住可滚动的正文区,不会遮挡 [metaBar] 与底部工具栏;
+  /// 键盘弹出导致正文区缩小时会跟着上移。
+  final Widget? bodyOverlay;
+
   const MarkdownEditor({
     super.key,
     required this.controller,
@@ -96,6 +102,7 @@ class MarkdownEditor extends ConsumerStatefulWidget {
     this.onSwitchToRich,
     this.header,
     this.metaBar,
+    this.bodyOverlay,
   });
 
   @override
@@ -813,7 +820,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       children: [
         // 编辑/预览区域
         Expanded(
-          child: _isPreview && widget.onTogglePreview == null
+          child: Stack(children: [
+            Positioned.fill(
+              child: _isPreview && widget.onTogglePreview == null
               ? SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -889,6 +898,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                     ),
                   ],
                 ),
+            ),
+            // 悬浮覆盖层:只盖正文区,不遮 metaBar/工具栏
+            if (widget.bodyOverlay != null)
+              Positioned(right: 12, bottom: 8, child: widget.bodyOverlay!),
+          ]),
         ),
 
         // 底部属性条(分类/标签/字数常驻,不随滚动离场)

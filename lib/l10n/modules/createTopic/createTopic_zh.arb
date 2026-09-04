@@ -1,13 +1,5 @@
 {
   "@@locale": "zh",
-  "createTopic_charCount": "{count} 字符",
-  "@createTopic_charCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "createTopic_postVoting": "问答",
   "createTopic_confirmPublish": "确定发布",
   "createTopic_contentHint": "正文内容 (支持 Markdown)...",

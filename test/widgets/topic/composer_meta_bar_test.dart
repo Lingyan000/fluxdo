@@ -41,7 +41,6 @@ void main() {
       selectedTags: const [],
       allTags: const [],
       onTagsChanged: (_) {},
-      charCount: 0,
     );
     await tester.pumpWidget(_wrap(bar));
     expect(find.text(S.current.topic_selectCategory), findsOneWidget);
@@ -53,11 +52,9 @@ void main() {
       selectedTags: const [],
       allTags: const [],
       onTagsChanged: (_) {},
-      charCount: 12,
     );
     await tester.pumpWidget(_wrap(bar));
     expect(find.text('沙盒'), findsOneWidget);
-    expect(find.text(S.current.createTopic_charCount(12)), findsOneWidget);
   });
 
   testWidgets('标签 pill:空显示添加入口,多标签收纳 +N', (tester) async {
@@ -70,7 +67,6 @@ void main() {
           selectedTags: const [],
           allTags: const ['a'],
           onTagsChanged: (_) {},
-          charCount: 0,
         ),
       ),
     );
@@ -85,7 +81,6 @@ void main() {
           selectedTags: const ['aa', 'bb', 'cc'],
           allTags: const ['aa', 'bb', 'cc'],
           onTagsChanged: (_) {},
-          charCount: 0,
         ),
       ),
     );
@@ -102,7 +97,6 @@ void main() {
           selectedTags: const [],
           allTags: const ['a', 'b'],
           onTagsChanged: (_) {},
-          charCount: 0,
         ),
       ),
     );
@@ -120,7 +114,6 @@ void main() {
           selectedTags: const [],
           allTags: const [],
           onTagsChanged: (_) {},
-          charCount: 0,
           enabled: false,
         ),
       ),

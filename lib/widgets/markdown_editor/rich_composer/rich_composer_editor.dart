@@ -113,6 +113,7 @@ class RichComposerEditor extends StatefulWidget {
     this.hintText = '',
     this.header,
     this.metaBar,
+    this.bodyOverlay,
     this.emojiPanelHeight = 280.0,
     this.onEmojiPanelChanged,
     this.mentionDataSource,
@@ -134,6 +135,12 @@ class RichComposerEditor extends StatefulWidget {
   /// 底部属性条(编辑区与工具栏之间,如 ComposerMetaBar):
   /// 分类/标签/字数等元数据常驻可见可改,不随滚动离场。null 时无。
   final Widget? metaBar;
+
+  /// 悬浮在正文输入区右下角的覆盖层(如字数不足提示)。
+  ///
+  /// 只盖住可滚动的正文区,不会遮挡 [metaBar] 与底部工具栏;
+  /// 键盘弹出导致正文区缩小时会跟着上移。
+  final Widget? bodyOverlay;
   final double emojiPanelHeight;
   final ValueChanged<bool>? onEmojiPanelChanged;
   final MentionDataSource? mentionDataSource;
@@ -2998,7 +3005,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     return Column(
       children: [
         Expanded(
-          child: CompositedTransformTarget(
+          child: Stack(children: [
+            Positioned.fill(
+              child: CompositedTransformTarget(
             link: _mentionLink,
             // 滚动结构:header(标题/标签等元数据)与编辑器同在一个
             // CustomScrollView —— 手机上写正文时头部随内容滚出屏,
@@ -3136,6 +3145,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               ),
             ),
           ),
+            ),
+            // 悬浮覆盖层:只盖正文区,不遮 metaBar/工具栏
+            if (widget.bodyOverlay != null)
+              Positioned(right: 12, bottom: 8, child: widget.bodyOverlay!),
+          ]),
         ),
         // 底部属性条(分类/标签/字数常驻,不随滚动离场)
         if (widget.metaBar != null) widget.metaBar!,

@@ -15,6 +15,8 @@ import 'package:fluxdo/models/draft.dart';
 import 'package:fluxdo/models/shortcut_binding.dart';
 
 import 'package:fluxdo/providers/discourse_providers.dart';
+import 'package:fluxdo/services/composer_min_length_resolver.dart';
+import 'package:fluxdo/widgets/common/character_counts_overlay.dart';
 import 'package:fluxdo/services/toast_service.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxdo/services/ai_post_review_service.dart';
@@ -104,10 +106,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     // 添加草稿自动保存监听
     _titleController.addListener(_onDraftContentChanged);
     _contentController.addListener(_onDraftContentChanged);
+    // 标题计数器需要随输入实时重建
+    _titleController.addListener(_updateTitleLength);
 
     // 预填标题/内容(待审内容撤回重编辑等场景):直接落 controller,
     // 并跳过草稿恢复弹窗,避免旧草稿覆盖预填内容
-    final hasInitialPrefill = (widget.initialTitle?.isNotEmpty ?? false) ||
+    final hasInitialPrefill =
+        (widget.initialTitle?.isNotEmpty ?? false) ||
         (widget.initialContent?.isNotEmpty ?? false);
     if (hasInitialPrefill) {
       if (widget.initialTitle != null) {
@@ -123,6 +128,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     // 从当前筛选条件自动填入分类和标签
     WidgetsBinding.instance.addPostFrameCallback((_) => _applyCurrentFilter());
+    // 先按站点默认算一版下限，_applyCurrentFilter 选中分类后会再刷新
+    _refreshMinContentLength();
   }
 
   @override
@@ -327,6 +334,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     _pageController.dispose();
     _contentController.removeListener(_updateContentLength);
+    _titleController.removeListener(_updateTitleLength);
     _titleController.dispose();
     _contentController.dispose();
     _contentFocusNode.dispose();
@@ -335,6 +343,32 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   void _updateContentLength() {
     setState(() => _contentLength = _contentController.text.length);
+  }
+
+  /// 标题长度变化时重建（驱动标题计数器）
+  int _titleLength = 0;
+  void _updateTitleLength() {
+    final length = _titleController.text.trim().length;
+    if (length == _titleLength) return;
+    setState(() => _titleLength = length);
+  }
+
+  /// 首帖最小字数（含 warden 等插件按分类的改写）；null 表示尚未解析出
+  int? _minContentLength;
+
+  /// 解析当前分类下的首帖最小字数
+  ///
+  /// 分类可随时切换（如从「云端资产」切到「搞七捻三」），每次切换都要重算，
+  /// 计数器分母与提交校验共用该结果。
+  Future<void> _refreshMinContentLength() async {
+    final category = _selectedCategory;
+    final min = await ComposerMinLengthResolver.resolve(
+      category: category,
+      isFirstPost: true,
+      isPrivateMessage: false,
+    );
+    if (!mounted) return;
+    setState(() => _minContentLength = min);
   }
 
   void _onCategorySelected(Category category) {
@@ -347,6 +381,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         _createAsPostVoting = true;
       }
     });
+    // 分类决定 warden 最小字数，切换后立即重算
+    _refreshMinContentLength();
 
     final currentContent = _contentController.text.trim();
     if (currentContent.isEmpty ||
@@ -405,7 +441,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     }
 
     // 手动验证内容
-    final minContentLength = ref.read(minFirstPostLengthProvider).value ?? 20;
+    // 与计数器共用同一份解析结果（含 warden 按分类改写）
+    final minContentLength =
+        _minContentLength ??
+        await ComposerMinLengthResolver.resolve(
+          category: _selectedCategory,
+          isFirstPost: true,
+          isPrivateMessage: false,
+        );
     final contentText = _contentController.text.trim();
     if (contentText.isEmpty) {
       if (_showPreview) _togglePreview();
@@ -437,6 +480,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     if (_templateContent != null &&
         _contentController.text.trim() == _templateContent!.trim()) {
+      // 上方最小字数解析可能 await 过，用 context 前先确认页面还在
+      if (!mounted) return;
       final confirm = await showAppDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -510,47 +555,74 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     final topInset = ProgressiveTopBlur.heightFor(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(20, topInset + 10, 20, 0),
-      child: TextFormField(
-        controller: _titleController,
-        decoration: InputDecoration(
-          hintText: context.l10n.createTopic_titleHint,
-          hintStyle: TextStyle(
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            fontWeight: FontWeight.normal,
+      // 标题字数提示悬浮在输入框右下角(与正文同一套做法):
+      // 不占布局空间,标题为空或已达标时完全不出现
+      child: Stack(
+        children: [
+          TextFormField(
+            controller: _titleController,
+            decoration: InputDecoration(
+              hintText: context.l10n.createTopic_titleHint,
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
+                fontWeight: FontWeight.normal,
+              ),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              isDense: true,
+            ),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+            maxLines: null,
+            maxLength: 200,
+            // 计数改用悬浮层(见下方 Stack),这里不占位
+            buildCounter:
+                (
+                  context, {
+                  required currentLength,
+                  required isFocused,
+                  maxLength,
+                }) => null,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return context.l10n.createTopic_enterTitle;
+              }
+              if (value.trim().length < minTitleLength) {
+                return context.l10n.createTopic_minTitleLength(minTitleLength);
+              }
+              return null;
+            },
+            onTap: () {
+              _editorKey.currentState?.closeEmojiPanel();
+              _richKey.currentState?.closeEmojiPanel();
+            },
           ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
-          isDense: true,
-        ),
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.5,
-        ),
-        maxLines: null,
-        maxLength: 200,
-        buildCounter:
-            (
-              context, {
-              required currentLength,
-              required isFocused,
-              maxLength,
-            }) => null,
-        validator: (value) {
-          if (value == null || value.trim().isEmpty) {
-            return context.l10n.createTopic_enterTitle;
-          }
-          if (value.trim().length < minTitleLength) {
-            return context.l10n.createTopic_minTitleLength(minTitleLength);
-          }
-          return null;
-        },
-        onTap: () {
-          _editorKey.currentState?.closeEmojiPanel();
-          _richKey.currentState?.closeEmojiPanel();
-        },
+          // 标题为空时同样提示（对齐 missingReplyCharacters > 0）：
+          // 一进来就知道标题有字数门槛，不用先打字才发现
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: CharacterCountsOverlay(
+              length: _titleLength,
+              minimumLength: minTitleLength,
+              // 标题不带社区警告文案（对齐主题组件 showWarning=false）
+              showWarning: false,
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  /// 字数不足时悬浮在正文区右下角的提示（对齐网页主题 CSS 的绝对定位）
+  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
+    length: _contentLength,
+    minimumLength: _minContentLength,
+  );
 
   /// 底部属性条:分类/标签/字数(编辑区与工具栏之间,常驻可改)
   Widget _buildMetaBar(
@@ -569,7 +641,6 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       selectedTags: _selectedTags,
       allTags: tagsAsync.value ?? const [],
       onTagsChanged: _onTagsChanged,
-      charCount: _contentLength,
       showPostVotingToggle: sitePostVoting,
       postVotingEnabled: _createAsPostVoting || locked,
       postVotingLocked: locked,
@@ -770,6 +841,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                                                   canTagTopics,
                                                   tagsAsync,
                                                 ),
+                                                bodyOverlay:
+                                                    _buildCharCountOverlay(),
                                                 controller: _contentController,
                                                 focusNode: _contentFocusNode,
                                                 hintText: context
@@ -822,6 +895,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                                             canTagTopics,
                                             tagsAsync,
                                           ),
+                                          bodyOverlay: _buildCharCountOverlay(),
                                           controller: _contentController,
                                           focusNode: _contentFocusNode,
                                           hintText: context

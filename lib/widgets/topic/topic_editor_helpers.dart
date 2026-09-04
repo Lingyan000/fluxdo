@@ -604,8 +604,6 @@ class ComposerMetaBar extends StatelessWidget {
   final List<String> allTags;
   final ValueChanged<List<String>> onTagsChanged;
 
-  final int charCount;
-
   /// 元数据可编辑权限(编辑页 _canEditMetadata):false 时禁用态展示
   final bool enabled;
 
@@ -626,7 +624,6 @@ class ComposerMetaBar extends StatelessWidget {
     required this.selectedTags,
     required this.allTags,
     required this.onTagsChanged,
-    required this.charCount,
     this.enabled = true,
     this.showPostVotingToggle = false,
     this.postVotingEnabled = false,
@@ -852,34 +849,19 @@ class ComposerMetaBar extends StatelessWidget {
           ),
         ),
       ),
+      // 字数展示已移出:不足时由 CharacterCountsOverlay 悬浮在输入区
+      // 右下角,达标后不再展示常驻字数(常驻计数只是噪音)。
       child: Row(
         children: [
-          // 左侧 pills 容器占掉全部中间空间(pills 靠左、内部各自
-          // Flexible 截断),字数固定贴最右 —— 不能用 Spacer:
-          // Flexible pills 未用完的 flex 份额会变成行尾空白,把
-          // 字数顶离右缘
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(child: _categoryPill(context, theme)),
-                if (showTags) ...[
-                  const SizedBox(width: 6),
-                  Flexible(child: _tagsPill(context, theme)),
-                ],
-                if (showPostVotingToggle) ...[
-                  const SizedBox(width: 6),
-                  Flexible(child: _postVotingPill(theme)),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            S.current.createTopic_charCount(charCount),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Flexible(child: _categoryPill(context, theme)),
+          if (showTags) ...[
+            const SizedBox(width: 6),
+            Flexible(child: _tagsPill(context, theme)),
+          ],
+          if (showPostVotingToggle) ...[
+            const SizedBox(width: 6),
+            Flexible(child: _postVotingPill(theme)),
+          ],
         ],
       ),
     );
