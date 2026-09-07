@@ -112,11 +112,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _draftController = DraftController(draftKey: widget.draftKey);
 
     // 添加草稿自动保存监听
-    _titleController.addListener(_onTitleChanged);
-    _titleController.addListener(_onDraftContentChanged);
+    // 标题上的三件事（featured link 解析 / 草稿 / 计数器）合并成一个监听，
+    // 标题输入是热路径，不必每个按键跑三轮回调。
+    _titleController.addListener(_onTitleInputChanged);
     _contentController.addListener(_onDraftContentChanged);
-    // 标题计数器需要随输入实时重建
-    _titleController.addListener(_updateTitleLength);
 
     // 预填标题/内容(待审内容撤回重编辑等场景):直接落 controller,
     // 并跳过草稿恢复弹窗,避免旧草稿覆盖预填内容
@@ -319,8 +318,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _shortcutSurfaceBinding.disposeDeferred();
     _featuredLinkDebounce?.cancel();
     // 移除草稿监听器
-    _titleController.removeListener(_onTitleChanged);
-    _titleController.removeListener(_onDraftContentChanged);
+    _titleController.removeListener(_onTitleInputChanged);
     _contentController.removeListener(_onDraftContentChanged);
 
     // 关闭时处理草稿：已提交则跳过，有内容则保存，无内容则删除
@@ -345,7 +343,6 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     _pageController.dispose();
     _contentController.removeListener(_updateContentLength);
-    _titleController.removeListener(_updateTitleLength);
     _titleController.dispose();
     _contentController.dispose();
     _contentFocusNode.dispose();
@@ -356,18 +353,36 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     setState(() => _contentLength = _contentController.text.length);
   }
 
+  /// 站点是否开放话题精选链接（Discourse `topic_featured_link_enabled`，
+  /// client: true / default: true）。
+  ///
+  /// 与仓库其它站点开关一致取正向判定：预加载 blob 尚未就绪（首帧、冷启动
+  /// 失败）时 `siteSettingsSync` 为 null，此时应当按「未开启」处理，避免凭空
+  /// 发起 inline-onebox 请求并改写用户标题。
   bool get _featuredLinkEnabled =>
-      PreloadedDataService().siteSettingsSync?['topic_featured_link_enabled'] !=
-      false;
+      PreloadedDataService().siteSettingsSync?['topic_featured_link_enabled'] ==
+      true;
+
+  /// 标题输入的单一监听入口（草稿 / 计数器 / featured link 三合一）。
+  void _onTitleInputChanged() {
+    _onDraftContentChanged();
+    _updateTitleLength();
+    _onTitleChanged();
+  }
 
   /// 对齐 Discourse composer：标题只包含一个 URL 时，异步取 onebox 标题，
-  /// 并把原 URL 放入正文作为首个链接。
+  /// 并记下原 URL 作为 `featured_link`。
+  ///
+  /// 注意这里**只**改标题、不碰正文：正文追加统一放到提交前（见
+  /// [_applyFeaturedLinkToContent]），否则与富文本编辑器的 flush 抢写。
   void _onTitleChanged() {
+    // 自增必须晚于「自改标题」的早退判断：_replaceTitleWithOneboxTitle 写回
+    // controller 会重入本方法，若在早退前推进 generation，就会把刚发出的那次
+    // 解析判成过期，_isCurrentTitleUrl 随之永远为 false。
+    if (_updatingFeaturedLinkTitle) return;
+
     _featuredLinkDebounce?.cancel();
     final generation = ++_titleChangeGeneration;
-
-    // 替换为 onebox 标题时不要把刚解析出的 featured_link 清掉。
-    if (_updatingFeaturedLinkTitle) return;
 
     final candidate = DiscourseUrlParser.parseTitleUrl(_titleController.text);
     if (!_featuredLinkEnabled || candidate == null) {
@@ -401,16 +416,12 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     TitleUrlInfo candidate,
     int generation,
   ) async {
-    if (!_featuredLinkEnabled) {
-      if (mounted && generation == _titleChangeGeneration) {
-        setState(() {
-          _isResolvingFeaturedLink = false;
-          _featuredLink = null;
-        });
-      }
-      return;
-    }
     if (!_isCurrentTitleUrl(candidate, generation)) {
+      if (mounted &&
+          generation == _titleChangeGeneration &&
+          _isResolvingFeaturedLink) {
+        setState(() => _isResolvingFeaturedLink = false);
+      }
       return;
     }
 
@@ -429,7 +440,6 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
     if (!mounted || !_isCurrentTitleUrl(candidate, generation)) return;
 
-    _appendFeaturedLinkToContent(candidate.url);
     setState(() {
       _featuredLink = candidate.url;
       _isResolvingFeaturedLink = false;
@@ -447,17 +457,42 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         _titleController.text.trim() == candidate.url;
   }
 
-  void _appendFeaturedLinkToContent(String url) {
-    final current = _contentController.text;
-    if (!current.contains(url)) {
-      final trimmed = current.trimRight();
-      _contentController.text = trimmed.isEmpty ? url : '$trimmed\n\n$url';
-    }
+  /// 提交时提前结束未完成的解析，把标题里的 URL 直接定为 featured link。
+  ///
+  /// onebox 只负责「把标题换成网页标题」这个锦上添花的步骤；用户主动点发布
+  /// 就说明他接受当前标题，没必要拿一个网络请求把提交按钮卡住。
+  void _settlePendingFeaturedLink() {
+    _featuredLinkDebounce?.cancel();
+    if (!_featuredLinkEnabled) return;
 
-    final richEditor = _richKey.currentState;
-    if (richEditor != null) {
-      unawaited(richEditor.syncFromController());
-    }
+    final candidate = DiscourseUrlParser.parseTitleUrl(_titleController.text);
+    if (candidate == null) return;
+    // 推进 generation 使飞在路上的解析回调失效，避免它在提交途中改标题。
+    _titleChangeGeneration++;
+    _isResolvingFeaturedLink = false;
+    _featuredLink = candidate.url;
+  }
+
+  /// 提交前把 featured link 落进正文。
+  ///
+  /// 必须在 [RichComposerEditorState.flushToController] **之后**调用：富文本
+  /// 编辑器持有独立的 EditorState，flush 会用它序列化的结果整体覆盖
+  /// controller。早于 flush 追加必被覆盖，这也是解析回调里不写正文的原因。
+  void _applyFeaturedLinkToContent() {
+    final url = _featuredLink;
+    if (url == null || url.isEmpty) return;
+
+    final current = _contentController.text;
+    if (current.contains(url)) return;
+
+    final trimmed = current.trimRight();
+    final next = trimmed.isEmpty ? url : '$trimmed\n\n$url';
+    // 用 value 整体赋值并给出合法选区：text setter 会把 selection 置为 -1，
+    // 平台以「无光标态」初始化输入连接后，IME 退格对既有文本失效。
+    _contentController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
   }
 
   void _replaceTitleWithOneboxTitle(String title) {
@@ -560,8 +595,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   }
 
   Future<void> _submit() async {
+    // 标题是纯 URL 但 onebox 还在飞（或还在 debounce 窗口内）时，不阻断提交：
+    // featured link 本身不依赖 onebox 结果，直接用当前标题里的 URL 定案。
+    _settlePendingFeaturedLink();
     // 富文本模式:先强制序列化镜像
     _richKey.currentState?.flushToController();
+    // flush 之后再追加 featured link，否则会被富文本序列化结果覆盖。
+    _applyFeaturedLinkToContent();
     if (!_formKey.currentState!.validate()) {
       // 预览模式下验证错误不可见，切回编辑模式并提示
       if (_showPreview) {
@@ -898,9 +938,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: FilledButton(
-                onPressed: (_isSubmitting || _isResolvingFeaturedLink)
-                    ? null
-                    : _submit,
+                onPressed: _isSubmitting ? null : _submit,
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1200,7 +1238,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       bindings: {
         for (final activator in composerSubmitActivators())
           activator: () {
-            if (!_isSubmitting && !_isResolvingFeaturedLink) _submit();
+            if (!_isSubmitting) _submit();
           },
       },
       child: page,

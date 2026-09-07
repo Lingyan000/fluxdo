@@ -39,5 +39,29 @@ void main() {
       );
       expect(DiscourseUrlParser.parseTitleUrl('https://'), isNull);
     });
+
+    test('空白标题与相对路径不触发精选链接', () {
+      expect(DiscourseUrlParser.parseTitleUrl(''), isNull);
+      expect(DiscourseUrlParser.parseTitleUrl('   '), isNull);
+      // 相对路径没有 host，不能当精选链接
+      expect(DiscourseUrlParser.parseTitleUrl('/t/topic/123'), isNull);
+      // javascript: 等危险协议必须拦下
+      expect(
+        DiscourseUrlParser.parseTitleUrl('javascript:alert(1)'),
+        isNull,
+      );
+    });
+
+    test('协议大小写不敏感，且保留原始 URL 形态', () {
+      final upper = DiscourseUrlParser.parseTitleUrl('HTTPS://Example.com/A');
+      expect(upper, isNotNull);
+      // url 保留用户原文（仅 trim），交给服务端规范化
+      expect(upper?.url, 'HTTPS://Example.com/A');
+      // Uri 会把 host 规范化为小写（路径保留原大小写）
+      expect(upper?.uri.host, 'example.com');
+      expect(upper?.uri.path, '/A');
+
+      expect(DiscourseUrlParser.parseTitleUrl('http://example.com'), isNotNull);
+    });
   });
 }

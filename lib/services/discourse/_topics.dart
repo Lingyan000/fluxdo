@@ -294,6 +294,13 @@ mixin _TopicsMixin on _DiscourseServiceBase {
       data['tags[]'] = tags;
     }
 
+    // 精选链接（标题为纯 URL 时自动解析）。
+    //
+    // 注：Discourse 除站点开关 topic_featured_link_enabled 外，还有分类级的
+    // topic_featured_link_allowed，而后者只在 CategorySerializer 下发、不在
+    // /site.json 用的 SiteCategorySerializer 里，客户端无法预先判断。分类
+    // 不允许时服务端会直接忽略该字段，不会连带整个发帖失败；叠加上正文
+    // 里已经追加了同一个 URL，降级后链接不会丢。
     if (featuredLink != null && featuredLink.isNotEmpty) {
       data['featured_link'] = featuredLink;
     }
