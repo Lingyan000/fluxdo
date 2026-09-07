@@ -7,8 +7,9 @@ import 'network/cookie/cookie_jar_service.dart';
 /// cf_clearance 在位值粘性判定（会话级）。
 ///
 /// **唯一规则：jar 里的当前 clearance 只要"还能用"（未过期、未临期、
-/// 未被撞），任何同步来源不得用不同的值替换它。** 允许替换的条件：
+/// 未被撞），普通同步来源不得用不同的值替换它。** 允许替换的条件：
 /// jar 空 / 在位值过期 / 临期 / 在位值刚被撞（已死）。
+/// 验证页面明确确认的新值可替换在位值，避免验证期间其他同步抢先写入旧副本。
 ///
 /// 为什么不判候选值（前三版的死穴）：
 /// - 「撞一次就拉黑」：有效值在限流风暴里也会撞，误杀后恢复路径被堵，
@@ -54,8 +55,9 @@ class CfClearanceAuthority {
 
   /// sync 闸门判定：候选值 [candidateValue] 是否允许替换 jar 当前值。
   Future<CfClearanceReplaceDecision> evaluateReplacement(
-    String candidateValue,
-  ) async {
+    String candidateValue, {
+    bool verified = false,
+  }) async {
     final candidate = _normalize(candidateValue);
     if (candidate.isEmpty) return CfClearanceReplaceDecision.allow;
 
@@ -69,6 +71,11 @@ class CfClearanceAuthority {
     if (candidate == currentValue) {
       return CfClearanceReplaceDecision.skipSameValue;
     }
+
+    // 验证完成时确认的精确值优先于普通同步抢先写回的副本。
+    // trusted 本身不代表已过盾（Turnstile/会话 bootstrap 也会使用它）；
+    // 调用方必须同时用 acceptValues 限定本轮验证观察到的新值。
+    if (verified) return CfClearanceReplaceDecision.allow;
 
     // 3. 在位值过期/临期：自然换届窗口，放行（新铸值无缝继位）。
     final expires = current?.expiresAt?.toLocal();

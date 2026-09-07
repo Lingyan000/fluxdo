@@ -48,6 +48,13 @@ class CfChallengeService {
   bool _isVerifying = false;
   bool? _completedVerificationResult;
   Completer<void>? _manualTeardownCompleter;
+  Future<void>? _completionCookieSync;
+
+  /// 等待本次已经发起的 Cookie 快照同步，不等待签发或续期新 Cookie。
+  /// 页面可以先结束，原生重试再复用这次同步，避免读到同步前的 jar。
+  Future<void> waitForCompletionCookieSync() async {
+    await _completionCookieSync;
+  }
 
   /// CF 验证是否正在进行中（用于外部判断是否应忽略路由变化）
   bool get isVerifying => _isVerifying;
@@ -69,7 +76,8 @@ class CfChallengeService {
   /// 拦截器 / ScreenTrack 等订阅它来在 CF 期间冻结业务流量与数据采集。
   final ValueNotifier<bool> inProgressNotifier = ValueNotifier<bool>(false);
 
-  /// CF 挑战被成功解决、新 cf_clearance 已落 CookieJar 的时刻广播。
+  /// 验证页面已不再被 CF 挑战、可以恢复请求的时刻广播。
+  /// 页面可能直接到达源站，不保证本轮发生过验证或签发过新 Cookie。
   /// [BrowserTrustCoordinator] 订阅它:WebView session bootstrap 因 CF 失败后,
   /// 等待 Dio 侧(或主动发起的)验证完成,再 force 重跑 bootstrap,避免两条线各自为政。
   final ValueNotifier<DateTime?> clearanceResolvedAt = ValueNotifier<DateTime?>(
@@ -82,6 +90,7 @@ class CfChallengeService {
     if (value) {
       _verifyRound++;
       _completedVerificationResult = null;
+      _completionCookieSync = null;
       final current = _manualTeardownCompleter;
       if (current == null || current.isCompleted) {
         _manualTeardownCompleter = Completer<void>();
@@ -133,6 +142,7 @@ class CfChallengeService {
   BuildContext? _context;
   static DateTime? _lastToastAt;
   Future<bool>? _activeSessionCompatPrompt;
+
   /// 上次拒绝「切兼容」的时刻;超过 [_sessionCompatDeclineTtl] 后可再问。
   DateTime? _sessionCompatDeclinedAt;
   Completer<BuildContext>? _contextReadyCompleter;
@@ -238,16 +248,15 @@ class CfChallengeService {
     }
   }
 
-  /// 验证「成功」但铸出的 cf_clearance 对 Dio 无效(重试仍 403)时立即冷却。
+  /// 验证页面已无挑战，但原生请求重试仍命中 CF 时立即冷却。
   ///
-  /// 这是确定性环境问题(典型:Dio 与 WebView2 出口 IP 不一致,clearance
-  /// 绑定了另一侧的 IP),重复验证不可能成功,不能走 3 次计数——否则每个
-  /// 403 都会拉起一轮完整验证,形成删 cookie → 验证 → 再 403 的无限循环。
+  /// 浏览器入口的放行不能证明原生 API 已恢复。两侧出口、网络栈或路径规则
+  /// 可能不同；先阻止反复拉起相同的验证页面，再由实际请求结果判断恢复。
   void startIneffectiveClearanceCooldown() {
     _consecutiveFailures = _maxFailuresBeforeCooldown;
     _cooldownUntil = DateTime.now().add(_ineffectiveClearanceCooldown);
     debugPrint(
-      '[CfChallenge] 验证完成但 clearance 对请求无效，'
+      '[CfChallenge] 验证入口已无盾，但原生请求仍命中 CF，'
       '进入 ${_ineffectiveClearanceCooldown.inSeconds}s 冷却期',
     );
     CfChallengeLogger.logCooldown(entering: true, until: _cooldownUntil);
@@ -362,10 +371,7 @@ class CfChallengeService {
         // 关掉自动过盾后不必再问兼容模式 —— 后续撞盾会静默 reject 并由
         // ErrorView 给出手动验证入口,不再走到本询问。
         _sessionCompatDeclinedAt = DateTime.now();
-        showGlobalMessage(
-          S.current.cf_autoVerifyDisabledHint,
-          isError: false,
-        );
+        showGlobalMessage(S.current.cf_autoVerifyDisabledHint, isError: false);
         CfChallengeLogger.log(
           '[PROMPT] User disabled auto verify from compat prompt',
         );
@@ -510,9 +516,7 @@ class CfChallengeService {
       _contextReadyCompleter ??= Completer<BuildContext>();
       debugPrint('[CfChallenge] Waiting for context to be ready...');
       try {
-        ctx = await _contextReadyCompleter!.future.timeout(
-          _contextWaitTimeout,
-        );
+        ctx = await _contextReadyCompleter!.future.timeout(_contextWaitTimeout);
       } on TimeoutException {
         debugPrint(
           '[CfChallenge] 等待 context 超时 '
@@ -581,6 +585,15 @@ class CfChallengeService {
     // 备份旧 cf_clearance，验证失败时恢复（避免误删仍有效的值）
     final cookieJarService = CookieJarService();
     final backupCfClearance = await cookieJarService.getCfClearanceCookie();
+    Set<String>? oldWebViewClearances;
+    try {
+      oldWebViewClearances = await BoundarySyncService.instance
+          .readCookieValuesFromWebView(name: 'cf_clearance');
+    } catch (e) {
+      CfChallengeLogger.log(
+        '[VERIFY] Failed to snapshot WebView clearances: $e',
+      );
+    }
 
     // Dio 请求已经 403，说明当前 cf_clearance 可能失效了。
     // 必须确保 WebView 中也没有旧的 cf_clearance，否则 CF 直接放行不显示盾。
@@ -721,6 +734,7 @@ class CfChallengeService {
         oldCfClearanceValue: backupCfClearance != null
             ? CookieValueCodec.decode(backupCfClearance.value)
             : null,
+        oldCfClearanceValues: oldWebViewClearances,
       ),
     );
     overlayState.insert(entry);
@@ -748,11 +762,11 @@ class CfChallengeService {
     // 验证成功后重置冷却期
     if (result == true) {
       resetCooldown();
-      // 广播:一次 CF 挑战被成功解决,新 cf_clearance 已落 jar。
+      // 广播验证入口已经无盾。是否签发新 Cookie、原生请求是否恢复是独立状态。
       clearanceResolvedAt.value = DateTime.now();
       CfChallengeLogger.logVerifyResult(
         success: true,
-        reason: 'user completed',
+        reason: 'verification page is no longer challenged',
       );
       // 验证页移除后，Windows WebView2 的原生 Controller 仍会异步析构。
       // 等验证冷却完成、帖子 WebView 池恢复后再错峰启动续期 WebView。
@@ -800,6 +814,7 @@ class CfChallengePage extends StatefulWidget {
     this.onResult,
     this.onPromoteRequest,
     this.oldCfClearanceValue,
+    this.oldCfClearanceValues,
   });
 
   final String verifyUrl;
@@ -812,6 +827,10 @@ class CfChallengePage extends StatefulWidget {
   /// showManualVerify 在删除前备份的旧 cf_clearance 值（已解码）
   /// 用于可靠过滤 Windows 上 WebView 中未完全删除的残留旧值
   final String? oldCfClearanceValue;
+
+  /// 删除前 WebView 中的全部旧值。空集合表示已确认没有旧值；null 表示
+  /// 未取得快照，需要沿用页面初始化时的读取兜底。
+  final Set<String>? oldCfClearanceValues;
 
   @override
   State<CfChallengePage> createState() => _CfChallengePageState();
@@ -851,7 +870,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
   /// 验证页面加载时 WebView 中的 cf_clearance 快照
   /// 用于区分「旧值残留」和「验证后新设的值」
-  String? _initialCfClearance;
+  final Set<String> _initialCfClearances = {};
 
   int get _activeMaxCheckCount =>
       _isBackground ? _backgroundMaxCheckCount : _foregroundMaxCheckCount;
@@ -864,18 +883,25 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _snapshotInitialClearance();
   }
 
-  /// 记录验证开始时的旧 cf_clearance 值
-  /// 优先使用 showManualVerify 传入的备份值（可靠），WebView 读取作为补充
-  /// 解决 Windows 上 initState 时 controller 为 null 导致 _initialCfClearance
-  /// 为 null，进而无法过滤残留旧值、误判为验证成功的问题
+  /// 记录本轮开始前 jar 与 WebView 中可见的旧值。两者可能不同，不能只
+  /// 比较 jar 的备份，否则另一枚残留值会被误认成本轮新签发的 clearance。
   Future<void> _snapshotInitialClearance() async {
-    // 优先使用从 showManualVerify 传入的备份旧值（最可靠）
+    _initialCfClearances.addAll(
+      (widget.oldCfClearanceValues ?? const <String>{})
+          .where((value) => value.isNotEmpty)
+          .map(CookieValueCodec.decode),
+    );
     if (widget.oldCfClearanceValue != null &&
         widget.oldCfClearanceValue!.isNotEmpty) {
-      _initialCfClearance = widget.oldCfClearanceValue;
+      _initialCfClearances.add(
+        CookieValueCodec.decode(widget.oldCfClearanceValue!),
+      );
+    }
+    if (widget.oldCfClearanceValues != null ||
+        _initialCfClearances.isNotEmpty) {
       debugPrint(
-        '[CfChallenge] 使用备份的旧 cf_clearance 作为初始快照 '
-        '(${_initialCfClearance!.length} chars)',
+        '[CfChallenge] 已记录验证前 cf_clearance 快照 '
+        '(${_initialCfClearances.length} 个不同值)',
       );
       return;
     }
@@ -883,11 +909,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
     // 兜底：从 WebView 读取（可能不可靠，但聊胜于无）
     try {
       final cookieValue = await _readCookieValue('cf_clearance');
-      _initialCfClearance = cookieValue;
-      if (_initialCfClearance != null && _initialCfClearance!.isNotEmpty) {
+      if (cookieValue != null && cookieValue.isNotEmpty) {
+        _initialCfClearances.add(CookieValueCodec.decode(cookieValue));
         debugPrint(
           '[CfChallenge] ⚠️ 验证页加载时 WebView 仍存在旧 cf_clearance '
-          '(${_initialCfClearance!.length} chars)，将忽略该值',
+          '(${cookieValue.length} chars)，将忽略该值',
         );
       }
     } catch (e) {
@@ -1191,9 +1217,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
   ///
   /// 不再主动 reveal WebView：reveal 完全交给 _startChallengeRevealProbe，
   /// 避免「完成响应到达 → reveal → 紧接着 CF 跳转回 /challenge 加载源站 404」
-  /// 期间 404 闪现。此处只负责 cf_clearance 探测与 finish(true)。
+  /// 期间 404 闪现。回调只触发页面检查，不用 Cookie 变化代替挑战状态。
   Future<void> _onChallengeComplete(List<dynamic> args) async {
-    if (_hasPopped) return;
+    if (_hasPopped || _finishingFromVerifyResponse) return;
     final url = args.isNotEmpty ? args[0] : '';
     final status = args.length > 1 ? args[1] : 0;
     debugPrint('[CfChallenge] challenge-platform 响应: url=$url, status=$status');
@@ -1202,53 +1228,16 @@ class _CfChallengePageState extends State<CfChallengePage> {
     );
 
     try {
-      final cookieValue = await _readCookieValue('cf_clearance');
-
-      if (cookieValue == null || cookieValue.isEmpty) {
-        debugPrint('[CfChallenge] 未检测到 cf_clearance，等待后续响应');
-        return;
-      }
-
-      // 关键：对比初始快照，过滤掉未被清除干净的旧值
-      if (!_isFreshClearance(cookieValue)) {
-        debugPrint('[CfChallenge] cf_clearance 与初始值相同（旧值残留），忽略');
-        return;
-      }
-
-      // cf_clearance 是新值，但需要确认页面已真正通过验证
-      // challenge-platform 在验证过程中有多次请求（脚本加载、初始化、提交等），
-      // 只有最终完成时页面才不再包含验证标记
-      final html = await _controller?.evaluateJavascript(
-        source: 'document.body ? document.body.innerHTML : ""',
-      );
-      if (html != null && CfChallengeService.hasActiveCfChallenge(html)) {
-        debugPrint('[CfChallenge] 检测到新 cf_clearance 但页面仍在验证中，继续等待');
-        return;
-      }
-
-      debugPrint(
-        '[CfChallenge] ✓ 验证完成：新 cf_clearance (${cookieValue.length} chars) 且页面已通过',
-      );
-      CfChallengeLogger.logVerifyResult(
-        success: true,
-        reason: 'new cf_clearance detected and page passed challenge',
-      );
-      await _syncLiveCookiesToCookieJar(freshClearance: cookieValue);
-      // 验证 cf_clearance 是否真正写入了 CookieJar
-      final synced = await CookieJarService().getCfClearance();
-      if (synced != null && synced.isNotEmpty) {
-        debugPrint(
-          '[CfChallenge] cf_clearance 已同步到 CookieJar (${synced.length} chars)',
-        );
-      } else {
-        debugPrint(
-          '[CfChallenge] ⚠️ syncFromWebView 后 CookieJar 中未找到 cf_clearance',
+      final controller = _controller;
+      // challenge-platform 有脚本加载、初始化、提交等多次请求；收到它的
+      // 响应或观察到续期 Cookie 都不等于页面已经结束挑战。
+      if (controller != null && await _hasLoadedOriginDocument(controller)) {
+        _finishFromOriginResponse(
+          reason: 'challenge callback: loaded document has no CF challenge',
         );
       }
-      _timeoutTimer?.cancel();
-      if (mounted) _finish(true);
     } catch (e) {
-      debugPrint('[CfChallenge] cookie 检查异常: $e');
+      debugPrint('[CfChallenge] challenge 回调页面检查异常: $e');
     }
   }
 
@@ -1291,8 +1280,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
       // 兜底轮询：验证通过后页面重定向会销毁 JS 上下文，
       // 导致 onChallengeComplete 回调丢失（macOS 上尤为明显），
-      // 每秒主动检查 cf_clearance 变化来弥补
-      _pollCfClearance();
+      // 每秒检查已加载的页面是否还有挑战；续期 Cookie 不作为完成信号。
+      _pollVerificationDocument();
 
       if (_checkCount > _activeMaxCheckCount) {
         if (_isBackground) {
@@ -1361,8 +1350,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
   /// 处理「页面没有 CF 挑战」的统一入口
   ///
   /// 触发场景：源站 404 / onReceivedHttpError / reveal 后页面退化 / noChallengeCheck 命中。
-  /// 行为：立刻覆盖 WebView 显示「正在完成验证…」overlay，短期轮询 cf_clearance；
-  /// 拿到新 cf_clearance 则 finish(true)，否则前台显示「重试/退出」操作，后台直接 finish(false)。
+  /// 状态码回调缺失或页面正在跳转时，短期确认源站文档。
+  /// 已加载的无盾文档即可结束，不要求源站为本轮签发新 Cookie。
   Future<void> _handleVerifyOriginFallback(
     int generation, {
     String? reason,
@@ -1388,20 +1377,13 @@ class _CfChallengePageState extends State<CfChallengePage> {
           (isCompletionProbe
               ? _completionProbeTimeout
               : _noChallengeProbeTimeout)) {
-        if (_hasPopped || _finishingFromVerifyResponse) return;
+        if (_hasPopped || !mounted || _finishingFromVerifyResponse) return;
         if (!isCompletionProbe && generation != _loadGeneration) return;
-        final cookieValue = await _readCookieValue('cf_clearance');
-        if (_isFreshClearance(cookieValue)) {
-          debugPrint(
-            '[CfChallenge] fallback/completion 期间检测到新 cf_clearance，自动完成',
+        final controller = _controller;
+        if (controller != null && await _hasLoadedOriginDocument(controller)) {
+          _finishFromOriginResponse(
+            reason: 'loaded verification document has no CF challenge',
           );
-          CfChallengeLogger.logVerifyResult(
-            success: true,
-            reason: reason ?? 'fresh cf_clearance during completion probe',
-          );
-          await _syncLiveCookiesToCookieJar(freshClearance: cookieValue);
-          _timeoutTimer?.cancel();
-          if (mounted) _finish(true);
           return;
         }
         attempt++;
@@ -1412,10 +1394,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
         );
       }
 
-      debugPrint('[CfChallenge] fallback/completion 结束仍无新 cf_clearance');
+      debugPrint('[CfChallenge] fallback/completion 尚未确认页面结束挑战');
       CfChallengeLogger.logVerifyResult(
         success: false,
-        reason: reason ?? 'no fresh cf_clearance after completion probe',
+        reason: reason ?? 'no origin document after completion probe',
       );
       if (_isBackground) {
         _timeoutTimer?.cancel();
@@ -1458,26 +1440,23 @@ class _CfChallengePageState extends State<CfChallengePage> {
     });
   }
 
-  /// 轮询检测 cf_clearance 变化（兜底 JS 回调被重定向吞掉的场景）
+  /// 页面状态轮询（兜底 JS 回调被重定向吞掉的场景）
   bool _polling = false;
-  Future<void> _pollCfClearance() async {
-    if (_hasPopped || _finishingFromVerifyResponse || _polling) return;
+  Future<void> _pollVerificationDocument() async {
+    if (_hasPopped ||
+        _finishingFromVerifyResponse ||
+        _polling ||
+        _checkingOriginFallback) {
+      return;
+    }
     _polling = true;
     try {
-      final cookieValue = await _readCookieValue('cf_clearance');
-      if (_hasPopped || _finishingFromVerifyResponse) return;
-      if (!_isFreshClearance(cookieValue)) return;
-
-      debugPrint(
-        '[CfChallenge] ✓ 轮询检测到新 cf_clearance (${cookieValue!.length} chars)',
-      );
-      CfChallengeLogger.logVerifyResult(
-        success: true,
-        reason: 'polling detected new cf_clearance',
-      );
-      await _syncLiveCookiesToCookieJar(freshClearance: cookieValue);
-      _timeoutTimer?.cancel();
-      if (mounted) _finish(true);
+      final controller = _controller;
+      if (controller != null && await _hasLoadedOriginDocument(controller)) {
+        _finishFromOriginResponse(
+          reason: 'polling: loaded document has no CF challenge',
+        );
+      }
     } catch (e) {
       debugPrint('[CfChallenge] 轮询检查异常: $e');
     } finally {
@@ -1595,12 +1574,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
   bool _isFreshClearance(String? cookieValue) {
     if (cookieValue == null || cookieValue.isEmpty) return false;
-    if (_initialCfClearance != null &&
-        _initialCfClearance!.isNotEmpty &&
-        cookieValue == _initialCfClearance) {
-      return false;
-    }
-    return true;
+    return !_initialCfClearances.contains(CookieValueCodec.decode(cookieValue));
   }
 
   bool _isVerifyUrl(WebUri? url) {
@@ -1645,15 +1619,6 @@ class _CfChallengePageState extends State<CfChallengePage> {
     return NavigationActionPolicy.ALLOW;
   }
 
-  bool _isVerifyOriginFallback(
-    WebResourceRequest request,
-    WebResourceResponse response,
-  ) {
-    if (response.statusCode != 404) return false;
-    if (request.isForMainFrame != true) return false;
-    return _isVerifyUrl(request.url);
-  }
-
   bool _isCfMitigatedChallengeHeaders(Map<String, String>? headers) {
     if (headers == null || headers.isEmpty) return false;
     for (final entry in headers.entries) {
@@ -1665,27 +1630,20 @@ class _CfChallengePageState extends State<CfChallengePage> {
     return false;
   }
 
-  bool _isVerifyPassedResponse(
-    WebResourceRequest request,
-    WebResourceResponse response,
-  ) {
-    if (request.isForMainFrame != true) return false;
-    if (!_isBareVerifyUrl(request.url)) return false;
-    if (_isCfMitigatedChallengeHeaders(response.headers)) return false;
+  bool _isVerifyOriginResponse({
+    required WebUri? url,
+    required bool? isForMainFrame,
+    required int? statusCode,
+    Map<String, String>? headers,
+  }) {
+    if (isForMainFrame != true || !_isVerifyUrl(url)) return false;
+    if (_isCfMitigatedChallengeHeaders(headers)) return false;
 
-    // /challenge 是站点专用的 CF 验证入口：
-    // 未通过时 Cloudflare 接管并返回 challenge；通过后请求会落到源站，
-    // 源站没有这个业务页面，所以 404 本身就是“已通过 CF”的完成信号。
-    return response.statusCode == 404;
-  }
-
-  bool _isVerifyPassedNavigationResponse(NavigationResponse response) {
-    final urlResponse = response.response;
-    if (response.isForMainFrame != true || urlResponse == null) return false;
-    if (!_isBareVerifyUrl(urlResponse.url)) return false;
-    if (_isCfMitigatedChallengeHeaders(urlResponse.headers)) return false;
-
-    return urlResponse.statusCode == 404;
+    // /challenge 在源站恰好不存在，所以通常返回 404；若站点以后提供正常
+    // 页面，2xx 也应结束。这里只说明入口当前无盾，不说明签发了新 Cookie。
+    // 403/429 等含义不明确的状态继续由页面内容判定，不能一律视为已放行。
+    return statusCode != null &&
+        ((statusCode >= 200 && statusCode < 300) || statusCode == 404);
   }
 
   Future<NavigationResponseAction> _handleVerifyNavigationResponse(
@@ -1702,9 +1660,15 @@ class _CfChallengePageState extends State<CfChallengePage> {
       );
     }
 
-    if (_isVerifyPassedNavigationResponse(navigationResponse)) {
-      await _finishVerifiedFromNetworkStatus(
-        reason: 'main frame /challenge navigation response returned source 404',
+    if (_isVerifyOriginResponse(
+      url: response?.url,
+      isForMainFrame: navigationResponse.isForMainFrame,
+      statusCode: response?.statusCode,
+      headers: response?.headers,
+    )) {
+      _finishFromOriginResponse(
+        reason:
+            'main frame verification navigation reached origin (${response?.statusCode})',
         headers: response?.headers,
       );
       return NavigationResponseAction.CANCEL;
@@ -1713,10 +1677,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
     return NavigationResponseAction.ALLOW;
   }
 
-  Future<void> _finishVerifiedFromNetworkStatus({
+  void _finishFromOriginResponse({
     required String reason,
     Map<String, String>? headers,
-  }) async {
+  }) {
     if (_hasPopped || _finishingFromVerifyResponse) return;
     _finishingFromVerifyResponse = true;
     _coverWebViewForOriginFallback();
@@ -1727,27 +1691,48 @@ class _CfChallengePageState extends State<CfChallengePage> {
     _challengeRevealProbeGeneration++;
     _revealStateWatchGeneration++;
 
-    debugPrint('[CfChallenge] $reason，按网络状态判定验证完成');
+    debugPrint('[CfChallenge] $reason，验证入口当前无盾，结束验证页面');
     CfChallengeLogger.logVerifyResult(success: true, reason: reason);
     if (headers != null) {
       CfChallengeLogger.log('[VERIFY] Passed response headers: $headers');
     }
 
-    unawaited(_syncVerifiedCookiesBestEffort());
+    // 源站可直接放行而不签发 Cookie。只同步此刻已有的值，不轮询续期，
+    // 不把 Cookie 的产生或落库作为页面结束条件。
+    final cookieSync = _syncCookiesAfterOriginResponse();
+    CfChallengeService()._completionCookieSync = cookieSync;
+    unawaited(cookieSync);
     if (mounted && !_hasPopped) _finish(true);
   }
 
-  Future<void> _syncVerifiedCookiesBestEffort() async {
+  Future<void> _syncCookiesAfterOriginResponse() async {
     try {
-      final freshClearance = await _readCookieValue('cf_clearance');
+      final clearance = await _readCookieValue('cf_clearance');
       await _syncLiveCookiesToCookieJar(
-        freshClearance: _isFreshClearance(freshClearance)
-            ? freshClearance
-            : null,
+        freshClearance: _isFreshClearance(clearance) ? clearance : null,
       );
     } catch (e) {
-      debugPrint('[CfChallenge] 按网络状态完成时后台同步 cookie 失败: $e');
+      debugPrint('[CfChallenge] 源站已放行，Cookie 同步未完成: $e');
     }
+  }
+
+  Future<bool> _hasLoadedOriginDocument(
+    InAppWebViewController controller,
+  ) async {
+    final generation = _loadGeneration;
+    if (!_isVerifyUrl(await controller.getUrl())) return false;
+    final html = await controller.evaluateJavascript(
+      source: '''
+document.readyState === 'complete' && document.body && document.body.innerHTML.trim()
+  ? document.documentElement.outerHTML : ''
+''',
+    );
+    return mounted &&
+        generation == _loadGeneration &&
+        html is String &&
+        html.trim().isNotEmpty &&
+        !CfChallengeService.hasActiveCfChallenge(html) &&
+        !CfChallengeService.isCfChallenge(html);
   }
 
   Future<bool> _hasVisibleChallenge(InAppWebViewController controller) async {
@@ -2033,11 +2018,10 @@ class _CfChallengePageState extends State<CfChallengePage> {
         _revealChallengeWebView();
         return;
       }
-      if (CfChallengeService.isOriginNotFound(htmlStr)) {
-        await _handleVerifyOriginFallback(
-          generation,
-          reason: 'immediate probe: origin 404 markers',
-          completionLikely: _hasSeenChallenge,
+      if (CfChallengeService.isOriginNotFound(htmlStr) ||
+          await _hasLoadedOriginDocument(controller)) {
+        _finishFromOriginResponse(
+          reason: 'loaded verification document reached origin',
         );
       }
     } catch (e) {
@@ -2221,22 +2205,16 @@ class _CfChallengePageState extends State<CfChallengePage> {
                 'headers=${errorResponse.headers}',
               );
             }
-            if (_isVerifyPassedResponse(request, errorResponse)) {
-              unawaited(
-                _finishVerifiedFromNetworkStatus(
-                  reason: 'main frame /challenge returned source 404',
-                  headers: errorResponse.headers,
-                ),
-              );
-              return;
-            }
-            if (_isVerifyOriginFallback(request, errorResponse)) {
-              unawaited(
-                _handleVerifyOriginFallback(
-                  _loadGeneration,
-                  reason: 'main frame /challenge returned 404',
-                  completionLikely: _hasSeenChallenge,
-                ),
+            if (_isVerifyOriginResponse(
+              url: request.url,
+              isForMainFrame: request.isForMainFrame,
+              statusCode: errorResponse.statusCode,
+              headers: errorResponse.headers,
+            )) {
+              _finishFromOriginResponse(
+                reason:
+                    'main frame verification request reached origin (${errorResponse.statusCode})',
+                headers: errorResponse.headers,
               );
             }
           },

@@ -877,6 +877,7 @@ class CookieJarService {
     Set<String>? excludeCookieNames,
     Map<String, String>? acceptValues,
     bool trusted = false,
+    required Future<bool> Function(String name, String value) shouldSyncCookie,
   }) async {
     if (!io.Platform.isWindows) return 0;
     if (!_initialized) await initialize();
@@ -889,32 +890,46 @@ class CookieJarService {
         controller,
         currentUrl: currentUrl,
       );
-      final filtered = rawCookies
-          .where((raw) {
-            final name = raw['name']?.toString();
-            final value = raw['value']?.toString() ?? '';
-            final domain = raw['domain']?.toString();
-            if (name == null || value.isEmpty) return false;
-            if (cookieNames != null && !cookieNames.contains(name)) {
-              return false;
-            }
-            if (excludeCookieNames != null &&
-                excludeCookieNames.contains(name)) {
-              return false;
-            }
-            final onlyValue = acceptValues?[name];
-            if (onlyValue != null && value != onlyValue) {
-              return false;
-            }
-            return matchesAppHost(domain);
-          })
-          .toList(growable: false);
+      final filtered = <Map<String, dynamic>>[];
+      for (final raw in rawCookies) {
+        final name = raw['name']?.toString();
+        final value = raw['value']?.toString() ?? '';
+        if (name == null || value.isEmpty) continue;
+        if (cookieNames != null && !cookieNames.contains(name)) continue;
+        if (excludeCookieNames != null && excludeCookieNames.contains(name)) {
+          continue;
+        }
+        final onlyValue = acceptValues?[name];
+        if (onlyValue != null && value != onlyValue) continue;
+        if (!matchesAppHost(raw['domain']?.toString())) continue;
+        // CDP 快路径也必须经过边界同步的在位值判定，不能直接绕过闸门。
+        if (!await shouldSyncCookie(name, value)) {
+          continue;
+        }
+        filtered.add(raw);
+      }
 
       if (filtered.isEmpty) return 0;
 
       final jar = _cookieJar;
       if (jar is EnhancedPersistCookieJar) {
-        await jar.saveFromCdpCookies(uri, filtered, trusted: trusted);
+        final remaining = [...filtered];
+        if (trusted && acceptValues?['cf_clearance'] != null) {
+          final verified = filtered
+              .where((raw) => raw['name'] == 'cf_clearance')
+              .map(
+                (raw) => CdpCookieParser.parse(raw, originUrl: uri.toString()),
+              )
+              .whereType<CanonicalCookie>()
+              .toList();
+          if (verified.isNotEmpty) {
+            // 新旧值可能属于不同 CHIPS 分区，不能仅按 storageKey 更新，
+            // 否则请求选优仍可能挑中 expires 更晚的旧副本。
+            await jar.replaceByNameForSite(uri, 'cf_clearance', verified);
+            remaining.removeWhere((raw) => raw['name'] == 'cf_clearance');
+          }
+        }
+        await jar.saveFromCdpCookies(uri, remaining, trusted: trusted);
         final authNames = filtered
             .map((raw) => raw['name']?.toString())
             .whereType<String>()
