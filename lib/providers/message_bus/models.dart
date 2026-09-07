@@ -142,6 +142,7 @@ class TopicChannelState {
   final TopicStatsUpdate? statsUpdate;
   final SharedIssueUpdate? sharedIssueUpdate;
   final bool messageArchived;
+  final bool removedFromPrivateMessage;
   final bool reloadRequested;        // 需要重新加载话题（reload_topic 消息）
   final bool refreshStreamRequested; // 需要刷新帖子流（reload_topic + refresh_stream）
   final int? notificationLevelChange; // 通知级别变更
@@ -154,6 +155,7 @@ class TopicChannelState {
     this.statsUpdate,
     this.sharedIssueUpdate,
     this.messageArchived = false,
+    this.removedFromPrivateMessage = false,
     this.reloadRequested = false,
     this.refreshStreamRequested = false,
     this.notificationLevelChange,
@@ -169,6 +171,7 @@ class TopicChannelState {
     SharedIssueUpdate? sharedIssueUpdate,
     bool clearSharedIssueUpdate = false,
     bool? messageArchived,
+    bool? removedFromPrivateMessage,
     bool? reloadRequested,
     bool? refreshStreamRequested,
     int? notificationLevelChange,
@@ -185,6 +188,8 @@ class TopicChannelState {
           ? null
           : (sharedIssueUpdate ?? this.sharedIssueUpdate),
       messageArchived: messageArchived ?? this.messageArchived,
+      removedFromPrivateMessage:
+          removedFromPrivateMessage ?? this.removedFromPrivateMessage,
       reloadRequested: reloadRequested ?? this.reloadRequested,
       refreshStreamRequested: refreshStreamRequested ?? this.refreshStreamRequested,
       notificationLevelChange: clearNotificationLevelChange ? null : (notificationLevelChange ?? this.notificationLevelChange),

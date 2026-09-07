@@ -37,9 +37,10 @@ class SettingsRenderer extends ConsumerWidget {
     // 依赖的前置开关关闭时整行隐藏(展示无意义;前置开启当场出现)
     if (!(m.enabledWhen?.call(ref) ?? true)) return const SizedBox.shrink();
     final value = m.getValue(ref);
+    final subtitle = m.subtitleBuilder?.call(ref) ?? m.subtitle;
     return SwitchListTile(
       title: Text(m.title),
-      subtitle: m.subtitle != null ? Text(m.subtitle!) : null,
+      subtitle: subtitle != null ? Text(subtitle) : null,
       secondary: Icon(
         m.icon,
         color: value
@@ -177,8 +178,10 @@ class SettingsRenderer extends ConsumerWidget {
       subtitle: displaySub != null
           ? Text(
               displaySub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines: m.wrapSubtitle ? null : 1,
+              overflow: m.wrapSubtitle
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 color: theme.colorScheme.onSurfaceVariant,

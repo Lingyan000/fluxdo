@@ -31,6 +31,7 @@
   "topicDetail_tocExpand": "展开目录",
   "topicDetail_sortByActivity": "按活动排序",
   "topicDetail_hotOnly": "只看热门",
+  "topicDetail_leavePrivateMessageConfirm": "确定要退出此私信吗？退出后将无法再查看或回复。",
   "topicDetail_loadFailedTapRetry": "加载失败，点击重试",
   "topicDetail_loading": "加载中...",
   "topicDetail_moreOptions": "更多选项",
@@ -50,6 +51,44 @@
     }
   },
   "topicDetail_relatedTopics": "相关话题",
+  "topicDetail_removePrivateMessageParticipantConfirm": "确定要将 @{username} 移出此私信吗？",
+  "@topicDetail_removePrivateMessageParticipantConfirm": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removedPrivateMessageParticipant": "已将 @{username} 移出私信",
+  "@topicDetail_removedPrivateMessageParticipant": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removePrivateMessageGroupConfirm": "确定要将群组 {name} 移出此私信吗？",
+  "@topicDetail_removePrivateMessageGroupConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_removedPrivateMessageGroup": "已将群组 {name} 移出私信",
+  "@topicDetail_removedPrivateMessageGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "topicDetail_archiveMessage": "归档",
+  "topicDetail_archiveMessageHelp": "将私信移至归档",
+  "topicDetail_moveMessageToInbox": "移至收件箱",
+  "topicDetail_moveMessageToInboxHelp": "将私信移回收件箱",
+  "topicDetail_messageArchived": "已归档私信",
+  "topicDetail_messageMovedToInbox": "已移回收件箱",
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已从浮窗移除",
   "topicDetail_replyLabel": "回复",

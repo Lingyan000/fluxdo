@@ -16,6 +16,8 @@ import 'package:dio/dio.dart';
 import 'package:fluxdo/providers/discourse_providers.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/services/app_error_handler.dart';
+import 'package:fluxdo/services/composer_min_length_resolver.dart';
+import 'package:fluxdo/widgets/common/character_counts_overlay.dart';
 import 'package:fluxdo/services/toast_service.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_renderer.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
@@ -110,8 +112,16 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     // 初始化首贴
     _firstPost = widget.firstPost;
 
+    _titleController.addListener(_updateTitleLength);
+    // 预填标题在上面已写入 controller，监听器挂载时不会再触发，
+    // 这里补一次初值，否则计数器会把已有标题当成 0 字
+    _titleLength = _titleController.text.trim().length;
+
     // 加载首贴和内容
     _loadFirstPostAndContent();
+
+    // 先按站点默认算一版；非私信在分类就位后会再刷新一次
+    _refreshMinContentLength();
 
     // 非私信时加载分类数据
     if (!_isPrivateMessage) {
@@ -130,6 +140,8 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
             .firstOrNull;
         if (category != null && _selectedCategory == null) {
           setState(() => _selectedCategory = category);
+          // 分类就位后才能算出 warden 的按分类下限
+          _refreshMinContentLength();
         }
       });
     }, fireImmediately: true);
@@ -180,6 +192,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   void dispose() {
     _pageController.dispose();
     _titleController.dispose();
+    _titleController.removeListener(_updateTitleLength);
     _contentController.dispose();
     _contentFocusNode.dispose();
     super.dispose();
@@ -189,8 +202,33 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     setState(() => _contentLength = _contentController.text.length);
   }
 
+  /// 标题长度变化时重建（驱动标题计数器）
+  int _titleLength = 0;
+  void _updateTitleLength() {
+    final length = _titleController.text.trim().length;
+    if (length == _titleLength) return;
+    setState(() => _titleLength = length);
+  }
+
+  /// 首帖最小字数（含 warden 等插件按分类的改写）
+  int? _minContentLength;
+
+  /// 解析当前分类下的首帖最小字数（本页编辑的始终是话题首楼）
+  Future<void> _refreshMinContentLength() async {
+    final min = await ComposerMinLengthResolver.resolve(
+      category: _selectedCategory,
+      isFirstPost: true,
+      isPrivateMessage: _isPrivateMessage,
+      isPmWithNonHumanUser: widget.topicDetail.pmWithNonHumanUser,
+    );
+    if (!mounted) return;
+    setState(() => _minContentLength = min);
+  }
+
   void _onCategorySelected(Category category) {
     setState(() => _selectedCategory = category);
+    // 分类决定 warden 最小字数，切换后立即重算
+    _refreshMinContentLength();
   }
 
   void _togglePreview() {
@@ -227,11 +265,15 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
 
     // 手动验证内容
     if (_canEditContent) {
-      final minContentLength = widget.topicDetail.pmWithNonHumanUser
-          ? 1
-          : _isPrivateMessage
-          ? (ref.read(minPmPostLengthProvider).value ?? 10)
-          : (ref.read(minFirstPostLengthProvider).value ?? 20);
+      // 与计数器共用同一份解析结果（含 warden 按分类改写）
+      final minContentLength =
+          _minContentLength ??
+          await ComposerMinLengthResolver.resolve(
+            category: _selectedCategory,
+            isFirstPost: true,
+            isPrivateMessage: _isPrivateMessage,
+            isPmWithNonHumanUser: widget.topicDetail.pmWithNonHumanUser,
+          );
       final contentText = _contentController.text.trim();
       if (contentText.isEmpty) {
         if (_showPreview) _togglePreview();
@@ -462,50 +504,73 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
 
     // 标题输入(编辑分支 header 与无权限分支共用)
     Widget buildTitleField() {
-      return TextFormField(
-        controller: _titleController,
-        enabled: _canEditMetadata,
-        decoration: InputDecoration(
-          hintText: context.l10n.createTopic_titleHint,
-          hintStyle: TextStyle(
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            fontWeight: FontWeight.normal,
+      // 标题字数提示悬浮在输入框右下角(与正文同一套做法):
+      // 不占布局空间,标题为空或已达标时完全不出现
+      return Stack(
+        children: [
+          TextFormField(
+            controller: _titleController,
+            enabled: _canEditMetadata,
+            decoration: InputDecoration(
+              hintText: context.l10n.createTopic_titleHint,
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
+                fontWeight: FontWeight.normal,
+              ),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              isDense: true,
+            ),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+              color: _canEditMetadata
+                  ? null
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            maxLines: null,
+            maxLength: 200,
+            // 计数改用悬浮层(见下方 Stack),这里不占位
+            buildCounter:
+                (
+                  context, {
+                  required currentLength,
+                  required isFocused,
+                  maxLength,
+                }) => null,
+            validator: _canEditMetadata
+                ? (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return context.l10n.createTopic_enterTitle;
+                    }
+                    if (value.trim().length < minTitleLength) {
+                      return context.l10n.createTopic_minTitleLength(
+                        minTitleLength,
+                      );
+                    }
+                    return null;
+                  }
+                : null,
+            onTap: () {
+              _editorKey.currentState?.closeEmojiPanel();
+              _richKey.currentState?.closeEmojiPanel();
+            },
           ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
-          isDense: true,
-        ),
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.5,
-          color: _canEditMetadata ? null : theme.colorScheme.onSurfaceVariant,
-        ),
-        maxLines: null,
-        maxLength: 200,
-        buildCounter:
-            (
-              context, {
-              required currentLength,
-              required isFocused,
-              maxLength,
-            }) => null,
-        validator: _canEditMetadata
-            ? (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return context.l10n.createTopic_enterTitle;
-                }
-                if (value.trim().length < minTitleLength) {
-                  return context.l10n.createTopic_minTitleLength(
-                    minTitleLength,
-                  );
-                }
-                return null;
-              }
-            : null,
-        onTap: () {
-          _editorKey.currentState?.closeEmojiPanel();
-          _richKey.currentState?.closeEmojiPanel();
-        },
+          // 标题为空时同样提示（对齐 missingReplyCharacters > 0）
+          if (_canEditMetadata)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: CharacterCountsOverlay(
+                length: _titleLength,
+                minimumLength: minTitleLength,
+                // 标题不带社区警告文案（对齐主题组件 showWarning=false）
+                showWarning: false,
+              ),
+            ),
+        ],
       );
     }
 
@@ -582,7 +647,6 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         selectedTags: _selectedTags,
         allTags: tagsAsync.value ?? const [],
         onTagsChanged: (newTags) => setState(() => _selectedTags = newTags),
-        charCount: _contentLength,
         enabled: _canEditMetadata,
       );
     }
@@ -645,6 +709,10 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                                     key: _richKey,
                                     header: buildComposerHeader(),
                                     metaBar: buildMetaBar(),
+                                    bodyOverlay: CharacterCountsOverlay(
+                                      length: _contentLength,
+                                      minimumLength: _minContentLength,
+                                    ),
                                     controller: _contentController,
                                     focusNode: _contentFocusNode,
                                     hintText:
@@ -675,6 +743,10 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                               key: _editorKey,
                               header: buildComposerHeader(),
                               metaBar: buildMetaBar(),
+                              bodyOverlay: CharacterCountsOverlay(
+                                length: _contentLength,
+                                minimumLength: _minContentLength,
+                              ),
                               controller: _contentController,
                               focusNode: _contentFocusNode,
                               hintText: context.l10n.createTopic_contentHint,

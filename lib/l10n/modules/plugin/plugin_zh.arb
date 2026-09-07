@@ -1,0 +1,12 @@
+{
+  "@@locale": "zh",
+  "replyCost_confirm": "本次回复将扣除 {cost} 积分，确定继续吗？",
+  "@replyCost_confirm": {
+    "placeholders": {
+      "cost": {
+        "type": "int"
+      }
+    }
+  },
+  "charCount_noPaddingWarning": "勿用各类字数补丁"
+}

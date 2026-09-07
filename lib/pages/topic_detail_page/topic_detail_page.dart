@@ -62,6 +62,7 @@ import '../../providers/nested_topic_provider.dart';
 import 'controllers/topic_detail_controller.dart';
 import 'controllers/topic_toc_controller.dart';
 import 'widgets/nested_post_list.dart';
+import 'widgets/invite_private_message_dialog.dart';
 import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_post_list.dart';
 import 'widgets/topic_toc_panel.dart';
@@ -209,6 +210,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
+  int? _removingPrivateMessageParticipantId;
+  String? _removingPrivateMessageGroupName;
+  bool _isTogglingArchiveMessage = false;
 
   /// 本地屏蔽名单过滤缓存：provider 状态与名单实例都未变时复用同一份
   /// 过滤结果，保证同一帧内多处读取拿到 identical 的 posts 列表
@@ -673,6 +677,30 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       return;
     }
     Navigator.of(context).maybePop();
+  }
+
+  /// 刷新三个私信列表（收件箱 / 已发送 / 归档）：成员变动与归档都会挪动
+  /// 私信在这三档里的归属。
+  void _invalidatePrivateMessageLists() {
+    ref.invalidate(pmInboxProvider);
+    ref.invalidate(pmSentProvider);
+    ref.invalidate(pmArchiveProvider);
+  }
+
+  /// 离开当前私信页。不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子
+  /// 模式，仍把这条私信留在屏幕上。
+  void _leavePrivateMessagePage() {
+    if (!mounted) return;
+    if (widget.embeddedMode) {
+      widget.onEmbeddedBack?.call();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  void _closeRemovedPrivateMessage() {
+    _invalidatePrivateMessageLists();
+    _leavePrivateMessagePage();
   }
 
   KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
@@ -1736,6 +1764,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onExport: _showExportSheet,
           onOpenInBrowser: _openInBrowser,
           onFilter: _showFilterSheet,
+          onToggleArchiveMessage: () =>
+              unawaited(_handleToggleArchiveMessage(notifier)),
           onReadingSettings: () {
             Navigator.push(
               context,
@@ -1774,6 +1804,30 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
                 const SizedBox(width: 12),
                 Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
+          ),
+        // 私信归档双态入口:对齐官方 topic footer 的 archive 按钮
+        // (message_archived 决定图标与文案)。
+        if (detail.isPrivateMessage)
+          PopupMenuItem(
+            value: 'archive_message',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  detail.messageArchived
+                      ? Symbols.move_to_inbox_rounded
+                      : Symbols.archive_rounded,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  detail.messageArchived
+                      ? context.l10n.topicDetail_moveMessageToInbox
+                      : context.l10n.topicDetail_archiveMessage,
+                ),
               ],
             ),
           ),
@@ -2183,6 +2237,26 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               .clearReloadRequest();
           _handleReloadTopic(notifier, next.refreshStreamRequested);
           return;
+        }
+
+        if (next.removedFromPrivateMessage &&
+            !(previous?.removedFromPrivateMessage ?? false)) {
+          ref
+              .read(topicChannelProvider(widget.topicId).notifier)
+              .clearRemovedFromPrivateMessage();
+          _closeRemovedPrivateMessage();
+          return;
+        }
+
+        // 别的端归档/取消归档同一条私信时，把归档态同步进 detail，菜单里的
+        // 双态入口跟着翻。只在 bus 状态真的变过时同步 —— 它初值恒为 false，
+        // 首次回调就同步会把「进来时已归档」的私信错判成未归档。
+        if (previous != null &&
+            next.messageArchived != previous.messageArchived) {
+          ref
+              .read(topicDetailProvider(params).notifier)
+              .applyMessageArchived(next.messageArchived);
+          _invalidatePrivateMessageLists();
         }
 
         // 2. notification_level_change（通知级别变更）
@@ -2947,6 +3021,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           headerKey: _headerKey,
           hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
+          removingPrivateMessageParticipantId:
+              _removingPrivateMessageParticipantId,
+          removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
+          onRemovePrivateMessageParticipant: isLoggedIn
+              ? _handleRemovePrivateMessageParticipant
+              : null,
+          onRemovePrivateMessageGroup: isLoggedIn
+              ? _handleRemovePrivateMessageGroup
+              : null,
+          onInvitePrivateMessageParticipants: isLoggedIn
+              ? _handleInvitePrivateMessageParticipants
+              : null,
           onReply: _handleReply,
           onEdit: _handleEdit,
           onRefreshPost: _handleRefreshPost,
@@ -2997,6 +3083,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onAnswerSortChanged: (byActivity) =>
                   byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
+              removingPrivateMessageParticipantId:
+                  _removingPrivateMessageParticipantId,
+              removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
+              onRemovePrivateMessageParticipant: isLoggedIn
+                  ? _handleRemovePrivateMessageParticipant
+                  : null,
+              onRemovePrivateMessageGroup: isLoggedIn
+                  ? _handleRemovePrivateMessageGroup
+                  : null,
+              onInvitePrivateMessageParticipants: isLoggedIn
+                  ? _handleInvitePrivateMessageParticipants
+                  : null,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
               loadingPreviousListenable: notifier.loadingPreviousListenable,

@@ -13,6 +13,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../l10n/s.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
+import '../../utils/image_save_utils.dart';
 import '../../utils/screenshot_utils.dart';
 import 'ai_share_image_widget.dart';
 import 'share_image_preview.dart';
@@ -166,15 +167,8 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
     try {
       final bytes = await _captureImage();
       if (bytes == null) throw Exception(S.current.share_screenshotFailed);
-
-      final success = await ScreenshotUtils.saveToGallery(bytes);
-      if (mounted) {
-        if (success) {
-          ToastService.showSuccess(S.current.share_imageSaved);
-        } else {
-          ToastService.showError(S.current.share_savePermissionDenied);
-        }
-      }
+      // 成功/失败/权限提示由 ImageSaveUtils 统一给出
+      await ScreenshotUtils.saveToGallery(bytes);
     } catch (e) {
       debugPrint('[AiShareImagePreview] saveImage error: $e');
       if (mounted) ToastService.showError(S.current.share_saveFailed);
@@ -429,14 +423,14 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // 保存到相册
+                    // 保存图片（移动端进相册、桌面端另存为）
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _anyLoading ? null : _saveImage,
                         icon: _isSaving
                             ? const LoadingSpinner(size: 18)
                             : const Icon(Symbols.save_alt_rounded, size: 18),
-                        label: Text(context.l10n.common_save),
+                        label: Text(ImageSaveUtils.actionLabel),
                         style: OutlinedButton.styleFrom(
                           padding:
                               const EdgeInsets.symmetric(vertical: 12),

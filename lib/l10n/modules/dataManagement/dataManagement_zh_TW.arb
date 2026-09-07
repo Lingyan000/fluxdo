@@ -22,7 +22,6 @@
       }
     }
   },
-  "dataManagement_backupSubject": "FluxDO 資料備份",
   "dataManagement_cacheManagement": "快取管理",
   "dataManagement_calculating": "計算中...",
   "dataManagement_categoryAvatar": "頭像",

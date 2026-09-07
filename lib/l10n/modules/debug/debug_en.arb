@@ -43,6 +43,7 @@
   "appLogs_request": "Request",
   "appLogs_search": "Search logs",
   "appLogs_sendFeedback": "Send logs via PM",
+  "appLogs_saveLogs": "Save logs",
   "appLogs_shareLogs": "Share logs",
   "appLogs_shareSubject": "App Logs",
   "appLogs_stack": "Stack",

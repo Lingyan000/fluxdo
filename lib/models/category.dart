@@ -31,6 +31,13 @@ class Category {
   /// 字段」派生,不做站点白名单
   final bool hasPostVotingFields;
 
+  /// 分类的 `custom_fields`(站点插件扩展字段)
+  ///
+  /// 各社区自建插件会往这里写自己的配置,如 linux.do warden 的
+  /// `warden_min_post_length` / `warden_min_first_post_length`。不为单个
+  /// 社区字段扩充模型属性,统一由 `lib/plugins` 下的站点插件解析。
+  final Map<String, dynamic> pluginExtras;
+
   Category({
     required this.id,
     required this.name,
@@ -54,6 +61,7 @@ class Category {
     this.createAsPostVotingDefault = false,
     this.onlyPostVotingInThisCategory = false,
     this.hasPostVotingFields = false,
+    this.pluginExtras = const <String, dynamic>{},
   });
 
   /// 是否允许在此分类创建话题
@@ -93,7 +101,22 @@ class Category {
       onlyPostVotingInThisCategory:
           json['only_post_voting_in_this_category'] as bool? ?? false,
       hasPostVotingFields: json.containsKey('create_as_post_voting_default'),
+      pluginExtras: _extractPluginExtras(json['custom_fields']),
     );
+  }
+
+  /// 只保留 `custom_fields` 里的非空标量,值为 null 的键直接丢弃
+  /// (warden 对未配置的分类也会下发 null,保留下来只会干扰判空)
+  static Map<String, dynamic> _extractPluginExtras(dynamic raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    final extras = <String, dynamic>{};
+    for (final entry in raw.entries) {
+      final value = entry.value;
+      if (value is num || value is bool || value is String) {
+        extras[entry.key.toString()] = value;
+      }
+    }
+    return Map.unmodifiable(extras);
   }
 }
 

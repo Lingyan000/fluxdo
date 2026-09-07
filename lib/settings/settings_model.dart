@@ -61,6 +61,11 @@ final class SwitchModel extends SettingsModel {
   /// 「富文本编辑器」开启才有意义,前置关闭时展示无意义)。null = 恒显示。
   final bool Function(WidgetRef ref)? enabledWhen;
 
+  /// 动态副标题:需要根据运行时状态变化时使用(如渲染兼容模式在
+  /// 检测到崩溃后追加「建议开启」)。返回非 null 时覆盖 [subtitle];
+  /// 不提供时行为与以前完全一致。
+  final String? Function(WidgetRef ref)? subtitleBuilder;
+
   const SwitchModel({
     required super.id,
     required super.title,
@@ -69,6 +74,7 @@ final class SwitchModel extends SettingsModel {
     required this.getValue,
     required this.onChanged,
     this.enabledWhen,
+    this.subtitleBuilder,
   });
 
   @override
@@ -127,6 +133,12 @@ final class IntSliderModel extends SettingsModel {
 final class ActionModel extends SettingsModel {
   final IconData icon;
 
+  /// 是否允许副标题按内容自然换行。
+  ///
+  /// 默认单行截断——[getDynamicSubtitle] 常用来显示当前值（URL、计数），
+  /// 那类内容换行反而撑乱列表。只有静态说明文字长到一行放不下时才开。
+  final bool wrapSubtitle;
+
   /// 动态副标题（如当前 URL）
   final String? Function(WidgetRef ref)? getDynamicSubtitle;
 
@@ -137,6 +149,7 @@ final class ActionModel extends SettingsModel {
     required super.title,
     super.subtitle,
     required this.icon,
+    this.wrapSubtitle = false,
     this.getDynamicSubtitle,
     required this.onTap,
   });

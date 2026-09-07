@@ -2,11 +2,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
-import 'package:gal/gal.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:cross_file/cross_file.dart';
 import 'dart:io';
+import 'image_save_utils.dart';
 import 'share_utils.dart';
 
 /// Widget 截图工具类
@@ -132,30 +132,11 @@ class ScreenshotUtils {
     return Uint8List.fromList(pngBytes);
   }
 
-  /// 保存图片到相册
-  /// 复用 image_viewer_page.dart 的保存逻辑
-  static Future<bool> saveToGallery(Uint8List bytes, {String? filename}) async {
-    try {
-      // 检查权限
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        final granted = await Gal.requestAccess();
-        if (!granted) {
-          return false;
-        }
-      }
-
-      // 生成文件名
-      final name = filename ?? 'fluxdo_share_${DateTime.now().millisecondsSinceEpoch}';
-      await Gal.putImageBytes(bytes, name: '$name.png');
-      return true;
-    } on GalException catch (e) {
-      debugPrint('[ScreenshotUtils] saveToGallery GalException: ${e.type.message}');
-      return false;
-    } catch (e) {
-      debugPrint('[ScreenshotUtils] saveToGallery error: $e');
-      return false;
-    }
+  /// 保存图片（移动端进相册、桌面端另存为文件），提示由 [ImageSaveUtils] 统一给出
+  static Future<bool> saveToGallery(Uint8List bytes, {String? filename}) {
+    final name =
+        filename ?? 'fluxdo_share_${DateTime.now().millisecondsSinceEpoch}';
+    return ImageSaveUtils.saveBytes(bytes, fileName: '$name.png');
   }
 
   /// 分享图片
@@ -169,7 +150,7 @@ class ScreenshotUtils {
 
       // 分享
       final xFile = XFile(file.path, mimeType: 'image/png');
-      await ShareUtils.shareOrSaveFile(xFile);
+      await ShareUtils.shareFile(xFile);
     } catch (e) {
       debugPrint('[ScreenshotUtils] shareImage error: $e');
       rethrow;

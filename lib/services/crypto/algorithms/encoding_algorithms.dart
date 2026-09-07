@@ -34,14 +34,7 @@ class Base64Algorithm extends CryptoAlgorithm {
   String decrypt(String ciphertext, CryptoParams params) {
     final normalized = _normalize(ciphertext);
     try {
-      return utf8.decode(base64.decode(normalized));
-    } on FormatException {
-      // 非 UTF-8 字节也允许以 Latin-1 兜底展示（CyberChef 行为）
-      try {
-        return latin1.decode(base64.decode(normalized));
-      } catch (_) {
-        throw const CryptoException('无效的 Base64 密文');
-      }
+      return decodeUtf8Compat(base64.decode(normalized));
     } catch (_) {
       throw const CryptoException('无效的 Base64 密文');
     }
@@ -63,6 +56,133 @@ class Base64Algorithm extends CryptoAlgorithm {
     return text;
   }
 }
+
+/// 编码文本类 payload 的 UTF-8 兼容解码（Base64 / Hex / Base32 共用）。
+///
+/// 依次容忍三种上游怪癖：
+/// 1. CESU-8/WTF-8：emoji 等 BMP 外字符被拆成 UTF-16 代理对、各按 3 字节编码
+///    （Java JNI、`writeUTF`、MySQL utf8mb3 等会这么干）；
+/// 2. 个别字节损坏（如划词把 base64 尾巴选漏）：只把坏字节替成 U+FFFD，
+///    保住其余正文，不再整段改换编码；
+/// 3. 整段本就不是 UTF-8（Latin-1 等）：回退 Latin-1（CyberChef 行为）。
+///
+/// 2 与 3 的取舍不看长度、不拍阈值：两个候选各数一次「可疑字符」后取优。
+/// 真 UTF-8 被 Latin-1 硬解会漏出成片 C1 控制字符，真 Latin-1 文本几乎没有，
+/// 两者天然可分——否则「几个重音字母」和「几个截断字节」只能靠长度瞎猜。
+String decodeUtf8Compat(List<int> bytes) {
+  final normalized = _normalizeCesu8SurrogatePairs(bytes);
+  try {
+    return utf8.decode(normalized);
+  } on FormatException {
+    final repaired = utf8.decode(normalized, allowMalformed: true);
+    final fallback = latin1.decode(bytes, allowInvalid: true);
+    return _countSuspiciousRunes(repaired) <= _countSuspiciousRunes(fallback)
+        ? repaired
+        : fallback;
+  }
+}
+
+/// 嗅探端判据：payload 按 UTF-8 解出来是否像人类可读文本。
+///
+/// 用于「这段 base64/hex 是真文本编码，还是加密后的裸 payload」二选一。
+/// 刻意只看 UTF-8 解释：Latin-1 是解码端的补救手段，不能拿来给二进制洗白
+/// 身份——随机字节硬解 Latin-1 也能凑出「没有控制字符」的假象（实测 16 字节
+/// 随机 payload 有约 1.8% 会蒙混过关）。
+bool looksLikeReadableText(List<int> bytes) {
+  if (bytes.isEmpty) return false;
+  final decoded =
+      utf8.decode(_normalizeCesu8SurrogatePairs(bytes), allowMalformed: true);
+  if (decoded.isEmpty) return false;
+  var runeCount = 0;
+  var replacements = 0;
+  var firstReplacementAt = -1;
+  for (final rune in decoded.runes) {
+    // 控制字符是二进制内容最强的信号，出现即判非文本
+    if (_isC0Control(rune) || _isC1Control(rune)) return false;
+    if (rune == 0xfffd) {
+      if (firstReplacementAt < 0) firstReplacementAt = runeCount;
+      replacements++;
+    }
+    runeCount++;
+  }
+  if (replacements == 0) return true;
+  // CESU-8 已在归一化阶段还原，这里只需再容忍「划词把 base64 尾巴选漏」。
+  // 截断只会毁掉末尾那一个多字节序列，所以要求替换符紧贴结尾——散落在正文
+  // 中间的损坏按二进制处理。不按占比放宽：占比会随文本变长越放越松，长文本
+  // 能静默吞掉几十个坏字节，且随机字节能靠「凑出几个合法多字节序列」蒙过去。
+  return replacements <= _maxTruncatedTailReplacements &&
+      firstReplacementAt >= runeCount - _maxTruncatedTailReplacements;
+}
+
+/// 尾部截断最多毁掉一个多字节序列，留一点余量
+const int _maxTruncatedTailReplacements = 2;
+
+/// 可疑字符：U+FFFD 替换符、C0 控制字符、C1 控制区。
+///
+/// C1（U+0080-009F）是关键项：正常文本几乎不用，但 UTF-8 多字节序列被
+/// Latin-1 硬解时后续字节会成片落进这里，正是「谁解错了」的指纹。
+bool _isSuspiciousRune(int rune) =>
+    rune == 0xfffd || _isC0Control(rune) || _isC1Control(rune);
+
+bool _isC0Control(int rune) =>
+    rune < 0x20 && rune != 0x09 && rune != 0x0a && rune != 0x0d;
+
+bool _isC1Control(int rune) => rune >= 0x80 && rune <= 0x9f;
+
+int _countSuspiciousRunes(String text) {
+  var count = 0;
+  for (final rune in text.runes) {
+    if (_isSuspiciousRune(rune)) count++;
+  }
+  return count;
+}
+
+/// CESU-8 代理序列的首字节
+const int _cesu8Lead = 0xed;
+
+/// 把成对的 CESU-8 代理序列（6 字节）还原成标准 UTF-8（4 字节）。
+///
+/// 合法 UTF-8 里 `0xED` 后接 `0xA0-0xBF` 恰好落在 U+D800-DFFF 代理区，
+/// 而该区在 UTF-8 中永远非法，所以这个还原不可能误伤正常内容。
+Uint8List _normalizeCesu8SurrogatePairs(List<int> bytes) {
+  final firstLead = bytes.indexOf(_cesu8Lead);
+  // 绝大多数 payload 不含 CESU-8：零拷贝原样返回
+  if (firstLead < 0) {
+    return bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+  }
+  final out = BytesBuilder()..add(bytes.sublist(0, firstLead));
+  var i = firstLead;
+  while (i < bytes.length) {
+    if (i + 5 < bytes.length && _isCesu8SurrogatePair(bytes, i)) {
+      out.add(utf8.encode(String.fromCharCode(_decodeCesu8Pair(bytes, i))));
+      i += 6;
+      continue;
+    }
+    out.addByte(bytes[i]);
+    i++;
+  }
+  return out.takeBytes();
+}
+
+/// `ED A0-AF xx` + `ED B0-BF xx`：高代理 + 低代理各一段 3 字节
+bool _isCesu8SurrogatePair(List<int> b, int i) =>
+    b[i] == _cesu8Lead &&
+    b[i + 1] >= 0xa0 &&
+    b[i + 1] <= 0xaf &&
+    _isUtf8Continuation(b[i + 2]) &&
+    b[i + 3] == _cesu8Lead &&
+    b[i + 4] >= 0xb0 &&
+    b[i + 4] <= 0xbf &&
+    _isUtf8Continuation(b[i + 5]);
+
+/// 两段 3 字节代理还原成单个码点（首字节固定 0xED 即高 4 位 0xD）
+int _decodeCesu8Pair(List<int> b, int i) {
+  final high = 0xd000 | ((b[i + 1] & 0x3f) << 6) | (b[i + 2] & 0x3f);
+  final low = 0xd000 | ((b[i + 4] & 0x3f) << 6) | (b[i + 5] & 0x3f);
+  return 0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00);
+}
+
+bool _isUtf8Continuation(int byte) => byte >= 0x80 && byte <= 0xbf;
 
 /// Hex（小写输出，解码大小写均可）
 class HexAlgorithm extends CryptoAlgorithm {
@@ -91,7 +211,7 @@ class HexAlgorithm extends CryptoAlgorithm {
       throw const CryptoException('无效的 Hex 密文（需为偶数长度的十六进制字符）');
     }
     try {
-      return utf8.decode(_hexDecode(text));
+      return decodeUtf8Compat(_hexDecode(text));
     } catch (_) {
       throw const CryptoException('Hex 解码失败：内容不是有效的 UTF-8 文本');
     }
@@ -191,7 +311,7 @@ class Base32Algorithm extends CryptoAlgorithm {
       buffer &= (1 << bits) - 1;
     }
     try {
-      return utf8.decode(out);
+      return decodeUtf8Compat(out);
     } catch (_) {
       throw const CryptoException('Base32 解码失败：内容不是有效的 UTF-8 文本');
     }

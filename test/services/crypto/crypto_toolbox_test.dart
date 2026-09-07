@@ -306,6 +306,131 @@ void main() {
       expect(suggestion.algorithmId, 'aes-256-cbc');
     });
 
+    test('CESU-8 emoji + \u4e2a\u522b\u574f\u5b57\u8282\uff1a\u4fdd\u4f4f\u6b63\u6587\u4e14\u4e0d\u8bef\u5224\u6210\u5bf9\u79f0\u7b97\u6cd5', () {
+      final bytes = <int>[
+        ...utf8.encode('Synthetic UTF-8 text with \u4e2d\u6587 '),
+        // U+1F449 \u7684 CESU-8 \u5f62\u6001\uff1aD83D DC49 -> ED A0 BD ED B1 89
+        0xed, 0xa0, 0xbd, 0xed, 0xb1, 0x89,
+        ...utf8.encode(' tail with enough readable text'),
+        0xff, // \u5355\u4e2a\u635f\u574f\u5c3e\u5b57\u8282
+      ];
+      final sample = base64.encode(bytes);
+
+      expect(CryptoToolbox.suggestDecrypt(sample).algorithmId, 'base64');
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: sample,
+          algorithmId: 'base64',
+          params: const CryptoParams(),
+        ),
+        'Synthetic UTF-8 text with \u4e2d\u6587 \u{1F449} '
+        'tail with enough readable text\uFFFD',
+      );
+    });
+
+    test('\u6210\u7247\u975e UTF-8 \u5b57\u8282\uff1a\u4ecd\u56de\u9000 Latin-1', () {
+      final sample = base64.encode(<int>[0x43, 0x61, 0x66, 0xe9]);
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: sample,
+          algorithmId: 'base64',
+          params: const CryptoParams(),
+        ),
+        'Caf\u00e9',
+      );
+    });
+
+    test('\u957f Latin-1 \u6587\u672c\uff1a\u574f\u5b57\u8282\u5360\u6bd4\u4f4e\u4e5f\u4e0d\u8bb8\u6309 UTF-8 \u635f\u574f\u89e3', () {
+      // \u5224\u636e\u82e5\u6309\u300c\u66ff\u6362\u7b26\u5360\u6bd4\u300d\u62cd\u9608\u503c\uff0c\u957f\u6587\u672c\u91cc\u7684\u96f6\u661f\u91cd\u97f3\u5b57\u6bcd\u4f1a\u88ab\u541e\u6210 U+FFFD\uff0c
+      // \u53cd\u800c\u662f\u91cd\u97f3\u8d8a\u5c11\u8d8a\u5bb9\u6613\u635f\u574f\u3002\u8fd9\u91cc\u9489\u4f4f\u300c\u53d6\u4f18\u300d\u800c\u975e\u300c\u770b\u957f\u5ea6\u300d\u3002
+      final bytes = <int>[
+        ...utf8.encode('A' * 60),
+        0xe9, // \u00e9
+        ...utf8.encode('B' * 60),
+        0xe8, // \u00e8
+        ...utf8.encode('C' * 60),
+        0xfc, // \u00fc
+        ...utf8.encode('D' * 20),
+      ];
+      final decoded = CryptoToolbox.decrypt(
+        ciphertext: base64.encode(bytes),
+        algorithmId: 'base64',
+        params: const CryptoParams(),
+      );
+      expect(
+        decoded,
+        '${'A' * 60}\u00e9${'B' * 60}\u00e8${'C' * 60}\u00fc${'D' * 20}',
+      );
+      expect(decoded.contains('\uFFFD'), isFalse);
+    });
+
+    test('\u622a\u65ad\u7684 UTF-8 \u4e2d\u6587\uff1a\u53ea\u4e22\u5c3e\u5b57\uff0c\u6b63\u6587\u4e0d\u6574\u6bb5\u9000 Latin-1', () {
+      final full = utf8.encode('\u4e2d\u6587\u6d4b\u8bd5\u5185\u5bb9\u591f\u957f\u4e00\u4e9b');
+      final truncated = full.sublist(0, full.length - 1);
+      final sample = base64.encode(truncated);
+      // \u5c3e\u90e8\u622a\u65ad\u4ecd\u5e94\u8ba4\u4f5c\u6587\u672c\u7f16\u7801\uff0c\u4e0d\u8be5\u88ab\u63a8\u53bb\u5efa\u8bae\u5bf9\u79f0\u7b97\u6cd5
+      expect(CryptoToolbox.suggestDecrypt(sample).algorithmId, 'base64');
+      final decoded = CryptoToolbox.decrypt(
+        ciphertext: sample,
+        algorithmId: 'base64',
+        params: const CryptoParams(),
+      );
+      expect(decoded, startsWith('\u4e2d\u6587\u6d4b\u8bd5\u5185\u5bb9\u591f\u957f\u4e00'));
+      // \u8001\u884c\u4e3a\u4f1a\u6574\u6bb5\u9000 Latin-1\uff0c\u628a\u6b63\u5e38\u4e2d\u6587\u4e00\u8d77\u53d8\u6210 \u00e4\u00b8\u00ad\u00e6 \u8fd9\u7c7b\u4e71\u7801
+      expect(decoded.contains('\u00e4'), isFalse);
+    });
+
+    test('Hex \u901a\u9053\uff1a\u55c5\u63a2\u5efa\u8bae hex \u540e\u5fc5\u987b\u771f\u80fd\u89e3\u51fa\uff0c\u4e0d\u80fd\u9009\u4e2d\u5373\u62a5\u9519', () {
+      final bytes = <int>[
+        ...utf8.encode('hello world this is a fairly long hex payload here ok'),
+        0xff,
+      ];
+      final hexText =
+          bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+      expect(CryptoToolbox.suggestDecrypt(hexText).algorithmId, 'hex');
+      expect(
+        () => CryptoToolbox.decrypt(
+          ciphertext: hexText,
+          algorithmId: 'hex',
+          params: const CryptoParams(),
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('Hex / Base32 \u901a\u9053\u540c\u6837\u4fee\u590d CESU-8', () {
+      // U+1F389 \u7684 CESU-8 \u5f62\u6001\uff1aD83C DF89 -> ED A0 BC ED BE 89
+      final bytes = <int>[
+        0xed, 0xa0, 0xbc, 0xed, 0xbe, 0x89,
+        ...utf8.encode(' \u4f1a\u8bae'),
+      ];
+      final hexText =
+          bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: hexText,
+          algorithmId: 'hex',
+          params: const CryptoParams(),
+        ),
+        '\u{1F389} \u4f1a\u8bae',
+      );
+
+      final base32Text = CryptoToolbox.encrypt(
+        plaintext: '\u{1F389} \u4f1a\u8bae',
+        algorithmId: 'base32',
+        params: const CryptoParams(),
+      );
+      expect(
+        CryptoToolbox.decrypt(
+          ciphertext: base32Text,
+          algorithmId: 'base32',
+          params: const CryptoParams(),
+        ),
+        '\u{1F389} \u4f1a\u8bae',
+      );
+    });
+
     test('纯 base64 内容探测：UTF-8 文本建议 base64、二进制建议对称算法', () {
       // UTF-8 可读 → base64 编码
       expect(

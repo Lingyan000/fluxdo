@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/download_item.dart';
@@ -60,9 +60,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     // 获取下载目录，处理重名
     final dir = await _getDownloadDir();
-    var savePath = _uniquePath(dir.path, initialFileName);
+    var reservation = DownloadService.reserveAvailableDownload(
+      directory: dir,
+      fileName: initialFileName,
+    );
+    var savePath = reservation.savePath;
     // 实际文件名可能带编号（如 "file (1).pdf"）
-    var actualFileName = savePath.split('/').last;
+    var actualFileName = p.basename(savePath);
 
     final id = DateTime.now().millisecondsSinceEpoch.toString();
     final item = DownloadItem(
@@ -82,31 +86,41 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // 立即显示下载进度 Toast（不等待 HEAD 请求）
     final toastHandle = ToastService.showDownload(actualFileName);
 
-    // 没有建议文件名时，通过 HEAD 请求获取更准确的文件名（作为下载 loading 的一部分）
-    if (suggestedFilename == null || suggestedFilename.isEmpty) {
-      final headerName = await DownloadService.instance.fetchFileNameFromHeader(
-        url,
-      );
-      if (headerName != null && headerName.isNotEmpty) {
-        final betterPath = _uniquePath(dir.path, headerName);
-        final betterActualName = betterPath.split('/').last;
-        if (betterActualName != actualFileName) {
-          savePath = betterPath;
-          actualFileName = betterActualName;
-          _updateItem(id, fileName: betterActualName, savePath: betterPath);
-          toastHandle.updateFileName(betterActualName);
-        }
-      }
-    }
-
-    // 开始下载
+    // 从文件名改进到实际下载均由同一个异常处理覆盖，避免中途失败遗留预留文件。
     final cancelToken = CancelToken();
     _cancelTokens[id] = cancelToken;
 
     try {
+      // 没有建议文件名时，通过 HEAD 请求获取更准确的文件名（作为下载 loading 的一部分）
+      if (suggestedFilename == null || suggestedFilename.isEmpty) {
+        final headerName = await DownloadService.instance
+            .fetchFileNameFromHeader(url);
+        if (headerName != null && headerName.isNotEmpty) {
+          final safeHeaderName = DownloadService.sanitizeFileName(headerName);
+          if (safeHeaderName != null &&
+              safeHeaderName != reservation.requestedFileName) {
+            final betterReservation = DownloadService.reserveAvailableDownload(
+              directory: dir,
+              fileName: safeHeaderName,
+            );
+            try {
+              await reservation.release();
+            } catch (_) {
+              await betterReservation.release();
+              rethrow;
+            }
+            reservation = betterReservation;
+            savePath = betterReservation.savePath;
+            actualFileName = p.basename(savePath);
+            _updateItem(id, fileName: actualFileName, savePath: savePath);
+            toastHandle.updateFileName(actualFileName);
+          }
+        }
+      }
+
       await DownloadService.instance.download(
         url: url,
-        savePath: savePath,
+        reservation: reservation,
         cancelToken: cancelToken,
         onProgress: (received, total) {
           final progress = total > 0 ? received / total : -1.0;
@@ -137,6 +151,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         onAction: () => DownloadListPage.navigateTo(highlightItemId: id),
       );
     } on DioException catch (e) {
+      await _releaseQuietly(reservation);
       toastHandle.dismiss();
       if (e.type == DioExceptionType.cancel) {
         debugPrint('[DownloadProvider] 下载已取消: $actualFileName');
@@ -146,6 +161,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         ToastService.showError(S.current.myBrowser_downloadFailed);
       }
     } catch (e) {
+      await _releaseQuietly(reservation);
       toastHandle.dismiss();
       debugPrint('[DownloadProvider] 下载异常: $e');
       _updateItem(id, status: DownloadItemStatus.failed);
@@ -153,6 +169,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     } finally {
       _cancelTokens.remove(id);
       _lastProgressPublishMicros.remove(id);
+    }
+  }
+
+  Future<void> _releaseQuietly(DownloadReservation reservation) async {
+    try {
+      await reservation.release();
+    } catch (e) {
+      debugPrint('[DownloadProvider] 清理下载临时文件失败: $e');
     }
   }
 
@@ -180,13 +204,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _cancelTokens[id]?.cancel();
     _cancelTokens.remove(id);
     final item = state.firstWhere((e) => e.id == id, orElse: () => state.first);
-    // 尝试删除本地文件
+    _deleteSavedFile(item);
+    state = state.where((e) => e.id != id).toList();
+    _save();
+  }
+
+  /// 删除记录对应的下载文件（下载始终落在应用目录里，是真实路径）。
+  void _deleteSavedFile(DownloadItem item) {
     try {
       final file = File(item.savePath);
       if (file.existsSync()) file.deleteSync();
     } catch (_) {}
-    state = state.where((e) => e.id != id).toList();
-    _save();
   }
 
   /// 清除已完成的记录
@@ -194,10 +222,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // 删除已完成的本地文件
     for (final item in state) {
       if (item.status == DownloadItemStatus.completed) {
-        try {
-          final file = File(item.savePath);
-          if (file.existsSync()) file.deleteSync();
-        } catch (_) {}
+        _deleteSavedFile(item);
       }
     }
     state = state
@@ -237,37 +262,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _prefs.setString(_storageKey, jsonStr);
   }
 
-  /// 生成不重名的文件路径：file.pdf → file (1).pdf → file (2).pdf ...
-  static String _uniquePath(String dirPath, String fileName) {
-    var path = '$dirPath/$fileName';
-    if (!File(path).existsSync()) return path;
-
-    final dot = fileName.lastIndexOf('.');
-    final name = dot > 0 ? fileName.substring(0, dot) : fileName;
-    final ext = dot > 0 ? fileName.substring(dot) : '';
-    var i = 1;
-    do {
-      path = '$dirPath/$name ($i)$ext';
-      i++;
-    } while (File(path).existsSync());
-    return path;
-  }
-
-  /// 获取下载目录
-  /// Android → 公共 Downloads，macOS/Linux/Windows → ~/Downloads
-  /// iOS → 应用 Documents（沙盒限制，但通过 Files app 可见）
-  Future<Directory> _getDownloadDir() async {
-    // 优先使用系统下载目录（Android 公共 Downloads / 桌面 ~/Downloads）
-    final downloadsDir = await getDownloadsDirectory();
-    if (downloadsDir != null) return downloadsDir;
-    // 回退到应用文档目录
-    final appDir = await getApplicationDocumentsDirectory();
-    final fallbackDir = Directory('${appDir.path}/Downloads');
-    if (!fallbackDir.existsSync()) {
-      fallbackDir.createSync(recursive: true);
-    }
-    return fallbackDir;
-  }
+  /// 获取下载目录（与其它保存入口共用同一套解析/回退逻辑）
+  Future<Directory> _getDownloadDir() =>
+      DownloadService.resolveDownloadDirectory();
 }
 
 final downloadProvider =

@@ -1,6 +1,5 @@
 {
   "@@locale": "en",
-  "createTopic_charCount": "{count} characters",
   "createTopic_postVoting": "Q&A",
   "createTopic_confirmPublish": "Publish",
   "createTopic_contentHint": "Content (Markdown supported)...",

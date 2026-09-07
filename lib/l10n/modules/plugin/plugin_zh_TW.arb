@@ -1,0 +1,12 @@
+{
+  "@@locale": "zh_TW",
+  "replyCost_confirm": "本次回覆將扣除 {cost} 積分，確定繼續嗎？",
+  "@replyCost_confirm": {
+    "placeholders": {
+      "cost": {
+        "type": "int"
+      }
+    }
+  },
+  "charCount_noPaddingWarning": "勿用各類字數補丁"
+}

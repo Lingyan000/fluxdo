@@ -144,7 +144,6 @@
     }
   },
   "imageViewer_grantPermission": "請授予相簿訪問許可權",
-  "imageViewer_imageSaved": "圖片已儲存到相簿",
   "imageViewer_saveFailed": "儲存失敗: {error}",
   "@imageViewer_saveFailed": {
     "placeholders": {

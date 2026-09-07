@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../site_customization.dart';
+import '../../plugins/character_counts/character_counts_plugin.dart';
+import '../../plugins/reply_cost/reply_cost_plugin.dart';
+import '../../plugins/warden/warden_plugin.dart';
 import '../../widgets/common/holographic_text.dart';
 
 /// linux.do 站点自定义配置
@@ -28,6 +31,14 @@ final linuxdoCustomization = SiteCustomization(
     ),
   ],
   linkSecurityConfig: _linuxdoLinkSecurityConfig,
+  plugins: const [
+    // 回复扣积分（抽奖类话题），对应社区插件 discourse-reply-cost
+    ReplyCostPlugin(),
+    // 按分类改写最小正文字数，对应社区插件 discourse-warden
+    WardenPlugin(),
+    // 字数不足时的「勿用各类字数补丁」提示，对应 character-counts 主题组件
+    CharacterCountsPlugin(),
+  ],
 );
 
 /// linux.do 链接安全配置

@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../l10n/s.dart';
+import '../../utils/image_save_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../models/topic.dart';
 import '../../pages/image_viewer_page.dart';
@@ -143,12 +144,21 @@ class ImageContextMenu {
         child: _MenuItemRow(icon: Symbols.link_rounded, label: S.current.image_copyLink),
       ),
       PopupMenuItem(
-        value: 'share',
+        value: 'save',
         child: _MenuItemRow(
-          icon: Symbols.share_rounded,
-          label: S.current.common_shareImage,
+          icon: Symbols.save_alt_rounded,
+          label: ImageSaveUtils.actionLabel,
         ),
       ),
+      // Linux 上 share_plus 不支持分享文件,隐藏该项(保存仍可用)
+      if (ShareUtils.canShareFiles)
+        PopupMenuItem(
+          value: 'share',
+          child: _MenuItemRow(
+            icon: Symbols.share_rounded,
+            label: S.current.common_shareImage,
+          ),
+        ),
       if (post != null && topicId != null && onQuoteImage != null)
         PopupMenuItem(
           value: 'quote',
@@ -245,11 +255,18 @@ class ImageContextMenu {
         },
       ),
       _MobileAction(
-        'share',
-        Symbols.share_rounded,
-        S.current.common_shareImage,
-        () => _shareImage(originalUrl, fileName: fileName),
+        'save',
+        Symbols.save_alt_rounded,
+        ImageSaveUtils.actionLabel,
+        () => _saveImage(originalUrl, fileName: fileName),
       ),
+      if (ShareUtils.canShareFiles)
+        _MobileAction(
+          'share',
+          Symbols.share_rounded,
+          S.current.common_shareImage,
+          () => _shareImage(originalUrl, fileName: fileName),
+        ),
       if (post != null && topicId != null && onQuoteImage != null)
         _MobileAction(
           'quote',
@@ -399,6 +416,8 @@ class ImageContextMenu {
       case 'copyLink':
         Clipboard.setData(ClipboardData(text: originalUrl));
         ToastService.showSuccess(S.current.common_linkCopied);
+      case 'save':
+        _saveImage(originalUrl, fileName: fileName);
       case 'share':
         _shareImage(originalUrl, fileName: fileName);
       case 'quote':
@@ -452,6 +471,25 @@ class ImageContextMenu {
     } catch (e) {
       debugPrint('[ImageContextMenu] copyImage error: $e');
       ToastService.showError(S.current.image_copyFailed);
+    }
+  }
+
+  /// 保存图片（移动端进相册、桌面端另存为文件）
+  static Future<void> _saveImage(String imageUrl, {String? fileName}) async {
+    try {
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.contentBucket,
+        imageUrl,
+      );
+      // 命名与分享同口径：原始文件名 → URL 末段 → 时间戳，逐级回退
+      final base =
+          ShareUtils.safeFileBaseName(fileName) ??
+          'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
+      final ext = BlobImageCache.httpUrlExtension(imageUrl);
+      await ImageSaveUtils.saveBytes(bytes, fileName: '$base.$ext');
+    } catch (e) {
+      debugPrint('[ImageContextMenu] saveImage error: $e');
+      ToastService.showError(S.current.share_saveFailed);
     }
   }
 

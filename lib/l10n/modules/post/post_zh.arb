@@ -175,6 +175,17 @@
   },
   "pm_recipientHint": "搜索用户或群组",
   "pm_newTitle": "新建私信",
+  "pm_inviteParticipants": "邀请成员",
+  "pm_inviteParticipantsHint": "搜索用户或可发私信的群组，加入本次私信。",
+  "pm_inviteSucceeded": "已邀请",
+  "pm_invitePartiallyFailed": "部分邀请失败：{names}",
+  "@pm_invitePartiallyFailed": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "pm_noRecipient": "请至少添加一个收件人",
   "post_sendPmTitle": "发送私信给 @{username}",
   "@post_sendPmTitle": {

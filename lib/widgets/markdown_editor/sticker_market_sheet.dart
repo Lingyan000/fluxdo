@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -20,19 +22,34 @@ import '../../../../../l10n/s.dart';
 ///
 /// 展示市场中所有可用的表情包分组，用户可以添加/移除。
 /// 支持分页加载：首次只加载第一页，滚动到底部时自动加载下一页。
+///
+/// 外壳由 [AppBottomSheet.showDraggable] 提供：本面板带搜索框，必须走
+/// `expandToFill` 那条分支（高度交给 DraggableScrollableSheet、不叠加键盘
+/// 内边距），否则「固定高度 + viewInsets 顶起」会在键盘弹出时把标题栏和
+/// 搜索框顶出屏幕。键盘内边距由列表自己加，与标签/分类选择面板同体例。
 class StickerMarketSheet extends ConsumerStatefulWidget {
-  const StickerMarketSheet({super.key});
+  /// 由 DraggableScrollableSheet 提供，必须交给列表才能联动拖拽缩放。
+  final ScrollController scrollController;
+
+  const StickerMarketSheet({super.key, required this.scrollController});
 
   @override
   ConsumerState<StickerMarketSheet> createState() => _StickerMarketSheetState();
 }
 
 class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
-  final ScrollController _scrollController = ScrollController();
   final LoadMoreCoordinator _loadMoreCoordinator = LoadMoreCoordinator(
     triggerDistance: 600,
     releaseDistance: 600,
   );
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
+  /// 当前选中分类 id（'all' = 全部）；与 notifier 同步，驱动 chip 选中态
+  String _selectedTopic = 'all';
+
+  ScrollController get _scrollController => widget.scrollController;
 
   @override
   void initState() {
@@ -42,7 +59,10 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    // controller 归 DraggableScrollableSheet 所有，只摘监听、不 dispose
+    _scrollController.removeListener(_onScroll);
     super.dispose();
   }
 
@@ -73,34 +93,141 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(marketGroupsProvider);
+    final topicsAsync = ref.watch(marketTopicsProvider);
 
-    return AppSheetScaffold(
-      title: S.current.sticker_marketTitle,
-      showCloseButton: false,
-      showTitleDivider: true,
-      contentPadding: EdgeInsets.zero,
-      maxHeightFactor: 0.8,
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-          child: Text(S.current.common_done),
+    return Column(
+      children: [
+        _buildSearchField(),
+        _buildTopicChips(topicsAsync),
+        Expanded(
+          child: (() {
+            final groups = groupsAsync.value;
+            if (groups != null) {
+              return _buildGroupList(groups);
+            }
+            return groupsAsync.when(
+              data: (groups) => _buildGroupList(groups),
+              loading: () => const Center(child: LoadingSpinner()),
+              error: _buildError,
+            );
+          })(),
         ),
       ],
-      child: (() {
-        final groups = groupsAsync.value;
-        if (groups != null) {
-          return _buildGroupList(groups);
-        }
-        return groupsAsync.when(
-          data: (groups) => _buildGroupList(groups),
-          loading: () => const Center(child: LoadingSpinner()),
-          error: (err, stack) => _buildError(err, stack),
-        );
-      })(),
+    );
+  }
+
+  // ==================== 搜索与分类 ====================
+
+  void _scheduleSearch() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      ref.read(marketGroupsProvider.notifier).setQuery(_searchController.text);
+    });
+  }
+
+  void _selectTopic(String topicId) {
+    if (topicId == _selectedTopic) return;
+    setState(() => _selectedTopic = topicId);
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    ref.read(marketGroupsProvider.notifier).setTopic(topicId);
+  }
+
+  Widget _buildSearchField() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _searchController,
+        builder: (context, value, _) {
+          return TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            onChanged: (_) => _scheduleSearch(),
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: S.current.sticker_marketSearchHint,
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
+              prefixIcon: const Icon(Symbols.search_rounded, size: 18),
+              suffixIcon: value.text.isEmpty
+                  ? null
+                  : IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Symbols.close_rounded, size: 16),
+                      onPressed: () {
+                        _searchDebounce?.cancel();
+                        _searchController.clear();
+                        ref.read(marketGroupsProvider.notifier).setQuery('');
+                      },
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.colorScheme.primary),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 分类 chips（横向滚动）。topics.json 取不到（旧版服务端 / 请求失败）或
+  /// 全部是空分类时整行不占位，此时只剩「全部」的浏览行为；totalGroups == 0
+  /// 的空分类不展示（点了只会看到空列表）。
+  Widget _buildTopicChips(AsyncValue<List<StickerMarketTopic>> topicsAsync) {
+    final theme = Theme.of(context);
+    final topics = (topicsAsync.value ?? const <StickerMarketTopic>[])
+        .where((t) => t.totalGroups > 0)
+        .toList(growable: false);
+    if (topics.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        itemCount: topics.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final topic = topics[index];
+          final selected = topic.id == _selectedTopic;
+          return ChoiceChip(
+            label: Text(topic.label),
+            selected: selected,
+            onSelected: (_) => _selectTopic(topic.id),
+            labelStyle: TextStyle(
+              fontSize: 12,
+              color: selected
+                  ? theme.colorScheme.onPrimary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            selectedColor: theme.colorScheme.primary,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            side: BorderSide(
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -111,7 +238,11 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.error_rounded, size: 48, color: theme.colorScheme.outline),
+          Icon(
+            Symbols.error_rounded,
+            size: 48,
+            color: theme.colorScheme.outline,
+          ),
           const SizedBox(height: 12),
           Text(
             S.current.sticker_marketLoadFailed,
@@ -166,9 +297,12 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
 
   Widget _buildGroupList(List<StickerGroup> groups) {
     if (groups.isEmpty) {
+      final notifier = ref.read(marketGroupsProvider.notifier);
       return Center(
         child: Text(
-          S.current.sticker_marketEmpty,
+          notifier.isSearchMode
+              ? S.current.sticker_marketSearchEmpty
+              : S.current.sticker_marketEmpty,
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -181,7 +315,11 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      // 外壳走 expandToFill、不叠加键盘内边距，键盘弹出时底部由列表自己让位
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: 8 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
       // 200px ≈ 3 个 item,滚动稍快新 item 一进 viewport 才开始 build + load icon
       // → 滚动时显著掉帧。1200px ≈ 16 个 item,off-screen 预 build,enter
       // viewport 时已经 ready,滚动丝滑。
@@ -218,15 +356,18 @@ class _StickerGroupTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isSubscribed = ref.watch(
-      subscribedStickerIdsProvider.select((ids) => ids.contains(group.id)),
+      subscribedStickerGroupsProvider.select(
+        (groups) => groups.any((g) => g.id == group.id),
+      ),
     );
 
     void onToggle() async {
-      final notifier = ref.read(subscribedStickerIdsProvider.notifier);
+      final notifier = ref.read(subscribedStickerGroupsProvider.notifier);
       if (isSubscribed) {
         await notifier.unsubscribe(group.id);
       } else {
-        await notifier.subscribe(group.id);
+        // 整个 group 一起交出去:name/icon 就地落盘，表情面板首帧不用再回网络
+        await notifier.subscribe(group);
       }
     }
 
@@ -310,7 +451,7 @@ class _StickerGroupTile extends ConsumerWidget {
       ),
       child: Center(
         child: Text(
-          group.name.isNotEmpty ? group.name[0] : '?',
+          group.name.isNotEmpty ? group.name.characters.first : '?',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

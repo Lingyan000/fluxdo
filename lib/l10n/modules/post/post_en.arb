@@ -109,6 +109,17 @@
   "post_returningUserNotice": "Welcome back {username} — their last post was {timeText}.",
   "pm_recipientHint": "Search users or groups",
   "pm_newTitle": "New message",
+  "pm_inviteParticipants": "Invite participants",
+  "pm_inviteParticipantsHint": "Search for users or groups that can receive messages.",
+  "pm_inviteSucceeded": "Invitation sent",
+  "pm_invitePartiallyFailed": "Some invitations failed: {names}",
+  "@pm_invitePartiallyFailed": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "pm_noRecipient": "Add at least one recipient",
   "post_sendPmTitle": "Send PM to @{username}",
   "post_solutionAccepted": "Accepted as solution",

@@ -17,6 +17,7 @@ import '../services/data_management/data_backup_service.dart';
 import '../services/toast_service.dart';
 import '../settings/definitions/data_management_defs.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import 'package:path/path.dart' as p;
 import '../widgets/settings/settings_group_page.dart';
 
 /// 数据管理页面（数据驱动版）
@@ -588,10 +589,15 @@ class DataBackupSection extends ConsumerWidget {
     try {
       final prefs = ref.read(sharedPreferencesProvider);
       final filePath = await DataBackupService.exportToFile(prefs);
-      await ShareUtils.shareOrSaveFile(
+      // 只保存、不走分享面板:备份里是明文 API Key / 代理密码 / Notion Token,
+      // 分享面板一手滑就发进聊天软件了。
+      final outcome = await ShareUtils.saveFile(
         XFile(filePath, mimeType: 'application/json'),
-        subject: S.current.dataManagement_backupSubject,
       );
+      if (outcome.shared) {
+        final name = outcome.displayName ?? p.basename(filePath);
+        ToastService.showSuccess(S.current.export_savedAs(name));
+      }
     } catch (e) {
       ToastService.showError(
           S.current.dataManagement_exportFailed(e.toString()));
@@ -664,7 +670,7 @@ class DataBackupSection extends ConsumerWidget {
     return SegmentedCardGroup(
       children: [
         ListTile(
-          leading: const Icon(Symbols.upload_rounded),
+          leading: const Icon(Symbols.save_alt_rounded),
           title: Text(context.l10n.dataManagement_exportData),
           subtitle: Text(context.l10n.dataManagement_exportDesc),
           trailing: Icon(
@@ -675,7 +681,7 @@ class DataBackupSection extends ConsumerWidget {
           onTap: () => _exportData(context, ref),
         ),
         ListTile(
-          leading: const Icon(Symbols.download_rounded),
+          leading: const Icon(Symbols.folder_open_rounded),
           title: Text(context.l10n.dataManagement_importData),
           subtitle: Text(context.l10n.dataManagement_importDesc),
           trailing: Icon(

@@ -9,6 +9,8 @@ import '../models/topic_card_style.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/cf_challenge_service.dart';
+import '../services/crash_context_reporter.dart';
+import '../services/render_backend_service.dart';
 import '../utils/blocked_user_filter.dart';
 import '../widgets/topic/topic_card_layout.dart';
 import 'theme_provider.dart';
@@ -115,6 +117,13 @@ class AppPreferences {
   /// 本地内容屏蔽用户名列表。只影响本客户端的展示，不会同步到 Discourse。
   final List<String> blockedUsernames;
 
+  /// 是否在话题列表顶部显示「已隐藏 N 条话题」提示条。
+  ///
+  /// 只管提示条本身：关掉后关键词过滤与本地屏蔽名单照常生效，只是不再
+  /// 留下一行痕迹——给「过滤了就别再提醒我」的用户用。管理入口仍在
+  /// 设置 → 内容过滤，不会因此不可达。
+  final bool showFilterHint;
+
   /// 话题关键词过滤的归一化形式（lowercase），匹配时使用
   late final List<String> normalizedFilterKeywords = List.unmodifiable(
     topicFilterKeywords
@@ -128,6 +137,13 @@ class AppPreferences {
 
   /// 崩溃日志上报（仅 Android）
   final bool crashlytics;
+
+  /// Skia/OpenGL ES 渲染兼容模式（仅 Android，下次冷启动生效）
+  ///
+  /// 开启后由 `MainActivity.provideFlutterEngine` 以
+  /// `--enable-impeller=false` 创建引擎，绕开部分 Mali Vulkan 驱动在
+  /// 纹理/表面销毁时的 SIGABRT 竞态（mali-event-hand 线程 destroyed mutex）。
+  final bool renderGlesBackend;
 
   /// 竖屏锁定
   final bool portraitLock;
@@ -286,7 +302,9 @@ class AppPreferences {
     required this.topicFilterKeywords,
     this.topicFilterWholeWord = false,
     this.blockedUsernames = const [],
+    this.showFilterHint = true,
     required this.crashlytics,
+    required this.renderGlesBackend,
     required this.portraitLock,
     required this.fullscreenSwipeBack,
     required this.exitOnSingleBack,
@@ -347,7 +365,9 @@ class AppPreferences {
     List<String>? topicFilterKeywords,
     bool? topicFilterWholeWord,
     List<String>? blockedUsernames,
+    bool? showFilterHint,
     bool? crashlytics,
+    bool? renderGlesBackend,
     bool? portraitLock,
     bool? fullscreenSwipeBack,
     bool? exitOnSingleBack,
@@ -409,7 +429,9 @@ class AppPreferences {
       topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
       topicFilterWholeWord: topicFilterWholeWord ?? this.topicFilterWholeWord,
       blockedUsernames: blockedUsernames ?? this.blockedUsernames,
+      showFilterHint: showFilterHint ?? this.showFilterHint,
       crashlytics: crashlytics ?? this.crashlytics,
+      renderGlesBackend: renderGlesBackend ?? this.renderGlesBackend,
       portraitLock: portraitLock ?? this.portraitLock,
       fullscreenSwipeBack: fullscreenSwipeBack ?? this.fullscreenSwipeBack,
       exitOnSingleBack: exitOnSingleBack ?? this.exitOnSingleBack,
@@ -497,7 +519,14 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
   static const String _topicFilterWholeWordKey = 'pref_topic_filter_whole_word';
   static const String _blockedUsernamesKey = 'pref_blocked_usernames';
+  static const String _showFilterHintKey = 'pref_show_filter_hint';
   static const String _crashlyticsKey = 'pref_crashlytics';
+
+  /// 渲染兼容模式的键**不带 `pref_` 前缀**：Android 原生侧在引擎创建前
+  /// 直接读 `FlutterSharedPreferences` 文件里的 `flutter.renderer_gles`，
+  /// 这是跨 Dart/native 的持久化契约。改这里必须同步
+  /// MainActivity.RENDER_GLES_PREF_KEY。
+  static const String _renderGlesBackendKey = 'renderer_gles';
   static const String _portraitLockKey = 'pref_portrait_lock';
   static const String _fullscreenSwipeBackKey = 'pref_fullscreen_swipe_back';
   static const String _exitOnSingleBackKey = 'pref_exit_on_single_back';
@@ -582,7 +611,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               _prefs.getBool(_topicFilterWholeWordKey) ?? false,
           blockedUsernames:
               _prefs.getStringList(_blockedUsernamesKey) ?? const [],
+          showFilterHint: _prefs.getBool(_showFilterHintKey) ?? true,
           crashlytics: _prefs.getBool(_crashlyticsKey) ?? true,
+          renderGlesBackend:
+              _prefs.getBool(_renderGlesBackendKey) ?? false,
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
           fullscreenSwipeBack:
               _prefs.getBool(_fullscreenSwipeBackKey) ?? false,
@@ -759,6 +791,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setStringList(_blockedUsernamesKey, sanitized);
   }
 
+  Future<void> setShowFilterHint(bool enabled) async {
+    if (state.showFilterHint == enabled) return;
+    state = state.copyWith(showFilterHint: enabled);
+    await _prefs.setBool(_showFilterHintKey, enabled);
+  }
+
   Future<void> setCrashlytics(bool enabled) async {
     state = state.copyWith(crashlytics: enabled);
     await _prefs.setBool(_crashlyticsKey, enabled);
@@ -767,6 +805,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
         'enabled': enabled,
       });
     }
+    // 关闭采集时导航上下文同步停掉
+    CrashContextReporter.setEnabled(Platform.isAndroid && enabled);
+  }
+
+  /// 切换渲染兼容模式。
+  ///
+  /// 先落盘再更新 state：native 侧下次冷启动读的是磁盘上的值，写失败时
+  /// UI 必须保持原状，否则用户会看到「已开启」但重启后仍是 Vulkan。
+  Future<void> setRenderGlesBackend(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    await _prefs.setBool(_renderGlesBackendKey, enabled);
+    // 同步启动快照，让下次冷启动不必解析整个偏好文件。
+    // 失败不影响正确性：原生侧读不到快照会回退到主文件。
+    await RenderBackendService.syncFlag(enabled);
+    state = state.copyWith(renderGlesBackend: enabled);
   }
 
   Future<void> setPortraitLock(bool enabled) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../models/topic.dart';
@@ -11,15 +12,18 @@ import '../../providers/notion_config_provider.dart';
 import '../../services/notion/notion_client.dart';
 import '../../services/notion/notion_config.dart';
 import '../../services/notion/notion_sync_service.dart';
+import '../../services/public_file_channel.dart';
 import '../../services/toast_service.dart';
 import '../../storage/export_history_dao.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/export_utils.dart';
+import '../../utils/platform_utils.dart';
+import '../../utils/share_utils.dart';
 import '../common/app_bottom_sheet.dart';
 
-/// 用户在 sheet 上选的"目标"。
+/// 用户在 sheet 上点的"去向"。
 /// 本地 MD/HTML 走 ExportUtils.exportTopic；Notion 走 NotionSyncService。
-enum _ExportTarget { md, html, notion }
+enum _ExportAction { save, saveAs, share, notion }
 
 /// 导出选项 Sheet
 class ExportSheet extends ConsumerStatefulWidget {
@@ -44,8 +48,10 @@ class ExportSheet extends ConsumerStatefulWidget {
 
 class _ExportSheetState extends ConsumerState<ExportSheet> {
   ExportScope _scope = ExportScope.firstPostOnly;
-  _ExportTarget _target = _ExportTarget.md;
-  bool _isExporting = false;
+  ExportFormat _format = ExportFormat.markdown;
+
+  /// 正在执行的去向（null = 空闲）。执行中其余行禁用。
+  _ExportAction? _running;
   int _progress = 0;
   int _total = 0;
   String? _phaseLabel; // Notion 同步的阶段文案
@@ -53,26 +59,31 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
   int get _totalPostsCount => widget.detail.postStream.stream.length;
 
   bool get _willBeLimited =>
-      _target == _ExportTarget.md &&
+      _format == ExportFormat.markdown &&
       _scope == ExportScope.allPosts &&
       _totalPostsCount > ExportUtils.maxMarkdownPosts;
 
-  Future<void> _export() async {
-    if (_isExporting) return;
+  Future<void> _run(_ExportAction action) async {
+    if (_running != null) return;
     setState(() {
-      _isExporting = true;
+      _running = action;
       _progress = 0;
       _total = 0;
       _phaseLabel = null;
     });
 
     try {
-      switch (_target) {
-        case _ExportTarget.md:
-        case _ExportTarget.html:
-          await _exportLocal();
+      switch (action) {
+        case _ExportAction.save:
+          await _exportLocal(ExportDelivery.save);
           break;
-        case _ExportTarget.notion:
+        case _ExportAction.saveAs:
+          await _exportLocal(ExportDelivery.saveAs);
+          break;
+        case _ExportAction.share:
+          await _exportLocal(ExportDelivery.share);
+          break;
+        case _ExportAction.notion:
           await _exportNotion();
           break;
       }
@@ -83,21 +94,19 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
     } finally {
       if (mounted) {
         setState(() {
-          _isExporting = false;
+          _running = null;
           _phaseLabel = null;
         });
       }
     }
   }
 
-  Future<void> _exportLocal() async {
-    final format = _target == _ExportTarget.md
-        ? ExportFormat.markdown
-        : ExportFormat.html;
+  Future<void> _exportLocal(ExportDelivery delivery) async {
     final result = await ExportUtils.exportTopic(
       detail: widget.detail,
       scope: _scope,
-      format: format,
+      format: _format,
+      delivery: delivery,
       onProgress: (current, total) {
         if (mounted) {
           setState(() {
@@ -107,6 +116,10 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
         }
       },
     );
+    // 保存/另存为被用户取消（未选位置）时不写历史、不关闭 sheet
+    final isSaving =
+        delivery == ExportDelivery.save || delivery == ExportDelivery.saveAs;
+    if (isSaving && !result.shared) return;
     await ref
         .read(exportHistoryProvider.notifier)
         .add(
@@ -115,17 +128,27 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
             sourceType: ExportHistorySource.topic,
             sourceTopicId: widget.detail.id,
             sourceTitle: widget.detail.title,
-            format: format == ExportFormat.markdown
+            format: _format == ExportFormat.markdown
                 ? ExportHistoryFormat.markdown
                 : ExportHistoryFormat.html,
-            targetType: ExportHistoryTarget.localFile,
-            targetRef: result.finalPath ?? '',
+            // 分享不产生本地文件:写临时路径进历史,点开只会是「文件已不存在」,
+            // 桌面端还会把用户带到临时目录
+            targetType: isSaving
+                ? ExportHistoryTarget.localFile
+                : ExportHistoryTarget.shared,
+            targetRef: isSaving ? (result.finalPath ?? '') : '',
             status: ExportHistoryStatus.success,
             createdAt: DateTime.now(),
             size: result.byteSize,
             postCount: result.postCount,
           ),
         );
+    if (isSaving) {
+      final name = result.displayName?.isNotEmpty == true
+          ? result.displayName!
+          : p.basename(result.finalPath ?? '');
+      ToastService.showSuccess(S.current.export_savedAs(name));
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -280,134 +303,182 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
     // 订阅 notionConfigProvider,保证它在打开 sheet 的整段生命周期里都在
     // 重建到 username 解析完后的"已配置"状态。否则首次进入时 ref.read
     // 拿到的可能是 username 还在 loading 时构造的空 cfg,误判"未配置"。
-    ref.watch(notionConfigProvider);
+    final notionCfg = ref.watch(notionConfigProvider);
+    final busy = _running != null;
 
     return AppSheetScaffold(
       title: context.l10n.export_title,
       showCloseButton: false,
-      contentPadding: EdgeInsets.zero,
-      footer: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: FilledButton.icon(
-          onPressed: _isExporting ? null : _export,
-          icon: _isExporting
-              ? const LoadingSpinner(size: 18, color: Colors.white)
-              : const Icon(Symbols.download_rounded),
-          label: Text(_buttonLabel(context)),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-      ),
+      contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 4),
-          // 导出范围选择
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              context.l10n.export_range,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          // 导出范围
+          _sectionLabel(theme, context.l10n.export_range),
+          M3eButtonGroup<ExportScope>(
+            items: [
+              M3eButtonGroupItem(
+                value: ExportScope.firstPostOnly,
+                label: Text(context.l10n.export_firstPostOnly),
+                icon: const Icon(Symbols.article_rounded),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: M3eButtonGroup<ExportScope>(
-              items: [
-                M3eButtonGroupItem(
-                  value: ExportScope.firstPostOnly,
-                  label: Text(context.l10n.export_firstPostOnly),
-                  icon: const Icon(Symbols.article_rounded),
-                ),
-                M3eButtonGroupItem(
-                  value: ExportScope.allPosts,
-                  label: Text(context.l10n.common_all),
-                  icon: const Icon(Symbols.forum_rounded),
-                ),
-              ],
-              selected: _scope,
-              onSelected: (scope) {
-                setState(() => _scope = scope);
-              },
-            ),
-          ),
-          const SizedBox(height: 20),
-          // 导出格式选择
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              context.l10n.export_format,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              M3eButtonGroupItem(
+                value: ExportScope.allPosts,
+                label: Text(context.l10n.common_all),
+                icon: const Icon(Symbols.forum_rounded),
               ),
-            ),
+            ],
+            selected: _scope,
+            onSelected: busy ? (_) {} : (v) => setState(() => _scope = v),
           ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: M3eButtonGroup<_ExportTarget>(
-              items: const [
-                M3eButtonGroupItem(
-                  value: _ExportTarget.md,
-                  label: Text('MD'),
-                  icon: Icon(Symbols.code_rounded),
-                ),
-                M3eButtonGroupItem(
-                  value: _ExportTarget.html,
-                  label: Text('HTML'),
-                  icon: Icon(Symbols.html_rounded),
-                ),
-                M3eButtonGroupItem(
-                  value: _ExportTarget.notion,
-                  label: Text('Notion'),
-                  icon: Icon(Symbols.cloud_sync_rounded),
-                ),
-              ],
-              selected: _target,
-              onSelected: (target) {
-                setState(() => _target = target);
-              },
-            ),
+          const SizedBox(height: 16),
+          // 文件格式（只作用于"保存"/"分享"，Notion 固定以页面写入）
+          _sectionLabel(theme, context.l10n.export_format),
+          M3eButtonGroup<ExportFormat>(
+            items: const [
+              M3eButtonGroupItem(
+                value: ExportFormat.markdown,
+                label: Text('Markdown'),
+                icon: Icon(Symbols.code_rounded),
+              ),
+              M3eButtonGroupItem(
+                value: ExportFormat.html,
+                label: Text('HTML'),
+                icon: Icon(Symbols.html_rounded),
+              ),
+            ],
+            selected: _format,
+            onSelected: busy ? (_) {} : (v) => setState(() => _format = v),
           ),
           // Markdown 限制提示
           if (_willBeLimited) ...[
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Icon(
-                    Symbols.info_rounded,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      context.l10n.export_markdownLimit(
-                        ExportUtils.maxMarkdownPosts,
-                      ),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
+            Row(
+              children: [
+                Icon(
+                  Symbols.info_rounded,
+                  size: 14,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    context.l10n.export_markdownLimit(
+                      ExportUtils.maxMarkdownPosts,
+                    ),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
+          const SizedBox(height: 16),
+          // 去向：点哪个即执行哪个
+          _sectionLabel(theme, context.l10n.export_deliverTitle),
+          SegmentedCardGroup(
+            children: [
+              // iOS 没有「公共目录」这一说:沙盒外无处可写,Documents 里躺着
+              // 数据库/cookie/日志(不能靠 UIFileSharingEnabled 整目录暴露),
+              // 所以那边只给「另存为」,由用户导出到「文件」App。
+              if (PlatformUtils.isDesktop || PublicFileChannel.hasPublicDownloads)
+                _deliveryTile(
+                  theme,
+                  action: _ExportAction.save,
+                  icon: Symbols.save_rounded,
+                  title: context.l10n.export_deliverSave,
+                  subtitle: PlatformUtils.isDesktop
+                      ? context.l10n.export_deliverSaveDescDesktop
+                      : context.l10n.export_deliverSaveDescMobile,
+                ),
+              // 桌面端「保存」本身就是另存为对话框，不必重复这一行
+              if (!PlatformUtils.isDesktop)
+                _deliveryTile(
+                  theme,
+                  action: _ExportAction.saveAs,
+                  icon: Symbols.drive_folder_upload_rounded,
+                  title: context.l10n.export_deliverSaveAs,
+                  subtitle: context.l10n.export_deliverSaveAsDesc,
+                ),
+              // Linux 上 share_plus 不支持分享文件，隐藏该入口
+              if (ShareUtils.canShareFiles)
+                _deliveryTile(
+                  theme,
+                  action: _ExportAction.share,
+                  icon: Symbols.share_rounded,
+                  title: context.l10n.export_deliverShare,
+                  subtitle: context.l10n.export_deliverShareDesc,
+                ),
+              _deliveryTile(
+                theme,
+                action: _ExportAction.notion,
+                icon: Symbols.cloud_sync_rounded,
+                title: context.l10n.export_deliverNotion,
+                subtitle: notionCfg.isComplete
+                    ? context.l10n.export_deliverNotionDesc
+                    : context.l10n.export_deliverNotionUnconfigured,
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  String _buttonLabel(BuildContext context) {
-    if (!_isExporting) return context.l10n.common_export;
+  Widget _sectionLabel(ThemeData theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// 一行去向。执行中的那行显示进度文案与转圈，其余行禁用。
+  Widget _deliveryTile(
+    ThemeData theme, {
+    required _ExportAction action,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final cs = theme.colorScheme;
+    final isRunning = _running == action;
+    final disabled = _running != null && !isRunning;
+
+    return Opacity(
+      opacity: disabled ? 0.4 : 1,
+      child: ListTile(
+        enabled: _running == null,
+        onTap: () => _run(action),
+        leading: Icon(icon, color: cs.primary),
+        title: Text(
+          title,
+          // 显式给色：执行中整行 enabled=false，否则文字会被 ListTile 灰化
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          isRunning ? _progressLabel(context) : subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: isRunning ? cs.primary : cs.onSurfaceVariant,
+          ),
+        ),
+        trailing: isRunning
+            ? LoadingSpinner(size: 18, color: cs.primary)
+            : Icon(Symbols.chevron_right_rounded, color: cs.onSurfaceVariant),
+      ),
+    );
+  }
+
+  String _progressLabel(BuildContext context) {
     if (_phaseLabel != null) return _phaseLabel!;
     if (_total > 0) {
       return context.l10n.export_exporting(_progress, _total);

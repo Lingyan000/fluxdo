@@ -22,7 +22,10 @@ enum ExportHistoryFormat {
 /// 导出目标类型。
 enum ExportHistoryTarget {
   localFile('local_file'),
-  notion('notion');
+  notion('notion'),
+
+  /// 只经系统分享面板发出去了,本地没有留下可打开的文件。
+  shared('shared');
 
   const ExportHistoryTarget(this.code);
   final String code;
@@ -69,8 +72,10 @@ enum ExportHistoryStatus {
 /// 单条导出历史。
 ///
 /// [targetRef] 含义：
-/// - localFile: 完整文件路径（用户最终保存位置；移动端 share 时记录的是临时路径）
+/// - localFile: 文件的最终引用——本地路径，或 Android 落公共目录/另存为拿到的
+///   `content://` uri
 /// - notion: Notion page URL
+/// - shared: 空字符串（分享不产生本地文件）
 class ExportHistoryEntry {
   const ExportHistoryEntry({
     required this.id,

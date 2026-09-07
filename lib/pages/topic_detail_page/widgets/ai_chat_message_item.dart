@@ -6,12 +6,12 @@ import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../pages/image_viewer_page.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/image_save_utils.dart';
 
 import '../../../widgets/markdown_editor/markdown_renderer.dart';
 
@@ -345,7 +345,7 @@ class AiChatMessageItem extends StatelessWidget {
           ),
           _ActionButton(
             icon: Symbols.save_alt_rounded,
-            label: context.l10n.ai_saveImageLabel,
+            label: ImageSaveUtils.actionLabel,
             color: color,
             onTap: () => _saveImageAttachment(context, finalAttachments.first),
           ),
@@ -433,27 +433,11 @@ class AiChatMessageItem extends StatelessWidget {
       }
       return;
     }
-    try {
-      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
-      if (!hasAccess) {
-        if (context.mounted) {
-          ToastService.showInfo(context.l10n.ai_imageSavePermission);
-        }
-        return;
-      }
-      await Gal.putImageBytes(
-        bytes,
-        name: 'fluxdo_ai_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      if (context.mounted) {
-        ToastService.showSuccess(context.l10n.ai_imageSaved);
-      }
-    } catch (e) {
-      debugPrint('[AiChatMessageItem] saveImage error: $e');
-      if (context.mounted) {
-        ToastService.showError(context.l10n.ai_imageSaveFailed);
-      }
-    }
+    // 落点（移动端相册 / 桌面另存为）与成功失败提示由 ImageSaveUtils 统一处理
+    await ImageSaveUtils.saveBytes(
+      bytes,
+      fileName: 'fluxdo_ai_${DateTime.now().millisecondsSinceEpoch}.png',
+    );
   }
 }
 

@@ -144,7 +144,6 @@
     }
   },
   "imageViewer_grantPermission": "请授予相册访问权限",
-  "imageViewer_imageSaved": "图片已保存到相册",
   "imageViewer_saveFailed": "保存失败: {error}",
   "@imageViewer_saveFailed": {
     "placeholders": {

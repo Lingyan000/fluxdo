@@ -7,6 +7,7 @@ import 'package:ai_model_manager/ai_model_manager.dart'
     show SwipeActionCell, SwipeAction, SwipeActionScope;
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path/path.dart' as p;
 import 'package:cross_file/cross_file.dart';
 
 import '../models/download_item.dart';
@@ -17,6 +18,9 @@ import '../services/toast_service.dart';
 import '../utils/time_utils.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../services/public_file_channel.dart';
+import '../utils/platform_utils.dart';
+import '../widgets/common/app_bottom_sheet.dart';
 
 /// 下载管理页面
 class DownloadListPage extends ConsumerStatefulWidget {
@@ -126,7 +130,9 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                     child: SwipeActionCell(
                       key: ValueKey(item.id),
                       trailingActions: [
-                        if (item.status == DownloadItemStatus.completed)
+                        // Linux 上 share_plus 不支持分享文件,隐藏该动作
+                        if (item.status == DownloadItemStatus.completed &&
+                            ShareUtils.canShareFiles)
                           SwipeAction(
                             icon: Symbols.share_rounded,
                             color: Colors.blue,
@@ -154,6 +160,7 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                         child: _DownloadCard(
                           item: item,
                           onTap: () => _handleTap(item),
+                          onLongPress: () => _showItemActions(item),
                         ),
                       ),
                     ),
@@ -178,6 +185,91 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
     }
   }
 
+  /// 长按菜单：把下载好的文件交出去。
+  ///
+  /// 下载本身仍落在应用目录（进度、断点、重下都靠它），这里提供「保存到系统
+  /// 下载目录 / 另存为」让用户按需把副本放到自己能找到的地方 —— 与导出文章
+  /// 的去向选择同一套语义。
+  Future<void> _showItemActions(DownloadItem item) async {
+    if (item.status != DownloadItemStatus.completed) return;
+    if (!File(item.savePath).existsSync()) {
+      ToastService.showError(S.current.myBrowser_fileNotFound);
+      return;
+    }
+
+    final actions = <(String, IconData, String)>[
+      ('open', Symbols.file_open_rounded, S.current.exportHistory_openFile),
+      // 桌面端「保存」本身就是另存为对话框，不重复给两行
+      if (PlatformUtils.isDesktop || PublicFileChannel.hasPublicDownloads)
+        ('save', Symbols.save_alt_rounded, S.current.export_deliverSave),
+      if (!PlatformUtils.isDesktop)
+        (
+          'saveAs',
+          Symbols.drive_folder_upload_rounded,
+          S.current.export_deliverSaveAs,
+        ),
+      if (ShareUtils.canShareFiles)
+        ('share', Symbols.share_rounded, S.current.common_share),
+      ('delete', Symbols.delete_rounded, S.current.myBrowser_delete),
+    ];
+
+    await AppBottomSheet.show<void>(
+      context: context,
+      title: item.fileName,
+      contentPadding: EdgeInsets.zero,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (id, icon, label) in actions)
+            ListTile(
+              leading: Icon(
+                icon,
+                color: id == 'delete' ? Theme.of(ctx).colorScheme.error : null,
+              ),
+              title: Text(
+                label,
+                style: id == 'delete'
+                    ? TextStyle(color: Theme.of(ctx).colorScheme.error)
+                    : null,
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _runItemAction(id, item);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runItemAction(String id, DownloadItem item) async {
+    switch (id) {
+      case 'open':
+        await _openFile(item);
+      case 'save':
+        await _saveCopy(item, asNew: false);
+      case 'saveAs':
+        await _saveCopy(item, asNew: true);
+      case 'share':
+        _shareFile(item);
+      case 'delete':
+        ref.read(downloadProvider.notifier).removeById(item.id);
+    }
+  }
+
+  /// 把下载好的文件另存一份到用户能找到的位置（原文件留在应用目录）。
+  Future<void> _saveCopy(DownloadItem item, {required bool asNew}) async {
+    final file = XFile(item.savePath, mimeType: item.mimeType);
+    final outcome = asNew
+        ? await ShareUtils.saveFileAs(file)
+        : await ShareUtils.saveFile(file);
+    if (!outcome.shared || !mounted) return;
+    final name = outcome.displayName?.isNotEmpty == true
+        ? outcome.displayName!
+        : p.basename(item.savePath);
+    ToastService.showSuccess(S.current.export_savedAs(name));
+  }
+
   /// 用系统默认应用打开文件
   Future<void> _openFile(DownloadItem item) async {
     final file = File(item.savePath);
@@ -187,8 +279,9 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
     }
     final result = await OpenFilex.open(item.savePath, type: item.mimeType);
     if (result.type != ResultType.done && mounted) {
-      // 打开失败时回退到分享/保存
-      ShareUtils.shareOrSaveFile(XFile(item.savePath));
+      // 打开失败就说打不开:原先回退成「另存为对话框」,用户想打开却被要求
+      // 再存一份,语义不通
+      ToastService.showError(S.current.exportHistory_openFailed);
     }
   }
 
@@ -198,7 +291,7 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
       ToastService.showError(S.current.myBrowser_fileNotFound);
       return;
     }
-    ShareUtils.shareOrSaveFile(XFile(item.savePath));
+    ShareUtils.shareFile(XFile(item.savePath));
   }
 
   void _confirmClear(BuildContext context) {
@@ -231,8 +324,13 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
 class _DownloadCard extends StatelessWidget {
   final DownloadItem item;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _DownloadCard({required this.item, required this.onTap});
+  const _DownloadCard({
+    required this.item,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -240,6 +338,7 @@ class _DownloadCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(

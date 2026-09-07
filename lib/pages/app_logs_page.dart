@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:path/path.dart' as p;
 
 import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
@@ -174,17 +175,27 @@ class _AppLogsPageState extends State<AppLogsPage> {
       await Clipboard.setData(ClipboardData(text: content));
       ToastService.showSuccess(S.current.common_copiedToClipboard);
     } on PlatformException {
-      // 日志超过 Binder 事务上限(~1MB)无法复制,回退到分享文件
-      await _shareLog();
+      // 日志超过 Binder 事务上限(~1MB)无法复制,回退到保存文件
+      // (保存五端都可用,分享在 Linux 上不支持文件)
+      await _saveLog();
     }
   }
 
   Future<void> _shareLog() async {
     final path = await LoggerUtils.getShareFilePath();
-    await ShareUtils.shareOrSaveFile(
+    await ShareUtils.shareFile(
       XFile(path),
       subject: S.current.appLogs_shareSubject,
     );
+  }
+
+  Future<void> _saveLog() async {
+    final path = await LoggerUtils.getShareFilePath();
+    final outcome = await ShareUtils.saveFile(XFile(path));
+    if (outcome.shared) {
+      final name = outcome.displayName ?? p.basename(path);
+      ToastService.showSuccess(S.current.export_savedAs(name));
+    }
   }
 
   Future<void> _clearLogs() async {
@@ -783,6 +794,8 @@ class _AppLogsPageState extends State<AppLogsPage> {
                 _copyDeviceInfo();
               case 'copy':
                 _copyAll();
+              case 'save':
+                _saveLog();
               case 'share':
                 _shareLog();
               case 'feedback':
@@ -811,14 +824,25 @@ class _AppLogsPageState extends State<AppLogsPage> {
               ),
             ),
             PopupMenuItem(
-              value: 'share',
+              value: 'save',
               child: ListTile(
-                leading: const Icon(Symbols.share_rounded),
-                title: Text(context.l10n.appLogs_shareLogs),
+                leading: const Icon(Symbols.save_alt_rounded),
+                title: Text(context.l10n.appLogs_saveLogs),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
               ),
             ),
+            // Linux 上 share_plus 不支持分享文件,隐藏该项
+            if (ShareUtils.canShareFiles)
+              PopupMenuItem(
+                value: 'share',
+                child: ListTile(
+                  leading: const Icon(Symbols.share_rounded),
+                  title: Text(context.l10n.appLogs_shareLogs),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
             PopupMenuItem(
               value: 'feedback',
               child: ListTile(
