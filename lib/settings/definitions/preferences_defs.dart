@@ -9,7 +9,7 @@ import '../../l10n/s.dart';
 import '../../providers/ai_post_review_provider.dart';
 import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
-import '../../providers/render_backend_provider.dart';
+import '../../providers/render_crash_provider.dart';
 import '../../providers/secret_store_provider.dart';
 import '../../services/crypto/crypto_key_store.dart';
 import '../../services/toast_service.dart';
@@ -322,9 +322,21 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             title: l10n.preferences_renderGlesBackend,
             subtitle: l10n.preferences_renderGlesBackendDesc,
             icon: Symbols.layers_rounded,
-            getValue: (ref) => ref.watch(renderGlesBackendProvider),
+            // 检测到过渲染崩溃时追加「建议开启」，让点过「暂不开启」
+            // 的用户之后仍能在设置里找到线索
+            subtitleBuilder: (ref) {
+              final detected = ref
+                  .watch(renderCrashDetectedProvider)
+                  .maybeWhen(data: (v) => v, orElse: () => false);
+              if (!detected) return null;
+              return '${l10n.preferences_renderGlesBackendDesc}'
+                  '\n⚠ ${l10n.preferences_renderGlesRecommended}';
+            },
+            getValue: (ref) => ref.watch(preferencesProvider).renderGlesBackend,
             onChanged: (ref, v) async {
-              await ref.read(renderGlesBackendProvider.notifier).setEnabled(v);
+              await ref
+                  .read(preferencesProvider.notifier)
+                  .setRenderGlesBackend(v);
               if (!context.mounted) return;
               _showRenderBackendRestartDialog(context);
             },
