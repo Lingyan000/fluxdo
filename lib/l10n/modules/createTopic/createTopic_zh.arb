@@ -40,6 +40,14 @@
       }
     }
   },
+  "createTopic_maxTitleLength": "标题最多 {max} 个字符",
+  "@createTopic_maxTitleLength": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "createTopic_noContent": "（无内容）",
   "createTopic_noTitle": "（无标题）",
   "createTopic_pendingReview": "你的帖子已提交，正在等待审核",

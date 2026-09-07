@@ -63,5 +63,23 @@ void main() {
 
       expect(DiscourseUrlParser.parseTitleUrl('http://example.com'), isNotNull);
     });
+
+    test('协议相对 URL 补齐为 https（对齐官方 isAbsoluteUrl）', () {
+      final result = DiscourseUrlParser.parseTitleUrl('//example.com/a');
+
+      expect(result, isNotNull);
+      // 原文保留，便于与标题比对
+      expect(result?.url, '//example.com/a');
+      // 对外使用的才是补齐后的绝对 URL
+      expect(result?.absoluteUrl, 'https://example.com/a');
+    });
+
+    test('absoluteUrl 对已带协议的 URL 保持可用', () {
+      final result = DiscourseUrlParser.parseTitleUrl(
+        'https://example.com/a?b=1',
+      );
+
+      expect(result?.absoluteUrl, 'https://example.com/a?b=1');
+    });
   });
 }

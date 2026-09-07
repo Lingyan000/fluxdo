@@ -12,6 +12,14 @@
   "createTopic_minContentLength": "Content needs at least {min} characters",
   "createTopic_minTags": "This category requires at least {min} tags",
   "createTopic_minTitleLength": "Title needs at least {min} characters",
+  "createTopic_maxTitleLength": "Title cannot exceed {max} characters",
+  "@createTopic_maxTitleLength": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "createTopic_noContent": "(No content)",
   "createTopic_noTitle": "(No title)",
   "createTopic_pendingReview": "Your post is pending review",

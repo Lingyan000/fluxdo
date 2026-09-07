@@ -32,6 +32,7 @@ import 'package:fluxdo/providers/shortcut_provider.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+import '../constants.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/discourse_url_parser.dart';
@@ -95,6 +96,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   int _titleChangeGeneration = 0;
   bool _isResolvingFeaturedLink = false;
   bool _updatingFeaturedLinkTitle = false;
+
+  /// 对齐官方 `autoPosted`：标题 URL 已自动搬运过一次的门闩
+  bool _featuredLinkAutoPosted = false;
   String? _featuredLink;
 
   final PageController _pageController = PageController();
@@ -353,15 +357,57 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     setState(() => _contentLength = _contentController.text.length);
   }
 
-  /// 站点是否开放话题精选链接（Discourse `topic_featured_link_enabled`，
-  /// client: true / default: true）。
+  /// 是否允许当前 composer 使用话题精选链接。
   ///
-  /// 与仓库其它站点开关一致取正向判定：预加载 blob 尚未就绪（首帧、冷启动
-  /// 失败）时 `siteSettingsSync` 为 null，此时应当按「未开启」处理，避免凭空
-  /// 发起 inline-onebox 请求并改写用户标题。
-  bool get _featuredLinkEnabled =>
-      PreloadedDataService().siteSettingsSync?['topic_featured_link_enabled'] ==
-      true;
+  /// 对齐官方 `Composer#canEditTopicFeaturedLink`
+  /// (frontend/discourse/app/models/composer.js)：
+  /// 1. 信任级别 0 的用户不允许（防垃圾链接）；
+  /// 2. 站点开关 `topic_featured_link_enabled` 必须为真；
+  /// 3. 当前分类需在 `topic_featured_link_allowed_category_ids` 白名单内。
+  ///
+  /// 预加载 blob 未就绪时 `siteSettingsSync` 为 null，取正向判定按「未开启」
+  /// 处理，避免凭空发起 inline-onebox 请求并改写用户标题。
+  bool get _featuredLinkEnabled {
+    final preloaded = PreloadedDataService();
+    if (preloaded.siteSettingsSync?['topic_featured_link_enabled'] != true) {
+      return false;
+    }
+
+    // TL0 不允许精选链接（官方第一道门）
+    final trustLevel = preloaded.currentUserSync?['trust_level'];
+    if (trustLevel is int && trustLevel == 0) return false;
+
+    // 分类白名单：未下发或为空 = 不限制（对齐官方
+    // `categoryIds === undefined || !categoryIds.length`）
+    final allowed = preloaded.topicFeaturedLinkAllowedCategoryIdsSync;
+    if (allowed == null || allowed.isEmpty) return true;
+
+    final categoryId = _selectedCategory?.id;
+    if (categoryId == null) return false;
+    return allowed.contains(categoryId);
+  }
+
+  /// 正文是否仍为「默认态」（空或等于分类模板）。
+  ///
+  /// 官方 `bodyIsDefault()`：只有正文还没被用户动过时才自动把标题 URL 搬进
+  /// 正文，否则会在用户已经写了内容的帖子末尾突兀地多出一行链接。
+  bool _bodyIsDefault() {
+    final reply = _contentController.text;
+    if (reply.isEmpty) return true;
+    final template = _templateContent;
+    if (template != null && reply.trim() == template.trim()) return true;
+    return false;
+  }
+
+  /// 标题 URL 是否指向本站。
+  ///
+  /// 官方只把**外部**链接做成精选链接（`only feature links to external
+  /// sites`），指向本站的 URL 直接不处理。
+  bool _isSameSiteUrl(TitleUrlInfo candidate) {
+    final siteHost = Uri.tryParse(AppConstants.baseUrl)?.host;
+    if (siteHost == null || siteHost.isEmpty) return false;
+    return candidate.uri.host.toLowerCase() == siteHost.toLowerCase();
+  }
 
   /// 标题输入的单一监听入口（草稿 / 计数器 / featured link 三合一）。
   void _onTitleInputChanged() {
@@ -384,8 +430,19 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _featuredLinkDebounce?.cancel();
     final generation = ++_titleChangeGeneration;
 
+    // 对齐官方 `autoPosted`：标题被清空才重置自动处理资格，否则整个
+    // composer 生命周期内只自动搬运一次，不会反复往正文里塞链接。
+    if (_titleController.text.trim().isEmpty) {
+      _featuredLinkAutoPosted = false;
+    }
+    if (_featuredLinkAutoPosted) return;
+
     final candidate = DiscourseUrlParser.parseTitleUrl(_titleController.text);
-    if (!_featuredLinkEnabled || candidate == null) {
+    // 对齐官方：只给外部链接做精选，且正文仍为默认态时才接管。
+    if (!_featuredLinkEnabled ||
+        candidate == null ||
+        _isSameSiteUrl(candidate) ||
+        !_bodyIsDefault()) {
       if (_isResolvingFeaturedLink || _featuredLink != null) {
         setState(() {
           _isResolvingFeaturedLink = false;
@@ -396,7 +453,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     }
 
     // 同一个 URL 已经解析过时，不重复请求。
-    if (_featuredLink == candidate.url) {
+    if (_featuredLink == candidate.absoluteUrl) {
       if (_isResolvingFeaturedLink) {
         setState(() => _isResolvingFeaturedLink = false);
       }
@@ -430,10 +487,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       final boxes = await ref
           .read(discourseServiceProvider)
           .fetchInlineOneboxes([
-            candidate.url,
+            candidate.absoluteUrl,
           ], categoryId: _selectedCategory?.id)
           .timeout(const Duration(seconds: 5));
-      resolvedTitle = boxes[candidate.url]?.title.trim();
+      resolvedTitle = boxes[candidate.absoluteUrl]?.title.trim();
     } catch (_) {
       // fetchInlineOneboxes 已将 onebox 失败降级为空结果；这里保留 URL。
     }
@@ -441,8 +498,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     if (!mounted || !_isCurrentTitleUrl(candidate, generation)) return;
 
     setState(() {
-      _featuredLink = candidate.url;
+      _featuredLink = candidate.absoluteUrl;
       _isResolvingFeaturedLink = false;
+      _featuredLinkAutoPosted = true;
     });
 
     if (resolvedTitle != null && resolvedTitle.isNotEmpty) {
@@ -454,6 +512,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     return mounted &&
         generation == _titleChangeGeneration &&
         _featuredLinkEnabled &&
+        // 官方同样在真正发请求前再查一次 bodyIsDefault：debounce 窗口内
+        // 用户可能已经开始写正文了。
+        _bodyIsDefault() &&
         _titleController.text.trim() == candidate.url;
   }
 
@@ -466,11 +527,15 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     if (!_featuredLinkEnabled) return;
 
     final candidate = DiscourseUrlParser.parseTitleUrl(_titleController.text);
-    if (candidate == null) return;
+    if (candidate == null ||
+        _isSameSiteUrl(candidate) ||
+        !_bodyIsDefault()) {
+      return;
+    }
     // 推进 generation 使飞在路上的解析回调失效，避免它在提交途中改标题。
     _titleChangeGeneration++;
     _isResolvingFeaturedLink = false;
-    _featuredLink = candidate.url;
+    _featuredLink = candidate.absoluteUrl;
   }
 
   /// 提交前把 featured link 落进正文。
@@ -595,12 +660,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   }
 
   Future<void> _submit() async {
+    // 富文本模式:先强制序列化镜像。
+    // 必须排在下面两步**之前**：它俩都要读 _contentController 判断正文是否
+    // 仍为默认态，而富文本的内容在 flush 前还在 EditorState 里。
+    _richKey.currentState?.flushToController();
     // 标题是纯 URL 但 onebox 还在飞（或还在 debounce 窗口内）时，不阻断提交：
     // featured link 本身不依赖 onebox 结果，直接用当前标题里的 URL 定案。
     _settlePendingFeaturedLink();
-    // 富文本模式:先强制序列化镜像
-    _richKey.currentState?.flushToController();
-    // flush 之后再追加 featured link，否则会被富文本序列化结果覆盖。
+    // 再把 featured link 追加进正文，否则会被富文本序列化结果覆盖。
     _applyFeaturedLinkToContent();
     if (!_formKey.currentState!.validate()) {
       // 预览模式下验证错误不可见，切回编辑模式并提示
@@ -753,7 +820,11 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               letterSpacing: -0.5,
             ),
             maxLines: null,
-            maxLength: 200,
+            // 对齐官方 `titleMaxLength`：允许精选链接时不设 maxLength，否则会
+            // 把粘贴进来的长链接截断（超长交由校验提示，不靠硬截）。
+            maxLength: _featuredLinkEnabled
+                ? null
+                : PreloadedDataService().maxTopicTitleLengthSync,
             // 计数改用悬浮层(见下方 Stack),这里不占位
             buildCounter:
                 (
@@ -768,6 +839,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               }
               if (value.trim().length < minTitleLength) {
                 return context.l10n.createTopic_minTitleLength(minTitleLength);
+              }
+              // 允许精选链接时不靠 maxLength 硬截，改由校验抦（对齐官方
+              // `composer.error.title_too_long`）。
+              final maxTitleLength = PreloadedDataService()
+                  .maxTopicTitleLengthSync;
+              if (value.trim().length > maxTitleLength) {
+                return context.l10n.createTopic_maxTitleLength(maxTitleLength);
               }
               return null;
             },
