@@ -2,6 +2,7 @@ package com.github.lingyan000.fluxdo
 
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
@@ -33,8 +34,29 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "AppLink"
+        private const val RENDER_TAG = "RenderBackend"
         private const val RAW_COOKIE_CHANNEL = "com.fluxdo/raw_cookie"
         private const val WEBAUTHN_CHANNEL = "com.fluxdo/webauthn"
+
+        // 渲染后端回退开关的存储位置。shared_preferences 在 Android 侧的
+        // 原生文件名与键前缀是插件约定；键名与 Dart 侧
+        // PreferencesNotifier._renderGlesBackendKey 保持一致。
+        const val RENDER_GLES_PREFS_FILE = "FlutterSharedPreferences"
+        const val RENDER_GLES_PREF_KEY = "flutter.renderer_gles"
+
+        // 启动快路：只存一个 boolean 的独立小文件。
+        //
+        // provideFlutterEngine 在引擎创建前、主线程上同步执行，而
+        // getSharedPreferences 首次读取会同步解析整个 XML。
+        // FlutterSharedPreferences 里装着全部应用偏好（已近百项），
+        // 为一个开关解析它 —— 而且是 **每次冷启动都解析**，
+        // 包括永远不会开这个开关的绝大多数用户 —— 是不必要的。
+        //
+        // Dart 侧写入时双写：插件自己那份（供 Dart 读）+ 这份快照
+        // （供启动路径读）。快照缺失时回退到插件文件，保证老版本升级
+        // 上来、快照尚未生成时仍能正确读到用户已有的设置。
+        const val RENDER_FAST_PREFS_FILE = "render_backend_fast"
+        const val RENDER_FAST_PREF_KEY = "renderer_gles"
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -60,8 +82,10 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.github.lingyan000.fluxdo/browser"
     private val CRASHLYTICS_CHANNEL = "com.github.lingyan000.fluxdo/crashlytics"
+    private val RENDER_BACKEND_CHANNEL = "com.github.lingyan000.fluxdo/render_backend"
     private val ICON_CHANNEL = "com.github.lingyan000.fluxdo/app_icon"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var ownsProvidedFlutterEngine = false
 
     // Cookie IPC 专用后台线程。CookieManager 的 getCookie / setCookie /
     // getCookieInfo 可从任意线程调用(Chromium cookie store 在自己的 IO
@@ -103,6 +127,41 @@ class MainActivity : FlutterActivity() {
         FairMemoryReceiver.detachEngine(flutterEngine)
         super.cleanUpFlutterEngine(flutterEngine)
     }
+
+    // 渲染后端兼容开关（设置-高级「Skia/OpenGL ES 渲染兼容模式」）。
+    // 开启后以 --enable-impeller=false 创建引擎，让 Release 版使用
+    // Skia/OpenGL ES，绕开部分 Mali Vulkan 驱动在纹理/表面销毁时的
+    // SIGABRT 竞态（mali-event-hand 线程 destroyed mutex）。
+    // 偏好不经 Dart，冷启动即生效。
+    // 关闭时返回 null，由 embedding 走默认后端创建路径。开启时引擎
+    // 由当前 Activity 创建并持有，必须随宿主销毁，避免 embedding 将其
+    // 视为可长期复用的外部引擎而泄漏原生/GPU 资源。
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        if (!readGlesCompatEnabled()) return null
+        ownsProvidedFlutterEngine = true
+        Log.i(RENDER_TAG, "启用 Skia/OpenGL ES 兼容模式（--enable-impeller=false）")
+        return FlutterEngine(context, arrayOf("--enable-impeller=false"))
+    }
+
+    /**
+     * 读兼容模式开关，优先读只含一个 boolean 的快照文件。
+     *
+     * 快照不存在（旧版本升级上来、还没经过一次 Dart 写入）时才回退去
+     * 解析插件的大文件，保证设置不丢。
+     */
+    private fun readGlesCompatEnabled(): Boolean {
+        val fast = getSharedPreferences(RENDER_FAST_PREFS_FILE, Context.MODE_PRIVATE)
+        if (fast.contains(RENDER_FAST_PREF_KEY)) {
+            return fast.getBoolean(RENDER_FAST_PREF_KEY, false)
+        }
+        return getSharedPreferences(RENDER_GLES_PREFS_FILE, Context.MODE_PRIVATE)
+            .getBoolean(RENDER_GLES_PREF_KEY, false)
+    }
+
+    override fun shouldDestroyEngineWithHost(): Boolean =
+        // 只接管本 Activity 自己创建的引擎；其余情况（含缓存引擎）仍委托
+        // embedding 的默认所有权语义，不能简化为直接返回 true。
+        ownsProvidedFlutterEngine || super.shouldDestroyEngineWithHost()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -172,6 +231,58 @@ class MainActivity : FlutterActivity() {
                         call.argument<String>("route"),
                         call.argument<String>("routeTrail"),
                     )
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // 渲染崩溃自动识别。与 Crashlytics 无关：纯本地判断、零网络，
+        // 所有用户都需要被提醒，不能挂在采集开关下。
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, RENDER_BACKEND_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                // 扫描上次退出记录，返回是否应弹窗建议开启兼容模式。
+                // 扫描会读 tombstone（磁盘 IO），必须放后台线程。
+                "checkRenderCrashSuggestion" -> {
+                    // 一次性后台线程:检测在整个进程生命周期只跑一两次,
+                    // 不值得为它常驻一条 HandlerThread。
+                    Thread({
+                        val suggest = try {
+                            val gpu = RenderCrashDetector.detectGpuIdentity()
+                            RenderCrashDetector.scan(applicationContext, gpu)
+                            RenderCrashDetector.consumePendingSuggestion(applicationContext)
+                        } catch (e: Throwable) {
+                            Log.w(RENDER_TAG, "渲染崩溃检测失败: ${e.message}")
+                            false
+                        }
+                        mainHandler.post { result.success(suggest) }
+                    }, "fluxdo-render-detect").start()
+                }
+                // 设置页的「建议开启」标记（不会被消费）
+                "hasDetectedRenderCrash" -> {
+                    Thread({
+                        val detected = try {
+                            RenderCrashDetector.hasDetectedRenderCrash(applicationContext)
+                        } catch (e: Throwable) {
+                            false
+                        }
+                        mainHandler.post { result.success(detected) }
+                    }, "fluxdo-render-detect").start()
+                }
+                // 用户选了「暂不开启」，不再自动弹窗
+                "dismissRenderCrashSuggestion" -> {
+                    RenderCrashDetector.markUserDismissed(applicationContext)
+                    result.success(null)
+                }
+                // Dart 写入偏好后同步启动快照，供下次冷启动快速读取
+                "syncRenderGlesFlag" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    getSharedPreferences(RENDER_FAST_PREFS_FILE, Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(RENDER_FAST_PREF_KEY, enabled)
+                        .apply()
                     result.success(null)
                 }
                 else -> result.notImplemented()

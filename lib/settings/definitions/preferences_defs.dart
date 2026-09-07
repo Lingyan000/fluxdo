@@ -9,6 +9,7 @@ import '../../l10n/s.dart';
 import '../../providers/ai_post_review_provider.dart';
 import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/render_crash_provider.dart';
 import '../../providers/secret_store_provider.dart';
 import '../../services/crypto/crypto_key_store.dart';
 import '../../services/toast_service.dart';
@@ -312,6 +313,34 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             onChanged: (ref, v) =>
                 ref.read(preferencesProvider.notifier).setCrashlytics(v),
           ),
+          // 渲染后端兼容模式：Release 版无法通过
+          // --impeller-backend=opengles 固定 Impeller 后端，因此改用
+          // --enable-impeller=false 强制 Skia/OpenGL ES，绕开部分 Mali
+          // Vulkan 驱动的 SIGABRT；代价是关闭 Impeller 与 HCPP。
+          SwitchModel(
+            id: 'renderGlesBackend',
+            title: l10n.preferences_renderGlesBackend,
+            subtitle: l10n.preferences_renderGlesBackendDesc,
+            icon: Symbols.layers_rounded,
+            // 检测到过渲染崩溃时追加「建议开启」，让点过「暂不开启」
+            // 的用户之后仍能在设置里找到线索
+            subtitleBuilder: (ref) {
+              final detected = ref
+                  .watch(renderCrashDetectedProvider)
+                  .maybeWhen(data: (v) => v, orElse: () => false);
+              if (!detected) return null;
+              return '${l10n.preferences_renderGlesBackendDesc}'
+                  '\n⚠ ${l10n.preferences_renderGlesRecommended}';
+            },
+            getValue: (ref) => ref.watch(preferencesProvider).renderGlesBackend,
+            onChanged: (ref, v) async {
+              await ref
+                  .read(preferencesProvider.notifier)
+                  .setRenderGlesBackend(v);
+              if (!context.mounted) return;
+              _showRenderBackendRestartDialog(context);
+            },
+          ),
         ],
       ),
 
@@ -361,6 +390,25 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
       ],
     ),
   ];
+}
+
+/// 渲染后端切换后提示重启。
+/// 引擎后端在进程启动时决定，热切换不可能；偏好此刻已落盘，
+/// 由 native 侧在下次冷启动时读取。
+void _showRenderBackendRestartDialog(BuildContext context) {
+  showAppDialog(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(dialogContext.l10n.preferences_renderGlesRestartTitle),
+      content: Text(dialogContext.l10n.preferences_renderGlesRestartBody),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(dialogContext.l10n.common_gotIt),
+        ),
+      ],
+    ),
+  );
 }
 
 Future<void> _showAiPostReviewModelSheet(

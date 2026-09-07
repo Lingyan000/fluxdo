@@ -40,6 +40,7 @@ import 'services/network/adapters/cronet_fallback_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/data_management/cache_size_service.dart';
 import 'services/discourse_cache_manager.dart';
+import 'services/render_backend_service.dart';
 import 'services/toast_service.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'l10n/s.dart';
@@ -1114,9 +1115,68 @@ class _MainPageState extends ConsumerState<MainPage>
     if (Platform.isAndroid) {
       await _showCrashlyticsNotice();
       if (!mounted) return;
+
+      // 疑似 Mali/Vulkan 渲染崩溃时建议开启兼容模式。
+      // 放在数据收集告知之后：那个是必须先看到的一次性声明。
+      await _maybeSuggestRenderCompatMode();
+      if (!mounted) return;
     }
 
     await _checkClipboardTopicLink();
+  }
+
+  /// 上次进程疑似因 Mali/Vulkan 驱动崩溃时，建议开启渲染兼容模式。
+  ///
+  /// 判定完全在原生侧完成（见 RenderCrashDetector.kt），这里只负责呈现。
+  /// 用户选「暂不开启」后不再自动弹窗，但设置项上会保留建议标记。
+  Future<void> _maybeSuggestRenderCompatMode() async {
+    // 已经开着了就不用建议了（原生侧也会做这个判断，这里是快速短路）
+    if (ref.read(preferencesProvider).renderGlesBackend) return;
+
+    final shouldSuggest =
+        await RenderBackendService.shouldSuggestCompatMode();
+    if (!shouldSuggest || !mounted) return;
+
+    final enable = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(S.current.preferences_renderGlesDetectedTitle),
+        content: Text(S.current.preferences_renderGlesDetectedBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(S.current.preferences_renderGlesDetectedDismiss),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(S.current.preferences_renderGlesDetectedEnable),
+          ),
+        ],
+      ),
+    );
+
+    if (enable == true) {
+      await ref
+          .read(preferencesProvider.notifier)
+          .setRenderGlesBackend(true);
+      if (!mounted) return;
+      await showAppDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(S.current.preferences_renderGlesRestartTitle),
+          content: Text(S.current.preferences_renderGlesRestartBody),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(S.current.common_gotIt),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 明确拒绝（含点遮罩关闭）后不再自动弹窗
+      await RenderBackendService.dismissSuggestion();
+    }
   }
 
   Future<void> _showCrashlyticsNotice() async {
