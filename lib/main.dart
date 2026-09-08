@@ -976,6 +976,7 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<void>? _notificationAlertChannelSub;
   ProviderSubscription<void>? _chatAlertChannelSub;
   ProviderSubscription<void>? _logoutChannelSub;
+  ProviderSubscription<bool>? _siteReadOnlySub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -1019,6 +1020,11 @@ class _MainPageState extends ConsumerState<MainPage>
     ) {
       next.whenData((message) => _handleAuthError(message));
     });
+
+    // 站点只读模式：/site/read-only 是公开频道，匿名也能收，
+    // 所以不放进下面那个以登录为前提的订阅块
+    _siteReadOnlySub?.close();
+    _siteReadOnlySub = ref.listenManual<bool>(siteReadOnlyProvider, (_, _) {});
 
     // 初始化连通性检测服务
     ConnectivityService().init();
@@ -1325,6 +1331,7 @@ class _MainPageState extends ConsumerState<MainPage>
     _notificationAlertChannelSub?.close();
     _chatAlertChannelSub?.close();
     _logoutChannelSub?.close();
+    _siteReadOnlySub?.close();
     _connectivitySub?.close();
     super.dispose();
   }

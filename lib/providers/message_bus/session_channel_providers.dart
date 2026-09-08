@@ -82,3 +82,59 @@ class LogoutChannelNotifier extends Notifier<void> {
 final logoutChannelProvider = NotifierProvider<LogoutChannelNotifier, void>(
   LogoutChannelNotifier.new,
 );
+
+/// 站点是否处于只读模式（`/site/read-only` 频道）
+///
+/// 服务端进入/退出只读（备份、迁移、手动维护）时广播一个裸布尔值。
+/// 对齐网页版 instance-initializers/read-only.js 的 `site.isReadOnly`。
+///
+/// 这是公开频道（不带 user_id），匿名用户也能收到，所以不依赖登录态。
+///
+/// 目前只维护状态、不接 UI：只读模式要管的写入口（回复栏、发新话题、
+/// 点赞、收藏、聊天……）分散在很多 widget 里，一次性铺开回归面太大。
+/// 需要时 `ref.watch(siteReadOnlyProvider)` 即可接入。
+class SiteReadOnlyNotifier extends Notifier<bool> {
+  MessageBusCallback? _callback;
+
+  static const String _channel = '/site/read-only';
+
+  @override
+  bool build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+
+    if (_callback != null) {
+      messageBus.unsubscribe(_channel, _callback);
+      _callback = null;
+    }
+
+    void onReadOnly(MessageBusMessage message) {
+      // payload 就是个裸布尔值（Discourse.readonly_channel 发的 true/false），
+      // 容错地再接一下字符串形态
+      final data = message.data;
+      final enabled = switch (data) {
+        final bool v => v,
+        final String v => v.toLowerCase() == 'true',
+        _ => null,
+      };
+      if (enabled == null) return;
+
+      debugPrint('[SiteReadOnly] 站点只读模式: $enabled');
+      state = enabled;
+    }
+
+    _callback = onReadOnly;
+    messageBus.subscribe(_channel, onReadOnly);
+
+    ref.onDispose(() {
+      if (_callback != null) {
+        messageBus.unsubscribe(_channel, _callback);
+      }
+    });
+
+    return false;
+  }
+}
+
+final siteReadOnlyProvider =
+    NotifierProvider<SiteReadOnlyNotifier, bool>(SiteReadOnlyNotifier.new);
