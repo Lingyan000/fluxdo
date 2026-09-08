@@ -19,6 +19,7 @@ import '../../utils/platform_utils.dart';
 import '../../utils/time_utils.dart';
 import 'bookmark_preview_quick_editor.dart';
 import '../common/error_view.dart';
+import '../common/morphing_dialog_anchor.dart';
 import '../common/icon_glyph_span.dart';
 import '../common/paged_list_footer.dart';
 import '../desktop_refresh_indicator.dart';
@@ -264,10 +265,8 @@ class BookmarksListContent extends ConsumerWidget {
             categoryMap,
             statsAvailableWidth,
           );
-          // Builder 紧贴卡片:长按预览的一镜到底动画要卡片自身的
-          // 屏幕 rect 作起点(外层 context 在桌面端 Center 包装下是
-          // 满宽,不是卡身);bottomGap 8 裁掉外壳底部间距。
-          Widget card = Builder(
+          Widget card = MorphingDialogAnchor(
+            enabled: enableLongPress,
             builder: (cardContext) => PaintedTopicCard(
               key: ValueKey(bookmarkTopicIdentity(topic)),
               layout: layout,
@@ -278,7 +277,7 @@ class BookmarksListContent extends ConsumerWidget {
                       context,
                       topic: topic,
                       onOpen: () => onTap(topic),
-                      anchorRect: topicCardAnchorRect(cardContext),
+                      sourceContext: cardContext,
                       // chat 书签无话题上下文:正文直接用书签 excerpt,
                       // 不按话题 id 拉详情(那个 id 是书签 id,必 404)
                       firstPostLoader: topic.isChatMessageBookmark

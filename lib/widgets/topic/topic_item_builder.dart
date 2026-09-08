@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/discourse_providers.dart';
 import '../../services/topic_preview_preloader.dart';
 import '../../utils/responsive.dart';
+import '../common/morphing_dialog_anchor.dart';
 import 'painted_topic_card.dart';
 import 'topic_card.dart';
 import 'topic_card_layout.dart';
@@ -84,9 +85,7 @@ Widget buildTopicItem({
           ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
           : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow);
 
-  // Builder 紧贴卡片构造:longPress 需要卡片自身的 context 取屏幕
-  // rect 作一镜到底起点(外层 context 的 RenderObject 在桌面端居中
-  // 约束下是满宽,不是卡身)。bottomGap 裁掉卡片外壳底部间距。
+  // 从实际卡身接管画面；桌面的居中约束留在来源外层。
   VoidCallback? longPressFor(BuildContext cardContext) => enableLongPress
       ? () => TopicPreviewDialog.show(
           context,
@@ -94,10 +93,7 @@ Widget buildTopicItem({
           onOpen: onTap,
           actions: previewActions,
           customActionPanelBuilder: previewCustomActionPanelBuilder,
-          anchorRect: topicCardAnchorRect(
-            cardContext,
-            bottomGap: topic.pinned ? 6 : 8,
-          ),
+          sourceContext: cardContext,
           anchorColor: anchorColor,
         )
       : null;
@@ -132,7 +128,9 @@ Widget buildTopicItem({
   // 自绘路径:排版全局缓存 + 单渲染对象。宽度口径见
   // [topicCardWidthFor];分类表由调用方传入(未传时不查,分类行缺分
   // 类名 —— 各列表页均已传)
-  final Widget child = Builder(
+  final Widget child = MorphingDialogAnchor(
+    enabled: enableLongPress,
+    bottomGap: topic.pinned ? 6 : 8,
     builder: (cardContext) {
       if (topic.pinned) {
         return CompactTopicCard(

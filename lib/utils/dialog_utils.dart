@@ -177,12 +177,14 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
   String? barrierLabel,
   Color? barrierColor,
   Duration transitionDuration = const Duration(milliseconds: 200),
+  Duration? reverseTransitionDuration,
   RouteTransitionsBuilder? transitionBuilder,
   bool useRootNavigator = true,
   RouteSettings? routeSettings,
   bool blur = true,
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
+  VoidCallback? onDisposed,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -196,9 +198,11 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
             ? blurBarrierColor(Theme.of(context).brightness)
             : const Color(0x80000000)),
     transitionDuration: transitionDuration,
+    reverseTransitionDuration: reverseTransitionDuration,
     transitionBuilder: transitionBuilder,
     settings: routeSettings,
     enableBlur: enableBlur,
+    onDisposed: onDisposed,
   );
 
   return _pushOverlayRoute(
@@ -380,8 +384,10 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T> {
   final String? _barrierLabel;
   final Color _barrierColor;
   final Duration _transitionDuration;
+  final Duration? _reverseTransitionDuration;
   final RouteTransitionsBuilder? _transitionBuilder;
   final bool enableBlur;
+  final VoidCallback? onDisposed;
 
   _BlurRawDialogRoute({
     required this.pageBuilder,
@@ -389,13 +395,16 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T> {
     String? barrierLabel,
     required Color barrierColor,
     required Duration transitionDuration,
+    Duration? reverseTransitionDuration,
     RouteTransitionsBuilder? transitionBuilder,
     super.settings,
     this.enableBlur = false,
+    this.onDisposed,
   }) : _barrierDismissible = barrierDismissible,
        _barrierLabel = barrierLabel,
        _barrierColor = barrierColor,
        _transitionDuration = transitionDuration,
+       _reverseTransitionDuration = reverseTransitionDuration,
        _transitionBuilder = transitionBuilder;
 
   @override
@@ -409,6 +418,16 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T> {
 
   @override
   Duration get transitionDuration => _transitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      _reverseTransitionDuration ?? _transitionDuration;
+
+  @override
+  void dispose() {
+    onDisposed?.call();
+    super.dispose();
+  }
 
   @override
   Widget buildPage(
