@@ -26,6 +26,12 @@ class TrackedTopicState {
   final bool createdInNewPeriod;
   final bool isSeen;
 
+  /// 话题是否已被软删除（对齐网页版 /delete /recover 频道维护的 deleted 标记）
+  ///
+  /// 软删除的话题不计入 new/unread 计数，但状态保留：/recover 会把它翻回来，
+  /// 此时无需重新拉取即可恢复原有已读游标。
+  final bool deleted;
+
   const TrackedTopicState({
     required this.topicId,
     this.lastReadPostNumber,
@@ -34,6 +40,7 @@ class TrackedTopicState {
     this.notificationLevel = 1,
     this.createdInNewPeriod = false,
     this.isSeen = false,
+    this.deleted = false,
   });
 
   TrackedTopicState copyWith({
@@ -44,6 +51,7 @@ class TrackedTopicState {
     int? notificationLevel,
     bool? createdInNewPeriod,
     bool? isSeen,
+    bool? deleted,
   }) {
     return TrackedTopicState(
       topicId: topicId,
@@ -53,6 +61,7 @@ class TrackedTopicState {
       notificationLevel: notificationLevel ?? this.notificationLevel,
       createdInNewPeriod: createdInNewPeriod ?? this.createdInNewPeriod,
       isSeen: isSeen ?? this.isSeen,
+      deleted: deleted ?? this.deleted,
     );
   }
 
@@ -147,20 +156,22 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
   }
 
   /// 判断是否为 NEW 话题（对齐网页版 isNew）
-  /// 条件：未读过 + 在新话题期限内创建 +
+  /// 条件：未读过 + 在新话题期限内创建 + 未被删除 +
   ///   (非静音且未看过 或 TRACKING 及以上)
   bool _isNew(TrackedTopicState s) {
     return s.lastReadPostNumber == null &&
         s.createdInNewPeriod &&
+        !s.deleted &&
         ((s.notificationLevel != 0 && !s.isSeen) ||
             s.notificationLevel >= 2);
   }
 
   /// 判断是否为 UNREAD 话题（对齐网页版 isUnread）
-  /// 条件：已读过 + 有新帖子 + TRACKING 或以上
+  /// 条件：已读过 + 有新帖子 + 未被删除 + TRACKING 或以上
   bool _isUnread(TrackedTopicState s) {
     return s.lastReadPostNumber != null &&
         s.lastReadPostNumber! < s.highestPostNumber &&
+        !s.deleted &&
         s.notificationLevel >= 2;
   }
 
@@ -180,6 +191,17 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
     }
     if (messageType == 'dismiss_new_posts') {
       _handleDismissNewPosts(data);
+      return;
+    }
+
+    // /delete /recover 频道：只翻 deleted 标记，不动其余字段
+    // （对齐网页版 onDeleteMessage / onRecoverMessage 的 modifyStateProp）
+    if (message.channel == '/delete') {
+      _setTopicDeleted(data, true);
+      return;
+    }
+    if (message.channel == '/recover') {
+      _setTopicDeleted(data, false);
       return;
     }
 
@@ -228,6 +250,21 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
       };
       return;
     }
+  }
+
+  /// 翻转话题的软删除标记（/delete、/recover 频道）
+  ///
+  /// 对齐网页版 modifyStateProp：仅当本地已有该话题的追踪状态时才改，
+  /// 不为一个从未跟踪过的话题凭空造条目（否则删除广播会把大量
+  /// 与当前用户无关的话题灌进状态表）。
+  void _setTopicDeleted(Map<String, dynamic> data, bool deleted) {
+    final topicId = data['topic_id'] as int?;
+    if (topicId == null) return;
+
+    final existing = state[topicId];
+    if (existing == null || existing.deleted == deleted) return;
+
+    state = {...state, topicId: existing.copyWith(deleted: deleted)};
   }
 
   /// 批量忽略新话题：设置 isSeen=true
@@ -424,10 +461,28 @@ class MessageBusInitNotifier extends Notifier<void> {
     debugPrint('[MessageBusInit] 订阅 ${meta.length} 个频道: ${meta.keys}');
     for (final entry in meta.entries) {
       final channel = entry.key;
-      final messageId = entry.value as int;
+      // meta 值理论上恒为 int，但它来自服务端 JSON；硬转换一旦遇到
+      // 非预期类型会直接抛，把整个追踪初始化带崩（所有频道都不订阅）。
+      // 降级为 -1（只要新消息）比整体失效安全。
+      final messageId = switch (entry.value) {
+        final int v => v,
+        final String v => int.tryParse(v) ?? -1,
+        _ => -1,
+      };
 
       void onTopicTracking(MessageBusMessage message) {
         debugPrint('[TopicTracking] 收到消息: ${message.channel} #${message.messageId}');
+
+        // /destroy：话题已不可逆销毁，登记后由详情页自行退出
+        if (message.channel == '/destroy') {
+          final data = message.data;
+          final topicId =
+              data is Map<String, dynamic> ? data['topic_id'] as int? : null;
+          if (topicId != null) {
+            ref.read(destroyedTopicsProvider.notifier).markDestroyed(topicId);
+          }
+        }
+
         // 转发给 TopicTrackingStateNotifier 更新追踪计数
         ref.read(topicTrackingStateProvider.notifier).processChannelPayload(message);
       }
@@ -448,6 +503,42 @@ class MessageBusInitNotifier extends Notifier<void> {
 
 final messageBusInitProvider = NotifierProvider<MessageBusInitNotifier, void>(
   MessageBusInitNotifier.new,
+);
+
+/// 被彻底销毁的话题 ID 集合（/destroy 频道）
+///
+/// 与 /delete 的区别：/delete 是软删除（可恢复，在 [TrackedTopicState.deleted]
+/// 上打标记）；/destroy 是不可逆销毁，话题已不存在，停留在详情页的
+/// 用户必须被送走（对齐网页版 onDestroyMessage 的 redirectTo("/")）。
+///
+/// 这里只做“事实登记”，不在 provider 里直接导航：路由栈归页面管，
+/// 由详情页 listen 到自己的 topicId 入集后自行退出，同时兼容嵌入式布局。
+class DestroyedTopicsNotifier extends Notifier<Set<int>> {
+  /// 只保留最近一段的销毁记录，避免长会话下集合无限增长。
+  /// 详情页是即时消费的，超过上限的老记录已无人关心。
+  static const int _maxTracked = 200;
+
+  @override
+  Set<int> build() => const {};
+
+  void markDestroyed(int topicId) {
+    if (state.contains(topicId)) return;
+    final next = {...state, topicId};
+    if (next.length > _maxTracked) {
+      // Set 保持插入顺序，从头丢最早的
+      final trimmed = next.skip(next.length - _maxTracked).toSet();
+      state = trimmed;
+      return;
+    }
+    state = next;
+  }
+
+  bool isDestroyed(int topicId) => state.contains(topicId);
+}
+
+final destroyedTopicsProvider =
+    NotifierProvider<DestroyedTopicsNotifier, Set<int>>(
+  DestroyedTopicsNotifier.new,
 );
 
 /// 话题列表新消息状态（按分类隔离）

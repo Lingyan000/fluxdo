@@ -1155,7 +1155,7 @@ extension _UserActions on _TopicDetailPageState {
       _invalidatePrivateMessageLists();
       if (archived) {
         ToastService.showSuccess(context.l10n.topicDetail_messageArchived);
-        _leavePrivateMessagePage();
+        _leaveTopicPage();
       } else {
         ToastService.showSuccess(context.l10n.topicDetail_messageMovedToInbox);
       }

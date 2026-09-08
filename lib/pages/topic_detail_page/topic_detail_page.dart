@@ -689,7 +689,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   /// 离开当前私信页。不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子
   /// 模式，仍把这条私信留在屏幕上。
-  void _leavePrivateMessagePage() {
+  /// 退出当前话题页（兼容嵌入式平行视界与普通路由两种形态）
+  void _leaveTopicPage() {
     if (!mounted) return;
     if (widget.embeddedMode) {
       widget.onEmbeddedBack?.call();
@@ -700,7 +701,19 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _closeRemovedPrivateMessage() {
     _invalidatePrivateMessageLists();
-    _leavePrivateMessagePage();
+    _leaveTopicPage();
+  }
+
+  /// 当前话题被彻底销毁：提示并退出详情页
+  ///
+  /// 对齐网页版 onDestroyMessage 的 redirectTo("/")，但这里只退一层：
+  /// 移动端把用户一脚踢回首页会丢掉整个导航栈（比如从搜索结果进来的），
+  /// 返回上一层更符合预期。复用 [_leaveTopicPage] 是因为它已经
+  /// 处理了嵌入式（平行视界）与普通路由两种形态。
+  void _handleTopicDestroyed() {
+    if (!mounted) return;
+    ToastService.showInfo(S.current.topicDetail_topicDestroyed);
+    _leaveTopicPage();
   }
 
   KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
@@ -2227,6 +2240,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // ref.read 可能作用在已失效的 widget 上而报错（表现为点头像/内部
     // 链接后卡死不响应——实测复现过）。整个回调包一层 try-catch：面板
     // 反正要没了，跳过这次更新是安全的，比让异常直接把交互链路搅死强。
+    // 当前话题被彻底销毁（/destroy 频道）：页面已没有存在的意义，直接退出。
+    // 不走上面那个 topicChannel 监听：话题被销毁后 /topic/:id 不会再有消息，
+    // 必须听全局的 /destroy。同样包 try-catch，理由见上方注释。
+    ref.listen(destroyedTopicsProvider, (previous, next) {
+      if (!context.mounted) return;
+      if (!next.contains(widget.topicId)) return;
+      if (previous?.contains(widget.topicId) ?? false) return;
+      try {
+        _handleTopicDestroyed();
+      } catch (e) {
+        debugPrint('[TopicDetail] 处理话题销毁失败: $e');
+      }
+    });
+
     ref.listen(topicChannelProvider(widget.topicId), (previous, next) {
       if (!context.mounted) return;
       try {

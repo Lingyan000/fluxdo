@@ -87,6 +87,7 @@
   "topicDetail_moveMessageToInbox": "移動到收件匣",
   "topicDetail_moveMessageToInboxHelp": "把私信移回收件匣",
   "topicDetail_messageArchived": "已封存私信",
+  "topicDetail_topicDestroyed": "該主題已被刪除",
   "topicDetail_messageMovedToInbox": "已移回收件匣",
   "topicDetail_removeFromReadLater": "移出浮窗",
   "topicDetail_removeFromReadLaterSuccess": "已從浮窗移除",
