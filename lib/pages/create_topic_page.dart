@@ -895,20 +895,15 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               showWarning: false,
             ),
           ),
-          // 正在解析标题里的链接：给个轻量 spinner。官方是把整个 composer 置
-          // loading 态，这里不阻断输入，只在标题右上角提示“在拿网页标题”。
+          // 正在解析标题里的链接。官方是把整个 composer 置 loading 态，这里
+          // 不阻断输入，只在标题右上角提示「在拿网页标题」。
+          // 用 LoadingSpinner：它内部跟随 M3eFlags，M3E 开启走 Expressive
+          // 形变环，关闭自动回退经典转圈（线宽按 size 等比缩放）。
           if (_isResolvingFeaturedLink)
-            Positioned(
+            const Positioned(
               right: 0,
               top: 0,
-              child: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
+              child: LoadingSpinner(size: 16),
             ),
         ],
       ),
