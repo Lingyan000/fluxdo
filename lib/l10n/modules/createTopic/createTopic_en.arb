@@ -12,6 +12,14 @@
   "createTopic_minContentLength": "Content needs at least {min} characters",
   "createTopic_minTags": "This category requires at least {min} tags",
   "createTopic_minTitleLength": "Title needs at least {min} characters",
+  "createTopic_maxTitleLength": "Title cannot exceed {max} characters",
+  "@createTopic_maxTitleLength": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "createTopic_noContent": "(No content)",
   "createTopic_noTitle": "(No title)",
   "createTopic_pendingReview": "Your post is pending review",
@@ -21,6 +29,7 @@
   "createTopic_templateNotModified": "You haven't modified the template. Publish anyway?",
   "createTopic_title": "Create Topic",
   "createTopic_titleHint": "Enter an engaging title...",
+  "createTopic_titleOrLinkHint": "Type title, or paste a link here",
   "editTopic_editPm": "Edit PM",
   "editTopic_editTopic": "Edit Topic",
   "editTopic_loadContentFailed": "Failed to load content: {error}"
