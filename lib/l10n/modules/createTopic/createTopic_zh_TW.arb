@@ -57,6 +57,7 @@
   "createTopic_templateNotModified": "您尚未修改分類别範本內容，確定要釋出嗎？",
   "createTopic_title": "建立話題",
   "createTopic_titleHint": "鍵入一個吸引人的標題...",
+  "createTopic_titleOrLinkHint": "輸入標題，或在此處貼上連結",
   "editTopic_editPm": "編輯私信",
   "editTopic_editTopic": "編輯話題",
   "editTopic_loadContentFailed": "載入內容失敗: {error}",

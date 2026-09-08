@@ -29,6 +29,7 @@
   "createTopic_templateNotModified": "You haven't modified the template. Publish anyway?",
   "createTopic_title": "Create Topic",
   "createTopic_titleHint": "Enter an engaging title...",
+  "createTopic_titleOrLinkHint": "Type title, or paste a link here",
   "editTopic_editPm": "Edit PM",
   "editTopic_editTopic": "Edit Topic",
   "editTopic_loadContentFailed": "Failed to load content: {error}"

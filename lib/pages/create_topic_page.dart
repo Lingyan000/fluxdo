@@ -377,13 +377,25 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     final trustLevel = preloaded.currentUserSync?['trust_level'];
     if (trustLevel is int && trustLevel == 0) return false;
 
-    // 分类白名单：未下发或为空 = 不限制（对齐官方
-    // `categoryIds === undefined || !categoryIds.length`）
     final allowed = preloaded.topicFeaturedLinkAllowedCategoryIdsSync;
-    if (allowed == null || allowed.isEmpty) return true;
-
     final categoryId = _selectedCategory?.id;
-    if (categoryId == null) return false;
+
+    // 尚未选分类：对齐官方的特例分支——白名单已下发，且（未分类在白名单里
+    // 或站点压根不允许未分类话题）时放行。linux.do 属于后者：
+    // allow_uncategorized_topics=false，所以刚打开发帖页、还没选分类时
+    // 也应当能粘链接——反正发布前必定会选一个合法分类。
+    if (categoryId == null) {
+      if (allowed == null || allowed.isEmpty) return true;
+      final uncategorizedId = preloaded.uncategorizedCategoryIdSync;
+      final allowUncategorized =
+          preloaded.siteSettingsSync?['allow_uncategorized_topics'] == true;
+      return (uncategorizedId != null && allowed.contains(uncategorizedId)) ||
+          !allowUncategorized;
+    }
+
+    // 白名单未下发或为空 = 不限制（对齐官方
+    // `categoryIds === undefined || !categoryIds.length`）
+    if (allowed == null || allowed.isEmpty) return true;
     return allowed.contains(categoryId);
   }
 
@@ -804,7 +816,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
           TextFormField(
             controller: _titleController,
             decoration: InputDecoration(
-              hintText: context.l10n.createTopic_titleHint,
+              // 对齐官方 `titlePlaceholder`：允许精选链接时提示可以粘链接
+              hintText: _featuredLinkEnabled
+                  ? context.l10n.createTopic_titleOrLinkHint
+                  : context.l10n.createTopic_titleHint,
               hintStyle: TextStyle(
                 color: theme.colorScheme.onSurfaceVariant.withValues(
                   alpha: 0.5,
