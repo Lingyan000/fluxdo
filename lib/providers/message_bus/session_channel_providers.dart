@@ -11,7 +11,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/user.dart';
 import '../../services/message_bus_service.dart';
+import '../../utils/time_utils.dart';
 import '../discourse_providers.dart';
 import 'message_bus_service_provider.dart';
 import 'topic_tracking_providers.dart';
@@ -138,3 +140,244 @@ class SiteReadOnlyNotifier extends Notifier<bool> {
 
 final siteReadOnlyProvider =
     NotifierProvider<SiteReadOnlyNotifier, bool>(SiteReadOnlyNotifier.new);
+
+/// 当前用户的草稿数量（`/user-drafts/:user_id`）
+///
+/// 服务端 `UserStat` 在草稿增删时推 `{draft_count: n}`。
+/// 多端编辑时，这让草稿入口的计数不至于停在旧值。
+class UserDraftCountNotifier extends Notifier<int?> {
+  String? _channel;
+  MessageBusCallback? _callback;
+
+  @override
+  int? build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+    final currentUser = ref.watch(currentUserProvider).value;
+
+    if (_channel != null && _callback != null) {
+      messageBus.unsubscribe(_channel!, _callback);
+      _channel = null;
+      _callback = null;
+    }
+
+    if (currentUser == null) return null;
+
+    final channel = '/user-drafts/${currentUser.id}';
+
+    void onDrafts(MessageBusMessage message) {
+      final data = message.data;
+      if (data is! Map<String, dynamic>) return;
+      final count = data['draft_count'];
+      if (count is int) {
+        debugPrint('[UserDrafts] 草稿数更新: $count');
+        state = count;
+      }
+    }
+
+    _channel = channel;
+    _callback = onDrafts;
+    messageBus.subscribe(channel, onDrafts);
+
+    ref.onDispose(() {
+      if (_channel != null && _callback != null) {
+        messageBus.unsubscribe(_channel!, _callback);
+      }
+    });
+
+    return null;
+  }
+}
+
+final userDraftCountProvider =
+    NotifierProvider<UserDraftCountNotifier, int?>(UserDraftCountNotifier.new);
+
+/// 勿扰模式结束时间（`/do-not-disturb/:user_id`）
+///
+/// payload 是 `{ends_at: <httpdate 字符串或 null>}`；null 表示已退出勿扰。
+/// 处于勿扰时不应再弹本地通知——这也是订阅它的主要目的。
+class DoNotDisturbNotifier extends Notifier<DateTime?> {
+  String? _channel;
+  MessageBusCallback? _callback;
+
+  @override
+  DateTime? build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+    final currentUser = ref.watch(currentUserProvider).value;
+
+    if (_channel != null && _callback != null) {
+      messageBus.unsubscribe(_channel!, _callback);
+      _channel = null;
+      _callback = null;
+    }
+
+    if (currentUser == null) return null;
+
+    final channel = '/do-not-disturb/${currentUser.id}';
+
+    void onDoNotDisturb(MessageBusMessage message) {
+      final data = message.data;
+      if (data is! Map<String, dynamic>) return;
+      // ends_at 为 null 是合法值（退出勿扰），不能当成“没字段”忽略
+      final endsAt = TimeUtils.parseUtcTime(data['ends_at'] as String?);
+      debugPrint('[DoNotDisturb] 勿扰结束时间: $endsAt');
+      state = endsAt;
+    }
+
+    _channel = channel;
+    _callback = onDoNotDisturb;
+    messageBus.subscribe(channel, onDoNotDisturb);
+
+    ref.onDispose(() {
+      if (_channel != null && _callback != null) {
+        messageBus.unsubscribe(_channel!, _callback);
+      }
+    });
+
+    return null;
+  }
+
+  /// 当前是否处于勿扰中
+  bool get isActive {
+    final endsAt = state;
+    return endsAt != null && endsAt.isAfter(DateTime.now());
+  }
+}
+
+final doNotDisturbProvider =
+    NotifierProvider<DoNotDisturbNotifier, DateTime?>(DoNotDisturbNotifier.new);
+
+/// 待审队列计数（`/reviewable_counts/:user_id`）
+class ReviewableCountsState {
+  final int reviewableCount;
+  final int unseenReviewableCount;
+
+  const ReviewableCountsState({
+    this.reviewableCount = 0,
+    this.unseenReviewableCount = 0,
+  });
+}
+
+/// 对齐网页版 onReviewableCounts，供版主/管理员入口展示待审徒章。
+/// 普通用户服务端不会推，订阅也不产生额外代价。
+class ReviewableCountsNotifier extends Notifier<ReviewableCountsState> {
+  String? _channel;
+  MessageBusCallback? _callback;
+
+  @override
+  ReviewableCountsState build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+    final currentUser = ref.watch(currentUserProvider).value;
+
+    if (_channel != null && _callback != null) {
+      messageBus.unsubscribe(_channel!, _callback);
+      _channel = null;
+      _callback = null;
+    }
+
+    if (currentUser == null) return const ReviewableCountsState();
+
+    final channel = '/reviewable_counts/${currentUser.id}';
+
+    void onCounts(MessageBusMessage message) {
+      final data = message.data;
+      if (data is! Map<String, dynamic>) return;
+      final total = data['reviewable_count'];
+      final unseen = data['unseen_reviewable_count'];
+      state = ReviewableCountsState(
+        reviewableCount: total is int ? total : state.reviewableCount,
+        unseenReviewableCount:
+            unseen is int ? unseen : state.unseenReviewableCount,
+      );
+      debugPrint(
+        '[ReviewableCounts] 待审: ${state.reviewableCount}, '
+        '未查看: ${state.unseenReviewableCount}',
+      );
+    }
+
+    _channel = channel;
+    _callback = onCounts;
+    messageBus.subscribe(channel, onCounts);
+
+    ref.onDispose(() {
+      if (_channel != null && _callback != null) {
+        messageBus.unsubscribe(_channel!, _callback);
+      }
+    });
+
+    return const ReviewableCountsState();
+  }
+}
+
+final reviewableCountsProvider =
+    NotifierProvider<ReviewableCountsNotifier, ReviewableCountsState>(
+  ReviewableCountsNotifier.new,
+);
+
+/// 其他用户的自定义状态（`/user-status`）
+///
+/// 这是一个**全站广播**频道（不带 user_id），payload 形如
+/// `{<userId>: {description, emoji, ends_at} | null}`，null 表示该用户清除了状态。
+///
+/// 缓存成 userId → 状态的表，帖子头像旁的状态表情可据此实时刷新。
+class UserStatusNotifier extends Notifier<Map<int, UserStatus?>> {
+  MessageBusCallback? _callback;
+
+  static const String _channel = '/user-status';
+
+  /// 防止长会话下无限增长（全站广播，作者基数可能很大）
+  static const int _maxTracked = 500;
+
+  @override
+  Map<int, UserStatus?> build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+    final currentUser = ref.watch(currentUserProvider).value;
+
+    if (_callback != null) {
+      messageBus.unsubscribe(_channel, _callback);
+      _callback = null;
+    }
+
+    // 服务端限 trust_level_0 以上可见，匿名订也收不到
+    if (currentUser == null) return const {};
+
+    void onUserStatus(MessageBusMessage message) {
+      final data = message.data;
+      if (data is! Map<String, dynamic>) return;
+
+      final next = Map<int, UserStatus?>.from(state);
+      for (final entry in data.entries) {
+        final userId = int.tryParse(entry.key);
+        if (userId == null) continue;
+        final value = entry.value;
+        // null 是合法语义：用户清除了状态
+        next[userId] = value is Map<String, dynamic>
+            ? UserStatus.fromJson(value)
+            : null;
+      }
+
+      state = next.length > _maxTracked
+          ? Map.fromEntries(next.entries.skip(next.length - _maxTracked))
+          : next;
+    }
+
+    _callback = onUserStatus;
+    messageBus.subscribe(_channel, onUserStatus);
+
+    ref.onDispose(() {
+      if (_callback != null) {
+        messageBus.unsubscribe(_channel, _callback);
+      }
+    });
+
+    return const {};
+  }
+}
+
+final userStatusProvider =
+    NotifierProvider<UserStatusNotifier, Map<int, UserStatus?>>(
+  UserStatusNotifier.new,
+);

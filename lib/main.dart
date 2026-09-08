@@ -978,6 +978,10 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<void>? _logoutChannelSub;
   ProviderSubscription<bool>? _siteReadOnlySub;
   ProviderSubscription<PmIncomingState>? _pmTrackingSub;
+  ProviderSubscription<DateTime?>? _doNotDisturbSub;
+  ProviderSubscription<Map<int, UserStatus?>>? _userStatusSub;
+  ProviderSubscription<int?>? _userDraftCountSub;
+  ProviderSubscription<ReviewableCountsState>? _reviewableCountsSub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -1103,6 +1107,26 @@ class _MainPageState extends ConsumerState<MainPage>
             pmTrackingProvider,
             (_, _) {},
           );
+          _doNotDisturbSub?.close();
+          _doNotDisturbSub = ref.listenManual<DateTime?>(
+            doNotDisturbProvider,
+            (_, _) {},
+          );
+          _userStatusSub?.close();
+          _userStatusSub = ref.listenManual<Map<int, UserStatus?>>(
+            userStatusProvider,
+            (_, _) {},
+          );
+          _userDraftCountSub?.close();
+          _userDraftCountSub = ref.listenManual<int?>(
+            userDraftCountProvider,
+            (_, _) {},
+          );
+          _reviewableCountsSub?.close();
+          _reviewableCountsSub = ref.listenManual<ReviewableCountsState>(
+            reviewableCountsProvider,
+            (_, _) {},
+          );
         });
       } else if (user == null) {
         _messageBusInitialized = false;
@@ -1118,6 +1142,14 @@ class _MainPageState extends ConsumerState<MainPage>
         _logoutChannelSub = null;
         _pmTrackingSub?.close();
         _pmTrackingSub = null;
+        _doNotDisturbSub?.close();
+        _doNotDisturbSub = null;
+        _userStatusSub?.close();
+        _userStatusSub = null;
+        _userDraftCountSub?.close();
+        _userDraftCountSub = null;
+        _reviewableCountsSub?.close();
+        _reviewableCountsSub = null;
       }
     }, fireImmediately: true);
   }
@@ -1341,6 +1373,10 @@ class _MainPageState extends ConsumerState<MainPage>
     _logoutChannelSub?.close();
     _siteReadOnlySub?.close();
     _pmTrackingSub?.close();
+    _doNotDisturbSub?.close();
+    _userStatusSub?.close();
+    _userDraftCountSub?.close();
+    _reviewableCountsSub?.close();
     _connectivitySub?.close();
     super.dispose();
   }
