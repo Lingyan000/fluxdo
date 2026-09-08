@@ -982,6 +982,7 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<Map<int, UserStatus?>>? _userStatusSub;
   ProviderSubscription<int?>? _userDraftCountSub;
   ProviderSubscription<ReviewableCountsState>? _reviewableCountsSub;
+  ProviderSubscription<void>? _siteChangesSub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -1030,6 +1031,10 @@ class _MainPageState extends ConsumerState<MainPage>
     // 所以不放进下面那个以登录为前提的订阅块
     _siteReadOnlySub?.close();
     _siteReadOnlySub = ref.listenManual<bool>(siteReadOnlyProvider, (_, _) {});
+
+    // 分类/站点设置变更同样是公开频道，匿名也需要跟进
+    _siteChangesSub?.close();
+    _siteChangesSub = ref.listenManual<void>(siteChangesProvider, (_, _) {});
 
     // 初始化连通性检测服务
     ConnectivityService().init();
@@ -1377,6 +1382,7 @@ class _MainPageState extends ConsumerState<MainPage>
     _userStatusSub?.close();
     _userDraftCountSub?.close();
     _reviewableCountsSub?.close();
+    _siteChangesSub?.close();
     _connectivitySub?.close();
     super.dispose();
   }

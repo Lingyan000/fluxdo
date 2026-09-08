@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/user.dart';
 import '../../services/message_bus_service.dart';
+import '../../services/preloaded_data_service.dart';
 import '../../utils/time_utils.dart';
 import '../discourse_providers.dart';
 import 'message_bus_service_provider.dart';
@@ -381,3 +382,81 @@ final userStatusProvider =
     NotifierProvider<UserStatusNotifier, Map<int, UserStatus?>>(
   UserStatusNotifier.new,
 );
+
+/// 站点级变更频道：`/categories`、`/client_settings`、`/refresh_client`
+///
+/// 三个频道合并到一个 Notifier：它们都是“站点侧变了，本地缓存该失效”，
+/// 拆成三个 provider 只会多写三份同构的订阅/退订样板。
+///
+/// 处理策略是 invalidate 而非手打缓存：分类/站点设置在本地有多份派生
+/// 缓存（categoriesProvider、预加载数据、可见分类集合……），逐字段去 patch
+/// 很容易漏一处就不一致；这类广播频率极低（管理员改配置才发），
+/// 重拉一次的代价可以忽略。
+class SiteChangesNotifier extends Notifier<void> {
+  final Map<String, MessageBusCallback> _callbacks = {};
+
+  @override
+  void build() {
+    ref.watch(messageBusInitProvider);
+    final messageBus = ref.watch(messageBusServiceProvider);
+
+    for (final entry in _callbacks.entries) {
+      messageBus.unsubscribe(entry.key, entry.value);
+    }
+    _callbacks.clear();
+
+    void onCategories(MessageBusMessage message) {
+      debugPrint('[SiteChanges] 分类变更，刷新分类列表');
+      ref.invalidate(categoriesProvider);
+    }
+
+    // 预加载刷新要发 GET / 拉首页 HTML，可能撞 CF 盾、限流或解析失败。
+    // 这里是 fire-and-forget，不吃掉异常会变成未捕获的异步错误；
+    // 而且这只是一次缓存刷新，失败了等下次启动/下拉自然会追上。
+    void refreshPreloadedQuietly(String reason) {
+      unawaited(
+        PreloadedDataService().refresh().catchError((Object e) {
+          debugPrint('[SiteChanges] 预加载刷新失败($reason)，已忽略: $e');
+        }),
+      );
+    }
+
+    void onClientSettings(MessageBusMessage message) {
+      final data = message.data;
+      if (data is! Map<String, dynamic>) return;
+      final name = data['name'];
+      debugPrint('[SiteChanges] 站点设置变更: $name');
+      // 预加载数据里存着整份 siteSettings，重拉一次比就地改一个键安全
+      refreshPreloadedQuietly('client_settings');
+    }
+
+    void onRefreshClient(MessageBusMessage message) {
+      // 服务端要求客户端丢掉缓存重新拿。网页版是整页刷新，
+      // 移动端不能把用户正在看的页面推倒，只重拉站点级数据。
+      debugPrint('[SiteChanges] 服务端要求刷新客户端缓存');
+      refreshPreloadedQuietly('refresh_client');
+      ref.invalidate(categoriesProvider);
+    }
+
+    final handlers = <String, MessageBusCallback>{
+      '/categories': onCategories,
+      '/client_settings': onClientSettings,
+      '/refresh_client': onRefreshClient,
+    };
+
+    handlers.forEach((channel, handler) {
+      _callbacks[channel] = handler;
+      messageBus.subscribe(channel, handler);
+    });
+
+    ref.onDispose(() {
+      for (final entry in _callbacks.entries) {
+        messageBus.unsubscribe(entry.key, entry.value);
+      }
+      _callbacks.clear();
+    });
+  }
+}
+
+final siteChangesProvider =
+    NotifierProvider<SiteChangesNotifier, void>(SiteChangesNotifier.new);
