@@ -687,9 +687,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     ref.invalidate(pmArchiveProvider);
   }
 
-  /// 离开当前私信页。不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子
-  /// 模式，仍把这条私信留在屏幕上。
-  /// 退出当前话题页（兼容嵌入式平行视界与普通路由两种形态）
+  /// 退出当前话题页（兼容嵌入式平行视界与普通路由两种形态）。
+  ///
+  /// 不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子模式，
+  /// 仍把这条话题留在屏幕上。
   void _leaveTopicPage() {
     if (!mounted) return;
     if (widget.embeddedMode) {

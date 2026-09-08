@@ -977,6 +977,7 @@ class _MainPageState extends ConsumerState<MainPage>
   ProviderSubscription<void>? _chatAlertChannelSub;
   ProviderSubscription<void>? _logoutChannelSub;
   ProviderSubscription<bool>? _siteReadOnlySub;
+  ProviderSubscription<PmIncomingState>? _pmTrackingSub;
   ProviderSubscription<AsyncValue<bool>>? _connectivitySub;
   bool _messageBusInitialized = false;
   int? _lastTappedIndex;
@@ -1097,6 +1098,11 @@ class _MainPageState extends ConsumerState<MainPage>
             logoutChannelProvider,
             (_, _) {},
           );
+          _pmTrackingSub?.close();
+          _pmTrackingSub = ref.listenManual<PmIncomingState>(
+            pmTrackingProvider,
+            (_, _) {},
+          );
         });
       } else if (user == null) {
         _messageBusInitialized = false;
@@ -1110,6 +1116,8 @@ class _MainPageState extends ConsumerState<MainPage>
         _chatAlertChannelSub = null;
         _logoutChannelSub?.close();
         _logoutChannelSub = null;
+        _pmTrackingSub?.close();
+        _pmTrackingSub = null;
       }
     }, fireImmediately: true);
   }
@@ -1332,6 +1340,7 @@ class _MainPageState extends ConsumerState<MainPage>
     _chatAlertChannelSub?.close();
     _logoutChannelSub?.close();
     _siteReadOnlySub?.close();
+    _pmTrackingSub?.close();
     _connectivitySub?.close();
     super.dispose();
   }

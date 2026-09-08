@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../models/topic.dart';
 import '../navigation/nav_action_bus.dart';
+import '../providers/message_bus/pm_tracking_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/user_content_providers.dart';
 import '../providers/preferences_provider.dart';
@@ -332,6 +335,24 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    // 收件箱：MessageBus 推来新私信时自动拉一次，不再等用户手动下拉。
+    // 只给 inbox：已发送/归档两个 tab 不会因为收到新私信而变。
+    if (widget.filter == PrivateMessageFilter.inbox) {
+      ref.listen(pmTrackingProvider, (previous, next) {
+        if (!next.hasIncoming) return;
+        if (previous != null &&
+            previous.incomingTopicIds.length >= next.incomingTopicIds.length) {
+          return;
+        }
+        // 刷完再清标记，避免同一批新消息重复触发
+        unawaited(
+          _onRefresh().whenComplete(
+            () => ref.read(pmTrackingProvider.notifier).clearIncoming(),
+          ),
+        );
+      });
+    }
 
     // 响应外层派发的快捷动作（只对当前激活 tab 生效：外层按 _tabController.index 派发）
     ref.listen(_pmTabEventProvider(widget.filter), (_, event) {
