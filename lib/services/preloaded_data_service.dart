@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:flutter/material.dart';
 import '../constants.dart';
 import '../models/topic.dart';
@@ -530,6 +530,19 @@ class PreloadedDataService {
   }
 
   /// 重置缓存（登出时调用）
+  /// 仅供测试：直接注入当前用户与站点设置
+  ///
+  /// 静音过滤等逻辑依赖这两份预加载数据，而本类是单例、真实加载路径要发
+  /// 网络请求。给测试开一个最小口子，好过把那些判定写成不可测。
+  @visibleForTesting
+  void debugSeed({
+    Map<String, dynamic>? currentUser,
+    Map<String, dynamic>? siteSettings,
+  }) {
+    _currentUser = currentUser;
+    _siteSettings = siteSettings;
+  }
+
   void reset() {
     _clearCachedData();
     _baseUri = '';

@@ -92,6 +92,17 @@ class TrackedTopicState {
 class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
   bool _loadingPreloadedStates = false;
 
+  /// 临时静音/取消静音的话题（topicId → 登记时间）
+  ///
+  /// 对齐网页版 currentUser.muted_topics / unmuted_topics：服务端在话题被静音
+  /// 时先发一条 muted 消息，随后才是带新内容的 latest/unread。这个表就是
+  /// 那段窗口内的“别算进来”名单。只保留 60 秒（网页版同值）：过了这个窗口
+  /// 服务端下发的 notification_level 已经是准的，不需要再靠本地记忆。
+  final Map<int, DateTime> _mutedTopics = {};
+  final Map<int, DateTime> _unmutedTopics = {};
+
+  static const Duration _muteMemoryWindow = Duration(seconds: 60);
+
   @override
   Map<int, TrackedTopicState> build() {
     // 从预加载数据初始化
@@ -184,6 +195,32 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
     final messageType = data['message_type'] as String?;
     debugPrint('[TopicTrackingState] 处理消息: type=$messageType, channel=${message.channel}, data=$data');
 
+    // muted / unmuted：只登记不改计数，直接返回
+    // （对齐网页版 _processChannelPayload 的第一个分支）
+    if (messageType == 'muted' || messageType == 'unmuted') {
+      _trackMutedOrUnmutedTopic(data, muted: messageType == 'muted');
+      return;
+    }
+
+    _pruneOldMutedAndUnmutedTopics();
+
+    // 静音过滤：话题级 → 全局默认静音 → 分类级 → 标签级
+    // 顺序与网页版一致；命中任一条则这条消息不应影响未读/新帖计数。
+    final topicIdForMute = data['topic_id'] as int?;
+    if (topicIdForMute != null && _isMutedTopic(topicIdForMute)) {
+      return;
+    }
+    if (_muteAllCategoriesByDefault &&
+        topicIdForMute != null &&
+        !_isUnmutedTopic(topicIdForMute)) {
+      return;
+    }
+    if (messageType == 'new_topic' || messageType == 'latest') {
+      if (_isMutedByCategory(data) || _isMutedByTags(data)) {
+        return;
+      }
+    }
+
     // dismiss_new / dismiss_new_posts 单独处理
     if (messageType == 'dismiss_new') {
       _handleDismissNew(data);
@@ -250,6 +287,120 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
       };
       return;
     }
+  }
+
+  /// 登记一条 muted / unmuted 消息
+  void _trackMutedOrUnmutedTopic(
+    Map<String, dynamic> data, {
+    required bool muted,
+  }) {
+    final topicId = data['topic_id'] as int?;
+    if (topicId == null) return;
+    final now = DateTime.now();
+    if (muted) {
+      _mutedTopics[topicId] = now;
+      _unmutedTopics.remove(topicId);
+    } else {
+      _unmutedTopics[topicId] = now;
+      _mutedTopics.remove(topicId);
+    }
+  }
+
+  /// 清理超过时间窗口的静音记录（对齐网页版 pruneOldMutedAndUnmutedTopics）
+  void _pruneOldMutedAndUnmutedTopics() {
+    final cutoff = DateTime.now().subtract(_muteMemoryWindow);
+    _mutedTopics.removeWhere((_, at) => at.isBefore(cutoff));
+    _unmutedTopics.removeWhere((_, at) => at.isBefore(cutoff));
+  }
+
+  bool _isMutedTopic(int topicId) => _mutedTopics.containsKey(topicId);
+
+  bool _isUnmutedTopic(int topicId) => _unmutedTopics.containsKey(topicId);
+
+  /// 站点设置：默认静音所有分类
+  bool get _muteAllCategoriesByDefault {
+    final value =
+        PreloadedDataService().siteSettingsSync?['mute_all_categories_by_default'];
+    if (value is bool) return value;
+    if (value is String) return value.toLowerCase() == 'true';
+    return false;
+  }
+
+  /// 分类级静音：muted_category_ids + indirectly_muted_category_ids
+  bool _isMutedByCategory(Map<String, dynamic> data) {
+    final payload = data['payload'] as Map<String, dynamic>?;
+    final categoryId = payload?['category_id'] as int?;
+    if (categoryId == null) return false;
+
+    final user = PreloadedDataService().currentUserSync;
+    if (user == null) return false;
+
+    final muted = <int>{
+      ..._intList(user['muted_category_ids']),
+      ..._intList(user['indirectly_muted_category_ids']),
+    };
+    if (!muted.contains(categoryId)) return false;
+
+    // 用户刚手动取消静音过这个话题时，分类静音让位
+    final topicId = data['topic_id'] as int?;
+    if (topicId != null && _isUnmutedTopic(topicId)) return false;
+    return true;
+  }
+
+  /// 标签级静音（对齐网页版 hasMutedTags）
+  ///
+  /// remove_muted_tags_from_latest：
+  /// - always：命中任一静音标签就过滤
+  /// - only_muted：所有标签都是静音标签才过滤
+  /// - never：不过滤
+  bool _isMutedByTags(Map<String, dynamic> data) =>
+      isMutedByTagsPayload(data['payload'] as Map<String, dynamic>?);
+
+  /// 对外暴露的标签静音判定（供 [LatestChannelNotifier] 复用）
+  static bool isMutedByTagsPayload(Map<String, dynamic>? payload) {
+    final rawTags = payload?['tags'];
+    if (rawTags is! List || rawTags.isEmpty) return false;
+
+    final user = PreloadedDataService().currentUserSync;
+    final mutedTagIds = _tagIds(user?['muted_tags']);
+    if (mutedTagIds.isEmpty) return false;
+
+    final mode = PreloadedDataService()
+            .siteSettingsSync?['remove_muted_tags_from_latest']
+            ?.toString() ??
+        'always';
+    if (mode == 'never') return false;
+
+    final topicTagIds = _tagIds(rawTags);
+    if (topicTagIds.isEmpty) return false;
+
+    if (mode == 'only_muted') {
+      return topicTagIds.every(mutedTagIds.contains);
+    }
+    return topicTagIds.any(mutedTagIds.contains);
+  }
+
+  /// 从 `[{id: 1}, ...]` 或 `[1, ...]` 两种形态里抽标签 ID
+  ///
+  /// 追踪 payload 给的是 `[{id: ...}]`，muted_tags 给的是
+  /// `[{id, name, slug}]`，但不同版本/插件下有可能退化成纯 ID 数组，
+  /// 两种都吃下比抽风险小。
+  static Set<int> _tagIds(dynamic raw) {
+    if (raw is! List) return const {};
+    final ids = <int>{};
+    for (final item in raw) {
+      if (item is int) {
+        ids.add(item);
+      } else if (item is Map && item['id'] is int) {
+        ids.add(item['id'] as int);
+      }
+    }
+    return ids;
+  }
+
+  static Set<int> _intList(dynamic raw) {
+    if (raw is! List) return const {};
+    return raw.whereType<int>().toSet();
   }
 
   /// 翻转话题的软删除标记（/delete、/recover 频道）
@@ -624,6 +775,12 @@ class LatestChannelNotifier extends Notifier<TopicListIncomingState> {
 
       // 过滤静音分类（对齐网页版 _processChannelPayload 的 muted_category_ids 检查）
       if (topicCategoryId != null && mutedCategoryIds.contains(topicCategoryId)) {
+        return;
+      }
+
+      // 过滤静音标签（对齐网页版 hasMutedTags）：分类没静音但带静音标签的
+      // 话题不应让列表顶部冒“有新话题”提示
+      if (TopicTrackingStateNotifier.isMutedByTagsPayload(payload)) {
         return;
       }
 
