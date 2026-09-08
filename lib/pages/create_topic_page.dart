@@ -515,6 +515,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       _featuredLinkAutoPosted = true;
     });
 
+    // 对齐官方：解析成功当场就把链接写进正文，用户能立即看到。
+    await _applyFeaturedLinkToContent(candidate.absoluteUrl);
+
     if (resolvedTitle != null && resolvedTitle.isNotEmpty) {
       _replaceTitleWithOneboxTitle(resolvedTitle);
     }
@@ -550,22 +553,27 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _featuredLink = candidate.absoluteUrl;
   }
 
-  /// 提交前把 featured link 落进正文。
+  /// 把 featured link 落进正文（对齐官方 `appendText(url, null, {block: true})`）。
   ///
-  /// 必须在 [RichComposerEditorState.flushToController] **之后**调用：富文本
-  /// 编辑器持有独立的 EditorState，flush 会用它序列化的结果整体覆盖
-  /// controller。早于 flush 追加必被覆盖，这也是解析回调里不写正文的原因。
-  void _applyFeaturedLinkToContent() {
-    final url = _featuredLink;
-    if (url == null || url.isEmpty) return;
+  /// 富文本模式下必须走编辑器的插入 API：它持有独立的 EditorState，
+  /// 且镜像是单向的（doc → controller），直接写 controller 不会显示，
+  /// 还会被下一次序列化覆盖掉。
+  Future<void> _applyFeaturedLinkToContent(String url) async {
+    if (url.isEmpty) return;
+    if (_contentController.text.contains(url)) return;
 
-    final current = _contentController.text;
-    if (current.contains(url)) return;
+    final richEditor = _richKey.currentState;
+    if (richEditor != null) {
+      // 富文本：经 EditorState 插入，内部会自行镜像回 controller
+      await richEditor.insertMarkdownSnippet(url);
+      return;
+    }
 
-    final trimmed = current.trimRight();
+    // 纯文本：直接拼接。用 value 整体赋值并给出合法选区——text setter 会把
+    // selection 置为 -1，平台以「无光标态」初始化输入连接后，IME 退格
+    // 对既有文本失效。
+    final trimmed = _contentController.text.trimRight();
     final next = trimmed.isEmpty ? url : '$trimmed\n\n$url';
-    // 用 value 整体赋值并给出合法选区：text setter 会把 selection 置为 -1，
-    // 平台以「无光标态」初始化输入连接后，IME 退格对既有文本失效。
     _contentController.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
@@ -679,8 +687,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     // 标题是纯 URL 但 onebox 还在飞（或还在 debounce 窗口内）时，不阻断提交：
     // featured link 本身不依赖 onebox 结果，直接用当前标题里的 URL 定案。
     _settlePendingFeaturedLink();
-    // 再把 featured link 追加进正文，否则会被富文本序列化结果覆盖。
-    _applyFeaturedLinkToContent();
+    // 已解析成功的情况下链接早已写进正文，这里只是兜底：接住「没等
+    // onebox 回来就点了发布」这条路径（内部已去重，不会重复追加）。
+    final pendingLink = _featuredLink;
+    if (pendingLink != null) {
+      await _applyFeaturedLinkToContent(pendingLink);
+      // 富文本插入后需要重新序列化，否则 controller 拿不到刚插的链接。
+      _richKey.currentState?.flushToController();
+    }
     if (!_formKey.currentState!.validate()) {
       // 预览模式下验证错误不可见，切回编辑模式并提示
       if (_showPreview) {
@@ -881,6 +895,21 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               showWarning: false,
             ),
           ),
+          // 正在解析标题里的链接：给个轻量 spinner。官方是把整个 composer 置
+          // loading 态，这里不阻断输入，只在标题右上角提示“在拿网页标题”。
+          if (_isResolvingFeaturedLink)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
         ],
       ),
     );
