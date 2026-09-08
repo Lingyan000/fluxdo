@@ -8,6 +8,7 @@
   "auth_ldcConfirmMessage": "Linux.do Credit will access your basic info. Allow?",
   "auth_ldcConfirmTitle": "Authorization",
   "auth_logSubject": "Auth log",
+  "auth_loggedOutByServer": "You have been logged out by the server, please log in again",
   "auth_loginExpiredRelogin": "Session expired, please log in again",
   "auth_loginExpiredTitle": "Session expired",
   "auth_oauthExpired": "{serviceName} authorization expired",
