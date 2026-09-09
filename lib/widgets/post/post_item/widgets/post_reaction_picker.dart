@@ -15,35 +15,35 @@ String _getEmojiUrl(String emojiName) {
 
 // ============================== 布局常量 ==============================
 
-const double _kItemSize = 40.0;
+const double _kItemSize = 44.0;
 const double _kIconSize = 28.0;
-const double _kItemSpacing = 2.0;
-const double _kPadding = 5.0;
+const double _kItemSpacing = 4.0;
+const double _kPadding = 8.0;
 const int _kCrossAxisCount = 5;
 
 /// 面板与按钮之间的间隙
-const double _kButtonGap = 16.0;
+const double _kButtonGap = 12.0;
 
 /// 高亮项放大倍数、相邻项让位缩小倍数
-const double _kHighlightScale = 1.5;
-const double _kNeighborScale = 0.9;
+const double _kHighlightScale = 1.25;
+const double _kNeighborScale = 0.94;
 
 /// 高亮项上浮距离:单行时上浮明显,多行时上浮会压到上一行,只轻轻抬一下
-const double _kLiftSingleRow = 10.0;
-const double _kLiftMultiRow = 4.0;
+const double _kLiftSingleRow = 6.0;
+const double _kLiftMultiRow = 2.0;
 
 /// 名称气泡与面板边缘的间隙(需容纳高亮项放大 + 上浮后越出面板的部分)
-const double _kTooltipGap = 26.0;
+const double _kTooltipGap = 14.0;
 
 /// 手指拖离面板多远开始弱化、弱化到底(此时松手 = 取消)
 const double _kDismissStartDistance = 28.0;
 const double _kDismissFullDistance = 140.0;
 
-const Duration _kEnterDuration = Duration(milliseconds: 280);
+const Duration _kEnterDuration = Duration(milliseconds: 240);
 const Duration _kExitDuration = Duration(milliseconds: 160);
-const Duration _kFlightDuration = Duration(milliseconds: 340);
+const Duration _kFlightDuration = Duration(milliseconds: 240);
 const Duration _kHighlightDuration = Duration(milliseconds: 130);
-const Duration _kPinPulseDuration = Duration(milliseconds: 90);
+const Duration _kDismissDuration = Duration(milliseconds: 120);
 const Duration _kDesktopHoverLeaveDelay = Duration(milliseconds: 120);
 
 /// 移动端长按手势识别阈值。picker 只在 onLongPressStart(长按在手势竞技场
@@ -64,15 +64,21 @@ enum ReactionPickerMode { touch, desktop }
 
 /// 选中后表情从面板槽位飞回按钮的一段飞行
 class _Flight {
-  const _Flight({required this.id, required this.from, required this.to});
+  const _Flight({
+    required this.id,
+    required this.from,
+    required this.to,
+    required this.startScale,
+  });
 
   final String id;
   final Offset from;
   final Offset to;
+  final double startScale;
 
   /// 二次贝塞尔:控制点抬高,轨迹带一点弧度而不是直线砸下去
   Offset at(double t) {
-    final control = Offset.lerp(from, to, 0.5)! - const Offset(0, 36);
+    final control = Offset.lerp(from, to, 0.5)! - const Offset(0, 24);
     final a = Offset.lerp(from, control, t)!;
     final b = Offset.lerp(control, to, t)!;
     return Offset.lerp(a, b, t)!;
@@ -123,7 +129,6 @@ class ReactionPickerController {
 
   OverlayEntry? _entry;
   Timer? _desktopLeaveTimer;
-  Timer? _pinPulseTimer;
   bool _closing = false;
   bool _disposed = false;
 
@@ -140,6 +145,7 @@ class ReactionPickerController {
   Rect _pickerRect = Rect.zero;
   bool _isAbove = true;
   int _rows = 1;
+  int _columns = 1;
 
   /// 每个表情槽位的最终全局矩形。由几何直接算出,不依赖布局后上报,
   /// 面板还在长的时候拖选就已经能命中。
@@ -157,6 +163,7 @@ class ReactionPickerController {
   Rect get buttonRect => _buttonRect;
   bool get isAbove => _isAbove;
   int get rows => _rows;
+  int get columns => _columns;
   List<Rect> get itemRects => _itemRects;
   List<int> get popRank => _popRank;
   List<String> get reactions => _reactions;
@@ -175,9 +182,9 @@ class ReactionPickerController {
   bool _touchPinned = false;
   bool get touchPinned => _touchPinned;
 
-  /// 停驻瞬间面板轻轻沉一下,提示"现在可以点了"
-  bool _pinPulse = false;
-  bool get pinPulse => _pinPulse;
+  /// 高亮项始终向远离按钮的一侧浮起，面板翻到按钮下方时方向随之翻转。
+  double get highlightLift =>
+      (_rows == 1 ? _kLiftSingleRow : _kLiftMultiRow) * (_isAbove ? 1 : -1);
 
   _Flight? _flight;
 
@@ -214,7 +221,6 @@ class ReactionPickerController {
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
-    _pinPulse = false;
     _flight = null;
 
     _computeGeometry(context);
@@ -287,9 +293,17 @@ class ReactionPickerController {
     final padding = mediaQuery.padding;
 
     final count = _reactions.length;
-    final cols = count < _kCrossAxisCount ? count : _kCrossAxisCount;
-    final rows = (count / _kCrossAxisCount).ceil();
+    final availableWidth = screenWidth - padding.horizontal - 32;
+    final fittingColumns = math.max(
+      1,
+      ((availableWidth - _kPadding * 2 + _kItemSpacing) /
+              (_kItemSize + _kItemSpacing))
+          .floor(),
+    );
+    final cols = math.min(count, math.min(_kCrossAxisCount, fittingColumns));
+    final rows = (count / cols).ceil();
     _rows = rows;
+    _columns = cols;
 
     final width =
         (_kItemSize * cols) + (_kItemSpacing * (cols - 1)) + (_kPadding * 2);
@@ -297,13 +311,15 @@ class ReactionPickerController {
         (_kItemSize * rows) + (_kItemSpacing * (rows - 1)) + (_kPadding * 2);
 
     double left = _buttonRect.center.dx - width / 2;
-    if (left < 16) left = 16;
-    if (left + width > screenWidth - 16) left = screenWidth - width - 16;
+    final minLeft = padding.left + 16;
+    final maxLeft = math.max(minLeft, screenWidth - padding.right - width - 16);
+    left = left.clamp(minLeft, maxLeft);
 
     // 默认面板在按钮上方；放不下则翻到下方
     _isAbove = true;
     double top = _buttonRect.top - height - _kButtonGap;
-    if (top < padding.top + 8 + _kTooltipGap) {
+    final tooltipHeight = mediaQuery.textScaler.scale(12) * 1.2 + 10;
+    if (top < padding.top + 12 + _kTooltipGap + tooltipHeight) {
       top = _buttonRect.bottom + _kButtonGap;
       _isAbove = false;
     }
@@ -316,9 +332,9 @@ class ReactionPickerController {
     // 每个槽位的最终矩形;末行不满时居中(与原 Wrap 的 center 对齐一致)
     final step = _kItemSize + _kItemSpacing;
     final rects = List<Rect>.generate(count, (i) {
-      final row = i ~/ _kCrossAxisCount;
-      final col = i % _kCrossAxisCount;
-      final inRow = math.min(count - row * _kCrossAxisCount, _kCrossAxisCount);
+      final row = i ~/ cols;
+      final col = i % cols;
+      final inRow = math.min(count - row * cols, cols);
       final rowOffset = (cols - inRow) * step / 2;
       return Rect.fromLTWH(
         left + _kPadding + rowOffset + col * step,
@@ -352,13 +368,7 @@ class ReactionPickerController {
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = true;
-    _pinPulse = true;
     _entry?.markNeedsBuild();
-    _pinPulseTimer?.cancel();
-    _pinPulseTimer = Timer(_kPinPulseDuration, () {
-      _pinPulse = false;
-      _entry?.markNeedsBuild();
-    });
   }
 
   /// 移动端松手:滑中表情即选;拖得太远即取消;否则停驻等点选
@@ -382,7 +392,7 @@ class ReactionPickerController {
 
     int? newIndex;
     for (int i = 0; i < rects.length; i++) {
-      if (rects[i].inflate(3).contains(globalPos)) {
+      if (rects[i].inflate(_kItemSpacing / 2).contains(globalPos)) {
         newIndex = i;
         break;
       }
@@ -442,15 +452,24 @@ class ReactionPickerController {
   void _startFlight(int idx) {
     if (_flight != null) return;
     HapticFeedback.lightImpact();
-    final lift = _rows == 1 ? _kLiftSingleRow : _kLiftMultiRow;
-    final from = _itemRects[idx].center - Offset(0, lift);
+    final wasHighlighted = _highlightIndex == idx;
+    final center = Offset.lerp(
+      _buttonRect.center,
+      _itemRects[idx].center,
+      morph.value,
+    )!;
+    final from = center - Offset(0, wasHighlighted ? highlightLift : 0);
     // like 图标在胶囊最右:右内边距 12 + 图标半径 10
     final to = Offset(_buttonRect.right - 22, _buttonRect.center.dy);
-    _flight = _Flight(id: _reactions[idx], from: from, to: to);
+    _flight = _Flight(
+      id: _reactions[idx],
+      from: from,
+      to: to,
+      startScale: wasHighlighted ? _kHighlightScale : 1.0,
+    );
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
-    _pinPulseTimer?.cancel();
     _desktopLeaveTimer?.cancel();
     _desktopLeaveTimer = null;
     _closing = true;
@@ -476,7 +495,6 @@ class ReactionPickerController {
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
-    _pinPulseTimer?.cancel();
     _desktopLeaveTimer?.cancel();
     _desktopLeaveTimer = null;
     enter.reverse().whenCompleteOrCancel(_disposeEntryIfNeeded);
@@ -492,7 +510,6 @@ class ReactionPickerController {
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
-    _pinPulse = false;
     _detachScrollListeners();
     _detachLifecycleObserver();
   }
@@ -531,7 +548,6 @@ class ReactionPickerController {
     if (_disposed) return;
     _disposed = true;
     _desktopLeaveTimer?.cancel();
-    _pinPulseTimer?.cancel();
     _detachScrollListeners();
     _detachLifecycleObserver();
     _entry?.remove();
@@ -582,7 +598,8 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
       Listenable.merge([ctrl.enter, ctrl.flightAnim]);
 
   bool get _interactive =>
-      ctrl.mode == ReactionPickerMode.desktop || ctrl.touchPinned;
+      !ctrl.isClosing &&
+      (ctrl.mode == ReactionPickerMode.desktop || ctrl.touchPinned);
 
   @override
   Widget build(BuildContext context) {
@@ -590,6 +607,8 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     if (theme == null) return const SizedBox.shrink();
 
     Widget body = Stack(
+      // 动画层始终占满浮层；名称提示尚未出现时，不能被空占位压成零尺寸。
+      fit: StackFit.expand,
       children: [
         // 全屏点击层：桌面端和移动端停驻后用于点击空白处关闭。
         if (_interactive)
@@ -624,31 +643,33 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     final m = ctrl.morph.value;
     final closing = ctrl.isClosing;
     final highlight = ctrl.highlightIndex;
-    final lift = ctrl.rows == 1 ? _kLiftSingleRow : _kLiftMultiRow;
+    final lift = ctrl.highlightLift;
     final count = ctrl.reactions.length;
 
     // 面板:从按钮胶囊形变到面板胶囊,起点与按钮重合所以先透明再显形
     final panelRect = Rect.lerp(ctrl.buttonRect, ctrl.pickerRect, m)!;
-    final finalRadius = math.min(30.0, ctrl.pickerRect.height / 2);
+    final finalRadius = ctrl.rows == 1 ? 26.0 : 24.0;
     final radius = lerpDouble(ctrl.buttonRect.height / 2, finalRadius, m)!;
     final panelOpacity = (m / 0.35).clamp(0.0, 1.0);
 
     final items = <Widget>[];
     Widget? highlightedItem;
     for (int i = 0; i < count; i++) {
+      // 飞行层接过原表情，避免槽位与飞回动画同时画出两份。
+      if (ctrl._flight?.id == ctrl.reactions[i]) continue;
       final isHighlighted = highlight == i;
       final isNeighbor = highlight != null &&
           !isHighlighted &&
           (i - highlight).abs() == 1 &&
-          i ~/ _kCrossAxisCount == highlight ~/ _kCrossAxisCount;
+          i ~/ ctrl.columns == highlight ~/ ctrl.columns;
       // 展开:按 rank 错峰、easeOutBack 弹出;收回:跟着形变一起缩
       final double pop;
       if (closing) {
         pop = m;
       } else {
         final rank = ctrl.popRank[i];
-        final start = 0.25 + 0.35 * (count > 1 ? rank / (count - 1) : 0);
-        pop = Interval(start, start + 0.4, curve: Curves.easeOutBack)
+        final start = 0.08 + 0.22 * (count > 1 ? rank / (count - 1) : 0);
+        pop = Interval(start, start + 0.7, curve: Curves.easeOutBack)
             .transform(t);
       }
       if (pop <= 0) continue;
@@ -687,9 +708,9 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     }
     if (highlightedItem != null) items.add(highlightedItem);
 
-    // 拖离弱化 + 停驻沉一下:整层(面板 + 表情)围绕面板中心缩放
+    // 拖离时整层围绕面板中心轻微缩小；松手停驻时保持稳定。
     final weaken = ctrl.dismissT;
-    final layerScale = (1 - 0.08 * weaken) * (ctrl.pinPulse ? 0.98 : 1.0);
+    final layerScale = 1 - 0.06 * weaken;
     final layerOpacity = 1 - 0.5 * weaken;
     final size = MediaQuery.sizeOf(context);
     final center = ctrl.pickerRect.center;
@@ -715,11 +736,11 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     layer = AnimatedScale(
       scale: layerScale,
       alignment: layerAlignment,
-      duration: _kPinPulseDuration,
+      duration: _kDismissDuration,
       curve: Curves.easeOut,
       child: AnimatedOpacity(
         opacity: layerOpacity,
-        duration: _kPinPulseDuration,
+        duration: _kDismissDuration,
         child: layer,
       ),
     );
@@ -808,7 +829,7 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
   Widget _buildFlight(_Flight flight) {
     final ft = Curves.easeInOutCubic.transform(ctrl.flightAnim.value);
     final p = flight.at(ft);
-    final scale = lerpDouble(_kHighlightScale, 0.7, ft)!;
+    final scale = lerpDouble(flight.startScale, 20 / _kIconSize, ft)!;
     final size = _kIconSize * scale;
     final opacity = ft < 0.85 ? 1.0 : 1 - (ft - 0.85) / 0.15;
     return Positioned(
@@ -826,7 +847,7 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
   }
 }
 
-/// 面板底面:浅色轻投影、深色重投影 + 略明显的描边把边缘从暗背景里勾出来
+/// 面板底面：轻底色配两层柔和投影，深色下用细描边保持边界清晰。
 class _PanelSurface extends StatelessWidget {
   const _PanelSurface({required this.theme, required this.radius});
 
@@ -838,18 +859,23 @@ class _PanelSurface extends StatelessWidget {
     final dark = theme.brightness == Brightness.dark;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.45 : 0.12),
+            color: Colors.black.withValues(alpha: dark ? 0.28 : 0.09),
             blurRadius: 24,
-            offset: Offset(0, dark ? 8 : 6),
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.16 : 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
         border: Border.all(
           color: theme.colorScheme.outlineVariant.withValues(
-            alpha: dark ? 0.35 : 0.15,
+            alpha: dark ? 0.4 : 0.2,
           ),
           width: 0.5,
         ),
@@ -921,7 +947,7 @@ class _ReactionItem extends StatelessWidget {
 
   final String reactionId;
 
-  /// 我当前的 reaction:细环 + 底部小点,安静地标出来,不和高亮态打架
+  /// 我当前的 reaction：用淡色圆角底标记，与滑选高亮使用同一种形状。
   final bool isCurrent;
   final bool isHighlighted;
 
@@ -939,71 +965,62 @@ class _ReactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
+    final borderRadius = BorderRadius.circular(14);
     final highlightScale = isHighlighted
         ? _kHighlightScale
         : isNeighbor
             ? _kNeighborScale
             : 1.0;
 
-    Widget content = Stack(
-      alignment: Alignment.center,
-      clipBehavior: Clip.none,
-      children: [
-        // 高亮柔光底
-        AnimatedOpacity(
-          opacity: isHighlighted ? 1 : 0,
-          duration: _kHighlightDuration,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: const SizedBox.square(dimension: _kItemSize),
-          ),
-        ),
-        if (isCurrent)
-          DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: primary, width: 1.5),
-            ),
-            child: const SizedBox.square(dimension: _kItemSize - 4),
-          ),
-        _EmojiImage(reactionId: reactionId, size: _kIconSize),
-        if (isCurrent)
-          Positioned(
-            bottom: 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
-              child: const SizedBox.square(dimension: 4),
-            ),
-          ),
-      ],
+    final background = isCurrent
+        ? theme.colorScheme.primaryContainer
+        : isHighlighted
+            ? primary.withValues(alpha: 0.1)
+            : primary.withValues(alpha: 0);
+
+    Widget content = AnimatedContainer(
+      duration: _kHighlightDuration,
+      curve: Curves.easeOutCubic,
+      margin: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: borderRadius,
+      ),
+      child: Center(
+        child: _EmojiImage(reactionId: reactionId, size: _kIconSize),
+      ),
     );
 
     if (onTap != null) {
-      // 停驻 / 桌面端:圆形按压反馈
+      // 按压反馈与选中底色保持相同圆角，整个槽位均可点击。
       content = Material(
         type: MaterialType.transparency,
-        child: InkResponse(
+        child: InkWell(
           onTap: onTap,
-          radius: _kItemSize / 2,
+          borderRadius: borderRadius,
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: primary.withValues(alpha: 0.08),
           child: content,
         ),
       );
     }
 
-    return Transform.scale(
-      scale: pop,
-      child: AnimatedSlide(
-        offset: Offset(0, isHighlighted ? -lift / _kItemSize : 0),
-        duration: _kHighlightDuration,
-        curve: Curves.easeOutBack,
-        child: AnimatedScale(
-          scale: highlightScale,
+    return Semantics(
+      button: true,
+      selected: isCurrent,
+      label: reactionId.replaceAll('_', ' '),
+      child: Transform.scale(
+        scale: pop,
+        child: AnimatedSlide(
+          offset: Offset(0, isHighlighted ? -lift / _kItemSize : 0),
           duration: _kHighlightDuration,
-          curve: Curves.easeOutBack,
-          child: content,
+          curve: Curves.easeOutCubic,
+          child: AnimatedScale(
+            scale: highlightScale,
+            duration: _kHighlightDuration,
+            curve: Curves.easeOutCubic,
+            child: content,
+          ),
         ),
       ),
     );

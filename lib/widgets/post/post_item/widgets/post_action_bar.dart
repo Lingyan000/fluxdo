@@ -94,19 +94,16 @@ class _PostActionBarState extends State<PostActionBar>
   bool _pressed = false;
 
   /// 选中的表情飞抵按钮时按钮弹跳一下,表达"落进去了"
-  late final AnimationController _bounce = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 360),
-  );
+  late final AnimationController _bounce;
   late final Animation<double> _bounceScale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: 1.0, end: 1.18)
+      tween: Tween(begin: 1.0, end: 1.1)
           .chain(CurveTween(curve: Curves.easeOutCubic)),
       weight: 35,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.18, end: 1.0)
-          .chain(CurveTween(curve: Curves.elasticOut)),
+      tween: Tween(begin: 1.1, end: 1.0)
+          .chain(CurveTween(curve: Curves.easeOutCubic)),
       weight: 65,
     ),
   ]).animate(_bounce);
@@ -119,6 +116,16 @@ class _PostActionBarState extends State<PostActionBar>
       _bounce.forward(from: 0);
     },
   );
+
+  @override
+  void initState() {
+    super.initState();
+    // 先初始化，避免访客或自己的帖子在 dispose 时才首次创建 ticker。
+    _bounce = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -554,11 +561,11 @@ class _PostActionBarState extends State<PostActionBar>
         child: ScaleTransition(
           scale: _bounceScale,
           child: AnimatedScale(
-            scale: _pressed ? 0.94 : 1.0,
-            duration: Duration(milliseconds: _pressed ? 120 : 200),
-            curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+            scale: _pressed ? 0.96 : 1.0,
+            duration: Duration(milliseconds: _pressed ? 100 : 160),
+            curve: Curves.easeOutCubic,
             child: AnimatedOpacity(
-              opacity: _pressed ? 0.7 : 1.0,
+              opacity: _pressed ? 0.82 : 1.0,
               duration: const Duration(milliseconds: 120),
               child: area,
             ),
