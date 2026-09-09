@@ -81,25 +81,71 @@ class PostActionBar extends StatefulWidget {
 }
 
 class _PostActionBarState extends State<PostActionBar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   Timer? _hoverTimer;
+
+  /// 已预热过的 reaction 图 URL(进程级):站点 reaction 就那几张,
+  /// 第一次长按前解码进内存,面板弹出时不会看到空槽位再逐个跳出来
+  static final Set<String> _warmedEmojiUrls = {};
+
+  /// 触摸端按下预反馈:长按要等 350ms 才有动静,这段空白由按钮本身填。
+  /// onTapDown 由竞技场在 100ms 后裁决触发,按钮缩小压暗;长按胜出、
+  /// 抬手或滚动接管都会走 onTapCancel/onTapUp 复原。
+  bool _pressed = false;
+
+  /// 选中的表情飞抵按钮时按钮弹跳一下,表达"落进去了"
+  late final AnimationController _bounce = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 360),
+  );
+  late final Animation<double> _bounceScale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: 1.18)
+          .chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 35,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 1.18, end: 1.0)
+          .chain(CurveTween(curve: Curves.elasticOut)),
+      weight: 65,
+    ),
+  ]).animate(_bounce);
 
   late final ReactionPickerController _pickerController =
       ReactionPickerController(
     vsync: this,
-    onReactionSelected: (id) => widget.onReactionSelected(id),
+    onReactionSelected: (id) {
+      widget.onReactionSelected(id);
+      _bounce.forward(from: 0);
+    },
   );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _warmReactionImages();
+  }
 
   @override
   void dispose() {
     _hoverTimer?.cancel();
+    _bounce.dispose();
     _pickerController.dispose();
     super.dispose();
   }
 
+  void _warmReactionImages() {
+    if (widget.isGuest || widget.isOwnPost) return;
+    for (final id in DiscourseService().enabledReactionsSync) {
+      final url = _getEmojiUrl(id);
+      if (url.isEmpty || !_warmedEmojiUrls.add(url)) continue;
+      precacheImage(emojiImageProvider(url), context).ignore();
+    }
+  }
+
   // ============================== 触发逻辑 ==============================
 
-  /// 以 like 按钮为锚点打开 picker(含上下 12px 间隙)。
+  /// 以 like 按钮为锚点打开 picker。
   /// 按钮未布局或站点没有启用任何 reaction 时返回 false。
   bool _openPicker(ReactionPickerMode mode) {
     final box = widget.likeButtonKey.currentContext?.findRenderObject()
@@ -107,15 +153,9 @@ class _PostActionBarState extends State<PostActionBar>
     if (box == null || !box.hasSize) return false;
     final reactions = DiscourseService().enabledReactionsSync;
     if (reactions.isEmpty) return false;
-    final topLeft = box.localToGlobal(Offset.zero);
     _pickerController.open(
       context: context,
-      buttonRect: Rect.fromLTWH(
-        topLeft.dx,
-        topLeft.dy - 12,
-        box.size.width,
-        box.size.height + 24,
-      ),
+      buttonRect: box.localToGlobal(Offset.zero) & box.size,
       reactions: reactions,
       currentUserReaction: widget.currentUserReaction,
       theme: Theme.of(context),
@@ -124,22 +164,19 @@ class _PostActionBarState extends State<PostActionBar>
     return true;
   }
 
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
   /// 移动端长按:手势在竞技场胜出(按住 [kReactionPickerLongPressDuration]
   /// 且位移未超 slop)才打开 picker,按下阶段不做任何事,滚动列表时
   /// picker 不会闪出来。打开即可拖动选择。
   void _handleLongPressStart(LongPressStartDetails details) {
+    _setPressed(false);
     if (!_openPicker(ReactionPickerMode.touch)) return;
     HapticFeedback.mediumImpact();
     _pickerController.updateHighlight(details.globalPosition);
-  }
-
-  /// 松手:滑中表情即选,否则停驻等用户点选
-  void _handleLongPressEnd(LongPressEndDetails _) {
-    if (_pickerController.highlightIndex != null) {
-      _pickerController.commitSelection();
-    } else {
-      _pickerController.pinForTouchSelection();
-    }
   }
 
   /// 触摸端手势表:tap 走各自回调,长按打开 picker。
@@ -151,6 +188,11 @@ class _PostActionBarState extends State<PostActionBar>
           TapGestureRecognizer.new,
           (instance) {
             instance.onTap = onTap;
+            if (!PlatformUtils.isDesktop) {
+              instance.onTapDown = (_) => _setPressed(true);
+              instance.onTapUp = (_) => _setPressed(false);
+              instance.onTapCancel = () => _setPressed(false);
+            }
           },
         ),
         if (!PlatformUtils.isDesktop)
@@ -163,7 +205,7 @@ class _PostActionBarState extends State<PostActionBar>
               instance.onLongPressStart = _handleLongPressStart;
               instance.onLongPressMoveUpdate = (d) =>
                   _pickerController.updateHighlight(d.globalPosition);
-              instance.onLongPressEnd = _handleLongPressEnd;
+              instance.onLongPressEnd = (_) => _pickerController.releaseTouch();
               instance.onLongPressCancel = _pickerController.close;
             },
           ),
@@ -482,7 +524,6 @@ class _PostActionBarState extends State<PostActionBar>
           );
 
     Widget area = Container(
-      key: widget.likeButtonKey,
       height: 36,
       decoration: BoxDecoration(
         color: widget.currentUserReaction != null
@@ -503,6 +544,30 @@ class _PostActionBarState extends State<PostActionBar>
         ],
       ),
     );
+
+    // 按下预反馈(缩小压暗)与选中落地弹跳。key 挂在变换之外:
+    // RenderTransform 自身的尺寸/位置不受其 transform 影响,
+    // 按下态下测出的锚点 Rect 仍是按钮的真实布局矩形。
+    if (!widget.isOwnPost) {
+      area = KeyedSubtree(
+        key: widget.likeButtonKey,
+        child: ScaleTransition(
+          scale: _bounceScale,
+          child: AnimatedScale(
+            scale: _pressed ? 0.94 : 1.0,
+            duration: Duration(milliseconds: _pressed ? 120 : 200),
+            curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+            child: AnimatedOpacity(
+              opacity: _pressed ? 0.7 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              child: area,
+            ),
+          ),
+        ),
+      );
+    } else {
+      area = KeyedSubtree(key: widget.likeButtonKey, child: area);
+    }
 
     // 桌面端：hover 延迟触发表情选择器
     if (PlatformUtils.isDesktop && !widget.isOwnPost) {
