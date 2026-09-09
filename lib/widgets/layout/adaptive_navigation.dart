@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,6 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../navigation/nav_action_bus.dart';
 import '../../providers/preferences_provider.dart';
-import '../../utils/blur_config.dart';
 import '../../utils/platform_utils.dart';
 
 /// 导航目标项配置
@@ -431,6 +431,34 @@ class _AdaptiveBottomNavigationState
 /// - 外边距/内边距对齐 Telegram（iOS `TabBarComponent` innerInset 4、
 ///   sideInset 12；Android `MainTabsActivity` inset ≈4、距导航栏 8）。
 abstract final class _CapsuleMetrics {
+  /// 选中 pill 的最大横向拉伸比例（18%）
+  static const double maxStretch = 0.18;
+
+  /// 达到最大拉伸所需的速度（槽位/秒）
+  static const double fullStretchSlotsPerSecond = 8;
+
+  /// pill 随速度的横向拉伸量。
+  ///
+  /// 快速连点时 pill 被“拉长”，停下来恢复原形 —— 这是悬浮底栏
+  /// 最显著的动态特征，比单纯平移多一层“有质量”的手感。
+  static double stretchFor(double slotsPerSecond) =>
+      (slotsPerSecond.abs() / fullStretchSlotsPerSecond * maxStretch).clamp(
+        0.0,
+        maxStretch,
+      );
+
+  /// 拉伸的变换原点（0=左缘，0.5=居中，1=右缘）。
+  ///
+  /// 原点朝运动方向偏移：向右飞时钉住右端、尾巴向左拖出，形成
+  /// “被甩在后面”的观感。固定居中的话两端均匀外撑，只像变胖。
+  /// 限幅 0.15~0.85：完全钉到端点会让回弹显得生硬。
+  static double stretchOriginX(double slotsPerSecond, double stretch) {
+    if (stretch <= 0 || slotsPerSecond == 0) return 0.5;
+    final direction = slotsPerSecond > 0 ? 1.0 : -1.0;
+    final normalized = (stretch / maxStretch).clamp(0.0, 1.0);
+    return (0.5 + direction * normalized * 0.35).clamp(0.15, 0.85);
+  }
+
   /// 带字态 item 基准高
   static const double itemHeightLabeled = 48;
 
@@ -587,7 +615,6 @@ class _FloatingBottomBarShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final barHeight = itemHeight + _CapsuleMetrics.innerInset * 2;
     final radius = barHeight / 2;
@@ -601,26 +628,19 @@ class _FloatingBottomBarShell extends StatelessWidget {
       child: child,
     );
 
-    // 模糊开：BackdropFilter + 半透明底色透出内容；模糊关：实色胶囊。
-    // 底色不透明度取 TG Android mainTabs（液态玻璃 0.85 / 关闭 0.76）。
-    final body = blur
-        ? BackdropFilter(
-            filter: createBlurFilter(blurSigma),
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                shape: shape,
-                color: scheme.surfaceContainer.withValues(alpha: 0.82),
-              ),
-              child: content,
-            ),
-          )
-        : DecoratedBox(
-            decoration: ShapeDecoration(
-              shape: shape,
-              color: scheme.surfaceContainer,
-            ),
-            child: content,
-          );
+    // 柔光玻璃材质：折射 + 方向性边缘光 + 色散（Impeller 主路径），
+    // 桌面 Skia / shader 未就绪时自动降级为均匀 BackdropFilter。
+    // blur 关闭时 GlassSurface 直接出实色，不建离屏层。
+    //
+    // 外层已有 ClipRRect 按胶囊裁切，满足 shader「原点为零」的前提。
+    // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
+    // surfaceContainer 会被主题色染成彩色塑料板，失去玻璃的中性感。
+    final body = GlassSurface(
+      recipe: GlassRecipe.navigation,
+      shape: shape,
+      enabled: blur,
+      child: content,
+    );
 
     return SafeArea(
       top: false,
@@ -637,7 +657,9 @@ class _FloatingBottomBarShell extends StatelessWidget {
             maxWidth,
           );
           return Padding(
-            padding: const EdgeInsets.only(bottom: _CapsuleMetrics.bottomMargin),
+            padding: const EdgeInsets.only(
+              bottom: _CapsuleMetrics.bottomMargin,
+            ),
             child: Align(
               // 槽位约束是 looseConstraints.tighten(width)：maxHeight 几乎
               // 是整个页面高，Expand 类组件（Center）会把胶囊顶到屏幕中间。
@@ -650,34 +672,48 @@ class _FloatingBottomBarShell extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: ShapeDecoration(
                     shape: shape,
+                    // 双层投影（对齐参考实现 softGlassShadowTokens）：
+                    // 外层大而极淡托起悬浮感，内层小而更淡收紧轮廓。
+                    // 负 spread 让影子略小于胶囊本体，避免糊出一圈灰边。
                     shadows: [
                       BoxShadow(
                         color: Colors.black.withValues(
-                          alpha: isDark ? 0.18 : 0.06,
+                          alpha: isDark ? 0.052 : 0.068,
                         ),
-                        blurRadius: 24,
-                        offset: const Offset(0, 2),
+                        blurRadius: isDark ? 7 : 8,
+                        spreadRadius: -0.75,
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: isDark ? 0.010 : 0.014,
+                        ),
+                        blurRadius: isDark ? 3 : 3.5,
+                        spreadRadius: -0.75,
                       ),
                     ],
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(radius),
                     // 描边画在裁切之内（最上层）：0.4 宽的边如果落在
-                    // ClipRRect 外侧会被抗锯齿吃掉半条，看着忽隐忽现
+                    // ClipRRect 外侧会被抗锯齿吃掉半条，看着忽隐忽现。
+                    //
+                    // 仅在玻璃走降级路径时才画：shader 主路径已在内部
+                    // 画了方向性边缘光，外面再叠一圈会变成双边。
                     child: Stack(
                       fit: StackFit.passthrough,
                       children: [
                         body,
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: _CapsuleBorderPainter(
-                                radius: radius,
-                                isDark: isDark,
+                        if (!(blur && GlassSurface.opticalEdgeAvailable))
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                painter: _CapsuleBorderPainter(
+                                  radius: radius,
+                                  isDark: isDark,
+                                ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -691,21 +727,58 @@ class _FloatingBottomBarShell extends StatelessWidget {
   }
 }
 
-/// 胶囊描边：上浅下深的单像素级细边。
+/// 胶囊描边：模拟玻璃边缘的折射受光，而非画一条均匀线框。
 ///
-/// TG Android `BlurredBackgroundProviderImpl.mainTabs` 用两个色分别画上下
-/// 边（浅色 top 黑 6.7% / bottom 黑 12.5%，深色 top 白 2.4% / bottom 白
-/// 6.7%），模拟玻璃边缘的受光差。这里用一条垂直渐变描边等价表达。
+/// 真实玻璃的边缘亮度取决于**该处法线与光源的夹角**：迎光的角落把光
+/// 聚起来最亮，背光侧几乎看不见，中间连续过渡。纯上下线性渐变做不到
+/// 这点——它只跟 y 有关，胶囊左端和右端同高就一样亮，整圈亮度差不到
+/// 4%，看着就是一条描线。
 ///
-/// 不用 `scheme.outline`：那是中灰色，压在半透明玻璃上会显脏；TG 两端都
-/// 是纯黑/纯白低透明度。
+/// 这里用 [SweepGradient] 按**绕轮廓的角度**取色，等价于 shader 里
+/// `pow(max(dot(normal, light), 0), 3)` 的单侧方向性高光：光源设在左上
+/// （与 shader 的 `normalize(vec2(-0.58,-0.82))` 一致），左上角落最亮，
+/// 右下背光侧落到保底值，整圈亮度比约 4.4x —— 与 shader 路径同量级。
+///
+/// ⚠️ 本 painter 只在**降级路径**使用（桌面 Skia / shader 未就绪）。
+/// Impeller 主路径的边缘光由 glass_surface.frag 内部绘制，参数在
+/// [GlassRecipe.highlightAlpha]，两者不叠加（见 _FloatingBottomBarShell）。
 class _CapsuleBorderPainter extends CustomPainter {
   const _CapsuleBorderPainter({required this.radius, required this.isDark});
 
   final double radius;
   final bool isDark;
 
-  static const double _width = 0.4;
+  /// 0.5：与 shader 光学边缘（0.5dp）同宽
+  static const double _width = 0.5;
+
+  /// 光源方向角（弧度）。atan2(-0.82, -0.58) ≈ -125.3°，即左上方，
+  /// 与 glass_surface.frag 的 lightDirection 同源。
+  static final double _lightAngle = math.atan2(-0.82, -0.58);
+
+  /// 迎光峰值与背光保底。深色下白边必须收得很狠，否则像描了荧光笔。
+  double get _peakAlpha => isDark ? 0.188 : 0.46;
+  double get _baseAlpha => isDark ? 0.042 : 0.19;
+
+  /// 绕一圈采样出方向性高光曲线。段数取 24：低于 16 在长边上能看出
+  /// 折线，再高对观感无增益。
+  List<Color> _sweepColors() {
+    const segments = 24;
+    // 玻璃边缘是反光，两种亮度模式都用白 —— 浅色下用黑边会变成线框，
+    // 失去"被照亮"的观感。
+    const base = Color(0xFFFFFFFF);
+    return [
+      for (var i = 0; i <= segments; i++)
+        base.withValues(alpha: _alphaAt(i / segments * 2 * math.pi)),
+    ];
+  }
+
+  /// 单侧余弦三次方：与 shader 的 pow(max(dot,0), 3.0) 等价。
+  /// 三次方让高光集中在迎光象限，一次方会糊成整圈都亮。
+  double _alphaAt(double angle) {
+    final d = math.cos(angle - _lightAngle);
+    final directional = d <= 0 ? 0.0 : d * d * d;
+    return _baseAlpha + (_peakAlpha - _baseAlpha) * directional;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -716,22 +789,13 @@ class _CapsuleBorderPainter extends CustomPainter {
       inner,
       Radius.circular(radius - _width / 2),
     );
+    final colors = _sweepColors();
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = _width
-      ..shader = ui.Gradient.linear(
-        Offset(inner.center.dx, inner.top),
-        Offset(inner.center.dx, inner.bottom),
-        isDark
-            ? [
-                const Color(0x0AFFFFFF),
-                const Color(0x14FFFFFF),
-              ]
-            : [
-                const Color(0x11000000),
-                const Color(0x20000000),
-              ],
-      );
+      ..shader = ui.Gradient.sweep(inner.center, colors, [
+        for (var i = 0; i < colors.length; i++) i / (colors.length - 1),
+      ]);
     canvas.drawRRect(rrect, paint);
   }
 
@@ -837,7 +901,8 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
             final slot = constraints.maxWidth / count;
             return Stack(
               children: [
-                // 滑动选中 pill：铺满整个条目槽位，位置弹簧插值
+                // 滑动选中 pill：铺满整个条目槽位，位置弹簧插值，
+                // 并随弹簧速度横向拉伸（详见 _CapsuleMetrics.stretchFor）
                 AnimatedBuilder(
                   animation: _position,
                   builder: (context, _) {
@@ -846,16 +911,29 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
                       0.0,
                       (count - 1).toDouble(),
                     );
+                    // velocity 单位已经是「槽位/秒」，与拉伸公式同量纲
+                    final velocity = _position.velocity;
+                    final stretch = _CapsuleMetrics.stretchFor(velocity);
+                    final originX = _CapsuleMetrics.stretchOriginX(
+                      velocity,
+                      stretch,
+                    );
                     return Positioned(
                       left: slot * pos,
                       top: 0,
                       width: slot,
                       height: widget.itemHeight,
                       child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: ShapeDecoration(
-                            color: pillColor,
-                            shape: const StadiumBorder(),
+                        child: Transform(
+                          // 只横向拉伸；纵向不动（纵向一起缩会变成「弹性
+                          // 球」，而不是「被甩在后面的拖尾」）
+                          transform: Matrix4.diagonal3Values(1 + stretch, 1, 1),
+                          alignment: Alignment(originX * 2 - 1, 0),
+                          child: DecoratedBox(
+                            decoration: ShapeDecoration(
+                              color: pillColor,
+                              shape: const StadiumBorder(),
+                            ),
                           ),
                         ),
                       ),

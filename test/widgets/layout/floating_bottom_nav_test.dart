@@ -69,6 +69,46 @@ void main() {
   RenderBox capsuleOf(WidgetTester tester) =>
       tester.renderObject<RenderBox>(find.byType(ClipRRect).first);
 
+  /// 只重建、不 settle：用于需要观察动画中间帧的用例。
+  Future<void> rebuildWithIndex(
+    WidgetTester tester, {
+    required bool labelless,
+    required int selectedIndex,
+    int count = 5,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: screen,
+              padding: EdgeInsets.only(bottom: safeBottom),
+            ),
+            child: Scaffold(
+              extendBody: true,
+              bottomNavigationBar: AdaptiveBottomNavigation(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: (_) {},
+                destinations: [
+                  for (var i = 0; i < count; i++)
+                    AdaptiveDestination(
+                      id: 'id$i',
+                      icon: const Icon(Icons.home_outlined),
+                      selectedIcon: const Icon(Icons.home),
+                      label: '标签$i',
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
   testWidgets('带字态胶囊高 56，贴屏底 8 / 距左右 12', (tester) async {
     await pumpBar(tester, labelless: false);
     final box = capsuleOf(tester);
@@ -143,11 +183,7 @@ void main() {
     final box = capsuleOf(tester);
     expect(box.size.width, lessThan(1200), reason: '宽屏不拉满');
     final left = box.localToGlobal(Offset.zero).dx;
-    expect(
-      left,
-      closeTo((1200 - box.size.width) / 2, 0.5),
-      reason: '水平居中悬浮',
-    );
+    expect(left, closeTo((1200 - box.size.width) / 2, 0.5), reason: '水平居中悬浮');
   });
 
   testWidgets('选中 pill 铺满整个条目槽位（非 M3 的只包图标短胶囊）', (tester) async {
@@ -199,11 +235,7 @@ void main() {
       closeTo(1.6, 0.02),
       reason: '无字态同比例 —— 槽宽不是硬编码常量，随高一起收',
     );
-    expect(
-      bare.width,
-      lessThan(labeled.width),
-      reason: '无字态更矮，槽宽也应更窄',
-    );
+    expect(bare.width, lessThan(labeled.width), reason: '无字态更矮，槽宽也应更窄');
   });
 
   testWidgets('切换选中项时 pill 滑动到新槽位', (tester) async {
@@ -225,5 +257,45 @@ void main() {
         .dx;
 
     expect(endX, greaterThan(startX), reason: 'pill 随选中项右移');
+  });
+
+  testWidgets('pill 飞行中横向拉伸，停下后恢复原宽', (tester) async {
+    // 拉伸是 Transform 的 scaleX，不改布局宽，所以看渲染后的
+    // 包围盒（localToGlobal 两角之差）而不是 RenderBox.size。
+    final pill = find.byWidgetPredicate((w) {
+      if (w is! DecoratedBox) return false;
+      final d = w.decoration;
+      return d is ShapeDecoration && d.shape is StadiumBorder;
+    });
+    double paintedWidth() {
+      final box = tester.renderObject<RenderBox>(pill.first);
+      final left = box.localToGlobal(Offset.zero).dx;
+      final right = box.localToGlobal(Offset(box.size.width, 0)).dx;
+      return right - left;
+    }
+
+    await pumpBar(tester, labelless: false, selectedIndex: 0);
+    final restWidth = paintedWidth();
+
+    // ⚠️ 不能用 pumpBar 切选中项：它末尾的 pumpAndSettle 会把整段
+    // 飞行一口气跑完，采样不到中间帧。这里只重建 widget（触发
+    // didUpdateWidget 启动弹簧），然后自己逐帧推进。
+    await rebuildWithIndex(tester, labelless: false, selectedIndex: 3);
+    var peak = restWidth;
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final w = paintedWidth();
+      if (w > peak) peak = w;
+    }
+    expect(peak, greaterThan(restWidth * 1.02), reason: '飞行中应被拉长（至少 2%）');
+    expect(peak, lessThan(restWidth * 1.19), reason: '拉伸不得超过上限 18%');
+
+    // 停下来必须完全恢复，否则 pill 永久变形
+    await tester.pumpAndSettle();
+    expect(
+      paintedWidth(),
+      moreOrLessEquals(restWidth, epsilon: 0.5),
+      reason: '弹簧静止后回到原宽',
+    );
   });
 }
