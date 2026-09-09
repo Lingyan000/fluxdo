@@ -24,25 +24,23 @@ const Duration _kEnterDuration = Duration(milliseconds: 180);
 const Duration _kExitDuration = Duration(milliseconds: 160);
 const Duration _kDesktopHoverLeaveDelay = Duration(milliseconds: 120);
 
-/// 移动端按下后等待多久才真正启动 picker 衍生动画。
-/// 这段时间内 picker 完全不存在(Timer 还在排队,Overlay 还没插入),
-/// 用户在此期间抬手 = pure tap,toggleLike 正常触发,无任何视觉残留。
-/// 超过这段时间仍按住才进入"长按意图",启动 picker 衍生。
-const Duration kReactionPickerOpenDelay = Duration(milliseconds: 80);
-
-/// 长按手势识别阈值:必须 ≥ kReactionPickerOpenDelay + _kEnterDuration,
-/// 保证 onLongPressStart 触发时 picker 动画已完整跑完,haptic 与视觉完成同时发生
+/// 移动端长按手势识别阈值。picker 只在 onLongPressStart(长按在手势竞技场
+/// 胜出)之后才插入 Overlay 并播放衍生动画:按下阶段什么都不做,滚动列表
+/// 时无论起手多慢都不会闪出 picker。
+///
+/// 低于框架默认的 kLongPressTimeout(500ms)保持跟手,但也不宜太短:
+/// 阈值内位移未超过 touch slop 的慢速滚动起手会被判成长按。
 const Duration kReactionPickerLongPressDuration =
-    Duration(milliseconds: 260);
+    Duration(milliseconds: 350);
 
 // ============================== 控制器 ==============================
 
 /// picker 的工作模式：
-/// - [touch]：移动端长按手势驱动；动画完整跑完 180ms 才算"展开完成"
+/// - [touch]：移动端长按手势驱动；长按识别成功后才展开，随后拖动选择
 /// - [desktop]：桌面端 hover 触发；按下即直接展开
 enum ReactionPickerMode { touch, desktop }
 
-/// 表情选择器控制器，由触发入口（PostActionBar）持有，贯穿按下→展开→拖动→抬起整个生命周期
+/// 表情选择器控制器，由触发入口（PostActionBar）持有，贯穿展开→拖动→抬起整个生命周期
 class ReactionPickerController {
   ReactionPickerController({
     required this.vsync,
@@ -104,16 +102,11 @@ class ReactionPickerController {
   int? _highlightIndex;
   int? get highlightIndex => _highlightIndex;
 
-  /// 是否处于"选择模式"（移动端 = 长按阈值已达成；桌面端 = 一直为 true）
-  bool _inSelectionMode = false;
-  bool get inSelectionMode => _inSelectionMode;
-
   /// 移动端长按松手后停驻，允许用户抬起手指后再点击选择。
   bool _touchPinned = false;
   bool get touchPinned => _touchPinned;
 
   bool get isOpen => _entry != null && !_closing;
-  bool get isClosing => _closing;
 
   /// 打开 picker。计算几何、插入 OverlayEntry、启动正向动画
   void open({
@@ -141,7 +134,6 @@ class ReactionPickerController {
     _theme = theme;
     _mode = mode;
     _highlightIndex = null;
-    _inSelectionMode = mode == ReactionPickerMode.desktop;
     _touchPinned = false;
 
     _computeGeometry(context);
@@ -251,29 +243,19 @@ class ReactionPickerController {
     _transformAlignment = Alignment(alignmentX, alignmentY);
   }
 
-  /// 长按阈值达成 / 桌面 hover 触发后进入"选择模式"，允许更新 highlight
-  void enterSelectionMode() {
-    if (_disposed || !isOpen) return;
-    if (_inSelectionMode) return;
-    _touchPinned = false;
-    _inSelectionMode = true;
-  }
-
   /// 移动端长按已展开但没有滑中表情时，让 picker 留在屏幕上。
   /// 停驻后 picker 自己接收点击，空白处点击关闭。
   void pinForTouchSelection() {
     if (_disposed || !isOpen) return;
     if (_mode != ReactionPickerMode.touch) return;
     _highlightIndex = null;
-    _inSelectionMode = false;
     _touchPinned = true;
     _entry?.markNeedsBuild();
   }
 
-  /// 根据指针的全局坐标更新 highlight
+  /// 根据指针的全局坐标更新 highlight（拖选 / 桌面 hover）；停驻后改为点选，不再跟随指针
   void updateHighlight(Offset globalPos) {
-    if (_disposed || !isOpen) return;
-    if (!_inSelectionMode) return;
+    if (_disposed || !isOpen || _touchPinned) return;
     final rects = _binding?.itemRects;
     if (rects == null || rects.isEmpty) return;
 
@@ -333,7 +315,6 @@ class ReactionPickerController {
     _entry = null;
     _binding = null;
     _closing = false;
-    _inSelectionMode = false;
     _highlightIndex = null;
     _touchPinned = false;
     _detachScrollListeners();
@@ -488,8 +469,8 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
         AnimatedBuilder(
           animation: ctrl.animation,
           builder: (context, _) {
-            // 入场和收回都用线性曲线：scale 完全跟随长按时长 / 抬手后剩余时间。
-            // 用户中途抬手时反向播放从当前 value 接着走，体感上"按多深、收多深"。
+            // 入场和收回都用线性曲线；中途关闭时反向播放从当前 value 接着走，
+            // 不会跳变。
             final t = ctrl.animation.value;
             final scale = t.clamp(0.0, 1.0);
             final opacity = t.clamp(0.0, 1.0);
