@@ -6,5 +6,5 @@ Icon=com.github.lingyan000.fluxdo
 Terminal=false
 Type=Application
 Categories=Network;
-MimeType=x-scheme-handler/fluxdo;
+MimeType=x-scheme-handler/fluxdo;x-scheme-handler/discourse;
 StartupWMClass=fluxdo
