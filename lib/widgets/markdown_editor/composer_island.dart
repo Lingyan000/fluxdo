@@ -7,7 +7,7 @@ const double kComposerIslandInset = 8;
 const double kComposerIslandBottomGap = 10;
 
 /// 只负责玻璃与裁切；覆盖正文的布局由 ComposerEditorLayout 提供。
-/// 编辑器使用已有的导航玻璃配方，高对比度模式降级为实色。
+/// 材质遵循全局玻璃开关和档位，高对比度实色策略由 GlassSurface 统一处理。
 class ComposerIsland extends StatelessWidget {
   const ComposerIsland({super.key, required this.child, this.toolsAnchor});
   final Widget child;
@@ -28,7 +28,6 @@ class ComposerIsland extends StatelessWidget {
           key: const ValueKey('composer-island-surface'),
           radius: kComposerIslandRadius,
           recipe: GlassRecipe.navigation,
-          enabled: !MediaQuery.highContrastOf(context),
           child: Material(color: Colors.transparent, child: child),
         ),
       ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
 import '../../navigation/nav_action_bus.dart';
+import '../../pages/appearance_page.dart';
 import '../../providers/preferences_provider.dart';
 import '../../utils/dialog_utils.dart';
 import '../settings_model.dart';
@@ -40,19 +41,18 @@ List<SettingsGroup> buildBottomNavGroups(BuildContext context) {
               .read(preferencesProvider.notifier)
               .setBottomNavFloating(value),
         ),
-        SwitchModel(
-          id: 'bottomNavFloatingBlur',
-          title: l10n.bottomNav_floatingBlur,
-          subtitle: l10n.bottomNav_floatingBlurDesc,
+        ActionModel(
+          id: 'glassSettings',
+          title: l10n.appearance_glass,
+          subtitle: l10n.appearance_glassSettingsEntry,
           icon: Symbols.blur_on_rounded,
-          getValue: (ref) =>
-              ref.watch(preferencesProvider).bottomNavFloatingBlur,
-          onChanged: (ref, value) => ref
-              .read(preferencesProvider.notifier)
-              .setBottomNavFloatingBlur(value),
-          // 仅悬浮底栏开启时显示（前置关闭时展示无意义）
-          enabledWhen: (ref) =>
-              ref.watch(preferencesProvider).bottomNavFloating,
+          wrapSubtitle: true,
+          onTap: (context, ref) => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AppearancePage(highlightId: 'glassEnabled'),
+            ),
+          ),
         ),
       ],
     ),

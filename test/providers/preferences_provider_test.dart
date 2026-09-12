@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
@@ -15,6 +16,65 @@ Future<ProviderContainer> _createContainer({
 }
 
 void main() {
+  test('全局玻璃默认自动开启，不继承旧底栏关闭值', () async {
+    final container = await _createContainer(
+      initialValues: {
+        'pref_bottom_nav_floating_blur': false,
+        'pref_dialog_blur': false,
+      },
+    );
+    addTearDown(container.dispose);
+    final state = container.read(preferencesProvider);
+    expect(state.glassEnabled, isTrue);
+    expect(state.glassEffectLevel, GlassEffectLevel.auto);
+    expect(state.dialogBlur, isFalse);
+  });
+
+  test('全局开关与档位分别持久化，关闭不会清空档位', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(preferencesProvider.notifier);
+    await notifier.setGlassEffectLevel(GlassEffectLevel.basic);
+    await notifier.setGlassEnabled(false);
+    final prefs = container.read(sharedPreferencesProvider);
+    expect(prefs.getString('pref_glass_effect_level'), 'basic');
+    expect(prefs.getBool('pref_glass_enabled'), isFalse);
+    final reloaded = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.read(preferencesProvider).glassEnabled, isFalse);
+    expect(
+      reloaded.read(preferencesProvider).glassEffectLevel,
+      GlassEffectLevel.basic,
+    );
+    await reloaded.read(preferencesProvider.notifier).setGlassEnabled(true);
+    expect(
+      reloaded.read(preferencesProvider).glassEffectLevel,
+      GlassEffectLevel.basic,
+    );
+    await reloaded
+        .read(preferencesProvider.notifier)
+        .setGlassEffectLevel(GlassEffectLevel.full);
+    expect(prefs.getString('pref_glass_effect_level'), 'full');
+  });
+
+  test('未知玻璃档位回到自动，不影响其他偏好', () async {
+    final container = await _createContainer(
+      initialValues: {'pref_glass_effect_level': 'future-level'},
+    );
+    addTearDown(container.dispose);
+    expect(
+      container.read(preferencesProvider).glassEffectLevel,
+      GlassEffectLevel.auto,
+    );
+    await container.read(preferencesProvider.notifier).setGlassEnabled(false);
+    await container
+        .read(preferencesProvider.notifier)
+        .setBottomNavFloating(true);
+    expect(container.read(preferencesProvider).glassEnabled, isFalse);
+  });
+
   test('单次返回退出默认关闭并可以持久化', () async {
     final container = await _createContainer();
     addTearDown(container.dispose);

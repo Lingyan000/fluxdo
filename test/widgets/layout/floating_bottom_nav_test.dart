@@ -28,7 +28,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'pref_bottom_nav_floating': true,
       'pref_bottom_nav_labelless': labelless,
-      'pref_bottom_nav_floating_blur': true,
+      'pref_glass_enabled': true,
     });
     final prefs = await SharedPreferences.getInstance();
 
@@ -149,7 +149,7 @@ void main() {
 
     SharedPreferences.setMockInitialValues({
       'pref_bottom_nav_floating': true,
-      'pref_bottom_nav_floating_blur': true,
+      'pref_glass_enabled': true,
     });
     final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(

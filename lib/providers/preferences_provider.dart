@@ -2,6 +2,7 @@ import '../constants/composer_tool_defaults.dart';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:common_ui/common_ui.dart' show GlassEffectLevel;
 import 'package:flutter/services.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
@@ -260,8 +261,11 @@ class AppPreferences {
   /// 底栏：悬浮底栏（仅手机底栏，宽度随入口数量自适应的悬浮胶囊）
   final bool bottomNavFloating;
 
-  /// 底栏：悬浮胶囊毛玻璃模糊（仅悬浮底栏开启时生效）
-  final bool bottomNavFloatingBlur;
+  /// 所有玻璃组件的总开关，不影响顶栏、弹窗背景或壁纸模糊。
+  final bool glassEnabled;
+
+  /// 玻璃效果能力档位。
+  final GlassEffectLevel glassEffectLevel;
 
   /// Android 屏幕刷新率偏好（0 = auto/跟随系统，其它为目标刷新率，如 60 / 90 / 120）
   final int displayModeRefreshRate;
@@ -347,7 +351,8 @@ class AppPreferences {
     required this.bottomNavIds,
     this.bottomNavLabelless = false,
     this.bottomNavFloating = false,
-    this.bottomNavFloatingBlur = false,
+    this.glassEnabled = true,
+    this.glassEffectLevel = GlassEffectLevel.auto,
     this.displayModeRefreshRate = 0,
     this.progressGesturesEnabled = true,
     this.progressGestureSwipeLeft = ProgressGestureAction.nextPost,
@@ -411,7 +416,8 @@ class AppPreferences {
     List<String>? bottomNavIds,
     bool? bottomNavLabelless,
     bool? bottomNavFloating,
-    bool? bottomNavFloatingBlur,
+    bool? glassEnabled,
+    GlassEffectLevel? glassEffectLevel,
     int? displayModeRefreshRate,
     bool? progressGesturesEnabled,
     ProgressGestureAction? progressGestureSwipeLeft,
@@ -491,8 +497,8 @@ class AppPreferences {
       bottomNavIds: bottomNavIds ?? this.bottomNavIds,
       bottomNavLabelless: bottomNavLabelless ?? this.bottomNavLabelless,
       bottomNavFloating: bottomNavFloating ?? this.bottomNavFloating,
-      bottomNavFloatingBlur:
-          bottomNavFloatingBlur ?? this.bottomNavFloatingBlur,
+      glassEnabled: glassEnabled ?? this.glassEnabled,
+      glassEffectLevel: glassEffectLevel ?? this.glassEffectLevel,
       displayModeRefreshRate:
           displayModeRefreshRate ?? this.displayModeRefreshRate,
       progressGesturesEnabled:
@@ -581,8 +587,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _bottomNavIdsKey = 'pref_bottom_nav_ids';
   static const String _bottomNavLabellessKey = 'pref_bottom_nav_labelless';
   static const String _bottomNavFloatingKey = 'pref_bottom_nav_floating';
-  static const String _bottomNavFloatingBlurKey =
-      'pref_bottom_nav_floating_blur';
+  static const String _glassEnabledKey = 'pref_glass_enabled';
+  static const String _glassEffectLevelKey = 'pref_glass_effect_level';
   static const String _displayModeRefreshRateKey =
       'pref_display_mode_refresh_rate';
   static const String _progressGesturesEnabledKey =
@@ -682,8 +688,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               const [NavEntryIds.home, NavEntryIds.profile],
           bottomNavLabelless: _prefs.getBool(_bottomNavLabellessKey) ?? false,
           bottomNavFloating: _prefs.getBool(_bottomNavFloatingKey) ?? false,
-          bottomNavFloatingBlur:
-              _prefs.getBool(_bottomNavFloatingBlurKey) ?? false,
+          // 新全局策略默认自动开启；不继承废弃的底栏局部开关。
+          glassEnabled: _prefs.getBool(_glassEnabledKey) ?? true,
+          glassEffectLevel: GlassEffectLevel.fromStorage(
+            _prefs.getString(_glassEffectLevelKey),
+          ),
           displayModeRefreshRate:
               _prefs.getInt(_displayModeRefreshRateKey) ?? 0,
           progressGesturesEnabled:
@@ -1061,10 +1070,15 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setBool(_bottomNavFloatingKey, enabled);
   }
 
-  /// 悬浮胶囊毛玻璃模糊（仅悬浮底栏开启时生效）
-  Future<void> setBottomNavFloatingBlur(bool enabled) async {
-    state = state.copyWith(bottomNavFloatingBlur: enabled);
-    await _prefs.setBool(_bottomNavFloatingBlurKey, enabled);
+  /// 所有玻璃组件共用；保留档位，关闭后再开启不会重置选择。
+  Future<void> setGlassEnabled(bool enabled) async {
+    state = state.copyWith(glassEnabled: enabled);
+    await _prefs.setBool(_glassEnabledKey, enabled);
+  }
+
+  Future<void> setGlassEffectLevel(GlassEffectLevel level) async {
+    state = state.copyWith(glassEffectLevel: level);
+    await _prefs.setString(_glassEffectLevelKey, level.name);
   }
 
   /// 设置 Android 屏幕刷新率偏好（0 = auto，其它为目标刷新率整数）。

@@ -370,9 +370,6 @@ class _AdaptiveBottomNavigationState
     final floating = ref.watch(
       preferencesProvider.select((p) => p.bottomNavFloating),
     );
-    final floatingBlur = ref.watch(
-      preferencesProvider.select((p) => p.bottomNavFloatingBlur),
-    );
 
     // 悬浮胶囊：自绘条目布局。M3 的「未选中图标居中、标签下垂」两段式
     // 结构在紧凑胶囊高度下必然失衡，改为压实的图标+标签整体。
@@ -383,7 +380,6 @@ class _AdaptiveBottomNavigationState
       );
       return _FloatingBottomBarShell(
         itemHeight: itemHeight,
-        blur: floatingBlur,
         itemCount: widget.destinations.length,
         child: _CapsuleNavBar(
           selectedIndex: widget.selectedIndex,
@@ -597,16 +593,12 @@ class _ActiveDestinationIcon extends ConsumerWidget {
 class _FloatingBottomBarShell extends StatelessWidget {
   const _FloatingBottomBarShell({
     required this.itemHeight,
-    required this.blur,
     required this.itemCount,
     required this.child,
   });
 
   /// 单个条目高度（胶囊高 = 本值 + [_CapsuleMetrics.innerInset] × 2）
   final double itemHeight;
-
-  /// 毛玻璃模糊开关
-  final bool blur;
 
   /// 入口数量（自适应宽度的基准）
   final int itemCount;
@@ -625,7 +617,7 @@ class _FloatingBottomBarShell extends StatelessWidget {
 
     // 柔光玻璃材质：局部背景模糊 + 折射 + 方向性边缘光。
     // 不支持 shader 时才使用均匀模糊与降级描边。
-    // blur 关闭时 GlassSurface 直接出实色，不建离屏层。
+    // 材质统一遵循全局玻璃策略；关闭时直接出实色，不建离屏层。
     //
     // 外壳 ClipRRect 只限制可见范围，不保证背景纹理原点归零。
     // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
@@ -633,7 +625,6 @@ class _FloatingBottomBarShell extends StatelessWidget {
     final body = GlassSurfaceFrame(
       radius: radius,
       recipe: GlassRecipe.navigation,
-      enabled: blur,
       child: content,
     );
 

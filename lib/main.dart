@@ -26,6 +26,7 @@ import 'services/crash_context_reporter.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
+import 'widgets/common/app_glass_settings.dart';
 import 'widgets/common/anchor_guard_sliver.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
 import 'package:common_ui/common_ui.dart';
@@ -930,7 +931,7 @@ class MainApp extends ConsumerWidget {
                   }
                 }
 
-                return result;
+                return AppGlassSettings(child: result);
               },
               home: const OnboardingGate(child: PreheatGate(child: MainPage())),
             ),

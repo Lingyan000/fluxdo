@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'glass_edge_painter.dart';
 import 'glass_optical_border.dart';
+import 'glass_settings.dart';
 
 /// 柔光玻璃材质配方。
 ///
@@ -220,12 +221,31 @@ class _GlassSurfaceState extends State<GlassSurface> {
   ui.FragmentProgram? _program;
 
   @override
-  void initState() {
-    super.initState();
-    if (!GlassSurface.opticalEdgeAvailable) {
-      _logPathOnce('当前后端不支持折射，使用背景模糊');
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ensureProgram();
+  }
+
+  @override
+  void didUpdateWidget(GlassSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) _ensureProgram();
+  }
+
+  bool _loadRequested = false;
+
+  void _ensureProgram() {
+    final settings = GlassSettingsScope.of(context);
+    if (!settings.allowsOptics(
+          shaderSupported: GlassSurface.opticalEdgeAvailable,
+          highContrast: MediaQuery.maybeOf(context)?.highContrast ?? false,
+          locallyEnabled: widget.enabled,
+        ) ||
+        _program != null ||
+        _loadRequested) {
       return;
     }
+    _loadRequested = true;
     final cached = _cachedProgram;
     if (cached != null) {
       _program = cached;
@@ -295,11 +315,20 @@ class _GlassSurfaceState extends State<GlassSurface> {
         widget.tintColor ??
         Color.from(alpha: 1, red: gray, green: gray, blue: gray);
 
+    final settings = GlassSettingsScope.of(context);
+    final highContrast = MediaQuery.maybeOf(context)?.highContrast ?? false;
+    final enabled = settings.allowsBlur(
+      highContrast: highContrast,
+      locallyEnabled: widget.enabled,
+    );
     final program = _program;
     final useShader =
-        widget.enabled &&
         program != null &&
-        GlassSurface.opticalEdgeAvailable &&
+        settings.allowsOptics(
+          shaderSupported: GlassSurface.opticalEdgeAvailable,
+          highContrast: highContrast,
+          locallyEnabled: widget.enabled,
+        ) &&
         _shapeSupported(widget.shape);
 
     // 前景始终留在同一个槽位；异步加载或切换模糊时只替换背景，不能
@@ -309,9 +338,12 @@ class _GlassSurfaceState extends State<GlassSurface> {
       fit: StackFit.passthrough,
       children: [
         Positioned.fill(
-          child: !widget.enabled
+          child: !enabled
               ? DecoratedBox(
-                  decoration: ShapeDecoration(shape: widget.shape, color: tint),
+                  decoration: ShapeDecoration(
+                    shape: widget.shape,
+                    color: tint.withValues(alpha: 1),
+                  ),
                 )
               : useShader
               ? _shaderBackground(context, program, tint, recipe, isDark)

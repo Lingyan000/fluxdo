@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -367,6 +368,93 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           getValue: (ref) => ref.watch(themeProvider).m3eEnabled,
           onChanged: (ref, v) =>
               ref.read(themeProvider.notifier).setM3eEnabled(v),
+        ),
+      ],
+    ),
+
+    // ── 玻璃组件 ──────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_glass,
+      icon: Symbols.blur_on_rounded,
+      items: [
+        SwitchModel(
+          id: 'glassEnabled',
+          title: l10n.appearance_glassEnabled,
+          subtitle: l10n.appearance_glassScope,
+          icon: Symbols.blur_on_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).glassEnabled,
+          onChanged: (ref, value) =>
+              ref.read(preferencesProvider.notifier).setGlassEnabled(value),
+        ),
+        CustomModel(
+          id: 'glassEffectLevel',
+          title: l10n.appearance_glassEffectLevel,
+          subtitle: l10n.appearance_glassAutoDesc,
+          builder: (context, ref) {
+            final preferences = ref.watch(preferencesProvider);
+            final l10n = context.l10n;
+            final theme = Theme.of(context);
+            final options = [
+              (
+                GlassEffectLevel.auto,
+                l10n.appearance_glassAuto,
+                l10n.appearance_glassAutoDesc,
+              ),
+              (
+                GlassEffectLevel.basic,
+                l10n.appearance_glassBasic,
+                l10n.appearance_glassBasicDesc,
+              ),
+              (
+                GlassEffectLevel.full,
+                l10n.appearance_glassFull,
+                l10n.appearance_glassFullDesc,
+              ),
+            ];
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Text(
+                    l10n.appearance_glassEffectLevel,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                RadioGroup<GlassEffectLevel>(
+                  groupValue: preferences.glassEffectLevel,
+                  onChanged: (value) {
+                    if (value == null || !preferences.glassEnabled) return;
+                    ref
+                        .read(preferencesProvider.notifier)
+                        .setGlassEffectLevel(value);
+                  },
+                  child: Column(
+                    children: [
+                      for (final (level, title, description) in options)
+                        RadioListTile<GlassEffectLevel>(
+                          value: level,
+                          title: Text(title),
+                          subtitle: Text(description),
+                          enabled: preferences.glassEnabled,
+                        ),
+                    ],
+                  ),
+                ),
+                if (!GlassSurface.opticalEdgeAvailable)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Text(
+                      l10n.appearance_glassUnsupported,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ],
     ),
