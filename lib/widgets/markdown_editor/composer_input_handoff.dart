@@ -38,6 +38,7 @@ class ComposerInputHandoff extends ChangeNotifier {
   bool? _target;
   int _generation = 0;
   Timer? _returnTimeout;
+  Timer? _controlTimeout;
   bool get dismissing => _target == false && !_restoreInput && !_customPanel;
   double get progress => _progress;
   bool get readyToFinish =>
@@ -99,7 +100,13 @@ class ComposerInputHandoff extends ChangeNotifier {
     notifyListeners();
   }
 
-  void update(double progress) {
+  void update(double progress, {bool dragging = false}) {
+    // 手势开始就确定输入意图，不能等松手才决定是否让键盘让位。
+    // 反向时也立即更新，待定回调不能继续执行上一方向。
+    if (dragging && progress != _progress) {
+      final open = progress > _progress;
+      if (_target != open) settle(open);
+    }
     _progress = progress;
     _moveKeyboard();
     notifyListeners();
@@ -141,8 +148,26 @@ class ComposerInputHandoff extends ChangeNotifier {
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide'),
         );
       }
+      if (keyboard.awaitingAndroidControl && _controlTimeout == null) {
+        _controlTimeout = Timer(const Duration(milliseconds: 160), () {
+          _controlTimeout = null;
+          if (_disposed ||
+              !active ||
+              _target != true ||
+              !keyboard.awaitingAndroidControl) {
+            return;
+          }
+          _controlling = false;
+          keyboard.dismissPendingWithSystemAnimation();
+          notifyListeners();
+        });
+      }
     } else if (restoreInput && !_controlling && !_customPanel) {
       _requestKeyboard();
+    }
+    if (!open) {
+      _controlTimeout?.cancel();
+      _controlTimeout = null;
     }
     if (dismissing && !wasDismissing) {
       _returnTimeout?.cancel();
@@ -201,6 +226,10 @@ class ComposerInputHandoff extends ChangeNotifier {
   }
 
   void _keyboardChanged() {
+    if (!keyboard.awaitingAndroidControl) {
+      _controlTimeout?.cancel();
+      _controlTimeout = null;
+    }
     if (active && _controlling && !_ending && !keyboard.active) {
       // 系统撤销控制权或旧系统不支持时，结束原生会话并回到普通
       // IME 帧交接；拖拽尚未松手则继续保留取消的选择。
@@ -221,6 +250,8 @@ class ComposerInputHandoff extends ChangeNotifier {
     if (_controlling && !_ending) unawaited(keyboard.end(0, cancel: true));
     _controlling = false;
     _returnTimeout?.cancel();
+    _controlTimeout?.cancel();
+    _controlTimeout = null;
     _release.stop();
     _target = null;
     notifyListeners();
@@ -230,6 +261,7 @@ class ComposerInputHandoff extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _returnTimeout?.cancel();
+    _controlTimeout?.cancel();
     keyboard.removeListener(_keyboardChanged);
     _release.dispose();
     super.dispose();

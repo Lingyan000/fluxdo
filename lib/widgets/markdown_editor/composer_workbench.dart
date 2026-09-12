@@ -100,7 +100,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _moveInput() {
-    if (_presenting) _input?.update(_animation.value);
+    if (_presenting) _input?.update(_animation.value, dragging: _dragging);
   }
 
   bool _onHardwareKey(KeyEvent event) {
@@ -329,9 +329,6 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     }
     if (!_presenting || _gestureExtent <= 0) return;
     // value 就是几何进度，拖动不经过补间曲线，也不依赖移动控件的局部坐标。
-    if (delta > 0 && _input?.active == true && _animation.value == 1) {
-      _input?.settle(false);
-    }
     _animation.value = (_animation.value - delta / _gestureExtent).clamp(
       0.0,
       1.0,
