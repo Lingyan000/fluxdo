@@ -275,14 +275,16 @@ class ComposerKeyboardDismissScope extends InheritedWidget {
   const ComposerKeyboardDismissScope({
     super.key,
     required this.controller,
+    this.active = false,
     required super.child,
   });
   final ComposerKeyboardDismissController controller;
+  final bool active;
   static ComposerKeyboardDismissController? maybeOf(BuildContext context) =>
       context
           .dependOnInheritedWidgetOfExactType<ComposerKeyboardDismissScope>()
           ?.controller;
   @override
   bool updateShouldNotify(ComposerKeyboardDismissScope oldWidget) =>
-      controller != oldWidget.controller;
+      controller != oldWidget.controller || active != oldWidget.active;
 }

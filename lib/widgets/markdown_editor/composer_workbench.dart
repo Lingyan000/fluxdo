@@ -58,6 +58,9 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   ComposerKeyboardDismissController? _keyboardGesture;
   bool _dragWasExpanded = false;
   double _expansionHeight = 400;
+  double _gestureExtent = 400;
+  double? _lastDragY;
+  Offset _sourceBottomLeft = Offset.zero;
   Map<String, Rect> _sourceIcons = {};
   LocalHistoryEntry? _history;
   bool _presenting = false;
@@ -68,6 +71,18 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     super.initState();
     widget.toolsAnchor?.addListener(_changed);
     _animation.addStatusListener(_status);
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
+  }
+
+  bool _onHardwareKey(KeyEvent event) {
+    if (!_presenting ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return false;
+    }
+    widget.toolsAnchor?.collapse();
+    return true;
   }
 
   @override
@@ -83,6 +98,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     final anchor = widget.toolsAnchor!;
     if (anchor.expanded && !_presenting) {
       _sourceIcons = anchor.visibleIcons();
+      _sourceBottomLeft = anchor.rect?.bottomLeft ?? Offset.zero;
       final byId = {for (final action in anchor.actions) action.keyId: action};
       _flightIds = MediaQuery.disableAnimationsOf(context)
           ? []
@@ -115,18 +131,11 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       );
       ModalRoute.of(context)?.addLocalHistoryEntry(_history!);
       setState(() {});
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _animation.value = 1;
-      } else if (!_dragging) {
-        _animation.forward();
-      }
-      if (!_dragging) _focus.requestFocus();
-    } else if (!anchor.expanded && _presenting) {
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _animation.value = 0;
-      } else {
-        _animation.reverse();
-      }
+      if (!_dragging) _settle(true);
+      if (!_dragging && PlatformUtils.isDesktop) _focus.requestFocus();
+    } else if (_presenting) {
+      if (!_dragging) _settle(anchor.expanded);
+      if (mounted) setState(() {});
     } else if (mounted) {
       setState(() {});
     }
@@ -148,6 +157,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     widget.toolsAnchor?.removeListener(_changed);
     widget.toolsAnchor?.finish();
     _history?.remove();
@@ -157,18 +167,67 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _toggle() {
-    if (widget.toolsAnchor?.expanded == true) {
-      widget.toolsAnchor!.collapse();
+    if (widget.toolsAnchor?.presenting == true) {
+      _setExpansion(!widget.toolsAnchor!.expanded);
     } else {
       widget.onExpandTools?.call();
     }
   }
 
-  void _startDrag() {
+  void _setExpansion(bool open) {
+    final anchor = widget.toolsAnchor;
+    if (open && anchor?.expanded == false) {
+      anchor!.reopen();
+    } else if (!open && anchor?.expanded == true) {
+      anchor!.collapse();
+    } else {
+      _settle(open);
+    }
+  }
+
+  void _settle(bool open) {
+    final target = open ? 1.0 : 0.0;
+    final remaining = (target - _animation.value).abs();
+    if (remaining == 0) {
+      if (!open) _status(AnimationStatus.dismissed);
+      return;
+    }
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _animation.value = target;
+      return;
+    }
+    final duration = Duration(
+      milliseconds: ((open ? 380 : 260) * remaining).round(),
+    );
+    if (open) {
+      _animation.animateTo(
+        target,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _animation.animateBack(
+        target,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _startDrag(DragStartDetails details) {
     _dragWasExpanded = widget.toolsAnchor?.expanded ?? false;
     _dragging = true;
+    _lastDragY = details.globalPosition.dy;
+    _gestureExtent = _expansionHeight;
     _keyboardGesture = null;
     if (_presenting) _animation.stop();
+  }
+
+  void _dragUpdate(DragUpdateDetails details) {
+    final y = details.globalPosition.dy;
+    final delta = _lastDragY == null ? details.delta.dy : y - _lastDragY!;
+    _lastDragY = y;
+    _drag(delta);
   }
 
   void _drag(double delta) {
@@ -190,47 +249,30 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       widget.onExpandTools?.call();
       _animation.stop();
     }
-    if (!_presenting || _expansionHeight <= 0) return;
-    final curve = Curves.easeInOutCubicEmphasized;
-    final progress =
-        (curve.transform(_animation.value) - delta / _expansionHeight).clamp(
-          0.0,
-          1.0,
-        );
-    // 手指控制实际高度，反解时序曲线，松手时不会换曲线跳一下。
-    var low = 0.0;
-    var high = 1.0;
-    for (var i = 0; i < 16; i++) {
-      final mid = (low + high) / 2;
-      if (curve.transform(mid) < progress) {
-        low = mid;
-      } else {
-        high = mid;
-      }
-    }
-    _animation.value = (low + high) / 2;
+    if (!_presenting || _gestureExtent <= 0) return;
+    // value 就是几何进度，拖动不经过补间曲线，也不依赖移动控件的局部坐标。
+    _animation.value = (_animation.value - delta / _gestureExtent).clamp(
+      0.0,
+      1.0,
+    );
   }
 
   void _cancelDrag() {
     // 轻点按钮赢得手势竞争时也会收到 cancel，此时并没有开始拖动。
     if (!_dragging) return;
-    _dragging = false;
+    setState(() => _dragging = false);
     final keyboard = _keyboardGesture;
     _keyboardGesture = null;
     if (keyboard != null) {
       keyboard.end(0, cancel: true);
     } else if (_presenting) {
-      if (_dragWasExpanded) {
-        _animation.forward();
-      } else {
-        widget.toolsAnchor?.collapse();
-      }
+      _setExpansion(_dragWasExpanded);
     }
   }
 
   void _endDrag(double velocity) {
     if (!_dragging) return;
-    _dragging = false;
+    setState(() => _dragging = false);
     final keyboard = _keyboardGesture;
     _keyboardGesture = null;
     if (keyboard != null) {
@@ -238,19 +280,12 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       return;
     }
     if (!_presenting) return;
-    final progress = Curves.easeInOutCubicEmphasized.transform(
-      _animation.value,
-    );
+    final progress = _animation.value;
     final open =
         velocity < -240 ||
         (velocity <= 240 && progress > (_dragWasExpanded ? .84 : .16));
-    if (open) {
-      _animation.forward();
-      _focus.requestFocus();
-    } else {
-      widget.toolsAnchor?.collapse();
-      if (_animation.value == 0) _status(AnimationStatus.dismissed);
-    }
+    _setExpansion(open);
+    if (open && PlatformUtils.isDesktop) _focus.requestFocus();
   }
 
   @override
@@ -260,19 +295,21 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     final handleHeight = !desktop && widget.onExpandTools != null
         ? ComposerToolsHandle.height
         : 0.0;
-    final footerHeight = desktop
-        ? row + 4
-        : row + (widget.editing ? row + 4 : 0);
+    final keyboard = ComposerKeyboardDismissScope.maybeOf(context);
+    final editing = widget.editing || (keyboard?.active ?? false);
+    final footerHeight = desktop ? row + 4 : row + (editing ? row + 4 : 0);
     final baseHeight = footerHeight + handleHeight;
     final available =
         context
             .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>()
             ?.height ??
         MediaQuery.sizeOf(context).height;
-    final expansionHeight = math.min(
-      desktop ? 360.0 : 400.0,
-      math.max(0.0, available - baseHeight - 40),
-    );
+    final expansionHeight = _dragging
+        ? _gestureExtent
+        : math.min(
+            desktop ? 360.0 : 400.0,
+            math.max(0.0, available - baseHeight - 40),
+          );
     _expansionHeight = expansionHeight;
     final theme = Theme.of(context);
     final footer = desktop
@@ -310,7 +347,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                 ),
               ),
               Visibility(
-                visible: widget.editing,
+                visible: editing,
                 maintainState: true,
                 maintainAnimation: true,
                 child: Container(
@@ -365,8 +402,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                       child: AnimatedBuilder(
                         animation: _animation,
                         builder: (context, _) {
-                          final progress = Curves.easeInOutCubicEmphasized
-                              .transform(_animation.value);
+                          final progress = _animation.value;
                           return SizedBox(
                             key: _contentKey,
                             height: baseHeight + expansionHeight * progress,
@@ -404,9 +440,8 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                   bottom: 0,
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.translucent,
-                                    onVerticalDragStart: (_) => _startDrag(),
-                                    onVerticalDragUpdate: (details) =>
-                                        _drag(details.delta.dy),
+                                    onVerticalDragStart: _startDrag,
+                                    onVerticalDragUpdate: _dragUpdate,
                                     onVerticalDragEnd: (details) =>
                                         _endDrag(details.primaryVelocity ?? 0),
                                     onVerticalDragCancel: _cancelDrag,
@@ -433,8 +468,10 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                           widget.toolsAnchor?.expanded ?? false,
                                       onActivate: _toggle,
                                       onDragStart: _startDrag,
-                                      onDragUpdate: _drag,
-                                      onDragEnd: _endDrag,
+                                      onDragUpdate: _dragUpdate,
+                                      onDragEnd: (details) => _endDrag(
+                                        details.primaryVelocity ?? 0,
+                                      ),
                                       onDragCancel: _cancelDrag,
                                     ),
                                   ),
@@ -446,6 +483,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                         delegate: _ToolFlights(
                                           ids: _flightIds,
                                           sources: _sourceIcons,
+                                          sourceBottomLeft: _sourceBottomLeft,
                                           anchor: widget.toolsAnchor!,
                                           contentKey: _contentKey,
                                           progress: _animation.value,
@@ -478,6 +516,7 @@ class _ToolFlights extends FlowDelegate {
   _ToolFlights({
     required this.ids,
     required this.sources,
+    required this.sourceBottomLeft,
     required this.anchor,
     required this.contentKey,
     required this.progress,
@@ -485,6 +524,7 @@ class _ToolFlights extends FlowDelegate {
   });
   final List<String> ids;
   final Map<String, Rect> sources;
+  final Offset sourceBottomLeft;
   final ComposerToolsAnchor anchor;
   final GlobalKey contentKey;
   final double progress;
@@ -500,7 +540,9 @@ class _ToolFlights extends FlowDelegate {
     final content = contentKey.currentContext?.findRenderObject();
     if (content is! RenderBox || !content.hasSize) return;
     final offset = content.localToGlobal(Offset.zero);
-    final currentSources = anchor.visibleIcons();
+    // 只测一次浮岛的位置；不再逐帧遍历每个来源图标的全部祖先裁剪链。
+    final sourceShift =
+        (anchor.rect?.bottomLeft ?? sourceBottomLeft) - sourceBottomLeft;
     for (var i = 0; i < ids.length; i++) {
       final id = ids[i];
       final target = anchor.targets[id]?.currentContext?.findRenderObject();
@@ -508,12 +550,12 @@ class _ToolFlights extends FlowDelegate {
       final destination =
           (target.localToGlobal(Offset.zero) - Offset(0, remainingHeight)) &
           target.size;
-      final start = currentSources[id] ?? sources[id]!;
+      final start = sources[id]!.shift(sourceShift);
       final delay = math.min(i, 5) * .012;
       final t = Interval(
         .04 + delay,
         .92 + delay,
-        curve: Curves.easeInOutCubicEmphasized,
+        curve: Curves.linear,
       ).transform(progress);
       // FaIcon 的字形宽度不等于字号，不能把字形边界拉伸到方形容器。
       // 插值中心与字号，保持两轴同比例，首尾才能与原图标无缝交接。
@@ -571,7 +613,14 @@ class ComposerEditorLayout extends StatefulWidget {
 
 class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
     with SingleTickerProviderStateMixin {
-  late final _keyboard = ComposerKeyboardDismissController(vsync: this);
+  late final _keyboard = ComposerKeyboardDismissController(vsync: this)
+    ..addListener(_onKeyboardActivity);
+  bool _keyboardActive = false;
+  void _onKeyboardActivity() {
+    if (_keyboardActive == _keyboard.active || !mounted) return;
+    setState(() => _keyboardActive = _keyboard.active);
+  }
+
   @override
   void dispose() {
     _keyboard.dispose();
@@ -581,6 +630,7 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   @override
   Widget build(BuildContext context) => ComposerKeyboardDismissScope(
     controller: _keyboard,
+    active: _keyboardActive,
     child: Column(
       children: [
         Expanded(
@@ -598,7 +648,10 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
                   ),
                   child: widget.bodyBuilder(
                     context,
-                    ComposerWorkbench.occupiedHeight(context, widget.editing) +
+                    ComposerWorkbench.occupiedHeight(
+                          context,
+                          widget.editing || _keyboardActive,
+                        ) +
                         12,
                     viewport.maxHeight,
                   ),

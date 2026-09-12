@@ -216,6 +216,17 @@ void main() {
               closeTo(80, .5),
               reason: '托柄拖动应直接改变浮岛高度',
             );
+            final expandedHeight = anchor.rect!.height;
+            await gesture.moveBy(const Offset(0, 30));
+            await tester.pump();
+            expect(
+              expandedHeight - anchor.rect!.height,
+              closeTo(30, .5),
+              reason: '不松手反向拖动仍保持跟手',
+            );
+            await gesture.moveBy(const Offset(0, -30));
+            await tester.pump();
+            expect(anchor.rect!.height, closeTo(expandedHeight, .5));
             await gesture.up();
           }
           await tester.pump();
@@ -295,6 +306,27 @@ void main() {
             findsNothing,
             reason: '空分类不占空间',
           );
+          if (!desktop) {
+            anchor.collapse();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 30));
+            final gesture = await tester.startGesture(
+              tester.getCenter(
+                find.byKey(const ValueKey('composer-tools-handle')),
+              ),
+            );
+            await gesture.moveBy(const Offset(0, -24));
+            await tester.pump();
+            await gesture.moveBy(const Offset(0, -80));
+            await tester.pump();
+            await gesture.up();
+            await tester.pumpAndSettle();
+            expect(anchor.expanded, isTrue, reason: '打断收起后反向拖动应恢复展开状态');
+            expect(
+              find.byKey(const ValueKey('composer-tools-panel')),
+              findsOneWidget,
+            );
+          }
           final customize = find.text(S.current.toolPanel_customize);
           final toolbarRect = tester.getRect(
             find.byKey(const ValueKey('composer-format-row')),

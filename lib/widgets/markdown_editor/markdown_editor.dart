@@ -22,7 +22,6 @@ import 'composer_tools_panel.dart';
 import 'composer_quick_panel.dart';
 import 'composer_tools_anchor.dart';
 import 'composer_workbench.dart';
-import 'composer_panel_scope.dart';
 import 'editor_tools.dart';
 import 'emoji_popover.dart';
 import 'emoji_sticker_panel.dart';
@@ -32,7 +31,7 @@ import 'package:pangutext/pangutext.dart';
 import '../../../../../l10n/s.dart';
 
 /// 编辑器面板类型
-enum EditorPanelType { none, keyboard, emoji, metadata }
+enum EditorPanelType { none, keyboard, emoji }
 
 /// 通用 Markdown 编辑器组件
 /// 包含编辑/预览模式切换、工具栏和表情面板
@@ -179,17 +178,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       _emojiPopover = EmojiPopoverController()
         ..addListener(_onEmojiPopoverChanged);
     }
-    _focusNode.addListener(_onEditorFocusChanged);
     EmojiHandler().init();
     // 预热 1:1 cook 引擎(eval bundle + 注入站点数据),
     // 让首次切预览时 JS cook 已就绪
     DiscourseCookService().warmUp();
     _previousText = widget.controller.text;
     widget.controller.addListener(_handleTextChange);
-  }
-
-  void _onEditorFocusChanged() {
-    if (mounted) setState(() {});
   }
 
   /// 预览返回时恢复输入连接；关闭面板留下的只读状态不能带回来。
@@ -202,32 +196,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     }
   }
 
-  Widget? _metadataPanel;
-  Completer<Object?>? _metadataResult;
-
-  Future<Object?> _openMetadataPanel(ComposerPanelBuilder builder) {
-    _metadataResult?.complete(null);
-    final result = Completer<Object?>();
-    _metadataResult = result;
-    _metadataPanel = builder((value) {
-      if (!mounted || _metadataResult != result) return;
-      _metadataResult = null;
-      result.complete(value);
-      closeEmojiPanel();
-      setState(() => _metadataPanel = null);
-      if (value != null) resumeEditing();
-    });
-    _togglePanel(EditorPanelType.metadata);
-    return result.future;
-  }
-
-  Widget _buildMetadataPanel() => SizedBox(
-    height: _panelHeight,
-    child: _metadataPanel ?? const SizedBox.shrink(),
-  );
-
   bool _toolsOpen = false;
-  bool _toolsWasEditing = false;
 
   Future<void>? _toolsTask;
 
@@ -240,8 +209,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   }
 
   Future<void> showTools() {
-    if (_toolsAnchor.expanded) {
-      _toolsAnchor.collapse();
+    if (_toolsAnchor.presenting) {
+      if (_toolsAnchor.expanded) {
+        _toolsAnchor.collapse();
+      } else {
+        _toolsAnchor.reopen();
+      }
       return _toolsTask ?? Future.value();
     }
     return _toolsTask = _presentTools(quick: false);
@@ -250,8 +223,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   Future<void> _presentTools({required bool quick}) async {
     final toolbar = _toolbarKey.currentState;
     if (toolbar == null || _toolsOpen) return;
-    _toolsWasEditing =
-        _focusNode.hasFocus || MediaQuery.viewInsetsOf(context).bottom > 0;
     setState(() => _toolsOpen = true);
     final selection = widget.controller.selection;
     final keyboardWasVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
@@ -388,9 +359,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   @override
   void dispose() {
-    _focusNode.removeListener(_onEditorFocusChanged);
-    _metadataResult?.complete(null);
-    _metadataResult = null;
     _toolsAnchor.dispose();
     _emojiPopover?.dispose();
     _undoController.dispose();
@@ -570,15 +538,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   /// 关闭表情/工具面板（供外部调用，如返回键拦截）
   void closeEmojiPanel() {
-    _metadataResult?.complete(null);
-    _metadataResult = null;
     if (_isDesktop) {
       _emojiPopover?.hide();
       return;
     }
     if (_intendedPanel != EditorPanelType.none ||
-        _currentPanelType == EditorPanelType.emoji ||
-        _currentPanelType == EditorPanelType.metadata) {
+        _currentPanelType == EditorPanelType.emoji) {
       _intendedPanel = EditorPanelType.none;
       // 不解除 readOnly、不摘焦点:关闭面板 = 输入框停在"光标闪烁、
       // 键盘不弹"的待命态(同聊天输入条,TG 口径,用户点名)。要用键盘,
@@ -1046,25 +1011,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     );
   }
 
-  /// 构建当前意图面板对应的组件（用于焦点竞争时维持面板显示）
-  Widget _buildIntendedPanel() {
-    return switch (_intendedPanel) {
-      EditorPanelType.metadata => _buildMetadataPanel(),
-      _ => _buildEmojiPanel(),
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final editing =
-        _isDesktop ||
-        (_toolsOpen && _toolsWasEditing) ||
-        _focusNode.hasFocus ||
-        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-        _currentPanelType != EditorPanelType.none ||
-        _intendedPanel != EditorPanelType.none;
+    final editing = _isDesktop || MediaQuery.viewInsetsOf(context).bottom > 0;
     return ComposerEditorLayout(
       editing: editing,
       bodyBuilder: (context, bottomInset, viewportHeight) {
@@ -1168,19 +1119,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       toolbar: TextFieldTapRegion(
         child: MarkdownToolbar(
           key: _toolbarKey,
-          metaBar: widget.metaBar == null || _isDesktop
-              ? null
-              : ComposerPanelScope(
-                  open: _openMetadataPanel,
-                  child: widget.metaBar!,
-                ),
-          editing:
-              _isDesktop ||
-              (_toolsOpen && _toolsWasEditing) ||
-              _focusNode.hasFocus ||
-              MediaQuery.viewInsetsOf(context).bottom > 0 ||
-              _currentPanelType != EditorPanelType.none ||
-              _intendedPanel != EditorPanelType.none,
+          metaBar: _isDesktop ? null : widget.metaBar,
+          editing: editing,
           controller: widget.controller,
           focusNode: _focusNode,
           undoController: _undoController,
@@ -1212,8 +1152,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           switch (type) {
             case EditorPanelType.emoji:
               return _buildEmojiPanel();
-            case EditorPanelType.metadata:
-              return _buildMetadataPanel();
             default:
               return const SizedBox.shrink();
           }
@@ -1236,7 +1174,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           }
 
           bool isCustomPanel(EditorPanelType type) =>
-              type == EditorPanelType.emoji || type == EditorPanelType.metadata;
+              type == EditorPanelType.emoji;
 
           final wasCustom = isCustomPanel(_currentPanelType);
           final wasNone = _currentPanelType == EditorPanelType.none;
@@ -1263,7 +1201,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
               panelType != ChatBottomPanelType.other) {
             return ColoredBox(
               color: theme.colorScheme.surface,
-              child: _buildIntendedPanel(),
+              child: _buildEmojiPanel(),
             );
           }
           switch (panelType) {
@@ -1273,12 +1211,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                 nativeKeyboardHeight: _panelController.keyboardHeight,
               );
             case ChatBottomPanelType.other:
-              if (data == EditorPanelType.metadata) {
-                return ColoredBox(
-                  color: theme.colorScheme.surface,
-                  child: _buildMetadataPanel(),
-                );
-              }
               if (data == EditorPanelType.emoji) {
                 return ColoredBox(
                   color: theme.colorScheme.surface,

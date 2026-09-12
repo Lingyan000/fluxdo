@@ -25,6 +25,7 @@ import '../../utils/platform_utils.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'composer_workbench.dart';
+import 'composer_keyboard_dismiss.dart';
 import 'composer_tools_anchor.dart';
 import 'composer_view_mode_switcher.dart';
 import 'cursor_swipe_control.dart';
@@ -1211,11 +1212,14 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final editing =
+        widget.editing ||
+        (ComposerKeyboardDismissScope.maybeOf(context)?.active ?? false);
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
-      editing: widget.editing,
+      editing: editing,
       controls: [
         if (!PlatformUtils.isDesktop && widget.undoController != null)
           _contentActions(),
@@ -1227,14 +1231,14 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
               children: [
                 // 保留光标控件的 State，弹出它自己的菜单时失焦也不会丢回调。
                 Visibility(
-                  visible: widget.editing || widget.onToggleTools == null,
+                  visible: editing || widget.onToggleTools == null,
                   maintainState: true,
                   child: CursorSwipeControl(
                     onMove: _moveCursor,
                     onMoveVertical: widget.onMoveCursorVertical,
                   ),
                 ),
-                if (!widget.editing && widget.onToggleTools != null)
+                if (!editing && widget.onToggleTools != null)
                   _buildToolsButton(theme),
               ],
             ),
@@ -1265,7 +1269,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
             ),
           ),
           if (widget.onToggleTools != null &&
-              (PlatformUtils.isDesktop || widget.editing))
+              (PlatformUtils.isDesktop || editing))
             _buildToolsButton(theme),
         ],
       ),

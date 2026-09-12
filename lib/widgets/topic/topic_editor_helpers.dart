@@ -1,4 +1,3 @@
-import '../markdown_editor/composer_panel_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -633,80 +632,35 @@ class ComposerMetaBar extends StatelessWidget {
     this.onPostVotingChanged,
   });
 
-  Future<void> _pickCategory(
-    BuildContext context, {
-    bool expanded = false,
-  }) async {
-    final panel = expanded ? null : ComposerPanelScope.maybeOf(context);
-    Category? result;
-    if (panel != null) {
-      result =
-          await panel.open(
-                (close) => CategorySelectionSheet(
-                  embedded: true,
-                  categories: categories,
-                  selectedCategory: category,
-                  onSelected: close,
-                  onCancel: () => close(null),
-                  onSearchRequested: () {
-                    close(null);
-                    _pickCategory(context, expanded: true);
-                  },
-                ),
-              )
-              as Category?;
-    } else {
-      result = await showAppBottomSheet<Category>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => CategorySelectionSheet(
-          categories: categories,
-          selectedCategory: category,
-        ),
-      );
-    }
+  Future<void> _pickCategory(BuildContext context) async {
+    final result = await showAppBottomSheet<Category>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CategorySelectionSheet(
+        categories: categories,
+        selectedCategory: category,
+      ),
+    );
     if (context.mounted && result != null) onCategorySelected(result);
   }
 
-  Future<void> _pickTags(
-    BuildContext context, {
-    bool expanded = false,
-    List<String>? initialTags,
-  }) async {
-    final panel = expanded ? null : ComposerPanelScope.maybeOf(context);
-    final minTags = category?.minimumRequiredTags ?? 0;
-    Widget picker({ValueChanged<Object?>? close}) => TagSelectionSheet(
-      embedded: close != null,
-      categoryId: category?.id,
-      availableTags: filterAvailableTagsForCategory(category, allTags),
-      selectedTags: initialTags ?? selectedTags,
-      maxTags: 5,
-      minTags: minTags,
-      filterForInput: true,
-      onSelected: close,
-      onCancel: close == null ? null : () => close(null),
-      onSearchRequested: close == null
-          ? null
-          : (selected) {
-              close(null);
-              _pickTags(context, expanded: true, initialTags: selected);
-            },
+  Future<void> _pickTags(BuildContext context) async {
+    final result = await showAppBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => TagSelectionSheet(
+        categoryId: category?.id,
+        availableTags: filterAvailableTagsForCategory(category, allTags),
+        selectedTags: selectedTags,
+        maxTags: 5,
+        minTags: category?.minimumRequiredTags ?? 0,
+        filterForInput: true,
+      ),
     );
-    final List<String>? result;
-    if (panel != null) {
-      result =
-          await panel.open((close) => picker(close: close)) as List<String>?;
-    } else {
-      result = await showAppBottomSheet<List<String>>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => picker(),
-      );
-    }
     if (context.mounted && result != null) onTagsChanged(result);
   }
 

@@ -20,6 +20,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/s.dart';
+import 'composer_action_menu.dart';
 
 class CursorSwipeControl extends StatefulWidget {
   const CursorSwipeControl({
@@ -233,9 +234,6 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
   }
 
   Future<void> _showCursorMenu() async {
-    final box = context.findRenderObject() as RenderBox;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final rect = box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
     final s = S.current;
     final entries = [
       (s.composer_cursorLeft, Icons.arrow_back_rounded),
@@ -244,9 +242,8 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
       (s.composer_cursorDown, Icons.arrow_downward_rounded),
       (s.composer_cursorSelect, Icons.select_all_rounded),
     ];
-    final picked = await showMenu<int>(
+    final picked = await showComposerActionMenu<int>(
       context: context,
-      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
       items: [
         for (var i = 0; i < entries.length; i++)
           PopupMenuItem(

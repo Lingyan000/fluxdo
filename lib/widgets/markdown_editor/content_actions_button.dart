@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../l10n/s.dart';
 import '../common/radial_long_press_menu.dart';
+import 'composer_action_menu.dart';
 
 /// 内容操作的能力提供方。
 ///
@@ -141,30 +142,9 @@ class ContentActionsButton extends StatelessWidget {
     final items = _buildItems(context);
     if (items.isEmpty) return;
 
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) return;
-
-    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final position = RelativeRect.fromLTRB(
-      topLeft.dx,
-      topLeft.dy - 8,
-      overlay.size.width - topLeft.dx - box.size.width,
-      overlay.size.height - topLeft.dy,
-    );
-
     final theme = Theme.of(context);
-    final picked = await showMenu<int>(
+    final picked = await showComposerActionMenu<int>(
       context: context,
-      position: position,
-      color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
       items: [
         for (var i = 0; i < items.length; i++)
           PopupMenuItem<int>(

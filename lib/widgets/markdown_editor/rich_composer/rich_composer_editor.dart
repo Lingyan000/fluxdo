@@ -68,10 +68,10 @@ import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
+import '../composer_keyboard_dismiss.dart';
 import '../composer_tools_panel.dart';
 import '../composer_quick_panel.dart';
 import '../composer_tools_anchor.dart';
-import '../composer_panel_scope.dart';
 import '../composer_view_mode_switcher.dart';
 import '../content_actions_button.dart';
 import '../content_actions_providers.dart';
@@ -261,7 +261,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       _emojiPopover = EmojiPopoverController()
         ..addListener(_onEmojiPopoverChanged);
     }
-    _editorAreaFocus.addListener(_onEditorAreaFocusChanged);
     if (kDebugMode) EditorImeClient.debugLogging = true;
     _importInitial();
   }
@@ -317,8 +316,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   @override
   void dispose() {
-    _metadataResult?.complete(null);
-    _metadataResult = null;
     _prefsSub?.close();
     // 镜像 debounce(800ms)窗口内的最后编辑先落盘到 controller ——
     // unmount 后序遍历,子先于宿主 dispose,此刻 controller 还活着、
@@ -339,16 +336,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _altFocus.dispose();
     _slashScroll.dispose();
     if (_ownsFocus) _editorFocus.dispose();
-    _editorAreaFocus.removeListener(_onEditorAreaFocusChanged);
     _editorAreaFocus.dispose();
     _scrollController.dispose();
     _editor?.removeListener(_onDocChanged);
     _editor?.dispose();
     super.dispose();
-  }
-
-  void _onEditorAreaFocusChanged() {
-    if (mounted) setState(() {});
   }
 
   /// 预览返回时恢复输入连接；关闭面板留下的只读状态不能带回来。
@@ -360,52 +352,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
-  Widget? _metadataPanel;
-  Completer<Object?>? _metadataResult;
-
-  Future<Object?> _openMetadataPanel(ComposerPanelBuilder builder) {
-    _metadataResult?.complete(null);
-    final result = Completer<Object?>();
-    _metadataResult = result;
-    _metadataPanel = builder((value) {
-      if (!mounted || _metadataResult != result) return;
-      _metadataResult = null;
-      result.complete(value);
-      closeEmojiPanel();
-      setState(() => _metadataPanel = null);
-      if (value != null) resumeEditing();
-    });
-    _toggleMetadataPanel();
-    return result.future;
-  }
-
-  Widget _buildMetadataPanel() => SizedBox(
-    height: _panelHeight,
-    child: _metadataPanel ?? const SizedBox.shrink(),
-  );
-
-  void _toggleMetadataPanel() {
-    _intendedPanel = _RichPanelType.metadata;
-    SystemChannels.textInput.invokeMethod('TextInput.hide');
-    setState(() => _showEmojiPanel = false);
-    widget.onEmojiPanelChanged?.call(true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _panelController.updatePanelType(
-        ChatBottomPanelType.other,
-        data: _RichPanelType.metadata,
-        forceHandleFocus: ChatBottomHandleFocus.none,
-      );
-    });
-  }
-
-  Widget _buildIntendedPanel() => switch (_intendedPanel) {
-    _RichPanelType.metadata => _buildMetadataPanel(),
-    _ => _buildEmojiPanel(),
-  };
-
   bool _toolsOpen = false;
-  bool _toolsWasEditing = false;
 
   Future<void>? _toolsTask;
 
@@ -418,8 +365,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   Future<void> showTools() {
-    if (_toolsAnchor.expanded) {
-      _toolsAnchor.collapse();
+    if (_toolsAnchor.presenting) {
+      if (_toolsAnchor.expanded) {
+        _toolsAnchor.collapse();
+      } else {
+        _toolsAnchor.reopen();
+      }
       return _toolsTask ?? Future.value();
     }
     return _toolsTask = _presentTools(quick: false);
@@ -428,9 +379,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   Future<void> _presentTools({required bool quick}) async {
     final editor = _editor;
     if (editor == null || _toolsOpen) return;
-    _toolsWasEditing =
-        _editorAreaFocus.hasFocus ||
-        MediaQuery.viewInsetsOf(context).bottom > 0;
     setState(() => _toolsOpen = true);
     final container = ProviderScope.containerOf(context, listen: false);
     final selection = editor.selection;
@@ -1729,8 +1677,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 宿主页 PopScope 只认 onEmojiPanelChanged 回落 canPop,这里
   /// 直接同步状态,不等容器 onPanelTypeChange 转一圈。
   void closeEmojiPanel() {
-    _metadataResult?.complete(null);
-    _metadataResult = null;
     if (_isDesktop) {
       _emojiPopover?.hide();
       return;
@@ -3373,13 +3319,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
     final isEmpty = _lastIsEmpty = _computeIsEmpty();
 
-    final editing =
-        _isDesktop ||
-        (_toolsOpen && _toolsWasEditing) ||
-        _editorAreaFocus.hasFocus ||
-        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-        _currentPanel != _RichPanelType.none ||
-        _intendedPanel != _RichPanelType.none;
+    final editing = _isDesktop || MediaQuery.viewInsetsOf(context).bottom > 0;
     return ComposerEditorLayout(
       editing: editing,
       bodyBuilder: (context, bottomInset, viewportHeight) {
@@ -3563,19 +3503,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       },
       toolbar: _RichToolbar(
         state: editor,
-        metaBar: widget.metaBar == null || _isDesktop
-            ? null
-            : ComposerPanelScope(
-                open: _openMetadataPanel,
-                child: widget.metaBar!,
-              ),
-        editing:
-            _isDesktop ||
-            (_toolsOpen && _toolsWasEditing) ||
-            _editorAreaFocus.hasFocus ||
-            MediaQuery.viewInsetsOf(context).bottom > 0 ||
-            _currentPanel != _RichPanelType.none ||
-            _intendedPanel != _RichPanelType.none,
+        metaBar: _isDesktop ? null : widget.metaBar,
+        editing: editing,
         isEmojiPanelVisible: _showEmojiPanel,
         onToggleEmoji: _toggleEmojiPanel,
         // 桌面端表情按钮由弹层锚点包裹(跟随定位 + toggle 无闪烁)
@@ -3640,7 +3569,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         inputFocusNode: _editorAreaFocus,
         otherPanelWidget: (type) => switch (type) {
           _RichPanelType.emoji => _buildEmojiPanel(),
-          _RichPanelType.metadata => _buildMetadataPanel(),
           _ => const SizedBox.shrink(),
         },
         onPanelTypeChange: (panelType, data) {
@@ -3657,11 +3585,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           if (_intendedPanel != _RichPanelType.none && next != _intendedPanel) {
             return;
           }
-          final wasCustom =
-              _currentPanel == _RichPanelType.emoji ||
-              _currentPanel == _RichPanelType.metadata;
-          final isCustom =
-              next == _RichPanelType.emoji || next == _RichPanelType.metadata;
+          final wasCustom = _currentPanel == _RichPanelType.emoji;
+          final isCustom = next == _RichPanelType.emoji;
           setState(() {
             _currentPanel = next;
             _showEmojiPanel = next == _RichPanelType.emoji;
@@ -3675,7 +3600,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           // 表情面板意图保持中,无论容器报什么态都续显面板
           if (_intendedPanel != _RichPanelType.none &&
               panelType != ChatBottomPanelType.other) {
-            return ColoredBox(color: surface, child: _buildIntendedPanel());
+            return ColoredBox(color: surface, child: _buildEmojiPanel());
           }
           switch (panelType) {
             case ChatBottomPanelType.keyboard:
@@ -3684,9 +3609,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 nativeKeyboardHeight: _panelController.keyboardHeight,
               );
             case ChatBottomPanelType.other:
-              if (data == _RichPanelType.metadata) {
-                return ColoredBox(color: surface, child: _buildMetadataPanel());
-              }
               if (data == _RichPanelType.emoji) {
                 return ColoredBox(color: surface, child: _buildEmojiPanel());
               }
@@ -3735,7 +3657,7 @@ void toggleInlineSpoilerOn(EditorState state) {
 ///
 /// 激活态签名驱动重建(EditorToolbar 同款):纯打字签名不变零重建。
 /// 富 composer 面板类型(ChatBottomPanelContainer 泛型)。
-enum _RichPanelType { none, keyboard, emoji, metadata }
+enum _RichPanelType { none, keyboard, emoji }
 
 /// 键盘占位:原生键盘高(与表情面板同高度源,切换等高零跳变)。
 class _KeyboardPlaceholder extends StatelessWidget {
@@ -3938,11 +3860,14 @@ class _RichToolbarState extends State<_RichToolbar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final editing =
+        widget.editing ||
+        (ComposerKeyboardDismissScope.maybeOf(context)?.active ?? false);
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
-      editing: widget.editing,
+      editing: editing,
       controls: [
         if (!PlatformUtils.isDesktop && widget.contentActions != null)
           ContentActionsButton(
@@ -3957,7 +3882,7 @@ class _RichToolbarState extends State<_RichToolbar> {
               children: [
                 if (widget.onPointerStart != null)
                   Visibility(
-                    visible: widget.editing || widget.onToggleTools == null,
+                    visible: editing || widget.onToggleTools == null,
                     maintainState: true,
                     child: CursorSwipeControl(
                       onPointerStart: widget.onPointerStart,
@@ -3967,7 +3892,7 @@ class _RichToolbarState extends State<_RichToolbar> {
                       onMoveVertical: widget.contentActions?.moveVertical,
                     ),
                   ),
-                if (!widget.editing && widget.onToggleTools != null)
+                if (!editing && widget.onToggleTools != null)
                   _buildToolsButton(theme),
               ],
             ),
@@ -3993,7 +3918,7 @@ class _RichToolbarState extends State<_RichToolbar> {
             ),
           ),
           if (widget.onToggleTools != null &&
-              (PlatformUtils.isDesktop || widget.editing))
+              (PlatformUtils.isDesktop || editing))
             _buildToolsButton(theme),
         ],
       ),

@@ -12,18 +12,8 @@ class CategorySelectionSheet extends StatefulWidget {
   final List<Category> categories;
   final Category? selectedCategory;
 
-  /// 编辑台内嵌模式沿用筛选与校验逻辑；搜索时展开完整选择器。
-  final bool embedded;
-  final VoidCallback? onCancel;
-  final ValueChanged<Category>? onSelected;
-  final VoidCallback? onSearchRequested;
-
   const CategorySelectionSheet({
     super.key,
-    this.embedded = false,
-    this.onSelected,
-    this.onCancel,
-    this.onSearchRequested,
     required this.categories,
     this.selectedCategory,
   });
@@ -98,10 +88,10 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     final items = _buildList();
 
     return DraggableScrollableSheet(
-      initialChildSize: widget.embedded ? 1 : 0.7,
-      minChildSize: widget.embedded ? 1 : 0.5,
-      maxChildSize: widget.embedded ? 1 : 0.95,
-      expand: widget.embedded,
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
       builder: (context, scrollController) {
         return AppSheetScaffold(
           expandToFill: true,
@@ -136,10 +126,6 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: TextField(
-                              readOnly: widget.embedded,
-                              onTap: widget.embedded
-                                  ? widget.onSearchRequested
-                                  : null,
                               controller: _searchController,
                               focusNode: _searchFocusNode,
                               textAlignVertical: TextAlignVertical.center,
@@ -182,8 +168,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                         ),
                         const SizedBox(width: 8),
                         TextButton(
-                          onPressed:
-                              widget.onCancel ?? () => Navigator.pop(context),
+                          onPressed: () => Navigator.pop(context),
                           style: TextButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -230,13 +215,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                               : null;
 
                           return InkWell(
-                            onTap: () {
-                              if (widget.onSelected != null) {
-                                widget.onSelected!(cat);
-                              } else {
-                                Navigator.pop(context, cat);
-                              }
-                            },
+                            onTap: () => Navigator.pop(context, cat),
                             child: Container(
                               padding: EdgeInsets.only(
                                 left: 16 + item.depth * 24.0,

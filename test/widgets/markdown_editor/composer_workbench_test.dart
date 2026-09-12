@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/widgets/common/tag_selection_sheet.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -39,6 +42,7 @@ Future<void> _pump(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetViewInsets);
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
   await tester.runAsync(() async {
@@ -71,17 +75,19 @@ Future<void> _pump(
             brightness: dark ? Brightness.dark : Brightness.light,
             colorSchemeSeed: const Color(0xff315fe7),
           ),
-          home: MediaQuery(
-            data: MediaQueryData(
-              size: Size(width, 760),
-              textScaler: TextScaler.linear(scale),
-            ),
-            child: RepaintBoundary(
-              key: const ValueKey('capture-workbench'),
-              child: Scaffold(
-                resizeToAvoidBottomInset: false,
-                appBar: AppBar(title: const Text('新话题')),
-                body: child,
+          home: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                size: Size(width, 760),
+                textScaler: TextScaler.linear(scale),
+              ),
+              child: RepaintBoundary(
+                key: const ValueKey('capture-workbench'),
+                child: Scaffold(
+                  resizeToAvoidBottomInset: false,
+                  appBar: AppBar(title: const Text('新话题')),
+                  body: child,
+                ),
               ),
             ),
           ),
@@ -354,6 +360,7 @@ void main() {
           dark: scale == 2,
         );
         focus.requestFocus();
+        tester.view.viewInsets = const FakeViewPadding(bottom: 240);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(tester.takeException(), isNull);
@@ -390,7 +397,71 @@ void main() {
     }
   }
 
-  testWidgets('普通态隐藏格式行，输入后原位置出现', (tester) async {
+  for (final rich in [false, true]) {
+    testWidgets('光标与内容菜单保留键盘和选区 rich=$rich', (tester) async {
+      final controller = TextEditingController(text: rich ? '' : 'hello world');
+      final focus = FocusNode();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(controller: controller, focusNode: focus)
+            : MarkdownEditor(controller: controller, focusNode: focus),
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      focus.requestFocus();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final editor = rich
+          ? tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state
+          : null;
+      if (rich) {
+        editor!.pastePlainText('hello world');
+        editor.selectAll();
+      } else {
+        controller.selection = const TextSelection(
+          baseOffset: 0,
+          extentOffset: 5,
+        );
+      }
+      await tester.pump();
+      final selection = rich ? editor!.selection : controller.selection;
+      expect(focus.hasFocus, isTrue);
+      for (final control in [
+        find.byType(ContentActionsButton),
+        find.byType(CursorSwipeControl),
+      ]) {
+        tester.testTextInput.log.clear();
+        await tester.tap(control);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(focus.hasFocus, isTrue, reason: '菜单路由不能抢正文焦点');
+        expect(
+          tester.testTextInput.log.where(
+            (call) => call.method == 'TextInput.hide',
+          ),
+          isEmpty,
+        );
+        expect(rich ? editor!.selection : controller.selection, selection);
+        final items = find.byType(PopupMenuItem<int>);
+        expect(items, findsWidgets);
+        expect(tester.getRect(items.first).top, greaterThanOrEqualTo(0));
+        expect(
+          tester.getRect(items.last).bottom,
+          lessThanOrEqualTo(500),
+          reason: '操作菜单避开键盘',
+        );
+        await tester.tapAt(const Offset(2, 80));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(focus.hasFocus, isTrue);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+  }
+
+  testWidgets('格式行只跟随键盘，不跟随光标或焦点', (tester) async {
     final controller = TextEditingController();
     final focus = FocusNode();
     await _pump(
@@ -405,7 +476,18 @@ void main() {
     focus.requestFocus();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey('composer-format-row')),
+      findsNothing,
+      reason: '有光标而键盘关闭时，不显示格式行',
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    await tester.pump();
     expect(find.byKey(const ValueKey('composer-format-row')), findsOneWidget);
+    tester.view.viewInsets = const FakeViewPadding();
+    await tester.pump();
+    expect(focus.hasFocus, isTrue);
+    expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
     focus.unfocus();
     await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -440,7 +522,7 @@ void main() {
           )
           .first,
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(table);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -486,6 +568,7 @@ void main() {
       ),
     );
     focus.requestFocus();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
     controller.selection = const TextSelection.collapsed(offset: 3);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('cursor-swipe-knob')));
@@ -500,7 +583,7 @@ void main() {
     focus.dispose();
   });
 
-  testWidgets('分类选择复用面板区域，并保持正文选区', (tester) async {
+  testWidgets('分类和标签恢复独立弹框，并保持正文选区', (tester) async {
     final controller = TextEditingController(text: 'abcdef');
     final focus = FocusNode();
     final categories = [
@@ -541,10 +624,35 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(ComposerWorkbench), findsOneWidget);
+    expect(find.byType(BottomSheet), findsOneWidget);
     await tester.tap(find.text('日常'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(selected?.id, 2);
+    expect(controller.selection.extentOffset, 3);
+    final service = DiscourseService();
+    final mock = InterceptorsWrapper(
+      onRequest: (options, handler) => handler.resolve(
+        Response(requestOptions: options, data: {'results': <Object>[]}),
+      ),
+    );
+    service.dio.interceptors.insert(0, mock);
+    addTearDown(() => service.dio.interceptors.remove(mock));
+    await tester.tap(find.text(S.current.topic_addTags));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(TagSelectionSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ComposerWorkbench),
+        matching: find.byType(TagSelectionSheet),
+      ),
+      findsNothing,
+    );
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(controller.selection.extentOffset, 3);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
