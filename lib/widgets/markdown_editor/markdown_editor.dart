@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -209,6 +210,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     _focusNode.requestFocus();
     if (!_isDesktop) {
       _panelController.updatePanelType(ChatBottomPanelType.keyboard);
+      SystemChannels.textInput.invokeMethod<void>('TextInput.show');
     }
   }
 
@@ -226,6 +228,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   Future<void> showTools() {
     if (!_isDesktop &&
+        !_toolsAnchor.presenting &&
         MediaQuery.viewInsetsOf(context).bottom == 0 &&
         !showEmojiPanel &&
         !_returningToKeyboard) {
@@ -248,7 +251,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     setState(() => _toolsOpen = true);
     final selection = widget.controller.selection;
     final keyboardWasVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
-    if (quick || _isDesktop) closeEmojiPanel();
+    closeEmojiPanel();
     void run(VoidCallback action) {
       if (!mounted) return;
       if (selection.isValid && selection.end <= widget.controller.text.length) {
@@ -367,7 +370,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
               anchor: _toolsAnchor,
               pinnedIds: ref.read(preferencesProvider).editorToolbarTools,
             );
-      if (!executed && mounted && (_isDesktop || keyboardWasVisible)) {
+      if (!executed &&
+          mounted &&
+          (_isDesktop || (quick && keyboardWasVisible))) {
         resumeEditing();
       }
     } finally {
@@ -560,6 +565,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   /// 关闭表情/工具面板（供外部调用，如返回键拦截）
   void closeEmojiPanel() {
+    _toolsAnchor.dismiss();
     if (_isDesktop) {
       _emojiPopover?.hide();
       return;
@@ -582,6 +588,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
   /// 切换自定义面板（表情/工具）
   void _togglePanel(EditorPanelType type) {
+    _toolsAnchor.dismiss();
     // 桌面端表情走悬浮弹层,不进 docked 容器
     if (_isDesktop && type == EditorPanelType.emoji) {
       _emojiPopover!.toggle(context, panel: _ensureEmojiPanelChild());
@@ -628,6 +635,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   /// 外滚结构下 TextField 只占内容高,旧 expands 的整区可点由此兜底;
   /// readOnly(表情面板开)时与 TextField 的 Listener 同款切回键盘。
   void _onBlankAreaTap() {
+    if (_toolsAnchor.presenting) {
+      _toolsAnchor.collapse();
+      resumeEditing();
+    }
     if (_readOnly) {
       _intendedPanel = EditorPanelType.none;
       _updateReadOnly(false);
@@ -942,6 +953,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     // 用 Listener 捕获点击：readOnly 模式下点击切回键盘
     final wrappedField = Listener(
       onPointerUp: (_) {
+        if (_toolsAnchor.presenting) {
+          _toolsAnchor.collapse();
+          resumeEditing();
+        }
         if (_readOnly) {
           _intendedPanel = EditorPanelType.none;
           _updateReadOnly(false);
@@ -1041,11 +1056,14 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         _isDesktop ||
         MediaQuery.viewInsetsOf(context).bottom > 0 ||
         showEmojiPanel ||
-        _returningToKeyboard;
+        _returningToKeyboard ||
+        _toolsAnchor.presenting;
     return ComposerEditorLayout(
       toolsAnchor: _toolsAnchor,
       editing: editing,
       holdInputToolbar: showEmojiPanel || _returningToKeyboard,
+      onResumeKeyboard: resumeEditing,
+      customPanelVisible: showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
         return Stack(

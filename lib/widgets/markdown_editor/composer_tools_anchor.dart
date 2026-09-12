@@ -11,6 +11,7 @@ class ComposerToolsAnchor extends ChangeNotifier {
   final targets = <String, GlobalKey>{};
   Completer<ComposerToolAction?>? _result;
   bool expanded = false;
+  bool restoreInput = true;
   bool customizing = false;
   ComposerToolAction? _picked;
   Animation<double>? animation;
@@ -26,15 +27,26 @@ class ComposerToolsAnchor extends ChangeNotifier {
     targets.clear();
     _picked = null;
     customizing = false;
+    restoreInput = true;
     _result = Completer<ComposerToolAction?>();
     expanded = true;
     notifyListeners();
     return _result!.future;
   }
 
-  void collapse([ComposerToolAction? picked]) {
-    if (!expanded) return;
+  void collapse([ComposerToolAction? picked]) =>
+      _collapse(picked, restore: true);
+
+  /// 离开输入、预览或系统返回时收起工具，不重新弹出键盘。
+  void dismiss() => _collapse(null, restore: false);
+
+  void _collapse(ComposerToolAction? picked, {required bool restore}) {
+    if (_result == null ||
+        (!expanded && restoreInput == restore && _picked == picked)) {
+      return;
+    }
     _picked = picked;
+    restoreInput = restore;
     expanded = false;
     notifyListeners();
   }
@@ -43,6 +55,7 @@ class ComposerToolsAnchor extends ChangeNotifier {
   void reopen() {
     if (_result == null || expanded) return;
     _picked = null;
+    restoreInput = true;
     expanded = true;
     notifyListeners();
   }
@@ -50,6 +63,8 @@ class ComposerToolsAnchor extends ChangeNotifier {
   void finish() {
     final result = _result;
     _result = null;
+    expanded = false;
+    animation = null;
     targets.clear();
     result?.complete(_picked);
     if (result != null) notifyListeners();

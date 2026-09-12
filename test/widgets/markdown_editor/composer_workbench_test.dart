@@ -46,6 +46,18 @@ Future<void> _pump(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetViewInsets);
+  // 本文件手动回报 IME 帧；原生拖拽通道在专门的交接测试中覆盖。
+  const keyboardChannel = MethodChannel('com.fluxdo/interactive_keyboard');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    keyboardChannel,
+    (call) async => call.method == 'begin' ? {'supported': false} : null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      keyboardChannel,
+      null,
+    ),
+  );
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
   await tester.runAsync(() async {
@@ -662,7 +674,7 @@ void main() {
       focus.dispose();
     });
 
-    testWidgets('工具行渐变显隐，关闭键盘自动折叠且不能在非输入态展开 rich=$rich', (tester) async {
+    testWidgets('工具接替键盘后保留展开，结束输入才隐藏工具行 rich=$rich', (tester) async {
       final controller = TextEditingController();
       final focus = FocusNode();
       final sourceKey = GlobalKey<MarkdownEditorState>();
@@ -710,20 +722,26 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 450));
       expect(grid, findsOneWidget);
-      final expandedHeight = tester.getSize(island).height;
+      final expandedTop = tester.getTopLeft(island).dy;
       tester.view.viewInsets = const FakeViewPadding();
       ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
       await tester.pump();
       expect(
-        tester.getSize(island).height,
-        lessThanOrEqualTo(expandedHeight + .1),
-        reason: '键盘消失时不能先向上膨胀再收起',
+        tester.getTopLeft(island).dy,
+        closeTo(expandedTop, .1),
+        reason: '键盘让出的空间由面板向下接住，上沿不跳变',
       );
+      expect(grid, findsOneWidget, reason: '工具态不再依赖键盘可见');
+      if (rich) {
+        richKey.currentState!.closeEmojiPanel();
+      } else {
+        sourceKey.currentState!.closeEmojiPanel();
+      }
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 180));
       expect(grid, findsNothing);
       await tester.pump(const Duration(milliseconds: 70));
-      expect(tester.getSize(island).height, greaterThan(closedHeight));
+      expect(tester.getSize(island).height, greaterThanOrEqualTo(closedHeight));
       await tester.pump(const Duration(milliseconds: 100));
       expect(formats, findsNothing);
       expect(handle, findsNothing);
@@ -748,6 +766,53 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
       expect(formats, findsOneWidget, reason: '快速重新打开输入区应打断隐藏动画');
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+  }
+
+  for (final rich in [false, true]) {
+    testWidgets('工具态点击正文重新接回键盘 rich=$rich', (tester) async {
+      final controller = TextEditingController(text: rich ? '' : '继续编辑');
+      final focus = FocusNode();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(controller: controller, focusNode: focus)
+            : MarkdownEditor(controller: controller, focusNode: focus),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      if (rich) {
+        tester
+            .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+            .state
+            .pastePlainText('继续编辑');
+      }
+      focus.requestFocus();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pump();
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('composer-tools-panel')),
+        findsOneWidget,
+      );
+      tester.testTextInput.log.clear();
+      await tester.tapAt(const Offset(70, 100));
+      await tester.pump();
+      expect(
+        tester.testTextInput.log.any((call) => call.method == 'TextInput.show'),
+        isTrue,
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('composer-tools-panel')), findsNothing);
+      expect(focus.hasFocus, isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
       focus.dispose();
@@ -807,6 +872,8 @@ void main() {
     await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+    tester.view.viewInsets = const FakeViewPadding();
+    await tester.pump();
     expect(find.text(S.current.toolbar_moreTools), findsNothing);
     expect(find.byKey(const ValueKey('composer-tools-search')), findsNothing);
     final table = find.byKey(const ValueKey('composer-tool-insert:table'));
@@ -823,6 +890,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(table);
     await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
     await tester.pump(const Duration(milliseconds: 400));
     for (
       var i = 0;

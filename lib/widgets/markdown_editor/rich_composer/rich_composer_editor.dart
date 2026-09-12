@@ -377,6 +377,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   Future<void> showTools() {
     if (!_isDesktop &&
+        !_toolsAnchor.presenting &&
         MediaQuery.viewInsetsOf(context).bottom == 0 &&
         !_showEmojiPanel &&
         !_returningToKeyboard) {
@@ -402,7 +403,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final toolContext = _buildToolContext(editor);
     final snapshot = _buildToolSnapshot(editor);
     final keyboardWasVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
-    if (quick || _isDesktop) closeEmojiPanel();
+    closeEmojiPanel();
     void run(VoidCallback action) {
       if (!mounted) return;
       if (selection != null) editor.updateSelection(selection);
@@ -503,7 +504,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               anchor: _toolsAnchor,
               pinnedIds: container.read(preferencesProvider).richToolbarTools,
             );
-      if (!executed && mounted && (_isDesktop || keyboardWasVisible)) {
+      if (!executed &&
+          mounted &&
+          (_isDesktop || (quick && keyboardWasVisible))) {
         resumeEditing();
       }
     } finally {
@@ -1617,6 +1620,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 表情面板开关(MarkdownEditor._togglePanel 同构:移动端经
   /// ChatBottomPanelContainer 与键盘等高互切零跳变;桌面走悬浮弹层)。
   void _toggleEmojiPanel() {
+    _toolsAnchor.dismiss();
     // 桌面端:悬浮弹层,不收 IME、焦点/光标原地不动;
     // _showEmojiPanel 由 popover listener 同步(驱动按钮高亮)
     if (_isDesktop) {
@@ -1681,6 +1685,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// selection 不变、syncFromState 不触发平台调用 → 键盘不出来
   /// ("关了面板但键盘没弹"的根因);连接在,show 幂等安全。
   void _onEditorAreaPointerDown() {
+    if (_toolsAnchor.presenting) {
+      _toolsAnchor.collapse();
+      resumeEditing();
+    }
     if (_intendedPanel == _RichPanelType.none) return;
     _intendedPanel = _RichPanelType.none;
     _panelController.updatePanelType(ChatBottomPanelType.keyboard);
@@ -1694,6 +1702,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 宿主页 PopScope 只认 onEmojiPanelChanged 回落 canPop,这里
   /// 直接同步状态,不等容器 onPanelTypeChange 转一圈。
   void closeEmojiPanel() {
+    _toolsAnchor.dismiss();
     if (_isDesktop) {
       _emojiPopover?.hide();
       return;
@@ -3340,11 +3349,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         _isDesktop ||
         MediaQuery.viewInsetsOf(context).bottom > 0 ||
         _showEmojiPanel ||
-        _returningToKeyboard;
+        _returningToKeyboard ||
+        _toolsAnchor.presenting;
     return ComposerEditorLayout(
       toolsAnchor: _toolsAnchor,
       editing: editing,
       holdInputToolbar: _showEmojiPanel || _returningToKeyboard,
+      onResumeKeyboard: resumeEditing,
+      customPanelVisible: _showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
         return Stack(

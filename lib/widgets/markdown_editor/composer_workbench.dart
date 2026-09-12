@@ -7,6 +7,7 @@ import '../../l10n/s.dart';
 import 'composer_view_mode_switcher.dart';
 import 'composer_chrome.dart';
 import 'composer_keyboard_dismiss.dart';
+import 'composer_input_handoff.dart';
 import 'composer_tools_panel.dart';
 import 'composer_tool_cell.dart' show ComposerToolGlyph;
 import 'package:flutter/services.dart';
@@ -49,12 +50,21 @@ class ComposerWorkbench extends StatefulWidget {
 }
 
 class _ComposerWorkbenchState extends State<ComposerWorkbench>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final _animation = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 380),
     reverseDuration: const Duration(milliseconds: 260),
   );
+  late final _visualAnimation = AnimationController(vsync: this);
+  late final _toolAnimation = _ToolTransitionAnimation(
+    _visualAnimation,
+    () => _animation.isAnimating || _dragging,
+    () => _animation.status == AnimationStatus.reverse
+        ? AnimationStatus.reverse
+        : AnimationStatus.forward,
+  );
+  ComposerInputHandoff? _input;
   final _contentKey = GlobalKey();
   final _focus = FocusNode();
   List<String> _flightIds = [];
@@ -77,7 +87,20 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     super.initState();
     widget.toolsAnchor?.addListener(_changed);
     _animation.addStatusListener(_status);
+    _animation.addListener(_moveInput);
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _input = context
+        .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>()
+        ?.input;
+  }
+
+  void _moveInput() {
+    if (_presenting) _input?.update(_animation.value);
   }
 
   bool _onHardwareKey(KeyEvent event) {
@@ -100,6 +123,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     }
     if (!PlatformUtils.isDesktop &&
         !widget.editing &&
+        _input?.active != true &&
         _presenting &&
         !_closingForInput) {
       _closingForInput = true;
@@ -135,17 +159,23 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
           ),
       ];
       _presenting = true;
+      if (!PlatformUtils.isDesktop) {
+        final viewport = context
+            .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>();
+        _input?.begin(View.of(context), viewport?.panelHeight ?? 0);
+      }
       _expandedTools = ComposerExpandedTools(
         anchor: anchor,
-        animation: _animation,
+        animation: _toolAnimation,
         flyingIds: _flightIds.toSet(),
       );
-      anchor.animation = _animation;
+      anchor.animation = _toolAnimation;
       _history = LocalHistoryEntry(
         impliesAppBarDismissal: false,
         onRemove: () {
+          final fromSystem = _history != null;
           _history = null;
-          anchor.collapse();
+          if (fromSystem) anchor.dismiss();
         },
       );
       ModalRoute.of(context)?.addLocalHistoryEntry(_history!);
@@ -161,9 +191,15 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _status(AnimationStatus status) {
+    if (!_dragging &&
+        (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed)) {
+      _input?.reachedTarget(status == AnimationStatus.completed);
+    }
     if (status != AnimationStatus.dismissed || !_presenting || _dragging) {
       return;
     }
+    if (_input?.active == true && !_input!.readyToFinish) return;
     _sourceIcons = {};
     _closingForInput = false;
     _presenting = false;
@@ -172,6 +208,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     _history = null;
     history?.remove();
     widget.toolsAnchor?.finish();
+    _input?.finish();
     if (mounted) setState(() {});
   }
 
@@ -181,13 +218,15 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     widget.toolsAnchor?.removeListener(_changed);
     widget.toolsAnchor?.finish();
     _history?.remove();
+    _input?.finish();
     _animation.dispose();
+    _visualAnimation.dispose();
     _focus.dispose();
     super.dispose();
   }
 
   void _toggle() {
-    if (!PlatformUtils.isDesktop && !widget.editing) return;
+    if (!PlatformUtils.isDesktop && !widget.editing && !_presenting) return;
     if (widget.toolsAnchor?.presenting == true) {
       _setExpansion(!widget.toolsAnchor!.expanded);
     } else {
@@ -207,9 +246,14 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _settle(bool open) {
+    _input?.settle(
+      open,
+      restoreInput: widget.toolsAnchor?.restoreInput ?? true,
+    );
     final target = open ? 1.0 : 0.0;
     final remaining = (target - _animation.value).abs();
     if (remaining == 0) {
+      _input?.reachedTarget(open);
       if (!open) _status(AnimationStatus.dismissed);
       return;
     }
@@ -221,7 +265,8 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       milliseconds:
           ((open
                       ? 380
-                      : (!PlatformUtils.isDesktop && !widget.editing
+                      : (!PlatformUtils.isDesktop &&
+                                (!widget.editing || _input?.dismissing == true)
                             ? 160
                             : 260)) *
                   remaining)
@@ -243,11 +288,13 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _startDrag(DragStartDetails details) {
-    if (!PlatformUtils.isDesktop && !widget.editing) return;
+    if (!PlatformUtils.isDesktop && !widget.editing && !_presenting) return;
     _dragWasExpanded = widget.toolsAnchor?.expanded ?? false;
     _dragging = true;
     _lastDragY = details.globalPosition.dy;
-    _gestureExtent = _expansionHeight;
+    _gestureExtent = _input?.active == true
+        ? math.max(48, _mobileLift)
+        : _expansionHeight;
     _keyboardGesture = null;
     if (_presenting) _animation.stop();
   }
@@ -260,7 +307,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _drag(double delta) {
-    if (!PlatformUtils.isDesktop && !widget.editing) return;
+    if (!PlatformUtils.isDesktop && !widget.editing && !_presenting) return;
     if (_keyboardGesture != null) {
       _keyboardGesture!.update(delta);
       return;
@@ -278,14 +325,20 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       if (delta == 0) return;
       widget.onExpandTools?.call();
       _animation.stop();
+      if (_input?.active == true) _gestureExtent = math.max(48, _mobileLift);
     }
     if (!_presenting || _gestureExtent <= 0) return;
     // value 就是几何进度，拖动不经过补间曲线，也不依赖移动控件的局部坐标。
+    if (delta > 0 && _input?.active == true && _animation.value == 1) {
+      _input?.settle(false);
+    }
     _animation.value = (_animation.value - delta / _gestureExtent).clamp(
       0.0,
       1.0,
     );
   }
+
+  double _mobileLift = 96;
 
   void _cancelDrag() {
     // 轻点按钮赢得手势竞争时也会收到 cancel，此时并没有开始拖动。
@@ -330,16 +383,36 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
         ? ComposerToolsHandle.height * inputProgress
         : 0.0;
     final keyboard = ComposerKeyboardDismissScope.maybeOf(context);
-    final editing = widget.editing || (keyboard?.active ?? false);
+    final editing =
+        widget.editing || _presenting || (keyboard?.active ?? false);
     final footerHeight = desktop ? row + 4 : row + (row + 4) * inputProgress;
     final baseHeight = footerHeight + handleHeight;
     final available = viewport?.height ?? MediaQuery.sizeOf(context).height;
-    final expansionHeight = math.min(
-      _dragging || _closingForInput
-          ? _gestureExtent
-          : (desktop ? 360.0 : 400.0),
-      math.max(0.0, available - baseHeight - 40),
-    );
+    final takeover = !desktop && _input?.active == true;
+    _mobileLift = _input?.extraLift(available, baseHeight) ?? 96;
+    final expansionHeight = takeover
+        ? math.min(
+            math.max(
+                  0,
+                  _input!.inputHeight -
+                      MediaQuery.viewPaddingOf(context).bottom,
+                ) +
+                _mobileLift,
+            math.max(
+              0.0,
+              available +
+                  _input!.visibleHeight -
+                  MediaQuery.viewPaddingOf(context).bottom -
+                  baseHeight -
+                  40,
+            ),
+          )
+        : math.min(
+            _dragging || _closingForInput
+                ? _gestureExtent
+                : (desktop ? 360.0 : 400.0),
+            math.max(0.0, available - baseHeight - 40),
+          );
     _expansionHeight = expansionHeight;
     final theme = Theme.of(context);
     final footer = desktop
@@ -410,9 +483,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
           );
     return TextFieldTapRegion(
       child: TapRegion(
-        onTapOutside: _presenting
-            ? (_) => widget.toolsAnchor?.collapse()
-            : null,
+        onTapOutside: _presenting ? (_) => widget.toolsAnchor?.dismiss() : null,
         child: Listener(
           onPointerCancel: (_) => _cancelDrag(),
           child: CallbackShortcuts(
@@ -441,12 +512,32 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                     child: Padding(
                       padding: const EdgeInsets.all(4),
                       child: AnimatedBuilder(
-                        animation: _animation,
+                        animation: Listenable.merge([_animation, _input]),
                         builder: (context, _) {
-                          final progress = _animation.value;
+                          final revealed = takeover
+                              ? math.min(
+                                  math.max(0, available - baseHeight - 40),
+                                  _input!.replacementHeight +
+                                      _mobileLift * _animation.value,
+                                )
+                              : expansionHeight * _animation.value;
+                          final progress = expansionHeight > 0
+                              ? (revealed / expansionHeight).clamp(0.0, 1.0)
+                              : _animation.value;
+                          _visualAnimation.value = progress;
+                          if (_presenting &&
+                              !_dragging &&
+                              _animation.isDismissed &&
+                              (_input?.readyToFinish ?? true)) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted && _animation.isDismissed) {
+                                _status(AnimationStatus.dismissed);
+                              }
+                            });
+                          }
                           return SizedBox(
                             key: _contentKey,
-                            height: baseHeight + expansionHeight * progress,
+                            height: baseHeight + revealed,
                             child: Stack(
                               clipBehavior: Clip.hardEdge,
                               children: [
@@ -461,13 +552,13 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     height: expansionHeight,
                                     child: IgnorePointer(
                                       ignoring:
-                                          _animation.status !=
+                                          _toolAnimation.status !=
                                           AnimationStatus.completed,
                                       child: Opacity(
                                         opacity: const Interval(
                                           .22,
                                           .82,
-                                        ).transform(_animation.value),
+                                        ).transform(progress),
                                         child: _expandedTools!,
                                       ),
                                     ),
@@ -541,7 +632,9 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     ),
                                   ),
                                 if (_flightIds.isNotEmpty &&
-                                    (_animation.isAnimating || _dragging))
+                                    (_animation.isAnimating ||
+                                        progress > 0 && progress < 1 ||
+                                        _dragging))
                                   Positioned.fill(
                                     child: IgnorePointer(
                                       child: Flow(
@@ -551,9 +644,9 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                           sourceBottomLeft: _sourceBottomLeft,
                                           anchor: widget.toolsAnchor!,
                                           contentKey: _contentKey,
-                                          progress: _animation.value,
+                                          progress: progress,
                                           remainingHeight:
-                                              expansionHeight * (1 - progress),
+                                              expansionHeight - revealed,
                                         ),
                                         children: _flightChildren,
                                       ),
@@ -574,6 +667,21 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       ),
     );
   }
+}
+
+/// 几何由键盘和手势共同决定；首尾帧仍保留运动方向，图标才能从
+/// 原槽位接入飞行层，不会在反向的第一帧重叠或消失。
+class _ToolTransitionAnimation extends Animation<double>
+    with AnimationWithParentMixin<double> {
+  _ToolTransitionAnimation(this.parent, this.moving, this.direction);
+  @override
+  final Animation<double> parent;
+  final bool Function() moving;
+  final AnimationStatus Function() direction;
+  @override
+  double get value => parent.value;
+  @override
+  AnimationStatus get status => moving() ? direction() : parent.status;
 }
 
 /// 用真实图标 Widget 迁移；布局只做一次，逐帧只更新绘制变换。
@@ -633,7 +741,7 @@ class _ToolFlights extends FlowDelegate {
           ..translateByDouble(
             center.dx - extent / 2,
             center.dy - extent / 2,
-            0,
+            0.0,
             1,
           )
           ..scaleByDouble(scale, scale, 1, 1),
@@ -649,13 +757,20 @@ class _WorkbenchViewport extends InheritedWidget {
   const _WorkbenchViewport({
     required this.height,
     required this.inputProgress,
+    required this.panelHeight,
+    this.input,
     required super.child,
   });
   final double height;
   final double inputProgress;
+  final double panelHeight;
+  final ComposerInputHandoff? input;
   @override
   bool updateShouldNotify(_WorkbenchViewport oldWidget) =>
-      height != oldWidget.height || inputProgress != oldWidget.inputProgress;
+      height != oldWidget.height ||
+      inputProgress != oldWidget.inputProgress ||
+      panelHeight != oldWidget.panelHeight ||
+      input != oldWidget.input;
 }
 
 /// 正文占满画布，工具岛覆盖其底部。只有键盘/扩展面板占独立布局空间。
@@ -668,6 +783,8 @@ class ComposerEditorLayout extends StatefulWidget {
     required this.panel,
     this.toolsAnchor,
     this.holdInputToolbar = false,
+    this.onResumeKeyboard,
+    this.customPanelVisible = false,
   });
   final bool editing;
   final Widget Function(
@@ -682,6 +799,8 @@ class ComposerEditorLayout extends StatefulWidget {
 
   /// 表情面板及其返回键盘的交接期保持完整工具行。
   final bool holdInputToolbar;
+  final VoidCallback? onResumeKeyboard;
+  final bool customPanelVisible;
 
   @override
   State<ComposerEditorLayout> createState() => _ComposerEditorLayoutState();
@@ -691,6 +810,10 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
     with TickerProviderStateMixin {
   late final _keyboard = ComposerKeyboardDismissController(vsync: this)
     ..addListener(_onKeyboardActivity);
+  late final _toolsInput = ComposerInputHandoff(_keyboard, vsync: this)
+    ..onResumeKeyboard = widget.onResumeKeyboard
+    ..addListener(_onToolsInput);
+  final _panelKey = GlobalKey();
   bool _keyboardActive = false;
   late final _inputVisibility = AnimationController(
     vsync: this,
@@ -710,9 +833,21 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
     _disableAnimations = MediaQuery.disableAnimationsOf(context);
     _keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     _safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    _toolsInput.updateMetrics(
+      _keyboardInset,
+      _safeBottom,
+      customPanel: widget.customPanelVisible,
+      disableAnimations: _disableAnimations,
+    );
     _inputRevealExtent =
         ComposerWorkbench.rowHeight(context) + ComposerToolsHandle.height + 4;
     _syncInputVisibility();
+  }
+
+  void _onToolsInput() {
+    if (!mounted || !_active) return;
+    _syncInputVisibility();
+    setState(() {});
   }
 
   @override
@@ -741,6 +876,13 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
       oldWidget.toolsAnchor?.removeListener(_syncInputVisibility);
       widget.toolsAnchor?.addListener(_syncInputVisibility);
     }
+    _toolsInput.onResumeKeyboard = widget.onResumeKeyboard;
+    _toolsInput.updateMetrics(
+      _keyboardInset,
+      _safeBottom,
+      customPanel: widget.customPanelVisible,
+      disableAnimations: _disableAnimations,
+    );
     _syncInputVisibility();
   }
 
@@ -749,6 +891,7 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
     final nativeDriven =
         !PlatformUtils.isDesktop &&
         !widget.holdInputToolbar &&
+        !_toolsInput.active &&
         widget.toolsAnchor?.presenting != true;
     if (nativeDriven &&
         (_keyboardInset > 0 || _keyboardActive || _trackingKeyboard)) {
@@ -767,9 +910,15 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
       return;
     }
     _trackingKeyboard = false;
-    final visible = widget.editing || _keyboardActive;
+    final visible =
+        !_toolsInput.dismissing &&
+        (widget.editing || _keyboardActive || _toolsInput.active);
     // 工具岛先收拢，再退去格式行；两种编辑器和正文避让共用同一进度。
-    if (!visible && widget.toolsAnchor?.presenting == true) return;
+    if (!visible &&
+        widget.toolsAnchor?.presenting == true &&
+        !_toolsInput.dismissing) {
+      return;
+    }
     final target = visible ? 1.0 : 0.0;
     if (!_disableAnimations &&
         _inputVisibility.isAnimating &&
@@ -802,6 +951,8 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   void dispose() {
     widget.toolsAnchor?.removeListener(_syncInputVisibility);
     _inputVisibility.dispose();
+    _toolsInput.removeListener(_onToolsInput);
+    _toolsInput.dispose();
     _keyboard.removeListener(_onKeyboardActivity);
     _keyboard.dispose();
     super.dispose();
@@ -812,7 +963,7 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
     controller: _keyboard,
     active: _keyboardActive,
     child: AnimatedBuilder(
-      animation: _inputVisibility,
+      animation: Listenable.merge([_inputVisibility, _toolsInput]),
       builder: (context, _) => Column(
         children: [
           Expanded(
@@ -821,22 +972,48 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
                 key: const ValueKey('composer-writing-canvas'),
                 fit: StackFit.expand,
                 children: [
-                  MediaQuery(
-                    data: MediaQuery.of(context).copyWith(
-                      size: Size(
-                        viewport.maxWidth,
-                        MediaQuery.sizeOf(context).height,
-                      ),
-                    ),
-                    child: widget.bodyBuilder(
-                      context,
-                      ComposerWorkbench.occupiedHeight(
-                            context,
-                            widget.editing || _keyboardActive,
-                            inputProgress: _inputVisibility.value,
-                          ) +
-                          12,
+                  Positioned.fill(
+                    bottom: math.min(
+                      _toolsInput.replacementHeight,
                       viewport.maxHeight,
+                    ),
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: Size(
+                          viewport.maxWidth,
+                          MediaQuery.sizeOf(context).height,
+                        ),
+                      ),
+                      child: widget.bodyBuilder(
+                        context,
+                        ComposerWorkbench.occupiedHeight(
+                              context,
+                              widget.editing || _keyboardActive,
+                              inputProgress: _inputVisibility.value,
+                            ) +
+                            12 +
+                            (_toolsInput.active
+                                ? _toolsInput.extraLift(
+                                        viewport.maxHeight -
+                                            ComposerChromeScope.topInsetOf(
+                                              context,
+                                            ),
+                                        ComposerWorkbench.occupiedHeight(
+                                              context,
+                                              widget.editing,
+                                              inputProgress:
+                                                  _inputVisibility.value,
+                                            ) -
+                                            8 -
+                                            kComposerIslandBottomGap,
+                                      ) *
+                                      _toolsInput.progress
+                                : 0),
+                        math.max(
+                          0,
+                          viewport.maxHeight - _toolsInput.replacementHeight,
+                        ),
+                      ),
                     ),
                   ),
                   Positioned(
@@ -848,6 +1025,13 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
                         alignment: Alignment.bottomCenter,
                         child: _WorkbenchViewport(
                           inputProgress: _inputVisibility.value,
+                          input: PlatformUtils.isDesktop ? null : _toolsInput,
+                          panelHeight:
+                              (_panelKey.currentContext?.findRenderObject()
+                                      as RenderBox?)
+                                  ?.size
+                                  .height ??
+                              math.max(_keyboardInset, _safeBottom),
                           // 页面正文可延伸到 AppBar 后方，展开的工具岛必须避让。
                           height: math.max(
                             0,
@@ -864,12 +1048,14 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
             ),
           ),
           AnimatedBuilder(
-            animation: _keyboard,
+            animation: Listenable.merge([_keyboard, _toolsInput]),
             child: widget.panel,
             builder: (_, child) => SizedBox(
               key: const ValueKey('composer-keyboard-space'),
-              height: _keyboard.active ? _keyboard.visibleHeight : null,
-              child: ClipRect(child: child),
+              height: _toolsInput.active
+                  ? _toolsInput.visibleHeight
+                  : (_keyboard.active ? _keyboard.visibleHeight : null),
+              child: ClipRect(key: _panelKey, child: child),
             ),
           ),
         ],
