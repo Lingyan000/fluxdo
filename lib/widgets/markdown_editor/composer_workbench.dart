@@ -498,7 +498,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     child: footer,
                                   ),
                                 ),
-                                if (handleHeight > 0)
+                                if (!desktop && widget.onExpandTools != null)
                                   Positioned(
                                     key: const ValueKey(
                                       'composer-handle-region',
@@ -507,26 +507,36 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     right: 0,
                                     top: 0,
                                     height: handleHeight,
-                                    child: Opacity(
-                                      opacity: inputProgress,
-                                      child: ComposerToolsHandle(
-                                        key: const ValueKey(
-                                          'composer-tools-handle',
+                                    child: Visibility(
+                                      visible: handleHeight > 0,
+                                      maintainState: true,
+                                      maintainAnimation: true,
+                                      child: Opacity(
+                                        opacity: inputProgress,
+                                        child: ComposerToolsHandle(
+                                          key: const ValueKey(
+                                            'composer-tools-handle',
+                                          ),
+                                          label:
+                                              widget.toolsAnchor?.expanded ==
+                                                  true
+                                              ? S
+                                                    .current
+                                                    .composer_collapseToolbar
+                                              : S
+                                                    .current
+                                                    .composer_expandToolbar,
+                                          expanded:
+                                              widget.toolsAnchor?.expanded ??
+                                              false,
+                                          onActivate: _toggle,
+                                          onDragStart: _startDrag,
+                                          onDragUpdate: _dragUpdate,
+                                          onDragEnd: (details) => _endDrag(
+                                            details.primaryVelocity ?? 0,
+                                          ),
+                                          onDragCancel: _cancelDrag,
                                         ),
-                                        label:
-                                            widget.toolsAnchor?.expanded == true
-                                            ? S.current.composer_collapseToolbar
-                                            : S.current.composer_expandToolbar,
-                                        expanded:
-                                            widget.toolsAnchor?.expanded ??
-                                            false,
-                                        onActivate: _toggle,
-                                        onDragStart: _startDrag,
-                                        onDragUpdate: _dragUpdate,
-                                        onDragEnd: (details) => _endDrag(
-                                          details.primaryVelocity ?? 0,
-                                        ),
-                                        onDragCancel: _cancelDrag,
                                       ),
                                     ),
                                   ),
@@ -657,6 +667,7 @@ class ComposerEditorLayout extends StatefulWidget {
     required this.toolbar,
     required this.panel,
     this.toolsAnchor,
+    this.holdInputToolbar = false,
   });
   final bool editing;
   final Widget Function(
@@ -668,6 +679,9 @@ class ComposerEditorLayout extends StatefulWidget {
   final Widget toolbar;
   final Widget panel;
   final ComposerToolsAnchor? toolsAnchor;
+
+  /// 表情面板及其返回键盘的交接期保持完整工具行。
+  final bool holdInputToolbar;
 
   @override
   State<ComposerEditorLayout> createState() => _ComposerEditorLayoutState();
@@ -685,11 +699,19 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   double? _inputTarget;
   bool _active = true;
   bool _disableAnimations = false;
+  double _keyboardInset = 0;
+  double _safeBottom = 0;
+  double _inputRevealExtent = 76;
+  bool _trackingKeyboard = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    _safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    _inputRevealExtent =
+        ComposerWorkbench.rowHeight(context) + ComposerToolsHandle.height + 4;
     _syncInputVisibility();
   }
 
@@ -724,6 +746,27 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
 
   void _syncInputVisibility() {
     if (!_active) return;
+    final nativeDriven =
+        !PlatformUtils.isDesktop &&
+        !widget.holdInputToolbar &&
+        widget.toolsAnchor?.presenting != true;
+    if (nativeDriven &&
+        (_keyboardInset > 0 || _keyboardActive || _trackingKeyboard)) {
+      final height = _keyboardActive ? _keyboard.visibleHeight : _keyboardInset;
+      final progress = ((height - _safeBottom) / _inputRevealExtent).clamp(
+        0.0,
+        1.0,
+      );
+      _trackingKeyboard = _keyboardInset > 0 || _keyboardActive;
+      _inputTarget = progress;
+      // Flutter 已逐帧同步原生 IME inset。位置和显隐共用这一进度，
+      // 不能在键盘落到底后，再补一段独立的工具行收起动画。
+      if (_inputVisibility.value != progress || _inputVisibility.isAnimating) {
+        _inputVisibility.value = progress;
+      }
+      return;
+    }
+    _trackingKeyboard = false;
     final visible = widget.editing || _keyboardActive;
     // 工具岛先收拢，再退去格式行；两种编辑器和正文避让共用同一进度。
     if (!visible && widget.toolsAnchor?.presenting == true) return;
@@ -748,8 +791,10 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   }
 
   void _onKeyboardActivity() {
-    if (_keyboardActive == _keyboard.active || !mounted) return;
-    setState(() => _keyboardActive = _keyboard.active);
+    if (!mounted) return;
+    if (_keyboardActive != _keyboard.active) {
+      setState(() => _keyboardActive = _keyboard.active);
+    }
     _syncInputVisibility();
   }
 
@@ -831,6 +876,40 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
       ),
     ),
   );
+}
+
+/// 普通键盘只按当前遮挡高度占位。缓存的终态高度仅用于表情切回键盘。
+class ComposerKeyboardSpace extends StatelessWidget {
+  const ComposerKeyboardSpace({
+    super.key,
+    this.heldHeight,
+    this.onHandoffComplete,
+  });
+  final double? heldHeight;
+  final VoidCallback? onHandoffComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    final actualHeight = MediaQuery.viewInsetsOf(context).bottom;
+    if (heldHeight != null &&
+        actualHeight >= heldHeight! - 1 &&
+        onHandoffComplete != null) {
+      // 原生终态高度也可能晚于最后一帧到达，此时宿主不会再收到 metrics 变化。
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => onHandoffComplete?.call(),
+      );
+    }
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: SizedBox(
+        width: double.infinity,
+        height: math.max(
+          heldHeight ?? actualHeight,
+          MediaQuery.viewPaddingOf(context).bottom,
+        ),
+      ),
+    );
+  }
 }
 
 /// 桌面属性属于文档头部，不进入悬浮格式工具栏。

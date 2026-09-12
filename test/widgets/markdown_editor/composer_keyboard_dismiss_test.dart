@@ -157,7 +157,13 @@ void main() {
         final selection = text.selection;
         final toolbar = find.byKey(const ValueKey('composer-format-row'));
         final space = find.byKey(const ValueKey('composer-keyboard-space'));
-        final gesture = await tester.startGesture(tester.getCenter(toolbar));
+        final gesture = await tester.startGesture(
+          tester.getCenter(
+            cancel
+                ? toolbar
+                : find.byKey(const ValueKey('composer-tools-handle')),
+          ),
+        );
         await gesture.moveBy(const Offset(0, 24));
         await tester.pump();
         await gesture.moveBy(const Offset(0, 30));
@@ -189,6 +195,9 @@ void main() {
         if (cancel) {
           await gesture.cancel();
         } else {
+          await gesture.moveBy(const Offset(0, 400));
+          await tester.pump();
+          expect(tester.getSize(space).height, 20);
           await gesture.up();
         }
         await tester.pump();

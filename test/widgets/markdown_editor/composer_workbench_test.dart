@@ -468,6 +468,83 @@ void main() {
   }
 
   for (final rich in [false, true]) {
+    testWidgets('键盘终态通知不抢跑位置，普通开合逐帧同步浮岛 rich=$rich', (tester) async {
+      tester.view.viewPadding = const FakeViewPadding(bottom: 20);
+      addTearDown(tester.view.resetViewPadding);
+      final controller = TextEditingController(text: rich ? '' : '保留当前段落');
+      final focus = FocusNode();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(controller: controller, focusNode: focus)
+            : MarkdownEditor(controller: controller, focusNode: focus),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      if (rich) {
+        tester
+            .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+            .state
+            .insertText('保留当前段落');
+        await tester.pump();
+      }
+      focus.requestFocus();
+      await tester.pump();
+      final space = find.byKey(const ValueKey('composer-keyboard-space'));
+      final surface = find.byKey(const ValueKey('composer-island-surface'));
+      final initial = tester.getRect(surface);
+      expect(tester.getSize(space).height, 20);
+
+      // Android 的终态通知可以早于原生动画第一帧，不能拿它直接占位。
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(300);
+      await tester.pump();
+      expect(tester.getRect(surface), initial);
+      var previousHeight = initial.height;
+      for (final height in [20.0, 40.0, 60.0, 100.0, 160.0, 240.0, 300.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: height);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getSize(space).height, height);
+        expect(
+          tester.getRect(surface).bottom,
+          closeTo(760 - height - kComposerIslandBottomGap, .1),
+        );
+        expect(
+          tester.getSize(surface).height,
+          greaterThanOrEqualTo(previousHeight - .1),
+        );
+        previousHeight = tester.getSize(surface).height;
+      }
+      final open = tester.getRect(surface);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.getRect(surface), open, reason: '键盘到位后不能再补播另一段收放');
+
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+      await tester.pump();
+      expect(tester.getRect(surface), open, reason: '关闭通知不能提前清空仍在移动的键盘占位');
+      for (final height in [240.0, 160.0, 100.0, 60.0, 40.0, 20.0, 0.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: height);
+        await tester.pump(const Duration(milliseconds: 16));
+        final reserved = height < 20 ? 20.0 : height;
+        expect(tester.getSize(space).height, reserved);
+        expect(
+          tester.getRect(surface).bottom,
+          closeTo(760 - reserved - kComposerIslandBottomGap, .1),
+        );
+        expect(
+          tester.getSize(surface).height,
+          lessThanOrEqualTo(previousHeight + .1),
+        );
+        previousHeight = tester.getSize(surface).height;
+      }
+      expect(tester.getRect(surface), initial);
+      expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.getRect(surface), initial);
+      expect(focus.hasFocus, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+
     testWidgets('表情与键盘往返保留工具栏，关闭输入区后隐藏 rich=$rich', (tester) async {
       final controller = TextEditingController();
       final focus = FocusNode();
@@ -521,10 +598,39 @@ void main() {
       expect(formats, findsOneWidget, reason: '原生键盘高度回报前不能闪退');
       await tester.pump(const Duration(milliseconds: 160));
       expect(formats, findsOneWidget);
+      for (final height in [25.0, 110.0, 220.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: height);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          tester.getRect(formats).bottom,
+          closeTo(toolbarBottom, .1),
+          reason: '表情切回键盘时不追随尚未到位的键盘跳到底部',
+        );
+      }
       await keyboardHeight(260);
       expect(find.byType(EmojiStickerPanel), findsNothing);
       expect(formats, findsOneWidget);
       expect(focus.hasFocus, isTrue);
+
+      // 新键盘变矮且终态高度回报较晚，等高交接结束后仍须继续跟随真实帧。
+      await tester.tap(emojiToggle);
+      await tester.pump();
+      await keyboardHeight(0);
+      await tester.tap(emojiToggle);
+      await tester.pump();
+      final keyboardSpace = find.byKey(
+        const ValueKey('composer-keyboard-space'),
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 220);
+      await tester.pump();
+      expect(tester.getSize(keyboardSpace).height, 260);
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(220);
+      await tester.pump();
+      await tester.pump();
+      expect(tester.getSize(keyboardSpace).height, 220);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 110);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getSize(keyboardSpace).height, 110);
       await keyboardHeight(0);
       expect(formats, findsNothing, reason: '键盘真正关闭后不残留过渡状态');
 
@@ -590,12 +696,14 @@ void main() {
       expect(grid, findsNothing);
       focus.requestFocus();
       await tester.pump();
-      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 26);
       ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
       final midwayHeight = tester.getSize(island).height;
       expect(midwayHeight, greaterThan(closedHeight));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 140));
       expect(tester.getSize(island).height, greaterThan(midwayHeight));
       await tester.tap(find.byTooltip(S.current.composer_expandToolbar));

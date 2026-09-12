@@ -190,8 +190,15 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+    if (_returningToKeyboard &&
+        MediaQuery.viewInsetsOf(context).bottom >= _panelHeight - 1) {
       _returningToKeyboard = false;
+    }
+  }
+
+  void _finishKeyboardHandoff() {
+    if (mounted && _returningToKeyboard) {
+      setState(() => _returningToKeyboard = false);
     }
   }
 
@@ -1038,6 +1045,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     return ComposerEditorLayout(
       toolsAnchor: _toolsAnchor,
       editing: editing,
+      holdInputToolbar: showEmojiPanel || _returningToKeyboard,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
         return Stack(
@@ -1233,9 +1241,9 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           }
           switch (panelType) {
             case ChatBottomPanelType.keyboard:
-              return _KeyboardPlaceholder(
-                color: theme.colorScheme.surface,
-                nativeKeyboardHeight: _panelController.keyboardHeight,
+              return ComposerKeyboardSpace(
+                heldHeight: _returningToKeyboard ? _panelHeight : null,
+                onHandoffComplete: _finishKeyboardHandoff,
               );
             case ChatBottomPanelType.other:
               if (data == EditorPanelType.emoji) {
@@ -1246,48 +1254,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
               }
               return const SizedBox.shrink();
             case ChatBottomPanelType.none:
-              return _SafeAreaPlaceholder(color: theme.colorScheme.surface);
+              return const ComposerKeyboardSpace();
           }
         },
       ),
-    );
-  }
-}
-
-/// 键盘占位组件：使用原生键盘高度，不使用 AnimatedSize，
-/// 与表情面板共用同一高度源（nativeKeyboardHeight），确保切换时等高
-class _KeyboardPlaceholder extends StatelessWidget {
-  final Color color;
-  final double nativeKeyboardHeight;
-
-  const _KeyboardPlaceholder({
-    required this.color,
-    required this.nativeKeyboardHeight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final height = max(nativeKeyboardHeight, safeBottom);
-    return ColoredBox(
-      color: color,
-      child: SizedBox(width: double.infinity, height: height),
-    );
-  }
-}
-
-/// 安全区域占位组件：无键盘时显示底部安全区域高度
-class _SafeAreaPlaceholder extends StatelessWidget {
-  final Color color;
-
-  const _SafeAreaPlaceholder({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    return ColoredBox(
-      color: color,
-      child: SizedBox(width: double.infinity, height: safeBottom),
     );
   }
 }

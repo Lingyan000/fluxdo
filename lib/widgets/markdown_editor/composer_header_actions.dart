@@ -209,9 +209,7 @@ class ComposerHeaderActions extends StatelessWidget {
                     visualDensity: VisualDensity.standard,
                     tapTargetSize: MaterialTapTargetSize.padded,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    shape: const StadiumBorder(),
                   ),
                   child: Stack(
                     alignment: Alignment.center,

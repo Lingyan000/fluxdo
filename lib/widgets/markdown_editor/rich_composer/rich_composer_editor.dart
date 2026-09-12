@@ -312,10 +312,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+    if (_returningToKeyboard &&
+        MediaQuery.viewInsetsOf(context).bottom >= _panelHeight - 1) {
       _returningToKeyboard = false;
     }
     _subscribePrefs();
+  }
+
+  void _finishKeyboardHandoff() {
+    if (mounted && _returningToKeyboard) {
+      setState(() => _returningToKeyboard = false);
+    }
   }
 
   @override
@@ -3337,6 +3344,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     return ComposerEditorLayout(
       toolsAnchor: _toolsAnchor,
       editing: editing,
+      holdInputToolbar: _showEmojiPanel || _returningToKeyboard,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
         return Stack(
@@ -3626,9 +3634,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           }
           switch (panelType) {
             case ChatBottomPanelType.keyboard:
-              return _KeyboardPlaceholder(
-                color: surface,
-                nativeKeyboardHeight: _panelController.keyboardHeight,
+              return ComposerKeyboardSpace(
+                heldHeight: _returningToKeyboard ? _panelHeight : null,
+                onHandoffComplete: _finishKeyboardHandoff,
               );
             case ChatBottomPanelType.other:
               if (data == _RichPanelType.emoji) {
@@ -3636,7 +3644,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               }
               return const SizedBox.shrink();
             case ChatBottomPanelType.none:
-              return _SafeAreaPlaceholder(color: surface);
+              return const ComposerKeyboardSpace();
           }
         },
       ),
@@ -3680,45 +3688,6 @@ void toggleInlineSpoilerOn(EditorState state) {
 /// 激活态签名驱动重建(EditorToolbar 同款):纯打字签名不变零重建。
 /// 富 composer 面板类型(ChatBottomPanelContainer 泛型)。
 enum _RichPanelType { none, keyboard, emoji }
-
-/// 键盘占位:原生键盘高(与表情面板同高度源,切换等高零跳变)。
-class _KeyboardPlaceholder extends StatelessWidget {
-  const _KeyboardPlaceholder({
-    required this.color,
-    required this.nativeKeyboardHeight,
-  });
-
-  final Color color;
-  final double nativeKeyboardHeight;
-
-  @override
-  Widget build(BuildContext context) {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    return ColoredBox(
-      color: color,
-      child: SizedBox(
-        width: double.infinity,
-        height: max(nativeKeyboardHeight, safeBottom),
-      ),
-    );
-  }
-}
-
-/// 无键盘时的底部安全区占位(全面屏 home indicator 区,工具栏不贴底)。
-class _SafeAreaPlaceholder extends StatelessWidget {
-  const _SafeAreaPlaceholder({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    return ColoredBox(
-      color: color,
-      child: SizedBox(width: double.infinity, height: safeBottom),
-    );
-  }
-}
 
 class _RichToolbar extends StatefulWidget {
   const _RichToolbar({
