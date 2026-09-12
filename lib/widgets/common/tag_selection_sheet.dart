@@ -31,8 +31,18 @@ class TagSelectionSheet extends StatefulWidget {
   /// 筛选浏览时：不发送 filterForInput，不显示必选标签组和最小标签数约束
   final bool filterForInput;
 
+  /// 编辑台内嵌模式沿用筛选与校验逻辑；搜索时展开完整选择器。
+  final bool embedded;
+  final VoidCallback? onCancel;
+  final ValueChanged<List<String>>? onSelected;
+  final ValueChanged<List<String>>? onSearchRequested;
+
   const TagSelectionSheet({
     super.key,
+    this.embedded = false,
+    this.onSelected,
+    this.onCancel,
+    this.onSearchRequested,
     this.categoryId,
     required this.availableTags,
     required this.selectedTags,
@@ -189,10 +199,10 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
         .toList();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
+      initialChildSize: widget.embedded ? 1 : 0.7,
+      minChildSize: widget.embedded ? 1 : 0.5,
+      maxChildSize: widget.embedded ? 1 : 0.95,
+      expand: widget.embedded,
       builder: (context, scrollController) {
         return AppSheetScaffold(
           expandToFill: true,
@@ -269,6 +279,12 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: TextField(
+                              readOnly: widget.embedded,
+                              onTap: widget.embedded
+                                  ? () => widget.onSearchRequested?.call(
+                                      _currentSelectedTags,
+                                    )
+                                  : null,
                               controller: _searchController,
                               focusNode: _searchFocusNode,
                               textAlignVertical: TextAlignVertical.center,
@@ -330,8 +346,13 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                         ),
                         const SizedBox(width: 8),
                         FilledButton.tonal(
-                          onPressed: () =>
-                              Navigator.pop(context, _currentSelectedTags),
+                          onPressed: () {
+                            if (widget.onSelected != null) {
+                              widget.onSelected!(_currentSelectedTags);
+                            } else {
+                              Navigator.pop(context, _currentSelectedTags);
+                            }
+                          },
                           style: FilledButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 16),

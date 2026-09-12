@@ -9,6 +9,51 @@ import 'dart:ui' as ui show PathOperation;
 
 import 'package:flutter/material.dart';
 
+/// 文本框与省略号：文字内容的操作菜单，保持线框以匹配操作类图标。
+class ContentActionsPainter extends CustomPainter {
+  const ContentActionsPainter({required this.color, required this.strokeWidth});
+
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 24;
+    canvas.save();
+    canvas.translate((size.width - 24 * scale) / 2, (size.height - 24 * scale) / 2);
+    canvas.scale(scale);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(8, 21)
+      ..lineTo(6.5, 21)
+      ..quadraticBezierTo(4, 21, 4, 18.5)
+      ..lineTo(4, 5.5)
+      ..quadraticBezierTo(4, 3, 6.5, 3)
+      ..lineTo(17.5, 3)
+      ..quadraticBezierTo(20, 3, 20, 5.5)
+      ..lineTo(20, 12.5)
+      ..moveTo(7.5, 8)
+      ..lineTo(16.5, 8)
+      ..moveTo(7.5, 12)
+      ..lineTo(13.5, 12);
+    canvas.drawPath(path, stroke);
+    final dot = Paint()..color = color;
+    for (final x in [11.5, 15.5, 19.5]) {
+      canvas.drawCircle(Offset(x, 19.5), strokeWidth * .55, dot);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant ContentActionsPainter oldDelegate) =>
+      color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth;
+}
+
 /// 笑脸（emoji tab）。
 ///
 /// 设计参考 Material Symbols Rounded 的 `sentiment_satisfied`，但绘制更圆润、

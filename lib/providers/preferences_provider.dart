@@ -1,3 +1,4 @@
+import '../constants/composer_tool_defaults.dart';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
@@ -283,8 +284,14 @@ class AppPreferences {
   /// 长按菜单候选功能（按顺序展示在半圆菜单中）
   final List<ProgressGestureAction> progressGestureMenuActions;
 
-  /// 编辑器工具栏外显工具 id 列表（空 = 全部收进「更多」面板）
+  /// 源码工具栏固定工具及其顺序；空列表表示不固定。
   final List<String> editorToolbarTools;
+
+  /// 富文本工具栏外显工具 id 列表。
+  ///
+  /// 与 [editorToolbarTools] 分开存：两种模式的工具集不同（富文本有行内
+  /// 剧透、没有模板/TOC 这类纯 markdown 字面量工具），共用一份会互相污染。
+  final List<String> richToolbarTools;
 
   /// 话题卡片自定义样式（元信息字段开关 / 头像布局 / 动态头像）
   final TopicCardStyle topicCardStyle;
@@ -348,7 +355,8 @@ class AppPreferences {
     this.progressGestureSwipeUp = ProgressGestureAction.jumpToUnread,
     this.progressGestureLongPressEnabled = true,
     this.progressGestureMenuActions = _defaultProgressGestureMenu,
-    this.editorToolbarTools = const [],
+    this.editorToolbarTools = kDefaultSourceVisibleTools,
+    this.richToolbarTools = kDefaultRichVisibleTools,
     this.topicCardStyle = TopicCardStyle.defaults,
   });
 
@@ -412,6 +420,7 @@ class AppPreferences {
     bool? progressGestureLongPressEnabled,
     List<ProgressGestureAction>? progressGestureMenuActions,
     List<String>? editorToolbarTools,
+    List<String>? richToolbarTools,
     TopicCardStyle? topicCardStyle,
   }) {
     return AppPreferences(
@@ -448,8 +457,7 @@ class AppPreferences {
       aiPostReviewModelKey: identical(aiPostReviewModelKey, _unset)
           ? this.aiPostReviewModelKey
           : aiPostReviewModelKey as String?,
-      aiTranslationEnabled:
-          aiTranslationEnabled ?? this.aiTranslationEnabled,
+      aiTranslationEnabled: aiTranslationEnabled ?? this.aiTranslationEnabled,
       aiTranslationTargetLanguage:
           identical(aiTranslationTargetLanguage, _unset)
           ? this.aiTranslationTargetLanguage
@@ -461,8 +469,10 @@ class AppPreferences {
           ? this.hcaptchaCreateEndpoint
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
-      cryptoRememberPassword: cryptoRememberPassword ?? this.cryptoRememberPassword,
-      cryptoRecentAlgorithms: cryptoRecentAlgorithms ?? this.cryptoRecentAlgorithms,
+      cryptoRememberPassword:
+          cryptoRememberPassword ?? this.cryptoRememberPassword,
+      cryptoRecentAlgorithms:
+          cryptoRecentAlgorithms ?? this.cryptoRecentAlgorithms,
       showSignatures: showSignatures ?? this.showSignatures,
       adaptiveSignatureFrameRate:
           adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
@@ -499,6 +509,7 @@ class AppPreferences {
       progressGestureMenuActions:
           progressGestureMenuActions ?? this.progressGestureMenuActions,
       editorToolbarTools: editorToolbarTools ?? this.editorToolbarTools,
+      richToolbarTools: richToolbarTools ?? this.richToolbarTools,
       topicCardStyle: topicCardStyle ?? this.topicCardStyle,
     );
   }
@@ -548,8 +559,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _hcaptchaCreateEndpointKey =
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
-  static const String _cryptoRememberPasswordKey = 'pref_crypto_remember_password';
-  static const String _cryptoRecentAlgorithmsKey = 'pref_crypto_recent_algorithms';
+  static const String _cryptoRememberPasswordKey =
+      'pref_crypto_remember_password';
+  static const String _cryptoRecentAlgorithmsKey =
+      'pref_crypto_recent_algorithms';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _adaptiveSignatureFrameRateKey =
       'pref_adaptive_signature_frame_rate';
@@ -585,6 +598,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _progressGestureMenuActionsKey =
       'pref_progress_gesture_menu_actions';
   static const String _editorToolbarToolsKey = 'pref_editor_toolbar_tools';
+  static const String _richToolbarToolsKey = 'pref_rich_toolbar_tools';
   static const String _topicCardStyleKey = 'pref_topic_card_style';
 
   static const _crashlyticsChannel = MethodChannel(
@@ -613,11 +627,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               _prefs.getStringList(_blockedUsernamesKey) ?? const [],
           showFilterHint: _prefs.getBool(_showFilterHintKey) ?? true,
           crashlytics: _prefs.getBool(_crashlyticsKey) ?? true,
-          renderGlesBackend:
-              _prefs.getBool(_renderGlesBackendKey) ?? false,
+          renderGlesBackend: _prefs.getBool(_renderGlesBackendKey) ?? false,
           portraitLock: _prefs.getBool(_portraitLockKey) ?? false,
-          fullscreenSwipeBack:
-              _prefs.getBool(_fullscreenSwipeBackKey) ?? false,
+          fullscreenSwipeBack: _prefs.getBool(_fullscreenSwipeBackKey) ?? false,
           exitOnSingleBack: _prefs.getBool(_exitOnSingleBackKey) ?? false,
           hideBarOnScroll: _prefs.getBool(_hideBarOnScrollKey) ?? true,
           clearCacheOnExit: _prefs.getBool(_clearCacheOnExitKey) ?? false,
@@ -638,15 +650,15 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           aiTranslationModelKey: _prefs.getString(_aiTranslationModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
-          cryptoRememberPassword: _prefs.getBool(_cryptoRememberPasswordKey) ?? false,
+          cryptoRememberPassword:
+              _prefs.getBool(_cryptoRememberPasswordKey) ?? false,
           cryptoRecentAlgorithms:
               _prefs.getStringList(_cryptoRecentAlgorithmsKey) ?? const [],
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
           adaptiveSignatureFrameRate:
               _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
           boostDanmaku: _prefs.getBool(_boostDanmakuKey) ?? false,
-          showSuggestedTopics:
-              _prefs.getBool(_showSuggestedTopicsKey) ?? true,
+          showSuggestedTopics: _prefs.getBool(_showSuggestedTopicsKey) ?? true,
           defaultNestedView: _prefs.getBool(_defaultNestedViewKey) ?? false,
           nestedLineStyle: NestedLineStyle.fromString(
             _prefs.getString(_nestedLineStyleKey),
@@ -694,7 +706,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
             _prefs.getStringList(_progressGestureMenuActionsKey),
           ),
           editorToolbarTools:
-              _prefs.getStringList(_editorToolbarToolsKey) ?? const [],
+              _prefs.getStringList(_editorToolbarToolsKey) ??
+              kDefaultSourceVisibleTools,
+          richToolbarTools:
+              _prefs.getStringList(_richToolbarToolsKey) ??
+              kDefaultRichVisibleTools,
           topicCardStyle: TopicCardStyle.fromJsonString(
             _prefs.getString(_topicCardStyleKey),
           ),
@@ -1116,7 +1132,17 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await setProgressGestureMenuActions(_defaultProgressGestureMenu);
   }
 
-  /// 写入编辑器工具栏外显工具 id 列表（顺序无关，渲染按工具注册表顺序）
+  /// 按用户顺序保存富文本工具栏固定工具。
+  Future<void> setRichToolbarTools(List<String> ids) async {
+    final deduped = ids.toSet().toList();
+    if (const ListEquality<String>().equals(state.richToolbarTools, deduped)) {
+      return;
+    }
+    state = state.copyWith(richToolbarTools: deduped);
+    await _prefs.setStringList(_richToolbarToolsKey, deduped);
+  }
+
+  /// 按用户顺序保存源码工具栏固定工具。
   Future<void> setEditorToolbarTools(List<String> ids) async {
     final deduped = ids.toSet().toList();
     if (const ListEquality<String>().equals(

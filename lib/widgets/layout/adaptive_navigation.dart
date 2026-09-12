@@ -614,13 +614,8 @@ class _FloatingBottomBarShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final barHeight = itemHeight + _CapsuleMetrics.innerInset * 2;
     final radius = barHeight / 2;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(radius),
-    );
 
     // 内容留白（最内层，玻璃/实色两种底色共用）
     final content = Padding(
@@ -635,9 +630,9 @@ class _FloatingBottomBarShell extends StatelessWidget {
     // 外层已有 ClipRRect 按胶囊裁切，满足 shader「原点为零」的前提。
     // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
     // surfaceContainer 会被主题色染成彩色塑料板，失去玻璃的中性感。
-    final body = GlassSurface(
+    final body = GlassSurfaceFrame(
+      radius: radius,
       recipe: GlassRecipe.navigation,
-      shape: shape,
       enabled: blur,
       child: content,
     );
@@ -669,55 +664,7 @@ class _FloatingBottomBarShell extends StatelessWidget {
               child: SizedBox(
                 width: width,
                 // 投影放在模糊层之外：玻璃下的内容清晰穿透，影子独立柔和
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    shape: shape,
-                    // 双层投影（对齐参考实现 softGlassShadowTokens）：
-                    // 外层大而极淡托起悬浮感，内层小而更淡收紧轮廓。
-                    // 负 spread 让影子略小于胶囊本体，避免糊出一圈灰边。
-                    shadows: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: isDark ? 0.052 : 0.068,
-                        ),
-                        blurRadius: isDark ? 7 : 8,
-                        spreadRadius: -0.75,
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: isDark ? 0.010 : 0.014,
-                        ),
-                        blurRadius: isDark ? 3 : 3.5,
-                        spreadRadius: -0.75,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(radius),
-                    // 描边画在裁切之内（最上层）：0.4 宽的边如果落在
-                    // ClipRRect 外侧会被抗锯齿吃掉半条，看着忽隐忽现。
-                    //
-                    // 仅在玻璃走降级路径时才画：shader 主路径已在内部
-                    // 画了方向性边缘光，外面再叠一圈会变成双边。
-                    child: Stack(
-                      fit: StackFit.passthrough,
-                      children: [
-                        body,
-                        if (!(blur && GlassSurface.opticalEdgeAvailable))
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: CustomPaint(
-                                painter: _CapsuleBorderPainter(
-                                  radius: radius,
-                                  isDark: isDark,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+                child: body,
               ),
             ),
           );
@@ -725,83 +672,6 @@ class _FloatingBottomBarShell extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 胶囊描边：模拟玻璃边缘的折射受光，而非画一条均匀线框。
-///
-/// 真实玻璃的边缘亮度取决于**该处法线与光源的夹角**：迎光的角落把光
-/// 聚起来最亮，背光侧几乎看不见，中间连续过渡。纯上下线性渐变做不到
-/// 这点——它只跟 y 有关，胶囊左端和右端同高就一样亮，整圈亮度差不到
-/// 4%，看着就是一条描线。
-///
-/// 这里用 [SweepGradient] 按**绕轮廓的角度**取色，等价于 shader 里
-/// `pow(max(dot(normal, light), 0), 3)` 的单侧方向性高光：光源设在左上
-/// （与 shader 的 `normalize(vec2(-0.58,-0.82))` 一致），左上角落最亮，
-/// 右下背光侧落到保底值，整圈亮度比约 4.4x —— 与 shader 路径同量级。
-///
-/// ⚠️ 本 painter 只在**降级路径**使用（桌面 Skia / shader 未就绪）。
-/// Impeller 主路径的边缘光由 glass_surface.frag 内部绘制，参数在
-/// [GlassRecipe.highlightAlpha]，两者不叠加（见 _FloatingBottomBarShell）。
-class _CapsuleBorderPainter extends CustomPainter {
-  const _CapsuleBorderPainter({required this.radius, required this.isDark});
-
-  final double radius;
-  final bool isDark;
-
-  /// 0.5：与 shader 光学边缘（0.5dp）同宽
-  static const double _width = 0.5;
-
-  /// 光源方向角（弧度）。atan2(-0.82, -0.58) ≈ -125.3°，即左上方，
-  /// 与 glass_surface.frag 的 lightDirection 同源。
-  static final double _lightAngle = math.atan2(-0.82, -0.58);
-
-  /// 迎光峰值与背光保底。深色下白边必须收得很狠，否则像描了荧光笔。
-  double get _peakAlpha => isDark ? 0.188 : 0.46;
-  double get _baseAlpha => isDark ? 0.042 : 0.19;
-
-  /// 绕一圈采样出方向性高光曲线。段数取 24：低于 16 在长边上能看出
-  /// 折线，再高对观感无增益。
-  List<Color> _sweepColors() {
-    const segments = 24;
-    // 玻璃边缘是反光，两种亮度模式都用白 —— 浅色下用黑边会变成线框，
-    // 失去"被照亮"的观感。
-    const base = Color(0xFFFFFFFF);
-    return [
-      for (var i = 0; i <= segments; i++)
-        base.withValues(alpha: _alphaAt(i / segments * 2 * math.pi)),
-    ];
-  }
-
-  /// 单侧余弦三次方：与 shader 的 pow(max(dot,0), 3.0) 等价。
-  /// 三次方让高光集中在迎光象限，一次方会糊成整圈都亮。
-  double _alphaAt(double angle) {
-    final d = math.cos(angle - _lightAngle);
-    final directional = d <= 0 ? 0.0 : d * d * d;
-    return _baseAlpha + (_peakAlpha - _baseAlpha) * directional;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 描边以路径为中心线各占一半，内缩半个宽度才能整条落在胶囊内
-    final rect = Offset.zero & size;
-    final inner = rect.deflate(_width / 2);
-    final rrect = RRect.fromRectAndRadius(
-      inner,
-      Radius.circular(radius - _width / 2),
-    );
-    final colors = _sweepColors();
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _width
-      ..shader = ui.Gradient.sweep(inner.center, colors, [
-        for (var i = 0; i < colors.length; i++) i / (colors.length - 1),
-      ]);
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(_CapsuleBorderPainter old) =>
-      old.radius != radius || old.isDark != isDark;
 }
 
 /// 悬浮胶囊底栏的条目区：图标+标签压实成一组，选中指示 pill 在槽位之间

@@ -10,4 +10,5 @@ library;
 export 'src/app_sheet_scaffold.dart';
 export 'src/dismissible_popup_menu.dart';
 export 'src/glass_surface.dart';
+export 'src/glass_surface_frame.dart';
 export 'src/predictive_back_cupertino_transitions.dart';

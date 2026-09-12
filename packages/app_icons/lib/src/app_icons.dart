@@ -198,6 +198,11 @@ abstract final class AppIcons {
   static const callSplit = Symbols.call_split_rounded;
 
   // ─── 自绘图标（Material Symbols 没有合适字形时） ─────────────────
+  static final AppCustomIcon contentActions = AppCustomIcon(
+    ({required color, required fill, required strokeWidth}) =>
+        ContentActionsPainter(color: color, strokeWidth: strokeWidth),
+  );
+
   // 表情 Tab 用的笑脸（更柔和，配合 fill 切实/空）
   static final AppCustomIcon smileyOutline = AppCustomIcon(
     ({required color, required fill, required strokeWidth}) =>

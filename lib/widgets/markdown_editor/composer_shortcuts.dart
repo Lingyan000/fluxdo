@@ -54,11 +54,20 @@ SingleActivator _primary(
       : SingleActivator(key, control: true, shift: shift, alt: alt);
 }
 
+/// 编辑器快捷搜索，与底栏的工具展开独立。
+SingleActivator composerQuickPanelActivator() =>
+    _primary(LogicalKeyboardKey.keyP, shift: true);
+
+List<SingleActivator> composerQuickPanelActivators() => const [
+  SingleActivator(LogicalKeyboardKey.keyP, meta: true, shift: true),
+  SingleActivator(LogicalKeyboardKey.keyP, control: true, shift: true),
+];
+
 /// 提交快捷键(Cmd/Ctrl+Enter,含小键盘 Enter;宿主页绑定用)
 List<SingleActivator> composerSubmitActivators() => [
-      _primary(LogicalKeyboardKey.enter),
-      _primary(LogicalKeyboardKey.numpadEnter),
-    ];
+  _primary(LogicalKeyboardKey.enter),
+  _primary(LogicalKeyboardKey.numpadEnter),
+];
 
 /// 全部撰写格式化快捷键(顺序即帮助浮层「撰写」分区展示顺序)
 List<ComposerShortcutSpec> buildComposerShortcutSpecs() {
@@ -67,15 +76,21 @@ List<ComposerShortcutSpec> buildComposerShortcutSpecs() {
       toolId: 'bold',
       label: (s) => s.toolPanel_bold,
       activator: _primary(LogicalKeyboardKey.keyB),
-      sourceAction: (t) => t.wrapSelection('**', '**',
-          placeholder: S.current.toolbar_boldPlaceholder),
+      sourceAction: (t) => t.wrapSelection(
+        '**',
+        '**',
+        placeholder: S.current.toolbar_boldPlaceholder,
+      ),
     ),
     ComposerShortcutSpec(
       toolId: 'italic',
       label: (s) => s.toolPanel_italic,
       activator: _primary(LogicalKeyboardKey.keyI),
-      sourceAction: (t) => t.wrapSelection('*', '*',
-          placeholder: S.current.toolbar_italicPlaceholder),
+      sourceAction: (t) => t.wrapSelection(
+        '*',
+        '*',
+        placeholder: S.current.toolbar_italicPlaceholder,
+      ),
     ),
     ComposerShortcutSpec(
       toolId: 'inlineCode',
@@ -133,8 +148,24 @@ List<ComposerShortcutSpec> buildComposerShortcutSpecs() {
   ];
 }
 
+/// 撤销/恢复的键位。
+///
+/// **不**进 [buildComposerShortcutSpecs]:源码模式的 Cmd/Ctrl+Z 由 Flutter
+/// DefaultTextEditingShortcuts 原生处理(直接打到 TextField 的
+/// UndoHistoryController),富文本模式由内核 editor_key_handler 处理 ——
+/// 再用 CallbackShortcuts 绑一遍只会遮蔽原生行为。这里只作为
+/// tooltip / 帮助浮层的**展示**事实源。
+Map<String, SingleActivator> composerHistoryActivators() => {
+  'undo': _primary(LogicalKeyboardKey.keyZ),
+  'redo': _primary(LogicalKeyboardKey.keyZ, shift: true),
+};
+
 /// 工具 tooltip 的快捷键后缀,如「 (⌘B)」/「 (Ctrl+B)」;无对应键位返回 null
 String? composerShortcutHint(String toolId) {
+  final history = composerHistoryActivators()[toolId];
+  if (history != null) {
+    return ' (${ShortcutBinding.formatActivator(history)})';
+  }
   for (final spec in buildComposerShortcutSpecs()) {
     if (spec.toolId == toolId) {
       return ' (${ShortcutBinding.formatActivator(spec.activator)})';

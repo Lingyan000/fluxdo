@@ -330,7 +330,7 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T> {
     Widget child,
   ) {
     if (_transitionBuilder != null) {
-      return _transitionBuilder!(context, animation, secondaryAnimation, child);
+      return _transitionBuilder(context, animation, secondaryAnimation, child);
     }
     return FadeTransition(
       opacity: CurvedAnimation(parent: animation, curve: Curves.linear),

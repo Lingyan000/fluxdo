@@ -12,11 +12,13 @@ class RadialMenuItem {
     required this.icon,
     required this.label,
     required this.onSelected,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onSelected;
+  final bool enabled;
 }
 
 /// 半圆展开方向：
@@ -146,6 +148,7 @@ class RadialMenuSession {
         newIndex = normalized.round().clamp(0, n - 1);
       }
     }
+    if (newIndex != null && !_items[newIndex].enabled) newIndex = null;
     final changed = newIndex != _highlightedIndex;
     _highlightedIndex = newIndex;
     if (changed && newIndex != null) {
@@ -164,7 +167,7 @@ class RadialMenuSession {
     // 清空高亮，让收回动画里所有项一起向中心回流（避免某一项保留放大态）
     _highlightedIndex = null;
     _beginClose();
-    if (hit != null) {
+    if (hit != null && hit.enabled) {
       HapticFeedback.mediumImpact();
       hit.onSelected();
     }
@@ -407,7 +410,7 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       height: renderSize,
       child: Opacity(
         // fadeT 让收回时图标也淡出，避免到最后才"啪"一下消失
-        opacity: fadeT.clamp(0.0, 1.0),
+        opacity: fadeT.clamp(0.0, 1.0) * (item.enabled ? 1 : 0.38),
         child: Material(
           color: isHighlighted
               ? theme.colorScheme.primary
@@ -464,18 +467,11 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
             elevation: 6,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    item.icon,
-                    size: 18,
-                    color: theme.colorScheme.onPrimary,
-                  ),
+                  Icon(item.icon, size: 18, color: theme.colorScheme.onPrimary),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
@@ -732,8 +728,9 @@ class _RadialLongPressMenuState extends State<RadialLongPressMenu> {
             ),
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () =>
-                  LongPressGestureRecognizer(duration: widget.longPressDuration),
+              () => LongPressGestureRecognizer(
+                duration: widget.longPressDuration,
+              ),
               (instance) {
                 instance.onLongPressStart = _handleLongPressStart;
                 instance.onLongPressMoveUpdate = (d) =>

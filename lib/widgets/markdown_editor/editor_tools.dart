@@ -6,7 +6,7 @@ import 'markdown_toolbar.dart';
 
 /// 编辑器工具定义
 ///
-/// 工具栏外显区和「更多」工具面板共用同一份注册表（[editorTools]）。
+/// 工具栏收起态、展开网格和快捷面板共用同一份注册表（[editorTools]）。
 /// 普通工具提供 [action]；需要二级选择的工具（标题、Callout）提供
 /// [menuItems] + [onMenuSelected]。
 class EditorTool {
@@ -234,5 +234,6 @@ final List<EditorTool> editorTools = [
 
 /// 按注册表顺序过滤出外显工具
 List<EditorTool> resolveVisibleTools(List<String> ids) {
-  return editorTools.where((tool) => ids.contains(tool.id)).toList();
+  final byId = {for (final tool in editorTools) tool.id: tool};
+  return [for (final id in ids.toSet()) if (byId[id] != null) byId[id]!];
 }

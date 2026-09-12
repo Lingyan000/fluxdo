@@ -1,3 +1,4 @@
+import '../markdown_editor/composer_panel_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -8,6 +9,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
+import '../../utils/platform_utils.dart';
 import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
@@ -631,37 +633,81 @@ class ComposerMetaBar extends StatelessWidget {
     this.onPostVotingChanged,
   });
 
-  Future<void> _pickCategory(BuildContext context) async {
-    final result = await showAppBottomSheet<Category>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => CategorySelectionSheet(
-        categories: categories,
-        selectedCategory: category,
-      ),
-    );
-    if (result != null) onCategorySelected(result);
+  Future<void> _pickCategory(
+    BuildContext context, {
+    bool expanded = false,
+  }) async {
+    final panel = expanded ? null : ComposerPanelScope.maybeOf(context);
+    Category? result;
+    if (panel != null) {
+      result =
+          await panel.open(
+                (close) => CategorySelectionSheet(
+                  embedded: true,
+                  categories: categories,
+                  selectedCategory: category,
+                  onSelected: close,
+                  onCancel: () => close(null),
+                  onSearchRequested: () {
+                    close(null);
+                    _pickCategory(context, expanded: true);
+                  },
+                ),
+              )
+              as Category?;
+    } else {
+      result = await showAppBottomSheet<Category>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => CategorySelectionSheet(
+          categories: categories,
+          selectedCategory: category,
+        ),
+      );
+    }
+    if (context.mounted && result != null) onCategorySelected(result);
   }
 
-  Future<void> _pickTags(BuildContext context) async {
+  Future<void> _pickTags(
+    BuildContext context, {
+    bool expanded = false,
+    List<String>? initialTags,
+  }) async {
+    final panel = expanded ? null : ComposerPanelScope.maybeOf(context);
     final minTags = category?.minimumRequiredTags ?? 0;
-    final result = await showAppBottomSheet<List<String>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => TagSelectionSheet(
-        categoryId: category?.id,
-        availableTags: filterAvailableTagsForCategory(category, allTags),
-        selectedTags: selectedTags,
-        maxTags: 5,
-        minTags: minTags,
-        filterForInput: true,
-      ),
+    Widget picker({ValueChanged<Object?>? close}) => TagSelectionSheet(
+      embedded: close != null,
+      categoryId: category?.id,
+      availableTags: filterAvailableTagsForCategory(category, allTags),
+      selectedTags: initialTags ?? selectedTags,
+      maxTags: 5,
+      minTags: minTags,
+      filterForInput: true,
+      onSelected: close,
+      onCancel: close == null ? null : () => close(null),
+      onSearchRequested: close == null
+          ? null
+          : (selected) {
+              close(null);
+              _pickTags(context, expanded: true, initialTags: selected);
+            },
     );
-    if (result != null) onTagsChanged(result);
+    final List<String>? result;
+    if (panel != null) {
+      result =
+          await panel.open((close) => picker(close: close)) as List<String>?;
+    } else {
+      result = await showAppBottomSheet<List<String>>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => picker(),
+      );
+    }
+    if (context.mounted && result != null) onTagsChanged(result);
   }
 
   Widget _pill(
@@ -670,23 +716,34 @@ class ComposerMetaBar extends StatelessWidget {
     required VoidCallback onTap,
     Color? borderColor,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color:
-                  borderColor ??
-                  theme.colorScheme.outlineVariant.withValues(alpha: 0.8),
+    final desktop = PlatformUtils.isDesktop;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: desktop ? 4 : 0),
+      child: Material(
+        color: desktop
+            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .22)
+            : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          side: desktop
+              ? BorderSide(
+                  width: .6,
+                  color:
+                      borderColor ??
+                      theme.colorScheme.outlineVariant.withValues(alpha: .55),
+                )
+              : BorderSide.none,
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: desktop ? 36 : 48),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: desktop ? 10 : 4),
+              child: Row(mainAxisSize: MainAxisSize.min, children: children),
             ),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: children),
         ),
       ),
     );
@@ -779,7 +836,10 @@ class ComposerMetaBar extends StatelessWidget {
           ? null
           : theme.colorScheme.error.withValues(alpha: 0.5),
       children: [
-        if (selectedTags.isEmpty) ...[
+        if (PlatformUtils.isDesktop) ...[
+          Icon(Symbols.sell_rounded, size: 14, color: color),
+          const SizedBox(width: 6),
+        ] else if (selectedTags.isEmpty) ...[
           Icon(Symbols.add_rounded, size: 14, color: color),
           const SizedBox(width: 2),
         ],
@@ -791,6 +851,10 @@ class ComposerMetaBar extends StatelessWidget {
             style: theme.textTheme.labelMedium?.copyWith(color: color),
           ),
         ),
+        if (PlatformUtils.isDesktop) ...[
+          const SizedBox(width: 6),
+          Icon(Symbols.expand_more_rounded, size: 16, color: color),
+        ],
       ],
     );
   }
@@ -811,11 +875,7 @@ class ComposerMetaBar extends StatelessWidget {
           ? theme.colorScheme.primary.withValues(alpha: 0.5)
           : null,
       children: [
-        Icon(
-          Symbols.thumbs_up_down_rounded,
-          size: 14,
-          color: color,
-        ),
+        Icon(Symbols.thumbs_up_down_rounded, size: 14, color: color),
         const SizedBox(width: 4),
         Text(
           S.current.createTopic_postVoting,
@@ -838,32 +898,27 @@ class ComposerMetaBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bar = Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-      ),
-      // 字数展示已移出:不足时由 CharacterCountsOverlay 悬浮在输入区
-      // 右下角,达标后不再展示常驻字数(常驻计数只是噪音)。
-      child: Row(
-        children: [
-          Flexible(child: _categoryPill(context, theme)),
-          if (showTags) ...[
-            const SizedBox(width: 6),
-            Flexible(child: _tagsPill(context, theme)),
-          ],
-          if (showPostVotingToggle) ...[
-            const SizedBox(width: 6),
-            Flexible(child: _postVotingPill(theme)),
-          ],
+    final desktop = PlatformUtils.isDesktop;
+    final base = Theme.of(context);
+    final theme = desktop
+        ? base.copyWith(
+            textTheme: base.textTheme.copyWith(
+              labelMedium: base.textTheme.labelMedium?.copyWith(fontSize: 13),
+            ),
+          )
+        : base;
+    Widget item(Widget child) =>
+        desktop ? Flexible(child: child) : Expanded(child: child);
+    final bar = Row(
+      mainAxisSize: desktop ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        item(_categoryPill(context, theme)),
+        if (showTags) ...[
+          if (desktop) const SizedBox(width: 8),
+          item(_tagsPill(context, theme)),
         ],
-      ),
+        if (showPostVotingToggle) Flexible(child: _postVotingPill(theme)),
+      ],
     );
     if (!enabled) {
       return IgnorePointer(child: Opacity(opacity: 0.6, child: bar));

@@ -1,3 +1,4 @@
+import '../../utils/platform_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
@@ -6,6 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'pm_recipient_field.dart';
 import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
+import '../markdown_editor/composer_workbench.dart';
+import '../markdown_editor/composer_page_chrome.dart';
+import '../markdown_editor/composer_view_mode_switcher.dart';
+import '../markdown_editor/markdown_renderer.dart';
 import '../markdown_editor/markdown_editor.dart';
 import '../markdown_editor/rich_composer/rich_composer_editor.dart';
 import '../../providers/preferences_provider.dart';
@@ -69,6 +74,7 @@ Future<Post?> showReplySheet({
   int? categoryId,
   Post? replyToPost,
   String? targetUsername,
+
   /// 新建私信（可无预设收件人）：收件人由用户在编辑器内搜索增删
   bool composePrivateMessage = false,
   String? draftKey,
@@ -200,6 +206,122 @@ class ReplySheet extends ConsumerStatefulWidget {
 class _ReplySheetState extends ConsumerState<ReplySheet> {
   /// 富文本导入失败(cook 不可用)时本次会话降级纯文本
   bool _richFallback = false;
+
+  /// 预览渲染。与 MarkdownEditor 内部预览同款（MarkdownBody + 空态文案），
+  /// 但对富文本/源码两种模式都生效。
+  Widget _buildPreview(ThemeData theme) {
+    final text = _contentController.text;
+    return SingleChildScrollView(
+      key: const ValueKey('reply-preview'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: text.trim().isEmpty
+          ? Text(
+              S.current.editor_noContent,
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            )
+          : MarkdownBody(data: text),
+    );
+  }
+
+  /// 预览态独立于编辑模式，切换时保留原编辑器。
+  bool _showPreview = false;
+
+  /// 当前视图档位。
+  ComposerViewMode get _viewMode {
+    if (_showPreview) return ComposerViewMode.preview;
+    return (ref.read(preferencesProvider).useRichComposer && !_richFallback)
+        ? ComposerViewMode.rich
+        : ComposerViewMode.source;
+  }
+
+  /// 三档齐全：预览对富文本/源码都可用（此前预览按钮挂在源码工具栏上，
+  /// 富文本态下根本看不到，是个割裂）。
+  void _setViewMode(ComposerViewMode next) {
+    if (next == _viewMode) return;
+    if (next == ComposerViewMode.preview) {
+      _togglePreview();
+      return;
+    }
+    final hadFocus = _contentFocusNode.hasFocus;
+    _richKey.currentState?.flushToController();
+    _editorKey.currentState?.closeEmojiPanel();
+    _richKey.currentState?.closeEmojiPanel();
+    _contentFocusNode.unfocus();
+    setState(() {
+      _showPreview = false;
+      _richFallback = next == ComposerViewMode.source;
+    });
+    if (hadFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _contentFocusNode.requestFocus();
+      });
+    }
+  }
+
+  Widget _buildReplyContext() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: Text(
+      widget.replyToPost == null
+          ? (_isEditMode ? S.current.common_edit : S.current.post_replyToTopic)
+          : '${widget.replyToPost!.username} · #${widget.replyToPost!.postNumber}',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.labelMedium,
+    ),
+  );
+
+  bool _previewHadFocus = false;
+
+  void _togglePreview() {
+    final leaving = _showPreview;
+    if (!leaving) {
+      _previewHadFocus = _contentFocusNode.hasFocus;
+      _richKey.currentState?.flushToController();
+      _editorKey.currentState?.closeEmojiPanel();
+      _richKey.currentState?.closeEmojiPanel();
+      FocusScope.of(context).unfocus();
+    }
+    setState(() => _showPreview = !leaving);
+    if (leaving && _previewHadFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _editorKey.currentState?.resumeEditing();
+        _richKey.currentState?.resumeEditing();
+      });
+    }
+  }
+
+  void _showQuickPanel() {
+    if (_showPreview) _togglePreview();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _editorKey.currentState?.showQuickPanel();
+      _richKey.currentState?.showQuickPanel();
+    });
+  }
+
+  Widget _buildReviewButton() {
+    if (!_canReviewPost ||
+        !ref.watch(preferencesProvider).aiPostReviewEnabled) {
+      return const SizedBox.shrink();
+    }
+    return AiPostReviewButton(
+      titleBuilder: () => widget.topicTitle,
+      contentBuilder: () {
+        _richKey.currentState?.flushToController();
+        return _contentController.text;
+      },
+      target: AiPostReviewTarget.reply,
+      enabled: !_isSubmitting && !_isLoadingRaw,
+      builder: (_, reviewing, trigger) => ComposerActionButton(
+        icon: Symbols.auto_awesome_rounded,
+        label: S.current.aiPostReview_button,
+        busy: reviewing,
+        onPressed: trigger,
+      ),
+    );
+  }
+
   final _richKey = GlobalKey<RichComposerEditorState>();
 
   final _titleController = TextEditingController();
@@ -544,7 +666,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
     // 最小字数校验：与计数器共用同一份解析结果（含 warden 按分类改写），
     // 否则在搞七捻三（16）这类分类下会出现计数器与校验不一致
-    final minLength = _minPostLength ??
+    final minLength =
+        _minPostLength ??
         await ComposerMinLengthResolver.resolve(
           category: widget.categoryId == null
               ? null
@@ -635,7 +758,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       _submitted = true;
       if (!mounted) return;
       final pending = e.pendingPost;
-      if (pending != null && widget.editPost == null && widget.topicId != null) {
+      if (pending != null &&
+          widget.editPost == null &&
+          widget.topicId != null) {
         // enqueued 响应的 pending_post 只有 {id, raw, created_at},回复目标
         // 服务端 payload 存了但本人可见接口都不吐;趁 composer 还知道上下文
         // 记入注册表,「撤回并重新编辑」才能恢复"回复某楼"而非退化为直接回复话题
@@ -829,15 +954,23 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                     ),
                                   ),
                                 ] else
-                                  Text(
-                                    context.l10n.post_replyToTopic,
-                                    style: theme.textTheme.titleSmall,
+                                  Expanded(
+                                    child: Text(
+                                      context.l10n.post_replyToTopic,
+                                      style: theme.textTheme.titleSmall,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
 
-                                if (!_isPrivateMessage &&
-                                    !_isEditMode &&
-                                    widget.replyToPost == null)
-                                  const Spacer(),
+                                // 视图模式切换(富文本/源码):与草稿/审核/
+                                // 发送同属文档级操作,从底部工具栏上移
+                                ComposerPreviewButton(
+                                  previewing: _showPreview,
+                                  onPressed: !_isSubmitting && !_isLoadingRaw
+                                      ? _togglePreview
+                                      : null,
+                                ),
 
                                 // 草稿保存状态指示器
                                 if (_draftController != null) ...[
@@ -852,26 +985,14 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                     },
                                   ),
                                   const SizedBox(width: 8),
-                                  // 舍弃按钮
-                                  TextButton(
+                                ],
+                                if (_draftController != null)
+                                  ComposerDiscardButton(
                                     onPressed: _isSubmitting
                                         ? null
                                         : _discardDraft,
-                                    child: Text(context.l10n.common_discard),
                                   ),
-                                  const SizedBox(width: 8),
-                                ],
-
-                                if (_canReviewPost) ...[
-                                  AiPostReviewButton(
-                                    titleBuilder: () => widget.topicTitle,
-                                    contentBuilder: () =>
-                                        _contentController.text,
-                                    target: AiPostReviewTarget.reply,
-                                    enabled: !_isSubmitting && !_isLoadingRaw,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
+                                _buildReviewButton(),
 
                                 // 发送/保存按钮
                                 FilledButton(
@@ -948,86 +1069,103 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                       // ComposerSwitchFade 无并存直切+淡入 —— 防双模
                       // 并存 IME 交接竞态,说明见 create_topic_page)
                       Expanded(
-                        child: ComposerSwitchFade(
-                          child:
-                              (ref.watch(
-                                  preferencesProvider.select(
-                                    (p) => p.useRichComposer,
-                                  ),
-                                ) &&
-                                !_richFallback)
-                            // 富文本的初始导入是一次性的(不监听 controller
-                            // 后续变化)——编辑原帖 raw / 草稿加载完成前挂载
-                            // 会用空 controller 建空文档,之后镜像回写覆盖
-                            // 真内容(毁帖)。内容源就绪后才挂;占位留空,
-                            // 加载视觉由草稿遮罩/RichComposer 自身统一提供
-                            // (双 spinner 叠影)。
-                            ? ((_isLoadingRaw || _isLoadingDraft)
-                                  ? const SizedBox.shrink()
-                                  : RichComposerEditor(
-                                      key: _richKey,
-                                      controller: _contentController,
-                                      focusNode: _contentFocusNode,
-                                      hintText: context.l10n.editor_hintText,
-                                      bodyOverlay: _buildCharCountOverlay(),
-                                      emojiPanelHeight: _emojiPanelHeight,
-                                      onEmojiPanelChanged: (show) {
-                                        setState(() => _showEmojiPanel = show);
-                                      },
-                                      mentionDataSource: (term) =>
-                                          DiscourseService().searchUsers(
-                                            term: term,
-                                            topicId: widget.topicId,
-                                            categoryId: widget.categoryId,
-                                            includeGroups:
-                                                !_isInPrivateMessageContext,
+                        child: ComposerPreviewPane(
+                          previewing: _showPreview,
+                          previewFooter: ComposerPreviewFooter(
+                            metadata: _buildReplyContext(),
+                            rich:
+                                ref
+                                    .watch(preferencesProvider)
+                                    .useRichComposer &&
+                                !_richFallback,
+                          ),
+                          preview: _buildPreview(theme),
+                          editor: ComposerSwitchFade(
+                            child:
+                                (ref.watch(
+                                      preferencesProvider.select(
+                                        (p) => p.useRichComposer,
+                                      ),
+                                    ) &&
+                                    !_richFallback)
+                                // 富文本的初始导入是一次性的(不监听 controller
+                                // 后续变化)——编辑原帖 raw / 草稿加载完成前挂载
+                                // 会用空 controller 建空文档,之后镜像回写覆盖
+                                // 真内容(毁帖)。内容源就绪后才挂;占位留空,
+                                // 加载视觉由草稿遮罩/RichComposer 自身统一提供
+                                // (双 spinner 叠影)。
+                                ? ((_isLoadingRaw || _isLoadingDraft)
+                                      ? const SizedBox.shrink()
+                                      : RichComposerEditor(
+                                          key: _richKey,
+                                          metaBar: PlatformUtils.isDesktop
+                                              ? null
+                                              : _buildReplyContext(),
+                                          onSwitchToSource: () => _setViewMode(
+                                            ComposerViewMode.source,
                                           ),
-                                      onFallbackToPlain: () {
-                                        if (mounted) {
-                                          setState(() => _richFallback = true);
-                                        }
-                                      },
-                                      // 主动切源码:会话内单向(重开恢复
-                                      // 富文本并重跑导入门禁)
-                                      onSwitchToSource: () {
-                                        if (mounted) {
-                                          setState(() => _richFallback = true);
-                                        }
-                                      },
-                                    ))
-                            : MarkdownEditor(
-                                key: _editorKey,
-                                controller: _contentController,
-                                focusNode: _contentFocusNode,
-                                hintText: context.l10n.editor_hintText,
-                                expands: true,
-                                bodyOverlay: _buildCharCountOverlay(),
-                                emojiPanelHeight: _emojiPanelHeight,
-                                onEmojiPanelChanged: (show) {
-                                  setState(() => _showEmojiPanel = show);
-                                },
-                                // 源码 → 富文本(仅富文本开关开着且当前
-                                // 处于主动切换态;门禁降级也允许重试 ——
-                                // 内容可能已改到可导入)
-                                onSwitchToRich: ref
-                                        .watch(preferencesProvider)
-                                        .useRichComposer
-                                    ? () {
-                                        if (mounted) {
-                                          setState(
-                                              () => _richFallback = false);
-                                        }
-                                      }
-                                    : null,
-                                mentionDataSource: (term) =>
-                                    DiscourseService().searchUsers(
-                                      term: term,
-                                      topicId: widget.topicId,
-                                      categoryId: widget.categoryId,
-                                      includeGroups:
-                                          !_isInPrivateMessageContext, // 私信不允许提及群组
-                                    ),
-                              ),
+                                          controller: _contentController,
+                                          focusNode: _contentFocusNode,
+                                          hintText:
+                                              context.l10n.editor_hintText,
+                                          bodyOverlay: _buildCharCountOverlay(),
+                                          emojiPanelHeight: _emojiPanelHeight,
+                                          onEmojiPanelChanged: (show) {
+                                            setState(
+                                              () => _showEmojiPanel = show,
+                                            );
+                                          },
+                                          mentionDataSource: (term) =>
+                                              DiscourseService().searchUsers(
+                                                term: term,
+                                                topicId: widget.topicId,
+                                                categoryId: widget.categoryId,
+                                                includeGroups:
+                                                    !_isInPrivateMessageContext,
+                                              ),
+                                          onFallbackToPlain: () {
+                                            if (mounted) {
+                                              setState(
+                                                () => _richFallback = true,
+                                              );
+                                            }
+                                          },
+                                          // 模式切换由编辑台承载。
+                                        ))
+                                : MarkdownEditor(
+                                    key: _editorKey,
+                                    metaBar: PlatformUtils.isDesktop
+                                        ? null
+                                        : _buildReplyContext(),
+                                    onSwitchToRich:
+                                        ref
+                                            .watch(preferencesProvider)
+                                            .useRichComposer
+                                        ? () => _setViewMode(
+                                            ComposerViewMode.rich,
+                                          )
+                                        : null,
+                                    controller: _contentController,
+                                    focusNode: _contentFocusNode,
+                                    hintText: context.l10n.editor_hintText,
+                                    expands: true,
+                                    // 预览已由头部切换器统一承载(对富文本也生效)
+                                    showPreviewButton: false,
+                                    bodyOverlay: _buildCharCountOverlay(),
+                                    emojiPanelHeight: _emojiPanelHeight,
+                                    onEmojiPanelChanged: (show) {
+                                      setState(() => _showEmojiPanel = show);
+                                    },
+                                    mentionDataSource: (term) =>
+                                        DiscourseService().searchUsers(
+                                          term: term,
+                                          topicId: widget.topicId,
+                                          categoryId: widget.categoryId,
+                                          includeGroups:
+                                              !_isInPrivateMessageContext, // 私信不允许提及群组
+                                        ),
+                                  ),
+                          ),
                         ),
                       ),
                     ],
@@ -1055,6 +1193,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
     return CallbackShortcuts(
       bindings: {
+        for (final activator in composerQuickPanelActivators())
+          activator: _showQuickPanel,
         for (final activator in composerSubmitActivators())
           activator: () {
             if (!_isSubmitting && !_isLoadingRaw) _submit();

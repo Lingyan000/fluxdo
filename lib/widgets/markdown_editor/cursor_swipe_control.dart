@@ -19,19 +19,24 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/s.dart';
 
 class CursorSwipeControl extends StatefulWidget {
   const CursorSwipeControl({
     super.key,
     this.onMove,
+    this.onMoveVertical,
     this.onPointerStart,
     this.onPointerMove,
     this.onPointerEnd,
-  }) : assert(onMove != null || onPointerStart != null,
-            '步进(onMove)与指针(onPointer*)模式二选一');
+  }) : assert(
+         onMove != null || onPointerStart != null,
+         '步进(onMove)与指针(onPointer*)模式二选一',
+       );
 
   /// 步进模式(水平):每步 [dir] = ±1,[extend] = 选择开关态。
   final void Function(int dir, {required bool extend})? onMove;
+  final void Function(int dir, {required bool extend})? onMoveVertical;
 
   /// 指针模式(二维虚拟指针):按下起步,返回 false = 编辑器无光标,
   /// 本次拖动忽略。与 [onPointerMove]/[onPointerEnd] 成组。
@@ -122,8 +127,10 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
               borderRadius: BorderRadius.circular(8),
               elevation: 2,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
                 child: Text(
                   text,
                   style: TextStyle(
@@ -201,13 +208,17 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
 
   void _onDragEnd() {
     if (!_moved) {
+      if (widget.onMoveVertical != null) {
+        _removeHint();
+        _showCursorMenu();
+        return;
+      }
       // 未越过 tapSlop = 单击:切换选择模式
       _removeHint();
       setState(() => _selecting = !_selecting);
       HapticFeedback.selectionClick();
       if (_selecting && _selectHintLeft > 0) {
-        _showHint('选择模式:滑动即选择文本',
-            autoHide: const Duration(milliseconds: 1800));
+        _showHint('选择模式:滑动即选择文本', autoHide: const Duration(milliseconds: 1800));
         _selectHintLeft--;
         _consume(_kSelectHintKey, _selectHintLeft);
       }
@@ -221,6 +232,46 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
     if (mounted) setState(() => _dragging = false);
   }
 
+  Future<void> _showCursorMenu() async {
+    final box = context.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final rect = box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
+    final s = S.current;
+    final entries = [
+      (s.composer_cursorLeft, Icons.arrow_back_rounded),
+      (s.composer_cursorRight, Icons.arrow_forward_rounded),
+      (s.composer_cursorUp, Icons.arrow_upward_rounded),
+      (s.composer_cursorDown, Icons.arrow_downward_rounded),
+      (s.composer_cursorSelect, Icons.select_all_rounded),
+    ];
+    final picked = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      items: [
+        for (var i = 0; i < entries.length; i++)
+          PopupMenuItem(
+            value: i,
+            child: Row(
+              children: [
+                Icon(entries[i].$2, size: 20),
+                const SizedBox(width: 12),
+                Text(entries[i].$1),
+                if (i == 4 && _selecting) const Icon(Icons.check, size: 18),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!mounted || picked == null) return;
+    if (picked < 2) {
+      widget.onMove?.call(picked == 0 ? -1 : 1, extend: _selecting);
+    } else if (picked < 4) {
+      widget.onMoveVertical?.call(picked == 2 ? -1 : 1, extend: _selecting);
+    } else {
+      setState(() => _selecting = !_selecting);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -232,24 +283,26 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
       gestures: {
         _EagerPanGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<_EagerPanGestureRecognizer>(
-          () => _EagerPanGestureRecognizer(debugOwner: this),
-          (r) {
-            r
-              ..onDown = ((_) => _onDown())
-              ..onUpdate = _onDragUpdate
-              ..onEnd = ((_) => _onDragEnd())
-              ..onCancel = _onDragEnd;
-          },
-        ),
+              () => _EagerPanGestureRecognizer(debugOwner: this),
+              (r) {
+                r
+                  ..onDown = ((_) => _onDown())
+                  ..onUpdate = _onDragUpdate
+                  ..onEnd = ((_) => _onDragEnd())
+                  ..onCancel = _onDragEnd;
+              },
+            ),
       },
       // 不用 Tooltip:其长按触发与「按住拖动」手势冲突(按住先弹提示,
       // 拖不起来)。说明留给 Semantics(无障碍)。
       child: Semantics(
+        button: true,
+        onTap: widget.onMoveVertical == null ? null : _showCursorMenu,
         label: _selecting ? '选择模式:滑动选择文本,单击退出' : '按住滑动移动光标,单击进入选择模式',
         child: Container(
           key: const ValueKey('cursor-swipe-knob'),
-          width: 44,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: active
@@ -266,8 +319,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
               : FaIcon(
                   FontAwesomeIcons.iCursor,
                   size: 19,
-                  color:
-                      active ? scheme.primary : scheme.onSurfaceVariant,
+                  color: active ? scheme.primary : scheme.onSurfaceVariant,
                 ),
         ),
       ),
@@ -291,9 +343,7 @@ TextSelection? moveTextSelectionByGrapheme(
   final from = sel.extentOffset;
   final int to;
   if (dir < 0) {
-    to = from <= 0
-        ? 0
-        : from - text.substring(0, from).characters.last.length;
+    to = from <= 0 ? 0 : from - text.substring(0, from).characters.last.length;
   } else {
     to = from >= text.length
         ? text.length
