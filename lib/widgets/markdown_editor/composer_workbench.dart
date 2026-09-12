@@ -168,6 +168,10 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
         anchor: anchor,
         animation: _toolAnimation,
         flyingIds: _flightIds.toSet(),
+        onCollapseStart: PlatformUtils.isDesktop ? null : _startDrag,
+        onCollapseUpdate: PlatformUtils.isDesktop ? null : _dragFromPanel,
+        onCollapseEnd: PlatformUtils.isDesktop ? null : _endDrag,
+        onCollapseCancel: PlatformUtils.isDesktop ? null : _cancelDrag,
       );
       anchor.animation = _toolAnimation;
       _history = LocalHistoryEntry(
@@ -336,6 +340,12 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   double _mobileLift = 96;
+
+  double _dragFromPanel(double delta) {
+    final previous = _animation.value;
+    _drag(delta);
+    return delta - (previous - _animation.value) * _gestureExtent;
+  }
 
   void _cancelDrag() {
     // 轻点按钮赢得手势竞争时也会收到 cancel，此时并没有开始拖动。

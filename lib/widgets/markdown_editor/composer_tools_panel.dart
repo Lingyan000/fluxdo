@@ -32,16 +32,84 @@ class ComposerExpandedTools extends StatefulWidget {
     required this.anchor,
     required this.animation,
     required this.flyingIds,
+    this.onCollapseStart,
+    this.onCollapseUpdate,
+    this.onCollapseEnd,
+    this.onCollapseCancel,
   });
   final ComposerToolsAnchor anchor;
   final Animation<double> animation;
   final Set<String> flyingIds;
+  final GestureDragStartCallback? onCollapseStart;
+
+  /// 返回未被面板消耗的距离，用于反向还原后继续滚动工具列表。
+  final double Function(double delta)? onCollapseUpdate;
+  final ValueChanged<double>? onCollapseEnd;
+  final VoidCallback? onCollapseCancel;
   @override
   State<ComposerExpandedTools> createState() => _ComposerExpandedToolsState();
 }
 
 class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
   final _scroll = ScrollController();
+  bool _pulling = false;
+  late final _physics = _ToolsPullPhysics(
+    pulling: () => _pulling,
+    updatePull: _updatePull,
+    parent: const AlwaysScrollableScrollPhysics(),
+  );
+
+  double _updatePull(double delta) {
+    final remaining = widget.onCollapseUpdate!(delta);
+    if (delta < 0 && remaining < -.01) {
+      _pulling = false;
+      widget.onCollapseEnd?.call(0);
+      return remaining;
+    }
+    return 0;
+  }
+
+  void _cancelPull() {
+    if (!_pulling) return;
+    _pulling = false;
+    widget.onCollapseCancel?.call();
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    if (widget.onCollapseUpdate == null || notification.depth != 0) {
+      return false;
+    }
+    if (notification is OverscrollNotification &&
+        notification.dragDetails != null &&
+        notification.overscroll < 0 &&
+        notification.metrics.pixels <=
+            notification.metrics.minScrollExtent + .5 &&
+        !_pulling) {
+      final details = notification.dragDetails!;
+      _pulling = true;
+      widget.onCollapseStart?.call(
+        DragStartDetails(
+          sourceTimeStamp: details.sourceTimeStamp,
+          globalPosition: details.globalPosition,
+          localPosition: details.localPosition,
+        ),
+      );
+      // 列表已经消耗了滚回顶部的距离，只交出边界之外的余量。
+      _updatePull(-notification.overscroll);
+    } else if (notification is ScrollEndNotification && _pulling) {
+      final details = notification.dragDetails;
+      if (details == null) {
+        _cancelPull();
+      } else {
+        _pulling = false;
+        widget.onCollapseEnd?.call(
+          details.primaryVelocity ?? details.velocity.pixelsPerSecond.dy,
+        );
+      }
+    }
+    return false;
+  }
+
   late final _initialPinned = <ComposerToolAction>[
     for (final id in widget.anchor.pinnedIds)
       ...widget.anchor.actions.where(
@@ -176,47 +244,67 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
             ),
           Expanded(
             child: ClipRect(
-              child: CustomScrollView(
-                controller: _scroll,
-                slivers: [
-                  const SliverToBoxAdapter(child: SizedBox(height: 4)),
-                  if (nested)
-                    grid(_parent!.children)
-                  else ...[
-                    // 固定工具保留原顺序和起始位置，继续承接底栏的迁移动画。
-                    if (_initialPinned.isNotEmpty) grid(_initialPinned),
-                    for (final entry in groups.entries)
-                      if (entry.value.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              headingInset,
-                              10,
-                              headingInset,
-                              4,
-                            ),
-                            child: Semantics(
-                              header: true,
-                              child: Text(
-                                entry.key.label,
-                                key: ValueKey(
-                                  'composer-tools-group-${entry.key.name}',
-                                ),
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+              child: Listener(
+                onPointerCancel: (_) => _cancelPull(),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _onScroll,
+                  child: NotificationListener<OverscrollIndicatorNotification>(
+                    onNotification: (notification) {
+                      if (widget.onCollapseUpdate != null &&
+                          notification.leading) {
+                        notification.disallowIndicator();
+                      }
+                      return false;
+                    },
+                    child: CustomScrollView(
+                      controller: _scroll,
+                      physics: widget.onCollapseUpdate == null
+                          ? null
+                          : _physics,
+                      slivers: [
+                        const SliverToBoxAdapter(child: SizedBox(height: 4)),
+                        if (nested)
+                          grid(_parent!.children)
+                        else ...[
+                          // 固定工具保留原顺序和起始位置，继续承接底栏的迁移动画。
+                          if (_initialPinned.isNotEmpty) grid(_initialPinned),
+                          for (final entry in groups.entries)
+                            if (entry.value.isNotEmpty) ...[
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    headingInset,
+                                    10,
+                                    headingInset,
+                                    4,
+                                  ),
+                                  child: Semantics(
+                                    header: true,
+                                    child: Text(
+                                      entry.key.label,
+                                      key: ValueKey(
+                                        'composer-tools-group-${entry.key.name}',
+                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
                                     ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                        grid(entry.value),
+                              grid(entry.value),
+                            ],
+                        ],
+                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
                       ],
-                  ],
-                  const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -224,4 +312,35 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
       );
     },
   );
+}
+
+/// 沿用 Scrollable 的同一个拖拽识别器。面板接管期间冻结列表；
+/// 反向还原后的余量再交回列表，不抢手势，也不带出惯性滚动。
+class _ToolsPullPhysics extends ClampingScrollPhysics {
+  const _ToolsPullPhysics({
+    required this.pulling,
+    required this.updatePull,
+    super.parent,
+  });
+  final bool Function() pulling;
+  final double Function(double) updatePull;
+
+  @override
+  _ToolsPullPhysics applyTo(ScrollPhysics? ancestor) => _ToolsPullPhysics(
+    pulling: pulling,
+    updatePull: updatePull,
+    parent: buildParent(ancestor),
+  );
+
+  @override
+  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) =>
+      pulling()
+      ? updatePull(offset)
+      : super.applyPhysicsToUserOffset(position, offset);
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) => pulling() ? null : super.createBallisticSimulation(position, velocity);
 }
