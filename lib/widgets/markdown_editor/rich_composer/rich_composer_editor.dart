@@ -201,6 +201,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 面板、无键盘时底部安全区 —— 切换零跳变)。
   final _panelController = ChatBottomPanelContainerController<_RichPanelType>();
   _RichPanelType _currentPanel = _RichPanelType.none;
+  bool _returningToKeyboard = false;
 
   /// 用户意图面板(防焦点竞争:表情面板打开期间焦点变化不得关面板)。
   _RichPanelType _intendedPanel = _RichPanelType.none;
@@ -311,6 +312,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      _returningToKeyboard = false;
+    }
     _subscribePrefs();
   }
 
@@ -365,6 +369,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   Future<void> showTools() {
+    if (!_isDesktop &&
+        MediaQuery.viewInsetsOf(context).bottom == 0 &&
+        !_showEmojiPanel &&
+        !_returningToKeyboard) {
+      return Future.value();
+    }
     if (_toolsAnchor.presenting) {
       if (_toolsAnchor.expanded) {
         _toolsAnchor.collapse();
@@ -385,7 +395,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final toolContext = _buildToolContext(editor);
     final snapshot = _buildToolSnapshot(editor);
     final keyboardWasVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
-    closeEmojiPanel();
+    if (quick || _isDesktop) closeEmojiPanel();
     void run(VoidCallback action) {
       if (!mounted) return;
       if (selection != null) editor.updateSelection(selection);
@@ -3319,8 +3329,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
     final isEmpty = _lastIsEmpty = _computeIsEmpty();
 
-    final editing = _isDesktop || MediaQuery.viewInsetsOf(context).bottom > 0;
+    final editing =
+        _isDesktop ||
+        MediaQuery.viewInsetsOf(context).bottom > 0 ||
+        _showEmojiPanel ||
+        _returningToKeyboard;
     return ComposerEditorLayout(
+      toolsAnchor: _toolsAnchor,
       editing: editing,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
@@ -3588,6 +3603,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           final wasCustom = _currentPanel == _RichPanelType.emoji;
           final isCustom = next == _RichPanelType.emoji;
           setState(() {
+            // 表情切回键盘时保留格式行，直到真实键盘高度接上。
+            if (next != _RichPanelType.keyboard) {
+              _returningToKeyboard = false;
+            } else if (wasCustom) {
+              _returningToKeyboard =
+                  MediaQuery.viewInsetsOf(context).bottom == 0;
+            }
             _currentPanel = next;
             _showEmojiPanel = next == _RichPanelType.emoji;
           });
@@ -3853,7 +3875,7 @@ class _RichToolbarState extends State<_RichToolbar> {
   Widget _buildToolsButton(ThemeData theme) => ComposerToolsToggle(
     anchor: widget.toolsAnchor,
     active: widget.isToolsPanelVisible,
-    compact: !PlatformUtils.isDesktop && !widget.editing,
+    compact: false,
     onPressed: widget.onToggleTools,
   );
 
@@ -3874,27 +3896,16 @@ class _RichToolbarState extends State<_RichToolbar> {
             provider: RichContentActions(widget.contentActions!),
             listenable: widget.state,
           ),
-        if (!PlatformUtils.isDesktop)
-          SizedBox.square(
-            dimension: 48,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (widget.onPointerStart != null)
-                  Visibility(
-                    visible: editing || widget.onToggleTools == null,
-                    maintainState: true,
-                    child: CursorSwipeControl(
-                      onPointerStart: widget.onPointerStart,
-                      onPointerMove: widget.onPointerMove,
-                      onPointerEnd: widget.onPointerEnd,
-                      onMove: widget.contentActions?.moveHorizontal,
-                      onMoveVertical: widget.contentActions?.moveVertical,
-                    ),
-                  ),
-                if (!editing && widget.onToggleTools != null)
-                  _buildToolsButton(theme),
-              ],
+        if (!PlatformUtils.isDesktop && widget.onPointerStart != null)
+          Visibility(
+            visible: editing,
+            maintainState: true,
+            child: CursorSwipeControl(
+              onPointerStart: widget.onPointerStart,
+              onPointerMove: widget.onPointerMove,
+              onPointerEnd: widget.onPointerEnd,
+              onMove: widget.contentActions?.moveHorizontal,
+              onMoveVertical: widget.contentActions?.moveVertical,
             ),
           ),
         if (widget.onSwitchToSource != null)
@@ -3917,9 +3928,7 @@ class _RichToolbarState extends State<_RichToolbar> {
               ),
             ),
           ),
-          if (widget.onToggleTools != null &&
-              (PlatformUtils.isDesktop || editing))
-            _buildToolsButton(theme),
+          if (widget.onToggleTools != null) _buildToolsButton(theme),
         ],
       ),
     );

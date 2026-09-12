@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../l10n/s.dart';
+import 'composer_page_chrome.dart';
 
 enum ComposerViewMode { rich, source, preview }
 
@@ -48,19 +49,10 @@ class ComposerPreviewButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => IconButton(
-    constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-    padding: const EdgeInsets.all(10),
-    style: IconButton.styleFrom(
-      minimumSize: const Size(44, 44),
-      maximumSize: const Size(44, 44),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    ),
-    tooltip: previewing
-        ? S.current.common_exitPreview
-        : S.current.common_preview,
+  Widget build(BuildContext context) => ComposerActionButton(
+    label: previewing ? S.current.common_exitPreview : S.current.common_preview,
     onPressed: onPressed,
     color: previewing ? Theme.of(context).colorScheme.primary : null,
-    icon: Icon(previewing ? Symbols.edit_rounded : AppIcons.book),
+    icon: previewing ? Symbols.edit_rounded : AppIcons.book,
   );
 }

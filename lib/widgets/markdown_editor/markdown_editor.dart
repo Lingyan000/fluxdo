@@ -145,6 +145,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   final _panelController =
       ChatBottomPanelContainerController<EditorPanelType>();
   EditorPanelType _currentPanelType = EditorPanelType.none;
+  bool _returningToKeyboard = false;
   bool _readOnly = false;
   // 面板意图状态：用户希望打开的自定义面板（表情/工具），
   // 用于防止焦点变化导致的面板状态竞争
@@ -186,6 +187,14 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     widget.controller.addListener(_handleTextChange);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      _returningToKeyboard = false;
+    }
+  }
+
   /// 预览返回时恢复输入连接；关闭面板留下的只读状态不能带回来。
   void resumeEditing() {
     _intendedPanel = EditorPanelType.none;
@@ -209,6 +218,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   }
 
   Future<void> showTools() {
+    if (!_isDesktop &&
+        MediaQuery.viewInsetsOf(context).bottom == 0 &&
+        !showEmojiPanel &&
+        !_returningToKeyboard) {
+      return Future.value();
+    }
     if (_toolsAnchor.presenting) {
       if (_toolsAnchor.expanded) {
         _toolsAnchor.collapse();
@@ -226,7 +241,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     setState(() => _toolsOpen = true);
     final selection = widget.controller.selection;
     final keyboardWasVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
-    closeEmojiPanel();
+    if (quick || _isDesktop) closeEmojiPanel();
     void run(VoidCallback action) {
       if (!mounted) return;
       if (selection.isValid && selection.end <= widget.controller.text.length) {
@@ -1015,8 +1030,13 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final editing = _isDesktop || MediaQuery.viewInsetsOf(context).bottom > 0;
+    final editing =
+        _isDesktop ||
+        MediaQuery.viewInsetsOf(context).bottom > 0 ||
+        showEmojiPanel ||
+        _returningToKeyboard;
     return ComposerEditorLayout(
+      toolsAnchor: _toolsAnchor,
       editing: editing,
       bodyBuilder: (context, bottomInset, viewportHeight) {
         _updateFloatingInset(bottomInset, viewportHeight);
@@ -1181,6 +1201,13 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           final isCustom = isCustomPanel(newType);
 
           setState(() {
+            // 仅承接表情 → 键盘的过渡，不把焦点触发的 keyboard 态当作键盘可见。
+            if (newType != EditorPanelType.keyboard) {
+              _returningToKeyboard = false;
+            } else if (wasCustom) {
+              _returningToKeyboard =
+                  MediaQuery.viewInsetsOf(context).bottom == 0;
+            }
             _currentPanelType = newType;
           });
 

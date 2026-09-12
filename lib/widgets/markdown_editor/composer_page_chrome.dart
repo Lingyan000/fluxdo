@@ -3,7 +3,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/s.dart';
 
-/// 文档操作始终直接显示，保留稳定的点击区域。
+/// 文档操作的统一图标规格。
 class ComposerActionButton extends StatelessWidget {
   const ComposerActionButton({
     super.key,
@@ -11,40 +11,35 @@ class ComposerActionButton extends StatelessWidget {
     required this.label,
     this.onPressed,
     this.busy = false,
+    this.color,
   });
   final IconData icon;
   final String label;
   final VoidCallback? onPressed;
   final bool busy;
+  final Color? color;
+
+  static ButtonStyle get buttonStyle => IconButton.styleFrom(
+    minimumSize: const Size(44, 44),
+    maximumSize: const Size(44, 44),
+    visualDensity: VisualDensity.standard,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 
   @override
   Widget build(BuildContext context) => IconButton(
     tooltip: label,
     onPressed: onPressed,
+    color: color,
     constraints: const BoxConstraints.tightFor(width: 44, height: 44),
     padding: const EdgeInsets.all(10),
-    style: IconButton.styleFrom(
-      minimumSize: const Size(44, 44),
-      maximumSize: const Size(44, 44),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    ),
+    style: buttonStyle,
     icon: busy
         ? const SizedBox.square(
             dimension: 18,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
         : Icon(icon, size: 21),
-  );
-}
-
-class ComposerDiscardButton extends StatelessWidget {
-  const ComposerDiscardButton({super.key, this.onPressed});
-  final VoidCallback? onPressed;
-  @override
-  Widget build(BuildContext context) => ComposerActionButton(
-    icon: Symbols.delete_rounded,
-    label: S.current.common_discard,
-    onPressed: onPressed,
   );
 }
 

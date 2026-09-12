@@ -14,6 +14,7 @@ import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -1145,56 +1146,35 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 ? SystemUiOverlayStyle.light
                 : SystemUiOverlayStyle.dark,
             actions: [
-              // 预览、舍弃、审核、发布保持直接入口。
-              ComposerPreviewButton(
+              ComposerHeaderActions(
+                availableWidth:
+                    MediaQuery.sizeOf(context).width -
+                    MediaQuery.paddingOf(context).horizontal,
+                submitLabel: context.l10n.common_publish,
+                onSubmit: _isSubmitting ? null : _submit,
+                submitting: _isSubmitting,
                 previewing: _showPreview,
-                onPressed: !_isSubmitting ? _togglePreview : null,
-              ),
-              ComposerDiscardButton(
-                onPressed: _isSubmitting ? null : _discardDraft,
-              ),
-              if (ref.watch(preferencesProvider).aiPostReviewEnabled)
-                AiPostReviewButton(
-                  titleBuilder: () => _titleController.text,
-                  contentBuilder: () {
-                    _richKey.currentState?.flushToController();
-                    return _contentController.text;
-                  },
-                  target: AiPostReviewTarget.topic,
-                  enabled: !_isSubmitting,
-                  categoryNameBuilder: () => _selectedCategory?.name,
-                  categoryDescriptionBuilder: () =>
-                      _selectedCategory?.description,
-                  tagsBuilder: () => _selectedTags,
-                  builder: (anchorContext, isReviewing, trigger) {
-                    return ComposerActionButton(
-                      icon: Symbols.auto_awesome_rounded,
-                      label: context.l10n.aiPostReview_button,
-                      onPressed: trigger,
-                      busy: isReviewing,
-                    );
-                  },
-                ),
-              Padding(
-                padding: EdgeInsets.only(right: desktop ? 16 : 0),
-                child: FilledButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(56, 40),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(context.l10n.common_publish),
-                ),
+                onTogglePreview: !_isSubmitting ? _togglePreview : null,
+                showDiscard: true,
+                onDiscard: _isSubmitting ? null : _discardDraft,
+                reviewBuilder:
+                    ref.watch(preferencesProvider).aiPostReviewEnabled
+                    ? (builder) => AiPostReviewButton(
+                        titleBuilder: () => _titleController.text,
+                        contentBuilder: () {
+                          _richKey.currentState?.flushToController();
+                          return _contentController.text;
+                        },
+                        target: AiPostReviewTarget.topic,
+                        enabled: !_isSubmitting,
+                        categoryNameBuilder: () => _selectedCategory?.name,
+                        categoryDescriptionBuilder: () =>
+                            _selectedCategory?.description,
+                        tagsBuilder: () => _selectedTags,
+                        builder: (_, reviewing, trigger) =>
+                            builder(reviewing, trigger),
+                      )
+                    : null,
               ),
             ],
           ),
@@ -1434,7 +1414,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               top: 0,
               left: 0,
               right: 0,
-              child: ComposerTopFade(height: _topChromeInset),
+              child: ComposerTopFade(
+                height: _topChromeInset,
+                statusBarHeight: MediaQuery.viewPaddingOf(context).top,
+              ),
             ),
           ],
         ),
@@ -1452,7 +1435,11 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
             if (!_isSubmitting) _submit();
           },
       },
-      child: ComposerChromeScope(controller: _chrome, child: page),
+      child: ComposerChromeScope(
+        controller: _chrome,
+        topInset: _topChromeInset,
+        child: page,
+      ),
     );
   }
 }

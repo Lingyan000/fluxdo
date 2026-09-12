@@ -30,11 +30,16 @@ class ComposerWorkbench extends StatefulWidget {
   final VoidCallback? onExpandTools;
   static double rowHeight(BuildContext context) =>
       math.max(48, MediaQuery.textScalerOf(context).scale(14) + 24);
-  static double occupiedHeight(BuildContext context, bool editing) {
+  static double occupiedHeight(
+    BuildContext context,
+    bool editing, {
+    double? inputProgress,
+  }) {
     final row = rowHeight(context);
+    final progress = inputProgress ?? (editing ? 1.0 : 0.0);
     return (PlatformUtils.isDesktop
             ? row + 4
-            : row + ComposerToolsHandle.height + (editing ? row + 4 : 0)) +
+            : row + (ComposerToolsHandle.height + row + 4) * progress) +
         8 +
         kComposerIslandBottomGap;
   }
@@ -55,6 +60,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   List<String> _flightIds = [];
   List<Widget> _flightChildren = [];
   bool _dragging = false;
+  bool _closingForInput = false;
   ComposerKeyboardDismissController? _keyboardGesture;
   bool _dragWasExpanded = false;
   double _expansionHeight = 400;
@@ -91,6 +97,19 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     if (oldWidget.toolsAnchor != widget.toolsAnchor) {
       oldWidget.toolsAnchor?.removeListener(_changed);
       widget.toolsAnchor?.addListener(_changed);
+    }
+    if (!PlatformUtils.isDesktop &&
+        !widget.editing &&
+        _presenting &&
+        !_closingForInput) {
+      _closingForInput = true;
+      _gestureExtent = _expansionHeight;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.editing) return;
+        _dragging = false;
+        _lastDragY = null;
+        widget.toolsAnchor?.collapse();
+      });
     }
   }
 
@@ -146,6 +165,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       return;
     }
     _sourceIcons = {};
+    _closingForInput = false;
     _presenting = false;
     _expandedTools = null;
     final history = _history;
@@ -167,6 +187,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _toggle() {
+    if (!PlatformUtils.isDesktop && !widget.editing) return;
     if (widget.toolsAnchor?.presenting == true) {
       _setExpansion(!widget.toolsAnchor!.expanded);
     } else {
@@ -197,7 +218,14 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       return;
     }
     final duration = Duration(
-      milliseconds: ((open ? 380 : 260) * remaining).round(),
+      milliseconds:
+          ((open
+                      ? 380
+                      : (!PlatformUtils.isDesktop && !widget.editing
+                            ? 160
+                            : 260)) *
+                  remaining)
+              .round(),
     );
     if (open) {
       _animation.animateTo(
@@ -215,6 +243,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _startDrag(DragStartDetails details) {
+    if (!PlatformUtils.isDesktop && !widget.editing) return;
     _dragWasExpanded = widget.toolsAnchor?.expanded ?? false;
     _dragging = true;
     _lastDragY = details.globalPosition.dy;
@@ -231,6 +260,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 
   void _drag(double delta) {
+    if (!PlatformUtils.isDesktop && !widget.editing) return;
     if (_keyboardGesture != null) {
       _keyboardGesture!.update(delta);
       return;
@@ -292,24 +322,24 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   Widget build(BuildContext context) {
     final desktop = PlatformUtils.isDesktop;
     final row = ComposerWorkbench.rowHeight(context);
+    final viewport = context
+        .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>();
+    final inputProgress =
+        viewport?.inputProgress ?? (widget.editing ? 1.0 : 0.0);
     final handleHeight = !desktop && widget.onExpandTools != null
-        ? ComposerToolsHandle.height
+        ? ComposerToolsHandle.height * inputProgress
         : 0.0;
     final keyboard = ComposerKeyboardDismissScope.maybeOf(context);
     final editing = widget.editing || (keyboard?.active ?? false);
-    final footerHeight = desktop ? row + 4 : row + (editing ? row + 4 : 0);
+    final footerHeight = desktop ? row + 4 : row + (row + 4) * inputProgress;
     final baseHeight = footerHeight + handleHeight;
-    final available =
-        context
-            .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>()
-            ?.height ??
-        MediaQuery.sizeOf(context).height;
-    final expansionHeight = _dragging
-        ? _gestureExtent
-        : math.min(
-            desktop ? 360.0 : 400.0,
-            math.max(0.0, available - baseHeight - 40),
-          );
+    final available = viewport?.height ?? MediaQuery.sizeOf(context).height;
+    final expansionHeight = math.min(
+      _dragging || _closingForInput
+          ? _gestureExtent
+          : (desktop ? 360.0 : 400.0),
+      math.max(0.0, available - baseHeight - 40),
+    );
     _expansionHeight = expansionHeight;
     final theme = Theme.of(context);
     final footer = desktop
@@ -347,22 +377,33 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                 ),
               ),
               Visibility(
-                visible: editing,
+                visible: inputProgress > 0,
                 maintainState: true,
                 maintainAnimation: true,
-                child: Container(
-                  key: const ValueKey('composer-format-row'),
-                  height: row + 4,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: theme.colorScheme.outlineVariant.withValues(
-                          alpha: .45,
+                child: IgnorePointer(
+                  ignoring: !editing,
+                  child: ClipRect(
+                    child: Align(
+                      heightFactor: inputProgress,
+                      alignment: Alignment.bottomCenter,
+                      child: Opacity(
+                        opacity: inputProgress,
+                        child: Container(
+                          key: const ValueKey('composer-format-row'),
+                          height: row + 4,
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: .45),
+                              ),
+                            ),
+                          ),
+                          child: widget.tools,
                         ),
                       ),
                     ),
                   ),
-                  child: widget.tools,
                 ),
               ),
             ],
@@ -440,11 +481,20 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                   bottom: 0,
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.translucent,
-                                    onVerticalDragStart: _startDrag,
-                                    onVerticalDragUpdate: _dragUpdate,
-                                    onVerticalDragEnd: (details) =>
-                                        _endDrag(details.primaryVelocity ?? 0),
-                                    onVerticalDragCancel: _cancelDrag,
+                                    onVerticalDragStart: editing
+                                        ? _startDrag
+                                        : null,
+                                    onVerticalDragUpdate: editing
+                                        ? _dragUpdate
+                                        : null,
+                                    onVerticalDragEnd: editing
+                                        ? (details) => _endDrag(
+                                            details.primaryVelocity ?? 0,
+                                          )
+                                        : null,
+                                    onVerticalDragCancel: editing
+                                        ? _cancelDrag
+                                        : null,
                                     child: footer,
                                   ),
                                 ),
@@ -456,23 +506,28 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     left: 0,
                                     right: 0,
                                     top: 0,
-                                    child: ComposerToolsHandle(
-                                      key: const ValueKey(
-                                        'composer-tools-handle',
+                                    height: handleHeight,
+                                    child: Opacity(
+                                      opacity: inputProgress,
+                                      child: ComposerToolsHandle(
+                                        key: const ValueKey(
+                                          'composer-tools-handle',
+                                        ),
+                                        label:
+                                            widget.toolsAnchor?.expanded == true
+                                            ? S.current.composer_collapseToolbar
+                                            : S.current.composer_expandToolbar,
+                                        expanded:
+                                            widget.toolsAnchor?.expanded ??
+                                            false,
+                                        onActivate: _toggle,
+                                        onDragStart: _startDrag,
+                                        onDragUpdate: _dragUpdate,
+                                        onDragEnd: (details) => _endDrag(
+                                          details.primaryVelocity ?? 0,
+                                        ),
+                                        onDragCancel: _cancelDrag,
                                       ),
-                                      label:
-                                          widget.toolsAnchor?.expanded == true
-                                          ? S.current.composer_collapseToolbar
-                                          : S.current.composer_expandToolbar,
-                                      expanded:
-                                          widget.toolsAnchor?.expanded ?? false,
-                                      onActivate: _toggle,
-                                      onDragStart: _startDrag,
-                                      onDragUpdate: _dragUpdate,
-                                      onDragEnd: (details) => _endDrag(
-                                        details.primaryVelocity ?? 0,
-                                      ),
-                                      onDragCancel: _cancelDrag,
                                     ),
                                   ),
                                 if (_flightIds.isNotEmpty &&
@@ -581,11 +636,16 @@ class _ToolFlights extends FlowDelegate {
 }
 
 class _WorkbenchViewport extends InheritedWidget {
-  const _WorkbenchViewport({required this.height, required super.child});
+  const _WorkbenchViewport({
+    required this.height,
+    required this.inputProgress,
+    required super.child,
+  });
   final double height;
+  final double inputProgress;
   @override
   bool updateShouldNotify(_WorkbenchViewport oldWidget) =>
-      height != oldWidget.height;
+      height != oldWidget.height || inputProgress != oldWidget.inputProgress;
 }
 
 /// 正文占满画布，工具岛覆盖其底部。只有键盘/扩展面板占独立布局空间。
@@ -596,6 +656,7 @@ class ComposerEditorLayout extends StatefulWidget {
     required this.bodyBuilder,
     required this.toolbar,
     required this.panel,
+    this.toolsAnchor,
   });
   final bool editing;
   final Widget Function(
@@ -606,23 +667,97 @@ class ComposerEditorLayout extends StatefulWidget {
   bodyBuilder;
   final Widget toolbar;
   final Widget panel;
+  final ComposerToolsAnchor? toolsAnchor;
 
   @override
   State<ComposerEditorLayout> createState() => _ComposerEditorLayoutState();
 }
 
 class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final _keyboard = ComposerKeyboardDismissController(vsync: this)
     ..addListener(_onKeyboardActivity);
   bool _keyboardActive = false;
+  late final _inputVisibility = AnimationController(
+    vsync: this,
+    value: widget.editing ? 1 : 0,
+  );
+  double? _inputTarget;
+  bool _active = true;
+  bool _disableAnimations = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _syncInputVisibility();
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+    _syncInputVisibility();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.toolsAnchor?.addListener(_syncInputVisibility);
+  }
+
+  @override
+  void didUpdateWidget(covariant ComposerEditorLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.toolsAnchor != widget.toolsAnchor) {
+      oldWidget.toolsAnchor?.removeListener(_syncInputVisibility);
+      widget.toolsAnchor?.addListener(_syncInputVisibility);
+    }
+    _syncInputVisibility();
+  }
+
+  void _syncInputVisibility() {
+    if (!_active) return;
+    final visible = widget.editing || _keyboardActive;
+    // 工具岛先收拢，再退去格式行；两种编辑器和正文避让共用同一进度。
+    if (!visible && widget.toolsAnchor?.presenting == true) return;
+    final target = visible ? 1.0 : 0.0;
+    if (!_disableAnimations &&
+        _inputVisibility.isAnimating &&
+        _inputTarget == target) {
+      return;
+    }
+    _inputTarget = target;
+    if (_disableAnimations) {
+      _inputVisibility.value = target;
+    } else if (_inputVisibility.value == target) {
+      _inputVisibility.stop();
+    } else {
+      _inputVisibility.animateTo(
+        target,
+        duration: Duration(milliseconds: visible ? 180 : 150),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _onKeyboardActivity() {
     if (_keyboardActive == _keyboard.active || !mounted) return;
     setState(() => _keyboardActive = _keyboard.active);
+    _syncInputVisibility();
   }
 
   @override
   void dispose() {
+    widget.toolsAnchor?.removeListener(_syncInputVisibility);
+    _inputVisibility.dispose();
+    _keyboard.removeListener(_onKeyboardActivity);
     _keyboard.dispose();
     super.dispose();
   }
@@ -631,59 +766,69 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   Widget build(BuildContext context) => ComposerKeyboardDismissScope(
     controller: _keyboard,
     active: _keyboardActive,
-    child: Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, viewport) => Stack(
-              key: const ValueKey('composer-writing-canvas'),
-              fit: StackFit.expand,
-              children: [
-                MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    size: Size(
-                      viewport.maxWidth,
-                      MediaQuery.sizeOf(context).height,
+    child: AnimatedBuilder(
+      animation: _inputVisibility,
+      builder: (context, _) => Column(
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, viewport) => Stack(
+                key: const ValueKey('composer-writing-canvas'),
+                fit: StackFit.expand,
+                children: [
+                  MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      size: Size(
+                        viewport.maxWidth,
+                        MediaQuery.sizeOf(context).height,
+                      ),
+                    ),
+                    child: widget.bodyBuilder(
+                      context,
+                      ComposerWorkbench.occupiedHeight(
+                            context,
+                            widget.editing || _keyboardActive,
+                            inputProgress: _inputVisibility.value,
+                          ) +
+                          12,
+                      viewport.maxHeight,
                     ),
                   ),
-                  child: widget.bodyBuilder(
-                    context,
-                    ComposerWorkbench.occupiedHeight(
-                          context,
-                          widget.editing || _keyboardActive,
-                        ) +
-                        12,
-                    viewport.maxHeight,
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: ComposerChromeVisibility(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: _WorkbenchViewport(
-                        height: viewport.maxHeight,
-                        child: widget.toolbar,
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: ComposerChromeVisibility(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: _WorkbenchViewport(
+                          inputProgress: _inputVisibility.value,
+                          // 页面正文可延伸到 AppBar 后方，展开的工具岛必须避让。
+                          height: math.max(
+                            0,
+                            viewport.maxHeight -
+                                ComposerChromeScope.topInsetOf(context),
+                          ),
+                          child: widget.toolbar,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        AnimatedBuilder(
-          animation: _keyboard,
-          child: widget.panel,
-          builder: (_, child) => SizedBox(
-            key: const ValueKey('composer-keyboard-space'),
-            height: _keyboard.active ? _keyboard.visibleHeight : null,
-            child: ClipRect(child: child),
+          AnimatedBuilder(
+            animation: _keyboard,
+            child: widget.panel,
+            builder: (_, child) => SizedBox(
+              key: const ValueKey('composer-keyboard-space'),
+              height: _keyboard.active ? _keyboard.visibleHeight : null,
+              child: ClipRect(child: child),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

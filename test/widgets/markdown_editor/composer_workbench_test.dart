@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:app_icons/app_icons.dart';
+import 'package:chat_bottom_container/listener_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
@@ -24,6 +26,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/emoji_sticker_panel.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -187,6 +190,9 @@ void main() {
       expect(find.byKey(const ValueKey('composer-tools-panel')), findsNothing);
       scroll.jumpTo(scroll.position.maxScrollExtent / 2);
       await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -461,6 +467,185 @@ void main() {
     });
   }
 
+  for (final rich in [false, true]) {
+    testWidgets('表情与键盘往返保留工具栏，关闭输入区后隐藏 rich=$rich', (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      final sourceKey = GlobalKey<MarkdownEditorState>();
+      final richKey = GlobalKey<RichComposerEditorState>();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(
+                key: richKey,
+                controller: controller,
+                focusNode: focus,
+              )
+            : MarkdownEditor(
+                key: sourceKey,
+                controller: controller,
+                focusNode: focus,
+              ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      focus.requestFocus();
+      await tester.pump();
+
+      Future<void> keyboardHeight(double height) async {
+        tester.view.viewInsets = FakeViewPadding(bottom: height);
+        ChatBottomContainerListenerManager().flutterApi.keyboardHeight(height);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      final formats = find.byKey(const ValueKey('composer-format-row'));
+      final emojiToggle = find.descendant(
+        of: formats,
+        matching: find.byTooltip(S.current.emoji_tab),
+      );
+      expect(formats, findsNothing, reason: '焦点本身不显示格式行');
+      await keyboardHeight(260);
+      final toolbarBottom = tester.getRect(formats).bottom;
+      await tester.tap(emojiToggle);
+      await tester.pump();
+      expect(formats, findsOneWidget);
+      await keyboardHeight(0);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(EmojiStickerPanel), findsOneWidget);
+      expect(formats, findsOneWidget);
+      expect(find.byIcon(Symbols.keyboard_rounded), findsOneWidget);
+      expect(tester.getRect(formats).bottom, closeTo(toolbarBottom, .1));
+
+      await tester.tap(emojiToggle);
+      await tester.pump();
+      expect(formats, findsOneWidget, reason: '原生键盘高度回报前不能闪退');
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(formats, findsOneWidget);
+      await keyboardHeight(260);
+      expect(find.byType(EmojiStickerPanel), findsNothing);
+      expect(formats, findsOneWidget);
+      expect(focus.hasFocus, isTrue);
+      await keyboardHeight(0);
+      expect(formats, findsNothing, reason: '键盘真正关闭后不残留过渡状态');
+
+      await keyboardHeight(260);
+      await tester.tap(emojiToggle);
+      await tester.pump();
+      await keyboardHeight(0);
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+      expect(
+        find.byKey(const ValueKey('composer-tools-panel')),
+        findsOneWidget,
+      );
+      if (rich) {
+        richKey.currentState!.closeEmojiPanel();
+      } else {
+        sourceKey.currentState!.closeEmojiPanel();
+      }
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pump(const Duration(milliseconds: 170));
+      expect(find.byType(EmojiStickerPanel), findsNothing);
+      expect(formats, findsNothing, reason: '直接关闭表情面板也要收起格式行');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+
+    testWidgets('工具行渐变显隐，关闭键盘自动折叠且不能在非输入态展开 rich=$rich', (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      final sourceKey = GlobalKey<MarkdownEditorState>();
+      final richKey = GlobalKey<RichComposerEditorState>();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(
+                key: richKey,
+                controller: controller,
+                focusNode: focus,
+              )
+            : MarkdownEditor(
+                key: sourceKey,
+                controller: controller,
+                focusNode: focus,
+              ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      Future<void> openTools() => rich
+          ? richKey.currentState!.showTools()
+          : sourceKey.currentState!.showTools();
+      final island = find.byKey(const ValueKey('composer-workbench'));
+      final grid = find.byKey(const ValueKey('composer-tools-panel'));
+      final handle = find.byKey(const ValueKey('composer-tools-handle'));
+      final formats = find.byKey(const ValueKey('composer-format-row'));
+      final closedHeight = tester.getSize(island).height;
+      expect(handle, findsNothing);
+      await openTools();
+      await tester.pump();
+      expect(grid, findsNothing);
+      focus.requestFocus();
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final midwayHeight = tester.getSize(island).height;
+      expect(midwayHeight, greaterThan(closedHeight));
+      await tester.pump(const Duration(milliseconds: 140));
+      expect(tester.getSize(island).height, greaterThan(midwayHeight));
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+      expect(grid, findsOneWidget);
+      final expandedHeight = tester.getSize(island).height;
+      tester.view.viewInsets = const FakeViewPadding();
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+      await tester.pump();
+      expect(
+        tester.getSize(island).height,
+        lessThanOrEqualTo(expandedHeight + .1),
+        reason: '键盘消失时不能先向上膨胀再收起',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+      expect(grid, findsNothing);
+      await tester.pump(const Duration(milliseconds: 70));
+      expect(tester.getSize(island).height, greaterThan(closedHeight));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(formats, findsNothing);
+      expect(handle, findsNothing);
+      await tester.dragFrom(
+        tester.getCenter(find.byKey(const ValueKey('composer-context-row'))),
+        const Offset(0, -90),
+      );
+      await openTools();
+      await tester.pump();
+      expect(grid, findsNothing);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(formats, findsOneWidget);
+      expect(grid, findsNothing, reason: '再次弹出键盘从折叠态开始');
+      tester.view.viewInsets = const FakeViewPadding();
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(formats, findsOneWidget, reason: '快速重新打开输入区应打断隐藏动画');
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+  }
+
   testWidgets('格式行只跟随键盘，不跟随光标或焦点', (tester) async {
     final controller = TextEditingController();
     final focus = FocusNode();
@@ -483,9 +668,11 @@ void main() {
     );
     tester.view.viewInsets = const FakeViewPadding(bottom: 260);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
     expect(find.byKey(const ValueKey('composer-format-row')), findsOneWidget);
     tester.view.viewInsets = const FakeViewPadding();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 170));
     expect(focus.hasFocus, isTrue);
     expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
     focus.unfocus();
@@ -503,6 +690,9 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
     final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
     final before = docToMarkdown(editor.blocks);
     await tester.runAsync(() => DiscourseCookService().ensureInitialized());

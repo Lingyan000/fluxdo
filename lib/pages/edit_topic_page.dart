@@ -1,4 +1,5 @@
 import '../widgets/markdown_editor/composer_chrome.dart';
+import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -530,36 +531,18 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 ? SystemUiOverlayStyle.light
                 : SystemUiOverlayStyle.dark,
             actions: [
-              // 视图模式切换(富文本/源码/预览):文档级操作,从底部工具栏上移
-              ComposerPreviewButton(
+              ComposerHeaderActions(
+                availableWidth:
+                    MediaQuery.sizeOf(context).width -
+                    MediaQuery.paddingOf(context).horizontal,
+                submitLabel: context.l10n.common_save,
+                onSubmit: (_isSubmitting || _isLoadingContent) ? null : _submit,
+                submitting: _isSubmitting,
                 previewing: _showPreview,
-                onPressed:
+                onTogglePreview:
                     !_isSubmitting && !_isLoadingContent && _canEditContent
                     ? _togglePreview
                     : null,
-              ),
-
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: FilledButton(
-                  onPressed: (_isSubmitting || _isLoadingContent)
-                      ? null
-                      : _submit,
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(context.l10n.common_save),
-                ),
               ),
             ],
           ),
@@ -589,7 +572,10 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
               top: 0,
               left: 0,
               right: 0,
-              child: ComposerTopFade(height: _topChromeInset),
+              child: ComposerTopFade(
+                height: _topChromeInset,
+                statusBarHeight: MediaQuery.viewPaddingOf(context).top,
+              ),
             ),
           ],
         ),
@@ -607,7 +593,11 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
             if (!_isSubmitting && !_isLoadingContent) _submit();
           },
       },
-      child: ComposerChromeScope(controller: _chrome, child: page),
+      child: ComposerChromeScope(
+        controller: _chrome,
+        topInset: _topChromeInset,
+        child: page,
+      ),
     );
   }
 

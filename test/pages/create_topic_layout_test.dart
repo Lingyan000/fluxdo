@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:chat_bottom_container/listener_manager.dart';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -19,6 +20,8 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_chrome.dart';
+import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -43,8 +46,14 @@ void main() {
         addTearDown(() => PlatformUtils.debugDesktopOverride = null);
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = Size(width, 760);
+        final statusBarHeight = desktop ? 0.0 : 47.0;
+        tester.view.padding = FakeViewPadding(top: statusBarHeight);
+        tester.view.viewPadding = FakeViewPadding(top: statusBarHeight);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewInsets);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetViewPadding);
         SharedPreferences.setMockInitialValues({
           'pref_use_rich_composer': true,
           'pref_ai_post_review_enabled': true,
@@ -158,6 +167,26 @@ void main() {
 
         expect(tester.takeException(), isNull);
         final appbar = find.byType(AppBar);
+        final publish = find.widgetWithText(
+          FilledButton,
+          S.current.common_publish,
+        );
+        expect(width - tester.getRect(publish).right, 16);
+        expect(tester.getSize(publish).height, 44);
+        final chrome = ComposerChromeScope.maybeOf(tester.element(appbar))!;
+        chrome.hide();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          tester
+              .widget<ProgressiveTopBlur>(find.byType(ProgressiveTopBlur))
+              .height,
+          statusBarHeight + 24,
+          reason: '收起后的渐变仍应覆盖完整状态栏和消散尾巴',
+        );
+        chrome.reveal();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
         final toolbar = tester.widget<NavigationToolbar>(
           find.descendant(of: appbar, matching: find.byType(NavigationToolbar)),
         );
@@ -167,21 +196,32 @@ void main() {
           findsOneWidget,
         );
         expect(tester.getSize(find.byWidget(toolbar.leading!)).width, 56);
-        expect(
-          find.descendant(
-            of: appbar,
-            matching: find.byType(ComposerDiscardButton),
-          ),
-          findsOneWidget,
-        );
-        expect(
-          find.descendant(
-            of: appbar,
-            matching: find.byIcon(Symbols.more_horiz_rounded),
-          ),
-          findsNothing,
-        );
-        expect(find.byTooltip(S.current.aiPostReview_button), findsOneWidget);
+        final more = find.byKey(const ValueKey('composer-header-more'));
+        if (width < 480) {
+          expect(tester.getSize(more), const Size(44, 44));
+          expect(tester.getRect(publish).left - tester.getRect(more).right, 8);
+          expect(find.byIcon(Symbols.delete_rounded), findsNothing);
+          await tester.tap(more);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          for (final action in ['preview', 'review', 'discard']) {
+            expect(
+              find.byKey(ValueKey('composer-header-$action')),
+              findsOneWidget,
+            );
+          }
+          await tester.tapAt(const Offset(2, 300));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+        } else {
+          expect(more, findsNothing);
+          for (final action in ['preview', 'review', 'discard']) {
+            expect(
+              find.byKey(ValueKey('composer-header-$action-inline')),
+              findsOneWidget,
+            );
+          }
+        }
         expect(find.byType(ComposerTopicKindPicker), findsOneWidget);
         expect(
           find.descendant(of: appbar, matching: find.byType(ComposerMetaBar)),
@@ -370,6 +410,35 @@ void main() {
             .1,
           ),
         );
+        if (!desktop) {
+          await tester.showKeyboard(sourceField);
+          tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+          ChatBottomContainerListenerManager().flutterApi.keyboardHeight(300);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 450));
+          final island = tester.getRect(
+            find.byKey(const ValueKey('composer-workbench')),
+          );
+          expect(
+            island.top,
+            greaterThanOrEqualTo(
+              statusBarHeight + kToolbarHeight + ProgressiveTopBlur.tail,
+            ),
+          );
+          expect(island.bottom, lessThanOrEqualTo(460));
+          final toolsScroll = tester
+              .widget<CustomScrollView>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('composer-tools-panel')),
+                  matching: find.byType(CustomScrollView),
+                ),
+              )
+              .controller!;
+          expect(toolsScroll.position.maxScrollExtent, greaterThan(0));
+        }
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(seconds: 1));
       },

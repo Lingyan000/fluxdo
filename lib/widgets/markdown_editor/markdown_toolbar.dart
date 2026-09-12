@@ -1205,7 +1205,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   Widget _buildToolsButton(ThemeData theme) => ComposerToolsToggle(
     anchor: widget.toolsAnchor,
     active: widget.isToolsPanelVisible,
-    compact: !PlatformUtils.isDesktop && !widget.editing,
+    compact: false,
     onPressed: widget.onToggleTools,
   );
 
@@ -1224,23 +1224,12 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         if (!PlatformUtils.isDesktop && widget.undoController != null)
           _contentActions(),
         if (!PlatformUtils.isDesktop)
-          SizedBox.square(
-            dimension: 48,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // 保留光标控件的 State，弹出它自己的菜单时失焦也不会丢回调。
-                Visibility(
-                  visible: editing || widget.onToggleTools == null,
-                  maintainState: true,
-                  child: CursorSwipeControl(
-                    onMove: _moveCursor,
-                    onMoveVertical: widget.onMoveCursorVertical,
-                  ),
-                ),
-                if (!editing && widget.onToggleTools != null)
-                  _buildToolsButton(theme),
-              ],
+          Visibility(
+            visible: editing,
+            maintainState: true,
+            child: CursorSwipeControl(
+              onMove: _moveCursor,
+              onMoveVertical: widget.onMoveCursorVertical,
             ),
           ),
         if (widget.onSwitchToRich != null)
@@ -1268,9 +1257,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
               ),
             ),
           ),
-          if (widget.onToggleTools != null &&
-              (PlatformUtils.isDesktop || editing))
-            _buildToolsButton(theme),
+          if (widget.onToggleTools != null) _buildToolsButton(theme),
         ],
       ),
     );

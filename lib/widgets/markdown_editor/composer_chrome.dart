@@ -39,17 +39,29 @@ class ComposerChromeScope extends StatefulWidget {
     super.key,
     required this.controller,
     required this.child,
+    this.topInset = 0,
   });
   final ComposerChromeController controller;
   final Widget child;
+  final double topInset;
   static ComposerChromeController? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_ChromeScope>()?.notifier;
+  static double topInsetOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ChromeScope>()?.topInset ?? 0;
   @override
   State<ComposerChromeScope> createState() => _ComposerChromeScopeState();
 }
 
 class _ChromeScope extends InheritedNotifier<ComposerChromeController> {
-  const _ChromeScope({required super.notifier, required super.child});
+  const _ChromeScope({
+    required super.notifier,
+    required super.child,
+    required this.topInset,
+  });
+  final double topInset;
+  @override
+  bool updateShouldNotify(_ChromeScope oldWidget) =>
+      topInset != oldWidget.topInset || super.updateShouldNotify(oldWidget);
 }
 
 class _ComposerChromeScopeState extends State<ComposerChromeScope> {
@@ -58,6 +70,24 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
   double _distance = 0;
   Offset? _down;
   bool _moved = false;
+  bool _keyboardVisible = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = MediaQuery.viewInsetsOf(context).bottom > 0;
+    if (_keyboardVisible && !visible) {
+      // 键盘收起后可滚范围可能归零，不能再等一次反向滚动来恢复栏位。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _keyboardVisible) return;
+        _userScroll = false;
+        _userDirection = ScrollDirection.idle;
+        _distance = 0;
+        widget.controller.reveal();
+      });
+    }
+    _keyboardVisible = visible;
+  }
 
   bool _onScroll(ScrollNotification event) {
     if (event.depth != 0 || event.metrics.axis != Axis.vertical) return false;
@@ -108,6 +138,7 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
   @override
   Widget build(BuildContext context) => _ChromeScope(
     notifier: widget.controller,
+    topInset: widget.topInset,
     child: LayoutBuilder(
       builder: (context, bounds) => Listener(
         onPointerDown: (event) {
@@ -200,16 +231,19 @@ class ComposerAutoHideAppBar extends StatelessWidget
 
 /// 顶栏收起后保留窄幅渐变，让滚出画面的文字自然消失。
 class ComposerTopFade extends StatelessWidget {
-  const ComposerTopFade({super.key, required this.height});
+  const ComposerTopFade({
+    super.key,
+    required this.height,
+    required this.statusBarHeight,
+  });
   final double height;
+  // 从 Scaffold 外传入；body 内的 MediaQuery 已移除顶部安全区。
+  final double statusBarHeight;
   @override
   Widget build(BuildContext context) {
     final hidden = ComposerChromeScope.maybeOf(context)?.hidden ?? false;
     return TweenAnimationBuilder<double>(
-      tween: Tween(
-        begin: height,
-        end: hidden ? MediaQuery.viewPaddingOf(context).top + 24 : height,
-      ),
+      tween: Tween(begin: height, end: hidden ? statusBarHeight + 24 : height),
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
           : const Duration(milliseconds: 180),

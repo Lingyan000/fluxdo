@@ -8,7 +8,7 @@ import 'pm_recipient_field.dart';
 import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/composer_workbench.dart';
-import '../markdown_editor/composer_page_chrome.dart';
+import '../markdown_editor/composer_header_actions.dart';
 import '../markdown_editor/composer_view_mode_switcher.dart';
 import '../markdown_editor/markdown_renderer.dart';
 import '../markdown_editor/markdown_editor.dart';
@@ -300,25 +300,74 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     });
   }
 
-  Widget _buildReviewButton() {
-    if (!_canReviewPost ||
-        !ref.watch(preferencesProvider).aiPostReviewEnabled) {
-      return const SizedBox.shrink();
-    }
-    return AiPostReviewButton(
-      titleBuilder: () => widget.topicTitle,
-      contentBuilder: () {
-        _richKey.currentState?.flushToController();
-        return _contentController.text;
-      },
-      target: AiPostReviewTarget.reply,
-      enabled: !_isSubmitting && !_isLoadingRaw,
-      builder: (_, reviewing, trigger) => ComposerActionButton(
-        icon: Symbols.auto_awesome_rounded,
-        label: S.current.aiPostReview_button,
-        busy: reviewing,
-        onPressed: trigger,
-      ),
+  Widget _buildHeaderActions(double availableWidth) => ComposerHeaderActions(
+    availableWidth: availableWidth,
+    submitLabel: _isEditMode
+        ? context.l10n.common_save
+        : context.l10n.common_send,
+    onSubmit: (_isSubmitting || _isLoadingRaw) ? null : _submit,
+    submitting: _isSubmitting,
+    previewing: _showPreview,
+    onTogglePreview: !_isSubmitting && !_isLoadingRaw ? _togglePreview : null,
+    showDiscard: _draftController != null,
+    onDiscard: _isSubmitting ? null : _discardDraft,
+    reviewBuilder:
+        _canReviewPost && ref.watch(preferencesProvider).aiPostReviewEnabled
+        ? (builder) => AiPostReviewButton(
+            titleBuilder: () => widget.topicTitle,
+            contentBuilder: () {
+              _richKey.currentState?.flushToController();
+              return _contentController.text;
+            },
+            target: AiPostReviewTarget.reply,
+            enabled: !_isSubmitting && !_isLoadingRaw,
+            builder: (_, reviewing, trigger) => builder(reviewing, trigger),
+          )
+        : null,
+  );
+
+  Widget _buildHeaderTitle(ThemeData theme) {
+    final target = widget.replyToPost;
+    final label = _isEditMode
+        ? context.l10n.post_editPostTitle(widget.editPost!.postNumber)
+        : _isPrivateMessage
+        ? (_recipients.isEmpty
+              ? context.l10n.pm_newTitle
+              : context.l10n.post_sendPmTitle(_recipients.join(', ')))
+        : target != null
+        ? context.l10n.post_replyToUser(target.username)
+        : context.l10n.post_replyToTopic;
+    return Row(
+      children: [
+        if (!_isEditMode && !_isPrivateMessage && target != null) ...[
+          SmartAvatar(
+            imageUrl: target.getAvatarUrl().isNotEmpty
+                ? target.getAvatarUrl()
+                : null,
+            radius: 14,
+            fallbackText: target.username,
+            backgroundColor: theme.colorScheme.primaryContainer,
+          ),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Tooltip(
+            message: label,
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+        if (_draftController != null) ...[
+          const SizedBox(width: 8),
+          SizedBox.square(
+            dimension: 16,
+            child: ValueListenableBuilder<DraftSaveStatus>(
+              valueListenable: _draftController!.statusNotifier,
+              builder: (_, status, _) =>
+                  _buildDraftStatusIndicator(status, theme),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -893,124 +942,25 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             ),
                           ),
 
-                          // 标题行
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                // 标题信息
-                                if (_isEditMode) ...[
-                                  Icon(
-                                    Symbols.edit_rounded,
-                                    size: 18,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      context.l10n.post_editPostTitle(
-                                        widget.editPost!.postNumber,
-                                      ),
-                                      style: theme.textTheme.titleSmall,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ] else if (_isPrivateMessage)
-                                  Expanded(
-                                    child: Text(
-                                      _recipients.isEmpty
-                                          ? context.l10n.pm_newTitle
-                                          : context.l10n.post_sendPmTitle(
-                                              _recipients.join(', '),
-                                            ),
-                                      style: theme.textTheme.titleSmall,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  )
-                                else if (widget.replyToPost != null) ...[
-                                  SmartAvatar(
-                                    imageUrl:
-                                        widget.replyToPost!
-                                            .getAvatarUrl()
-                                            .isNotEmpty
-                                        ? widget.replyToPost!.getAvatarUrl()
-                                        : null,
-                                    radius: 14,
-                                    fallbackText: widget.replyToPost!.username,
-                                    backgroundColor:
-                                        theme.colorScheme.primaryContainer,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      context.l10n.post_replyToUser(
-                                        widget.replyToPost!.username,
-                                      ),
-                                      style: theme.textTheme.titleSmall,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ] else
-                                  Expanded(
-                                    child: Text(
-                                      context.l10n.post_replyToTopic,
-                                      style: theme.textTheme.titleSmall,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-
-                                // 视图模式切换(富文本/源码):与草稿/审核/
-                                // 发送同属文档级操作,从底部工具栏上移
-                                ComposerPreviewButton(
-                                  previewing: _showPreview,
-                                  onPressed: !_isSubmitting && !_isLoadingRaw
-                                      ? _togglePreview
-                                      : null,
+                          SizedBox(
+                            height: kToolbarHeight,
+                            child: LayoutBuilder(
+                              builder: (context, bounds) => AppBar(
+                                key: const ValueKey('reply-composer-header'),
+                                primary: false,
+                                centerTitle: false,
+                                automaticallyImplyLeading: false,
+                                leading: CloseButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).maybePop(),
                                 ),
-
-                                // 草稿保存状态指示器
-                                if (_draftController != null) ...[
-                                  ValueListenableBuilder<DraftSaveStatus>(
-                                    valueListenable:
-                                        _draftController!.statusNotifier,
-                                    builder: (context, status, _) {
-                                      return _buildDraftStatusIndicator(
-                                        status,
-                                        theme,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                if (_draftController != null)
-                                  ComposerDiscardButton(
-                                    onPressed: _isSubmitting
-                                        ? null
-                                        : _discardDraft,
-                                  ),
-                                _buildReviewButton(),
-
-                                // 发送/保存按钮
-                                FilledButton(
-                                  onPressed: (_isSubmitting || _isLoadingRaw)
-                                      ? null
-                                      : _submit,
-                                  child: _isSubmitting
-                                      ? const LoadingSpinner(
-                                          size: 20,
-                                          color: Colors.white,
-                                        )
-                                      : Text(
-                                          _isEditMode
-                                              ? context.l10n.common_save
-                                              : context.l10n.common_send,
-                                        ),
-                                ),
-                              ],
+                                title: _buildHeaderTitle(theme),
+                                backgroundColor: Colors.transparent,
+                                surfaceTintColor: Colors.transparent,
+                                elevation: 0,
+                                scrolledUnderElevation: 0,
+                                actions: [_buildHeaderActions(bounds.maxWidth)],
+                              ),
                             ),
                           ),
 
