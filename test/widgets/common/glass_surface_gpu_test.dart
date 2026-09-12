@@ -249,21 +249,22 @@ void main() {
   GlassRecipe refractionOnly(double amount) {
     const base = GlassRecipe.navigation;
     return GlassRecipe(
-      blurSigmaPx: base.blurSigmaPx,
+      // 固定诊断配方，使几何回归不随产品视觉配方调校而改变基线。
+      blurSigmaPx: 9.2,
       tintAlpha: 0,
       tintLightGray: base.tintLightGray,
       tintDarkGray: base.tintDarkGray,
       saturation: 1,
       brightness: 0,
       contrast: 1,
-      refractionHeight: base.refractionHeight,
+      refractionHeight: 18,
       refractionAmount: amount,
       depthEffect: base.depthEffect,
       chromaticAberration: 0,
       highlightAlpha: 0,
       darkHighlightMultiplier: base.darkHighlightMultiplier,
       noise: 0,
-      postBlurSigma: base.postBlurSigma,
+      postBlurSigma: 0.5,
       fallbackEdgeWidth: base.fallbackEdgeWidth,
       fallbackLightAlpha: base.fallbackLightAlpha,
       fallbackDarkAlpha: base.fallbackDarkAlpha,

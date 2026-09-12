@@ -136,8 +136,9 @@ void main() {
   // ⚠️ 正中心像素 centered==(0,0):径向除零会产生 NaN,而 NaN
   // 会穿过后面的 mix() 把该像素渲染成黑点。用长度阀值无分支地
   // 把径向分量淡出(中心处 lens 本来就为 0,不影响观感)。
-  float gradientRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-  vec2 normal = roundedRectGradient(centered, halfSize, gradientRadius);
+  // 法线与距离场使用同一个圆角。放大半径会让非胶囊表面的光学转角
+  // 提前进入直边区；厚度感由下面的径向分量提供，不改变轮廓半径。
+  vec2 normal = roundedRectGradient(centered, halfSize, radius);
   float centerDist = length(centered);
   vec2 radial = centered / max(centerDist, 0.001);
   radial *= smoothstep(0.0, 1.0, centerDist);

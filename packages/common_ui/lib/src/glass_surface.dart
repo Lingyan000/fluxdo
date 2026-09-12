@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'glass_edge_painter.dart';
+import 'glass_optical_border.dart';
 
 /// 柔光玻璃材质配方。
 ///
@@ -71,8 +72,7 @@ class GlassRecipe {
   /// 否则胶囊像是"描了一圈荧光笔"
   final double darkHighlightMultiplier;
 
-  /// 磨砂噪点强度。量级在 0.1 左右,远高于常见的 0.01 级去带噪 ——
-  /// 它是磨砂质感本身的来源,不是修饰。调小会直接失去"柔"的观感。
+  /// 磨砂噪点强度。导航使用轻微去带噪，不以粗颗粒代替背景柔化。
   final double noise;
 
   /// 折射后的收口柔化(逻辑像素):抹平折射引入的高频锯齿
@@ -88,25 +88,24 @@ class GlassRecipe {
 
   /// 悬浮导航胶囊。
   ///
-  /// 模糊刻意压得很轻(sigma 9.2 物理像素):底栏下方内容应当仍能辨认
-  /// 形状,玻璃感主要来自磨砂噪点与边缘折射,而不是把背景糊成一片。
-  /// 重模糊反而会让人失去"页面在动"的感知。
+  /// 背景细节柔化成色块，色罩保留透色；轮廓光独立绘制，不依赖
+  /// 粗噪点或过大的折射量制造质感。
   static const navigation = GlassRecipe(
-    blurSigmaPx: 9.2,
-    tintAlpha: 0.675,
+    blurSigmaPx: 14,
+    tintAlpha: 0.32,
     tintLightGray: 0.99,
     tintDarkGray: 0.12,
     saturation: 1.1025,
     brightness: 0.0,
     contrast: 1.0,
-    refractionHeight: 18,
-    refractionAmount: 18,
+    refractionHeight: 12,
+    refractionAmount: 8,
     depthEffect: 0.60,
-    chromaticAberration: 1.0,
+    chromaticAberration: 0.45,
     highlightAlpha: 0.95,
     darkHighlightMultiplier: 0.20,
-    noise: 0.095,
-    postBlurSigma: 0.5,
+    noise: 0.012,
+    postBlurSigma: 0.4,
     fallbackEdgeWidth: 0.5,
     fallbackLightAlpha: 0.46,
     fallbackDarkAlpha: 0.08,
@@ -319,6 +318,22 @@ class _GlassSurfaceState extends State<GlassSurface> {
               : _buildFallback(context, tint, recipe, isDark),
         ),
         widget.child ?? const SizedBox.shrink(),
+        if (useShader)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: LayoutBuilder(
+                builder: (context, constraints) => CustomPaint(
+                  painter: GlassOpticalBorder(
+                    radius:
+                        _cornerRadiusOf(widget.shape) ??
+                        constraints.maxHeight / 2,
+                    isDark: isDark,
+                    strength: recipe.highlightAlpha,
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (!useShader && widget.fallbackBorderRadius != null)
           Positioned.fill(
             child: IgnorePointer(
@@ -371,8 +386,8 @@ class _GlassSurfaceState extends State<GlassSurface> {
     final radiusLogical = _cornerRadiusOf(widget.shape) ?? size.height / 2;
 
     // 深色模式下白色边缘光必须大幅衰减,否则像描了荧光边
-    final highlightAlpha =
-        recipe.highlightAlpha * (isDark ? recipe.darkHighlightMultiplier : 1.0);
+    // 窄高光由色罩上方的光学轮廓统一负责；shader 不重复加白边。
+    const highlightAlpha = 0.0;
     // 高光颜色:浅色模式偏白(玻璃迎光面),深色模式同样用白但已被
     // darkHighlightMultiplier 压到很淡 —— 用黑边会让深色玻璃显脏
     const highlightGray = 1.0;
@@ -425,7 +440,9 @@ class _GlassSurfaceState extends State<GlassSurface> {
           sigmaY: blurLogical,
           tileMode: ui.TileMode.clamp,
         ),
-        blendMode: BlendMode.src,
+        // 最外层仍与页面背景按圆角抗锯齿覆盖率合成，不能直接替换。
+        // src 会在直边与圆弧交界处暴露覆盖率接缝，形成四角缺口/细线。
+        blendMode: BlendMode.srcOver,
         child: BackdropFilter(
           filter: filter,
           // 局部 pass 已有主模糊结果，替换它，避免透明像素重复混合。
