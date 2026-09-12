@@ -15,19 +15,18 @@ precision highp float;
 // 参考:https://github.com/AritxOnly/Hyper-PiliPlus
 // (其圆角矩形 SDF 与圆形透镜思路源自 Kyant0/AndroidLiquidGlass, Apache-2.0)
 //
-// ⚠️ 本 shader 只做"折射 + 边缘光",高斯模糊由外层
-// ImageFilter.compose 的 outer 承担。原因同 progressive_top_blur:
-// 中间纹理的坐标基准无文档约定,把 blur 塞进本 shader 内部做多 tap
-// 会与 fragCoord 基准打架。
+// 主模糊由独立的外层 BackdropFilter 完成，同时建立局部背景纹理；
+// 本 shader 在内层进行折射、边缘光和色散，compose 的 outer 仅做
+// 极轻的后柔化。不能把主模糊与折射合并回同一条背景滤镜链。
 //
 // ⚠️ .frag 构建期编译打包,新增/修改后必须冷启动重建,热重载不生效。
 
 // 引擎自动填入:绑定纹理尺寸(物理像素)
 uniform vec2 u_size;
 
-// 表面在纹理坐标系中的原点与尺寸(物理像素)。
-// ⚠️ 不能用 u_size 代替:BackdropFilter 的输入纹理可能是整屏,
-// 而玻璃只占其中一块,用 u_size 会让 SDF 中心与圆角完全错位。
+// 表面在局部背景纹理中的原点与尺寸(物理像素)。外层主模糊
+// BackdropFilter 建立独立 pass 后传入零原点；只有 ClipRRect 不够。
+// u_size 是引擎提供的实际采样纹理尺寸，不与形状尺寸混用。
 uniform vec2 u_origin;
 uniform vec2 u_rect;
 
@@ -108,21 +107,24 @@ vec2 toUv(vec2 px) {
 }
 
 void main() {
-  vec2 frag = FlutterFragCoord().xy;
-
-  // GLES 下 fragCoord 原点在左下,先翻到统一的"左上原点"再算 SDF,
-  // 否则上下边的折射方向与高光方向会整体颠倒
-  vec2 pos = frag;
-#ifdef IMPELLER_TARGET_OPENGLES
-  pos.y = u_size.y - frag.y;
-#endif
+  // FlutterFragCoord 是几何坐标，不是 GLES 的 gl_FragCoord。
+  // GLES 的纹理方向差异只在 toUv 中处理一次，否则两次翻转相互抵消。
+  vec2 pos = FlutterFragCoord().xy;
 
   vec2 halfSize = u_rect * 0.5;
-  vec2 center = u_origin + halfSize;
-  vec2 centered = pos - center;
+  // 只有形状计算使用局部坐标，采样始终留在输入纹理坐标系。
+  vec2 localPos = pos - u_origin;
+  vec2 centered = localPos - halfSize;
 
   float radius = clamp(u_radius, 0.0, min(halfSize.x, halfSize.y));
   float signedDistance = roundedRectSdf(centered, halfSize, radius);
+
+  // 滤镜组合可能请求裁切外的像素。它们必须原样透传，不能被当作
+  // 最大折射带，更不能被夹到胶囊边缘后横向或纵向复制。
+  if (signedDistance > 0.0) {
+    frag_color = texture(u_texture, toUv(pos));
+    return;
+  }
 
   // 距边缘的内向深度;带内侧 lensProgress→0,最边缘→1
   float innerDepth = max(-signedDistance, 0.0);
@@ -141,10 +143,11 @@ void main() {
   radial *= smoothstep(0.0, 1.0, centerDist);
   normal = normalize(normal + radial * u_depth + vec2(0.0001));
 
-  // 采样点向内收:玻璃把边缘外侧的背景"吸"进来
-  // clamp 到玻璃矩形内半像素,避免采到区域外的未定义内容
-  vec2 sampleMin = u_origin + vec2(0.5);
-  vec2 sampleMax = u_origin + u_rect - vec2(0.5);
+  // 折射位移在输入纹理坐标系中应用。只按纹理范围限幅，不能按
+  // 玻璃矩形限幅，否则形状范围与纹理不一致时会重复采样同一行/列。
+  // 输入范围由外层主模糊的局部背景层建立，不再假设输入是整屏。
+  vec2 sampleMin = vec2(0.5);
+  vec2 sampleMax = u_size - vec2(0.5);
   vec2 refracted = clamp(
     pos - normal * u_refract_amt * lens,
     sampleMin,

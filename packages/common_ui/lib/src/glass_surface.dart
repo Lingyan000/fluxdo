@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'glass_edge_painter.dart';
+
 /// 柔光玻璃材质配方。
 ///
 /// 参数不对用户暴露:光学参数之间强耦合(折射带宽与圆角、色散与折射量、
@@ -159,17 +161,12 @@ class GlassRecipe {
 
 /// 柔光玻璃表面。
 ///
-/// 主路径(Impeller):`ImageFilter.compose` 三段链 ——
-/// outer 高斯模糊 → inner 折射 shader,再叠色罩。折射 shader 提供
-/// 边缘透镜弯曲、方向性高光与色散,这三样是"玻璃"区别于"半透明
-/// 灰板"的关键。
+/// Impeller 下先用主模糊建立局部背景层，再在该层上折射并轻柔化。
+/// 两层 BackdropFilter 不能合并为一条 compose：后者仍会让 shader
+/// 直接读取父渲染层纹理，胶囊的局部坐标会与输入纹理错位。
 ///
-/// 降级路径(桌面 Skia / shader 未就绪 / 显式关闭):纯
-/// `BackdropFilter` + 色罩,即项目原有观感,不会红屏也不会突变。
-///
-/// ⚠️ 本组件自身不裁切、不画描边、不投影 —— 这些由调用方按场景决定
-/// (胶囊底栏的描边要画在裁切之内,Sheet 则只有顶部圆角)。本组件
-/// 只负责"玻璃材质"本身,填满父级给的尺寸。
+/// 本组件不做形状裁切或投影，由调用方限制可见范围。独立使用时默认提供
+/// 细描边；外壳可通过 fallbackBorderRadius 委托本实例绘制降级边缘光。
 class GlassSurface extends StatefulWidget {
   const GlassSurface({
     super.key,
@@ -177,13 +174,12 @@ class GlassSurface extends StatefulWidget {
     required this.shape,
     this.tintColor,
     this.enabled = true,
+    this.drawFallbackBorder = true,
+    this.fallbackBorderRadius,
     this.child,
   });
 
-  /// 当前环境是否会走 shader 光学路径(即玻璃自带方向性边缘光)。
-  ///
-  /// 调用方据此决定要不要另外再画一层描边 —— shader 已经在玻璃
-  /// 内部画了迎光/背光渐变的边,外面再叠一圈会变成双边。
+  /// 后端是否支持光学材质；描边切换仍须依据本实例实际渲染路径。
   static bool get opticalEdgeAvailable =>
       ui.ImageFilter.isShaderFilterSupported;
 
@@ -191,8 +187,8 @@ class GlassSurface extends StatefulWidget {
   /// [GlassRecipe.dialog]
   final GlassRecipe recipe;
 
-  /// 玻璃形状。shader 需要圆角半径,故只接受 [RoundedRectangleBorder]
-  /// 与 [StadiumBorder];其他形状自动走降级路径。
+  /// 玻璃形状。shader 支持四角相同的圆形圆角 [RoundedRectangleBorder]
+  /// 与 [StadiumBorder]；非对称或椭圆圆角等形状使用降级路径。
   final ShapeBorder shape;
 
   /// 色罩颜色覆盖。默认为 null,用配方里的**固定灰阶**
@@ -202,6 +198,13 @@ class GlassSurface extends StatefulWidget {
 
   /// 关闭时直接走实色(无模糊无折射),供"省电/低端机/用户关闭"使用
   final bool enabled;
+
+  /// 外壳自绘边缘光时关闭，避免均匀描边与方向性描边叠加。
+  final bool drawFallbackBorder;
+
+  /// 外壳的方向性降级描边半径。由本实例按实际路径绘制，避免加载中或
+  /// shader 加载失败时，外壳误判 GPU 能力而漏掉描边。
+  final double? fallbackBorderRadius;
 
   final Widget? child;
 
@@ -220,9 +223,8 @@ class _GlassSurfaceState extends State<GlassSurface> {
   @override
   void initState() {
     super.initState();
-    // ImageFilter.shader 仅 Impeller;Skia(桌面)直接留在降级路径
-    if (!ui.ImageFilter.isShaderFilterSupported) {
-      _logPathOnce('Impeller 不可用,走 BackdropFilter 降级');
+    if (!GlassSurface.opticalEdgeAvailable) {
+      _logPathOnce('当前后端不支持折射，使用背景模糊');
       return;
     }
     final cached = _cachedProgram;
@@ -255,14 +257,25 @@ class _GlassSurfaceState extends State<GlassSurface> {
   double? _cornerRadiusOf(ShapeBorder shape) {
     if (shape is StadiumBorder) return null;
     if (shape is RoundedRectangleBorder) {
-      final radius = shape.borderRadius.resolve(TextDirection.ltr).topLeft.x;
+      final radius = shape.borderRadius
+          .resolve(Directionality.of(context))
+          .topLeft
+          .x;
       return radius;
     }
     return null;
   }
 
-  bool _shapeSupported(ShapeBorder shape) =>
-      shape is StadiumBorder || shape is RoundedRectangleBorder;
+  bool _shapeSupported(ShapeBorder shape) {
+    if (shape is StadiumBorder) return true;
+    if (shape is! RoundedRectangleBorder) return false;
+    final radii = shape.borderRadius.resolve(Directionality.of(context));
+    final radius = radii.topLeft;
+    return radius.x == radius.y &&
+        radii.topRight == radius &&
+        radii.bottomLeft == radius &&
+        radii.bottomRight == radius;
+  }
 
   /// 给形状叠描边。ShapeBorder 没有通用 copyWith,需按具体类型分支;
   /// 未知形状原样返回(宁可没描边,不能抄错形状)。
@@ -283,29 +296,56 @@ class _GlassSurfaceState extends State<GlassSurface> {
         widget.tintColor ??
         Color.from(alpha: 1, red: gray, green: gray, blue: gray);
 
-    // 关闭:实色,连 BackdropFilter 都不建(省一次离屏合成)
-    if (!widget.enabled) {
-      return DecoratedBox(
-        decoration: ShapeDecoration(shape: widget.shape, color: tint),
-        child: widget.child,
-      );
-    }
-
     final program = _program;
-    final useShader = program != null && _shapeSupported(widget.shape);
+    final useShader =
+        widget.enabled &&
+        program != null &&
+        GlassSurface.opticalEdgeAvailable &&
+        _shapeSupported(widget.shape);
 
-    if (!useShader) {
-      return _buildFallback(tint, recipe, isDark);
-    }
+    // 前景始终留在同一个槽位；异步加载或切换模糊时只替换背景，不能
+    // 重新挂载编辑器、焦点和导航动画。由前景布局尺寸约束背景，而不是
+    // 用父级的松约束上限猜玻璃高度。
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(
+          child: !widget.enabled
+              ? DecoratedBox(
+                  decoration: ShapeDecoration(shape: widget.shape, color: tint),
+                )
+              : useShader
+              ? _shaderBackground(context, program, tint, recipe, isDark)
+              : _buildFallback(context, tint, recipe, isDark),
+        ),
+        widget.child ?? const SizedBox.shrink(),
+        if (!useShader && widget.fallbackBorderRadius != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: GlassEdgePainter(
+                  radius: widget.fallbackBorderRadius!,
+                  isDark: isDark,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
-    // shader 需要玻璃在输入纹理中的原点与尺寸。BackdropFilter 的输入
-    // 纹理基准无文档约定,故用 LayoutBuilder 拿到自身尺寸,并假定
-    // 外层已按玻璃边界裁切(ClipPath/ClipRRect),使原点为零。
+  Widget _shaderBackground(
+    BuildContext context,
+    ui.FragmentProgram program,
+    Color tint,
+    GlassRecipe recipe,
+    bool isDark,
+  ) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
         if (!size.isFinite || size.isEmpty) {
-          return _buildFallback(tint, recipe, isDark);
+          return const SizedBox.shrink();
         }
         return _buildShaderGlass(
           context: context,
@@ -360,22 +400,11 @@ class _GlassSurfaceState extends State<GlassSurface> {
       ..setFloat(15, recipe.brightness)
       ..setFloat(16, recipe.contrast);
 
-    // 效果链顺序至关重要(同 progressive_top_blur 的踩坑记录):
-    // shader 必须在 inner —— 它的 fragCoord 基准必须是原始 backdrop;
-    // 放到 outer 会拿到中间纹理,坐标错位导致折射带跑到画面外。
-    // ⚠️ sigma 是物理像素,而 ImageFilter.blur 收逻辑像素 —— 需除 dpr。
-    // 不除的话 dpr=3 的机器上会模糊过量 3 倍。
+    // 主模糊放在独立的外层 BackdropFilter，不放进同一条 compose。
+    // 它先把背景画进受 ClipRect 约束的局部 pass，内层折射读取的才是
+    // 原点为胶囊左上角的纹理，而不是父层/整屏纹理。
     final blurLogical = recipe.blurSigmaPx / dpr;
-    ui.ImageFilter filter = ui.ImageFilter.compose(
-      outer: ui.ImageFilter.blur(
-        sigmaX: blurLogical,
-        sigmaY: blurLogical,
-        // clamp:边缘模糊核越界时复制边缘像素。默认 decal 会混入透明,
-        // 深色下玻璃四周会出现一圈"没模糊的暗线"
-        tileMode: ui.TileMode.clamp,
-      ),
-      inner: ui.ImageFilter.shader(shader),
-    );
+    ui.ImageFilter filter = ui.ImageFilter.shader(shader);
 
     // 折射后的极轻柔化:抹平透镜采样在陡峭区引入的高频锯齿
     if (recipe.postBlurSigma > 0) {
@@ -389,14 +418,26 @@ class _GlassSurfaceState extends State<GlassSurface> {
       );
     }
 
-    return BackdropFilter(
-      filter: filter,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          shape: widget.shape,
-          color: tint.withValues(alpha: recipe.tintAlpha),
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(
+          sigmaX: blurLogical,
+          sigmaY: blurLogical,
+          tileMode: ui.TileMode.clamp,
         ),
-        child: widget.child,
+        blendMode: BlendMode.src,
+        child: BackdropFilter(
+          filter: filter,
+          // 局部 pass 已有主模糊结果，替换它，避免透明像素重复混合。
+          blendMode: BlendMode.src,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              shape: widget.shape,
+              color: tint.withValues(alpha: recipe.tintAlpha),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
       ),
     );
   }
@@ -404,10 +445,14 @@ class _GlassSurfaceState extends State<GlassSurface> {
   /// 降级:均匀模糊 + 色罩 + 实描边。
   ///
   /// 没有 shader 时用一条描边替代光学边缘光,勾出胶囊轮廓。
-  Widget _buildFallback(Color tint, GlassRecipe recipe, bool isDark) {
-    final dpr = ui.PlatformDispatcher.instance.views.isNotEmpty
-        ? ui.PlatformDispatcher.instance.views.first.devicePixelRatio
-        : 1.0;
+  Widget _buildFallback(
+    BuildContext context,
+    Color tint,
+    GlassRecipe recipe,
+    bool isDark,
+  ) {
+    // 必须取当前组件所在视图的 DPR，不能拿进程的第一个视图。
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     final blurLogical = recipe.blurSigmaPx / dpr;
     final edgeAlpha = isDark
         ? recipe.fallbackDarkAlpha
@@ -422,16 +467,19 @@ class _GlassSurfaceState extends State<GlassSurface> {
       ),
       child: DecoratedBox(
         decoration: ShapeDecoration(
-          shape: _shapeWithSide(
-            widget.shape,
-            BorderSide(width: recipe.fallbackEdgeWidth, color: edgeColor),
-          ),
+          shape:
+              widget.drawFallbackBorder && widget.fallbackBorderRadius == null
+              ? _shapeWithSide(
+                  widget.shape,
+                  BorderSide(width: recipe.fallbackEdgeWidth, color: edgeColor),
+                )
+              : widget.shape,
           // 降级没有折射与边缘光可撑玻璃感,色罩略加厚补偿
           color: tint.withValues(
             alpha: (recipe.tintAlpha + 0.08).clamp(0.0, 1.0),
           ),
         ),
-        child: widget.child,
+        child: const SizedBox.expand(),
       ),
     );
   }
