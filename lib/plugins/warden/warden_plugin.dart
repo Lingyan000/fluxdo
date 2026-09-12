@@ -23,6 +23,8 @@ import '../site_plugin.dart';
 ///
 /// 要点：
 /// - 私信（含与非真人用户的私信）完全不接管，沿用站点默认
+/// - 当前用户已有服务端明确下发的专属回复下限（如 premium）时不接管；
+///   该值比面向整个分类的通用规则更具体，不能把 4 字重新抬成 16 字
 /// - 首帖读 `warden_min_first_post_length`，回复读 `warden_min_post_length`
 /// - 值为 null/0/负数/非数字一律回退上一级结果（站点默认或会员优惠）
 /// - 生效时按站点 `max_post_length` 封顶，避免误配出无法满足的下限
@@ -42,6 +44,9 @@ class WardenPlugin extends SitePlugin {
   int composerMinPostLength(int value, ComposerMinLengthContext context) {
     // 对齐 `composer.privateMessage || composer.topic?.pm_with_non_human_user`
     if (context.isPrivateMessage || context.isPmWithNonHumanUser) return value;
+
+    // 服务端按当前用户/分组计算出的专属下限优先于分类通用规则。
+    if (context.hasUserSpecificMinPostLength) return value;
 
     final min = context.readCategoryInt(
       context.isFirstPost ? minFirstPostLengthField : minPostLengthField,
