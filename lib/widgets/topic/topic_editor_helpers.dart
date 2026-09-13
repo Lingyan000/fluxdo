@@ -743,8 +743,8 @@ class ComposerMetaBar extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),
@@ -778,9 +778,7 @@ class ComposerMetaBar extends StatelessWidget {
       label = more > 0 ? '$shown +$more' : shown;
     }
     final color = satisfied
-        ? (selectedTags.isEmpty
-              ? theme.colorScheme.onSurfaceVariant
-              : theme.colorScheme.onSurface)
+        ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.error;
 
     return _pill(

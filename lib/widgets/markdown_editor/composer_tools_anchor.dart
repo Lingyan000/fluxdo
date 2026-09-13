@@ -285,7 +285,8 @@ class ComposerToolsHandle extends StatefulWidget {
   final GestureDragUpdateCallback? onDragUpdate;
   final GestureDragEndCallback? onDragEnd;
   final VoidCallback? onDragCancel;
-  static const height = 24.0;
+  // 整个工具栏也可竖向拖动；这里只保留轻量的顶部握柄。
+  static const height = 16.0;
   @override
   State<ComposerToolsHandle> createState() => _ComposerToolsHandleState();
 }
@@ -327,8 +328,8 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
           width: double.infinity,
           child: Center(
             child: Container(
-              width: 32,
-              height: 4,
+              width: 28,
+              height: 3,
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,

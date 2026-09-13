@@ -40,7 +40,7 @@ class ComposerWorkbench extends StatefulWidget {
     final progress = inputProgress ?? (editing ? 1.0 : 0.0);
     return (PlatformUtils.isDesktop
             ? row + 4
-            : row + (ComposerToolsHandle.height + row + 4) * progress) +
+            : row + (ComposerToolsHandle.height + row) * progress) +
         8 +
         kComposerIslandBottomGap;
   }
@@ -392,7 +392,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     final keyboard = ComposerKeyboardDismissScope.maybeOf(context);
     final editing =
         widget.editing || _presenting || (keyboard?.active ?? false);
-    final footerHeight = desktop ? row + 4 : row + (row + 4) * inputProgress;
+    final footerHeight = desktop ? row + 4 : row + row * inputProgress;
     final baseHeight = footerHeight + handleHeight;
     final available = viewport?.height ?? MediaQuery.sizeOf(context).height;
     final takeover = !desktop && _input?.active == true;
@@ -461,25 +461,26 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                 maintainState: true,
                 maintainAnimation: true,
                 child: IgnorePointer(
-                  ignoring: !editing,
-                  child: ClipRect(
-                    child: Align(
-                      heightFactor: inputProgress,
-                      alignment: Alignment.bottomCenter,
-                      child: Opacity(
-                        opacity: inputProgress,
-                        child: Container(
-                          key: const ValueKey('composer-format-row'),
-                          height: row + 4,
-                          decoration: BoxDecoration(
-                            border: Border(
-                              top: BorderSide(
-                                color: theme.colorScheme.outlineVariant
-                                    .withValues(alpha: .45),
-                              ),
+                  ignoring: !editing || inputProgress < 1,
+                  child: ExcludeFocus(
+                    excluding: !editing || inputProgress < 1,
+                    child: ExcludeSemantics(
+                      excluding: !editing || inputProgress < 1,
+                      child: ClipRect(
+                        child: Align(
+                          heightFactor: inputProgress,
+                          alignment: Alignment.bottomCenter,
+                          child: Opacity(
+                            // 先淡出再收拢，避免图标被行高生硬地切成半截。
+                            opacity: Curves.easeInCubic.transform(
+                              inputProgress,
+                            ),
+                            child: SizedBox(
+                              key: const ValueKey('composer-format-row'),
+                              height: row,
+                              child: widget.tools,
                             ),
                           ),
-                          child: widget.tools,
                         ),
                       ),
                     ),
@@ -760,6 +761,54 @@ class _ToolFlights extends FlowDelegate {
   bool shouldRepaint(covariant _ToolFlights oldDelegate) => true;
 }
 
+/// 仅输入时可用的辅助入口与格式行共用几何进度，保留控件和手势状态。
+/// 让出的宽度连续交回元数据，不能等 editing 翻转后直接移除按钮。
+class ComposerInputControl extends StatelessWidget {
+  const ComposerInputControl({
+    super.key,
+    required this.editing,
+    required this.child,
+  });
+
+  final bool editing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress =
+        context
+            .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>()
+            ?.inputProgress ??
+        (editing ? 1.0 : 0.0);
+    final interactive = editing && progress == 1;
+    return Visibility(
+      visible: progress > 0,
+      maintainState: true,
+      maintainAnimation: true,
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: ExcludeFocus(
+          excluding: !interactive,
+          child: ExcludeSemantics(
+            excluding: !interactive,
+            child: ClipRect(
+              child: Align(
+                widthFactor: progress,
+                heightFactor: 1,
+                alignment: Alignment.centerRight,
+                child: Opacity(
+                  opacity: Curves.easeInCubic.transform(progress),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WorkbenchViewport extends InheritedWidget {
   const _WorkbenchViewport({
     required this.height,
@@ -831,7 +880,7 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   bool _disableAnimations = false;
   double _keyboardInset = 0;
   double _safeBottom = 0;
-  double _inputRevealExtent = 76;
+  double _inputRevealExtent = 64;
   bool _trackingKeyboard = false;
 
   @override
@@ -847,7 +896,7 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
       disableAnimations: _disableAnimations,
     );
     _inputRevealExtent =
-        ComposerWorkbench.rowHeight(context) + ComposerToolsHandle.height + 4;
+        ComposerWorkbench.rowHeight(context) + ComposerToolsHandle.height;
     _syncInputVisibility();
   }
 

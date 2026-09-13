@@ -1224,9 +1224,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         if (!PlatformUtils.isDesktop && widget.undoController != null)
           _contentActions(),
         if (!PlatformUtils.isDesktop)
-          Visibility(
-            visible: editing,
-            maintainState: true,
+          ComposerInputControl(
+            editing: editing,
             child: CursorSwipeControl(
               onMove: _moveCursor,
               onMoveVertical: widget.onMoveCursorVertical,

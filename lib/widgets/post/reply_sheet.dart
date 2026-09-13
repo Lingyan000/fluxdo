@@ -258,17 +258,43 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     }
   }
 
-  Widget _buildReplyContext() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    child: Text(
-      widget.replyToPost == null
-          ? (_isEditMode ? S.current.common_edit : S.current.post_replyToTopic)
-          : '${widget.replyToPost!.username} · #${widget.replyToPost!.postNumber}',
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: Theme.of(context).textTheme.labelMedium,
-    ),
-  );
+  Widget _buildReplyContext() {
+    final theme = Theme.of(context);
+    final target = widget.replyToPost;
+    final title = widget.topicTitle?.trim();
+    final (label, icon) = _isEditMode
+        ? ('#${widget.editPost!.postNumber}', Symbols.edit_rounded)
+        : _isPrivateMessage && _recipients.isNotEmpty
+        ? (_recipients.map((name) => '@$name').join(', '), Symbols.mail_rounded)
+        : target != null
+        ? ('@${target.username} · #${target.postNumber}', Symbols.reply_rounded)
+        : title != null && title.isNotEmpty
+        ? (title, Symbols.reply_rounded)
+        : (_viewMode.label, _viewMode.icon);
+    return Tooltip(
+      message: label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   bool _previewHadFocus = false;
 

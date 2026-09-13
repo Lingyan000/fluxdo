@@ -3878,9 +3878,8 @@ class _RichToolbarState extends State<_RichToolbar> {
             listenable: widget.state,
           ),
         if (!PlatformUtils.isDesktop && widget.onPointerStart != null)
-          Visibility(
-            visible: editing,
-            maintainState: true,
+          ComposerInputControl(
+            editing: editing,
             child: CursorSwipeControl(
               onPointerStart: widget.onPointerStart,
               onPointerMove: widget.onPointerMove,

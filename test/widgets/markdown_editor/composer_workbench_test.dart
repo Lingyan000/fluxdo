@@ -118,6 +118,59 @@ void main() {
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
 
   for (final rich in [false, true]) {
+    testWidgets('单行切换时光标入口连续让位，反向展开保留控件状态 rich=$rich', (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      const metadata = SizedBox.expand(key: ValueKey('transition-metadata'));
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(
+                controller: controller,
+                focusNode: focus,
+                metaBar: metadata,
+                onSwitchToSource: () {},
+              )
+            : MarkdownEditor(
+                controller: controller,
+                focusNode: focus,
+                metaBar: metadata,
+                showPreviewButton: false,
+                onSwitchToRich: () {},
+              ),
+      );
+      focus.requestFocus();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final info = find.byKey(const ValueKey('transition-metadata'));
+      final cursor = find.byType(CursorSwipeControl);
+      final originalState = tester.state(cursor);
+      final expandedWidth = tester.getSize(info).width;
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 32);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getSize(info).width, greaterThan(expandedWidth));
+      expect(tester.getSize(info).width, lessThan(expandedWidth + 48));
+      expect(tester.state(cursor), same(originalState));
+
+      // 未等收起结束就反向，光标与格式行都直接回到同一组控件。
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getSize(info).width, expandedWidth);
+      expect(cursor.hitTestable(), findsOneWidget);
+      expect(tester.state(cursor), same(originalState));
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 0);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getSize(info).width, closeTo(expandedWidth + 48, .1));
+      expect(cursor.hitTestable(), findsNothing);
+      expect(focus.hasFocus, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+
     testWidgets('自定义工具固定持久化并在底栏可用 rich=$rich', (tester) async {
       final controller = TextEditingController();
       await _pump(
