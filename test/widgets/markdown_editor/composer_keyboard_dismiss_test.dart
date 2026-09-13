@@ -129,11 +129,9 @@ void main() {
           Scaffold(
             resizeToAvoidBottomInset: false,
             body: ComposerEditorLayout(
-              editing: true,
               bodyBuilder: (_, _, _) =>
                   TextField(controller: text, focusNode: focus),
               toolbar: ComposerWorkbench(
-                editing: true,
                 controls: const [],
                 tools: const Row(
                   children: [

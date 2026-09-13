@@ -75,10 +75,6 @@ void main() {
             resizeToAvoidBottomInset: false,
             body: Builder(
               builder: (context) => ComposerEditorLayout(
-                toolsAnchor: anchor,
-                editing:
-                    MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                    anchor.presenting,
                 onResumeKeyboard: () {
                   resumes++;
                   SystemChannels.textInput.invokeMethod<void>('TextInput.show');
@@ -88,9 +84,6 @@ void main() {
                   child: TextField(controller: text, focusNode: focus),
                 ),
                 toolbar: ComposerWorkbench(
-                  editing:
-                      MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                      anchor.presenting,
                   toolsAnchor: anchor,
                   onExpandTools: () => showComposerTools(context, [
                     ComposerToolAction(
@@ -261,20 +254,10 @@ void main() {
                 appBar: AppBar(title: const Text('写作')),
                 body: Builder(
                   builder: (context) => ComposerEditorLayout(
-                    editing:
-                        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                        anchor.presenting ||
-                        emoji,
-                    toolsAnchor: anchor,
                     customPanelVisible: emoji,
-                    holdInputToolbar: emoji,
                     onResumeKeyboard: () => resumes++,
                     bodyBuilder: (_, _, _) => const SizedBox.expand(),
                     toolbar: ComposerWorkbench(
-                      editing:
-                          MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                          anchor.presenting ||
-                          emoji,
                       toolsAnchor: anchor,
                       onExpandTools: () {
                         rebuild(() => emoji = false);

@@ -122,18 +122,11 @@ void main() {
             resizeToAvoidBottomInset: false,
             body: Builder(
               builder: (context) => ComposerEditorLayout(
-                toolsAnchor: anchor,
-                editing:
-                    MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                    anchor.presenting,
                 onResumeKeyboard: () => SystemChannels.textInput
                     .invokeMethod<void>('TextInput.show'),
                 bodyBuilder: (_, _, _) =>
                     TextField(controller: controller, focusNode: focus),
                 toolbar: ComposerWorkbench(
-                  editing:
-                      MediaQuery.viewInsetsOf(context).bottom > 0 ||
-                      anchor.presenting,
                   toolsAnchor: anchor,
                   controls: const [],
                   tools: const SizedBox(height: 48),

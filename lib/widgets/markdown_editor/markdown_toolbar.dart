@@ -25,7 +25,6 @@ import '../../utils/platform_utils.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'composer_workbench.dart';
-import 'composer_keyboard_dismiss.dart';
 import 'composer_tools_anchor.dart';
 import 'composer_view_mode_switcher.dart';
 import 'cursor_swipe_control.dart';
@@ -96,7 +95,6 @@ class MarkdownToolbar extends StatefulWidget {
   final ComposerToolsAnchor? toolsAnchor;
 
   final Widget? metaBar;
-  final bool editing;
   final void Function(int direction, {required bool extend})?
   onMoveCursorVertical;
 
@@ -119,7 +117,6 @@ class MarkdownToolbar extends StatefulWidget {
     this.emojiPopover,
     this.toolsAnchor,
     this.metaBar,
-    this.editing = true,
     this.onMoveCursorVertical,
   });
 
@@ -1212,24 +1209,17 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final editing =
-        widget.editing ||
-        (ComposerKeyboardDismissScope.maybeOf(context)?.active ?? false);
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
-      editing: editing,
       controls: [
         if (!PlatformUtils.isDesktop && widget.undoController != null)
           _contentActions(),
         if (!PlatformUtils.isDesktop)
-          ComposerInputControl(
-            editing: editing,
-            child: CursorSwipeControl(
-              onMove: _moveCursor,
-              onMoveVertical: widget.onMoveCursorVertical,
-            ),
+          CursorSwipeControl(
+            onMove: _moveCursor,
+            onMoveVertical: widget.onMoveCursorVertical,
           ),
         if (widget.onSwitchToRich != null)
           ComposerModeButton(rich: false, onPressed: widget.onSwitchToRich),

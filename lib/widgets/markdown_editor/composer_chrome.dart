@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../common/progressive_top_blur.dart';
 
-/// 同一次用户滚动驱动顶栏和底栏；程序滚动与光标避让不参与。
+/// 用户滚动驱动页头显隐；编辑工具栏常驻，程序滚动与光标避让不参与。
 class ComposerChromeController extends ChangeNotifier {
   bool _hidden = false;
   int _locks = 0;

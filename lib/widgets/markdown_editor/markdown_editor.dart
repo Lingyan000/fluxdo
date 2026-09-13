@@ -227,13 +227,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   }
 
   Future<void> showTools() {
-    if (!_isDesktop &&
-        !_toolsAnchor.presenting &&
-        MediaQuery.viewInsetsOf(context).bottom == 0 &&
-        !showEmojiPanel &&
-        !_returningToKeyboard) {
-      return Future.value();
-    }
     if (_toolsAnchor.presenting) {
       if (_toolsAnchor.expanded) {
         _toolsAnchor.collapse();
@@ -1052,16 +1045,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final editing =
-        _isDesktop ||
-        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-        showEmojiPanel ||
-        _returningToKeyboard ||
-        _toolsAnchor.presenting;
     return ComposerEditorLayout(
-      toolsAnchor: _toolsAnchor,
-      editing: editing,
-      holdInputToolbar: showEmojiPanel || _returningToKeyboard,
       onResumeKeyboard: resumeEditing,
       customPanelVisible: showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
@@ -1166,7 +1150,6 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         child: MarkdownToolbar(
           key: _toolbarKey,
           metaBar: _isDesktop ? null : widget.metaBar,
-          editing: editing,
           controller: widget.controller,
           focusNode: _focusNode,
           undoController: _undoController,

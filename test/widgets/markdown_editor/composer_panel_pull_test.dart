@@ -66,7 +66,6 @@ Future<(ComposerToolsAnchor, List<String>)> _openTools(
                 ),
             ], anchor: anchor);
             final toolbar = ComposerWorkbench(
-              editing: true,
               toolsAnchor: anchor,
               onExpandTools: open,
               controls: const [],
@@ -81,8 +80,6 @@ Future<(ComposerToolsAnchor, List<String>)> _openTools(
             );
             if (!withKeyboard) return toolbar;
             return ComposerEditorLayout(
-              editing: true,
-              toolsAnchor: anchor,
               onResumeKeyboard: () {
                 onResumeKeyboard?.call();
                 tester.view.viewInsets = const FakeViewPadding(bottom: 300);

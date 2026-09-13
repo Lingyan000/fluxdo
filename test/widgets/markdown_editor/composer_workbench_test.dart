@@ -36,12 +36,14 @@ Future<void> _pump(
   WidgetTester tester,
   Widget child, {
   double width = 390,
+  double height = 760,
   double scale = 1,
   bool dark = false,
   bool desktop = false,
+  bool disableAnimations = false,
 }) async {
   PlatformUtils.debugDesktopOverride = desktop;
-  tester.view.physicalSize = Size(width, 760);
+  tester.view.physicalSize = Size(width, height);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -93,8 +95,9 @@ Future<void> _pump(
           home: Builder(
             builder: (context) => MediaQuery(
               data: MediaQuery.of(context).copyWith(
-                size: Size(width, 760),
+                size: Size(width, height),
                 textScaler: TextScaler.linear(scale),
+                disableAnimations: disableAnimations,
               ),
               child: RepaintBoundary(
                 key: const ValueKey('capture-workbench'),
@@ -134,7 +137,7 @@ void main() {
   });
 
   for (final rich in [false, true]) {
-    testWidgets('单行切换时光标入口连续让位，反向展开保留控件状态 rich=$rich', (tester) async {
+    testWidgets('键盘开合保持工具栏高度、分类宽度和光标入口状态 rich=$rich', (tester) async {
       final controller = TextEditingController();
       final focus = FocusNode();
       const metadata = SizedBox.expand(key: ValueKey('transition-metadata'));
@@ -163,14 +166,17 @@ void main() {
       final cursor = find.byType(CursorSwipeControl);
       final originalState = tester.state(cursor);
       final expandedWidth = tester.getSize(info).width;
+      final workbench = find.byType(ComposerWorkbench);
+      final toolbarHeight = tester.getSize(workbench).height;
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 32);
       await tester.pump(const Duration(milliseconds: 16));
-      expect(tester.getSize(info).width, greaterThan(expandedWidth));
-      expect(tester.getSize(info).width, lessThan(expandedWidth + 48));
+      expect(tester.getSize(info).width, expandedWidth);
+      expect(tester.getSize(workbench).height, toolbarHeight);
+      expect(cursor.hitTestable(), findsOneWidget);
       expect(tester.state(cursor), same(originalState));
 
-      // 未等收起结束就反向，光标与格式行都直接回到同一组控件。
+      // 键盘动画中途反向也只改变位置。
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
       await tester.pump(const Duration(milliseconds: 16));
       expect(tester.getSize(info).width, expandedWidth);
@@ -179,9 +185,48 @@ void main() {
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 0);
       await tester.pump(const Duration(milliseconds: 16));
-      expect(tester.getSize(info).width, closeTo(expandedWidth + 48, .1));
-      expect(cursor.hitTestable(), findsNothing);
+      expect(tester.getSize(info).width, expandedWidth);
+      expect(tester.getSize(workbench).height, toolbarHeight);
+      expect(cursor.hitTestable(), findsOneWidget);
       expect(focus.hasFocus, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+
+    testWidgets('键盘直接切到零占位后立即展开工具，不复用旧键盘高度 rich=$rich', (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(controller: controller, focusNode: focus)
+            : MarkdownEditor(controller: controller, focusNode: focus),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      focus.requestFocus();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pump();
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pump();
+      tester.testTextInput.log.clear();
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+      final grid = find.byKey(const ValueKey('composer-tools-panel'));
+      expect(grid, findsOneWidget);
+      expect(tester.getSize(grid).height, greaterThan(200));
+      await tester.tap(find.byTooltip(S.current.composer_collapseToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(grid, findsNothing);
+      expect(
+        tester.testTextInput.log.where(
+          (call) => call.method == 'TextInput.show',
+        ),
+        isEmpty,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
       focus.dispose();
@@ -242,11 +287,15 @@ void main() {
     testWidgets('正文下拉不再唤起工具，滚动后工具入口仍可用 rich=$rich', (tester) async {
       final raw = List.generate(40, (i) => '正文第 $i 段').join('\n\n');
       final controller = TextEditingController(text: rich ? '' : raw);
+      final chrome = ComposerChromeController();
       await _pump(
         tester,
-        rich
-            ? RichComposerEditor(controller: controller)
-            : MarkdownEditor(controller: controller),
+        ComposerChromeScope(
+          controller: chrome,
+          child: rich
+              ? RichComposerEditor(controller: controller)
+              : MarkdownEditor(controller: controller),
+        ),
       );
       await tester.pump();
       if (rich) {
@@ -271,9 +320,13 @@ void main() {
       expect(find.byKey(const ValueKey('composer-tools-panel')), findsNothing);
       scroll.jumpTo(scroll.position.maxScrollExtent / 2);
       await tester.pump();
-      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.dragFrom(const Offset(10, 300), const Offset(0, -120));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(chrome.hidden, isTrue);
+      expect(
+        find.byTooltip(S.current.toolPanel_bold).hitTestable(),
+        findsOneWidget,
+      );
       await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -286,6 +339,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
+      chrome.dispose();
     });
   }
 
@@ -367,7 +421,7 @@ void main() {
   }
 
   for (final rich in [false, true]) {
-    testWidgets('继续输入恢复隐藏工具栏 rich=$rich', (tester) async {
+    testWidgets('页头隐藏时编辑工具仍可见，继续输入恢复页头 rich=$rich', (tester) async {
       final chrome = ComposerChromeController();
       final controller = TextEditingController();
       await _pump(
@@ -394,6 +448,16 @@ void main() {
       chrome.hide();
       await tester.pump();
       expect(chrome.hidden, isTrue);
+      expect(
+        find
+            .byTooltip(RegExp('^${RegExp.escape(S.current.toolPanel_bold)}'))
+            .hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip(S.current.composer_expandToolbar).hitTestable(),
+        findsOneWidget,
+      );
       if (rich) {
         tester
             .widget<FluxdoEditor>(find.byType(FluxdoEditor))
@@ -579,7 +643,6 @@ void main() {
       ChatBottomContainerListenerManager().flutterApi.keyboardHeight(300);
       await tester.pump();
       expect(tester.getRect(surface), initial);
-      var previousHeight = initial.height;
       for (final height in [20.0, 40.0, 60.0, 100.0, 160.0, 240.0, 300.0]) {
         tester.view.viewInsets = FakeViewPadding(bottom: height);
         await tester.pump(const Duration(milliseconds: 16));
@@ -588,11 +651,7 @@ void main() {
           tester.getRect(surface).bottom,
           closeTo(760 - height - kComposerIslandBottomGap, .1),
         );
-        expect(
-          tester.getSize(surface).height,
-          greaterThanOrEqualTo(previousHeight - .1),
-        );
-        previousHeight = tester.getSize(surface).height;
+        expect(tester.getSize(surface).height, initial.height);
       }
       final open = tester.getRect(surface);
       await tester.pump(const Duration(milliseconds: 250));
@@ -610,14 +669,10 @@ void main() {
           tester.getRect(surface).bottom,
           closeTo(760 - reserved - kComposerIslandBottomGap, .1),
         );
-        expect(
-          tester.getSize(surface).height,
-          lessThanOrEqualTo(previousHeight + .1),
-        );
-        previousHeight = tester.getSize(surface).height;
+        expect(tester.getSize(surface).height, initial.height);
       }
       expect(tester.getRect(surface), initial);
-      expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
+      expect(find.byKey(const ValueKey('composer-format-row')), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 250));
       expect(tester.getRect(surface), initial);
       expect(focus.hasFocus, isTrue);
@@ -626,7 +681,7 @@ void main() {
       focus.dispose();
     });
 
-    testWidgets('表情与键盘往返保留工具栏，关闭输入区后隐藏 rich=$rich', (tester) async {
+    testWidgets('表情与键盘往返及关闭后工具栏始终可用 rich=$rich', (tester) async {
       final controller = TextEditingController();
       final focus = FocusNode();
       final sourceKey = GlobalKey<MarkdownEditorState>();
@@ -661,7 +716,7 @@ void main() {
         of: formats,
         matching: find.byTooltip(S.current.emoji_tab),
       );
-      expect(formats, findsNothing, reason: '焦点本身不显示格式行');
+      expect(formats, findsOneWidget, reason: '没有软键盘也能使用格式工具');
       await keyboardHeight(260);
       final toolbarBottom = tester.getRect(formats).bottom;
       await tester.tap(emojiToggle);
@@ -713,7 +768,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
       expect(tester.getSize(keyboardSpace).height, 110);
       await keyboardHeight(0);
-      expect(formats, findsNothing, reason: '键盘真正关闭后不残留过渡状态');
+      expect(formats, findsOneWidget, reason: '关闭键盘不隐藏编辑工具');
 
       await keyboardHeight(260);
       await tester.tap(emojiToggle);
@@ -736,14 +791,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 180));
       await tester.pump(const Duration(milliseconds: 170));
       expect(find.byType(EmojiStickerPanel), findsNothing);
-      expect(formats, findsNothing, reason: '直接关闭表情面板也要收起格式行');
+      expect(formats, findsOneWidget, reason: '关闭表情面板后保留编辑工具');
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
       focus.dispose();
     });
 
-    testWidgets('工具接替键盘后保留展开，结束输入才隐藏工具行 rich=$rich', (tester) async {
+    testWidgets('工具接替键盘后保留展开，关闭输入后仍能再次展开 rich=$rich', (tester) async {
       final controller = TextEditingController();
       final focus = FocusNode();
       final sourceKey = GlobalKey<MarkdownEditorState>();
@@ -763,30 +818,24 @@ void main() {
               ),
       );
       await tester.pump(const Duration(milliseconds: 300));
-      Future<void> openTools() => rich
-          ? richKey.currentState!.showTools()
-          : sourceKey.currentState!.showTools();
       final island = find.byKey(const ValueKey('composer-workbench'));
       final grid = find.byKey(const ValueKey('composer-tools-panel'));
       final handle = find.byKey(const ValueKey('composer-tools-handle'));
       final formats = find.byKey(const ValueKey('composer-format-row'));
       final closedHeight = tester.getSize(island).height;
-      expect(handle, findsNothing);
-      await openTools();
-      await tester.pump();
-      expect(grid, findsNothing);
+      expect(handle, findsOneWidget);
+      expect(formats, findsOneWidget);
       focus.requestFocus();
       await tester.pump();
       tester.view.viewInsets = const FakeViewPadding(bottom: 26);
       ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
-      final midwayHeight = tester.getSize(island).height;
-      expect(midwayHeight, greaterThan(closedHeight));
+      expect(tester.getSize(island).height, closedHeight);
       tester.view.viewInsets = const FakeViewPadding(bottom: 260);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 140));
-      expect(tester.getSize(island).height, greaterThan(midwayHeight));
+      expect(tester.getSize(island).height, closedHeight);
       await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 450));
@@ -800,41 +849,38 @@ void main() {
         closeTo(expandedTop, .1),
         reason: '键盘让出的空间由面板向下接住，上沿不跳变',
       );
-      expect(grid, findsOneWidget, reason: '工具态不再依赖键盘可见');
+      expect(grid, findsOneWidget);
       if (rich) {
         richKey.currentState!.closeEmojiPanel();
       } else {
         sourceKey.currentState!.closeEmojiPanel();
       }
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 180));
-      expect(grid, findsNothing);
-      await tester.pump(const Duration(milliseconds: 70));
-      expect(tester.getSize(island).height, greaterThanOrEqualTo(closedHeight));
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(formats, findsNothing);
-      expect(handle, findsNothing);
-      await tester.dragFrom(
-        tester.getCenter(find.byKey(const ValueKey('composer-context-row'))),
-        const Offset(0, -90),
-      );
-      await openTools();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
       expect(grid, findsNothing);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
-      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
       expect(formats, findsOneWidget);
-      expect(grid, findsNothing, reason: '再次弹出键盘从折叠态开始');
-      tester.view.viewInsets = const FakeViewPadding();
-      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+      expect(handle, findsOneWidget);
+      expect(tester.getSize(island).height, closedHeight);
+
+      tester.testTextInput.log.clear();
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
       await tester.pump();
-      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
-      ChatBottomContainerListenerManager().flutterApi.keyboardHeight(260);
+      await tester.pump(const Duration(milliseconds: 450));
+      expect(grid, findsOneWidget, reason: '关闭输入后仍能打开更多工具');
+      expect(tester.getSize(grid).height, greaterThan(200));
+      await tester.tap(find.byTooltip(S.current.composer_collapseToolbar));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(formats, findsOneWidget, reason: '快速重新打开输入区应打断隐藏动画');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(grid, findsNothing);
+      expect(tester.getSize(island).height, closedHeight);
+      expect(
+        tester.testTextInput.log.where(
+          (call) => call.method == 'TextInput.show',
+        ),
+        isEmpty,
+        reason: '没有底部键盘时，展开和收起工具不主动唤起键盘',
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
       focus.dispose();
@@ -888,41 +934,112 @@ void main() {
     });
   }
 
-  testWidgets('格式行只跟随键盘，不跟随光标或焦点', (tester) async {
-    final controller = TextEditingController();
-    final focus = FocusNode();
-    await _pump(
-      tester,
-      MarkdownEditor(
-        controller: controller,
-        focusNode: focus,
-        showPreviewButton: false,
-      ),
-    );
-    expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
-    focus.requestFocus();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(
-      find.byKey(const ValueKey('composer-format-row')),
-      findsNothing,
-      reason: '有光标而键盘关闭时，不显示格式行',
-    );
-    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(find.byKey(const ValueKey('composer-format-row')), findsOneWidget);
-    tester.view.viewInsets = const FakeViewPadding();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 170));
-    expect(focus.hasFocus, isTrue);
-    expect(find.byKey(const ValueKey('composer-format-row')), findsNothing);
-    focus.unfocus();
-    await tester.pump();
-    await tester.pumpWidget(const SizedBox.shrink());
-    controller.dispose();
-    focus.dispose();
-  });
+  for (final rich in [false, true]) {
+    for (final size in [
+      const Size(390, 760),
+      const Size(375, 500),
+      const Size(600, 320),
+    ]) {
+      testWidgets('无软键盘占位时可编辑和展开工具 rich=$rich size=$size', (tester) async {
+        tester.view.viewPadding = const FakeViewPadding(bottom: 20);
+        addTearDown(tester.view.resetViewPadding);
+        final compact = size.height < 760;
+        final controller = TextEditingController();
+        final focus = FocusNode();
+        await _pump(
+          tester,
+          rich
+              ? RichComposerEditor(controller: controller, focusNode: focus)
+              : MarkdownEditor(
+                  controller: controller,
+                  focusNode: focus,
+                  showPreviewButton: false,
+                ),
+          width: size.width,
+          height: size.height,
+          scale: size.width == 375 ? 2 : 1,
+          dark: compact,
+          disableAnimations: compact,
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        final formats = find.byKey(const ValueKey('composer-format-row'));
+        final cursor = find.byType(CursorSwipeControl);
+        final island = find.byKey(const ValueKey('composer-island-surface'));
+        final initial = tester.getRect(island);
+        expect(formats, findsOneWidget);
+        expect(cursor.hitTestable(), findsOneWidget);
+        expect(initial.bottom, lessThanOrEqualTo(size.height - 20));
+
+        // 首次输入前就能展开，不依赖一次软键盘高度回报。
+        tester.testTextInput.log.clear();
+        await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 450));
+        final grid = find.byKey(const ValueKey('composer-tools-panel'));
+        expect(grid, findsOneWidget);
+        final boldCell = find.byKey(const ValueKey('composer-tool-bold'));
+        await tester.ensureVisible(boldCell);
+        await tester.pump();
+        expect(boldCell.hitTestable(), findsOneWidget);
+        expect(
+          tester.getRect(boldCell).bottom,
+          lessThanOrEqualTo(tester.getRect(grid).bottom),
+        );
+        expect(
+          tester.getRect(island).top,
+          greaterThanOrEqualTo(kToolbarHeight),
+        );
+        await tester.tap(find.byTooltip(S.current.composer_collapseToolbar));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(grid, findsNothing);
+        expect(tester.getRect(island), initial);
+        expect(
+          tester.testTextInput.log.where(
+            (call) => call.method == 'TextInput.show',
+          ),
+          isEmpty,
+        );
+
+        focus.requestFocus();
+        await tester.pump();
+        if (rich) {
+          final editor = tester
+              .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+              .state;
+          editor.pastePlainText('外接键盘输入');
+          editor.selectAll();
+        } else {
+          await tester.enterText(find.byType(EditableText), '浮动键盘输入');
+          controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: controller.text.length,
+          );
+        }
+        await tester.pump();
+        expect(tester.view.viewInsets.bottom, 0);
+        await tester.tap(find.byTooltip(S.current.toolPanel_bold));
+        await tester.pump();
+        final text = rich
+            ? docToMarkdown(
+                tester
+                    .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+                    .state
+                    .blocks,
+              )
+            : controller.text;
+        expect(text, contains(rich ? '**外接键盘输入**' : '**浮动键盘输入**'));
+        expect(focus.hasFocus, isTrue);
+        expect(formats, findsOneWidget);
+        expect(cursor.hitTestable(), findsOneWidget);
+        expect(tester.getRect(island), initial);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        controller.dispose();
+        focus.dispose();
+      });
+    }
+  }
 
   testWidgets('富文本扩展动作直接列出插入块，不再叠加菜单', (tester) async {
     final controller = TextEditingController();

@@ -68,7 +68,6 @@ import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
-import '../composer_keyboard_dismiss.dart';
 import '../composer_tools_panel.dart';
 import '../composer_quick_panel.dart';
 import '../composer_tools_anchor.dart';
@@ -377,13 +376,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   Future<void> showTools() {
-    if (!_isDesktop &&
-        !_toolsAnchor.presenting &&
-        MediaQuery.viewInsetsOf(context).bottom == 0 &&
-        !_showEmojiPanel &&
-        !_returningToKeyboard) {
-      return Future.value();
-    }
     if (_toolsAnchor.presenting) {
       if (_toolsAnchor.expanded) {
         _toolsAnchor.collapse();
@@ -3350,16 +3342,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
     final isEmpty = _lastIsEmpty = _computeIsEmpty();
 
-    final editing =
-        _isDesktop ||
-        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-        _showEmojiPanel ||
-        _returningToKeyboard ||
-        _toolsAnchor.presenting;
     return ComposerEditorLayout(
-      toolsAnchor: _toolsAnchor,
-      editing: editing,
-      holdInputToolbar: _showEmojiPanel || _returningToKeyboard,
       onResumeKeyboard: resumeEditing,
       customPanelVisible: _showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
@@ -3544,7 +3527,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       toolbar: _RichToolbar(
         state: editor,
         metaBar: _isDesktop ? null : widget.metaBar,
-        editing: editing,
         isEmojiPanelVisible: _showEmojiPanel,
         onToggleEmoji: _toggleEmojiPanel,
         // 桌面端表情按钮由弹层锚点包裹(跟随定位 + toggle 无闪烁)
@@ -3727,11 +3709,9 @@ class _RichToolbar extends StatefulWidget {
     this.visibleToolIds,
     this.insertTools = const [],
     this.metaBar,
-    this.editing = true,
   });
 
   final Widget? metaBar;
-  final bool editing;
   final EditorState state;
   final bool isEmojiPanelVisible;
   final VoidCallback onToggleEmoji;
@@ -3868,14 +3848,10 @@ class _RichToolbarState extends State<_RichToolbar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final editing =
-        widget.editing ||
-        (ComposerKeyboardDismissScope.maybeOf(context)?.active ?? false);
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
-      editing: editing,
       controls: [
         if (!PlatformUtils.isDesktop && widget.contentActions != null)
           ContentActionsButton(
@@ -3883,15 +3859,12 @@ class _RichToolbarState extends State<_RichToolbar> {
             listenable: widget.state,
           ),
         if (!PlatformUtils.isDesktop && widget.onPointerStart != null)
-          ComposerInputControl(
-            editing: editing,
-            child: CursorSwipeControl(
-              onPointerStart: widget.onPointerStart,
-              onPointerMove: widget.onPointerMove,
-              onPointerEnd: widget.onPointerEnd,
-              onMove: widget.contentActions?.moveHorizontal,
-              onMoveVertical: widget.contentActions?.moveVertical,
-            ),
+          CursorSwipeControl(
+            onPointerStart: widget.onPointerStart,
+            onPointerMove: widget.onPointerMove,
+            onPointerEnd: widget.onPointerEnd,
+            onMove: widget.contentActions?.moveHorizontal,
+            onMoveVertical: widget.contentActions?.moveVertical,
           ),
         if (widget.onSwitchToSource != null)
           ComposerModeButton(rich: true, onPressed: widget.onSwitchToSource),

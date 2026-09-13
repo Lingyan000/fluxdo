@@ -137,7 +137,6 @@ void main() {
                       ),
                     ], anchor: anchor);
                     return ComposerWorkbench(
-                      editing: true,
                       controls: const [],
                       toolsAnchor: anchor,
                       onExpandTools: open,
