@@ -2,6 +2,7 @@ import '../widgets/markdown_editor/composer_chrome.dart';
 import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
 import 'package:flutter/material.dart';
+import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
@@ -536,6 +537,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                     MediaQuery.sizeOf(context).width -
                     MediaQuery.paddingOf(context).horizontal,
                 submitLabel: context.l10n.common_save,
+                submitIcon: Symbols.check_rounded,
                 onSubmit: (_isSubmitting || _isLoadingContent) ? null : _submit,
                 submitting: _isSubmitting,
                 previewing: _showPreview,

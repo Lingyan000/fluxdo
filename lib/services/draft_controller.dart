@@ -31,6 +31,7 @@ class DraftController {
 
   /// 上次保存的内容快照（用于检测变化）
   String? _lastSavedData;
+  DraftData? _latestData;
 
   /// 防抖定时器
   Timer? _debounceTimer;
@@ -122,6 +123,7 @@ class DraftController {
   /// 触发自动保存（带防抖）
   void scheduleSave(DraftData data) {
     if (_disposed || _disabled) return;
+    _latestData = data;
 
     // 清空内容时取消尚未执行的保存，并清掉本地兜底。
     if (!data.hasContent) {
@@ -155,6 +157,7 @@ class DraftController {
   /// 立即保存（关闭时调用）
   Future<void> saveNow(DraftData data) async {
     if (_disposed || _disabled) return;
+    _latestData = data;
 
     _debounceTimer?.cancel();
     await _saveLocalNow(data);
@@ -206,9 +209,7 @@ class DraftController {
       _sequence = newSequence;
       _lastSavedData = data.toJsonString();
       await _deleteLocalIfMatches(data);
-      if (!_disposed) {
-        _statusNotifier.value = DraftSaveStatus.saved;
-      }
+      _reportSaveResult(data, DraftSaveStatus.saved);
     } on DraftSequenceConflictException {
       // 服务端 sequence 与客户端不一致(例如网页端同时编辑、上次保存丢响应)。
       // 服务端 409 不返回最新 sequence,只能 force_save 一次绕过校验。
@@ -222,25 +223,31 @@ class DraftController {
         _sequence = newSequence;
         _lastSavedData = data.toJsonString();
         await _deleteLocalIfMatches(data);
-        if (!_disposed) {
-          _statusNotifier.value = DraftSaveStatus.saved;
-        }
+        _reportSaveResult(data, DraftSaveStatus.saved);
       } catch (e) {
         debugPrint('[DraftController] force save failed: $e');
-        if (!_disposed) {
-          _statusNotifier.value = DraftSaveStatus.error;
-        }
+        _reportSaveResult(data, DraftSaveStatus.error);
       }
     } catch (e) {
       debugPrint('[DraftController] save failed: $e');
-      if (!_disposed) {
-        _statusNotifier.value = DraftSaveStatus.error;
-      }
+      _reportSaveResult(data, DraftSaveStatus.error);
     } finally {
       if (_saveFuture != null) {
         _saveFuture = null;
       }
     }
+  }
+
+  void _reportSaveResult(DraftData savedData, DraftSaveStatus result) {
+    if (_disposed || _disabled) return;
+    final latest = _latestData;
+    // 请求发出后用户可能继续输入或清空正文，旧结果不能宣称当前内容已保存。
+    _statusNotifier.value =
+        latest == null || latest.toJsonString() == savedData.toJsonString()
+        ? result
+        : latest.hasContent
+        ? DraftSaveStatus.pending
+        : DraftSaveStatus.idle;
   }
 
   /// 删除草稿

@@ -8,11 +8,58 @@ import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart'
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
 
 void main() {
+  testWidgets('图标提交保留动作说明，加载时尺寸稳定且不可重复提交', (tester) async {
+    final semantics = tester.ensureSemantics();
+    var submitting = false;
+    var calls = 0;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: StatefulBuilder(
+            builder: (context, setState) => Scaffold(
+              appBar: AppBar(
+                actions: [
+                  ComposerHeaderActions(
+                    availableWidth: 390,
+                    submitLabel: '保存',
+                    submitIcon: Symbols.check_rounded,
+                    submitting: submitting,
+                    onSubmit: () => setState(() {
+                      calls++;
+                      submitting = true;
+                    }),
+                    previewing: false,
+                    onTogglePreview: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final button = find.byKey(const ValueKey('composer-header-submit'));
+    final bounds = tester.getRect(button);
+    expect(find.byTooltip('保存'), findsOneWidget);
+    expect(find.byIcon(Symbols.check_rounded), findsOneWidget);
+    expect(tester.getSemantics(button).label, '保存');
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(tester.getRect(button), bounds);
+    expect(tester.getSemantics(button).label, '保存');
+    await tester.tap(button);
+    expect(calls, 1);
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final (width, count, folded) in [
     (320.0, 1, 0),
     (320.0, 2, 2),
     (700.0, 2, 0),
-    (390.0, 3, 3),
+    (390.0, 3, 2),
     (420.0, 3, 2),
     (700.0, 3, 0),
   ]) {
@@ -60,9 +107,11 @@ void main() {
         of: send,
         matching: find.byType(Material),
       );
-      expect(tester.getSize(send).height, 44, reason: '视觉变轻仍保留触控高度');
+      expect(tester.getSize(send).height, 48, reason: '视觉变轻仍保留触控高度');
       expect(tester.getSize(surface).height, 36);
-      expect(tester.getSize(surface).width, greaterThanOrEqualTo(64));
+      expect(tester.getSize(surface).width, 48);
+      expect(find.byTooltip('发送'), findsOneWidget);
+      expect(find.byIcon(Symbols.send_rounded), findsOneWidget);
       final more = find.byKey(const ValueKey('composer-header-more'));
       expect(more, folded == 0 ? findsNothing : findsOneWidget);
       if (folded > 0) {

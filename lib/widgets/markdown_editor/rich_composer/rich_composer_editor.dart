@@ -514,6 +514,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
+  double _bodyOverlayHeight = 0;
+  void _onBodyOverlayHeight(double height) {
+    if (!mounted || _bodyOverlayHeight == height) return;
+    setState(() => _bodyOverlayHeight = height);
+  }
+
   double _floatingInset = 0;
   double _floatingViewportHeight = 0;
 
@@ -3358,7 +3364,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       onResumeKeyboard: resumeEditing,
       customPanelVisible: _showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
-        _updateFloatingInset(bottomInset, viewportHeight);
+        final contentInset =
+            bottomInset +
+            (widget.bodyOverlay != null && _bodyOverlayHeight > 0
+                ? _bodyOverlayHeight + 8
+                : 0);
+        _updateFloatingInset(contentInset, viewportHeight);
         return Stack(
           children: [
             Positioned.fill(
@@ -3406,7 +3417,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                         0,
                                         sliver.viewportMainAxisExtent -
                                             sliver.precedingScrollExtent -
-                                            bottomInset,
+                                            contentInset,
                                       ),
                                     ),
                                     child: ComposerReadingPadding(
@@ -3514,7 +3525,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                           ),
                         ),
                       ),
-                      SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
+                      SliverToBoxAdapter(child: SizedBox(height: contentInset)),
                     ],
                   ),
                 ),
@@ -3529,7 +3540,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 child: ComposerReadingPadding(
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: widget.bodyOverlay!,
+                    child: ComposerOverlayMeasure(
+                      onHeightChanged: _onBodyOverlayHeight,
+                      child: widget.bodyOverlay!,
+                    ),
                   ),
                 ),
               ),

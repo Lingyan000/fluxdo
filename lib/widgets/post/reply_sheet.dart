@@ -9,6 +9,7 @@ import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/composer_workbench.dart';
 import '../markdown_editor/composer_header_actions.dart';
+import '../markdown_editor/composer_draft_status.dart';
 import '../markdown_editor/composer_view_mode_switcher.dart';
 import '../markdown_editor/markdown_renderer.dart';
 import '../markdown_editor/markdown_editor.dart';
@@ -19,7 +20,6 @@ import '../../models/draft.dart';
 import '../../plugins/plugins.dart';
 import '../../providers/category_provider.dart';
 import '../../services/composer_min_length_resolver.dart';
-import '../common/character_counts_overlay.dart';
 import '../../models/pending_post.dart';
 import '../../pages/pending_posts_page.dart';
 import '../../services/local_notification_service.dart' show navigatorKey;
@@ -331,6 +331,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     submitLabel: _isEditMode
         ? context.l10n.common_save
         : context.l10n.common_send,
+    submitIcon: _isEditMode ? Symbols.check_rounded : Symbols.send_rounded,
     onSubmit: (_isSubmitting || _isLoadingRaw) ? null : _submit,
     submitting: _isSubmitting,
     previewing: _showPreview,
@@ -382,17 +383,6 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
             child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
-        if (_draftController != null) ...[
-          const SizedBox(width: 8),
-          SizedBox.square(
-            dimension: 16,
-            child: ValueListenableBuilder<DraftSaveStatus>(
-              valueListenable: _draftController!.statusNotifier,
-              builder: (_, status, _) =>
-                  _buildDraftStatusIndicator(status, theme),
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -629,16 +619,22 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   void _onContentChanged() {
     if (_isEditMode || _draftController == null) return;
 
-    final data = DraftData(
-      reply: _contentController.text,
-      title: _isPrivateMessage ? _titleController.text : null,
-      action: _isPrivateMessage ? 'privateMessage' : 'reply',
-      replyToPostNumber: widget.replyToPost?.postNumber,
-      recipients: _isPrivateMessage ? _recipients : null,
-      archetypeId: _isPrivateMessage ? 'private_message' : 'regular',
-    );
+    _draftController!.scheduleSave(_currentDraftData());
+  }
 
-    _draftController!.scheduleSave(data);
+  DraftData _currentDraftData() => DraftData(
+    reply: _contentController.text,
+    title: _isPrivateMessage ? _titleController.text : null,
+    action: _isPrivateMessage ? 'privateMessage' : 'reply',
+    replyToPostNumber: widget.replyToPost?.postNumber,
+    recipients: _isPrivateMessage ? _recipients : null,
+    archetypeId: _isPrivateMessage ? 'private_message' : 'regular',
+  );
+
+  Future<void> _retryDraftSave() async {
+    if (_isSubmitting || _draftController == null) return;
+    _richKey.currentState?.flushToController();
+    await _draftController!.saveNow(_currentDraftData());
   }
 
   /// 收件人本身也是私信草稿的一部分；只改名单不继续输入也要及时保存。
@@ -873,46 +869,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     }
   }
 
-  /// 构建草稿保存状态指示器
-  /// 字数不足时悬浮在正文区右下角的提示
-  ///
-  /// 对齐网页端：主题组件只吐一个 `.character-counts` div，悬浮定位由
-  /// 主题 CSS 完成。悬浮而非占独立行，既不挤压顶部标题行（那行已有
-  /// 头像/草稿状态/舍弃/AI 审阅/发送），也不受中英文文案长度差异影响。
-  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
+  Widget _buildCharCountOverlay() => ComposerStatusBar(
     length: _contentLength,
     minimumLength: _minPostLength,
+    draftStatus: _draftController?.statusNotifier,
+    onRetry: _isSubmitting ? null : _retryDraftSave,
   );
-
-  Widget _buildDraftStatusIndicator(DraftSaveStatus status, ThemeData theme) {
-    switch (status) {
-      case DraftSaveStatus.idle:
-        return const SizedBox.shrink();
-      case DraftSaveStatus.pending:
-        return const SizedBox.shrink();
-      case DraftSaveStatus.saving:
-        return SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: theme.colorScheme.outline,
-          ),
-        );
-      case DraftSaveStatus.saved:
-        return Icon(
-          Symbols.cloud_done_rounded,
-          size: 16,
-          color: theme.colorScheme.outline,
-        );
-      case DraftSaveStatus.error:
-        return Icon(
-          Symbols.cloud_off_rounded,
-          size: 16,
-          color: theme.colorScheme.error,
-        );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

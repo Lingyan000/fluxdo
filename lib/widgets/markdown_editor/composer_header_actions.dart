@@ -25,6 +25,7 @@ class ComposerHeaderActions extends StatelessWidget {
     required this.onSubmit,
     required this.previewing,
     required this.onTogglePreview,
+    this.submitIcon = Symbols.send_rounded,
     this.submitting = false,
     this.showDiscard = false,
     this.onDiscard,
@@ -33,6 +34,7 @@ class ComposerHeaderActions extends StatelessWidget {
 
   final double availableWidth;
   final String submitLabel;
+  final IconData submitIcon;
   final VoidCallback? onSubmit;
   final bool submitting;
   final bool previewing;
@@ -47,18 +49,7 @@ class ComposerHeaderActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scaler = MediaQuery.textScalerOf(context);
-    final labelPainter = TextPainter(
-      text: TextSpan(
-        text: submitLabel,
-        style:
-            FilledButtonTheme.of(context).style?.textStyle?.resolve({}) ??
-            theme.textTheme.labelLarge,
-      ),
-      textDirection: Directionality.of(context),
-      textScaler: scaler,
-    )..layout();
-    final submitWidth = math.max(64.0, labelPainter.width + 32);
-    labelPainter.dispose();
+    const submitWidth = 48.0;
     final actions = [
       _HeaderAction.preview,
       if (reviewBuilder != null) _HeaderAction.review,
@@ -197,34 +188,36 @@ class ComposerHeaderActions extends StatelessWidget {
               overflow.contains(_HeaderAction.review)
                   ? reviewHost(folded: true)
                   : more(false, null),
-            SizedBox(
-              height: 44,
-              child: Align(
-                widthFactor: 1,
-                child: FilledButton(
-                  key: const ValueKey('composer-header-submit'),
-                  onPressed: submitting ? null : onSubmit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(64, 36),
-                    visualDensity: VisualDensity.standard,
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    shape: const StadiumBorder(),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Opacity(
-                        opacity: submitting ? 0 : 1,
-                        alwaysIncludeSemantics: true,
-                        child: Text(submitLabel),
+            Tooltip(
+              message: submitLabel,
+              excludeFromSemantics: true,
+              child: SizedBox(
+                height: 48,
+                child: Align(
+                  widthFactor: 1,
+                  child: FilledButton(
+                    key: const ValueKey('composer-header-submit'),
+                    onPressed: submitting ? null : onSubmit,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(submitWidth, 36),
+                      visualDensity: VisualDensity.standard,
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                      padding: EdgeInsets.zero,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: Semantics(
+                      label: submitLabel,
+                      child: ExcludeSemantics(
+                        child: submitting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(submitIcon, size: 21),
                       ),
-                      if (submitting)
-                        const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),

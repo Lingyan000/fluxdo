@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
@@ -15,6 +14,7 @@ import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -260,15 +260,22 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   /// 草稿内容变化时触发保存
   void _onDraftContentChanged() {
-    final data = DraftData(
-      title: _titleController.text,
-      reply: _contentController.text,
-      categoryId: _selectedCategory?.id,
-      tags: _selectedTags.isNotEmpty ? _selectedTags : null,
-      action: 'createTopic',
-      archetypeId: 'regular',
-    );
-    _draftController.scheduleSave(data);
+    _draftController.scheduleSave(_currentDraftData());
+  }
+
+  DraftData _currentDraftData() => DraftData(
+    title: _titleController.text,
+    reply: _contentController.text,
+    categoryId: _selectedCategory?.id,
+    tags: _selectedTags.isNotEmpty ? _selectedTags : null,
+    action: 'createTopic',
+    archetypeId: 'regular',
+  );
+
+  Future<void> _retryDraftSave() async {
+    if (_isSubmitting) return;
+    _richKey.currentState?.flushToController();
+    await _draftController.saveNow(_currentDraftData());
   }
 
   /// 舍弃草稿
@@ -971,26 +978,18 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 ),
             ],
           ),
-          SizedBox(
-            height: 16,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: ValueListenableBuilder<DraftSaveStatus>(
-                valueListenable: _draftController.statusNotifier,
-                builder: (context, status, _) =>
-                    _buildDraftStatusIndicator(status, theme),
-              ),
-            ),
-          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
   }
 
   /// 字数不足时悬浮在正文区右下角的提示（对齐网页主题 CSS 的绝对定位）
-  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
+  Widget _buildCharCountOverlay() => ComposerStatusBar(
     length: _contentLength,
     minimumLength: _minContentLength,
+    draftStatus: _draftController.statusNotifier,
+    onRetry: _isSubmitting ? null : _retryDraftSave,
   );
 
   /// 底部属性条:分类/标签/字数(编辑区与工具栏之间,常驻可改)
@@ -1013,42 +1012,6 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       postVotingEnabled: _createAsPostVoting || locked,
       postVotingLocked: locked,
       onPostVotingChanged: (v) => setState(() => _createAsPostVoting = v),
-    );
-  }
-
-  /// 构建草稿保存状态指示器
-  /// 草稿保存状态指示器(瞬态):保存中转圈、失败红色警示;
-  /// 已保存/空闲不显示 —— 成功无需常驻宣告,失败才需要被看见。
-  Widget _buildDraftStatusIndicator(DraftSaveStatus status, ThemeData theme) {
-    final Widget child;
-    switch (status) {
-      case DraftSaveStatus.idle:
-      case DraftSaveStatus.pending:
-      case DraftSaveStatus.saved:
-        return const SizedBox.shrink();
-      case DraftSaveStatus.saving:
-        child = SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: theme.colorScheme.outline,
-          ),
-        );
-      case DraftSaveStatus.error:
-        child = Icon(
-          Symbols.cloud_off_rounded,
-          size: 16,
-          color: theme.colorScheme.error,
-        );
-    }
-    return Center(
-      widthFactor: 1,
-      heightFactor: 1,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, right: 4),
-        child: child,
-      ),
     );
   }
 

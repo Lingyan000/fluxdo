@@ -679,6 +679,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     _scrollToCursor();
   }
 
+  double _bodyOverlayHeight = 0;
+  void _onBodyOverlayHeight(double height) {
+    if (!mounted || _bodyOverlayHeight == height) return;
+    setState(() => _bodyOverlayHeight = height);
+  }
+
   double _floatingInset = 0;
   double _floatingViewportHeight = 0;
 
@@ -1065,7 +1071,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       onResumeKeyboard: resumeEditing,
       customPanelVisible: showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
-        _updateFloatingInset(bottomInset, viewportHeight);
+        final contentInset =
+            bottomInset +
+            (widget.bodyOverlay != null && _bodyOverlayHeight > 0
+                ? _bodyOverlayHeight + 8
+                : 0);
+        _updateFloatingInset(contentInset, viewportHeight);
         return Stack(
           children: [
             Positioned.fill(
@@ -1083,7 +1094,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: Padding(
-                        padding: EdgeInsets.only(bottom: bottomInset),
+                        padding: EdgeInsets.only(bottom: contentInset),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -1109,7 +1120,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                   ],
                 ),
                 preview: SingleChildScrollView(
-                  padding: EdgeInsets.only(bottom: bottomInset),
+                  padding: EdgeInsets.only(bottom: contentInset),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1155,7 +1166,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
                 child: ComposerReadingPadding(
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: widget.bodyOverlay!,
+                    child: ComposerOverlayMeasure(
+                      onHeightChanged: _onBodyOverlayHeight,
+                      child: widget.bodyOverlay!,
+                    ),
                   ),
                 ),
               ),

@@ -19,6 +19,10 @@
       }
     }
   },
+  "composer_draftPending": "草稿待保存",
+  "composer_draftSaving": "正在保存草稿",
+  "composer_draftSaved": "草稿已保存",
+  "composer_draftError": "草稿保存失败",
   "draft_untitled": "无标题",
   "drafts_deleteContent": "确定要删除这个草稿吗？",
   "drafts_deleteDraft": "删除草稿",

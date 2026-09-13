@@ -160,7 +160,8 @@ void main() {
       expect(find.byType(CloseButton), findsOneWidget);
       final send = find.byKey(const ValueKey('composer-header-submit'));
       final more = find.byKey(const ValueKey('composer-header-more'));
-      expect(tester.getSize(send).height, 44);
+      expect(tester.getSize(send), const Size(48, 48));
+      expect(find.byTooltip(S.current.common_send), findsOneWidget);
       if (width < 480) expect(tester.getSize(more), const Size(44, 44));
       expect(width - tester.getRect(send).right, 16);
       final lastAction = width < 480
@@ -169,7 +170,7 @@ void main() {
       expect(tester.getRect(send).left - tester.getRect(lastAction).right, 8);
       expect(
         find.byType(ComposerPreviewButton),
-        width >= 480 ? findsOneWidget : findsNothing,
+        width >= 390 && scale == 1 ? findsOneWidget : findsNothing,
       );
 
       final field = find.descendant(
@@ -199,7 +200,17 @@ void main() {
           ),
           isEmpty,
         );
-        await tester.tap(find.byKey(const ValueKey('composer-header-preview')));
+        if (width >= 390 && scale == 1) {
+          await tester.tapAt(const Offset(2, 300));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('composer-header-preview-inline')),
+          );
+        } else {
+          await tester.tap(
+            find.byKey(const ValueKey('composer-header-preview')),
+          );
+        }
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 250));
         expect(find.byKey(const ValueKey('reply-preview')), findsOneWidget);

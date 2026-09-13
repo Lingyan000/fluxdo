@@ -167,12 +167,10 @@ void main() {
 
         expect(tester.takeException(), isNull);
         final appbar = find.byType(AppBar);
-        final publish = find.widgetWithText(
-          FilledButton,
-          S.current.common_publish,
-        );
+        final publish = find.byKey(const ValueKey('composer-header-submit'));
         expect(width - tester.getRect(publish).right, 16);
-        expect(tester.getSize(publish).height, 44);
+        expect(tester.getSize(publish), const Size(48, 48));
+        expect(find.byTooltip(S.current.common_publish), findsOneWidget);
         final chrome = ComposerChromeScope.maybeOf(tester.element(appbar))!;
         chrome.hide();
         await tester.pump();
@@ -204,7 +202,11 @@ void main() {
           await tester.tap(more);
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
-          for (final action in ['preview', 'review', 'discard']) {
+          for (final action in [
+            if (width < 390) 'preview',
+            'review',
+            'discard',
+          ]) {
             expect(
               find.byKey(ValueKey('composer-header-$action')),
               findsOneWidget,
