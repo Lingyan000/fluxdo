@@ -7,7 +7,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
@@ -71,9 +70,6 @@ final scrollToTopProvider = StateNotifierProvider<ScrollToTopNotifier, int>((
 
 /// 顶栏/底栏可见性进度（0.0 = 完全隐藏, 1.0 = 完全显示）
 final barVisibilityProvider = StateProvider<double>((ref) => 1.0);
-
-/// FAB 是否处于刷新模式（用户正在向上滚动时为 true）
-final fabRefreshModeProvider = StateProvider<bool>((ref) => false);
 
 /// FAB 触发刷新信号
 final fabRefreshSignalProvider =
@@ -1146,7 +1142,6 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     // 监听滚动到顶部的通知：动画展开头部；列表回顶由 _TopicListState
     // 各自监听同一信号处理（overlay 头部与列表滚动已解耦）
     ref.listen(scrollToTopProvider, (previous, next) {
-      ref.read(fabRefreshModeProvider.notifier).state = false;
       _headerController.expand();
     });
 
@@ -1554,27 +1549,6 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
       }
       // 发布"距顶进度"到 NavActionBus，底栏据此做动态图标切换
       _publishHomeScrollProgress(metrics.pixels);
-
-      // 列表到达顶部时恢复创建模式
-      if (metrics.pixels <= 0 && ref.read(fabRefreshModeProvider)) {
-        ref.read(fabRefreshModeProvider.notifier).state = false;
-      }
-    }
-
-    // 用 UserScrollNotification 追踪用户主动滚动方向（FAB 刷新/创建
-    // 模式切换;回弹/惯性不误触发）
-    if (notification is UserScrollNotification) {
-      if (notification.direction == ScrollDirection.forward) {
-        // 向上滚动（朝顶部方向）→ 刷新模式
-        if (!ref.read(fabRefreshModeProvider)) {
-          ref.read(fabRefreshModeProvider.notifier).state = true;
-        }
-      } else if (notification.direction == ScrollDirection.reverse) {
-        // 向下滚动（深入列表）→ 创建模式
-        if (ref.read(fabRefreshModeProvider)) {
-          ref.read(fabRefreshModeProvider.notifier).state = false;
-        }
-      }
     }
 
     // 拖拽滚动开始时，清理 pointer scroll 的状态，避免影响松手吸附;

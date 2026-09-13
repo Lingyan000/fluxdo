@@ -1,23 +1,17 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/s.dart';
 import '../models/search_filter.dart';
 import '../models/category.dart';
 import '../navigation/nav_action_bus.dart';
-import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../providers/discourse_providers.dart';
-import '../services/dynamic_content_suspension_service.dart';
 import '../utils/platform_utils.dart';
-import '../utils/blur_config.dart';
-import '../utils/responsive.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../widgets/topics/topics_fab.dart';
 import '../widgets/layout/pane_projection_back_scope.dart';
 import '../widgets/layout/home_workspace_scope.dart';
 import 'topics_page.dart';
@@ -157,11 +151,9 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       }
       switch (event.action) {
         case NavAction.scrollToTop:
-          ref.read(fabRefreshModeProvider.notifier).state = false;
           ref.read(scrollToTopProvider.notifier).trigger();
           break;
         case NavAction.refresh:
-          ref.read(fabRefreshModeProvider.notifier).state = false;
           ref.read(scrollToTopProvider.notifier).trigger();
           ref.read(fabRefreshSignalProvider.notifier).trigger();
           ref.resetNavScrollProgress(NavEntryIds.home);
@@ -211,12 +203,21 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
         // TopicDetailPage.truncateOnPush 注释），不是列表——"新建话题"这个
         // FAB 只在 master 真的是列表时才有意义，之前没跟着切换，压栈后
         // 预览一个话题下面还挂着"新建话题"的加号，容易被当成回复按钮。
-        masterFloatingActionButton: user != null && !selectedTopic.isStacked
-            ? _TopicsFab(
-                onCreateTopic: () => _createTopic(context, ref),
-                onOpenDrafts: () => _openDrafts(context),
-              )
-            : null,
+        // 保留宿主，通过活跃状态播放退场，不能直接移除 FAB 截断动画。
+        masterFloatingActionButton: TopicsFab(
+          canCreate: user != null,
+          isActive: widget.isActive &&
+              !selectedTopic.isStacked &&
+              !_showEmbeddedSearch &&
+              (!selectedTopic.hasSelection ||
+                  MasterDetailLayout.canShowBothPanesFor(context)),
+          onRefresh: () {
+            ref.read(scrollToTopProvider.notifier).trigger();
+            ref.read(fabRefreshSignalProvider.notifier).trigger();
+          },
+          onCreateTopic: () => _createTopic(context, ref),
+          onOpenDrafts: () => _openDrafts(context),
+        ),
         ),
       ),
     );
@@ -408,369 +409,6 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
         );
       }
     }
-  }
-}
-
-/// 首页 FAB：向上滚动时切换为刷新按钮，正常模式下点击展开 Speed Dial 菜单
-class _TopicsFab extends ConsumerStatefulWidget {
-  const _TopicsFab({required this.onCreateTopic, required this.onOpenDrafts});
-
-  final VoidCallback onCreateTopic;
-  final VoidCallback onOpenDrafts;
-
-  @override
-  ConsumerState<_TopicsFab> createState() => _TopicsFabState();
-}
-
-class _TopicsFabState extends ConsumerState<_TopicsFab>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _expandAnimation;
-  final LayerLink _layerLink = LayerLink();
-  bool _isExpanded = false;
-  OverlayEntry? _overlayEntry;
-  LocalHistoryEntry? _historyEntry;
-  bool _removingHistory = false;
-  DynamicContentSuspensionLease? _dynamicContentLease;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-    _expandAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    );
-  }
-
-  @override
-  void dispose() {
-    _removeHistoryEntry();
-    _removeOverlay();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    if (_isExpanded) {
-      _close();
-    } else {
-      setState(() => _isExpanded = true);
-      _addHistoryEntry();
-      _showOverlay();
-      _controller.forward();
-      HapticFeedback.lightImpact();
-    }
-  }
-
-  void _close({bool immediately = false, bool fromHistory = false}) {
-    if (!fromHistory) _removeHistoryEntry();
-    if (!_isExpanded) return;
-    setState(() => _isExpanded = false);
-    if (immediately) {
-      _controller.stop();
-      _controller.value = 0;
-      _removeOverlay();
-      return;
-    }
-    _controller.reverse().then((_) {
-      _removeOverlay();
-    });
-  }
-
-  void _addHistoryEntry() {
-    if (_historyEntry != null) return;
-    final route = ModalRoute.of(context);
-    if (route == null) return;
-    _historyEntry = LocalHistoryEntry(
-      impliesAppBarDismissal: false,
-      onRemove: () {
-        _historyEntry = null;
-        if (!_removingHistory && mounted) {
-          _close(fromHistory: true);
-        }
-      },
-    );
-    route.addLocalHistoryEntry(_historyEntry!);
-  }
-
-  void _removeHistoryEntry() {
-    final entry = _historyEntry;
-    if (entry == null) return;
-    _historyEntry = null;
-    _removingHistory = true;
-    entry.remove();
-    _removingHistory = false;
-  }
-
-  void _showOverlay() {
-    _removeOverlay();
-    // 在展开动画和全屏背景模糊开始前先暂停帖子动态内容，避免首帧就与
-    // SVG/WebView 纹理提交争抢 UI、raster 和 GPU。
-    _acquireDynamicContentSuspension();
-    final theme = Theme.of(context);
-    final dialogBlur = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(preferencesProvider).dialogBlur;
-
-    // 桌面 acrylic 模式下 NavigationRail 背景透明，
-    // BackdropFilter 对其模糊效果异常，需跳过该区域
-    final showRail = Responsive.showNavigationRail(context);
-    final hasAcrylic = Platform.isMacOS || Platform.isWindows;
-    final blurLeftInset = (showRail && hasAcrylic) ? 72.0 : 0.0;
-    final barrierColor = dialogBlur
-        ? blurBarrierColor(Theme.of(context).brightness)
-        : Colors.black26;
-
-    _overlayEntry = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // 全屏暗色遮罩 + 点击关闭
-          GestureDetector(
-            onTap: _close,
-            behavior: HitTestBehavior.opaque,
-            child: FadeTransition(
-              opacity: _expandAnimation,
-              child: ColoredBox(
-                color: barrierColor,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ),
-          // NavigationRail 补底：acrylic 模式下 Rail 背景透明，
-          // 用 surface 色填充使遮罩可见
-          if (dialogBlur && blurLeftInset > 0)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: blurLeftInset,
-              child: IgnorePointer(
-                child: FadeTransition(
-                  opacity: _expandAnimation,
-                  child: ColoredBox(
-                    color: Theme.of(context).colorScheme.surfaceDim,
-                  ),
-                ),
-              ),
-            ),
-          // 模糊层：覆盖 body 区域（跳过透明的 NavigationRail）
-          if (dialogBlur)
-            Positioned.fill(
-              left: blurLeftInset,
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _expandAnimation,
-                  builder: (context, child) {
-                    final t = _expandAnimation.value;
-                    if (t == 0) return child!;
-                    return BackdropFilter(
-                      filter: createBlurFilter(
-                        (blurSigma * t).clamp(0.01, blurSigma),
-                      ),
-                      child: child,
-                    );
-                  },
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-          // 主 FAB 副本（在模糊层之上，保持清晰）
-          if (dialogBlur)
-            CompositedTransformFollower(
-              link: _layerLink,
-              showWhenUnlinked: false,
-              targetAnchor: Alignment.center,
-              followerAnchor: Alignment.center,
-              child: FloatingActionButton(
-                heroTag: null,
-                onPressed: _close,
-                child: AnimatedRotation(
-                  turns: 0.125,
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(Symbols.add_rounded),
-                ),
-              ),
-            ),
-          // 子按钮：定位到主 FAB 上方
-          CompositedTransformFollower(
-            link: _layerLink,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.topRight,
-            followerAnchor: Alignment.bottomRight,
-            offset: const Offset(0, -16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                _buildMiniAction(
-                  icon: Symbols.drafts_rounded,
-                  label: context.l10n.topicsScreen_myDrafts,
-                  onTap: () {
-                    _close(immediately: true);
-                    widget.onOpenDrafts();
-                  },
-                  theme: theme,
-                ),
-                const SizedBox(height: 12),
-                _buildMiniAction(
-                  icon: Symbols.edit_rounded,
-                  label: context.l10n.topicsScreen_createTopic,
-                  onTap: () {
-                    _close(immediately: true);
-                    widget.onCreateTopic();
-                  },
-                  theme: theme,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    Overlay.of(context).insert(_overlayEntry!);
-  }
-
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry?.dispose();
-    _overlayEntry = null;
-    _releaseDynamicContentSuspension();
-  }
-
-  void _acquireDynamicContentSuspension() {
-    _dynamicContentLease ??= DynamicContentSuspensionService.instance.acquire(
-      reason: 'topics_fab_speed_dial',
-    );
-  }
-
-  void _releaseDynamicContentSuspension() {
-    _dynamicContentLease?.release();
-    _dynamicContentLease = null;
-  }
-
-  void _refreshTopics() {
-    ref.read(fabRefreshModeProvider.notifier).state = false;
-    ref.read(scrollToTopProvider.notifier).trigger();
-    ref.read(fabRefreshSignalProvider.notifier).trigger();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final showRefresh = ref.watch(fabRefreshModeProvider);
-
-    // 刷新模式切换时自动收起
-    if (showRefresh && _isExpanded) {
-      _close();
-    }
-
-    final Widget fab;
-    if (showRefresh) {
-      // 刷新模式：简单的单按钮
-      fab = FloatingActionButton(
-        heroTag: 'createTopic',
-        onPressed: _refreshTopics,
-        child: const Icon(Symbols.refresh_rounded),
-      );
-    } else {
-      // 主 FAB（作为锚点，子按钮在 Overlay 中定位到它上方）
-      // 模糊开启时，展开后隐藏真实 FAB（overlay 中有 sharp 副本）
-      final dialogBlur = ref.watch(
-        preferencesProvider.select((p) => p.dialogBlur),
-      );
-      final hideFab = _isExpanded && dialogBlur;
-
-      fab = CompositedTransformTarget(
-        link: _layerLink,
-        child: Opacity(
-          opacity: hideFab ? 0 : 1,
-          child: FloatingActionButton(
-            heroTag: 'createTopic',
-            onPressed: _toggle,
-            child: AnimatedRotation(
-              turns: _isExpanded ? 0.125 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: const Icon(Symbols.add_rounded),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 跟随底栏升降：FAB 的 Positioned 锚在系统安全区基线
-    // （MasterDetailLayout 用 viewPadding），底栏可见时按可见度把
-    // FAB 抬高一个底栏槽高（padding.bottom 是 extendBody 注入的槽高，
-    // 与 viewPadding 的差即底栏本体；rail 模式无底栏时差为 0 自动
-    // 退化）。paint-only 平移，overlay 里的子按钮经
-    // CompositedTransformFollower 跟随主 FAB 一起动。
-    return Consumer(
-      builder: (context, ref, child) {
-        final visibility = ref.watch(barVisibilityProvider);
-        final mq = MediaQuery.of(context);
-        final barHeight = (mq.padding.bottom - mq.viewPadding.bottom).clamp(
-          0.0,
-          double.infinity,
-        );
-        return Transform.translate(
-          offset: Offset(0, -barHeight * visibility),
-          child: child,
-        );
-      },
-      child: fab,
-    );
-  }
-
-  Widget _buildMiniAction({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    required ThemeData theme,
-  }) {
-    return FadeTransition(
-      opacity: _expandAnimation,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.5),
-          end: Offset.zero,
-        ).animate(_expandAnimation),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Material(
-              color: theme.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(8),
-              elevation: 2,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Text(
-                    label,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            FloatingActionButton.small(
-              heroTag: 'fab_$label',
-              onPressed: onTap,
-              child: Icon(icon),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

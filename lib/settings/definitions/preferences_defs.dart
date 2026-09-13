@@ -47,6 +47,15 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
               ref.read(preferencesProvider.notifier).setAutoFillLogin(v),
         ),
         SwitchModel(
+          id: 'homeRefreshButton',
+          title: l10n.preferences_homeRefreshButton,
+          subtitle: l10n.preferences_homeRefreshButtonDesc,
+          icon: Symbols.refresh_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).homeRefreshButton,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setHomeRefreshButton(v),
+        ),
+        SwitchModel(
           id: 'clipboardTopicLinkDetection',
           title: l10n.preferences_clipboardTopicLinkDetection,
           subtitle: l10n.preferences_clipboardTopicLinkDetectionDesc,

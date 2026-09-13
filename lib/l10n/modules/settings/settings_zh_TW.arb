@@ -42,6 +42,8 @@
   "preferences_anonymousShareDesc": "分享連結時不附帶個人使用者標識",
   "preferences_autoFillLogin": "自動填充登入",
   "preferences_autoFillLoginDesc": "記住賬號密碼，登入時自動填充",
+  "preferences_homeRefreshButton": "首頁懸浮重新整理按鈕",
+  "preferences_homeRefreshButtonDesc": "在首頁創作按鈕上方顯示獨立重新整理入口",
   "preferences_clipboardTopicLinkDetection": "自動偵測剪貼簿話題連結",
   "preferences_clipboardTopicLinkDetectionDesc": "回到應用時偵測剪貼簿中的 Linux.do 話題連結，並在底部詢問是否開啟",
   "preferences_clipboardTopicLink_detected": "偵測到剪貼簿中的話題連結",
