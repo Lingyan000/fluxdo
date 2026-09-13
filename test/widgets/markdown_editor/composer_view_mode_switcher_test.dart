@@ -108,8 +108,8 @@ void main() {
         matching: find.byType(Material),
       );
       expect(tester.getSize(send).height, 48, reason: '视觉变轻仍保留触控高度');
-      expect(tester.getSize(surface).height, 36);
-      expect(tester.getSize(surface).width, 48);
+      expect(tester.getSize(surface), const Size.square(40));
+      expect(tester.widget<Material>(surface).shape, isA<CircleBorder>());
       expect(find.byTooltip('发送'), findsOneWidget);
       expect(find.byIcon(Symbols.send_rounded), findsOneWidget);
       final more = find.byKey(const ValueKey('composer-header-more'));

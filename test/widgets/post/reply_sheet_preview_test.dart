@@ -164,9 +164,7 @@ void main() {
       expect(find.byTooltip(S.current.common_send), findsOneWidget);
       if (width < 480) expect(tester.getSize(more), const Size(44, 44));
       expect(width - tester.getRect(send).right, 16);
-      final lastAction = width < 480
-          ? more
-          : find.byKey(const ValueKey('composer-header-discard-inline'));
+      final lastAction = more;
       expect(tester.getRect(send).left - tester.getRect(lastAction).right, 8);
       expect(
         find.byType(ComposerPreviewButton),
@@ -215,14 +213,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 250));
         expect(find.byKey(const ValueKey('reply-preview')), findsOneWidget);
       } else {
-        expect(more, findsNothing);
+        expect(more, findsOneWidget);
         expect(
           find.byKey(const ValueKey('composer-header-review-inline')),
           findsOneWidget,
         );
         expect(
           find.byKey(const ValueKey('composer-header-discard-inline')),
-          findsOneWidget,
+          findsNothing,
         );
       }
       expect(tester.takeException(), isNull);

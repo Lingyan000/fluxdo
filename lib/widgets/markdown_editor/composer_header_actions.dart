@@ -3,9 +3,12 @@ import 'dart:math' as math;
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../l10n/s.dart';
 import '../../utils/platform_utils.dart';
+import '../../services/draft_controller.dart';
+import 'composer_draft_status.dart';
 import 'composer_page_chrome.dart';
 import 'composer_view_mode_switcher.dart';
 
@@ -14,7 +17,7 @@ typedef ComposerReviewBuilder =
       Widget Function(bool reviewing, VoidCallback? trigger) builder,
     );
 
-enum _HeaderAction { preview, review, discard }
+enum _HeaderAction { preview, review, discard, draft }
 
 /// 创建、编辑和回复共用的文档操作区。窄屏优先给标题和提交按钮留空间。
 class ComposerHeaderActions extends StatelessWidget {
@@ -30,6 +33,8 @@ class ComposerHeaderActions extends StatelessWidget {
     this.showDiscard = false,
     this.onDiscard,
     this.reviewBuilder,
+    this.draftStatus,
+    this.onRetryDraft,
   });
 
   final double availableWidth;
@@ -41,6 +46,8 @@ class ComposerHeaderActions extends StatelessWidget {
   final VoidCallback? onTogglePreview;
   final bool showDiscard;
   final VoidCallback? onDiscard;
+  final ValueListenable<DraftSaveStatus>? draftStatus;
+  final VoidCallback? onRetryDraft;
 
   /// 审核状态跨收纳保留，结果锚定当前外显按钮或菜单入口。
   final ComposerReviewBuilder? reviewBuilder;
@@ -53,7 +60,7 @@ class ComposerHeaderActions extends StatelessWidget {
     final actions = [
       _HeaderAction.preview,
       if (reviewBuilder != null) _HeaderAction.review,
-      if (showDiscard) _HeaderAction.discard,
+      if (showDiscard && draftStatus == null) _HeaderAction.discard,
     ];
     // 保留导航和默认标题间距，标题至少容纳常规页面名称。
     final titleWidth = 120 * scaler.scale(22) / 22;
@@ -68,11 +75,19 @@ class ComposerHeaderActions extends StatelessWidget {
               52)
           .floor(),
     );
-    final inlineCount = actions.length <= slots ? actions.length : slots - 1;
+    final inlineCount = draftStatus != null
+        ? math.min(actions.length, slots - 1)
+        : actions.length <= slots
+        ? actions.length
+        : slots - 1;
     final inline = actions.take(inlineCount).toList();
-    final overflow = actions.skip(inlineCount).toList();
-    // 仅超出容量时才使用菜单；为菜单预留一格后，收纳项必然至少有两项。
-    assert(overflow.length != 1);
+    final overflow = [
+      if (draftStatus != null) _HeaderAction.draft,
+      ...actions.skip(inlineCount),
+      if (draftStatus != null && showDiscard) _HeaderAction.discard,
+    ];
+    // 草稿状态与舍弃固定收进菜单，其余操作按剩余空间收纳。
+    assert(draftStatus != null || overflow.length != 1);
 
     String label(_HeaderAction action, bool reviewing) => switch (action) {
       _HeaderAction.preview =>
@@ -82,18 +97,25 @@ class ComposerHeaderActions extends StatelessWidget {
             ? S.current.aiPostReview_reviewing
             : S.current.aiPostReview_button,
       _HeaderAction.discard => S.current.common_discard,
+      _HeaderAction.draft => composerDraftStatusLabel(
+        context,
+        draftStatus!.value,
+      ),
     };
     IconData icon(_HeaderAction action) => switch (action) {
       _HeaderAction.preview =>
         previewing ? Symbols.edit_rounded : AppIcons.book,
       _HeaderAction.review => Symbols.auto_awesome_rounded,
       _HeaderAction.discard => Symbols.delete_rounded,
+      _HeaderAction.draft => Symbols.cloud_upload_rounded,
     };
     VoidCallback? callback(_HeaderAction action, VoidCallback? onReview) =>
         switch (action) {
           _HeaderAction.preview => onTogglePreview,
           _HeaderAction.review => onReview,
           _HeaderAction.discard => onDiscard,
+          _HeaderAction.draft =>
+            draftStatus?.value == DraftSaveStatus.error ? onRetryDraft : null,
         };
 
     Widget more(
@@ -105,44 +127,61 @@ class ComposerHeaderActions extends StatelessWidget {
       requestFocus: PlatformUtils.isDesktop,
       position: PopupMenuPosition.under,
       offset: const Offset(0, 4),
-      icon: const Icon(Symbols.more_horiz_rounded, size: 21),
+      icon: draftStatus == null
+          ? const Icon(Symbols.more_horiz_rounded, size: 21)
+          : ComposerDraftAttention(
+              status: draftStatus!,
+              child: const Icon(Symbols.more_horiz_rounded, size: 21),
+            ),
       style: ComposerActionButton.buttonStyle,
       onSelected: (action) => callback(action, onReview)?.call(),
       itemBuilder: (_) => [
         for (final action in overflow) ...[
-          if (action == _HeaderAction.discard && action != overflow.first)
+          if (action == _HeaderAction.discard && action != overflow.first ||
+              action != _HeaderAction.draft &&
+                  overflow.first == _HeaderAction.draft &&
+                  overflow.indexOf(action) == 1)
             const PopupMenuDivider(),
-          PopupMenuItem<_HeaderAction>(
-            key: ValueKey('composer-header-${action.name}'),
-            value: action,
-            enabled: callback(action, onReview) != null,
-            child: Row(
-              children: [
-                if (action == _HeaderAction.review && reviewing)
-                  const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Icon(
-                    icon(action),
-                    size: 21,
-                    color: action == _HeaderAction.discard && onDiscard != null
-                        ? theme.colorScheme.error
-                        : null,
+          if (action == _HeaderAction.draft)
+            ComposerDraftMenuEntry<_HeaderAction>(
+              status: draftStatus!,
+              retryValue: _HeaderAction.draft,
+              canRetry: onRetryDraft != null,
+            )
+          else
+            PopupMenuItem<_HeaderAction>(
+              key: ValueKey('composer-header-${action.name}'),
+              value: action,
+              enabled: callback(action, onReview) != null,
+              child: Row(
+                children: [
+                  if (action == _HeaderAction.review && reviewing)
+                    const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Icon(
+                      icon(action),
+                      size: 21,
+                      color:
+                          action == _HeaderAction.discard && onDiscard != null
+                          ? theme.colorScheme.error
+                          : null,
+                    ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      label(action, reviewing),
+                      style:
+                          action == _HeaderAction.discard && onDiscard != null
+                          ? TextStyle(color: theme.colorScheme.error)
+                          : null,
+                    ),
                   ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    label(action, reviewing),
-                    style: action == _HeaderAction.discard && onDiscard != null
-                        ? TextStyle(color: theme.colorScheme.error)
-                        : null,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ],
     );
@@ -183,6 +222,7 @@ class ComposerHeaderActions extends StatelessWidget {
                   label: S.current.common_discard,
                   onPressed: onDiscard,
                 ),
+                _HeaderAction.draft => const SizedBox.shrink(),
               },
             if (overflow.isNotEmpty)
               overflow.contains(_HeaderAction.review)
@@ -199,11 +239,13 @@ class ComposerHeaderActions extends StatelessWidget {
                     key: const ValueKey('composer-header-submit'),
                     onPressed: submitting ? null : onSubmit,
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size(submitWidth, 36),
+                      minimumSize: const Size.square(40),
+                      maximumSize: const Size.square(40),
+                      fixedSize: const Size.square(40),
                       visualDensity: VisualDensity.standard,
                       tapTargetSize: MaterialTapTargetSize.padded,
                       padding: EdgeInsets.zero,
-                      shape: const StadiumBorder(),
+                      shape: const CircleBorder(),
                     ),
                     child: Semantics(
                       label: submitLabel,

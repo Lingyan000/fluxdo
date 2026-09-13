@@ -4,43 +4,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../common/progressive_top_blur.dart';
 
-/// 反馈区变高时同步正文的光标避让；测量不依赖保存状态或文案长度。
-class ComposerOverlayMeasure extends SingleChildRenderObjectWidget {
-  const ComposerOverlayMeasure({
-    super.key,
-    required this.onHeightChanged,
-    required super.child,
-  });
-
-  final ValueChanged<double> onHeightChanged;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderComposerOverlayMeasure(onHeightChanged);
-
-  @override
-  void updateRenderObject(BuildContext context, RenderObject renderObject) =>
-      (renderObject as _RenderComposerOverlayMeasure).onHeightChanged =
-          onHeightChanged;
-}
-
-class _RenderComposerOverlayMeasure extends RenderProxyBox {
-  _RenderComposerOverlayMeasure(this.onHeightChanged);
-
-  ValueChanged<double> onHeightChanged;
-  double? _height;
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    if (_height == size.height) return;
-    _height = size.height;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (attached) onHeightChanged(size.height);
-    });
-  }
-}
-
 /// 同一次用户滚动驱动顶栏和底栏；程序滚动与光标避让不参与。
 class ComposerChromeController extends ChangeNotifier {
   bool _hidden = false;

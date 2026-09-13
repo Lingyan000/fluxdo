@@ -8,6 +8,7 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
+import 'package:fluxdo/utils/platform_utils.dart';
 
 Widget _wrap(Widget child) {
   return TranslationProvider(
@@ -33,6 +34,41 @@ Category _cat({int minTags = 0}) => Category.fromJson({
 });
 
 void main() {
+  for (final width in [152.0, 280.0]) {
+    testWidgets('手机胶囊适配剩余宽度，标签完整值可查看 width=$width', (tester) async {
+      PlatformUtils.debugDesktopOverride = false;
+      addTearDown(() => PlatformUtils.debugDesktopOverride = null);
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: width,
+            child: ComposerMetaBar(
+              category: _cat(),
+              categories: [_cat()],
+              onCategorySelected: (_) {},
+              selectedTags: const ['flutter', 'design', '体验'],
+              allTags: const [],
+              onTagsChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final category = find.byKey(const ValueKey('composer-category-chip'));
+      final tags = find.byKey(const ValueKey('composer-tags-chip'));
+      expect(tester.getSize(category).height, greaterThanOrEqualTo(48));
+      expect(tester.getSize(tags).height, greaterThanOrEqualTo(48));
+      expect(tester.getSize(tags).width, greaterThanOrEqualTo(48));
+      expect(tester.getRect(tags).left - tester.getRect(category).right, 6);
+      expect(
+        find.byTooltip('${S.current.tag_tabTags}: #flutter #design #体验'),
+        findsOneWidget,
+      );
+      expect(find.text(width < 200 ? '3' : 'flutter'), findsOneWidget);
+      if (width > 200) expect(find.text('+2'), findsOneWidget);
+    });
+  }
+
   testWidgets('未选分类:引导文案;已选:名字+色点', (tester) async {
     var bar = ComposerMetaBar(
       category: null,

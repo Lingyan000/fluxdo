@@ -19,6 +19,7 @@
       }
     }
   },
+  "composer_draftAutoSave": "草稿自動儲存",
   "composer_draftPending": "草稿待儲存",
   "composer_draftSaving": "正在儲存草稿",
   "composer_draftSaved": "草稿已儲存",

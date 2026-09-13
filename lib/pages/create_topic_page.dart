@@ -14,7 +14,6 @@ import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
-import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -272,10 +271,16 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     archetypeId: 'regular',
   );
 
+  bool _retryingDraft = false;
   Future<void> _retryDraftSave() async {
-    if (_isSubmitting) return;
-    _richKey.currentState?.flushToController();
-    await _draftController.saveNow(_currentDraftData());
+    if (_isSubmitting || _retryingDraft) return;
+    _retryingDraft = true;
+    try {
+      _richKey.currentState?.flushToController();
+      await _draftController.saveNow(_currentDraftData());
+    } finally {
+      _retryingDraft = false;
+    }
   }
 
   /// 舍弃草稿
@@ -985,11 +990,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   }
 
   /// 字数不足时悬浮在正文区右下角的提示（对齐网页主题 CSS 的绝对定位）
-  Widget _buildCharCountOverlay() => ComposerStatusBar(
+  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
     length: _contentLength,
     minimumLength: _minContentLength,
-    draftStatus: _draftController.statusNotifier,
-    onRetry: _isSubmitting ? null : _retryDraftSave,
   );
 
   /// 底部属性条:分类/标签/字数(编辑区与工具栏之间,常驻可改)
@@ -1118,6 +1121,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 submitting: _isSubmitting,
                 previewing: _showPreview,
                 onTogglePreview: !_isSubmitting ? _togglePreview : null,
+                draftStatus: _draftController.statusNotifier,
+                onRetryDraft: _isSubmitting ? null : _retryDraftSave,
                 showDiscard: true,
                 onDiscard: _isSubmitting ? null : _discardDraft,
                 reviewBuilder:

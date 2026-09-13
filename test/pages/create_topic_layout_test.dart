@@ -20,6 +20,8 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
+import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_chrome.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
@@ -216,8 +218,8 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
         } else {
-          expect(more, findsNothing);
-          for (final action in ['preview', 'review', 'discard']) {
+          expect(more, findsOneWidget);
+          for (final action in ['preview', 'review']) {
             expect(
               find.byKey(ValueKey('composer-header-$action-inline')),
               findsOneWidget,
@@ -246,6 +248,35 @@ void main() {
           closeTo(0, .01),
           reason: '空白和短正文不应被最小高度或底部留白撑出滚动',
         );
+        final scrollBeforeStatus = initialScroll.offset;
+        final canvasBeforeStatus = tester.getRect(
+          find.byType(CustomScrollView).first,
+        );
+        final status =
+            tester
+                    .widget<ComposerHeaderActions>(
+                      find.byType(ComposerHeaderActions),
+                    )
+                    .draftStatus!
+                as ValueNotifier<DraftSaveStatus>;
+        for (final value in [
+          DraftSaveStatus.pending,
+          DraftSaveStatus.saving,
+          DraftSaveStatus.saved,
+          DraftSaveStatus.error,
+        ]) {
+          status.value = value;
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(
+            initialScroll.offset,
+            scrollBeforeStatus,
+            reason: '保存状态不能顶起正文',
+          );
+          expect(
+            tester.getRect(find.byType(CustomScrollView).first),
+            canvasBeforeStatus,
+          );
+        }
         final titleEditable = tester
             .state<EditableTextState>(
               find.descendant(
@@ -418,6 +449,60 @@ void main() {
           ChatBottomContainerListenerManager().flutterApi.keyboardHeight(300);
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 200));
+          final bodyController = tester
+              .widget<TextField>(sourceField)
+              .controller!;
+          final longText = List.filled(40, '继续输入，草稿状态不能改变当前阅读位置。').join('\n');
+          bodyController.value = TextEditingValue(
+            text: longText,
+            selection: TextSelection.collapsed(offset: longText.length),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.pump();
+          for (final reading in [false, true]) {
+            if (reading) {
+              sourceScroll.jumpTo(
+                (sourceScroll.offset - 100).clamp(
+                  0,
+                  sourceScroll.position.maxScrollExtent,
+                ),
+              );
+              await tester.pump();
+            }
+            final offsetBefore = sourceScroll.offset;
+            final caretBefore = sourceBody.localToGlobal(
+              sourceBody
+                  .getLocalRectForCaret(bodyController.selection.extent)
+                  .bottomLeft,
+            );
+            for (final value in [
+              DraftSaveStatus.pending,
+              DraftSaveStatus.saved,
+              DraftSaveStatus.error,
+            ]) {
+              status.value = value;
+              await tester.pump(const Duration(milliseconds: 200));
+              expect(
+                sourceScroll.offset,
+                offsetBefore,
+                reason: '输入和滚动过程中保存状态都不能顶起正文',
+              );
+              expect(
+                sourceBody.localToGlobal(
+                  sourceBody
+                      .getLocalRectForCaret(bodyController.selection.extent)
+                      .bottomLeft,
+                ),
+                caretBefore,
+              );
+              expect(find.text(S.current.composer_draftSaved), findsNothing);
+              expect(find.text(S.current.composer_draftError), findsNothing);
+            }
+          }
+          // 后续工具面板用例从光标可见的位置开始，避免离屏选区柄盖住入口。
+          sourceScroll.jumpTo(sourceScroll.position.maxScrollExtent);
+          await tester.pump();
           await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 450));

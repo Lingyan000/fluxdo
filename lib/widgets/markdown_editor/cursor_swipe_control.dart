@@ -17,6 +17,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:app_icons/app_icons.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/s.dart';
 import 'composer_action_menu.dart';
@@ -312,9 +313,9 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
                   size: 20,
                   color: scheme.primary,
                 )
-              : Icon(
-                  Symbols.text_select_move_forward_character_rounded,
-                  size: 20,
+              : FaIcon(
+                  FontAwesomeIcons.iCursor,
+                  size: 19,
                   color: active ? scheme.primary : scheme.onSurfaceVariant,
                 ),
         ),

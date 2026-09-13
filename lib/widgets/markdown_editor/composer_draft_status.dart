@@ -1,222 +1,129 @@
-import 'dart:async';
-
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/s.dart';
 import '../../services/draft_controller.dart';
-import '../common/character_counts_overlay.dart';
 
-/// 草稿与字数共用正文底部的反馈区，不占用顶栏标题或改变文档布局。
-class ComposerStatusBar extends StatelessWidget {
-  const ComposerStatusBar({
-    super.key,
-    required this.length,
-    this.minimumLength,
-    this.draftStatus,
-    this.onRetry,
-  });
-
-  final int length;
-  final int? minimumLength;
-  final ValueListenable<DraftSaveStatus>? draftStatus;
-  final Future<void> Function()? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final counter = CharacterCountsOverlay(
-      length: length,
-      minimumLength: minimumLength,
-    );
-    if (draftStatus == null) return counter;
-    final draft = ComposerDraftStatus(status: draftStatus!, onRetry: onRetry);
-    if (minimumLength == null || minimumLength! <= length) {
-      return Align(alignment: Alignment.centerLeft, child: draft);
-    }
-    return LayoutBuilder(
-      builder: (context, bounds) {
-        // 窄屏和大字体分行，保存失败及字数要求都能完整读到。
-        if (bounds.maxWidth < 320 ||
-            MediaQuery.textScalerOf(context).scale(12) > 16) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(alignment: Alignment.centerLeft, child: draft),
-              Align(alignment: Alignment.centerRight, child: counter),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: draft),
-            const SizedBox(width: 12),
-            Flexible(child: counter),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// 成功反馈短暂显示；失败常驻并可重试。快速保存不闪烁加载动画。
-class ComposerDraftStatus extends StatefulWidget {
-  const ComposerDraftStatus({super.key, required this.status, this.onRetry});
-
-  final ValueListenable<DraftSaveStatus> status;
-  final Future<void> Function()? onRetry;
-
-  @override
-  State<ComposerDraftStatus> createState() => _ComposerDraftStatusState();
-}
-
-class _ComposerDraftStatusState extends State<ComposerDraftStatus> {
-  late DraftSaveStatus _status;
-  Timer? _timer;
-  bool _visible = false;
-  bool _showSpinner = false;
-  bool _retrying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.status.addListener(_changed);
-    _readStatus();
-  }
-
-  @override
-  void didUpdateWidget(covariant ComposerDraftStatus oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.status != widget.status) {
-      oldWidget.status.removeListener(_changed);
-      widget.status.addListener(_changed);
-      _readStatus();
-    }
-  }
-
-  void _changed() => setState(_readStatus);
-
-  void _readStatus() {
-    _timer?.cancel();
-    _status = widget.status.value;
-    _visible = _status != DraftSaveStatus.idle;
-    _showSpinner = false;
-    if (_status == DraftSaveStatus.saved) {
-      _timer = Timer(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _visible = false);
-      });
-    } else if (_status == DraftSaveStatus.saving) {
-      _timer = Timer(const Duration(milliseconds: 300), () {
-        if (mounted) setState(() => _showSpinner = true);
-      });
-    }
-  }
-
-  Future<void> _retry() async {
-    if (_retrying || widget.onRetry == null) return;
-    setState(() => _retrying = true);
-    try {
-      await widget.onRetry!();
-    } finally {
-      if (mounted) setState(() => _retrying = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.status.removeListener(_changed);
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final reduced = MediaQuery.disableAnimationsOf(context);
-    final error = _status == DraftSaveStatus.error;
-    final label = switch (_status) {
-      DraftSaveStatus.idle => '',
+String composerDraftStatusLabel(BuildContext context, DraftSaveStatus status) =>
+    switch (status) {
+      DraftSaveStatus.idle => context.l10n.composer_draftAutoSave,
       DraftSaveStatus.pending => context.l10n.composer_draftPending,
       DraftSaveStatus.saving => context.l10n.composer_draftSaving,
       DraftSaveStatus.saved => context.l10n.composer_draftSaved,
       DraftSaveStatus.error => context.l10n.composer_draftError,
     };
-    final color = error ? colors.error : colors.onSurfaceVariant;
-    final icon = switch (_status) {
-      DraftSaveStatus.saved => Symbols.cloud_done_rounded,
-      DraftSaveStatus.error => Symbols.cloud_off_rounded,
-      _ => Symbols.cloud_upload_rounded,
-    };
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_showSpinner && !reduced)
-          SizedBox.square(
-            dimension: 14,
-            child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
-          )
-        else
-          Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            error && widget.onRetry != null
-                ? '$label · ${context.l10n.common_retry}'
-                : label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ),
-      ],
-    );
-    return TextFieldTapRegion(
-      child: IgnorePointer(
-        ignoring: !_visible || !error || _retrying,
-        child: AnimatedSwitcher(
-          duration: reduced ? Duration.zero : const Duration(milliseconds: 180),
-          reverseDuration: reduced
-              ? Duration.zero
-              : const Duration(milliseconds: 120),
-          layoutBuilder: (current, previous) => Stack(
-            alignment: Alignment.centerLeft,
-            children: [
-              for (final child in previous)
-                IgnorePointer(child: ExcludeSemantics(child: child)),
-              ?current,
-            ],
-          ),
-          child: !_visible
-              ? const SizedBox.shrink()
-              : Semantics(
-                  key: ValueKey(_status),
-                  liveRegion: error || _status == DraftSaveStatus.saved,
-                  child: Material(
-                    color: colors.surface,
-                    borderRadius: BorderRadius.circular(6),
-                    child: error && widget.onRetry != null
-                        ? TextButton(
-                            key: const ValueKey('composer-draft-retry'),
-                            onPressed: _retrying ? null : _retry,
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              foregroundColor: colors.error,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                            ),
-                            child: content,
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: content,
-                          ),
-                  ),
+
+/// 草稿状态只在菜单中展示，打开菜单期间继续跟随真实保存结果。
+class ComposerDraftMenuEntry<T> extends PopupMenuEntry<T> {
+  const ComposerDraftMenuEntry({
+    super.key,
+    required this.status,
+    required this.retryValue,
+    this.canRetry = true,
+  });
+
+  final ValueListenable<DraftSaveStatus> status;
+  final T retryValue;
+  final bool canRetry;
+
+  @override
+  double get height => 48;
+
+  @override
+  bool represents(T? value) => false;
+
+  @override
+  State<ComposerDraftMenuEntry<T>> createState() =>
+      _ComposerDraftMenuEntryState<T>();
+}
+
+class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<DraftSaveStatus>(
+    valueListenable: widget.status,
+    builder: (context, status, _) {
+      final colors = Theme.of(context).colorScheme;
+      final error = status == DraftSaveStatus.error;
+      final label = composerDraftStatusLabel(context, status);
+      final color = error ? colors.error : colors.onSurfaceVariant;
+      final icon = switch (status) {
+        DraftSaveStatus.error => Symbols.cloud_off_rounded,
+        DraftSaveStatus.saved => Symbols.cloud_done_rounded,
+        _ => Symbols.cloud_upload_rounded,
+      };
+      return PopupMenuItem<T>(
+        key: const ValueKey('composer-draft-status-item'),
+        value: widget.retryValue,
+        enabled: error && widget.canRetry,
+        height: 48,
+        child: Row(
+          children: [
+            if (status == DraftSaveStatus.saving &&
+                !MediaQuery.disableAnimationsOf(context))
+              SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: color,
                 ),
+              )
+            else
+              Icon(icon, size: 21, color: color),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                error && widget.canRetry
+                    ? '$label · ${context.l10n.common_retry}'
+                    : label,
+                style: TextStyle(color: color),
+              ),
+            ),
+          ],
         ),
+      );
+    },
+  );
+}
+
+/// 失败只标记既有的更多入口，不占新栏位，也不触发正文的布局变化。
+class ComposerDraftAttention extends StatelessWidget {
+  const ComposerDraftAttention({
+    super.key,
+    required this.status,
+    required this.child,
+  });
+
+  final ValueListenable<DraftSaveStatus> status;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<DraftSaveStatus>(
+    valueListenable: status,
+    builder: (context, value, _) => Semantics(
+      value: value == DraftSaveStatus.error
+          ? context.l10n.composer_draftError
+          : null,
+      liveRegion: value == DraftSaveStatus.error,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          child,
+          if (value == DraftSaveStatus.error)
+            Positioned(
+              right: -3,
+              top: -1,
+              child: DecoratedBox(
+                key: const ValueKey('composer-draft-attention'),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error,
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox.square(dimension: 6),
+              ),
+            ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

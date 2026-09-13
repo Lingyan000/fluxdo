@@ -9,7 +9,7 @@ import '../markdown_editor/composer_shortcuts.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/composer_workbench.dart';
 import '../markdown_editor/composer_header_actions.dart';
-import '../markdown_editor/composer_draft_status.dart';
+import '../common/character_counts_overlay.dart';
 import '../markdown_editor/composer_view_mode_switcher.dart';
 import '../markdown_editor/markdown_renderer.dart';
 import '../markdown_editor/markdown_editor.dart';
@@ -336,6 +336,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     submitting: _isSubmitting,
     previewing: _showPreview,
     onTogglePreview: !_isSubmitting && !_isLoadingRaw ? _togglePreview : null,
+    draftStatus: _draftController?.statusNotifier,
+    onRetryDraft: _isSubmitting ? null : _retryDraftSave,
     showDiscard: _draftController != null,
     onDiscard: _isSubmitting ? null : _discardDraft,
     reviewBuilder:
@@ -631,10 +633,16 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     archetypeId: _isPrivateMessage ? 'private_message' : 'regular',
   );
 
+  bool _retryingDraft = false;
   Future<void> _retryDraftSave() async {
-    if (_isSubmitting || _draftController == null) return;
-    _richKey.currentState?.flushToController();
-    await _draftController!.saveNow(_currentDraftData());
+    if (_isSubmitting || _retryingDraft || _draftController == null) return;
+    _retryingDraft = true;
+    try {
+      _richKey.currentState?.flushToController();
+      await _draftController!.saveNow(_currentDraftData());
+    } finally {
+      _retryingDraft = false;
+    }
   }
 
   /// 收件人本身也是私信草稿的一部分；只改名单不继续输入也要及时保存。
@@ -869,11 +877,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     }
   }
 
-  Widget _buildCharCountOverlay() => ComposerStatusBar(
+  Widget _buildCharCountOverlay() => CharacterCountsOverlay(
     length: _contentLength,
     minimumLength: _minPostLength,
-    draftStatus: _draftController?.statusNotifier,
-    onRetry: _isSubmitting ? null : _retryDraftSave,
   );
 
   @override

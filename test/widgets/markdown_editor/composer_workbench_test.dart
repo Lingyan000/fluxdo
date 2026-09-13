@@ -19,8 +19,6 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_chrome.dart';
-import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
-import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_island.dart';
 import 'package:fluxdo/widgets/markdown_editor/content_actions_button.dart';
 import 'package:fluxdo/widgets/markdown_editor/cursor_swipe_control.dart';
@@ -1211,51 +1209,5 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
     focus.dispose();
-  });
-
-  testWidgets('保存反馈变高时正文光标仍完整可见', (tester) async {
-    final status = ValueNotifier(DraftSaveStatus.saved);
-    final controller = TextEditingController();
-    final focus = FocusNode();
-    await _pump(
-      tester,
-      MarkdownEditor(
-        controller: controller,
-        focusNode: focus,
-        bodyOverlay: ComposerStatusBar(
-          length: 100,
-          minimumLength: 10,
-          draftStatus: status,
-          onRetry: () async {},
-        ),
-        expands: true,
-        showPreviewButton: false,
-      ),
-    );
-    focus.requestFocus();
-    await tester.pump();
-    final text = List.filled(50, '检查草稿提示和最后一行的间距。').join('\n');
-    controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    for (final value in [DraftSaveStatus.saved, DraftSaveStatus.error]) {
-      status.value = value;
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      await tester.pump();
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
-      final caret = editable.getLocalRectForCaret(controller.selection.extent);
-      expect(
-        editable.localToGlobal(caret.bottomLeft).dy,
-        lessThan(tester.getRect(find.byType(ComposerDraftStatus)).top),
-      );
-    }
-    await tester.pumpWidget(const SizedBox.shrink());
-    status.dispose();
-    focus.dispose();
-    controller.dispose();
   });
 }
