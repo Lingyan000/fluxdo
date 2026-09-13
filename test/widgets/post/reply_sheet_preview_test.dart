@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -14,7 +12,8 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
-import 'package:fluxdo/storage/app_database.dart';
+import 'package:fluxdo/providers/draft_store_provider.dart';
+import '../../helpers/memory_draft_store.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
@@ -61,26 +60,6 @@ Future<void> _pumpReply(
   );
   DiscourseService().dio.interceptors.insert(0, mock);
   addTearDown(() => DiscourseService().dio.interceptors.remove(mock));
-  if (sheet?.topicId != null) {
-    final directory = await tester.runAsync(() async {
-      final directory = await Directory.systemTemp.createTemp(
-        'fluxdo-reply-header-',
-      );
-      Hive.init(directory.path);
-      await AppDatabase.debugReset();
-      AppDatabase.debugMarkInitialized();
-      await AppDatabase.namedBox('local_drafts');
-      return directory;
-    });
-    addTearDown(() async {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(() async {
-        await Hive.close();
-        await AppDatabase.debugReset();
-        await directory!.delete(recursive: true);
-      });
-    });
-  }
   await tester.runAsync(() async {
     final loaded = await PreloadedDataService().hydrateFromHtml(
       '<meta id="data-discourse-setup">'
@@ -96,7 +75,10 @@ Future<void> _pumpReply(
 
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        localDraftStoreProvider.overrideWithValue(MemoryDraftStore()),
+      ],
       child: TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),

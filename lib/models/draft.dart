@@ -87,6 +87,13 @@ class DraftData {
   /// 转换为 JSON 字符串
   String toJsonString() => jsonEncode(toJson());
 
+  /// 会话时长不代表文档修改，不能参与草稿去重或冲突判断。
+  String get contentFingerprint => jsonEncode(
+    toJson()
+      ..remove('composerTime')
+      ..remove('typingTime'),
+  );
+
   /// 是否有有效内容
   bool get hasContent {
     return (reply != null && reply!.trim().isNotEmpty) ||

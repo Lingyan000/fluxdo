@@ -1,3 +1,5 @@
+import 'package:fluxdo/providers/draft_store_provider.dart';
+import '../helpers/memory_draft_store.dart';
 import 'dart:convert';
 import 'package:chat_bottom_container/listener_manager.dart';
 
@@ -96,6 +98,7 @@ void main() {
         final container = ProviderContainer(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            localDraftStoreProvider.overrideWithValue(MemoryDraftStore()),
             categoriesProvider.overrideWith((_) async => categories),
             tagsProvider.overrideWith((_) async => ['flutter', '体验']),
             canTagTopicsProvider.overrideWith((_) async => true),

@@ -1,8 +1,10 @@
+import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 import '../../utils/platform_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/draft_store_provider.dart';
 
 import 'pm_recipient_field.dart';
 import '../markdown_editor/composer_shortcuts.dart';
@@ -484,6 +486,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     // 但计数器在编辑帖子时同样需要实时更新
     _contentController.addListener(_onContentLengthChanged);
     _loadMinPostLength();
+    _draftLifecycle = AppLifecycleListener(
+      onInactive: _flushDraftForLifecycle,
+      onPause: _flushDraftForLifecycle,
+      onResume: _flushDraftForLifecycle,
+    );
 
     // 自动聚焦（非编辑模式时立即聚焦，编辑模式在加载完成后聚焦）
     if (!_isEditMode) {
@@ -518,7 +525,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
 
-    _draftController = DraftController(draftKey: draftKey);
+    _draftController = DraftController(
+      draftKey: draftKey,
+      localStore: ref.read(localDraftStoreProvider),
+    );
     if (shouldLoadDraft) {
       _loadExistingDraft();
     }
@@ -633,13 +643,29 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     archetypeId: _isPrivateMessage ? 'private_message' : 'regular',
   );
 
+  AppLifecycleListener? _draftLifecycle;
+  void _flushDraftForLifecycle() {
+    if (!mounted ||
+        _isSubmitting ||
+        _isLoadingDraft ||
+        _submitted ||
+        _discarded) {
+      return;
+    }
+    _richKey.currentState?.flushToController();
+    _draftController?.saveNow(_currentDraftData());
+  }
+
   bool _retryingDraft = false;
   Future<void> _retryDraftSave() async {
     if (_isSubmitting || _retryingDraft || _draftController == null) return;
     _retryingDraft = true;
     try {
       _richKey.currentState?.flushToController();
-      await _draftController!.saveNow(_currentDraftData());
+      final force = _draftController!.hasConflict;
+      if (force && !await confirmComposerDraftOverwrite(context)) return;
+      if (!mounted) return;
+      await _draftController!.saveNow(_currentDraftData(), forceSave: force);
     } finally {
       _retryingDraft = false;
     }
@@ -681,6 +707,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
   @override
   void dispose() {
+    _draftLifecycle?.dispose();
     // 移除监听器
     _contentController.removeListener(_onContentChanged);
     _titleController.removeListener(_onContentChanged);
@@ -789,6 +816,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     );
     if (!pluginAllowed || !mounted) return;
 
+    if (_draftController?.hasConflict == true &&
+        !await confirmComposerDraftOverwrite(context)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _isSubmitting = true);
     // 对齐 Discourse 前端 composer.set("disableDrafts", true):
     // 发送途中关掉自动保存,避免与 PostCreator 推进的 draft_sequence 撞 409

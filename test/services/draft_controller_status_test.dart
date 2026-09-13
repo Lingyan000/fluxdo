@@ -9,6 +9,9 @@ class _DraftService implements DiscourseService {
   final pending = <Completer<int>>[];
 
   @override
+  Future<Draft?> getDraft(String key) async => null;
+
+  @override
   Future<int> saveDraft({
     required String draftKey,
     required DraftData data,

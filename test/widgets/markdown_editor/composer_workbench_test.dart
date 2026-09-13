@@ -117,6 +117,22 @@ void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
 
+  testWidgets('富文本持续输入也会定期生成最新草稿快照', (tester) async {
+    final controller = TextEditingController();
+    await _pump(tester, RichComposerEditor(controller: controller));
+    await tester.pump(const Duration(milliseconds: 300));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    for (var i = 0; i < 8; i++) {
+      editor.pastePlainText('字');
+      await tester.pump(const Duration(milliseconds: 300));
+      if (i >= 3) expect(controller.text, isNotEmpty);
+    }
+    await tester.pump(const Duration(milliseconds: 850));
+    expect(controller.text, contains('字字字字字字字字'));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   for (final rich in [false, true]) {
     testWidgets('单行切换时光标入口连续让位，反向展开保留控件状态 rich=$rich', (tester) async {
       final controller = TextEditingController();

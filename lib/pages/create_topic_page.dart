@@ -1,3 +1,4 @@
+import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 import '../widgets/markdown_editor/composer_chrome.dart';
 import '../utils/platform_utils.dart';
 import 'dart:async';
@@ -5,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/draft_store_provider.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -124,7 +126,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _contentController.addListener(_updateContentLength);
 
     // 初始化草稿控制器
-    _draftController = DraftController(draftKey: widget.draftKey);
+    _draftController = DraftController(
+      draftKey: widget.draftKey,
+      localStore: ref.read(localDraftStoreProvider),
+    );
 
     // 添加草稿自动保存监听
     // 标题上的三件事（featured link 解析 / 草稿 / 计数器）合并成一个监听，
@@ -153,6 +158,11 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _applyCurrentFilter());
     // 先按站点默认算一版下限，_applyCurrentFilter 选中分类后会再刷新
     _refreshMinContentLength();
+    _draftLifecycle = AppLifecycleListener(
+      onInactive: _flushDraftForLifecycle,
+      onPause: _flushDraftForLifecycle,
+      onResume: _flushDraftForLifecycle,
+    );
   }
 
   @override
@@ -271,13 +281,29 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     archetypeId: 'regular',
   );
 
+  AppLifecycleListener? _draftLifecycle;
+  void _flushDraftForLifecycle() {
+    if (!mounted ||
+        _isSubmitting ||
+        _isLoadingDraft ||
+        _submitted ||
+        _discarded) {
+      return;
+    }
+    _richKey.currentState?.flushToController();
+    _draftController.saveNow(_currentDraftData());
+  }
+
   bool _retryingDraft = false;
   Future<void> _retryDraftSave() async {
     if (_isSubmitting || _retryingDraft) return;
     _retryingDraft = true;
     try {
       _richKey.currentState?.flushToController();
-      await _draftController.saveNow(_currentDraftData());
+      final force = _draftController.hasConflict;
+      if (force && !await confirmComposerDraftOverwrite(context)) return;
+      if (!mounted) return;
+      await _draftController.saveNow(_currentDraftData(), forceSave: force);
     } finally {
       _retryingDraft = false;
     }
@@ -343,6 +369,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   @override
   void dispose() {
+    _draftLifecycle?.dispose();
     _chrome.dispose();
     _shortcutSurfaceBinding.disposeDeferred();
     _featuredLinkDebounce?.cancel();
@@ -838,7 +865,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       if (confirm != true) return;
     }
 
+    if (!mounted) return;
+    if (_draftController.hasConflict &&
+        !await confirmComposerDraftOverwrite(context)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _isSubmitting = true);
+    _draftController.disable();
 
     try {
       final service = ref.read(discourseServiceProvider);
@@ -849,6 +883,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         tags: _selectedTags.isNotEmpty ? _selectedTags : null,
         featuredLink: _featuredLink,
         createAsPostVoting: _createAsPostVoting,
+        draftKey: _draftController.draftKey,
+        onDraftSequence: _draftController.syncSequence,
       );
 
       // 发送成功后删除草稿
@@ -875,7 +911,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       Navigator.of(context).pop();
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
+      _draftController.enable();
     } catch (e, s) {
+      _draftController.enable();
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

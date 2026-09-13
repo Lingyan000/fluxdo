@@ -4,6 +4,28 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/s.dart';
 import '../../services/draft_controller.dart';
+import '../../utils/dialog_utils.dart';
+
+Future<bool> confirmComposerDraftOverwrite(BuildContext context) async =>
+    await showAppDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(context.l10n.composer_draftConflictTitle),
+        content: Text(context.l10n.composer_draftConflictBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.l10n.composer_draftOverwrite),
+          ),
+        ],
+      ),
+    ) ??
+    false;
 
 String composerDraftStatusLabel(BuildContext context, DraftSaveStatus status) =>
     switch (status) {
@@ -11,6 +33,8 @@ String composerDraftStatusLabel(BuildContext context, DraftSaveStatus status) =>
       DraftSaveStatus.pending => context.l10n.composer_draftPending,
       DraftSaveStatus.saving => context.l10n.composer_draftSaving,
       DraftSaveStatus.saved => context.l10n.composer_draftSaved,
+      DraftSaveStatus.local => context.l10n.composer_draftLocal,
+      DraftSaveStatus.conflict => context.l10n.composer_draftConflict,
       DraftSaveStatus.error => context.l10n.composer_draftError,
     };
 
@@ -44,7 +68,9 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
     valueListenable: widget.status,
     builder: (context, status, _) {
       final colors = Theme.of(context).colorScheme;
-      final error = status == DraftSaveStatus.error;
+      final error =
+          status == DraftSaveStatus.error || status == DraftSaveStatus.conflict;
+      final retryable = error || status == DraftSaveStatus.local;
       final label = composerDraftStatusLabel(context, status);
       final color = error ? colors.error : colors.onSurfaceVariant;
       final icon = switch (status) {
@@ -55,7 +81,7 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
       return PopupMenuItem<T>(
         key: const ValueKey('composer-draft-status-item'),
         value: widget.retryValue,
-        enabled: error && widget.canRetry,
+        enabled: retryable && widget.canRetry,
         height: 48,
         child: Row(
           children: [
@@ -73,7 +99,7 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
             const SizedBox(width: 12),
             Flexible(
               child: Text(
-                error && widget.canRetry
+                retryable && widget.canRetry
                     ? '$label · ${context.l10n.common_retry}'
                     : label,
                 style: TextStyle(color: color),
@@ -101,15 +127,17 @@ class ComposerDraftAttention extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder<DraftSaveStatus>(
     valueListenable: status,
     builder: (context, value, _) => Semantics(
-      value: value == DraftSaveStatus.error
-          ? context.l10n.composer_draftError
+      value: value == DraftSaveStatus.error || value == DraftSaveStatus.conflict
+          ? composerDraftStatusLabel(context, value)
           : null,
-      liveRegion: value == DraftSaveStatus.error,
+      liveRegion:
+          value == DraftSaveStatus.error || value == DraftSaveStatus.conflict,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           child,
-          if (value == DraftSaveStatus.error)
+          if (value == DraftSaveStatus.error ||
+              value == DraftSaveStatus.conflict)
             Positioned(
               right: -3,
               top: -1,

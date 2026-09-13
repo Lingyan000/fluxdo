@@ -51,7 +51,7 @@ mixin _DraftsMixin on _DiscourseServiceBase {
   /// 保存草稿
   /// 返回新的序列号
   /// [forceSave] 为 true 时绕过服务端 sequence 校验(用于 409 冲突后重试)
-  /// 409 冲突时抛出 [DraftSequenceConflictException],上层应带 forceSave=true 重试
+  /// 409 冲突时由上层让用户决定是否覆盖，不能自动强制重试
   Future<int> saveDraft({
     required String draftKey,
     required DraftData data,
@@ -76,7 +76,7 @@ mixin _DraftsMixin on _DiscourseServiceBase {
       return sequence + 1;
     } on DioException catch (e) {
       // 服务端 409 响应只含 errors/extras,不带 draft_sequence,
-      // 必须靠下次 force_save 兜底
+      // 交给上层确认，只有用户选择覆盖才设置 force_save
       if (e.response?.statusCode == 409) {
         throw const DraftSequenceConflictException();
       }

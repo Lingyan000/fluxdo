@@ -115,7 +115,13 @@ class ComposerHeaderActions extends StatelessWidget {
           _HeaderAction.review => onReview,
           _HeaderAction.discard => onDiscard,
           _HeaderAction.draft =>
-            draftStatus?.value == DraftSaveStatus.error ? onRetryDraft : null,
+            [
+                  DraftSaveStatus.error,
+                  DraftSaveStatus.local,
+                  DraftSaveStatus.conflict,
+                ].contains(draftStatus?.value)
+                ? onRetryDraft
+                : null,
         };
 
     Widget more(

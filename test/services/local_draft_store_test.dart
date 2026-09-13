@@ -28,6 +28,94 @@ void main() {
   LocalDraftStore createStore() =>
       LocalDraftStore(boxFactory: () async => box, now: () => now);
 
+  test('云端确认只更新对应版本，不能覆盖较新的本地输入', () async {
+    final store = createStore();
+    const old = DraftData(reply: 'A');
+    const current = DraftData(reply: 'B');
+    await store.write(
+      accountId: 'alice',
+      draftKey: 'topic_1',
+      data: current,
+      sequence: 2,
+    );
+    expect(
+      await store.recordSync(
+        accountId: 'alice',
+        draftKey: 'topic_1',
+        data: old,
+        sequence: 3,
+        synced: true,
+      ),
+      isFalse,
+    );
+    expect((await store.read('alice', 'topic_1'))!.data.reply, 'B');
+    expect(
+      await store.recordSync(
+        accountId: 'alice',
+        draftKey: 'topic_1',
+        data: current,
+        sequence: 4,
+        synced: true,
+        baseFingerprint: current.contentFingerprint,
+      ),
+      isTrue,
+    );
+    final saved = (await store.read('alice', 'topic_1'))!;
+    expect(saved.synced, isTrue);
+    expect(saved.sequence, 4);
+    expect(saved.baseFingerprint, current.contentFingerprint);
+  });
+
+  test('离线列表包含本地私信、隔离账号并隐藏待删除稿', () async {
+    final store = createStore();
+    const key = 'new_private_message_123';
+    const pm = DraftData(
+      reply: '离线内容',
+      title: '私信',
+      action: 'privateMessage',
+      recipients: ['bob'],
+    );
+    await store.write(accountId: 'alice', draftKey: key, data: pm, sequence: 0);
+    await store.write(
+      accountId: 'other',
+      draftKey: 'topic_2',
+      data: const DraftData(reply: '其他账号'),
+      sequence: 0,
+    );
+    await store.write(
+      accountId: 'alice',
+      draftKey: 'topic_3',
+      data: const DraftData(),
+      sequence: 1,
+    );
+    final local = await store.list('alice');
+    expect(local.keys, unorderedEquals([key, 'topic_3']));
+    final drafts = mergeLocalDrafts([], local, serverAvailable: false);
+    expect(drafts.single.draftKey, key);
+    expect(drafts.single.data.recipients, ['bob']);
+  });
+
+  test('在线列表不会复活已同步且已被远端删除的缓存', () {
+    final local = {
+      'topic_1': LocalDraftEntry(
+        data: const DraftData(reply: '旧缓存'),
+        sequence: 1,
+        updatedAt: now,
+        synced: true,
+      ),
+      'topic_2': LocalDraftEntry(
+        data: const DraftData(reply: '待同步'),
+        sequence: 2,
+        updatedAt: now,
+      ),
+    };
+    expect(
+      mergeLocalDrafts([], local, serverAvailable: true).single.draftKey,
+      'topic_2',
+    );
+    expect(mergeLocalDrafts([], local, serverAvailable: false), hasLength(2));
+  });
+
   test('按账号和 draftKey 隔离并完整恢复草稿数据', () async {
     final store = createStore();
     const data = DraftData(

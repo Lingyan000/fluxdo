@@ -1,3 +1,6 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +10,7 @@ import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 
 Future<void> _pump(
   WidgetTester tester,
@@ -22,43 +26,48 @@ Future<void> _pump(
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = Size(width, 760);
   addTearDown(tester.view.reset);
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
-    TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navigatorKey,
-        locale: const Locale('zh'),
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        supportedLocales: AppLocaleUtils.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(scale),
-            disableAnimations: reduced,
+    ProviderScope(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      child: TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocaleUtils.supportedLocales,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(scale),
+              disableAnimations: reduced,
+            ),
+            child: child!,
           ),
-          child: child!,
-        ),
-        home: Scaffold(
-          resizeToAvoidBottomInset: false,
-          appBar: AppBar(
-            title: const Text('回复话题'),
-            actions: [
-              ComposerHeaderActions(
-                availableWidth: width,
-                submitLabel: '发送',
-                onSubmit: () {},
-                previewing: false,
-                onTogglePreview: () {},
-                showDiscard: true,
-                onDiscard: () {},
-                draftStatus: status,
-                onRetryDraft: onRetry,
-              ),
-            ],
+          home: Scaffold(
+            resizeToAvoidBottomInset: false,
+            appBar: AppBar(
+              title: const Text('回复话题'),
+              actions: [
+                ComposerHeaderActions(
+                  availableWidth: width,
+                  submitLabel: '发送',
+                  onSubmit: () {},
+                  previewing: false,
+                  onTogglePreview: () {},
+                  showDiscard: true,
+                  onDiscard: () {},
+                  draftStatus: status,
+                  onRetryDraft: onRetry,
+                ),
+              ],
+            ),
+            body: TextField(focusNode: focus),
           ),
-          body: TextField(focusNode: focus),
         ),
       ),
     ),
@@ -66,6 +75,27 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('覆盖云端需要明确选择，取消不会授权覆盖', (tester) async {
+    final status = ValueNotifier(DraftSaveStatus.conflict);
+    await _pump(tester, status, width: 320, scale: 2);
+    final context = tester.element(find.byType(TextField));
+    final cancel = confirmComposerDraftOverwrite(context);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.tap(find.text(S.current.common_cancel));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(await cancel, isFalse);
+    final overwrite = confirmComposerDraftOverwrite(context);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.tap(find.text(S.current.composer_draftOverwrite));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(await overwrite, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    status.dispose();
+  });
   testWidgets('草稿状态不占正文，更多菜单实时展示结果且重试保留键盘', (tester) async {
     final status = ValueNotifier(DraftSaveStatus.idle);
     final focus = FocusNode();

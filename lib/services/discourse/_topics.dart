@@ -282,12 +282,15 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     List<String>? tags,
     String? featuredLink,
     bool createAsPostVoting = false,
+    String? draftKey,
+    ValueChanged<int>? onDraftSequence,
   }) async {
     final data = <String, dynamic>{
       'title': title,
       'raw': raw,
       'category': categoryId,
       'archetype': 'regular',
+      'draft_key': ?draftKey,
     };
 
     if (tags != null && tags.isNotEmpty) {
@@ -317,6 +320,12 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     );
 
     final respData = response.data;
+    if (respData is Map) {
+      final target = respData['target'];
+      final sequence = (target is Map ? target['draft_sequence'] : null) ??
+          respData['draft_sequence'];
+      if (sequence is int) onDraftSequence?.call(sequence);
+    }
 
     // 帖子进入审核队列
     if (respData is Map && respData['action'] == 'enqueued') {

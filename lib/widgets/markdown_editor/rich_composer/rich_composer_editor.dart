@@ -176,6 +176,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   bool _importing = true;
 
   Timer? _serializeDebounce;
+  Timer? _serializeDeadline;
 
   bool _showEmojiPanel = false;
 
@@ -591,7 +592,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   void _onDocChanged() {
     final revision = _editor?.docRevision ?? 0;
-    if (revision != _chromeDocRevision && mounted) {
+    final documentChanged = revision != _chromeDocRevision;
+    if (documentChanged && mounted) {
       _chromeDocRevision = revision;
       ComposerChromeScope.maybeOf(context)?.reveal();
     }
@@ -602,23 +604,24 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (empty != _lastIsEmpty && mounted) {
       setState(() => _lastIsEmpty = empty);
     }
-    _serializeDebounce?.cancel();
-    // 800ms:回写 controller 会触发宿主(字数/草稿监听)整页 setState,
-    // 打字停顿后再做;草稿保存自身还有二级 debounce,不丢内容。
-    _serializeDebounce = Timer(const Duration(milliseconds: 800), () {
-      final editor = _editor;
-      if (editor == null || !mounted) return;
-      final sw = Stopwatch()..start();
-      final raw = docToRaw(editor.blocks);
-      if (raw == widget.controller.text) return;
-      widget.controller.text = raw;
-      if (kDebugMode && sw.elapsedMilliseconds > 8) {
-        debugPrint(
-          '[RichComposer] serialize+mirror '
-          '${sw.elapsedMilliseconds}ms (${raw.length} chars)',
-        );
-      }
-    });
+    if (documentChanged) {
+      _serializeDebounce?.cancel();
+      // 停顿 800ms 后回写，持续输入最长等待 1 秒，兼顾镜像开销和本地快照及时性。
+      _serializeDeadline ??= Timer(
+        const Duration(seconds: 1),
+        flushToController,
+      );
+      _serializeDebounce = Timer(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        final sw = Stopwatch()..start();
+        flushToController();
+        if (kDebugMode && sw.elapsedMilliseconds > 8) {
+          debugPrint(
+            '[RichComposer] serialize+mirror ${sw.elapsedMilliseconds}ms',
+          );
+        }
+      });
+    }
     _updateMentionQuery();
     _updateEmojiQuery();
     _updateSlashQuery();
@@ -639,10 +642,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 窗口内提交也不丢内容)。
   void flushToController() {
     _serializeDebounce?.cancel();
+    _serializeDeadline?.cancel();
+    _serializeDeadline = null;
     final editor = _editor;
     if (editor == null) return;
     final raw = docToRaw(editor.blocks);
-    if (raw != widget.controller.text) {
+    if (raw != widget.controller.text || !widget.controller.selection.isValid) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
       // collapsed(-1);切到源码模式时 TextField attach 的**首帧**
       // setEditingState 就带着 -1 发给平台(EditableText 的聚焦纠偏
