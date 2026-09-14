@@ -33,15 +33,57 @@ process.stdout.write(__fluxdoCook.cook(JSON.parse(process.argv[1])));
 }
 
 void main() {
+  for (final link in [
+    '[https://github.com](https://github.com)',
+    'https://github.com',
+    '[example.com](http://example.com)',
+    'example.com',
+    '[a@example.com](mailto:a@example.com)',
+    'a@example.com',
+  ]) {
+    for (final raw in [
+      link,
+      '前 $link 后',
+      '前文  \n$link',
+      '> $link',
+      '- $link',
+    ]) {
+      test('链接来源与上下文往返：$raw', () async {
+        final original = await cookWithNode(raw);
+        var n = 0;
+        final doc = blockNodesToDoc(
+          ParagraphParser().parse(original),
+          () => 'e_${n++}',
+        );
+        final back = docToRaw(doc);
+        expect(await cookWithNode(back), original, reason: back);
+      });
+    }
+  }
+
   for (final raw in <String>[
     r'[https://github.com/\](https://github.com)',
     r'前 https://example.com/a\b 后',
     '前 https://example.com/中文 后',
     '前 https://example.com/%E4%B8%AD%E6%96%87 后',
+    '前 https://example.com/a%20b 后',
+    '前 https://example.com/a%2Fb 后',
+    '前 https://example.com/%FF 后',
+    '前 https://example.com/a%C2%A0b 后',
+    '前 https://example.com/a%E2%80%A8b 后',
+    '前 https://example.com/%EF%BF%BC 后',
+    '前 https://example.com/%E4%B8%AD%E6%96%87%20x 后',
     r'\[https://example.com/path](https://github.com)',
     r'[显示\]括号](https://example.com)',
     r'\[普通文字\](目标)',
     '[GitHub](https://github.com)',
+    '[https://github.com](https://github.com)',
+    '就经常闹惨惨惨餐桌参  \n'
+        '[https://github.com](https://github.com)\n\n'
+        '![14973.jpg|1200x2608, 50%]'
+        '(upload://2zEn0OmOJIlgAfDmxF48u4rvXrH.jpeg)\n\n你好',
+    '[https://example.com/中文](https://example.com/%E4%B8%AD%E6%96%87)',
+    r'[https://github.com/\\](https://github.com/%5C)',
     'https://github.com',
     '![14973.jpg|1200x2608, 50%]'
         '(upload://2zEn0OmOJIlgAfDmxF48u4rvXrH.jpeg)',
