@@ -235,7 +235,10 @@ void main() {
           desktop ? findsOneWidget : findsNothing,
         );
         expect(find.byType(ComposerDesktopMetadata), findsNothing);
-        expect(find.byType(GlassSurfaceFrame), findsOneWidget);
+        expect(
+          find.byType(GlassSurfaceFrame),
+          findsNWidgets(desktop && width >= 1040 ? 2 : 1),
+        );
         final initialScroll = tester
             .widget<CustomScrollView>(
               find

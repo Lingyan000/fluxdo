@@ -52,7 +52,11 @@ class _FakeProvider extends ChangeNotifier implements ContentActionsProvider {
   void paste() => calls.add('paste');
 }
 
-Future<void> _pump(WidgetTester tester, _FakeProvider p) async {
+Future<void> _pump(
+  WidgetTester tester,
+  _FakeProvider p, {
+  double scale = 1,
+}) async {
   await tester.pumpWidget(
     // S.current 走全局 navigatorKey 取本地化，必须把 key 接上
     TranslationProvider(
@@ -65,9 +69,16 @@ Future<void> _pump(WidgetTester tester, _FakeProvider p) async {
           GlobalCupertinoLocalizations.delegate,
         ],
         supportedLocales: AppLocaleUtils.supportedLocales,
-        home: Scaffold(
-          body: Center(
-            child: ContentActionsButton(provider: p, listenable: p),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: Scaffold(
+              body: Center(
+                child: ContentActionsButton(provider: p, listenable: p),
+              ),
+            ),
           ),
         ),
       ),
@@ -88,18 +99,25 @@ void main() {
     expect(find.text('撤销'), findsOneWidget);
     expect(
       tester
-          .widget<PopupMenuItem<int>>(
-            find.ancestor(
-              of: find.text('撤销'),
-              matching: find.byType(PopupMenuItem<int>),
-            ),
+          .widget<TextButton>(
+            find.byKey(const ValueKey('composer-content-action-0')),
           )
-          .enabled,
-      isFalse,
+          .onPressed,
+      isNull,
     );
     expect(find.text('恢复'), findsOneWidget);
     expect(find.text('复制'), findsOneWidget);
     expect(find.text('剪切'), findsOneWidget);
+    final positions = [
+      for (var i = 0; i < 6; i++)
+        tester.getRect(find.byKey(ValueKey('composer-content-action-$i'))),
+    ];
+    expect(positions[0].top, positions[1].top);
+    expect(positions[1].top, positions[2].top);
+    expect(positions[3].top, positions[4].top);
+    expect(positions[4].top, positions[5].top);
+    expect(positions[3].top, greaterThanOrEqualTo(positions[0].bottom));
+    expect(positions[0].left, positions[3].left);
   });
 
   testWidgets('有历史时出现撤销，撤销过后出现恢复', (tester) async {
@@ -156,6 +174,50 @@ void main() {
     await tester.tap(find.byType(ContentActionsButton));
     await tester.pumpAndSettle();
     expect(find.text('撤销'), findsOneWidget);
+  });
+
+  testWidgets('操作板打开时更新可用性，按最新状态执行且不移动按钮', (tester) async {
+    final p = _FakeProvider();
+    await _pump(tester, p);
+    await tester.tap(find.byType(ContentActionsButton));
+    await tester.pumpAndSettle();
+    final undo = find.byKey(const ValueKey('composer-content-action-0'));
+    final before = tester.getRect(undo);
+    expect(tester.widget<TextButton>(undo).onPressed, isNull);
+    p.canUndoValue = true;
+    p.notifyListeners();
+    await tester.pump();
+    expect(tester.widget<TextButton>(undo).onPressed, isNotNull);
+    expect(tester.getRect(undo), before);
+    await tester.tap(undo);
+    await tester.pumpAndSettle();
+    expect(p.calls, ['undo']);
+  });
+
+  testWidgets('320 宽、两倍字体与键盘占位下操作板保持两排且可点选', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 760);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+    addTearDown(tester.view.reset);
+    final p = _FakeProvider(hasSelectionValue: true);
+    await _pump(tester, p, scale: 2);
+    await tester.tap(find.byType(ContentActionsButton));
+    await tester.pumpAndSettle();
+    final grid = find.byKey(const ValueKey('composer-content-actions-grid'));
+    expect(tester.getRect(grid).left, greaterThanOrEqualTo(0));
+    expect(tester.getRect(grid).right, lessThanOrEqualTo(320));
+    expect(tester.getRect(grid).bottom, lessThanOrEqualTo(520));
+    for (var i = 0; i < 6; i++) {
+      final bounds = tester.getRect(
+        find.byKey(ValueKey('composer-content-action-$i')),
+      );
+      expect(bounds.width, greaterThanOrEqualTo(48));
+      expect(bounds.height, greaterThanOrEqualTo(48));
+    }
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('复制'));
+    await tester.pumpAndSettle();
+    expect(p.calls, ['copy']);
   });
 
   group('源码模式 provider', () {

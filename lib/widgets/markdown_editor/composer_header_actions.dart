@@ -11,6 +11,7 @@ import '../../services/draft_controller.dart';
 import 'composer_draft_status.dart';
 import 'composer_page_chrome.dart';
 import 'composer_view_mode_switcher.dart';
+import 'composer_submit_button.dart';
 
 typedef ComposerReviewBuilder =
     Widget Function(
@@ -28,7 +29,7 @@ class ComposerHeaderActions extends StatelessWidget {
     required this.onSubmit,
     required this.previewing,
     required this.onTogglePreview,
-    this.submitIcon = Symbols.send_rounded,
+    this.submitIcon,
     this.submitting = false,
     this.showDiscard = false,
     this.onDiscard,
@@ -39,7 +40,7 @@ class ComposerHeaderActions extends StatelessWidget {
 
   final double availableWidth;
   final String submitLabel;
-  final IconData submitIcon;
+  final IconData? submitIcon;
   final VoidCallback? onSubmit;
   final bool submitting;
   final bool previewing;
@@ -102,9 +103,8 @@ class ComposerHeaderActions extends StatelessWidget {
         draftStatus!.value,
       ),
     };
-    IconData icon(_HeaderAction action) => switch (action) {
-      _HeaderAction.preview =>
-        previewing ? Symbols.edit_rounded : AppIcons.book,
+    Object icon(_HeaderAction action) => switch (action) {
+      _HeaderAction.preview => previewing ? AppIcons.edit : AppIcons.openBook,
       _HeaderAction.review => Symbols.auto_awesome_rounded,
       _HeaderAction.discard => Symbols.delete_rounded,
       _HeaderAction.draft => Symbols.cloud_upload_rounded,
@@ -167,7 +167,7 @@ class ComposerHeaderActions extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    Icon(
+                    AppIcon(
                       icon(action),
                       size: 21,
                       color:
@@ -234,41 +234,11 @@ class ComposerHeaderActions extends StatelessWidget {
               overflow.contains(_HeaderAction.review)
                   ? reviewHost(folded: true)
                   : more(false, null),
-            Tooltip(
-              message: submitLabel,
-              excludeFromSemantics: true,
-              child: SizedBox(
-                height: 48,
-                child: Align(
-                  widthFactor: 1,
-                  child: FilledButton(
-                    key: const ValueKey('composer-header-submit'),
-                    onPressed: submitting ? null : onSubmit,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.square(40),
-                      maximumSize: const Size.square(40),
-                      fixedSize: const Size.square(40),
-                      visualDensity: VisualDensity.standard,
-                      tapTargetSize: MaterialTapTargetSize.padded,
-                      padding: EdgeInsets.zero,
-                      shape: const CircleBorder(),
-                    ),
-                    child: Semantics(
-                      label: submitLabel,
-                      child: ExcludeSemantics(
-                        child: submitting
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(submitIcon, size: 21),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            ComposerSubmitButton(
+              label: submitLabel,
+              icon: submitIcon,
+              busy: submitting,
+              onPressed: onSubmit,
             ),
           ],
         ),

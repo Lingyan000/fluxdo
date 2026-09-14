@@ -13,11 +13,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
+import 'package:fluxdo/models/emoji.dart';
+import 'package:fluxdo/providers/emoji_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_desktop_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_chrome.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_island.dart';
 import 'package:fluxdo/widgets/markdown_editor/content_actions_button.dart';
@@ -76,7 +79,12 @@ Future<void> _pump(
   });
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        emojiGroupsProvider.overrideWith(
+          (ref) => Stream.value(<String, List<Emoji>>{}),
+        ),
+      ],
       child: TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),
@@ -119,6 +127,206 @@ Future<void> _pump(
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  for (final rich in [false, true]) {
+    testWidgets('PC 宽屏分列工具，缩窄保留正文、选区、撤销和已打开面板 rich=$rich', (tester) async {
+      final controller = TextEditingController(text: rich ? '' : 'desktop');
+      final focus = FocusNode();
+      await _pump(
+        tester,
+        rich
+            ? RichComposerEditor(
+                controller: controller,
+                focusNode: focus,
+                onSwitchToSource: () {},
+              )
+            : MarkdownEditor(
+                controller: controller,
+                focusNode: focus,
+                showPreviewButton: false,
+                onSwitchToRich: () {},
+              ),
+        desktop: true,
+        width: 1200,
+      );
+      // 原生 UndoHistory 以 500ms 合并编辑，先让初始文本快照落入历史。
+      await tester.pump(const Duration(milliseconds: 800));
+      final editor = rich
+          ? tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state
+          : null;
+      if (rich) {
+        editor!.pastePlainText('desktop');
+        editor.selectAll();
+      } else {
+        controller.selection = const TextSelection(
+          baseOffset: 0,
+          extentOffset: 7,
+        );
+      }
+      focus.requestFocus();
+      await tester.pump();
+      // 初始 controller 的选区无效；有效选区也需要先形成撤销基线。
+      await tester.pump(const Duration(milliseconds: 600));
+      final rail = find.byKey(const ValueKey('composer-desktop-rail'));
+      final history = find.byKey(const ValueKey('composer-desktop-history'));
+      final document = find.byType(CustomScrollView).first;
+      expect(rail, findsOneWidget);
+      expect(history, findsOneWidget);
+      expect(
+        tester.getRect(document).left,
+        greaterThan(tester.getRect(history).right),
+      );
+      expect(
+        tester.getRect(document).right,
+        lessThan(tester.getRect(rail).left),
+      );
+      expect(find.byType(CursorSwipeControl), findsNothing);
+      await tester.tap(
+        find.byTooltip(RegExp('^${RegExp.escape(S.current.toolPanel_bold)}')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(
+        rich ? docToMarkdown(editor!.blocks) : controller.text,
+        contains('**desktop**'),
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (w) =>
+                    w is IconButton &&
+                    (w.tooltip ?? '').startsWith(S.current.toolbar_undo),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(
+        find.byTooltip(RegExp('^${RegExp.escape(S.current.toolbar_undo)}')),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(
+        (rich ? docToMarkdown(editor!.blocks) : controller.text).trim(),
+        'desktop',
+      );
+      expect(focus.hasFocus, isTrue);
+      final selection = rich ? editor!.selection : controller.selection;
+
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final panel = find.byKey(const ValueKey('composer-tools-panel'));
+      expect(panel, findsOneWidget);
+      expect(tester.getRect(panel).right, lessThan(tester.getRect(rail).left));
+      expect(tester.getRect(panel).top, greaterThanOrEqualTo(kToolbarHeight));
+      tester.view.physicalSize = const Size(700, 760);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(rail, findsNothing);
+      expect(panel, findsOneWidget);
+      expect(tester.getRect(panel).right, lessThanOrEqualTo(700));
+      expect(rich ? editor!.selection : controller.selection, selection);
+      if (rich) {
+        expect(
+          tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state,
+          same(editor),
+        );
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(panel, findsNothing);
+      expect(focus.hasFocus, isTrue);
+
+      tester.view.physicalSize = const Size(390, 760);
+      await tester.pump();
+      expect(find.byType(ContentActionsButton), findsOneWidget);
+      expect(
+        find.byTooltip(RegExp('^${RegExp.escape(S.current.toolbar_undo)}')),
+        findsNothing,
+      );
+      expect(
+        find.byTooltip(S.current.composer_expandToolbar).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.byType(ContentActionsButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(
+        find.byKey(const ValueKey('composer-content-actions-grid')),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(2, 80));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      tester.view.physicalSize = const Size(1200, 760);
+      await tester.pump();
+      expect(rail, findsOneWidget);
+      expect(
+        (rich ? docToMarkdown(editor!.blocks) : controller.text).trim(),
+        'desktop',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+
+    testWidgets('PC 采用实际编辑区宽高，侧栏表情弹层随缩放避让 rich=$rich', (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      Widget editor() => rich
+          ? RichComposerEditor(controller: controller, focusNode: focus)
+          : MarkdownEditor(
+              controller: controller,
+              focusNode: focus,
+              showPreviewButton: false,
+            );
+      await _pump(
+        tester,
+        SizedBox(width: 600, child: editor()),
+        desktop: true,
+        width: 1300,
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('composer-desktop-rail')), findsNothing);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('composer-format-row'))).right,
+        lessThanOrEqualTo(600),
+      );
+      await _pump(tester, editor(), desktop: true, width: 1200, height: 400);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('composer-desktop-rail')), findsNothing);
+      await _pump(tester, editor(), desktop: true, width: 1200);
+      await tester.pump(const Duration(milliseconds: 400));
+      focus.requestFocus();
+      await tester.pump();
+      final rail = find.byKey(const ValueKey('composer-desktop-rail'));
+      expect(rail, findsOneWidget);
+      await tester.tap(find.byTooltip(S.current.emoji_tab));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final popover = find.byKey(const ValueKey('composer-emoji-popover'));
+      expect(popover, findsOneWidget);
+      expect(
+        tester.getRect(popover).right,
+        lessThan(tester.getRect(rail).left),
+      );
+      tester.view.physicalSize = const Size(390, 760);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(popover, findsOneWidget);
+      expect(tester.getRect(popover).left, greaterThanOrEqualTo(0));
+      expect(tester.getRect(popover).right, lessThanOrEqualTo(390));
+      expect(tester.takeException(), isNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    });
+  }
 
   testWidgets('富文本持续输入也会定期生成最新草稿快照', (tester) async {
     final controller = TextEditingController();
@@ -272,7 +480,7 @@ void main() {
       );
       expect(button, findsOneWidget);
       final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposerWorkbench)),
+        tester.element(find.byType(ComposerDesktopWorkbench)),
       );
       expect(
         rich
@@ -593,7 +801,9 @@ void main() {
           isEmpty,
         );
         expect(rich ? editor!.selection : controller.selection, selection);
-        final items = find.byType(PopupMenuItem<int>);
+        final items = tester.widget(control) is ContentActionsButton
+            ? find.byKey(const ValueKey('composer-content-actions-grid'))
+            : find.byType(PopupMenuItem<int>);
         expect(items, findsWidgets);
         expect(tester.getRect(items.first).top, greaterThanOrEqualTo(0));
         expect(
@@ -1029,6 +1239,14 @@ void main() {
               )
             : controller.text;
         expect(text, contains(rich ? '**外接键盘输入**' : '**浮动键盘输入**'));
+        if (rich) {
+          final bold = tester.widget<IconButton>(
+            find.byWidgetPredicate(
+              (w) => w is IconButton && w.tooltip == S.current.toolPanel_bold,
+            ),
+          );
+          expect(bold.isSelected, isTrue, reason: '选中态来自实际编辑器格式状态');
+        }
         expect(focus.hasFocus, isTrue);
         expect(formats, findsOneWidget);
         expect(cursor.hitTestable(), findsOneWidget);
@@ -1214,7 +1432,7 @@ void main() {
   for (final width in [390.0, 1000.0]) {
     for (final rich in [false, true]) {
       testWidgets(
-        '真实 PC ${width.toInt()} 宽 ${rich ? "富文本" : "源码"}：属性不在工具岛，移动端控件不出现',
+        '真实 PC ${width.toInt()} 宽 ${rich ? "富文本" : "源码"}：属性在文档头部，光标手势不占桌面栏',
         (tester) async {
           final controller = TextEditingController();
           final category = Category.fromJson({
@@ -1258,7 +1476,7 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 400));
           expect(PlatformUtils.isDesktop, isTrue);
-          expect(find.byType(ContentActionsButton), findsNothing);
+          expect(find.byType(ContentActionsButton), findsOneWidget);
           expect(find.byType(CursorSwipeControl), findsNothing);
           expect(
             find.byKey(const ValueKey('composer-context-row')),

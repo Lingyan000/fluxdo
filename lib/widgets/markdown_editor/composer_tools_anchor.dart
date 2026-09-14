@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'composer_tool_action.dart';
 import '../../l10n/s.dart';
+import 'composer_tool_style.dart';
 
 /// 工具栏两种编辑模式共用的转场来源；只记录实际可见的图标。
 class ComposerToolsAnchor extends ChangeNotifier {
@@ -151,11 +152,13 @@ class ComposerToolsToggle extends StatelessWidget {
     this.anchor,
     required this.active,
     required this.compact,
+    this.axis = Axis.horizontal,
     this.onPressed,
   });
   final ComposerToolsAnchor? anchor;
   final bool active;
   final bool compact;
+  final Axis axis;
   final VoidCallback? onPressed;
   Widget _button(BuildContext context) {
     final done = compact && anchor?.customizing == true;
@@ -164,6 +167,8 @@ class ComposerToolsToggle extends StatelessWidget {
       icon: Icon(
         done
             ? Symbols.check_rounded
+            : axis == Axis.vertical
+            ? (expanded ? AppIcons.chevronRight : AppIcons.chevronLeft)
             : expanded
             ? Symbols.expand_more_rounded
             : Symbols.expand_less_rounded,
@@ -173,7 +178,7 @@ class ComposerToolsToggle extends StatelessWidget {
           : expanded
           ? S.current.composer_collapseToolbar
           : S.current.composer_expandToolbar,
-      color: active ? Theme.of(context).colorScheme.primary : null,
+      style: composerToolButtonStyle(context, active: expanded || done),
       onPressed: done ? anchor?.toggleCustomizing : onPressed,
     );
   }

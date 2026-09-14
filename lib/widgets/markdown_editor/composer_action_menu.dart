@@ -2,10 +2,22 @@ import 'dart:math' as math;
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
+double composerActionMenuWidth(BuildContext context) {
+  final overlay = Navigator.of(context).overlay?.context.findRenderObject();
+  final media = MediaQuery.of(context);
+  return math.min(
+    280.0,
+    (overlay is RenderBox ? overlay.size.width : media.size.width) -
+        media.viewPadding.horizontal -
+        16,
+  );
+}
+
 /// 编辑中的操作菜单不抢输入焦点，优先在按钮上方、键盘之外展开。
 Future<T?> showComposerActionMenu<T>({
   required BuildContext context,
   required List<PopupMenuEntry<T>> items,
+  double cornerRadius = 12,
 }) async {
   final box = context.findRenderObject();
   final navigator = Navigator.of(context);
@@ -25,10 +37,7 @@ Future<T?> showComposerActionMenu<T>({
     available,
     items.fold<double>(16, (height, item) => height + item.height),
   );
-  final width = math.min(
-    280.0,
-    overlay.size.width - media.viewPadding.horizontal - 16,
-  );
+  final width = composerActionMenuWidth(context);
   final theme = Theme.of(context);
   return showSwipeDismissibleMenu<T>(
     context: context,
@@ -47,7 +56,7 @@ Future<T?> showComposerActionMenu<T>({
     menuPadding: const EdgeInsets.symmetric(vertical: 8),
     color: theme.colorScheme.surfaceContainerLow,
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(cornerRadius),
       side: BorderSide(
         color: theme.colorScheme.outlineVariant.withValues(alpha: .5),
         width: .6,

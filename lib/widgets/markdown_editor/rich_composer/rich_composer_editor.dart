@@ -68,6 +68,9 @@ import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
+import '../composer_tool_style.dart';
+import '../composer_desktop_layout.dart';
+import '../composer_desktop_workbench.dart';
 import '../composer_tools_panel.dart';
 import '../composer_quick_panel.dart';
 import '../composer_tools_anchor.dart';
@@ -499,7 +502,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             );
       if (!executed &&
           mounted &&
-          (_isDesktop || (quick && keyboardWasVisible))) {
+          ((_isDesktop && (quick || _toolsAnchor.restoreInput)) ||
+              (quick && keyboardWasVisible))) {
         resumeEditing();
       }
     } finally {
@@ -1664,7 +1668,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 光标状态快照，驱动工具格子/按钮的激活态。
   RichToolSnapshot _buildToolSnapshot(EditorState editor) {
-    final marks = editor.effectiveMarksAtCaret();
+    final marks = richToolbarMarks(editor);
     final sel = editor.selection;
     final block = sel == null ? null : editor.textBlockById(sel.extent.blockId);
     return RichToolSnapshot(
@@ -3526,6 +3530,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       },
       toolbar: _RichToolbar(
         state: editor,
+        onResumeEditing: resumeEditing,
         metaBar: _isDesktop ? null : widget.metaBar,
         isEmojiPanelVisible: _showEmojiPanel,
         onToggleEmoji: _toggleEmojiPanel,
@@ -3700,6 +3705,7 @@ class _RichToolbar extends StatefulWidget {
     this.onPointerMove,
     this.onPointerEnd,
     this.onSwitchToSource,
+    this.onResumeEditing,
     this.emojiPopover,
     this.toolsAnchor,
     this.contentActions,
@@ -3730,9 +3736,10 @@ class _RichToolbar extends StatefulWidget {
   final VoidCallback? onPointerEnd;
 
   final VoidCallback? onSwitchToSource;
+  final VoidCallback? onResumeEditing;
 
-  /// 内容操作句柄。移动端用它渲染单个「内容操作」按钮(点按弹菜单/
-  /// 长按滑动速选);桌面端仍平铺撤销/恢复两个键(宽度不缺)。
+  /// 内容操作句柄。两端共用点按操作板/长按速选，桌面空间足够时
+  /// 另外外显撤销与恢复。
   final FluxdoEditorContentActions? contentActions;
 
   /// 展开/收起当前工具岛。
@@ -3746,7 +3753,7 @@ class _RichToolbar extends StatefulWidget {
   /// (见 [_onState]),在 build 时现算。
   final RichToolContext? toolContext;
 
-  /// 外显工具 id 列表。null(桌面端) = 显示全部工具。
+  /// 外显工具 id 列表。两端沿用用户固定顺序；null 为显示全部的兼容默认值。
   final List<String>? visibleToolIds;
   final List<ComposerToolAction> insertTools;
 
@@ -3798,7 +3805,7 @@ class _RichToolbarState extends State<_RichToolbar> {
 
   _Sig _compute() {
     final state = widget.state;
-    final marks = state.effectiveMarksAtCaret();
+    final marks = richToolbarMarks(state);
     final sel = state.selection;
     final block = sel == null ? null : state.textBlockById(sel.extent.blockId);
     return (
@@ -3830,12 +3837,21 @@ class _RichToolbarState extends State<_RichToolbar> {
       ),
       tooltip: S.current.emoji_tab,
       onPressed: widget.onToggleEmoji,
-      color: widget.isEmojiPanelVisible ? theme.colorScheme.primary : null,
+      isSelected: widget.isEmojiPanelVisible,
+      style: composerToolButtonStyle(
+        context,
+        active: widget.isEmojiPanelVisible,
+      ),
     );
     final popover = widget.emojiPopover;
     return popover == null
         ? button
-        : EmojiPopoverAnchor(controller: popover, child: button);
+        : EmojiPopoverAnchor(
+            controller: popover,
+            preferSide:
+                ComposerDesktopViewport.maybeOf(context)?.useRail ?? false,
+            child: button,
+          );
   }
 
   Widget _buildToolsButton(ThemeData theme) => ComposerToolsToggle(
@@ -3845,26 +3861,72 @@ class _RichToolbarState extends State<_RichToolbar> {
     onPressed: widget.onToggleTools,
   );
 
+  void _desktopAction(VoidCallback action) {
+    widget.toolsAnchor?.dismiss();
+    widget.onResumeEditing?.call();
+    action();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (PlatformUtils.isDesktop &&
+        ComposerDesktopViewport.maybeOf(context) != null) {
+      return ComposerDesktopWorkbench(
+        anchor: widget.toolsAnchor,
+        onExpandTools: widget.onToggleTools,
+        emoji: _buildEmojiButton(theme),
+        tools: _buildMiddleTools(theme, anchored: false),
+        contentActions: widget.contentActions == null
+            ? null
+            : ContentActionsButton(
+                provider: RichContentActions(widget.contentActions!),
+                listenable: widget.state,
+              ),
+        history: [
+          for (final redo in [false, true])
+            IconButton(
+              tooltip: _tip(
+                redo ? S.current.toolbar_redo : S.current.toolbar_undo,
+                redo ? 'redo' : 'undo',
+              ),
+              icon: Icon(redo ? AppIcons.redo : AppIcons.undo, size: 20),
+              onPressed: (redo ? widget.state.canRedo : widget.state.canUndo)
+                  ? () => _desktopAction(
+                      redo ? widget.state.redo : widget.state.undo,
+                    )
+                  : null,
+            ),
+        ],
+        controls: [
+          if (widget.onSwitchToSource != null)
+            ComposerModeButton(rich: true, onPressed: widget.onSwitchToSource),
+        ],
+      );
+    }
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
       controls: [
-        if (!PlatformUtils.isDesktop && widget.contentActions != null)
-          ContentActionsButton(
-            provider: RichContentActions(widget.contentActions!),
-            listenable: widget.state,
-          ),
-        if (!PlatformUtils.isDesktop && widget.onPointerStart != null)
-          CursorSwipeControl(
-            onPointerStart: widget.onPointerStart,
-            onPointerMove: widget.onPointerMove,
-            onPointerEnd: widget.onPointerEnd,
-            onMove: widget.contentActions?.moveHorizontal,
-            onMoveVertical: widget.contentActions?.moveVertical,
+        if (!PlatformUtils.isDesktop &&
+            (widget.contentActions != null || widget.onPointerStart != null))
+          ComposerEditingControls(
+            children: [
+              if (widget.contentActions != null)
+                ContentActionsButton(
+                  provider: RichContentActions(widget.contentActions!),
+                  listenable: widget.state,
+                ),
+              if (widget.onPointerStart != null)
+                CursorSwipeControl(
+                  onPointerStart: widget.onPointerStart,
+                  onPointerMove: widget.onPointerMove,
+                  onPointerEnd: widget.onPointerEnd,
+                  onMove: widget.contentActions?.moveHorizontal,
+                  onMoveVertical: widget.contentActions?.moveVertical,
+                ),
+            ],
           ),
         if (widget.onSwitchToSource != null)
           ComposerModeButton(rich: true, onPressed: widget.onSwitchToSource),
@@ -3898,7 +3960,7 @@ class _RichToolbarState extends State<_RichToolbar> {
     final sel = state.selection;
     final block = sel == null ? null : state.textBlockById(sel.extent.blockId);
     return RichToolSnapshot(
-      marks: state.effectiveMarksAtCaret(),
+      marks: richToolbarMarks(state),
       headingLevel: block?.isHeading == true ? block!.headingLevel : 0,
       isListItem: block?.isListItem ?? false,
       ordered: block?.isListItem == true && block!.ordered,
@@ -3907,7 +3969,7 @@ class _RichToolbarState extends State<_RichToolbar> {
   }
 
   /// 两端按固定偏好渲染工具；插入动作也可固定，和展开态共用同一执行出口。
-  List<Widget> _buildMiddleTools(ThemeData theme) {
+  List<Widget> _buildMiddleTools(ThemeData theme, {bool anchored = true}) {
     final ctx = widget.toolContext;
     // 现算:本 State 已监听 state 变化,build 时的值一定是最新光标态
     final snap = _snapshotFromState();
@@ -3922,25 +3984,12 @@ class _RichToolbarState extends State<_RichToolbar> {
             _tip(t.label, t.id),
             toolId: t.id,
             active: t.isActive?.call(snap) ?? false,
+            anchored: anchored,
             onTap: () => t.run(ctx),
           ),
       for (final action in widget.insertTools)
         if (ids?.contains('insert:${action.searchText}') == true)
-          widget.toolsAnchor!.compactControl(
-            IconButton(
-              tooltip: action.label,
-              icon:
-                  widget.toolsAnchor?.icon(
-                    'insert:${action.searchText}',
-                    IconTheme.merge(
-                      data: const IconThemeData(size: 20),
-                      child: action.icon,
-                    ),
-                  ) ??
-                  action.icon,
-              onPressed: action.run,
-            ),
-          ),
+          _insertButton(action, anchored: anchored),
       // 上传中的图片工具用转圈替代（外显了才需要）
       if (widget.uploading)
         const Padding(
@@ -3954,34 +4003,48 @@ class _RichToolbarState extends State<_RichToolbar> {
     ];
   }
 
+  Widget _insertButton(ComposerToolAction action, {required bool anchored}) {
+    final icon = IconTheme.merge(
+      data: const IconThemeData(size: 20),
+      child: action.icon,
+    );
+    final button = IconButton(
+      tooltip: action.label,
+      icon: anchored
+          ? widget.toolsAnchor?.icon('insert:${action.searchText}', icon) ??
+                icon
+          : icon,
+      onPressed: anchored ? action.run : () => _desktopAction(action.run),
+    );
+    return anchored
+        ? widget.toolsAnchor?.compactControl(button) ?? button
+        : button;
+  }
+
   /// 标准工具按钮(MarkdownToolbar._ToolbarButton 同参:FaIcon 16 +
   /// compact + onSurfaceVariant;激活态 primary)。
   Widget _btn(
     FaIconData icon,
     String tooltip, {
     bool active = false,
+    bool anchored = true,
     String? toolId,
     required VoidCallback onTap,
   }) {
-    final theme = Theme.of(context);
     final button = IconButton(
       visualDensity: VisualDensity.standard,
-      icon: toolId == null
+      isSelected: active,
+      icon: toolId == null || !anchored
           ? FaIcon(icon, size: 16)
           : widget.toolsAnchor?.icon(toolId, FaIcon(icon, size: 16)) ??
                 FaIcon(icon, size: 16),
-      onPressed: onTap,
+      onPressed: anchored ? onTap : () => _desktopAction(onTap),
       tooltip: tooltip,
-      style: IconButton.styleFrom(
-        foregroundColor: active
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
-        backgroundColor: active
-            ? theme.colorScheme.primary.withValues(alpha: 0.12)
-            : null,
-      ),
+      style: composerToolButtonStyle(context, active: active),
     );
-    return widget.toolsAnchor?.compactControl(button) ?? button;
+    return anchored
+        ? widget.toolsAnchor?.compactControl(button) ?? button
+        : button;
   }
 }
 

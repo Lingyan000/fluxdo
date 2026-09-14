@@ -365,7 +365,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
             );
       if (!executed &&
           mounted &&
-          (_isDesktop || (quick && keyboardWasVisible))) {
+          ((_isDesktop && (quick || _toolsAnchor.restoreInput)) ||
+              (quick && keyboardWasVisible))) {
         resumeEditing();
       }
     } finally {
@@ -1153,6 +1154,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           controller: widget.controller,
           focusNode: _focusNode,
           undoController: _undoController,
+          onResumeEditing: resumeEditing,
           onMoveCursorVertical: _moveCursorVertical,
           showPreviewButton: widget.showPreviewButton,
           isPreview: _isPreview,

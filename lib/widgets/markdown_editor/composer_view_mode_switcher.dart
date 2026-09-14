@@ -7,10 +7,10 @@ import 'composer_page_chrome.dart';
 enum ComposerViewMode { rich, source, preview }
 
 extension ComposerViewModeX on ComposerViewMode {
-  IconData get icon => switch (this) {
+  Object get icon => switch (this) {
     ComposerViewMode.rich => Symbols.wysiwyg_rounded,
     ComposerViewMode.source => Symbols.code_rounded,
-    ComposerViewMode.preview => AppIcons.book,
+    ComposerViewMode.preview => AppIcons.openBook,
   };
 
   String get label => switch (this) {
@@ -53,6 +53,6 @@ class ComposerPreviewButton extends StatelessWidget {
     label: previewing ? S.current.common_exitPreview : S.current.common_preview,
     onPressed: onPressed,
     color: previewing ? Theme.of(context).colorScheme.primary : null,
-    icon: previewing ? Symbols.edit_rounded : AppIcons.book,
+    icon: previewing ? AppIcons.edit : AppIcons.openBook,
   );
 }

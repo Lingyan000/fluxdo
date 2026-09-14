@@ -42,15 +42,19 @@ class AppCustomIcon extends AppIconSpec {
 
   /// 设计稿尺寸（painter 用归一化坐标时应基于此 box）。渲染时按 size 缩放。
   final Size designSize;
-  const AppCustomIcon(this.painterBuilder, {this.designSize = const Size(24, 24)});
+  const AppCustomIcon(
+    this.painterBuilder, {
+    this.designSize = const Size(24, 24),
+  });
 }
 
 /// painter 构造函数签名。color/fill 由 [AppIcon] 渲染时注入。
-typedef IconPainterBuilder = CustomPainter Function({
-  required Color color,
-  required double fill,
-  required double strokeWidth,
-});
+typedef IconPainterBuilder =
+    CustomPainter Function({
+      required Color color,
+      required double fill,
+      required double strokeWidth,
+    });
 
 /// 内部隐式转换：直接把 [IconData] 当 [AppIconSpec] 用。
 extension IconDataToSpec on IconData {
@@ -85,6 +89,8 @@ abstract final class AppIcons {
   static const tune = Symbols.tune_rounded;
   static const refresh = Symbols.refresh_rounded;
   static const sync = Symbols.sync_rounded;
+  static const undo = Symbols.undo_rounded;
+  static const redo = Symbols.redo_rounded;
 
   // ─── 文件 / 内容操作 ───────────────────────────────────────────────
   static const copy = Symbols.content_copy_rounded;
@@ -198,6 +204,16 @@ abstract final class AppIcons {
   static const callSplit = Symbols.call_split_rounded;
 
   // ─── 自绘图标（Material Symbols 没有合适字形时） ─────────────────
+  static final AppCustomIcon openBook = AppCustomIcon(
+    ({required color, required fill, required strokeWidth}) =>
+        OpenBookPainter(color: color, strokeWidth: strokeWidth),
+  );
+
+  static final AppCustomIcon paperPlane = AppCustomIcon(
+    ({required color, required fill, required strokeWidth}) =>
+        PaperPlanePainter(color: color, strokeWidth: strokeWidth),
+  );
+
   static final AppCustomIcon contentActions = AppCustomIcon(
     ({required color, required fill, required strokeWidth}) =>
         ContentActionsPainter(color: color, strokeWidth: strokeWidth),

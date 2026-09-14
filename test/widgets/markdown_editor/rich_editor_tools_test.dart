@@ -36,7 +36,7 @@ RichToolSnapshot _snap(EditorState s) {
   final sel = s.selection;
   final block = sel == null ? null : s.textBlockById(sel.extent.blockId);
   return RichToolSnapshot(
-    marks: s.effectiveMarksAtCaret(),
+    marks: richToolbarMarks(s),
     headingLevel: block?.isHeading == true ? block!.headingLevel : 0,
     isListItem: block?.isListItem ?? false,
     ordered: block?.isListItem == true && block!.ordered,
@@ -84,8 +84,8 @@ void main() {
       );
       _tool('bold').run(_ctx(s));
 
-      // 注意：effectiveMarksAtCaret 对非折叠选区按设计返回空集，
-      // 所以要把光标折叠进已加粗的区间里再看激活态。
+      expect(_tool('bold').isActive!(_snap(s)), isTrue);
+      // 折叠进已加粗的区间后仍保持激活。
       _caret(s, 2);
       expect(_tool('bold').isActive!(_snap(s)), isTrue);
       expect(_tool('italic').isActive!(_snap(s)), isFalse);
@@ -100,6 +100,27 @@ void main() {
       expect(snap.ordered, isFalse);
       expect(_tool('bulletList').isActive!(snap), isTrue);
       expect(_tool('numberedList').isActive!(snap), isFalse);
+    });
+
+    test('混合格式不高亮，反向选区与 pending 样式仍正确', () {
+      final s = _makeState();
+      addTearDown(s.dispose);
+      final id = s.blocks.first.id;
+      void select(int start, int end) => s.updateSelection(
+        EditorSelection(
+          base: EditorPosition(blockId: id, offset: start),
+          extent: EditorPosition(blockId: id, offset: end),
+        ),
+      );
+      select(0, 2);
+      _tool('bold').run(_ctx(s));
+      select(0, 3);
+      expect(_tool('bold').isActive!(_snap(s)), isFalse);
+      select(2, 0);
+      expect(_tool('bold').isActive!(_snap(s)), isTrue);
+      _caret(s, 1);
+      _tool('italic').run(_ctx(s));
+      expect(_snap(s).marks, containsAll([MarkKind.strong, MarkKind.em]));
     });
 
     test('引用：切换后 inQuote 为真', () {

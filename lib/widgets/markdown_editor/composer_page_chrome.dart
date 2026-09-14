@@ -13,7 +13,7 @@ class ComposerActionButton extends StatelessWidget {
     this.busy = false,
     this.color,
   });
-  final IconData icon;
+  final Object icon;
   final String label;
   final VoidCallback? onPressed;
   final bool busy;
@@ -39,7 +39,7 @@ class ComposerActionButton extends StatelessWidget {
             dimension: 18,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
-        : Icon(icon, size: 21),
+        : AppIcon(icon, size: 21),
   );
 }
 

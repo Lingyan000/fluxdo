@@ -17,6 +17,7 @@ import '../../helpers/memory_draft_store.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_desktop_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/content_actions_button.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/post/reply_sheet.dart';
@@ -32,8 +33,9 @@ Future<void> _pumpReply(
   double? width,
   double scale = 1,
   bool dark = false,
+  bool desktop = false,
 }) async {
-  PlatformUtils.debugDesktopOverride = false;
+  PlatformUtils.debugDesktopOverride = desktop;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
   if (width != null) {
     tester.view.devicePixelRatio = 1;
@@ -91,6 +93,7 @@ Future<void> _pumpReply(
           supportedLocales: AppLocaleUtils.supportedLocales,
           theme: ThemeData(
             brightness: dark ? Brightness.dark : Brightness.light,
+            platform: desktop ? TargetPlatform.macOS : TargetPlatform.android,
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
@@ -120,6 +123,34 @@ Future<void> _pumpReply(
 }
 
 void main() {
+  testWidgets('桌面回复使用实际可用空间切换侧栏和横栏，预览往返保留正文', (tester) async {
+    await _pumpReply(tester, width: 1200, desktop: true);
+    expect(find.byType(ComposerDesktopWorkbench), findsOneWidget);
+    expect(find.byKey(const ValueKey('composer-desktop-rail')), findsOneWidget);
+    final field = find.byType(EditableText).first;
+    await tester.enterText(field, 'desktop reply');
+    await tester.pump();
+    final controller = tester.widget<EditableText>(field).controller;
+    await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('composer-tools-panel')), findsOneWidget);
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(controller.text, 'desktop reply');
+    expect(find.byKey(const ValueKey('composer-tools-panel')), findsNothing);
+    tester.view.physicalSize = const Size(600, 760);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byKey(const ValueKey('composer-desktop-rail')), findsNothing);
+    expect(find.byKey(const ValueKey('composer-format-row')), findsOneWidget);
+    expect(controller.text, 'desktop reply');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final (width, scale, dark) in [
     (320.0, 1.0, false),
     (390.0, 1.0, false),

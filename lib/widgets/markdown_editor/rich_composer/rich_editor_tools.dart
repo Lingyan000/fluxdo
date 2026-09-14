@@ -88,6 +88,26 @@ class RichToolSnapshot {
   bool has(MarkKind k) => marks.contains(k);
 }
 
+/// 单块选区只有完整覆盖才高亮；折叠光标沿用内核的 pending marks。
+/// 跨块格式命令目前不支持，保持与其可操作范围一致。
+Set<MarkKind> richToolbarMarks(EditorState state) {
+  if (state.selection?.isCollapsed != false) {
+    return state.effectiveMarksAtCaret();
+  }
+  final range = state.normalizedSelection();
+  if (range == null || range.$1.blockId != range.$2.blockId) return const {};
+  final content = state.textBlockById(range.$1.blockId)?.content;
+  if (content == null) return const {};
+  final start = range.$1.offset.clamp(0, content.length);
+  final end = range.$2.offset.clamp(0, content.length);
+  if (start >= end) return const {};
+  return {
+    for (final kind in MarkKind.values)
+      if (kind != MarkKind.link && content.isRangeFullyMarked(start, end, kind))
+        kind,
+  };
+}
+
 /// 全部富文本工具（顺序 = 工具栏外显与面板网格的展示顺序）。
 final List<RichEditorTool> richEditorTools = [
   RichEditorTool(

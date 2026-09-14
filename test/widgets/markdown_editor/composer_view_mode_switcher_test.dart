@@ -111,7 +111,12 @@ void main() {
       expect(tester.getSize(surface), const Size.square(40));
       expect(tester.widget<Material>(surface).shape, isA<CircleBorder>());
       expect(find.byTooltip('发送'), findsOneWidget);
-      expect(find.byIcon(Symbols.send_rounded), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is AppIcon && w.icon == AppIcons.paperPlane,
+        ),
+        findsOneWidget,
+      );
       final more = find.byKey(const ValueKey('composer-header-more'));
       expect(more, folded == 0 ? findsNothing : findsOneWidget);
       if (folded > 0) {
@@ -169,7 +174,12 @@ void main() {
       ),
       findsNothing,
     );
-    expect(find.byIcon(AppIcons.book), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is AppIcon && w.icon == AppIcons.openBook,
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byType(ComposerPreviewButton));
     await tester.pump();
     expect(preview, isTrue);

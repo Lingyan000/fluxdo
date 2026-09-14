@@ -25,6 +25,9 @@ import '../../utils/platform_utils.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
 import 'composer_workbench.dart';
+import 'composer_tool_style.dart';
+import 'composer_desktop_layout.dart';
+import 'composer_desktop_workbench.dart';
 import 'composer_tools_anchor.dart';
 import 'composer_view_mode_switcher.dart';
 import 'cursor_swipe_control.dart';
@@ -86,7 +89,7 @@ class MarkdownToolbar extends StatefulWidget {
   final bool isToolsPanelVisible;
 
   /// 外显工具 id 列表（见 editor_tools.dart）
-  /// null（桌面端）= 显示全部工具；空列表 = 中部不显示任何工具
+  /// null = 显示全部工具；实际两端沿用用户固定列表，空列表不显示固定工具。
   final List<String>? visibleToolIds;
 
   /// 桌面端表情悬浮弹层控制器(非 null 时表情按钮被锚点包裹,
@@ -95,6 +98,7 @@ class MarkdownToolbar extends StatefulWidget {
   final ComposerToolsAnchor? toolsAnchor;
 
   final Widget? metaBar;
+  final VoidCallback? onResumeEditing;
   final void Function(int direction, {required bool extend})?
   onMoveCursorVertical;
 
@@ -117,6 +121,7 @@ class MarkdownToolbar extends StatefulWidget {
     this.emojiPopover,
     this.toolsAnchor,
     this.metaBar,
+    this.onResumeEditing,
     this.onMoveCursorVertical,
   });
 
@@ -1110,22 +1115,27 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   /// 构建中部滚动区域的工具按钮
   ///
   /// 两端按用户保存的顺序显示固定工具；null 仅作为独立使用时的兼容默认值。
-  List<Widget> _buildToolButtons() {
+  List<Widget> _buildToolButtons({bool anchored = true}) {
     final ids = widget.visibleToolIds;
     final tools = ids == null ? editorTools : resolveVisibleTools(ids);
 
     return [
       for (final tool in tools)
-        widget.toolsAnchor?.compactControl(_buildToolButton(tool)) ??
-            _buildToolButton(tool),
+        if (anchored)
+          widget.toolsAnchor?.compactControl(_buildToolButton(tool)) ??
+              _buildToolButton(tool)
+        else
+          _buildToolButton(tool, anchored: false),
       // 图片工具未外显时，上传中在中部显示进度指示
       if (_isUploading && ids != null && !ids.contains(kEditorToolImage))
         _UploadIndicator(progress: _uploadProgress),
     ];
   }
 
-  Widget _buildToolButton(EditorTool tool) {
-    final icon = widget.toolsAnchor?.icon(tool.id, tool.icon) ?? tool.icon;
+  Widget _buildToolButton(EditorTool tool, {bool anchored = true}) {
+    final icon = anchored
+        ? widget.toolsAnchor?.icon(tool.id, tool.icon) ?? tool.icon
+        : tool.icon;
     final s = S.current;
     // 桌面端 tooltip 标注快捷键(如「粗体 (⌘B)」;移动端无物理键盘不标)
     final hint = PlatformUtils.isDesktop ? composerShortcutHint(tool.id) : null;
@@ -1143,7 +1153,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         ),
         tooltip: tooltip,
         itemBuilder: (context) => tool.menuItems!(s),
-        onSelected: (value) => tool.onMenuSelected!(this, value),
+        onSelected: (value) => anchored
+            ? tool.onMenuSelected!(this, value)
+            : _desktopAction(() => tool.onMenuSelected!(this, value)),
         padding: EdgeInsets.zero,
         iconSize: 20,
         style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
@@ -1154,7 +1166,11 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     final isUpload = isImage || tool.id == 'attachment';
     return _ToolbarButton(
       icon: icon,
-      onPressed: _isUploading && isUpload ? null : () => tool.action!(this),
+      onPressed: _isUploading && isUpload
+          ? null
+          : () => anchored
+                ? tool.action!(this)
+                : _desktopAction(() => tool.action!(this)),
       isLoading: isImage && _isUploading,
       label: isImage ? _uploadProgress : null,
       tooltip: tooltip,
@@ -1170,12 +1186,21 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       ),
       tooltip: S.current.emoji_tab,
       onPressed: widget.onToggleEmoji,
-      color: widget.isEmojiPanelVisible ? theme.colorScheme.primary : null,
+      isSelected: widget.isEmojiPanelVisible,
+      style: composerToolButtonStyle(
+        context,
+        active: widget.isEmojiPanelVisible,
+      ),
     );
     final popover = widget.emojiPopover;
     return popover == null
         ? button
-        : EmojiPopoverAnchor(controller: popover, child: button);
+        : EmojiPopoverAnchor(
+            controller: popover,
+            preferSide:
+                ComposerDesktopViewport.maybeOf(context)?.useRail ?? false,
+            child: button,
+          );
   }
 
   void _moveCursor(int direction, {required bool extend}) {
@@ -1206,20 +1231,64 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     onPressed: widget.onToggleTools,
   );
 
+  void _desktopAction(VoidCallback action) {
+    widget.toolsAnchor?.dismiss();
+    widget.onResumeEditing?.call();
+    action();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (PlatformUtils.isDesktop &&
+        ComposerDesktopViewport.maybeOf(context) != null) {
+      final undo = widget.undoController;
+      return ComposerDesktopWorkbench(
+        anchor: widget.toolsAnchor,
+        onExpandTools: widget.onToggleTools,
+        emoji: _buildEmojiButton(theme),
+        tools: _buildToolButtons(anchored: false),
+        contentActions: undo == null ? null : _contentActions(),
+        history: [
+          if (undo != null)
+            for (final redo in [false, true])
+              ValueListenableBuilder(
+                valueListenable: undo,
+                builder: (context, value, _) => IconButton(
+                  tooltip:
+                      '${redo ? S.current.toolbar_redo : S.current.toolbar_undo}${composerShortcutHint(redo ? 'redo' : 'undo') ?? ''}',
+                  icon: Icon(redo ? AppIcons.redo : AppIcons.undo, size: 20),
+                  onPressed: (redo ? value.canRedo : value.canUndo)
+                      ? () => _desktopAction(redo ? undo.redo : undo.undo)
+                      : null,
+                ),
+              ),
+        ],
+        controls: [
+          if (widget.onSwitchToRich != null)
+            ComposerModeButton(rich: false, onPressed: widget.onSwitchToRich),
+          if (widget.showPreviewButton)
+            ComposerPreviewButton(
+              previewing: widget.isPreview,
+              onPressed: widget.onTogglePreview,
+            ),
+        ],
+      );
+    }
     return ComposerWorkbench(
       toolsAnchor: widget.toolsAnchor,
       onExpandTools: widget.onToggleTools,
       metadata: widget.metaBar,
       controls: [
-        if (!PlatformUtils.isDesktop && widget.undoController != null)
-          _contentActions(),
         if (!PlatformUtils.isDesktop)
-          CursorSwipeControl(
-            onMove: _moveCursor,
-            onMoveVertical: widget.onMoveCursorVertical,
+          ComposerEditingControls(
+            children: [
+              if (widget.undoController != null) _contentActions(),
+              CursorSwipeControl(
+                onMove: _moveCursor,
+                onMoveVertical: widget.onMoveCursorVertical,
+              ),
+            ],
           ),
         if (widget.onSwitchToRich != null)
           ComposerModeButton(rich: false, onPressed: widget.onSwitchToRich),
@@ -1335,9 +1404,7 @@ class _ToolbarButton extends StatelessWidget {
       icon: child,
       onPressed: onPressed,
       tooltip: tooltip,
-      style: IconButton.styleFrom(
-        foregroundColor: theme.colorScheme.onSurfaceVariant,
-      ),
+      style: composerToolButtonStyle(context),
     );
   }
 }

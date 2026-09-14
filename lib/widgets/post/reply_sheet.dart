@@ -279,7 +279,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+            AppIcon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -333,7 +333,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     submitLabel: _isEditMode
         ? context.l10n.common_save
         : context.l10n.common_send,
-    submitIcon: _isEditMode ? Symbols.check_rounded : Symbols.send_rounded,
+    submitIcon: _isEditMode ? AppIcons.check : null,
     onSubmit: (_isSubmitting || _isLoadingRaw) ? null : _submit,
     submitting: _isSubmitting,
     previewing: _showPreview,

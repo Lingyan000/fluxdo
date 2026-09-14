@@ -14,6 +14,8 @@
 /// 点按与长按速选共用同一份动作和可用性判断。
 library;
 
+import 'dart:math' as math;
+
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
@@ -137,39 +139,145 @@ class ContentActionsButton extends StatelessWidget {
     return items;
   }
 
-  /// 点按路径：弹常规菜单（不是所有人都会用长按滑动，也便于无障碍）。
+  /// 点按使用两行三列操作板，长按仍共用上面的六个动作。
   Future<void> _showTapMenu(BuildContext context) async {
     final items = _buildItems(context);
     if (items.isEmpty) return;
 
-    final theme = Theme.of(context);
+    final width = composerActionMenuWidth(context);
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.labelLarge!.copyWith(height: 1.25);
+    var rowHeight = 76.0;
+    for (final item in items) {
+      final painter = TextPainter(
+        text: TextSpan(text: item.label, style: labelStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 2,
+      )..layout(maxWidth: (width - 16) / 3 - 12);
+      rowHeight = math.max(rowHeight, painter.height + 44);
+      painter.dispose();
+    }
     final picked = await showComposerActionMenu<int>(
       context: context,
+      cornerRadius: 20,
       items: [
-        for (var i = 0; i < items.length; i++)
-          PopupMenuItem<int>(
-            value: i,
-            height: 48,
-            enabled: items[i].enabled,
-            child: Row(
-              children: [
-                Icon(
-                  items[i].icon,
-                  size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 10),
-                Text(items[i].label),
-              ],
-            ),
-          ),
+        _ContentActionsGridEntry(
+          width: width,
+          rowHeight: rowHeight,
+          labelStyle: labelStyle,
+          listenable: listenable,
+          itemsBuilder: () => context.mounted ? _buildItems(context) : [],
+        ),
       ],
     );
-    if (context.mounted &&
-        picked != null &&
-        picked < items.length &&
-        items[picked].enabled) {
-      items[picked].onSelected();
+    if (!context.mounted || picked == null) return;
+    final current = _buildItems(context);
+    if (picked < current.length && current[picked].enabled) {
+      current[picked].onSelected();
     }
   }
+}
+
+class _ContentActionsGridEntry extends PopupMenuEntry<int> {
+  const _ContentActionsGridEntry({
+    required this.width,
+    required this.rowHeight,
+    required this.labelStyle,
+    required this.listenable,
+    required this.itemsBuilder,
+  });
+  final double width;
+  final double rowHeight;
+  final TextStyle labelStyle;
+  final Listenable listenable;
+  final List<RadialMenuItem> Function() itemsBuilder;
+
+  @override
+  double get height => rowHeight * 2;
+  @override
+  bool represents(int? value) => false;
+  @override
+  State<_ContentActionsGridEntry> createState() =>
+      _ContentActionsGridEntryState();
+}
+
+class _ContentActionsGridEntryState extends State<_ContentActionsGridEntry> {
+  @override
+  Widget build(BuildContext context) => TextFieldTapRegion(
+    child: SizedBox(
+      key: const ValueKey('composer-content-actions-grid'),
+      width: widget.width,
+      height: widget.height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: ListenableBuilder(
+          listenable: widget.listenable,
+          builder: (context, _) {
+            final items = widget.itemsBuilder();
+            final colors = Theme.of(context).colorScheme;
+            return Column(
+              children: [
+                for (var row = 0; row < 2; row++)
+                  SizedBox(
+                    height: widget.rowHeight,
+                    child: Row(
+                      children: [
+                        for (var col = 0; col < 3; col++)
+                          Expanded(
+                            child: row * 3 + col >= items.length
+                                ? const SizedBox.shrink()
+                                : TextButton(
+                                    key: ValueKey(
+                                      'composer-content-action-${row * 3 + col}',
+                                    ),
+                                    onPressed: items[row * 3 + col].enabled
+                                        ? () => Navigator.of(
+                                            context,
+                                          ).pop(row * 3 + col)
+                                        : null,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: colors.onSurface,
+                                      minimumSize: const Size(48, 48),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      textStyle: widget.labelStyle,
+                                    ),
+                                    child: SizedBox.expand(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            items[row * 3 + col].icon,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            items[row * 3 + col].label,
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  );
 }
