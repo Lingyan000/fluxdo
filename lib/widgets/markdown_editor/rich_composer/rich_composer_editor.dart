@@ -527,11 +527,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   (int, EditorSelection?, double, Size)? _lastCaretRevealKey;
 
   void _keepCaretAboveToolbar() {
-    if (_caretRevealScheduled || !_editorFocus.hasFocus) return;
+    // 虚拟光标由幽灵位置驱动边缘滚动，不能再按图片行底的实光标反向补滚。
+    if (_caretRevealScheduled || !_editorFocus.hasFocus || _virtualPointer.isActive) {
+      return;
+    }
     _caretRevealScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _caretRevealScheduled = false;
-      if (!mounted || !_editorFocus.hasFocus || !_scrollController.hasClients) {
+      if (!mounted ||
+          !_editorFocus.hasFocus ||
+          !_scrollController.hasClients ||
+          _virtualPointer.isActive) {
         return;
       }
       final rect = _caretGlobalRect;
@@ -567,6 +573,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         }
       }
     });
+  }
+
+  void _endVirtualPointer() {
+    _virtualPointer.end();
+    // 结束时实光标矩形可能不变，主动恢复一次工具栏避让。
+    _lastCaretRevealKey = null;
+    _keepCaretAboveToolbar();
   }
 
   /// 编辑区滚回顶部(header 含标题输入,校验失败等场景需拉回可见)
@@ -3544,7 +3557,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         onPointerStart: ({required extend}) =>
             _virtualPointer.start(extend: extend),
         onPointerMove: _virtualPointer.moveBy,
-        onPointerEnd: _virtualPointer.end,
+        onPointerEnd: _endVirtualPointer,
         contentActions: _contentActions,
         // 两端复用同一个浮岛展开态，固定工具由现有偏好驱动。
         onToggleTools: showTools,

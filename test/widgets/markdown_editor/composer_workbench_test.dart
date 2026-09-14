@@ -34,6 +34,7 @@ import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_edito
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo_render/editor.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ImageRun;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -127,6 +128,46 @@ Future<void> _pump(
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('高图下方向上拖虚拟光标，宿主不能把视口拉回图片底部', (tester) async {
+    final controller = TextEditingController();
+    await _pump(tester, RichComposerEditor(controller: controller));
+    await tester.pump(const Duration(milliseconds: 800));
+    final widget = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+    final state = widget.state;
+    state.pastePlainText('above image');
+    final above = state.selection!.extent.blockId;
+    state.splitBlock();
+    state.insertAtom(const ImageRun(
+      src: 'https://example.com/tall.png', width: 240, height: 900,
+    ));
+    state.splitBlock();
+    state.insertText('below image');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final scrollable = tester.state<ScrollableState>(find.descendant(
+      of: find.byType(CustomScrollView).first,
+      matching: find.byType(Scrollable),
+    ).first);
+    final position = scrollable.position;
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pump();
+    final pointer = widget.virtualPointer!;
+    expect(pointer.start(), isTrue);
+    pointer.moveBy(const Offset(0, -5000));
+    var previous = position.pixels;
+    for (var i = 0; i < 180; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(position.pixels, lessThanOrEqualTo(previous + 0.01),
+          reason: '向上拖动时不能被光标避让反向拉回图片底部');
+      previous = position.pixels;
+    }
+    expect(position.pixels, closeTo(position.minScrollExtent, 0.01));
+    expect(state.selection!.extent.blockId, above);
+    pointer.end();
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
 
   for (final rich in [false, true]) {
     testWidgets('PC 宽屏分列工具，缩窄保留正文、选区、撤销和已打开面板 rich=$rich', (tester) async {
