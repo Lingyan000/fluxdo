@@ -147,6 +147,32 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
     );
   }
 
+  /// 获取当前用户对标签的通知级别。
+  Future<TagNotificationLevel> getTagNotificationLevel(String tagName) async {
+    final response = await _dio.get(
+      '/tag/${Uri.encodeComponent(tagName)}/notifications.json',
+    );
+    final notification =
+        response.data['tag_notification'] as Map<String, dynamic>;
+    return TagNotificationLevel.fromValue(
+      notification['notification_level'] as int?,
+    );
+  }
+
+  /// 标签接口使用 PUT，参数需嵌套在 tag_notification 中。
+  Future<void> setTagNotificationLevel(
+    String tagName,
+    TagNotificationLevel level,
+  ) async {
+    await _dio.put(
+      '/tag/${Uri.encodeComponent(tagName)}/notifications.json',
+      data: {
+        'tag_notification': {'notification_level': level.value},
+      },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+  }
+
   /// 获取首页书签 tab
   Future<TopicListResponse> getBookmarks({int page = 0}) async {
     final response = await _dio.get(

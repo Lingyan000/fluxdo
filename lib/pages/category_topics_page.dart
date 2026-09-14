@@ -48,6 +48,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   List<Topic> _topics = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  bool _isUpdatingNotificationLevel = false;
   bool _isLoadMoreFailed = false;
   bool _hasMore = true;
   int _page = 0;
@@ -373,9 +374,12 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
   Future<void> _setCategoryNotificationLevel(
     CategoryNotificationLevel level,
   ) async {
+    if (_isUpdatingNotificationLevel) return;
     final overrides = ref.read(categoryNotificationOverridesProvider);
     final oldLevel =
         overrides[widget.category.id] ?? widget.category.notificationLevel;
+    if (CategoryNotificationLevel.fromValue(oldLevel) == level) return;
+    setState(() => _isUpdatingNotificationLevel = true);
     // 乐观更新
     ref.read(categoryNotificationOverridesProvider.notifier).state = {
       ...overrides,
@@ -403,6 +407,8 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             ..remove(widget.category.id);
         }
       }
+    } finally {
+      if (mounted) setState(() => _isUpdatingNotificationLevel = false);
     }
   }
 
@@ -490,6 +496,15 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
         title: Text(widget.category.name),
         centerTitle: false,
         actions: [
+          if (isLoggedIn)
+            CategoryNotificationButton(
+              level: CategoryNotificationLevel.fromValue(
+                ref.watch(categoryNotificationOverridesProvider)[widget.category.id] ??
+                    widget.category.notificationLevel,
+              ),
+              isLoading: _isUpdatingNotificationLevel,
+              onChanged: _setCategoryNotificationLevel,
+            ),
           IconButton(
             icon: const Icon(Symbols.search_rounded),
             onPressed: () => Navigator.push(
@@ -526,29 +541,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage> {
             onTagRemoved: _removeTag,
             onAddTag: _openTagSelection,
             trailing: isLoggedIn
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _CreateTopicButton(onPressed: _createTopic),
-                      const SizedBox(width: 6),
-                      Builder(
-                        builder: (context) {
-                          final overrides = ref.watch(
-                            categoryNotificationOverridesProvider,
-                          );
-                          final effectiveLevel =
-                              overrides[widget.category.id] ??
-                              widget.category.notificationLevel;
-                          return CategoryNotificationButton(
-                            level: CategoryNotificationLevel.fromValue(
-                              effectiveLevel,
-                            ),
-                            onChanged: _setCategoryNotificationLevel,
-                          );
-                        },
-                      ),
-                    ],
-                  )
+                ? _CreateTopicButton(onPressed: _createTopic)
                 : null,
           ),
           // 列表
