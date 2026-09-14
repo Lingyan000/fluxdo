@@ -391,12 +391,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     );
   }
 
-  final _richKey = GlobalKey<RichComposerEditorState>();
+  var _richKey = GlobalKey<RichComposerEditorState>();
 
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   final _contentFocusNode = FocusNode();
-  final _editorKey = GlobalKey<MarkdownEditorState>();
+  var _editorKey = GlobalKey<MarkdownEditorState>();
 
   bool _isSubmitting = false;
   bool _submitted = false; // 提交成功标志，防止 dispose 重新保存草稿
@@ -404,6 +404,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   bool _showEmojiPanel = false;
   bool _isLoadingRaw = false; // 编辑模式：加载原始内容中
   bool _isLoadingDraft = false; // 加载草稿中
+  bool _restoringDraft = false;
+  bool _reloadingDraft = false;
 
   // 表情面板高度
   static const double _emojiPanelHeight = 280.0;
@@ -489,7 +491,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     _draftLifecycle = AppLifecycleListener(
       onInactive: _flushDraftForLifecycle,
       onPause: _flushDraftForLifecycle,
-      onResume: _flushDraftForLifecycle,
+      onResume: () => _flushDraftForLifecycle(refresh: true),
     );
 
     // 自动聚焦（非编辑模式时立即聚焦，编辑模式在加载完成后聚焦）
@@ -528,6 +530,22 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     _draftController = DraftController(
       draftKey: draftKey,
       localStore: ref.read(localDraftStoreProvider),
+      onRemoteDraftChanged: (data) {
+        if (mounted &&
+            !_submitted &&
+            !_discarded &&
+            (!_isLoadingDraft || _reloadingDraft)) {
+          _restoreDraft(
+            Draft(draftKey: draftKey, data: data),
+            appendInitialContent: false,
+          );
+        }
+      },
+      currentEditorData: () {
+        if (!mounted || (_isLoadingDraft && !_reloadingDraft)) return null;
+        _richKey.currentState?.flushToController();
+        return _currentDraftData();
+      },
     );
     if (shouldLoadDraft) {
       _loadExistingDraft();
@@ -550,6 +568,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     } finally {
       if (mounted) {
         setState(() => _isLoadingDraft = false);
+        if (widget.initialContent?.isNotEmpty == true) _onContentChanged();
         _contentFocusNode.requestFocus();
       }
     }
@@ -583,25 +602,24 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   }
 
   /// 恢复草稿内容
-  void _restoreDraft(Draft draft) {
-    if (draft.data.reply != null) {
-      // 有预填内容时，将草稿追加到引用内容后面
-      if (widget.initialContent != null && widget.initialContent!.isNotEmpty) {
-        _contentController.text = '${widget.initialContent}${draft.data.reply}';
-      } else {
-        _contentController.text = draft.data.reply!;
+  void _restoreDraft(Draft draft, {bool appendInitialContent = true}) {
+    _restoringDraft = true;
+    _richKey.currentState?.prepareForDocumentReplacement();
+    _richKey = GlobalKey<RichComposerEditorState>();
+    _editorKey = GlobalKey<MarkdownEditorState>();
+    try {
+      final prefix = appendInitialContent ? widget.initialContent ?? '' : '';
+      _contentController.text = '$prefix${draft.data.reply ?? ''}';
+      if (_isPrivateMessage) {
+        _titleController.text = draft.data.title ?? '';
+        setState(
+          () => _recipients = List.of(draft.data.recipients ?? const []),
+        );
       }
+    } finally {
+      _restoringDraft = false;
     }
-    if (_isPrivateMessage) {
-      if (draft.data.title != null) {
-        _titleController.text = draft.data.title!;
-      }
-      // 对齐 Discourse loadDraft：收件人以草稿数据为准（支持多收件人）
-      final recipients = draft.data.recipients;
-      if (recipients != null && recipients.isNotEmpty) {
-        setState(() => _recipients = List.of(recipients));
-      }
-    }
+    setState(() {});
   }
 
   /// 内容变化时触发草稿保存
@@ -629,7 +647,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   }
 
   void _onContentChanged() {
-    if (_isEditMode || _draftController == null) return;
+    if (_isEditMode ||
+        _draftController == null ||
+        _isLoadingDraft ||
+        _restoringDraft) {
+      return;
+    }
 
     _draftController!.scheduleSave(_currentDraftData());
   }
@@ -644,7 +667,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
   );
 
   AppLifecycleListener? _draftLifecycle;
-  void _flushDraftForLifecycle() {
+  void _flushDraftForLifecycle({bool refresh = false}) {
     if (!mounted ||
         _isSubmitting ||
         _isLoadingDraft ||
@@ -653,7 +676,31 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
     _richKey.currentState?.flushToController();
-    _draftController?.saveNow(_currentDraftData());
+    if (refresh) {
+      _draftController?.scheduleSave(_currentDraftData());
+      _draftController?.retryPending();
+    } else {
+      _draftController?.saveNow(_currentDraftData());
+    }
+  }
+
+  Future<void> _reloadRemoteDraft() async {
+    setState(() {
+      _reloadingDraft = true;
+      _isLoadingDraft = true;
+    });
+    try {
+      if (await _draftController?.reloadFromRemote() != true && mounted) {
+        ToastService.showError(S.current.composer_draftReloadFailed);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingDraft = false;
+          _reloadingDraft = false;
+        });
+      }
+    }
   }
 
   bool _retryingDraft = false;
@@ -663,7 +710,13 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     try {
       _richKey.currentState?.flushToController();
       final force = _draftController!.hasConflict;
-      if (force && !await confirmComposerDraftOverwrite(context)) return;
+      if (force &&
+          !await confirmComposerDraftOverwrite(
+            context,
+            onReload: _reloadRemoteDraft,
+          )) {
+        return;
+      }
       if (!mounted) return;
       await _draftController!.saveNow(_currentDraftData(), forceSave: force);
     } finally {
@@ -714,7 +767,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     _contentController.removeListener(_onContentLengthChanged);
 
     // 关闭时处理草稿：已提交则跳过，有内容则保存，无内容则删除
-    if (_draftController != null && !_submitted && !_discarded) {
+    if (_draftController != null &&
+        !_submitted &&
+        !_discarded &&
+        !_isLoadingDraft) {
       final hasContent =
           _contentController.text.trim().isNotEmpty ||
           (_isPrivateMessage && _titleController.text.trim().isNotEmpty);
@@ -817,7 +873,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     if (!pluginAllowed || !mounted) return;
 
     if (_draftController?.hasConflict == true &&
-        !await confirmComposerDraftOverwrite(context)) {
+        !await confirmComposerDraftOverwrite(
+          context,
+          onReload: _reloadRemoteDraft,
+        )) {
       return;
     }
     if (!mounted) return;
@@ -1070,7 +1129,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                                 // 真内容(毁帖)。内容源就绪后才挂;占位留空,
                                 // 加载视觉由草稿遮罩/RichComposer 自身统一提供
                                 // (双 spinner 叠影)。
-                                ? ((_isLoadingRaw || _isLoadingDraft)
+                                ? ((_isLoadingRaw ||
+                                          (_isLoadingDraft && !_reloadingDraft))
                                       ? const SizedBox.shrink()
                                       : RichComposerEditor(
                                           key: _richKey,

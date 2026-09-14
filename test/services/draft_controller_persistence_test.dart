@@ -239,7 +239,7 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('旧本地稿立即恢复，云端版本不匹配时保留两端并停止上传', (tester) async {
+  testWidgets('在线恢复先核对云端，未上传本地稿冲突时保留两端并停止上传', (tester) async {
     final remote = Completer<Draft?>();
     final service = DraftService()..get = () => remote.future;
     final store = MemoryDraftStore()
@@ -251,10 +251,10 @@ void main() {
     final c = create(service, store);
     final load = c.loadDraft();
     await tester.pump();
-    expect((await load)?.data.reply, 'A');
     expect(c.sequence, 2);
     remote.complete(const Draft(draftKey: 'topic_1', data: b, sequence: 9));
     await tester.pump();
+    expect((await load)?.data.reply, 'A');
     expect(c.status, DraftSaveStatus.conflict);
     expect(service.requests, isEmpty);
     expect(c.sequence, 2);

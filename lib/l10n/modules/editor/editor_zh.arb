@@ -20,9 +20,9 @@
     }
   },
   "composer_draftLocal": "草稿已存本机，待同步",
-  "composer_draftConflict": "云端草稿已更新",
+  "composer_draftConflict": "草稿版本冲突",
   "composer_draftConflictTitle": "草稿版本冲突",
-  "composer_draftConflictBody": "其他设备可能修改了这份草稿。是否用当前内容覆盖云端版本？取消不会替换当前内容。",
+  "composer_draftConflictBody": "本机和云端都有修改。使用云端版本会替换本机当前内容；覆盖云端会上传本机当前内容。取消可继续保留本机内容。",
   "composer_draftOverwrite": "覆盖云端",
   "composer_draftAutoSave": "草稿自动保存",
   "composer_draftPending": "草稿待保存",
@@ -138,5 +138,8 @@
   "composer_toolsEditing": "编辑",
   "composer_quickPanel": "快捷面板",
   "composer_expandToolbar": "展开工具栏",
-  "composer_collapseToolbar": "收起工具栏"
+  "composer_collapseToolbar": "收起工具栏",
+  "composer_draftUseRemote": "使用云端版本",
+  "composer_draftResolve": "选择版本",
+  "composer_draftReloadFailed": "无法加载云端草稿，已保留本机内容"
 }

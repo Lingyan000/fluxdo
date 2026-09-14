@@ -40,9 +40,11 @@ class MemoryDraftStore extends LocalDraftStore {
     required int sequence,
     required bool synced,
     String? baseFingerprint,
+    String? expectedFingerprint,
   }) async {
     if (entry != null &&
-        entry!.data.contentFingerprint != data.contentFingerprint) {
+        entry!.data.contentFingerprint != data.contentFingerprint &&
+        entry!.data.contentFingerprint != expectedFingerprint) {
       return false;
     }
     await write(
@@ -53,6 +55,17 @@ class MemoryDraftStore extends LocalDraftStore {
       synced: synced,
       baseFingerprint: baseFingerprint,
     );
+    return true;
+  }
+
+  @override
+  Future<bool> deleteIfMatches({
+    required String accountId,
+    required String draftKey,
+    required DraftData data,
+  }) async {
+    if (entry?.data.toJsonString() != data.toJsonString()) return false;
+    entry = null;
     return true;
   }
 

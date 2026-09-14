@@ -75,6 +75,24 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('冲突可以选择云端版本，加载操作不会同时授权覆盖云端', (tester) async {
+    final status = ValueNotifier(DraftSaveStatus.conflict);
+    await _pump(tester, status, width: 320, scale: 2);
+    var reloaded = false;
+    final resolution = confirmComposerDraftOverwrite(
+      tester.element(find.byType(TextField)),
+      onReload: () async => reloaded = true,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(S.current.composer_draftUseRemote));
+    await tester.pumpAndSettle();
+    expect(await resolution, isFalse);
+    expect(reloaded, isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    status.dispose();
+  });
+
   testWidgets('覆盖云端需要明确选择，取消不会授权覆盖', (tester) async {
     final status = ValueNotifier(DraftSaveStatus.conflict);
     await _pump(tester, status, width: 320, scale: 2);

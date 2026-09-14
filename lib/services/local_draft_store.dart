@@ -21,6 +21,8 @@ class LocalDraftEntry {
   final DateTime updatedAt;
   final bool synced;
   final String? baseFingerprint;
+  bool get hasLocalChanges =>
+      !synced && data.contentFingerprint != baseFingerprint;
 }
 
 /// 本地草稿快照。云端确认后保留缓存，发送或舍弃后清理。
@@ -57,7 +59,9 @@ class LocalDraftStore {
         sequence: (raw[_sequenceKey] as num?)?.toInt() ?? 0,
         updatedAt: DateTime.parse(raw[_updatedAtKey] as String),
         synced: raw['synced'] == true,
-        baseFingerprint: raw['base_fingerprint'] as String?,
+        baseFingerprint: _normalizeFingerprint(
+          raw['base_fingerprint'] as String?,
+        ),
       );
     } catch (_) {
       await box.delete(_entryKey(accountId, draftKey));
@@ -84,7 +88,8 @@ class LocalDraftStore {
     });
   }
 
-  /// 云端答复只能更新对应的本地版本，不能覆盖另一个编辑器的新输入。
+  /// 保存回执只能确认同一份内容；拉取云端时可替换指定的旧缓存。
+  /// 两种路径都不能覆盖另一个编辑器已经写入的新内容。
   Future<bool> recordSync({
     required String accountId,
     required String draftKey,
@@ -92,6 +97,7 @@ class LocalDraftStore {
     required int sequence,
     required bool synced,
     String? baseFingerprint,
+    String? expectedFingerprint,
   }) async {
     final box = await _boxFactory();
     final key = _entryKey(accountId, draftKey);
@@ -100,7 +106,10 @@ class LocalDraftStore {
       final current = DraftData.fromJson(
         jsonDecode(raw[_dataKey] as String) as Map<String, dynamic>,
       );
-      if (current.contentFingerprint != data.contentFingerprint) return false;
+      if (current.contentFingerprint != data.contentFingerprint &&
+          current.contentFingerprint != expectedFingerprint) {
+        return false;
+      }
     }
     await box.put(key, {
       _dataKey: data.toJsonString(),
@@ -110,6 +119,37 @@ class LocalDraftStore {
       'base_fingerprint': ?baseFingerprint,
     });
     return true;
+  }
+
+  /// 列表响应也更新已同步缓存；列表有分页，缺席的 key 不代表已删除。
+  Future<void> cacheRemoteDrafts(String accountId, List<Draft> drafts) async {
+    for (final draft in drafts) {
+      final local = await read(accountId, draft.draftKey);
+      if (local?.hasLocalChanges == true &&
+          local!.data.contentFingerprint != draft.data.contentFingerprint) {
+        continue;
+      }
+      await recordSync(
+        accountId: accountId,
+        draftKey: draft.draftKey,
+        data: draft.data,
+        sequence: draft.sequence,
+        synced: true,
+        baseFingerprint: draft.data.contentFingerprint,
+        expectedFingerprint: local?.data.contentFingerprint,
+      );
+    }
+  }
+
+  String? _normalizeFingerprint(String? fingerprint) {
+    if (fingerprint == null) return null;
+    try {
+      return DraftData.fromJson(
+        jsonDecode(fingerprint) as Map<String, dynamic>,
+      ).contentFingerprint;
+    } catch (_) {
+      return fingerprint;
+    }
   }
 
   Future<Map<String, LocalDraftEntry>> list(String accountId) async {
@@ -192,7 +232,7 @@ List<Draft> mergeLocalDrafts(
       }
       continue;
     }
-    if (!serverAvailable || !entry.synced) {
+    if (!serverAvailable || entry.hasLocalChanges) {
       drafts[item.key] = (remote ?? Draft(draftKey: item.key, data: entry.data))
           .copyWith(
             data: entry.data,

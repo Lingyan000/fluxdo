@@ -87,12 +87,29 @@ class DraftData {
   /// 转换为 JSON 字符串
   String toJsonString() => jsonEncode(toJson());
 
-  /// 会话时长不代表文档修改，不能参与草稿去重或冲突判断。
-  String get contentFingerprint => jsonEncode(
-    toJson()
-      ..remove('composerTime')
-      ..remove('typingTime'),
-  );
+  /// 比较文档语义：时长、空字段写法和标签顺序不代表内容修改。
+  String get contentFingerprint {
+    final normalizedAction = switch (action) {
+      'create_topic' => 'createTopic',
+      'private_message' => 'privateMessage',
+      null => 'reply',
+      _ => action,
+    };
+    return jsonEncode({
+      'reply': reply ?? '',
+      'title': title ?? '',
+      'categoryId': categoryId == 0 ? null : categoryId,
+      'tags': (tags ?? const <String>[]).toSet().toList()..sort(),
+      'replyToPostNumber': replyToPostNumber == 0 ? null : replyToPostNumber,
+      'action': normalizedAction,
+      'recipients': (recipients ?? const <String>[]).toSet().toList()..sort(),
+      'archetypeId':
+          archetypeId ??
+          (normalizedAction == 'privateMessage'
+              ? 'private_message'
+              : 'regular'),
+    });
+  }
 
   /// 是否有有效内容
   bool get hasContent {

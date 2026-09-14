@@ -6,26 +6,40 @@ import '../../l10n/s.dart';
 import '../../services/draft_controller.dart';
 import '../../utils/dialog_utils.dart';
 
-Future<bool> confirmComposerDraftOverwrite(BuildContext context) async =>
-    await showAppDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        scrollable: true,
-        title: Text(context.l10n.composer_draftConflictTitle),
-        content: Text(context.l10n.composer_draftConflictBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(context.l10n.common_cancel),
-          ),
+enum _DraftConflictChoice { reload, overwrite }
+
+Future<bool> confirmComposerDraftOverwrite(
+  BuildContext context, {
+  Future<void> Function()? onReload,
+}) async {
+  final choice = await showAppDialog<_DraftConflictChoice>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: Text(context.l10n.composer_draftConflictTitle),
+      content: Text(context.l10n.composer_draftConflictBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(context.l10n.common_cancel),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(context, _DraftConflictChoice.overwrite),
+          child: Text(context.l10n.composer_draftOverwrite),
+        ),
+        if (onReload != null)
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(context.l10n.composer_draftOverwrite),
+            onPressed: () =>
+                Navigator.pop(context, _DraftConflictChoice.reload),
+            child: Text(context.l10n.composer_draftUseRemote),
           ),
-        ],
-      ),
-    ) ??
-    false;
+      ],
+    ),
+  );
+  if (choice == _DraftConflictChoice.reload) await onReload?.call();
+  return choice == _DraftConflictChoice.overwrite;
+}
 
 String composerDraftStatusLabel(BuildContext context, DraftSaveStatus status) =>
     switch (status) {
@@ -100,7 +114,7 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
             Flexible(
               child: Text(
                 retryable && widget.canRetry
-                    ? '$label · ${context.l10n.common_retry}'
+                    ? '$label · ${status == DraftSaveStatus.conflict ? context.l10n.composer_draftResolve : context.l10n.common_retry}'
                     : label,
                 style: TextStyle(color: color),
               ),

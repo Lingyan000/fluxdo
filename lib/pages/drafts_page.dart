@@ -31,8 +31,9 @@ final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   final online =
       ref.watch(isConnectedProvider).value ?? ConnectivityService().isConnected;
   var local = <String, LocalDraftEntry>{};
+  String? account;
   try {
-    final account = await service.getUsername();
+    account = await service.getUsername();
     if (account != null) local = await store.list(account);
   } catch (e) {
     debugPrint('[DraftsPage] local drafts unavailable: $e');
@@ -40,6 +41,14 @@ final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   if (!online) return mergeLocalDrafts([], local, serverAvailable: false);
   try {
     final response = await service.getDrafts();
+    if (account != null) {
+      try {
+        await store.cacheRemoteDrafts(account, response.drafts);
+        local = await store.list(account);
+      } catch (e) {
+        debugPrint('[DraftsPage] caching server drafts failed: $e');
+      }
+    }
     return mergeLocalDrafts(response.drafts, local, serverAvailable: true);
   } catch (_) {
     if (local.isEmpty) rethrow;

@@ -7,11 +7,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/models/draft.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/providers/draft_store_provider.dart';
 import '../../helpers/memory_draft_store.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
@@ -34,6 +36,9 @@ Future<void> _pumpReply(
   double scale = 1,
   bool dark = false,
   bool desktop = false,
+  Draft? Function()? remoteDraft,
+  MemoryDraftStore? draftStore,
+  List<Map>? draftWrites,
 }) async {
   PlatformUtils.debugDesktopOverride = desktop;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
@@ -52,10 +57,35 @@ Future<void> _pumpReply(
   FlutterSecureStorage.setMockInitialValues({'linux_do_username': 'tester'});
   final mock = InterceptorsWrapper(
     onRequest: (options, handler) {
+      final draft = remoteDraft?.call();
+      if (options.method == 'POST' && options.path == '/drafts.json') {
+        draftWrites?.add(Map.of(options.data as Map));
+        if (draft != null &&
+            (options.data as Map)['sequence'] != draft.sequence) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.badResponse,
+              response: Response(
+                requestOptions: options,
+                statusCode: 409,
+                data: {
+                  'errors': ['sequence conflict'],
+                },
+              ),
+            ),
+          );
+          return;
+        }
+      }
       handler.resolve(
         Response(
           requestOptions: options,
-          data: {'success': 'OK', 'draft': null},
+          data: {
+            'success': 'OK',
+            'draft': draft?.data.toJsonString(),
+            'draft_sequence': draft?.sequence ?? 0,
+          },
         ),
       );
     },
@@ -79,7 +109,9 @@ Future<void> _pumpReply(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
-        localDraftStoreProvider.overrideWithValue(MemoryDraftStore()),
+        localDraftStoreProvider.overrideWithValue(
+          draftStore ?? MemoryDraftStore(),
+        ),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -122,7 +154,143 @@ Future<void> _pumpReply(
   expect(find.byType(CloseButton).hitTestable(), findsOneWidget);
 }
 
+Future<void> _waitForRichDraft(WidgetTester tester, String text) async {
+  for (var i = 0; i < 100; i++) {
+    await tester.runAsync(
+      () async => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    final editors = find.byType(FluxdoEditor).evaluate();
+    if (editors.length == 1 &&
+        docToMarkdown(
+              (editors.single.widget as FluxdoEditor).state.blocks,
+            ).trim() ==
+            text) {
+      return;
+    }
+  }
+  fail('富文本内部文档没有同步到云端内容');
+}
+
 void main() {
+  testWidgets('富文本冲突菜单使用云端后重建实际文档，旧编辑器卸载不会回写本地版本', (tester) async {
+    var remote = const Draft(
+      draftKey: 'topic_1',
+      sequence: 1,
+      data: DraftData(reply: '共同正文', action: 'reply'),
+    );
+    final store = MemoryDraftStore();
+    final writes = <Map>[];
+    await _pumpReply(
+      tester,
+      rich: true,
+      sheet: const ReplySheet(topicId: 1),
+      remoteDraft: () => remote,
+      draftStore: store,
+      draftWrites: writes,
+    );
+    await _waitForRichDraft(tester, remote.data.reply!);
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: editor.blocks.first.id, offset: 0),
+      ),
+    );
+    editor.insertText('本机修改');
+    remote = const Draft(
+      draftKey: 'topic_1',
+      sequence: 2,
+      data: DraftData(reply: '另一设备的最新版本', action: 'reply'),
+    );
+    tester
+        .widget<ComposerHeaderActions>(find.byType(ComposerHeaderActions))
+        .onRetryDraft!();
+    await tester.pump();
+    final status = tester
+        .widget<ComposerHeaderActions>(find.byType(ComposerHeaderActions))
+        .draftStatus!;
+    for (var i = 0; i < 30 && status.value == DraftSaveStatus.saving; i++) {
+      await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(status.value, DraftSaveStatus.conflict);
+    await tester.tap(find.byKey(const ValueKey('composer-header-more')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('composer-draft-status-item')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text(S.current.composer_draftUseRemote));
+    await tester.pump();
+    await _waitForRichDraft(tester, remote.data.reply!);
+    await tester.pump(const Duration(seconds: 3));
+    expect(status.value, DraftSaveStatus.saved);
+    expect(store.entry?.data.reply, remote.data.reply);
+    expect(store.entry?.synced, isTrue);
+    expect(writes, hasLength(1));
+    expect(writes.single['force_save'], isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(writes, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final rich in [false, true]) {
+    testWidgets('回复草稿恢复不回写旧内容，回到前台同步另一设备正文 rich=$rich', (tester) async {
+      var remote = const Draft(
+        draftKey: 'topic_1',
+        sequence: 1,
+        data: DraftData(reply: '另一设备保存的正文', action: 'reply'),
+      );
+      final store = MemoryDraftStore();
+      final writes = <Map>[];
+      await _pumpReply(
+        tester,
+        rich: rich,
+        sheet: const ReplySheet(topicId: 1),
+        remoteDraft: () => remote,
+        draftStore: store,
+        draftWrites: writes,
+      );
+      Future<void> waitForDocument() async {
+        if (!rich) return;
+        await _waitForRichDraft(tester, remote.data.reply!);
+      }
+
+      await waitForDocument();
+      await tester.pump(const Duration(seconds: 3));
+      TextEditingController content() => rich
+          ? tester
+                .widget<RichComposerEditor>(find.byType(RichComposerEditor))
+                .controller
+          : tester
+                .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+                .controller;
+      expect(content().text, remote.data.reply);
+      expect(writes, isEmpty, reason: '恢复不是用户编辑，不能产生重复保存');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      remote = const Draft(
+        draftKey: 'topic_1',
+        sequence: 2,
+        data: DraftData(reply: '另一设备更新后的正文', action: 'reply'),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await waitForDocument();
+      await tester.pump(const Duration(seconds: 3));
+      expect(content().text, remote.data.reply);
+      expect(store.entry?.data.reply, remote.data.reply);
+      expect(store.entry?.sequence, 2);
+      expect(writes, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+  }
+
   testWidgets('桌面回复使用实际可用空间切换侧栏和横栏，预览往返保留正文', (tester) async {
     await _pumpReply(tester, width: 1200, desktop: true);
     expect(find.byType(ComposerDesktopWorkbench), findsOneWidget);

@@ -6,9 +6,9 @@
   "codeBlock_renderFailed": "Code block render failed: {error}",
   "draft_topicTitle": "Topic #{id}",
   "composer_draftLocal": "Draft saved on this device; sync pending",
-  "composer_draftConflict": "The online draft has changed",
+  "composer_draftConflict": "Draft version conflict",
   "composer_draftConflictTitle": "Draft version conflict",
-  "composer_draftConflictBody": "This draft may have changed on another device. Replace the online version with your current content? Cancel to keep editing your current content.",
+  "composer_draftConflictBody": "This draft has changes on this device and online. Use the online version to replace your current content, or replace the online draft with your current content. Cancel to keep your current content.",
   "composer_draftOverwrite": "Replace online draft",
   "composer_draftAutoSave": "Drafts save automatically",
   "composer_draftPending": "Draft not yet saved",
@@ -110,5 +110,8 @@
   "composer_toolsEditing": "Edit",
   "composer_quickPanel": "Quick panel",
   "composer_expandToolbar": "Expand toolbar",
-  "composer_collapseToolbar": "Collapse toolbar"
+  "composer_collapseToolbar": "Collapse toolbar",
+  "composer_draftUseRemote": "Use online version",
+  "composer_draftResolve": "Choose version",
+  "composer_draftReloadFailed": "Could not load the online draft. Your current content has been kept."
 }
