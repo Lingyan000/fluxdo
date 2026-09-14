@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -62,6 +63,7 @@ part '_chat_composer.dart';
 part '_chat_widgets.dart';
 part '_message_bubble.dart';
 part '_message_rows.dart';
+part '_message_list.dart';
 
 /// 聊天窗:气泡流 + 底部常驻输入条
 ///
@@ -94,6 +96,7 @@ class ChatChannelPage extends ConsumerStatefulWidget {
 
 class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     with WidgetsBindingObserver {
+  late final ProviderContainer _providerContainer;
   final AutoScrollController _scrollController = AutoScrollController();
   final ChatComposerController _inputController = ChatComposerController();
   final FocusNode _inputFocus = FocusNode();
@@ -108,7 +111,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   /// 正在输入上报器(击键 enter presence,5s 静默/发送时 leave;
   /// hide_presence 用户完全静默)
   late final ChatTypingReporter _typingReporter = ChatTypingReporter(
-    () => ref.read(discourseServiceProvider),
+    () => _providerContainer.read(discourseServiceProvider),
     widget.channelId,
     isEnabled: () => ref.read(currentUserProvider).value?.hidePresence != true,
   );
@@ -150,13 +153,25 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   bool _selecting = false;
   final Set<int> _selectedIds = {};
 
-  /// 离开底部(reverse 列表 pixels>阈值)时显示"回到底部"浮钮
+  /// 离开最新消息一侧时显示"回到底部"浮钮。
   /// 离底跟踪之外,滚动进行中标志:桌面 hover 工具条在滚动时抑制,
   /// 否则光标不动、气泡从下面划过,onEnter/onExit 连环触发 → 工具条
   /// 在不同消息上反复闪现(用户点名)。滚动停止 160ms 后复位。
   bool _awayFromBottom = false;
   final ValueNotifier<bool> _scrolling = ValueNotifier<bool>(false);
   Timer? _scrollIdleTimer;
+
+  static const _pastLoadDistance = 300.0;
+  static const _futureLoadDistance = 200.0;
+  static const _paginationReleaseDistance = 100.0;
+
+  bool _userScrolling = false;
+  int _userScrollGeneration = 0;
+  bool _pastLoadArmed = true;
+  bool _futureLoadArmed = true;
+
+  /// 跨双向请求互斥，并覆盖响应落地后的布局帧。
+  bool _paginationInFlight = false;
 
   /// 悬浮输入条实占高度(卡 + 安全区 + 键盘/表情面板占位)。
   /// 输入条是浮在消息流之上的(TG 口径:内容能滚到它下面),父级量不到
@@ -190,6 +205,8 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   @override
   void initState() {
     super.initState();
+    // dispose 中的已读、草稿和输入状态收尾不能再通过 WidgetRef 读取。
+    _providerContainer = ProviderScope.containerOf(context, listen: false);
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _inputController.addListener(() {
@@ -279,7 +296,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   void _persistDraft(String text) {
     _lastSavedDraft = text;
     unawaited(
-      ref
+      _providerContainer
           .read(discourseServiceProvider)
           .saveChatDraft(
             widget.channelId,
@@ -455,7 +472,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     );
     // 高亮计时到落点才起:重载慢于 3s 时提前起会让用户看不到落点
     _flashHighlight(messageId);
-    // 构造性定位不产生滚动事件,落点可能正处在分页触发区,主动评估一次
+    // 定位后更新已读和离底状态，分页只由用户滚动触发。
     _onScroll();
   }
 
@@ -553,7 +570,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   /// 当前频道(DM 与公共频道双列表查找——只查 DM 会让公共频道
   /// 处处拿到 null:标题不可点/能力位全关/回复分流失效)
   ChatChannel? _findChannel() {
-    final state = ref.read(chatChannelsProvider).value;
+    final state = _providerContainer.read(chatChannelsProvider).value;
     if (state == null) return null;
     return [
       ...state.directMessageChannels,
@@ -568,25 +585,95 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   );
 
   ChatMessagesNotifier get _notifier =>
-      ref.read(chatMessagesProvider(_streamKey).notifier);
+      _providerContainer.read(chatMessagesProvider(_streamKey).notifier);
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    // 消息内的代码块、横向附件等滚动不参与聊天分页。
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+
+    if ((notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        (notification is UserScrollNotification &&
+            notification.direction != ScrollDirection.idle &&
+            !_userScrolling)) {
+      _userScrolling = true;
+      _userScrollGeneration++;
+      _pastLoadArmed = true;
+      _futureLoadArmed = true;
+    } else if (notification is ScrollEndNotification) {
+      _userScrolling = false;
+    }
+
+    if (!_userScrolling || _jumpLock || _jumping) return false;
+    final delta = switch (notification) {
+      ScrollUpdateNotification() => notification.scrollDelta ?? 0,
+      OverscrollNotification() => notification.overscroll,
+      _ => 0.0,
+    };
+    if (delta == 0) return false;
+
+    // 回弹的像素位移会反向，但用户意图没有变，不能借此加载另一端。
+    final direction = _scrollController.position.userScrollDirection;
+    if ((delta > 0 && direction != ScrollDirection.reverse) ||
+        (delta < 0 && direction != ScrollDirection.forward)) {
+      return false;
+    }
+
+    final metrics = notification.metrics;
+    // 离开边缘后才重新允许同一次手势加载；短页/失败时留在边缘，
+    // 需下一次主动滚动重试，避免回弹或布局修正接连翻页。
+    if (metrics.extentAfter > _pastLoadDistance + _paginationReleaseDistance) {
+      _pastLoadArmed = true;
+    }
+    if (metrics.extentBefore >
+        _futureLoadDistance + _paginationReleaseDistance) {
+      _futureLoadArmed = true;
+    }
+
+    if (_paginationInFlight) return false;
+    final state = ref.read(chatMessagesProvider(_streamKey)).value;
+    if (state == null || state.loadingPast || state.loadingFuture) return false;
+
+    // reverse:true：正向位移接近历史，负向位移接近最新。
+    if (delta > 0 &&
+        metrics.extentAfter < _pastLoadDistance &&
+        _pastLoadArmed &&
+        state.canLoadMorePast) {
+      _pastLoadArmed = false;
+      unawaited(_loadPage(past: true));
+    } else if (delta < 0 &&
+        metrics.extentBefore < _futureLoadDistance &&
+        _futureLoadArmed &&
+        state.canLoadMoreFuture) {
+      _futureLoadArmed = false;
+      unawaited(_loadPage(past: false));
+    }
+    return false;
+  }
+
+  Future<void> _loadPage({required bool past}) async {
+    if (_paginationInFlight) return;
+    _paginationInFlight = true;
+    try {
+      final notifier = _notifier;
+      await (past ? notifier.loadPast() : notifier.loadFuture());
+      // provider 的 loading 在响应返回时复位，此时新列表还未布局。
+      // 等边界更新后再放开请求，防止沿用旧 maxScrollExtent 连翻。
+      if (mounted) await SchedulerBinding.instance.endOfFrame;
+    } finally {
+      _paginationInFlight = false;
+    }
+  }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    // 列表 reverse:true —— pixels 越大越接近历史顶部
-    if (position.pixels > position.maxScrollExtent - 400) {
-      _notifier.loadPast();
-    }
-    if (position.pixels < 200) {
-      _notifier.loadFuture();
-    }
     // 已读上报(官方口径:滚动即触发,1s 去抖,报视口内可见的最新消息
     // ——历史区渐进推进,不只贴底才报)
     _scheduleMarkRead();
-    final away = position.pixels > 600;
-    if (away != _awayFromBottom) {
-      setState(() => _awayFromBottom = away);
-    }
+    _updateAwayFromBottom(position);
     // 滚动进行中:抑制 hover 工具条;停止 160ms 后复位
     if (!_scrolling.value) _scrolling.value = true;
     _scrollIdleTimer?.cancel();
@@ -595,17 +682,48 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     });
   }
 
+  void _updateAwayFromBottom(ScrollMetrics metrics) {
+    final away = metrics.extentBefore > 600;
+    if (away != _awayFromBottom) {
+      setState(() => _awayFromBottom = away);
+    }
+  }
+
+  Future<void> _scrollToLatest({bool animate = false}) async {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final streamKey = _streamKey;
+    final userScrollGeneration = _userScrollGeneration;
+    if (animate) {
+      await _scrollController.animateTo(
+        position.minScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+    // 变高消息的边界起初是预估值，末端真正布局后再收尾。
+    // 只用于主动回底/贴底收新消息；分页从不调用它。
+    for (var retry = 0; retry < _settleMaxRetry; retry++) {
+      await SchedulerBinding.instance.endOfFrame;
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          !identical(position, _scrollController.position) ||
+          streamKey != _streamKey ||
+          userScrollGeneration != _userScrollGeneration) {
+        return;
+      }
+      if ((position.pixels - position.minScrollExtent).abs() < 0.5) return;
+      _scrollController.jumpTo(position.minScrollExtent);
+    }
+  }
+
   /// 回到最新:窗口含最新页直接滚底;不含最新页(锚点定位/往新翻页
   /// 未到底)时清锚点原地重载——provider key 变化自动拉最新窗口,
   /// 页面路由不动(旧版整页 pushReplacement 有转场闪断)
   void _jumpToLatest() {
     final state = ref.read(chatMessagesProvider(_streamKey)).value;
     if (state != null && !state.canLoadMoreFuture) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      unawaited(_scrollToLatest(animate: true));
       return;
     }
     if (_anchorMessageId != null) {
@@ -646,14 +764,8 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     final replyTo = _replyingTo;
     _inputController.clear();
     if (replyTo != null) setState(() => _replyingTo = null);
-    // 发送后滚回底部(reverse 列表底部是 0)
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      );
-    }
+    // 发送后滚回最新消息；双向列表的下边界会随较新页扩展。
+    unawaited(_scrollToLatest(animate: true));
     await _notifier.send(text, inReplyToId: replyTo?.id, uploadIds: uploadIds);
   }
 
@@ -662,13 +774,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   Future<void> _sendSticker(String markdown) async {
     final replyTo = _replyingTo;
     if (replyTo != null) setState(() => _replyingTo = null);
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      );
-    }
+    unawaited(_scrollToLatest(animate: true));
     await _notifier.send(markdown, inReplyToId: replyTo?.id);
   }
 
@@ -1008,13 +1114,15 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     if (!_userPresent) return;
     final channel = _findChannel();
     if (channel?.currentUserMembership?.following != true) return;
-    final state = ref.read(chatMessagesProvider(_streamKey)).value;
+    final state = _providerContainer
+        .read(chatMessagesProvider(_streamKey))
+        .value;
     if (state == null || state.messages.isEmpty) return;
     var visibleId = _lastVisibleMessageId();
     // 量不到(极端时序/行全在缓存外)退回贴底口径,不误报深处消息
     if (visibleId == null &&
         _scrollController.hasClients &&
-        _scrollController.position.pixels <= 100) {
+        _scrollController.position.extentBefore <= 100) {
       visibleId = state.messages.where((m) => !m.isStaged).lastOrNull?.id;
     }
     if (visibleId != null) _notifier.markReadUpTo(visibleId);
@@ -1035,6 +1143,24 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     ref.listen(chatMessagesProvider(_streamKey), (prev, next) {
       final state = next.value;
       if (state == null) return;
+      final previous = prev?.value;
+      // 实时新消息只在原本贴着最新处时跟随。分页响应始终保留阅读位置。
+      if (previous != null &&
+          previous.messages.isNotEmpty &&
+          state.messages.isNotEmpty &&
+          previous.messages.last.id != state.messages.last.id &&
+          !state.canLoadMoreFuture &&
+          !previous.loadingPast &&
+          !previous.loadingFuture &&
+          !state.loadingPast &&
+          !state.loadingFuture &&
+          !_paginationInFlight &&
+          !_jumpLock &&
+          !_userScrolling &&
+          _scrollController.hasClients &&
+          _scrollController.position.extentBefore <= 1) {
+        unawaited(_scrollToLatest());
+      }
       // 锚点模式首屏就绪:滚到目标消息并高亮(仅一次,prev 无数据时)
       // 与跳转同源,走同一套落点收尾
       final target = _anchorMessageId;
@@ -1138,46 +1264,84 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
             // Expanded 切在条上沿。静止时的底部避让由列表自己的
             // 避让位承担(见 _buildMessageList),值取 _composerHeight
             Positioned.fill(
-              child: messagesAsync.when(
-                // 跳转换窗口期间同样整屏转圈(与首屏加载一个观感)。
-                // 由页面自己的 _jumping 驱动、不进 provider 状态:标志位
-                // 放进 state 会被 MessageBus 广播的 copyWith 带着走,
-                // 广播频繁的大频道里极易固化成永久 loading
-                data: (state) => _jumping
-                    ? const Center(child: LoadingSpinner())
-                    : _buildMessageList(theme, state),
-                loading: () => const Center(child: LoadingSpinner()),
-                error: (error, stack) => ErrorView(
-                  error: error,
-                  stackTrace: stack,
-                  onRetry: () =>
-                      ref.invalidate(chatMessagesProvider(_streamKey)),
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (notification) {
+                  if (notification.depth == 0) {
+                    _updateAwayFromBottom(notification.metrics);
+                  }
+                  return false;
+                },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _onScrollNotification,
+                  child: messagesAsync.when(
+                    // 跳转换窗口期间同样整屏转圈(与首屏加载一个观感)。
+                    // 由页面自己的 _jumping 驱动、不进 provider 状态:标志位
+                    // 放进 state 会被 MessageBus 广播的 copyWith 带着走,
+                    // 广播频繁的大频道里极易固化成永久 loading
+                    data: (state) => _jumping
+                        ? const Center(child: LoadingSpinner())
+                        : _buildMessageList(theme, state),
+                    loading: () => const Center(child: LoadingSpinner()),
+                    error: (error, stack) => ErrorView(
+                      error: error,
+                      stackTrace: stack,
+                      onRetry: () =>
+                          ref.invalidate(chatMessagesProvider(_streamKey)),
+                    ),
+                  ),
                 ),
               ),
             ),
-            // 置顶横幅:顶栏下,点击跳转,多条轮换
-            if (_pins.isNotEmpty)
+            // 加载提示固定在视口边缘，提前加载时也可见；不占消息流高度，
+            // 显隐不会改变滚动边界或把正在阅读的消息推开。
+            if (_pins.isNotEmpty ||
+                (!_jumping && messagesAsync.value?.loadingPast == true))
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 // 横幅浮在列表之上(列表铺满整页),跳转落点要扣掉它的
                 // 高度才不会顶死在它下沿 —— 与输入条同一套量法
-                child: HeightReporter(
-                  onHeight: (height) => _pinnedBannerHeight = height,
-                  child: _PinnedBanner(
-                    pins: _pins,
-                    cursor: _pinCursor % _pins.length,
-                    onTap: () async {
-                      final pin = _pins[_pinCursor % _pins.length];
-                      await _jumpToMessage(pin.id);
-                      // 轮换放在跳转之后:跳失败时不该把指示器推到下一条
-                      if (!mounted) return;
-                      setState(
-                        () => _pinCursor = (_pinCursor + 1) % _pins.length,
-                      );
-                    },
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_pins.isNotEmpty)
+                      HeightReporter(
+                        onHeight: (height) => _pinnedBannerHeight = height,
+                        child: _PinnedBanner(
+                          pins: _pins,
+                          cursor: _pinCursor % _pins.length,
+                          onTap: () async {
+                            final pin = _pins[_pinCursor % _pins.length];
+                            await _jumpToMessage(pin.id);
+                            // 轮换放在跳转之后:跳失败时不该把指示器推到下一条
+                            if (!mounted) return;
+                            setState(
+                              () =>
+                                  _pinCursor = (_pinCursor + 1) % _pins.length,
+                            );
+                          },
+                        ),
+                      ),
+                    if (!_jumping && messagesAsync.value?.loadingPast == true)
+                      const _PaginationLoading(
+                        key: ValueKey('chat_loading_past'),
+                      ),
+                  ],
+                ),
+              ),
+            if (!_jumping && messagesAsync.value?.loadingFuture == true)
+              ValueListenableBuilder<double>(
+                valueListenable: _composerHeight,
+                builder: (context, height, child) => Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: height,
+                  child: child!,
+                ),
+                child: const _PaginationLoading(
+                  key: ValueKey('chat_loading_future'),
                 ),
               ),
             // 回到底部浮钮(离底/锚点模式时出现):钉在输入条上沿
@@ -1363,38 +1527,14 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     }
 
     final currentUserId = ref.watch(currentUserProvider).value?.id;
-    // reverse 列表:index 0 = 最新消息,渲染时倒着取
     final messages = state.messages;
 
-    return ListView.builder(
+    return _ChatMessageList(
       key: _listKey,
       controller: _scrollController,
-      reverse: true,
-      // 水平边距由行自管(桌面宽/移动窄),列表层不再叠一层
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      // +1 = 悬浮输入条的避让位(reverse 列表 index 0 在视觉最底)
-      itemCount: messages.length + 1 + (state.loadingPast ? 1 : 0),
-      itemBuilder: (context, rawIndex) {
-        // 避让位做成列表首项、而不是列表的 bottom padding:键盘弹出
-        // 期间输入条高度逐帧在变,改 padding 等于每帧换一个新的
-        // delegate(可见行全量 rebuild);换成这一个 SizedBox,逐帧
-        // 变化只触发重新布局。
-        if (rawIndex == 0) {
-          return ValueListenableBuilder<double>(
-            valueListenable: _composerHeight,
-            builder: (context, height, _) => SizedBox(height: height),
-          );
-        }
-        final index = rawIndex - 1;
-        if (index >= messages.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Center(
-              child: SizedBox(width: 22, height: 22, child: LoadingSpinner()),
-            ),
-          );
-        }
-        final i = messages.length - 1 - index;
+      messages: messages,
+      composerHeight: _composerHeight,
+      itemBuilder: (context, i) {
         final message = messages[i];
         final prev = i > 0 ? messages[i - 1] : null;
 
@@ -1406,7 +1546,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
         if (collapsedDeleted(message) &&
             next != null &&
             collapsedDeleted(next)) {
-          return const SizedBox.shrink();
+          return SizedBox.shrink(key: ValueKey('chat_msg_${message.id}'));
         }
         var deletedRunCount = 0;
         if (collapsedDeleted(message)) {
@@ -1547,4 +1687,3 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
-
