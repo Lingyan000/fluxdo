@@ -139,13 +139,13 @@ void main() {
     const url = 'https://github.com';
     const raw = '[$url]($url)';
     final id = editor.blocks.first.id;
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: id, offset: 0),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(EditorPosition(blockId: id, offset: 0)),
+    );
     editor.pastePlainText(raw);
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: id, offset: 4),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(EditorPosition(blockId: id, offset: 4)),
+    );
     expect((editor.blocks.first as TextBlock).content.text, raw);
     final selection = editor.selection;
     await tester.pump(const Duration(milliseconds: 1100));
@@ -168,17 +168,25 @@ void main() {
     state.pastePlainText('above image');
     final above = state.selection!.extent.blockId;
     state.splitBlock();
-    state.insertAtom(const ImageRun(
-      src: 'https://example.com/tall.png', width: 240, height: 900,
-    ));
+    state.insertAtom(
+      const ImageRun(
+        src: 'https://example.com/tall.png',
+        width: 240,
+        height: 900,
+      ),
+    );
     state.splitBlock();
     state.insertText('below image');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    final scrollable = tester.state<ScrollableState>(find.descendant(
-      of: find.byType(CustomScrollView).first,
-      matching: find.byType(Scrollable),
-    ).first);
+    final scrollable = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(CustomScrollView).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     final position = scrollable.position;
     position.jumpTo(position.maxScrollExtent);
     await tester.pump();
@@ -188,8 +196,11 @@ void main() {
     var previous = position.pixels;
     for (var i = 0; i < 180; i++) {
       await tester.pump(const Duration(milliseconds: 16));
-      expect(position.pixels, lessThanOrEqualTo(previous + 0.01),
-          reason: '向上拖动时不能被光标避让反向拉回图片底部');
+      expect(
+        position.pixels,
+        lessThanOrEqualTo(previous + 0.01),
+        reason: '向上拖动时不能被光标避让反向拉回图片底部',
+      );
       previous = position.pixels;
     }
     expect(position.pixels, closeTo(position.minScrollExtent, 0.01));
@@ -1568,7 +1579,13 @@ void main() {
             tester.getRect(attributes).bottom,
             lessThan(tester.getRect(find.byType(ComposerIsland)).top),
           );
-          expect(find.byType(GlassSurface), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byType(ComposerIsland),
+              matching: find.byType(GlassSurface),
+            ),
+            findsOneWidget,
+          );
           expect(tester.takeException(), isNull);
 
           await tester.pumpWidget(const SizedBox.shrink());

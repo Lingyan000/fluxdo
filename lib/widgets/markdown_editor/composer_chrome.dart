@@ -254,20 +254,52 @@ class ComposerTopFade extends StatelessWidget {
 }
 
 /// 保留整幅滚动画布和编辑器的最小高度，只限制文字行宽。
+class ComposerReadingGutter extends InheritedWidget {
+  const ComposerReadingGutter({
+    super.key,
+    required this.leading,
+    this.trailing = 20,
+    required super.child,
+  });
+  final double leading;
+  final double trailing;
+  static double of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<ComposerReadingGutter>()
+          ?.leading ??
+      20;
+  static double trailingOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<ComposerReadingGutter>()
+          ?.trailing ??
+      20;
+  @override
+  bool updateShouldNotify(ComposerReadingGutter oldWidget) =>
+      leading != oldWidget.leading || trailing != oldWidget.trailing;
+}
+
 class ComposerReadingPadding extends StatelessWidget {
   const ComposerReadingPadding({
     super.key,
     required this.child,
     this.vertical = EdgeInsets.zero,
+    this.minLeading,
   });
   final Widget child;
   final EdgeInsets vertical;
+  final double? minLeading;
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.fromLTRB(
-      math.max(20, (MediaQuery.sizeOf(context).width - 800) / 2),
+      math.max(
+        minLeading ?? ComposerReadingGutter.of(context),
+        (MediaQuery.sizeOf(context).width - 800) / 2,
+      ),
       vertical.top,
-      math.max(20, (MediaQuery.sizeOf(context).width - 800) / 2),
+      math.max(
+        ComposerReadingGutter.trailingOf(context),
+        (MediaQuery.sizeOf(context).width - 800) / 2,
+      ),
       vertical.bottom,
     ),
     child: child,

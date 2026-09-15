@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:chat_bottom_container/listener_manager.dart';
 
 import 'package:app_icons/app_icons.dart';
-import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -161,7 +160,11 @@ void main() {
         await tester.pump();
         for (
           var i = 0;
-          i < 40 && find.byType(GlassSurfaceFrame).evaluate().isEmpty;
+          i < 40 &&
+              find
+                  .byKey(const ValueKey('composer-island-surface'))
+                  .evaluate()
+                  .isEmpty;
           i++
         ) {
           await tester.runAsync(
@@ -236,7 +239,7 @@ void main() {
         );
         expect(find.byType(ComposerDesktopMetadata), findsNothing);
         expect(
-          find.byType(GlassSurfaceFrame),
+          find.byKey(const ValueKey('composer-island-surface')),
           findsNWidgets(desktop && width >= 1040 ? 2 : 1),
         );
         final initialScroll = tester
