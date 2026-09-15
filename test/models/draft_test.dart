@@ -1,7 +1,81 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/draft.dart';
 
 void main() {
+  group('DraftData 标签兼容', () {
+    test('兼容旧版字符串、新版对象及混合标签，不把对象转成显示文本', () {
+      final data = DraftData.fromJson({
+        'tags': [
+          'linux',
+          {'name': '纯水'},
+          {'id': 42, 'name': '快问快答', 'slug': 'questions'},
+        ],
+      });
+
+      expect(data.tags, ['linux', '纯水', '快问快答']);
+      expect(jsonDecode(data.toJsonString())['tags'], ['linux', '纯水', '快问快答']);
+      expect(DraftData.fromJson(data.toJson()).tags, data.tags);
+    });
+
+    test('忽略无效标签，保留草稿正文及有效标签', () {
+      final data = DraftData.fromJson({
+        'reply': '正文不能因为标签异常而丢失',
+        'tags': [
+          null,
+          42,
+          false,
+          {},
+          {'id': 1},
+          {'name': null},
+          {'name': 2},
+          '',
+          {'name': ''},
+          {'name': '纯水'},
+        ],
+      });
+
+      expect(data.reply, '正文不能因为标签异常而丢失');
+      expect(data.tags, ['纯水']);
+      expect(DraftData.fromJson({}).tags, isNull);
+      expect(DraftData.fromJson({'tags': []}).tags, isEmpty);
+    });
+
+    for (final encoded in [false, true]) {
+      test('草稿 API 的对象和 JSON 字符串入口均能恢复网页标签 encoded=$encoded', () {
+        final payload = {
+          'title': '网页草稿',
+          'reply': '草稿正文',
+          'tags': [
+            {'name': '纯水'},
+            {'id': 42, 'name': '快问快答'},
+          ],
+        };
+        final draft = Draft.fromJson({
+          'draft_key': 'new_topic',
+          'data': encoded ? jsonEncode(payload) : payload,
+        });
+
+        expect(draft.data.tags, ['纯水', '快问快答']);
+        expect(draft.data.reply, '草稿正文');
+      });
+    }
+
+    test('网页对象标签与客户端字符串标签具有相同内容指纹', () {
+      final web = DraftData.fromJson({
+        'reply': '正文',
+        'tags': [
+          {'name': '纯水'},
+          {'id': 42, 'name': '快问快答'},
+        ],
+      });
+      const app = DraftData(reply: '正文', tags: ['快问快答', '纯水']);
+
+      expect(web.contentFingerprint, app.contentFingerprint);
+    });
+  });
+
   group('Draft', () {
     test('识别网页端带后缀的新话题草稿 key', () {
       expect(Draft.isNewTopicKey('new_topic'), isTrue);

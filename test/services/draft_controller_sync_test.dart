@@ -92,6 +92,36 @@ class _Device {
 }
 
 void main() {
+  testWidgets('云端仅改变标签表示格式时不冲突也不重复保存', (tester) async {
+    const data = DraftData(reply: '正文', tags: ['纯水', '快问快答']);
+    final server = _Server()
+      ..draft = const Draft(draftKey: _key, data: data, sequence: 1);
+    final device = _Device(server);
+    await device.open(tester);
+    server.draft = Draft.fromJson({
+      'draft_key': _key,
+      'draft_sequence': 2,
+      'data': {
+        'reply': '正文',
+        'tags': [
+          {'name': '纯水'},
+          {'id': 42, 'name': '快问快答'},
+        ],
+      },
+    });
+
+    await device.refresh(tester);
+    await device.save(tester, data);
+
+    expect(device.displayed?.tags, data.tags);
+    expect(device.controller.hasConflict, isFalse);
+    expect(device.controller.status, DraftSaveStatus.saved);
+    expect(device.store.entry?.data.tags, data.tags);
+    expect(device.store.entry?.sequence, 2);
+    expect(device.store.entry?.synced, isTrue);
+    expect(server.writes, isEmpty);
+  });
+
   testWidgets('云端响应前收取富文本尚未镜像的新输入，不能把它当成干净缓存覆盖', (tester) async {
     final server = _Server();
     final store = MemoryDraftStore();

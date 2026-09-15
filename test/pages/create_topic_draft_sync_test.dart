@@ -55,7 +55,14 @@ void main() {
             requestOptions: request,
             data: {
               'success': 'OK',
-              'draft': remote.data.toJsonString(),
+              // 模拟网页端 serializeTags 的真实草稿格式，而非客户端自己的序列化。
+              'draft': jsonEncode({
+                ...remote.data.toJson(),
+                'tags': [
+                  for (final name in remote.data.tags ?? <String>[])
+                    {'name': name},
+                ],
+              }),
               'draft_sequence': remote.sequence,
             },
           ),
@@ -120,6 +127,8 @@ void main() {
     final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
     expect(editor.controller.text, remote.data.reply);
     expect(find.text(remote.data.title!), findsOneWidget);
+    expect(find.text('旧标签'), findsOneWidget);
+    expect(find.text('{name: 旧标签}'), findsNothing);
     expect(writes, isEmpty, reason: '标题、正文、分类恢复过程不能上传半份草稿');
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -127,6 +136,33 @@ void main() {
     remote = const Draft(
       draftKey: 'new_topic_sync',
       sequence: 2,
+      data: DraftData(
+        title: '云端更新标签',
+        reply: '云端更新正文',
+        categoryId: 2,
+        tags: ['纯水', '快问快答'],
+        action: 'createTopic',
+      ),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('纯水'), findsOneWidget);
+    expect(
+      find.byTooltip('${S.current.tag_tabTags}: #纯水 #快问快答'),
+      findsOneWidget,
+    );
+    expect(find.text('{name: 纯水}'), findsNothing);
+    expect(find.text('旧标签'), findsNothing);
+    expect(store.entry?.data.tags, ['纯水', '快问快答']);
+    expect(store.entry?.synced, isTrue);
+    expect(writes, isEmpty, reason: '采用云端标签后不能触发多余回写');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    remote = const Draft(
+      draftKey: 'new_topic_sync',
+      sequence: 3,
       data: DraftData(
         title: '云端最新标题',
         reply: '云端最新正文',
@@ -143,7 +179,10 @@ void main() {
     expect(find.text('云端原始标题'), findsNothing);
     expect(find.text('旧标签'), findsNothing);
     expect(store.entry?.data.categoryId, 2);
-    expect(store.entry?.sequence, 2);
+    expect(store.entry?.data.tags, isEmpty);
+    expect(find.text('纯水'), findsNothing);
+    expect(find.text('快问快答'), findsNothing);
+    expect(store.entry?.sequence, 3);
     expect(writes, isEmpty);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

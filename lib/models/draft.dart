@@ -52,7 +52,12 @@ class DraftData {
       reply: json['reply'] as String?,
       title: json['title'] as String?,
       categoryId: json['categoryId'] as int?,
-      tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      // Discourse 的 serializeTags 将标签保存为 {id?, name}，旧草稿仍可能是字符串。
+      tags: (json['tags'] as List<dynamic>?)
+          ?.map((tag) => tag is Map ? tag['name'] : tag)
+          .whereType<String>()
+          .where((name) => name.isNotEmpty)
+          .toList(),
       replyToPostNumber: json['replyToPostNumber'] as int?,
       action: json['action'] as String?,
       recipients: (json['recipients'] as List<dynamic>?)
