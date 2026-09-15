@@ -17,6 +17,10 @@ const double _kMenuMinWidth = 2.0 * _kMenuWidthStep;
 const double _kMenuWidthStep = 56.0;
 const double _kMenuScreenPadding = 8.0;
 
+/// 自定义菜单外壳；需提供 Material，以保留菜单项的点击反馈。
+typedef PopupMenuSurfaceBuilder =
+    Widget Function(BuildContext context, Widget child);
+
 // 菜单顶部圆形快捷按钮配置。
 class MenuQuickAction {
   const MenuQuickAction({
@@ -571,7 +575,8 @@ class _SubmenuRowTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (selected) Icon(Symbols.check_rounded, size: 18, color: cs.primary),
+            if (selected)
+              Icon(Symbols.check_rounded, size: 18, color: cs.primary),
           ],
         ),
       ),
@@ -939,20 +944,24 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
             curve: Curves.easeOutCubic,
             child: Stack(
               children: [
-                Material(
-                  shape: widget.route.shape ?? popupMenuTheme.shape,
-                  color: widget.route.color ?? popupMenuTheme.color,
-                  clipBehavior: widget.clipBehavior,
-                  type: MaterialType.card,
-                  elevation:
-                      widget.route.elevation ?? popupMenuTheme.elevation ?? 8.0,
-                  shadowColor:
-                      widget.route.shadowColor ?? popupMenuTheme.shadowColor,
-                  surfaceTintColor:
-                      widget.route.surfaceTintColor ??
-                      popupMenuTheme.surfaceTintColor,
-                  child: menuChild,
-                ),
+                widget.route.surfaceBuilder?.call(context, menuChild!) ??
+                    Material(
+                      shape: widget.route.shape ?? popupMenuTheme.shape,
+                      color: widget.route.color ?? popupMenuTheme.color,
+                      clipBehavior: widget.clipBehavior,
+                      type: MaterialType.card,
+                      elevation:
+                          widget.route.elevation ??
+                          popupMenuTheme.elevation ??
+                          8.0,
+                      shadowColor:
+                          widget.route.shadowColor ??
+                          popupMenuTheme.shadowColor,
+                      surfaceTintColor:
+                          widget.route.surfaceTintColor ??
+                          popupMenuTheme.surfaceTintColor,
+                      child: menuChild,
+                    ),
                 Positioned.fill(
                   child: IgnorePointer(
                     ignoring: !dimmed,
@@ -1109,6 +1118,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
     super.requestFocus,
     this.popUpAnimationStyle,
     this.headerActions,
+    this.surfaceBuilder,
   }) : itemSizes = List<Size?>.filled(items.length, null),
        super(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
 
@@ -1130,6 +1140,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   final Clip clipBehavior;
   final AnimationStyle? popUpAnimationStyle;
   final List<MenuQuickAction>? headerActions;
+  final PopupMenuSurfaceBuilder? surfaceBuilder;
 
   CurvedAnimation? _animation;
 
@@ -1322,6 +1333,7 @@ Future<T?> showSwipeDismissibleMenu<T>({
   AnimationStyle? popUpAnimationStyle,
   bool? requestFocus,
   List<MenuQuickAction>? headerActions,
+  PopupMenuSurfaceBuilder? surfaceBuilder,
 }) {
   assert(items.isNotEmpty);
 
@@ -1378,6 +1390,7 @@ Future<T?> showSwipeDismissibleMenu<T>({
       requestFocus: requestFocus,
       popUpAnimationStyle: popUpAnimationStyle,
       headerActions: headerActions,
+      surfaceBuilder: surfaceBuilder,
     ),
   );
 }
@@ -1499,15 +1512,17 @@ class _SwipeDismissiblePopupMenuButtonState<T>
 
     final Rect buttonRect = Rect.fromPoints(
       overlay.globalToLocal(button.localToGlobal(Offset.zero)),
-      overlay.globalToLocal(button.localToGlobal(button.size.bottomRight(Offset.zero))),
+      overlay.globalToLocal(
+        button.localToGlobal(button.size.bottomRight(Offset.zero)),
+      ),
     );
 
     final RelativeRect position = RelativeRect.fromRect(
       Rect.fromPoints(
         overlay.globalToLocal(button.localToGlobal(offset)),
-        overlay.globalToLocal(button.localToGlobal(
-          button.size.bottomRight(Offset.zero) + offset,
-        )),
+        overlay.globalToLocal(
+          button.localToGlobal(button.size.bottomRight(Offset.zero) + offset),
+        ),
       ),
       Offset.zero & overlay.size,
     );
