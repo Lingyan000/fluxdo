@@ -657,7 +657,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (_documentReplaced) return;
     final editor = _editor;
     if (editor == null) return;
-    final raw = docToRaw(editor.blocks);
+    final raw = editor.exportMarkdown();
     if (raw != widget.controller.text || !widget.controller.selection.isValid) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
       // collapsed(-1);切到源码模式时 TextField attach 的**首帧**

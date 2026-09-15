@@ -129,6 +129,36 @@ void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
 
+  testWidgets('链接展开期间自动镜像与卸载回写不能增加转义包装', (tester) async {
+    final controller = TextEditingController();
+    final key = GlobalKey<RichComposerEditorState>();
+    await _pump(tester, RichComposerEditor(key: key, controller: controller));
+    await tester.pump(const Duration(milliseconds: 800));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.mode = EditorMode.ir;
+    const url = 'https://github.com';
+    const raw = '[$url]($url)';
+    final id = editor.blocks.first.id;
+    editor.updateSelection(EditorSelection.collapsed(
+      EditorPosition(blockId: id, offset: 0),
+    ));
+    editor.pastePlainText(raw);
+    editor.updateSelection(EditorSelection.collapsed(
+      EditorPosition(blockId: id, offset: 4),
+    ));
+    expect((editor.blocks.first as TextBlock).content.text, raw);
+    final selection = editor.selection;
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(controller.text, raw, reason: '光标仍驻留时定时镜像必须保留链接');
+    expect(editor.selection, selection);
+    expect((editor.blocks.first as TextBlock).content.text, raw);
+    key.currentState!.flushToController();
+    expect(controller.text, raw);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(controller.text, raw, reason: '卸载时最终回写同样不能毁掉链接');
+    controller.dispose();
+  });
+
   testWidgets('高图下方向上拖虚拟光标，宿主不能把视口拉回图片底部', (tester) async {
     final controller = TextEditingController();
     await _pump(tester, RichComposerEditor(controller: controller));

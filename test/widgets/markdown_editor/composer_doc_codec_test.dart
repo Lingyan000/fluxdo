@@ -33,6 +33,56 @@ process.stdout.write(__fluxdoCook.cook(JSON.parse(process.argv[1])));
 }
 
 void main() {
+  test('连续导入、点击展开、停留导出三次不增加链接层数', () async {
+    const raw = '[https://github.com](https://github.com)';
+    final original = await cookWithNode(raw);
+    var cooked = original;
+    for (var round = 0; round < 3; round++) {
+      var n = 0;
+      final editor = EditorState(
+        blocks: blockNodesToDoc(
+          ParagraphParser().parse(cooked),
+          () => 'e_${n++}',
+        ),
+      )..mode = EditorMode.ir;
+      try {
+        editor.updateSelection(
+          EditorSelection.collapsed(
+            EditorPosition(blockId: editor.blocks.first.id, offset: 4),
+          ),
+        );
+        final exported = editor.exportMarkdown();
+        expect(exported, raw, reason: '第 $round 次展开态回写');
+        cooked = await cookWithNode(exported);
+        expect(cooked, original);
+      } finally {
+        editor.dispose();
+      }
+    }
+  });
+
+  test('链接停留在 IR 展开态时回写不能变成转义正文', () async {
+    const raw = '[https://github.com](https://github.com)';
+    final original = await cookWithNode(raw);
+    var n = 0;
+    final editor = EditorState(
+      blocks: blockNodesToDoc(
+        ParagraphParser().parse(original),
+        () => 'e_${n++}',
+      ),
+    )..mode = EditorMode.ir;
+    addTearDown(editor.dispose);
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: editor.blocks.first.id, offset: 3),
+      ),
+    );
+    expect((editor.blocks.first as TextBlock).content.text, raw);
+    // 宿主自动镜像时光标仍在链接内，必须使用模式感知的只读导出。
+    final back = editor.exportMarkdown();
+    expect(await cookWithNode(back), original, reason: '展开态回写：$back');
+  });
+
   for (final link in [
     '[https://github.com](https://github.com)',
     'https://github.com',
