@@ -17,6 +17,7 @@ Future<T?> showComposerAnchoredPanel<T>({
   bool fitBesideAnchor = false,
   Rect? globalViewport,
   bool atPointer = false,
+  bool requestFocus = true,
 }) async {
   final navigator = Navigator.of(context);
   final overlay = navigator.overlay?.context.findRenderObject();
@@ -32,6 +33,7 @@ Future<T?> showComposerAnchoredPanel<T>({
     maxHeight: maxHeight,
     fitBesideAnchor: fitBesideAnchor,
     atPointer: atPointer,
+    requestFocus: requestFocus,
     builder: builder,
     themes: InheritedTheme.capture(from: context, to: navigator.context),
     reduceMotion: MediaQuery.disableAnimationsOf(context),
@@ -55,7 +57,8 @@ class _ComposerPanelRoute<T> extends PopupRoute<T> {
     required this.themes,
     required this.reduceMotion,
     required this.barrierLabel,
-  }) : super(requestFocus: true);
+    required bool requestFocus,
+  }) : super(requestFocus: requestFocus);
 
   final Rect anchor;
   final Rect? viewport;

@@ -3101,6 +3101,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                           ),
                                           child: FluxdoEditor(
                                             state: editor,
+                                            onEditingActivity: () {
+                                              if (!_isDesktop) {
+                                                ComposerChromeScope.maybeOf(
+                                                  context,
+                                                )?.beginInput();
+                                              }
+                                            },
                                             objectToolbarManaged: true,
                                             onAddGridImages: (id) =>
                                                 _pickAndUploadImages(
@@ -3314,6 +3321,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           _RichPanelType next;
           switch (panelType) {
             case ChatBottomPanelType.none:
+              ComposerChromeScope.maybeOf(context)?.endInput();
               next = _RichPanelType.none;
             case ChatBottomPanelType.keyboard:
               next = _RichPanelType.keyboard;

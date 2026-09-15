@@ -473,7 +473,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('键盘收起后正文不足一屏，顶栏底栏仍能恢复', (tester) async {
+  testWidgets('键盘开启时上下栏不隐藏，收起后短文仍保持可见', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 760);
     tester.view.viewInsets = const FakeViewPadding(bottom: 260);
@@ -505,7 +505,7 @@ void main() {
     );
     await tester.drag(find.byType(ListView), const Offset(0, -90));
     await tester.pumpAndSettle();
-    expect(chrome.hidden, isTrue);
+    expect(chrome.hidden, isFalse);
     tester.view.viewInsets = const FakeViewPadding();
     await tester.pumpAndSettle();
     expect(scroll.position.maxScrollExtent, 0);

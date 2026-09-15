@@ -616,8 +616,12 @@ void main() {
       expect(chrome.hidden, isTrue);
       expect(
         find.byTooltip(S.current.toolPanel_bold).hitTestable(),
-        findsOneWidget,
+        findsNothing,
       );
+      await tester.dragFrom(const Offset(10, 250), const Offset(0, 100));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(chrome.hidden, isFalse);
       await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -1595,6 +1599,172 @@ void main() {
         },
       );
     }
+  }
+
+  for (final rich in [false, true]) {
+    for (final size in [const Size(390, 844), const Size(360, 520)]) {
+      testWidgets('手机顶底栏同步阅读显隐，输入与零占位键盘保持显示 rich=$rich size=$size', (
+        tester,
+      ) async {
+        final text = TextEditingController();
+        final focus = FocusNode();
+        final chrome = ComposerChromeController();
+        await _pump(
+          tester,
+          ComposerChromeScope(
+            controller: chrome,
+            child: Column(
+              children: [
+                const ComposerChromeVisibility(
+                  top: true,
+                  child: SizedBox(height: 36, child: Text('TOP BAR')),
+                ),
+                Expanded(
+                  child: rich
+                      ? RichComposerEditor(controller: text, focusNode: focus)
+                      : MarkdownEditor(controller: text, focusNode: focus),
+                ),
+              ],
+            ),
+          ),
+          width: size.width,
+          height: size.height,
+        );
+        await tester.pump(const Duration(milliseconds: 800));
+        final raw = List.generate(50, (i) => '正文段落 $i').join('\n\n');
+        final core = rich
+            ? tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state
+            : null;
+        if (rich) {
+          core!.pastePlainText(raw);
+        } else {
+          text.text = raw;
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final scroll = tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView).first)
+            .controller!;
+        Future<void> readDown() async {
+          scroll.jumpTo(scroll.position.maxScrollExtent / 2);
+          await tester.pump();
+          final rect = tester.getRect(find.byType(CustomScrollView).first);
+          await tester.dragFrom(
+            rect.topLeft + const Offset(10, 90),
+            const Offset(0, -75),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+
+        await readDown();
+        expect(chrome.hidden, isTrue);
+        expect(find.text('TOP BAR').hitTestable(), findsNothing);
+        expect(
+          find.byTooltip(S.current.toolPanel_bold).hitTestable(),
+          findsNothing,
+        );
+        tester.view.viewInsets = const FakeViewPadding(bottom: 180);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 220));
+        await readDown();
+        expect(chrome.hidden, isFalse);
+        expect(find.text('TOP BAR').hitTestable(), findsOneWidget);
+        expect(
+          find.byTooltip(S.current.toolPanel_bold).hitTestable(),
+          findsOneWidget,
+        );
+        tester.view.viewInsets = const FakeViewPadding();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        focus.requestFocus();
+        await tester.pump();
+        if (rich) {
+          final block = core!.textBlockById(core.selection!.extent.blockId)!;
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
+              text: ' ${block.content.text}x',
+              selection: TextSelection.collapsed(
+                offset: block.content.length + 2,
+              ),
+            ),
+          );
+        } else {
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
+              text: '${text.text}x',
+              selection: TextSelection.collapsed(offset: text.text.length + 1),
+            ),
+          );
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await readDown();
+        expect(chrome.hidden, isFalse, reason: '浮动/外接键盘输入无底部占位也不能隐藏');
+        ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+        await tester.pump();
+        await readDown();
+        expect(chrome.hidden, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        text.dispose();
+        focus.dispose();
+        chrome.dispose();
+      });
+    }
+  }
+
+  for (final rich in [false, true]) {
+    testWidgets('手机表情与展开工具面板锁定顶底栏，关闭后恢复阅读隐藏 rich=$rich', (tester) async {
+      final text = TextEditingController();
+      final chrome = ComposerChromeController();
+      final source = GlobalKey<MarkdownEditorState>();
+      final rendered = GlobalKey<RichComposerEditorState>();
+      await _pump(
+        tester,
+        ComposerChromeScope(
+          controller: chrome,
+          child: rich
+              ? RichComposerEditor(key: rendered, controller: text)
+              : MarkdownEditor(key: source, controller: text),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('composer-format-row')),
+          matching: find.byTooltip(S.current.emoji_tab),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      chrome.hide();
+      expect(chrome.hidden, isFalse);
+      if (rich) {
+        rendered.currentState!.closeEmojiPanel();
+      } else {
+        source.currentState!.closeEmojiPanel();
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      chrome.hide();
+      expect(chrome.hidden, isTrue);
+      chrome.reveal();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      chrome.hide();
+      expect(chrome.hidden, isFalse);
+      await tester.tap(find.byTooltip(S.current.composer_collapseToolbar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      chrome.hide();
+      expect(chrome.hidden, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      text.dispose();
+      chrome.dispose();
+    });
   }
 
   for (final change in ['keyboard-open', 'keyboard-close', 'resize']) {

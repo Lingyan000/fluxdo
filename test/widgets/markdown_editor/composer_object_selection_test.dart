@@ -16,6 +16,7 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/services/navigation/keyboard_focus_guard.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_object_toolbar.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_block_picker.dart';
@@ -38,6 +39,7 @@ Future<void> _pump(
   bool dark = false,
   bool desktop = false,
   bool disableAnimations = false,
+  bool focusGuard = false,
 }) async {
   PlatformUtils.debugDesktopOverride = desktop;
   tester.view.physicalSize = Size(width, height);
@@ -84,6 +86,7 @@ Future<void> _pump(
           scrollBehavior: const DesktopScrollInteractionBehavior(),
           locale: const Locale('zh'),
           navigatorKey: navigatorKey,
+          navigatorObservers: [if (focusGuard) KeyboardFocusGuard()],
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
@@ -153,6 +156,105 @@ Future<({EditorState state, String imageId})> _insertImage(
 void main() {
   _Binding();
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('手机斜杠菜单利用键盘上方视口而非光标旁的小空隙', (tester) async {
+    final controller = TextEditingController();
+    await _pump(
+      tester,
+      RichComposerEditor(controller: controller),
+      width: 390,
+      height: 844,
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+    editor.state.pastePlainText(List.filled(6, '正文').join('\n\n'));
+    editor.state.splitBlock();
+    editor.state.insertText('/');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    final results = tester.getRect(
+      find.byKey(const ValueKey('composer-block-results')),
+    );
+    expect(results.height, greaterThan(250));
+    expect(
+      tester.getRect(find.byType(ComposerBlockPicker)).bottom,
+      lessThanOrEqualTo(504),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  for (final size in [const Size(360, 520), const Size(640, 390)]) {
+    testWidgets('小窗和横屏大字斜杠菜单完整落在键盘上方 size=$size', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        width: size.width,
+        height: size.height,
+        scale: 1.6,
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 160);
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.insertText('/');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      final bounds = tester.getRect(find.byType(ComposerBlockPicker));
+      expect(bounds.top, greaterThanOrEqualTo(56));
+      expect(bounds.bottom, lessThanOrEqualTo(size.height - 160));
+      expect(tester.takeException(), isNull);
+      final picker = tester
+          .widget<ComposerBlockPicker>(find.byType(ComposerBlockPicker))
+          .controller;
+      picker.search.text = '图片';
+      await tester.pump();
+      expect(find.text('图片').hitTestable(), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
+  for (final keyboardInset in [0.0, 300.0]) {
+    testWidgets('手机图片更多菜单打开和取消都保留输入连接 inset=$keyboardInset', (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        focusGuard: true,
+      );
+      await _insertImage(tester);
+      tester.view.viewInsets = FakeViewPadding(bottom: keyboardInset);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      tester.testTextInput.log.clear();
+      await tester.tap(find.byKey(const ValueKey('composer-object-more')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(find.text('图片尺寸').hitTestable(), findsOneWidget);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(
+        tester.testTextInput.log.where(
+          (call) =>
+              call.method == 'TextInput.clearClient' ||
+              call.method == 'TextInput.hide',
+        ),
+        isEmpty,
+      );
+      Navigator.of(tester.element(find.text('图片尺寸'))).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
 
   for (final desktop in [false, true]) {
     for (final delay in [0, 240]) {

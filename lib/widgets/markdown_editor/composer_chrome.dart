@@ -1,14 +1,22 @@
 import 'dart:math' as math;
+import 'package:chat_bottom_container/listener_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../common/progressive_top_blur.dart';
 
-/// 用户滚动驱动页头显隐；编辑工具栏常驻，程序滚动与光标避让不参与。
+/// 顶栏与底栏共享阅读态显隐；输入或面板交互期间保持可见。
 class ComposerChromeController extends ChangeNotifier {
   bool _hidden = false;
   int _locks = 0;
+  bool _inputActive = false;
   bool get hidden => _hidden;
+  void beginInput() {
+    _inputActive = true;
+    reveal();
+  }
+
+  void endInput() => _inputActive = false;
   void reveal() {
     if (!_hidden) return;
     _hidden = false;
@@ -16,7 +24,7 @@ class ComposerChromeController extends ChangeNotifier {
   }
 
   void hide() {
-    if (_hidden || _locks > 0) return;
+    if (_hidden || _locks > 0 || _inputActive) return;
     _hidden = true;
     notifyListeners();
   }
@@ -71,12 +79,35 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
   Offset? _down;
   bool _moved = false;
   bool _keyboardVisible = false;
+  late final String _keyboardListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _keyboardListener = ChatBottomContainerListenerManager().register((height) {
+      if (!mounted) return;
+      // Native close notifications also cover floating/small-window keyboards
+      // whose viewInsets were zero throughout the input session.
+      if (height <= 0) {
+        widget.controller.endInput();
+      } else {
+        widget.controller.beginInput();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    ChatBottomContainerListenerManager().unregister(_keyboardListener);
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final visible = MediaQuery.viewInsetsOf(context).bottom > 0;
     if (_keyboardVisible && !visible) {
+      widget.controller.endInput();
       // 键盘收起后可滚范围可能归零，不能再等一次反向滚动来恢复栏位。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _keyboardVisible) return;
@@ -91,6 +122,10 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
 
   bool _onScroll(ScrollNotification event) {
     if (event.depth != 0 || event.metrics.axis != Axis.vertical) return false;
+    if (_keyboardVisible) {
+      widget.controller.reveal();
+      return false;
+    }
     if (event is ScrollStartNotification) {
       _userScroll = event.dragDetails != null;
       _userDirection = ScrollDirection.idle;
@@ -165,11 +200,19 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
         child: Focus(
           canRequestFocus: false,
           skipTraversal: true,
+          onFocusChange: (focused) {
+            if (!focused) widget.controller.endInput();
+          },
           onKeyEvent: (_, event) {
             if (event is KeyDownEvent &&
                 event.logicalKey != LogicalKeyboardKey.pageDown &&
                 event.logicalKey != LogicalKeyboardKey.pageUp) {
               widget.controller.reveal();
+              if (event.character?.isNotEmpty == true ||
+                  event.logicalKey == LogicalKeyboardKey.backspace ||
+                  event.logicalKey == LogicalKeyboardKey.enter) {
+                widget.controller.beginInput();
+              }
             }
             return KeyEventResult.ignored;
           },
@@ -181,6 +224,61 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
       ),
     ),
   );
+}
+
+/// A declarative visibility hold shared by keyboard, custom panel and menus.
+class ComposerChromeActivity extends StatefulWidget {
+  const ComposerChromeActivity({
+    super.key,
+    required this.active,
+    required this.child,
+  });
+  final bool active;
+  final Widget child;
+  @override
+  State<ComposerChromeActivity> createState() => _ComposerChromeActivityState();
+}
+
+class _ComposerChromeActivityState extends State<ComposerChromeActivity> {
+  ComposerChromeController? _controller;
+  ComposerChromeController? _held;
+  VoidCallback? _release;
+  bool _queued = false;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller = ComposerChromeScope.maybeOf(context);
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant ComposerChromeActivity oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    if (_queued) return;
+    _queued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _queued = false;
+      if (!mounted) return;
+      final next = widget.active ? _controller : null;
+      if (identical(next, _held)) return;
+      _release?.call();
+      _held = next;
+      _release = next?.hold();
+    });
+  }
+
+  @override
+  void dispose() {
+    _release?.call();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class ComposerChromeVisibility extends StatelessWidget {

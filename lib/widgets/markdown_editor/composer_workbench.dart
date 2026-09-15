@@ -872,94 +872,103 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
           active: _keyboardActive,
           child: AnimatedBuilder(
             animation: _toolsInput,
-            builder: (context, _) => Column(
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, viewport) => Stack(
-                      key: const ValueKey('composer-writing-canvas'),
-                      fit: StackFit.expand,
-                      children: [
-                        Positioned.fill(
-                          bottom: math.min(
-                            _toolsInput.replacementHeight,
-                            viewport.maxHeight,
-                          ),
-                          child: MediaQuery(
-                            data: MediaQuery.of(context).copyWith(
-                              size: Size(
-                                viewport.maxWidth,
-                                MediaQuery.sizeOf(context).height,
+            builder: (context, _) => ComposerChromeActivity(
+              active:
+                  _keyboardInset > 0 ||
+                  widget.customPanelVisible ||
+                  _toolsInput.active,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, viewport) => Stack(
+                        key: const ValueKey('composer-writing-canvas'),
+                        fit: StackFit.expand,
+                        children: [
+                          Positioned.fill(
+                            bottom: math.min(
+                              _toolsInput.replacementHeight,
+                              viewport.maxHeight,
+                            ),
+                            child: MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                size: Size(
+                                  viewport.maxWidth,
+                                  MediaQuery.sizeOf(context).height,
+                                ),
+                              ),
+                              child: widget.bodyBuilder(
+                                context,
+                                ComposerWorkbench.occupiedHeight(context) +
+                                    12 +
+                                    (_toolsInput.active
+                                        ? _toolsInput.extraLift(
+                                                viewport.maxHeight -
+                                                    ComposerChromeScope.topInsetOf(
+                                                      context,
+                                                    ),
+                                                ComposerWorkbench.occupiedHeight(
+                                                      context,
+                                                    ) -
+                                                    8 -
+                                                    kComposerIslandBottomGap,
+                                              ) *
+                                              _toolsInput.progress
+                                        : 0),
+                                math.max(
+                                  0,
+                                  viewport.maxHeight -
+                                      _toolsInput.replacementHeight,
+                                ),
                               ),
                             ),
-                            child: widget.bodyBuilder(
-                              context,
-                              ComposerWorkbench.occupiedHeight(context) +
-                                  12 +
-                                  (_toolsInput.active
-                                      ? _toolsInput.extraLift(
-                                              viewport.maxHeight -
-                                                  ComposerChromeScope.topInsetOf(
-                                                    context,
-                                                  ),
-                                              ComposerWorkbench.occupiedHeight(
-                                                    context,
-                                                  ) -
-                                                  8 -
-                                                  kComposerIslandBottomGap,
-                                            ) *
-                                            _toolsInput.progress
-                                      : 0),
-                              math.max(
-                                0,
-                                viewport.maxHeight -
-                                    _toolsInput.replacementHeight,
+                          ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: _WorkbenchViewport(
+                                input: PlatformUtils.isDesktop
+                                    ? null
+                                    : _toolsInput,
+                                panelHeight:
+                                    (_panelKey.currentContext
+                                                ?.findRenderObject()
+                                            as RenderBox?)
+                                        ?.size
+                                        .height ??
+                                    math.max(_keyboardInset, _safeBottom),
+                                // 页面正文可延伸到 AppBar 后方，展开的工具岛必须避让。
+                                height: math.max(
+                                  0,
+                                  viewport.maxHeight -
+                                      ComposerChromeScope.topInsetOf(context),
+                                ),
+                                child: ComposerChromeVisibility(
+                                  child: widget.toolbar,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: _WorkbenchViewport(
-                              input: PlatformUtils.isDesktop
-                                  ? null
-                                  : _toolsInput,
-                              panelHeight:
-                                  (_panelKey.currentContext?.findRenderObject()
-                                          as RenderBox?)
-                                      ?.size
-                                      .height ??
-                                  math.max(_keyboardInset, _safeBottom),
-                              // 页面正文可延伸到 AppBar 后方，展开的工具岛必须避让。
-                              height: math.max(
-                                0,
-                                viewport.maxHeight -
-                                    ComposerChromeScope.topInsetOf(context),
-                              ),
-                              child: widget.toolbar,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                AnimatedBuilder(
-                  animation: Listenable.merge([_keyboard, _toolsInput]),
-                  child: widget.panel,
-                  builder: (_, child) => SizedBox(
-                    key: const ValueKey('composer-keyboard-space'),
-                    height: _toolsInput.active
-                        ? _toolsInput.visibleHeight
-                        : (_keyboard.active ? _keyboard.visibleHeight : null),
-                    child: ClipRect(key: _panelKey, child: child),
+                  AnimatedBuilder(
+                    animation: Listenable.merge([_keyboard, _toolsInput]),
+                    child: widget.panel,
+                    builder: (_, child) => SizedBox(
+                      key: const ValueKey('composer-keyboard-space'),
+                      height: _toolsInput.active
+                          ? _toolsInput.visibleHeight
+                          : (_keyboard.active ? _keyboard.visibleHeight : null),
+                      child: ClipRect(key: _panelKey, child: child),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

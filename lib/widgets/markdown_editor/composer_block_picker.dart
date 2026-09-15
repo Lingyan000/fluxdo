@@ -4,6 +4,8 @@ import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
 
 import 'composer_anchored_panel.dart';
+import 'composer_chrome.dart';
+import '../../utils/platform_utils.dart';
 
 class ComposerBlockChoice {
   const ComposerBlockChoice({
@@ -138,6 +140,7 @@ class ComposerBlockPickerController extends ChangeNotifier {
     required Rect Function() anchor,
     required Rect? Function() viewport,
   }) {
+    _releaseChrome = ComposerChromeScope.maybeOf(context)?.hold();
     final overlay = Overlay.of(context);
     _history = LocalHistoryEntry(
       impliesAppBarDismissal: false,
@@ -192,7 +195,11 @@ class ComposerBlockPickerController extends ChangeNotifier {
     }
   }
 
+  VoidCallback? _releaseChrome;
+
   void _finish() {
+    _releaseChrome?.call();
+    _releaseChrome = null;
     final history = _history;
     _history = null;
     history?.remove();
@@ -292,6 +299,7 @@ class _BlockPickerPopoverState extends State<_BlockPickerPopover>
       reduceMotion: _reduced,
       width: 336,
       maxHeight: 440,
+      fitBesideAnchor: PlatformUtils.isDesktop,
       child: TapRegion(
         groupId: widget.controller,
         onTapOutside: (_) => widget.controller.dismiss(restoreFocus: false),
@@ -391,129 +399,135 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
         actions: {_PickerKeyIntent: _PickerKeyAction(controller)},
         child: IgnorePointer(
           ignoring: controller.isClosing,
-          child: Column(
-            key: const ValueKey('composer-block-picker'),
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                key: const ValueKey('composer-block-search-header'),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Icon(
-                        Icons.search_rounded,
-                        key: ValueKey('composer-block-search-icon'),
-                        size: 20,
-                      ),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        key: const ValueKey('composer-block-search'),
-                        controller: controller.search,
-                        focusNode: controller.searchFocus,
-                        autofocus: controller.autofocusSearch,
-                        textAlignVertical: TextAlignVertical.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        decoration: const InputDecoration(
-                          hintText: '搜索块类型…',
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+          child: LayoutBuilder(
+            builder: (context, constraints) => Column(
+              key: const ValueKey('composer-block-picker'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  key: const ValueKey('composer-block-search-header'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          Icons.search_rounded,
+                          key: ValueKey('composer-block-search-icon'),
+                          size: 20,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      key: const ValueKey('composer-block-search-close'),
-                      tooltip: '关闭',
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size.square(48),
-                        maximumSize: const Size.square(48),
-                        visualDensity: VisualDensity.standard,
-                      ),
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () => controller.dismiss(),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(
-                height: 1,
-                color: colors.outlineVariant.withValues(alpha: .5),
-              ),
-              Flexible(
-                fit: FlexFit.loose,
-                child: Scrollbar(
-                  controller: _scroll,
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    key: const ValueKey('composer-block-results'),
-                    padding: const EdgeInsets.all(6),
-                    child: entries.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Text(
-                              '没有匹配的块类型\n试试“图片”“标题”或“表格”',
-                              key: const ValueKey(
-                                'composer-block-empty-results',
-                              ),
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: colors.onSurfaceVariant),
-                            ),
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              for (var i = 0; i < entries.length; i++) ...[
-                                if (!searching &&
-                                    (i == 0 ||
-                                        entries[i - 1].group !=
-                                            entries[i].group))
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      10,
-                                      10,
-                                      10,
-                                      4,
-                                    ),
-                                    child: Text(
-                                      entries[i].group,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
-                                _row(context, entries[i], i),
-                              ],
-                            ],
+                      Expanded(
+                        child: TextField(
+                          key: const ValueKey('composer-block-search'),
+                          controller: controller.search,
+                          focusNode: controller.searchFocus,
+                          autofocus: controller.autofocusSearch,
+                          textAlignVertical: TextAlignVertical.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          decoration: const InputDecoration(
+                            hintText: '搜索块类型…',
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
                           ),
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('composer-block-search-close'),
+                        tooltip: '关闭',
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size.square(48),
+                          maximumSize: const Size.square(48),
+                          visualDensity: VisualDensity.standard,
+                        ),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () => controller.dismiss(),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-                child: Text(
-                  switch (Theme.of(context).platform) {
-                    TargetPlatform.android ||
-                    TargetPlatform.iOS ||
-                    TargetPlatform.fuchsia => '输入名称查找，点选插入',
-                    _ => '↑↓ 选择   Enter 确认   Esc 关闭',
-                  },
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+                Divider(
+                  height: 1,
+                  color: colors.outlineVariant.withValues(alpha: .5),
+                ),
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: Scrollbar(
+                    controller: _scroll,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      key: const ValueKey('composer-block-results'),
+                      padding: const EdgeInsets.all(6),
+                      child: entries.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Text(
+                                '没有匹配的块类型\n试试“图片”“标题”或“表格”',
+                                key: const ValueKey(
+                                  'composer-block-empty-results',
+                                ),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: colors.onSurfaceVariant),
+                              ),
+                            )
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (var i = 0; i < entries.length; i++) ...[
+                                  if (!searching &&
+                                      (i == 0 ||
+                                          entries[i - 1].group !=
+                                              entries[i].group))
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        10,
+                                        10,
+                                        10,
+                                        4,
+                                      ),
+                                      child: Text(
+                                        entries[i].group,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  _row(context, entries[i], i),
+                                ],
+                              ],
+                            ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                if (PlatformUtils.isDesktop || constraints.maxHeight >= 320)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Text(
+                      switch (Theme.of(context).platform) {
+                        TargetPlatform.android ||
+                        TargetPlatform.iOS ||
+                        TargetPlatform.fuchsia => '输入名称查找，点选插入',
+                        _ => '↑↓ 选择   Enter 确认   Esc 关闭',
+                      },
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

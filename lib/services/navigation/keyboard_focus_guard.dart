@@ -22,6 +22,9 @@ class KeyboardFocusGuard extends NavigatorObserver {
     if (PlatformUtils.isDesktop) return;
     // 首屏入栈:底下没有页面,也就没有"待恢复的焦点"这回事
     if (previousRoute == null) return;
+    // Editing menus deliberately keep the input focus, including floating
+    // keyboards and hardware keyboards with no bottom inset.
+    if (route is PopupRoute && !route.requestFocus) return;
     if (_keyboardVisible) return;
     final focus = FocusManager.instance.primaryFocus;
     if (focus == null) return;

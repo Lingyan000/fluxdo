@@ -4,6 +4,7 @@ import '../../utils/platform_utils.dart';
 import 'composer_tool_style.dart';
 import 'composer_object_action.dart';
 import 'composer_anchored_panel.dart';
+import 'composer_chrome.dart';
 export 'composer_object_action.dart';
 
 Future<void> showComposerObjectMenu(
@@ -15,6 +16,7 @@ Future<void> showComposerObjectMenu(
   List<ComposerObjectAction> additionalActions = const [],
 }) async {
   final navigator = Navigator.of(context);
+  final releaseChrome = ComposerChromeScope.maybeOf(context)?.hold();
   selection.onMenuVisibilityChanged?.call(true);
   ComposerObjectAction? action;
   try {
@@ -29,6 +31,7 @@ Future<void> showComposerObjectMenu(
     if (anchor == null) return;
     action = await showComposerAnchoredPanel<ComposerObjectAction>(
       context: context,
+      requestFocus: PlatformUtils.isDesktop,
       globalAnchor: anchor,
       atPointer: globalPosition != null,
       globalViewport: globalPosition == null
@@ -62,6 +65,7 @@ Future<void> showComposerObjectMenu(
       ),
     );
   } finally {
+    releaseChrome?.call();
     selection.onMenuVisibilityChanged?.call(false);
     onClosed?.call();
   }

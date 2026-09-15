@@ -912,6 +912,12 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       controller: widget.controller,
       focusNode: _focusNode,
       undoController: _undoController,
+      onTap: () {
+        if (!_isDesktop) ComposerChromeScope.maybeOf(context)?.beginInput();
+      },
+      onChanged: (_) {
+        if (!_isDesktop) ComposerChromeScope.maybeOf(context)?.beginInput();
+      },
       readOnly: _readOnly,
       showCursor: true,
       // 外滚结构:TextField 自身不滚(maxLines:null 全内容展开),
@@ -1191,6 +1197,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           EditorPanelType newType;
           switch (panelType) {
             case ChatBottomPanelType.none:
+              ComposerChromeScope.maybeOf(context)?.endInput();
               newType = EditorPanelType.none;
             case ChatBottomPanelType.keyboard:
               newType = EditorPanelType.keyboard;
