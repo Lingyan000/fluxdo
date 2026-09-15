@@ -18,6 +18,7 @@ import '../../models/search_result.dart';
 import '../../models/emoji.dart';
 import '../../models/badge.dart';
 import '../../models/tag_search_result.dart';
+import '../../models/tag_notification_level.dart';
 import '../../models/mention_user.dart';
 import '../../models/draft.dart';
 import '../../models/invite_link.dart';

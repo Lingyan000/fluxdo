@@ -13,6 +13,7 @@ import '../widgets/common/paged_list_footer.dart';
 import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
+import '../widgets/topic/tag_notification_button.dart';
 import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/common/error_view.dart';
@@ -328,13 +329,19 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   Widget build(BuildContext context) {
     // 高亮"正在右栏的那条":watch 本页自己的栈(旧代码误 watch 首页栈)。
     final selectedTopicId = ref.watch(_paneProvider).topicId;
-    final isLoggedIn = ref.watch(currentUserProvider).value != null;
+    final currentUser = ref.watch(currentUserProvider).value;
+    final isLoggedIn = currentUser != null;
 
     final list = Scaffold(
       appBar: AppBar(
         title: Text('#${widget.tagName}'),
         centerTitle: false,
         actions: [
+          if (currentUser != null)
+            TagNotificationButton(
+              key: ValueKey(currentUser.id),
+              tagName: widget.tagName,
+            ),
           IconButton(
             icon: const Icon(Symbols.search_rounded),
             onPressed: () => Navigator.push(
