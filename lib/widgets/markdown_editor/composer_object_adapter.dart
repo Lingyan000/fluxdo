@@ -7,6 +7,8 @@ enum ComposerObjectCommand {
   imageAlt,
   joinGrid,
   moveOutOfGrid,
+  gridMovePrevious,
+  gridMoveNext,
   gridLayout,
   splitGrid,
   openLink,
@@ -39,12 +41,17 @@ class ComposerObjectAdapter {
             ComposerObjectCommand.joinGrid,
           ],
         ),
-        EditorGridImageTarget() => const ComposerObjectAdapter(
-          '网格图片',
+        EditorGridImageTarget() => ComposerObjectAdapter(
+          ((object.block as IslandBlock).node as ImageGridNode).mode ==
+                  ImageGridMode.carousel
+              ? '轮播图片'
+              : '网格图片',
           primary: ComposerObjectCommand.viewImage,
           commands: [
             ComposerObjectCommand.imageAlt,
             ComposerObjectCommand.moveOutOfGrid,
+            ComposerObjectCommand.gridMovePrevious,
+            ComposerObjectCommand.gridMoveNext,
           ],
         ),
         EditorContainerTarget() => ComposerObjectAdapter(
@@ -129,7 +136,8 @@ String composerBlockLabel(EditorBlock block) => switch (block) {
     OneboxNode() => '链接卡片',
     CalloutNode() => '提示框',
     DetailsNode() => '折叠详情',
-    ImageGridNode() => '图片网格',
+    ImageGridNode(:final mode) =>
+      mode == ImageGridMode.carousel ? '图片轮播' : '图片网格',
     FootnotesSectionNode() => '脚注',
     LazyVideoNode() => '视频卡片',
     IframeNode() => '嵌入内容',

@@ -68,6 +68,7 @@ import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
 import '../composer_tool_style.dart';
 import '../composer_object_toolbar.dart';
+import '../composer_object_surface.dart';
 import '../composer_block_picker.dart';
 import '../composer_block_hover.dart';
 import '../composer_object_controller.dart';
@@ -1822,18 +1823,29 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   /// 上传图片(选图 → 确认框 → 上传 → 插图片岛;单图流程,多图循环单图)。
-  Future<void> _pickAndUploadImages() async {
+  Future<void> _pickAndUploadImages({String? gridId}) async {
+    final editor = _editor;
+    if (editor == null ||
+        (gridId != null && _addingImageGrids.contains(gridId))) {
+      return;
+    }
+    if (gridId != null) setState(() => _addingImageGrids.add(gridId));
     try {
       final images = await ImagePicker().pickMultiImage();
-      if (images.isEmpty || !mounted) return;
+      if (images.isEmpty || !mounted || !identical(editor, _editor)) return;
       for (final img in images) {
-        if (!mounted) return;
+        if (!mounted || !identical(editor, _editor)) return;
         final confirmed = await showImageUploadDialog(
           context,
           imagePath: img.path,
           imageName: img.name,
         );
         if (confirmed == null) continue;
+        if (!mounted || !identical(editor, _editor)) return;
+        if (gridId != null && editor.indexOfBlock(gridId) < 0) {
+          ToastService.showError('图片组已被移除，无法添加图片');
+          return;
+        }
         setState(() => _uploadingCount++);
         try {
           final uploadResult = await DiscourseService().uploadImage(
@@ -1844,23 +1856,33 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           if (url != null) {
             DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
           }
-          if (!mounted) return;
-          insertUploadedImage(
+          if (!mounted || !identical(editor, _editor)) return;
+          final inserted = insertUploadedImage(
+            targetGridId: gridId,
             shortUrl: uploadResult.shortUrl,
             alt: confirmed.originalName,
             width: uploadResult.width,
             height: uploadResult.height,
           );
+          if (!inserted && gridId != null) {
+            ToastService.showError('图片组已被移除，无法添加图片');
+            return;
+          }
         } finally {
           if (mounted) setState(() => _uploadingCount--);
         }
       }
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      if (mounted && gridId != null) {
+        setState(() => _addingImageGrids.remove(gridId));
+      }
     }
   }
 
   int _uploadingCount = 0;
+  final Set<String> _addingImageGrids = {};
 
   /// 音视频上传插入(插入菜单):file_picker 选 → .xz 改名上传 →
   /// <audio>/<video> 标签经 cook 岛化插入。
@@ -3006,14 +3028,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 上传完成后在光标处插入图片原子(官方 inline image 同语义;渲染层
   /// data-orig-src 异步解析)。scale 留 null(=100 档,序列化不写后缀,
   /// raw 形态与官方上传一致);选中图后工具条可缩放。
-  void insertUploadedImage({
+  bool insertUploadedImage({
     required String shortUrl,
+    String? targetGridId,
     String alt = '',
     int? width,
     int? height,
   }) {
     final editor = _editor;
-    if (editor == null) return;
+    if (editor == null) return false;
+    if (targetGridId != null) {
+      return appendImagesToGrid(editor, targetGridId, [
+        ImageRun(
+          src: shortUrl,
+          alt: alt,
+          width: width?.toDouble(),
+          height: height?.toDouble(),
+        ),
+      ]);
+    }
     final sel = editor.selection;
     // 从未聚焦 / 光标停在岛上(整选态):落到最后一个文本块尾
     if (sel == null || editor.textBlockById(sel.extent.blockId) == null) {
@@ -3021,7 +3054,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         (b) => b is TextBlock,
         orElse: () => editor.blocks.last,
       );
-      if (lastText is! TextBlock) return;
+      if (lastText is! TextBlock) return false;
       editor.updateSelection(
         EditorSelection.collapsed(
           EditorPosition(
@@ -3049,6 +3082,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 偶尔换两行,重开草稿就好了」(实测复现)。分块后结构与往返结果
     // 一致,不再有多余的 `<br>`。
     editor.splitBlock();
+    return true;
   }
 
   // -----------------------------------------------------------------
@@ -3145,6 +3179,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                           child: FluxdoEditor(
                                             state: editor,
                                             objectToolbarManaged: true,
+                                            onAddGridImages: (id) =>
+                                                _pickAndUploadImages(
+                                                  gridId: id,
+                                                ),
+                                            addingImageGrids: _addingImageGrids,
+                                            gridControlSurfaceBuilder:
+                                                (_, child) =>
+                                                    ComposerObjectSurface(
+                                                      compact: true,
+                                                      radius: 8,
+                                                      child: child,
+                                                    ),
                                             showTrailingParagraph: true,
                                             emptyParagraphHint:
                                                 isEmpty &&

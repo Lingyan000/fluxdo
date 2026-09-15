@@ -21,9 +21,10 @@ import 'package:fluxdo/widgets/markdown_editor/composer_object_toolbar.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_block_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/widgets/content/discourse_html_content/lazy_image.dart';
+import 'package:fluxdo/widgets/content/discourse_html_content/image_utils.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show ImageRun, ImageGridNode, CodeBlockNode;
+    show ImageRun, ImageGridNode, ImageGridMode, CodeBlockNode;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -1202,6 +1203,97 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
+  testWidgets('网格左键小菜单支持前后移动，添加图片锁定原网格而非光标', (tester) async {
+    final controller = TextEditingController();
+    final key = GlobalKey<RichComposerEditorState>();
+    await _pump(
+      tester,
+      RichComposerEditor(key: key, controller: controller),
+      desktop: true,
+      width: 1200,
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+    editor.state.pasteBlocks([
+      const IslandBlock(
+        id: 'group',
+        node: ImageGridNode(
+          id: 'node',
+          images: [
+            ImageRun(src: 'a', width: 120, height: 80),
+            ImageRun(src: 'b', width: 120, height: 80),
+          ],
+          mode: ImageGridMode.carousel,
+        ),
+      ),
+      TextBlock(
+        id: 'after',
+        content: EditableTextContent(text: '不要改动此处正文'),
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+    final group = editor.state.blocks.whereType<IslandBlock>().single;
+    editor.contentActions!.selectObject(
+      EditorGridImageTarget(group.id, 0, 'a'),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(
+      find.byKey(ValueKey('grid-image-more-${group.id}-0')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.text('后移一张').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('后移一张'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+    ImageGridNode grid() =>
+        (editor.state.blocks.firstWhere((b) => b.id == group.id) as IslandBlock)
+                .node
+            as ImageGridNode;
+    expect(grid().images.map((image) => image.src), ['b', 'a']);
+    final paragraph = editor.state.blocks.whereType<TextBlock>().last;
+    editor.state.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: paragraph.id, offset: 2),
+      ),
+    );
+    final selection = editor.state.selection;
+    DiscourseImageUtils.seedUploadUrl(
+      'upload://new',
+      'https://example.com/new.png',
+    );
+    expect(
+      key.currentState!.insertUploadedImage(
+        targetGridId: group.id,
+        shortUrl: 'upload://new',
+        width: 100,
+        height: 80,
+      ),
+      isTrue,
+    );
+    await tester.pump();
+    expect(grid().images.map((image) => image.src), ['b', 'a', 'upload://new']);
+    expect(grid().mode, ImageGridMode.carousel);
+    expect(editor.state.selection, selection);
+    expect(editor.state.textBlockById(paragraph.id)!.content.text, '不要改动此处正文');
+    deleteEditorObject(editor.state, EditorBlockTarget(group.id));
+    final before = editor.state.blocks;
+    expect(
+      key.currentState!.insertUploadedImage(
+        targetGridId: group.id,
+        shortUrl: 'upload://late',
+      ),
+      isFalse,
+    );
+    expect(editor.state.blocks, before, reason: '不能将迟到的上传结果插到其他段落');
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets('网格单图操作清除旧文字选区，删除只影响目标图片且可撤销', (tester) async {
     final controller = TextEditingController();
     await _pump(tester, RichComposerEditor(controller: controller));
@@ -1224,8 +1316,9 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(state.selection, isNull);
-    expect(find.text('网格图片'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('composer-object-more')));
+    expect(find.byType(ComposerObjectToolbar), findsNothing);
+    final groupId = state.blocks.whereType<IslandBlock>().single.id;
+    await tester.tap(find.byKey(ValueKey('grid-image-more-$groupId-0')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('删除图片'));
@@ -1566,18 +1659,15 @@ void main() {
     await tester.tapAt(tester.getRect(find.byType(LazyImage).at(2)).center);
     await tester.pump();
     await tester.pump();
-    final before = tester
-        .widget<ComposerObjectToolbar>(find.byType(ComposerObjectToolbar))
-        .selection
-        .rect;
+    final actions = tester
+        .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+        .contentActions!;
+    final before = actions.objectSelection!.globalRect;
     tester.view.physicalSize = const Size(600, 760);
     await tester.pump();
     await tester.pump();
     await tester.pump();
-    final after = tester
-        .widget<ComposerObjectToolbar>(find.byType(ComposerObjectToolbar))
-        .selection
-        .rect;
+    final after = actions.objectSelection!.globalRect;
     final image = tester.getRect(find.byType(LazyImage).at(2));
     expect(after.center.dx, closeTo(image.center.dx, 1));
     expect(after.center.dy, closeTo(image.center.dy, 1));

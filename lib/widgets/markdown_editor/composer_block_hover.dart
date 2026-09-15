@@ -462,7 +462,10 @@ class _BlockTypeIcon extends StatelessWidget {
                 OneboxNode() => Icons.link_rounded,
                 CalloutNode() => Icons.info_outline_rounded,
                 DetailsNode() => Icons.expand_more_rounded,
-                ImageGridNode() => Icons.grid_view_rounded,
+                ImageGridNode(:final mode) =>
+                  mode == ImageGridMode.carousel
+                      ? Icons.view_carousel_outlined
+                      : Icons.grid_view_rounded,
                 TableNode() => Icons.table_chart_outlined,
                 CodeBlockNode(:final language) =>
                   language == 'mermaid'

@@ -101,6 +101,12 @@ class ComposerObjectController extends ValueNotifier<ComposerObjectSelection?> {
     if (_disposed) return;
     final previous = _selection;
     _selection = selection;
+    // Grid images own their in-place controls; keep the shared action model
+    // without replacing the mobile format bar with duplicate image buttons.
+    if (selection?.target is EditorGridImageTarget) {
+      value = null;
+      return;
+    }
     if (!_transient &&
         value != null &&
         selection != null &&
@@ -173,7 +179,17 @@ class ComposerObjectController extends ValueNotifier<ComposerObjectSelection?> {
       return ComposerObjectAction(
         label,
         icon,
-        enabled ? () => _run(command, target) : null,
+        enabled &&
+                (command != ComposerObjectCommand.gridMovePrevious ||
+                    (target as EditorGridImageTarget).index > 0) &&
+                (command != ComposerObjectCommand.gridMoveNext ||
+                    (target as EditorGridImageTarget).index <
+                        ((object.block as IslandBlock).node as ImageGridNode)
+                                .images
+                                .length -
+                            1)
+            ? () => _run(command, target)
+            : null,
       );
     }
 
@@ -283,6 +299,11 @@ class ComposerObjectController extends ValueNotifier<ComposerObjectSelection?> {
     ComposerObjectCommand.imageAlt => ('替代文本', Icons.text_fields_rounded),
     ComposerObjectCommand.joinGrid => ('加入网格', Icons.grid_view_rounded),
     ComposerObjectCommand.moveOutOfGrid => ('移出网格', Icons.grid_off_rounded),
+    ComposerObjectCommand.gridMovePrevious => (
+      '前移一张',
+      Icons.arrow_back_rounded,
+    ),
+    ComposerObjectCommand.gridMoveNext => ('后移一张', Icons.arrow_forward_rounded),
     ComposerObjectCommand.gridLayout => (
       ((object.block as IslandBlock).node as ImageGridNode).mode ==
               ImageGridMode.grid
@@ -335,6 +356,22 @@ class ComposerObjectController extends ValueNotifier<ComposerObjectSelection?> {
           target.blockId,
           (target as EditorGridImageTarget).index,
         );
+      case ComposerObjectCommand.gridMovePrevious:
+      case ComposerObjectCommand.gridMoveNext:
+        final imageTarget = target as EditorGridImageTarget;
+        final next =
+            imageTarget.index +
+            (command == ComposerObjectCommand.gridMovePrevious ? -1 : 1);
+        if (reorderImageInGrid(
+          state,
+          target.blockId,
+          imageTarget.index,
+          next,
+        )) {
+          contentActions.selectObject(
+            EditorGridImageTarget(target.blockId, next, imageTarget.src),
+          );
+        }
       case ComposerObjectCommand.gridLayout:
         final grid = (object.block as IslandBlock).node as ImageGridNode;
         setImageGridMode(
