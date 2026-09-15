@@ -16,6 +16,7 @@ import '../cookie/webview_cookie_priming.dart';
 import '../../webview_settings.dart';
 import '../../windows_webview_environment_service.dart';
 import 'adapter_log_metadata.dart';
+import 'webview_response_codec.dart';
 
 /// WebView HTTP 适配器
 ///
@@ -67,6 +68,12 @@ class WebViewHttpAdapter implements HttpClientAdapter {
   };
   @visibleForTesting
   static const String defaultApiFetchCacheMode = 'no-store';
+  final _responseTransport = WebViewResponseTransport(
+    isAndroid: Platform.isAndroid,
+    supportsArrayBuffer: () => WebViewFeature.isFeatureSupported(
+      WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER,
+    ),
+  );
   HeadlessInAppWebView? _headlessWebView;
   InAppWebViewController? _controller;
   bool _isInitialized = false;
@@ -532,11 +539,20 @@ document.close();
     required Stopwatch totalWatch,
     required Duration? cookiePrepElapsed,
   }) async {
+    // 与 AndroidX 接收消息时使用同一能力判断，在建立传输前决定编码。
+    final useBase64 = await _responseTransport.usesBase64();
     final bridge = await _createBinaryResponseBridge(
       options,
       requestId: requestId,
     );
-
+    _setNetworkLogField(
+      options,
+      'webViewBinaryTransport',
+      useBase64 ? 'base64' : 'arrayBuffer',
+    );
+    final senderScript = WebViewResponseCodec.buildSenderScript(
+      useBase64: useBase64,
+    );
     final script =
         '''
       (async function() {
@@ -577,14 +593,7 @@ document.close();
             headers: headersObj
           }));
 
-          const sendBuffer = function(buffer) {
-            if (!buffer || buffer.byteLength === 0) return;
-            try {
-              responsePort.postMessage(buffer, [buffer]);
-            } catch (_) {
-              responsePort.postMessage(buffer);
-            }
-          };
+          $senderScript
 
           if (response.body && response.body.getReader) {
             const reader = response.body.getReader();
@@ -764,7 +773,9 @@ document.close();
         final decoded = jsonDecode(payload);
         if (decoded is! Map) return;
         final kind = decoded['kind']?.toString();
-        if (kind == 'ready') {
+        if (kind == 'chunk') {
+          bridge.addBytes(WebViewResponseCodec.decodeChunk(decoded)!);
+        } else if (kind == 'ready') {
           if (!readyCompleter.isCompleted) readyCompleter.complete();
         } else if (kind == 'headers') {
           bridge.completeHeaders(_BinaryResponseHeaders.fromJson(decoded));
