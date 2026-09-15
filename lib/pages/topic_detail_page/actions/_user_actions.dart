@@ -582,16 +582,10 @@ extension _UserActions on _TopicDetailPageState {
     ref.read(topicDetailProvider(params).notifier).refreshPost(postId);
   }
 
-  Future<void> _handleNotificationLevelChanged(
+  void _handleNotificationLevelChanged(
     TopicDetailNotifier notifier,
     TopicNotificationLevel level,
   ) async {
-    if (_isUpdatingNotificationLevel ||
-        ref.read(currentUserProvider).value == null ||
-        ref.read(topicDetailProvider(_params)).value?.notificationLevel == level) {
-      return;
-    }
-    setState(() => _isUpdatingNotificationLevel = true);
     try {
       await notifier.updateNotificationLevel(level);
       if (mounted) {
@@ -601,9 +595,7 @@ extension _UserActions on _TopicDetailPageState {
       // 网络错误已由 ErrorInterceptor 处理
       debugPrint('[TopicDetail] 更新订阅级别失败: $e');
     } catch (e, s) {
-      if (mounted) AppErrorHandler.handleUnexpected(e, s);
-    } finally {
-      if (mounted) setState(() => _isUpdatingNotificationLevel = false);
+      AppErrorHandler.handleUnexpected(e, s);
     }
   }
 

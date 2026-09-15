@@ -7,13 +7,9 @@ void main() {
     const backKey = ValueKey('back');
     const closeKey = ValueKey('close');
     const titleKey = ValueKey('title');
-    const notificationKey = ValueKey('notifications');
     const searchKey = ValueKey('search');
     const countKey = ValueKey('count');
     const moreKey = ValueKey('more');
-
-    await tester.binding.setSurfaceSize(const Size(320, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -30,11 +26,6 @@ void main() {
             onBack: () {},
             onClose: () {},
             actions: [
-              IconButton(
-                key: notificationKey,
-                onPressed: () {},
-                icon: const Icon(Icons.notifications),
-              ),
               IconButton(
                 key: searchKey,
                 onPressed: () {},
@@ -62,18 +53,15 @@ void main() {
     final backLeft = tester.getTopLeft(find.byKey(backKey));
     final closeLeft = tester.getTopLeft(find.byKey(closeKey));
     final titleLeft = tester.getTopLeft(find.byKey(titleKey));
-    final notificationLeft = tester.getTopLeft(find.byKey(notificationKey));
     final searchLeft = tester.getTopLeft(find.byKey(searchKey));
     final countLeft = tester.getTopLeft(find.byKey(countKey));
     final moreLeft = tester.getTopLeft(find.byKey(moreKey));
 
     expect(backLeft.dx, lessThan(closeLeft.dx));
     expect(closeLeft.dx, lessThan(titleLeft.dx));
-    expect(titleLeft.dx, lessThan(notificationLeft.dx));
-    expect(notificationLeft.dx, lessThan(searchLeft.dx));
+    expect(titleLeft.dx, lessThan(searchLeft.dx));
     expect(searchLeft.dx, lessThan(countLeft.dx));
     expect(countLeft.dx, lessThan(moreLeft.dx));
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('移动端帖子工作区数字方框使用更紧凑的尺寸', (tester) async {

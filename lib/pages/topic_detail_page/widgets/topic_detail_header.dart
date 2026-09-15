@@ -13,6 +13,7 @@ import '../../../widgets/common/emoji_text.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/relative_time_text.dart';
 import '../../../utils/number_utils.dart';
+import '../../../widgets/topic/topic_notification_button.dart';
 import '../../../widgets/layout/home_workspace_scope.dart';
 import 'topic_vote_button.dart';
 import '../../../widgets/common/topic_badges.dart';
@@ -25,6 +26,7 @@ class TopicDetailHeader extends ConsumerWidget {
   final TopicDetail detail;
   final GlobalKey? headerKey;
   final void Function(int, bool)? onVoteChanged;
+  final void Function(TopicNotificationLevel)? onNotificationLevelChanged;
   final bool showTitle;
 
   /// 跳转到当前话题的指定帖子
@@ -35,6 +37,7 @@ class TopicDetailHeader extends ConsumerWidget {
     required this.detail,
     this.headerKey,
     this.onVoteChanged,
+    this.onNotificationLevelChanged,
     this.showTitle = true,
     this.onJumpToPost,
   });
@@ -293,14 +296,18 @@ class TopicDetailHeader extends ConsumerWidget {
             ],
           ),
 
-          if (detail.summarizable) ...[
-            const SizedBox(height: 16),
-            CollapsibleTopicSummary(
-              topicId: detail.id,
-              topicDetail: detail,
-              onJumpToPost: onJumpToPost,
+          // AI 摘要 & 订阅按钮
+          const SizedBox(height: 16),
+          CollapsibleTopicSummary(
+            topicId: detail.id,
+            topicDetail: detail,
+            onJumpToPost: onJumpToPost,
+            headerExtra: TopicNotificationButton(
+              level: detail.notificationLevel,
+              onChanged: onNotificationLevelChanged,
+              style: TopicNotificationButtonStyle.chip,
             ),
-          ],
+          ),
         ],
       ),
     );

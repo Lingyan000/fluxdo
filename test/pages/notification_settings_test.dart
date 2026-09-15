@@ -268,6 +268,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('话题详情订阅入口保持摘要卡片内的胶囊样式', (tester) async {
+    TopicNotificationLevel? selected;
+    await _pumpPage(
+      tester,
+      _NotificationService(),
+      size: const Size(390, 844),
+      page: Scaffold(
+        body: Center(
+          child: TopicNotificationButton(
+            level: TopicNotificationLevel.tracking,
+            onChanged: (level) => selected = level,
+            style: TopicNotificationButtonStyle.chip,
+          ),
+        ),
+      ),
+    );
+    // 胶囊样式不占用 AppBar 图标按钮，直接内联展示当前级别文案
+    expect(find.byType(NotificationLevelButton), findsNothing);
+    final chip = find.text(TopicNotificationLevel.tracking.label);
+    expect(chip, findsOneWidget);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(find.byType(ListTile), findsNWidgets(4));
+    await tester.tap(
+      find.widgetWithText(ListTile, TopicNotificationLevel.watching.label),
+    );
+    await tester.pumpAndSettle();
+    expect(selected, TopicNotificationLevel.watching);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('未登录不请求订阅设置，登录后显示服务端当前状态', (tester) async {
     final service = _NotificationService()
       ..level = TagNotificationLevel.tracking;
