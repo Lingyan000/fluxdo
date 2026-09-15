@@ -773,6 +773,7 @@ class MainApp extends ConsumerWidget {
         return TranslationProvider(
           child: Builder(
             builder: (context) => MaterialApp(
+              scrollBehavior: const DesktopScrollInteractionBehavior(),
               navigatorKey: navigatorKey,
               // JankNavObserver 给 [JANK] 日志加导航归因(debug/profile 观测用)
               // KeyboardFocusGuard 压掉浮层关闭后键盘自弹(移动端)

@@ -19,7 +19,6 @@ import 'package:chat_bottom_container/chat_bottom_container.dart';
 import 'package:flutter/foundation.dart'
     show Uint8List, ValueListenable, debugPrint, kDebugMode, listEquals;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -511,79 +510,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     } finally {
       if (mounted) setState(() => _toolsOpen = false);
     }
-  }
-
-  double _floatingInset = 0;
-  double _floatingViewportHeight = 0;
-
-  void _updateFloatingInset(double value, double viewportHeight) {
-    if (_floatingInset == value && _floatingViewportHeight == viewportHeight) {
-      return;
-    }
-    _floatingInset = value;
-    _floatingViewportHeight = viewportHeight;
-    _keepCaretAboveToolbar();
-  }
-
-  bool _caretRevealScheduled = false;
-  (int, EditorSelection?, double, Size)? _lastCaretRevealKey;
-
-  void _keepCaretAboveToolbar() {
-    // 虚拟光标由幽灵位置驱动边缘滚动，不能再按图片行底的实光标反向补滚。
-    if (_caretRevealScheduled ||
-        !_editorFocus.hasFocus ||
-        _virtualPointer.isActive) {
-      return;
-    }
-    _caretRevealScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _caretRevealScheduled = false;
-      if (!mounted ||
-          !_editorFocus.hasFocus ||
-          !_scrollController.hasClients ||
-          _virtualPointer.isActive) {
-        return;
-      }
-      final rect = _caretGlobalRect;
-      final editor = _editor;
-      final position = _scrollController.position;
-      if (rect == null || editor == null) return;
-      final box = position.context.storageContext.findRenderObject();
-      if (box is! RenderBox || !box.attached) return;
-      // 滚动也会改变光标的全局坐标，但不代表需要再次滚到光标。
-      final key = (
-        editor.docRevision,
-        editor.selection,
-        _floatingInset,
-        box.size,
-      );
-      if (key == _lastCaretRevealKey) return;
-      if (position.userScrollDirection != ScrollDirection.idle) {
-        _lastCaretRevealKey = key;
-        return;
-      }
-      // 等内核的编辑滚动完成，再补浮岛避让；用户滚动则取消本次请求。
-      if (position.isScrollingNotifier.value) return;
-      _lastCaretRevealKey = key;
-      final visibleBottom =
-          box.localToGlobal(Offset.zero).dy +
-          position.viewportDimension -
-          _floatingInset;
-      if (rect.bottom > visibleBottom) {
-        final target = (position.pixels + rect.bottom - visibleBottom + 12)
-            .clamp(position.minScrollExtent, position.maxScrollExtent);
-        if ((target - position.pixels).abs() > .5) {
-          _scrollController.jumpTo(target);
-        }
-      }
-    });
-  }
-
-  void _endVirtualPointer() {
-    _virtualPointer.end();
-    // 结束时实光标矩形可能不变，主动恢复一次工具栏避让。
-    _lastCaretRevealKey = null;
-    _keepCaretAboveToolbar();
   }
 
   /// 编辑区滚回顶部(header 含标题输入,校验失败等场景需拉回可见)
@@ -3107,7 +3033,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       onResumeKeyboard: resumeEditing,
       customPanelVisible: _showEmojiPanel,
       bodyBuilder: (context, bottomInset, viewportHeight) {
-        _updateFloatingInset(bottomInset, viewportHeight);
         return Stack(
           children: [
             Positioned.fill(
@@ -3124,8 +3049,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                     bottomInset,
                     ComposerChromeScope.topInsetOf(context),
                     ComposerObjectPointerRegion(
-                      scrollController: _scrollController,
-                      onContextMenu: _contentActions.showObjectMenuAt,
                       onPointerDown: _isDesktop
                           ? _objectSelection.rememberPointer
                           : null,
@@ -3191,6 +3114,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                       radius: 8,
                                                       child: child,
                                                     ),
+                                            caretViewportInsets:
+                                                EdgeInsets.only(
+                                                  bottom: bottomInset,
+                                                ),
                                             showTrailingParagraph: true,
                                             emptyParagraphHint:
                                                 isEmpty &&
@@ -3265,7 +3192,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             onCaretRectChanged: (r) {
                                               if (r == _caretGlobalRect) return;
                                               _caretGlobalRect = r;
-                                              _keepCaretAboveToolbar();
                                               _blockPicker?.refreshAnchor();
                                               _mentionOverlay?.markNeedsBuild();
                                             },
@@ -3330,7 +3256,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         onPointerStart: ({required extend}) =>
             _virtualPointer.start(extend: extend),
         onPointerMove: _virtualPointer.moveBy,
-        onPointerEnd: _endVirtualPointer,
+        onPointerEnd: _virtualPointer.end,
         contentActions: _contentActions,
         // 两端复用同一个浮岛展开态，固定工具由现有偏好驱动。
         onToggleTools: showTools,

@@ -26,6 +26,9 @@ import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show ImageRun, ImageGridNode, ImageGridMode, CodeBlockNode;
 
+class _Binding extends AutomatedTestWidgetsFlutterBinding
+    with DesktopScrollInteractionBinding {}
+
 Future<void> _pump(
   WidgetTester tester,
   Widget child, {
@@ -78,6 +81,7 @@ Future<void> _pump(
       ],
       child: TranslationProvider(
         child: MaterialApp(
+          scrollBehavior: const DesktopScrollInteractionBehavior(),
           locale: const Locale('zh'),
           navigatorKey: navigatorKey,
           localizationsDelegates: const [
@@ -147,6 +151,7 @@ Future<({EditorState state, String imageId})> _insertImage(
 }
 
 void main() {
+  _Binding();
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
 
   for (final desktop in [false, true]) {
@@ -1203,6 +1208,243 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
+  for (final desktop in [true, false]) {
+    testWidgets('浏览图片组时切换模式和撤销保持位置，继续输入才追随光标 desktop=$desktop', (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        desktop: desktop,
+        width: desktop ? 1000 : 390,
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.pasteBlocks([
+        IslandBlock(
+          id: 'group',
+          node: ImageGridNode(
+            id: 'node',
+            images: [
+              for (var i = 0; i < 6; i++)
+                ImageRun(src: 'image-$i', width: 120, height: 80),
+            ],
+          ),
+        ),
+        for (var i = 0; i < 45; i++)
+          TextBlock(
+            id: 'after-$i',
+            content: EditableTextContent(text: '后续正文 $i'),
+          ),
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final scroll = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView).first)
+          .controller!;
+      final selection = editor.state.selection;
+      expect(selection!.extent.blockId, editor.state.blocks.last.id);
+      expect(scroll.offset, greaterThan(500));
+      scroll.jumpTo(0);
+      await tester.pump();
+      final grid = find.byType(EditorImageGrid);
+      for (final label in ['轮播', '网格', '轮播']) {
+        await tester.tap(
+          find.descendant(of: grid, matching: find.text(label)),
+          kind: desktop ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(editor.state.selection, selection);
+        expect(scroll.offset, closeTo(0, 1), reason: '切换$label不能追到文末旧光标');
+      }
+      editor.state.undo();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      expect(scroll.offset, closeTo(0, 1));
+      editor.focusNode!.requestFocus();
+      editor.state.insertText('继续输入');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(scroll.offset, greaterThan(500), reason: '真正输入后仍要跟随光标');
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
+  for (final horizontal in [false, true]) {
+    testWidgets('滚动中一次点击图片操作按钮，轻微移动也不拖图 horizontal=$horizontal', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        desktop: true,
+        width: 600,
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.pasteBlocks([
+        IslandBlock(
+          id: 'group',
+          node: ImageGridNode(
+            id: 'node',
+            mode: ImageGridMode.carousel,
+            images: [
+              for (var i = 0; i < 8; i++)
+                ImageRun(src: 'image-$i', width: 120, height: 80),
+            ],
+          ),
+        ),
+        for (var i = 0; i < 40; i++)
+          TextBlock(
+            id: 'text-$i',
+            content: EditableTextContent(text: '后续正文 $i'),
+          ),
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final outer = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView).first)
+          .controller!;
+      outer.jumpTo(0);
+      await tester.pump();
+      final group = editor.state.blocks.whereType<IslandBlock>().single;
+      editor.contentActions!.selectObject(
+        EditorGridImageTarget(group.id, 1, 'image-1'),
+      );
+      await tester.pump();
+      await tester.pump();
+      final scroll = horizontal
+          ? tester
+                .widget<SingleChildScrollView>(
+                  find.byKey(ValueKey('grid-viewport-${group.id}')),
+                )
+                .controller!
+          : outer;
+      unawaited(
+        scroll.animateTo(
+          60,
+          duration: const Duration(seconds: 1),
+          curve: Curves.linear,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(scroll.position.shouldIgnorePointer, isTrue);
+      final before = editor.state.blocks;
+      final point = tester.getCenter(
+        find.byKey(ValueKey('grid-image-more-${group.id}-1')),
+      );
+      final mouse = await tester.startGesture(
+        point,
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.moveBy(const Offset(3, 2));
+      await mouse.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(find.text('后移一张').hitTestable(), findsOneWidget);
+      expect(editor.state.blocks, before);
+      expect(scroll.position.isScrollingNotifier.value, isFalse);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
+  for (final desktop in [true, false]) {
+    testWidgets('网格图片菜单关闭不把光标和页面送到文末 desktop=$desktop', (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        desktop: desktop,
+        width: desktop ? 1200 : 390,
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.pasteBlocks([
+        const IslandBlock(
+          id: 'group',
+          node: ImageGridNode(
+            id: 'node',
+            images: [
+              ImageRun(src: 'a', width: 120, height: 80),
+              ImageRun(src: 'b', width: 120, height: 80),
+            ],
+          ),
+        ),
+        for (var i = 0; i < 45; i++)
+          TextBlock(
+            id: 'after-$i',
+            content: EditableTextContent(text: '后续正文 $i'),
+          ),
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      final scroll = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView).first)
+          .controller!;
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.pump();
+      final group = editor.state.blocks.whereType<IslandBlock>().single;
+      for (final escape in [true, false]) {
+        editor.contentActions!.selectObject(
+          EditorGridImageTarget(group.id, 0, 'a'),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(editor.state.selection, isNull);
+        final before = scroll.offset;
+        final transitions = <EditorSelection?>[];
+        void record() => transitions.add(editor.state.selection);
+        editor.state.addListener(record);
+        await tester.tap(
+          find.byKey(ValueKey('grid-image-more-${group.id}-0')),
+          kind: desktop ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 260));
+        expect(find.text('后移一张').hitTestable(), findsOneWidget);
+        if (escape) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        } else {
+          await tester.tapAt(
+            tester.getRect(find.byType(CustomScrollView).first).bottomRight -
+                const Offset(12, 12),
+          );
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        editor.state.removeListener(record);
+        expect(find.text('后移一张').hitTestable(), findsNothing);
+        expect(
+          transitions.whereType<EditorSelection>(),
+          isEmpty,
+          reason: '菜单恢复焦点期间也不能短暂补一个文末光标',
+        );
+        expect(editor.state.selection, isNull);
+        expect(scroll.offset, closeTo(before, 1));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
   testWidgets('网格左键小菜单支持前后移动，添加图片锁定原网格而非光标', (tester) async {
     final controller = TextEditingController();
     final key = GlobalKey<RichComposerEditorState>();

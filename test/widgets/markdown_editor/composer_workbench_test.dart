@@ -34,6 +34,7 @@ import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_edito
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo_render/editor.dart';
+import 'package:fluxdo_render/src/editor/widget/editor_caret.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show ImageRun;
 
 Future<void> _pump(
@@ -1595,6 +1596,91 @@ void main() {
       );
     }
   }
+
+  for (final change in ['keyboard-open', 'keyboard-close', 'resize']) {
+    testWidgets('富文本阅读上文时布局变化不追到文末 $change', (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        RichComposerEditor(controller: controller),
+        desktop: change == 'resize',
+        width: 600,
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.pastePlainText(
+        List.generate(60, (i) => '上文阅读段落 $i').join('\n\n'),
+      );
+      if (change == 'keyboard-close') {
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      final scroll = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView).first)
+          .controller!;
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(scroll.offset, greaterThan(500));
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.pump();
+      final selection = editor.state.selection;
+      if (change == 'resize') {
+        tester.view.physicalSize = const Size(600, 540);
+      } else {
+        tester.view.viewInsets = FakeViewPadding(
+          bottom: change == 'keyboard-open' ? 300 : 0,
+        );
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(editor.state.selection, selection);
+      expect(scroll.offset, closeTo(0, 1), reason: '只变布局不能回到屏幕外的旧光标');
+      editor.state.insertText('继续');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(scroll.offset, greaterThan(500));
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
+  testWidgets('富文本正在编辑时键盘连续升起，光标仍保持在浮岛上方', (tester) async {
+    final controller = TextEditingController();
+    await _pump(tester, RichComposerEditor(controller: controller));
+    await tester.pump(const Duration(milliseconds: 800));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+    editor.state.pastePlainText(List.filled(50, '正文测试，检查浮岛避让。').join('\n\n'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    for (final inset in [50.0, 140.0, 240.0, 300.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final caret = tester
+        .widget<EditorCaret>(find.byType(EditorCaret))
+        .caretRect!;
+    final bottom =
+        tester.getTopLeft(find.byType(FluxdoEditor)).dy + caret.bottom;
+    final toolbar = tester.getRect(
+      find.byKey(const ValueKey('composer-island-surface')),
+    );
+    expect(bottom, lessThan(toolbar.top));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
 
   testWidgets('源码最后一行与光标可以滚到浮岛上方', (tester) async {
     final controller = TextEditingController();

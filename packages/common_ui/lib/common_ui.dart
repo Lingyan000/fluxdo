@@ -5,10 +5,13 @@
 ///   [PopupMenuButton] / showMenu,统一全局菜单交互;
 /// - [GlassSurface]:柔光玻璃材质(局部背景折射、边缘光与色散),
 ///   按 [GlassRecipe] 三档场景配方使用。
+/// - [DesktopScrollInteractionBehavior] 与 [DesktopScrollInteractionBinding]:
+///   统一桌面滚动期间的控件点击，接入应用入口即可覆盖后代滚动容器。
 library;
 
 export 'src/app_sheet_scaffold.dart';
 export 'src/dismissible_popup_menu.dart';
+export 'src/desktop_scroll_interaction.dart';
 export 'src/glass_settings.dart';
 export 'src/glass_surface.dart';
 export 'src/glass_surface_frame.dart';

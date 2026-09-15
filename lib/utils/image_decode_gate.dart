@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:common_ui/common_ui.dart';
 
 import 'frame_jank_monitor.dart';
 import 'frame_scheduler_probe.dart';
@@ -224,10 +225,11 @@ class GatedImageCodec implements ui.Codec {
 /// 应用级 binding:接管框架标准图片解码入口,给所有标准路径的图
 /// 套上 [ImageDecodeGate];并混入 [PerfPipelineProbe] 提供 UI 相位
 /// 拆分、[FrameSchedulerProbe] 提供帧调度归因(监控关闭时零成本)。
+/// [DesktopScrollInteractionBinding] 在鼠标按下的正式命中前中断目标滚动。
 /// 必须在 main() 里以 `FluxdoWidgetsBinding.ensureInitialized()` 替代
 /// `WidgetsFlutterBinding.ensureInitialized()`。
 class FluxdoWidgetsBinding extends WidgetsFlutterBinding
-    with PerfPipelineProbe, FrameSchedulerProbe {
+    with PerfPipelineProbe, FrameSchedulerProbe, DesktopScrollInteractionBinding {
   static FluxdoWidgetsBinding? _instance;
 
   static FluxdoWidgetsBinding ensureInitialized() =>
