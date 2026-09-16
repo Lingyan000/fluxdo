@@ -36,9 +36,13 @@ class ComposerHeaderActions extends StatelessWidget {
     this.reviewBuilder,
     this.draftStatus,
     this.onRetryDraft,
+    this.minimumTitleWidth,
   });
 
   final double availableWidth;
+
+  /// Measured title content, including decorations such as a reply avatar.
+  final double? minimumTitleWidth;
   final String submitLabel;
   final IconData? submitIcon;
   final VoidCallback? onSubmit;
@@ -64,7 +68,7 @@ class ComposerHeaderActions extends StatelessWidget {
       if (showDiscard && draftStatus == null) _HeaderAction.discard,
     ];
     // 保留导航和默认标题间距，标题至少容纳常规页面名称。
-    final titleWidth = 120 * scaler.scale(22) / 22;
+    final titleWidth = minimumTitleWidth ?? 120 * scaler.scale(22) / 22;
     final slots = math.max(
       1,
       ((availableWidth -

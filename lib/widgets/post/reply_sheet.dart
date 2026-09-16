@@ -328,8 +328,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     });
   }
 
-  Widget _buildHeaderActions(double availableWidth) => ComposerHeaderActions(
+  Widget _buildHeaderActions(
+    double availableWidth, {
+    double? minimumTitleWidth,
+  }) => ComposerHeaderActions(
     availableWidth: availableWidth,
+    minimumTitleWidth: minimumTitleWidth,
     submitLabel: _isEditMode
         ? context.l10n.common_save
         : context.l10n.common_send,
@@ -357,7 +361,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         : null,
   );
 
-  Widget _buildHeaderTitle(ThemeData theme) {
+  Widget _buildHeaderTitle(
+    ThemeData theme, {
+    TextStyle? style,
+    bool wrapTarget = false,
+  }) {
     final target = widget.replyToPost;
     final label = _isEditMode
         ? context.l10n.post_editPostTitle(widget.editPost!.postNumber)
@@ -384,9 +392,83 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         Expanded(
           child: Tooltip(
             message: label,
-            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: Text(
+              wrapTarget ? '@${target!.username}' : label,
+              key: const ValueKey('reply-composer-title-text'),
+              style: style,
+              maxLines: wrapTarget ? null : 1,
+              overflow: wrapTarget
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+            ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildResponsiveHeader(ThemeData theme, double width) {
+    final target = widget.replyToPost;
+    final compactTarget =
+        (width < 600 || !PlatformUtils.isDesktop) &&
+        !_isEditMode &&
+        !_isPrivateMessage &&
+        target != null;
+    final style = compactTarget
+        ? theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)
+        : null;
+    double? titleWidth;
+    if (compactTarget) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: context.l10n.post_replyToUser(target.username),
+          style: style,
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      titleWidth = painter.width.ceilToDouble() + 28 + 8;
+      painter.dispose();
+    }
+    // 56 navigation + 32 title margins + 44 more + 8 gap + 48 submit + 16 trailing.
+    // When even the compact action row cannot fit the recipient, give it its
+    // own full-width row instead of truncating the identity or shrinking taps.
+    final separateTarget = compactTarget && titleWidth! > width - 204;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: kToolbarHeight,
+          child: AppBar(
+            key: const ValueKey('reply-composer-header'),
+            primary: false,
+            centerTitle: false,
+            automaticallyImplyLeading: false,
+            leading: CloseButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            title: separateTarget
+                ? Text(context.l10n.common_reply)
+                : _buildHeaderTitle(theme, style: style),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            actions: [
+              _buildHeaderActions(
+                width,
+                minimumTitleWidth: separateTarget ? width : titleWidth,
+              ),
+            ],
+          ),
+        ),
+        if (separateTarget)
+          Padding(
+            key: const ValueKey('reply-composer-recipient-row'),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: _buildHeaderTitle(theme, style: style, wrapTarget: true),
+          ),
       ],
     );
   }
@@ -1027,26 +1109,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             ),
                           ),
 
-                          SizedBox(
-                            height: kToolbarHeight,
-                            child: LayoutBuilder(
-                              builder: (context, bounds) => AppBar(
-                                key: const ValueKey('reply-composer-header'),
-                                primary: false,
-                                centerTitle: false,
-                                automaticallyImplyLeading: false,
-                                leading: CloseButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).maybePop(),
-                                ),
-                                title: _buildHeaderTitle(theme),
-                                backgroundColor: Colors.transparent,
-                                surfaceTintColor: Colors.transparent,
-                                elevation: 0,
-                                scrolledUnderElevation: 0,
-                                actions: [_buildHeaderActions(bounds.maxWidth)],
-                              ),
-                            ),
+                          LayoutBuilder(
+                            builder: (context, bounds) =>
+                                _buildResponsiveHeader(theme, bounds.maxWidth),
                           ),
 
                           Divider(

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:fluxdo/models/topic.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -173,6 +175,71 @@ Future<void> _waitForRichDraft(WidgetTester tester, String text) async {
 }
 
 void main() {
+  for (final (width, scale, username) in [
+    (320.0, 1.0, 'IG2018'),
+    (390.0, 1.0, 'IG2018'),
+    (390.0, 2.0, 'IG2018'),
+    (320.0, 2.0, 'a_very_long_reply_recipient_username'),
+    (700.0, 1.0, 'a_very_long_reply_recipient_username'),
+  ]) {
+    testWidgets('手机回复对象完整显示且不挤压操作按钮 $width/$scale/$username', (tester) async {
+      await _pumpReply(
+        tester,
+        width: width,
+        scale: scale,
+        dark: scale == 2,
+        review: true,
+        sheet: ReplySheet(
+          topicId: 1,
+          preloadedDraftFuture: Future.value(null),
+          replyToPost: Post(
+            id: 2,
+            username: username,
+            avatarTemplate: '',
+            cooked: '<p>reply target</p>',
+            postNumber: 2,
+            postType: 1,
+            updatedAt: DateTime(2026),
+            createdAt: DateTime(2026),
+            likeCount: 0,
+            replyCount: 0,
+          ),
+        ),
+      );
+      final title = find.byKey(const ValueKey('reply-composer-title-text'));
+      void expectComplete() {
+        expect(title, findsOneWidget);
+        expect(tester.widget<Text>(title).data, contains('@$username'));
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(of: title, matching: find.byType(RichText)),
+        );
+        expect(paragraph.didExceedMaxLines, isFalse, reason: '回复对象不应被省略');
+        final rect = tester.getRect(title);
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(width));
+        final send = find.byKey(const ValueKey('composer-header-submit'));
+        expect(tester.getSize(send), const Size(48, 48));
+        expect(tester.getSize(find.byType(CloseButton)), const Size(48, 48));
+        final more = find.byKey(const ValueKey('composer-header-more'));
+        if (more.evaluate().isNotEmpty &&
+            find
+                .byKey(const ValueKey('reply-composer-recipient-row'))
+                .evaluate()
+                .isEmpty) {
+          expect(rect.right, lessThanOrEqualTo(tester.getRect(more).left));
+        }
+        expect(tester.takeException(), isNull);
+      }
+
+      expectComplete();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      await tester.pump(const Duration(milliseconds: 300));
+      expectComplete();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+  }
+
   testWidgets('富文本冲突菜单使用云端后重建实际文档，旧编辑器卸载不会回写本地版本', (tester) async {
     var remote = const Draft(
       draftKey: 'topic_1',
