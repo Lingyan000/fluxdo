@@ -17,6 +17,7 @@ import '../../webview_settings.dart';
 import '../../windows_webview_environment_service.dart';
 import 'adapter_log_metadata.dart';
 import 'webview_response_codec.dart';
+import 'webview_request_codec.dart';
 
 /// WebView HTTP 适配器
 ///
@@ -1064,6 +1065,7 @@ document.close();
     }
 
     final streamedBodyScript = await _buildStreamedBodyScript(
+      options,
       requestStream,
       requestId: requestId,
       requestUri: requestUri,
@@ -1111,6 +1113,7 @@ document.close();
   }
 
   Future<String?> _buildStreamedBodyScript(
+    RequestOptions options,
     Stream<Uint8List>? requestStream, {
     required String requestId,
     required Uri requestUri,
@@ -1172,8 +1175,27 @@ document.close();
         requestId: requestId,
       );
 
+      // 上传与下载复用同一原生能力查询，必须在消费流之前决定编码。
+      final useBase64 = await _responseTransport.usesBase64();
+      _setNetworkLogField(
+        options,
+        'webViewUploadTransport',
+        useBase64 ? 'base64' : 'arrayBuffer',
+      );
+      _setNetworkLogField(options, 'webViewUploadPhase', 'transfer');
       transferStarted = true;
-      await _pipeRequestStreamToPort(requestStream, port);
+      await WebViewRequestCodec.pipe(
+        requestStream,
+        useBase64: useBase64,
+        send: (payload) => port.postMessage(
+          WebMessage(
+            data: payload,
+            type: payload is String
+                ? WebMessageType.STRING
+                : WebMessageType.ARRAY_BUFFER,
+          ),
+        ),
+      );
 
       await _postRequestBodyControlMessage(port, {
         'kind': 'complete',
@@ -1186,8 +1208,19 @@ document.close();
         requestId: requestId,
       );
 
+      _setNetworkLogField(options, 'webViewUploadPhase', 'complete');
       return 'fetchOptions.body = window.__fluxdoTakeRequestBody(${jsonEncode(requestId)});';
     } catch (e) {
+      _setNetworkLogField(
+        options,
+        'webViewUploadPhase',
+        transferStarted ? 'transfer_failed' : 'bridge_fallback',
+      );
+      _setNetworkLogField(
+        options,
+        'webViewUploadErrorType',
+        e.runtimeType.toString(),
+      );
       if (!transferStarted) {
         debugPrint(
           '[WebViewAdapter] Stream bridge unavailable, fallback to base64: $e',
@@ -1220,7 +1253,8 @@ document.close();
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         (function() {
           if (window.__fluxdoRequestBodyBridgeInstalled) return;
           window.__fluxdoRequestBodyBridgeInstalled = true;
@@ -1267,6 +1301,7 @@ document.close();
                 if (typeof payload === 'string') {
                   var message = JSON.parse(payload);
                   switch (message.kind) {
+                    ${WebViewRequestCodec.receiverScript}
                     case 'complete':
                       state.body = new Blob(state.chunks);
                       state.chunks = [];
@@ -1351,55 +1386,6 @@ document.close();
         'Request body transfer timeout for request $requestId',
       ),
     );
-  }
-
-  Future<void> _pipeRequestStreamToPort(
-    Stream<Uint8List> requestStream,
-    WebMessagePort port,
-  ) async {
-    const targetChunkBytes = 64 * 1024;
-
-    var bufferedLength = 0;
-    var builder = BytesBuilder(copy: false);
-
-    Future<void> flush() async {
-      if (bufferedLength == 0) {
-        return;
-      }
-      final bytes = builder.takeBytes();
-      builder = BytesBuilder(copy: false);
-      bufferedLength = 0;
-      await port.postMessage(
-        WebMessage(data: bytes, type: WebMessageType.ARRAY_BUFFER),
-      );
-    }
-
-    await for (final chunk in requestStream) {
-      if (chunk.isEmpty) {
-        continue;
-      }
-      if (chunk.length >= targetChunkBytes) {
-        await flush();
-        await port.postMessage(
-          WebMessage(data: chunk, type: WebMessageType.ARRAY_BUFFER),
-        );
-        continue;
-      }
-
-      if (bufferedLength + chunk.length > targetChunkBytes &&
-          bufferedLength > 0) {
-        await flush();
-      }
-
-      builder.add(chunk);
-      bufferedLength += chunk.length;
-
-      if (bufferedLength >= targetChunkBytes) {
-        await flush();
-      }
-    }
-
-    await flush();
   }
 
   @visibleForTesting
