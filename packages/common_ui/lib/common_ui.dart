@@ -4,7 +4,7 @@
 /// - 支持滑动关闭、缩放/链式关闭等交互的弹出菜单封装,替代原生
 ///   [PopupMenuButton] / showMenu,统一全局菜单交互;
 /// - [GlassSurface]:柔光玻璃材质(局部背景折射、边缘光与色散),
-///   按 [GlassRecipe] 三档场景配方使用。
+///   按 [GlassRecipe] 按阅读密度分级的场景配方使用。
 /// - [DesktopScrollInteractionBehavior] 与 [DesktopScrollInteractionBinding]:
 ///   统一桌面滚动期间的控件点击，接入应用入口即可覆盖后代滚动容器。
 library;

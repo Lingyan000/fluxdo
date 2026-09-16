@@ -168,6 +168,7 @@ class _ComposerDesktopWorkbenchState extends State<ComposerDesktopWorkbench>
           groupId: this,
           onTapOutside: _presenting ? (_) => widget.anchor?.dismiss() : null,
           child: ComposerIsland(
+            expanded: _presenting,
             padding: EdgeInsets.zero,
             radius: 28,
             toolsAnchor: anchor,

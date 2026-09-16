@@ -15,7 +15,7 @@ class ComposerObjectSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GlassSurfaceFrame(
     radius: radius,
-    recipe: compact ? GlassRecipe.navigation : GlassRecipe.dialog,
+    recipe: compact ? GlassRecipe.toolbar : GlassRecipe.menu,
     child: Material(color: Colors.transparent, child: child),
   );
 }

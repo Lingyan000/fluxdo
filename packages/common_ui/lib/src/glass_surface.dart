@@ -18,6 +18,7 @@ class GlassRecipe {
   const GlassRecipe({
     required this.blurSigmaPx,
     required this.tintAlpha,
+    this.tintDarkAlpha,
     required this.tintLightGray,
     required this.tintDarkGray,
     required this.saturation,
@@ -42,6 +43,11 @@ class GlassRecipe {
 
   /// 色罩不透明度(叠在模糊结果之上的灰阶色)
   final double tintAlpha;
+
+  /// 深色前景通常是浅色文字，需要更厚的底罩抵挡亮背景。
+  final double? tintDarkAlpha;
+  double tintAlphaFor(bool isDark) =>
+      isDark ? tintDarkAlpha ?? tintAlpha : tintAlpha;
 
   /// 色罩灰阶(浅色/深色)。刻意用**固定灰阶**而非主题色:玻璃是中性
   /// 介质,用 surfaceContainer 会被主题色染成彩色塑料板。
@@ -112,46 +118,94 @@ class GlassRecipe {
     fallbackDarkAlpha: 0.08,
   );
 
+  /// 覆盖正文的工具条：抑制底层字形，仍保留透色。
+  static const toolbar = GlassRecipe(
+    blurSigmaPx: 32,
+    tintAlpha: 0.56,
+    tintDarkAlpha: 0.70,
+    tintLightGray: 0.99,
+    tintDarkGray: 0.12,
+    saturation: 1.04,
+    brightness: 0,
+    contrast: 1,
+    refractionHeight: 10,
+    refractionAmount: 5,
+    depthEffect: 0.35,
+    chromaticAberration: 0.20,
+    highlightAlpha: 0.70,
+    darkHighlightMultiplier: 0.20,
+    noise: 0.012,
+    postBlurSigma: 0.5,
+    fallbackEdgeWidth: 0.5,
+    fallbackLightAlpha: 0.40,
+    fallbackDarkAlpha: 0.08,
+  );
+
+  /// 菜单与选择器：提高文字可读性，减弱色散和折射。
+  static const menu = GlassRecipe(
+    blurSigmaPx: 48,
+    tintAlpha: 0.74,
+    tintDarkAlpha: 0.80,
+    tintLightGray: 0.99,
+    tintDarkGray: 0.12,
+    saturation: 1,
+    brightness: 0,
+    contrast: 1,
+    refractionHeight: 10,
+    refractionAmount: 3,
+    depthEffect: 0.25,
+    chromaticAberration: 0.12,
+    highlightAlpha: 0.55,
+    darkHighlightMultiplier: 0.20,
+    noise: 0.008,
+    postBlurSigma: 0.5,
+    fallbackEdgeWidth: 0.5,
+    fallbackLightAlpha: 0.36,
+    fallbackDarkAlpha: 0.08,
+  );
+
   /// 临时浮层(BottomSheet):重模糊,底下内容只留色块形状。
   /// 搭配 36dp 圆角使用。
   static const sheet = GlassRecipe(
     blurSigmaPx: 64,
-    tintAlpha: 0.66,
-    tintLightGray: 0.99,
-    tintDarkGray: 0.12,
-    saturation: 1.0,
-    brightness: 0.0,
-    contrast: 1.0,
-    refractionHeight: 22,
-    refractionAmount: 14,
-    depthEffect: 0.45,
-    chromaticAberration: 0.8,
-    highlightAlpha: 0.72,
-    darkHighlightMultiplier: 0.22,
-    noise: 0.095,
-    postBlurSigma: 1.0,
-    fallbackEdgeWidth: 0.5,
-    fallbackLightAlpha: 0.46,
-    fallbackDarkAlpha: 0.08,
-  );
-
-  /// 对话框:比 Sheet 略收敛,折射量更小(直角比胶囊更容易看出畸变)。
-  /// 搭配 40dp 圆角使用。
-  static const dialog = GlassRecipe(
-    blurSigmaPx: 48,
-    tintAlpha: 0.62,
+    tintAlpha: 0.80,
+    tintDarkAlpha: 0.86,
     tintLightGray: 0.99,
     tintDarkGray: 0.12,
     saturation: 1.0,
     brightness: 0.0,
     contrast: 1.0,
     refractionHeight: 16,
-    refractionAmount: 10,
-    depthEffect: 0.38,
-    chromaticAberration: 0.6,
+    refractionAmount: 6,
+    depthEffect: 0.30,
+    chromaticAberration: 0.20,
+    highlightAlpha: 0.72,
+    darkHighlightMultiplier: 0.22,
+    noise: 0.012,
+    postBlurSigma: 1.0,
+    fallbackEdgeWidth: 0.5,
+    fallbackLightAlpha: 0.46,
+    fallbackDarkAlpha: 0.08,
+  );
+
+  /// 对话框：最强背景隔离，减少折射与噪点以突出确认内容。
+  /// 搭配 40dp 圆角使用。
+  static const dialog = GlassRecipe(
+    blurSigmaPx: 80,
+    tintAlpha: 0.86,
+    tintDarkAlpha: 0.90,
+    tintLightGray: 0.99,
+    tintDarkGray: 0.12,
+    saturation: 1.0,
+    brightness: 0.0,
+    contrast: 1.0,
+    refractionHeight: 16,
+    refractionAmount: 4,
+    depthEffect: 0.22,
+    chromaticAberration: 0.12,
     highlightAlpha: 0.68,
     darkHighlightMultiplier: 0.22,
-    noise: 0.095,
+    noise: 0.008,
     postBlurSigma: 0.75,
     fallbackEdgeWidth: 0.5,
     fallbackLightAlpha: 0.46,
@@ -482,7 +536,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
           child: DecoratedBox(
             decoration: ShapeDecoration(
               shape: widget.shape,
-              color: tint.withValues(alpha: recipe.tintAlpha),
+              color: tint.withValues(alpha: recipe.tintAlphaFor(isDark)),
             ),
             child: const SizedBox.expand(),
           ),
@@ -525,7 +579,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
               : widget.shape,
           // 降级没有折射与边缘光可撑玻璃感,色罩略加厚补偿
           color: tint.withValues(
-            alpha: (recipe.tintAlpha + 0.08).clamp(0.0, 1.0),
+            alpha: (recipe.tintAlphaFor(isDark) + 0.08).clamp(0.0, 1.0),
           ),
         ),
         child: const SizedBox.expand(),

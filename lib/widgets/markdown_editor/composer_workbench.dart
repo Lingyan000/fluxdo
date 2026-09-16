@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import '../../utils/platform_utils.dart';
 import 'composer_island.dart';
 import 'composer_tools_anchor.dart';
@@ -10,8 +12,10 @@ import 'composer_keyboard_dismiss.dart';
 import 'composer_input_handoff.dart';
 import 'composer_tools_panel.dart';
 import 'composer_tool_cell.dart' show ComposerToolGlyph;
+
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'composer_tool_style.dart';
 import 'composer_desktop_layout.dart';
 
@@ -464,6 +468,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: desktop ? 640 : 720),
                 child: ComposerIsland(
+                  expanded: _presenting,
                   key: const ValueKey('composer-workbench'),
                   toolsAnchor: widget.toolsAnchor,
                   child: IconButtonTheme(
