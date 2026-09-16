@@ -164,6 +164,7 @@ class _Messages extends ChatMessagesNotifier {
   }
 
   Completer<void>? windowRequest;
+  int olderWindowCount = 25;
 
   @override
   Future<bool> loadWindowAround(int messageId) async {
@@ -175,7 +176,7 @@ class _Messages extends ChatMessagesNotifier {
     state = AsyncData(
       ChatMessagesState(
         messages: _messages(
-          messageId - 25,
+          messageId - olderWindowCount,
           messageId + 25,
           variedHeights: true,
         ),
@@ -626,6 +627,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LoadingSpinner), findsNothing);
     expect(find.byKey(const ValueKey('chat_msg_240')), findsOneWidget);
+    await _disposePage(tester);
+  });
+
+  testWidgets('定位接近历史起点后，上边界没有整屏空白', (tester) async {
+    final messages = _Messages()..olderWindowCount = 0;
+    final controller = await _pumpPage(tester, messages);
+    messages.addReplyReference(140, 50);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('定位到消息 50'));
+    await tester.pump();
+    messages.windowRequest!.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+    }
+    final first = find.byKey(const ValueKey('chat_msg_50'));
+    expect(first, findsOneWidget);
+    final viewport = tester.getRect(find.byType(CustomScrollView));
+    expect(tester.getTopLeft(first).dy - viewport.top, closeTo(8, 1));
     await _disposePage(tester);
   });
 

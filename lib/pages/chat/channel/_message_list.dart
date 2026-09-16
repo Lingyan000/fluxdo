@@ -5,14 +5,12 @@ class _ChatMessageList extends StatefulWidget {
   const _ChatMessageList({
     super.key,
     required this.controller,
-    this.initialAnchorMessageId,
     required this.messages,
     required this.composerHeight,
     required this.itemBuilder,
   });
 
   final AutoScrollController controller;
-  final int? initialAnchorMessageId;
   final List<ChatMessage> messages;
   final ValueListenable<double> composerHeight;
   final IndexedWidgetBuilder itemBuilder;
@@ -23,12 +21,9 @@ class _ChatMessageList extends StatefulWidget {
 
 class _ChatMessageListState extends State<_ChatMessageList> {
   static const _centerKey = ValueKey('chat_message_center');
-  late int _anchorMessageId =
-      widget.messages.any(
-        (message) => message.id == widget.initialAnchorMessageId,
-      )
-      ? widget.initialAnchorMessageId!
-      : widget.messages.last.id;
+  // center 后侧必须包含初始窗口的全部消息，否则 Flutter 将上边界
+  // 至少钳到 0；原点前消息不足一屏时就会留下可滚动的顶部空白。
+  late int _anchorMessageId = widget.messages.last.id;
 
   @override
   void didUpdateWidget(_ChatMessageList oldWidget) {

@@ -197,9 +197,6 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   /// 列表 key:量各消息行相对视口的位置(可见已读口径)
   GlobalKey _listKey = GlobalKey();
 
-  /// 整窗定位时直接挂载目标，不依赖从窗口末尾逐帧探测。
-  int? _windowAnchorMessageId;
-
   /// composer key:返回键先收表情面板再退页(编辑器同款拦截)
   final GlobalKey<_ChatComposerState> _composerKey = GlobalKey();
 
@@ -413,7 +410,6 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
       if (!inWindowNow) {
         setState(() {
           // 快请求可能没有绘制过 loading，同样需要重建滚动原点。
-          _windowAnchorMessageId = messageId;
           _listKey = GlobalKey();
         });
       }
@@ -748,7 +744,6 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
       return;
     }
     setState(() {
-      _windowAnchorMessageId = null;
       _listKey = GlobalKey();
     });
     if (_anchorMessageId != null) {
@@ -1559,7 +1554,6 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     return _ChatMessageList(
       key: _listKey,
       controller: _scrollController,
-      initialAnchorMessageId: _windowAnchorMessageId ?? _anchorMessageId,
       messages: messages,
       composerHeight: _composerHeight,
       itemBuilder: (context, i) {
