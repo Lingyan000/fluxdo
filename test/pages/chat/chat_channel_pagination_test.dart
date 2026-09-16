@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:m3e_ui/m3e_ui.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -69,8 +71,10 @@ class _Messages extends ChatMessagesNotifier {
   Completer<void>? _pastRequest;
   Completer<void>? _futureRequest;
 
+  Completer<ChatMessagesState>? reloadRequest;
   @override
-  Future<ChatMessagesState> build() async => initial;
+  Future<ChatMessagesState> build() async =>
+      reloadRequest == null ? initial : await reloadRequest!.future;
 
   @override
   Future<void> loadPast() async {
@@ -157,6 +161,29 @@ class _Messages extends ChatMessagesNotifier {
         ],
       ),
     );
+  }
+
+  Completer<void>? windowRequest;
+
+  @override
+  Future<bool> loadWindowAround(int messageId) async {
+    if (state.requireValue.messages.any((m) => m.id == messageId)) {
+      return true;
+    }
+    windowRequest = Completer<void>();
+    await windowRequest!.future;
+    state = AsyncData(
+      ChatMessagesState(
+        messages: _messages(
+          messageId - 25,
+          messageId + 25,
+          variedHeights: true,
+        ),
+        canLoadMorePast: true,
+        canLoadMoreFuture: true,
+      ),
+    );
+    return true;
   }
 
   void removeMessage(int id) {
@@ -535,6 +562,70 @@ void main() {
     final viewport = tester.getRect(find.byType(CustomScrollView));
     expect(viewport.contains(tester.getCenter(target)), isTrue);
     expect(messages.futureCalls, 1);
+    await _disposePage(tester);
+  });
+
+  testWidgets('回到底部需要重载时显示 loading，完成后显示最新窗口', (tester) async {
+    final messages = _Messages();
+    final controller = await _pumpPage(tester, messages);
+    controller.jumpTo(1000);
+    await tester.pumpAndSettle();
+    messages.reloadRequest = Completer<ChatMessagesState>();
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(CustomScrollView), findsNothing);
+    expect(find.byType(LoadingSpinner), findsOneWidget);
+
+    messages.reloadRequest!.complete(
+      ChatMessagesState(messages: _messages(201, 240), canLoadMorePast: true),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(LoadingSpinner), findsNothing);
+    expect(find.byKey(const ValueKey('chat_msg_240')), findsOneWidget);
+    expect(controller.position.extentBefore, closeTo(0, 1));
+    await _disposePage(tester);
+  });
+
+  testWidgets('定位加载期间回底不重入，定位完成后回底能结束 loading', (tester) async {
+    final messages = _Messages(variedHeights: true);
+    final controller = await _pumpPage(tester, messages);
+    controller.jumpTo(1800);
+    await tester.pumpAndSettle();
+    final visible = tester.widget<AutoScrollTag>(_visibleMessage(tester));
+    messages.addReplyReference(visible.index, 50);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('定位到消息 50'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(CustomScrollView), findsNothing);
+    // 定位尚未结束时回底不能重建 provider 或启动第二个窗口请求。
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pump();
+    expect(messages.windowRequest!.isCompleted, isFalse);
+    messages.windowRequest!.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    final target = find.byKey(const ValueKey('chat_msg_50'));
+    expect(target, findsOneWidget);
+    final viewport = tester.getRect(find.byType(CustomScrollView));
+    expect(viewport.contains(tester.getCenter(target)), isTrue);
+    expect(messages.pastCalls, 0);
+    expect(messages.futureCalls, 0);
+
+    messages.reloadRequest = Completer<ChatMessagesState>();
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pump();
+    expect(find.byType(LoadingSpinner), findsOneWidget);
+    messages.reloadRequest!.complete(
+      ChatMessagesState(messages: _messages(201, 240), canLoadMorePast: true),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(LoadingSpinner), findsNothing);
+    expect(find.byKey(const ValueKey('chat_msg_240')), findsOneWidget);
     await _disposePage(tester);
   });
 

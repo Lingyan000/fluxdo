@@ -97,7 +97,9 @@ class ChatChannelPage extends ConsumerStatefulWidget {
 class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     with WidgetsBindingObserver {
   late final ProviderContainer _providerContainer;
-  final AutoScrollController _scrollController = AutoScrollController();
+  final AutoScrollController _scrollController = AutoScrollController(
+    keepScrollOffset: false,
+  );
   final ChatComposerController _inputController = ChatComposerController();
   final FocusNode _inputFocus = FocusNode();
   bool _canSend = false;
@@ -193,7 +195,10 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   bool _userPresent = true;
 
   /// 列表 key:量各消息行相对视口的位置(可见已读口径)
-  final GlobalKey _listKey = GlobalKey();
+  GlobalKey _listKey = GlobalKey();
+
+  /// 整窗定位时直接挂载目标，不依赖从窗口末尾逐帧探测。
+  int? _windowAnchorMessageId;
 
   /// composer key:返回键先收表情面板再退页(编辑器同款拦截)
   final GlobalKey<_ChatComposerState> _composerKey = GlobalKey();
@@ -405,6 +410,13 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
           }
         }
       }
+      if (!inWindowNow) {
+        setState(() {
+          // 快请求可能没有绘制过 loading，同样需要重建滚动原点。
+          _windowAnchorMessageId = messageId;
+          _listKey = GlobalKey();
+        });
+      }
       await _settleOnMessage(messageId);
     } finally {
       _jumpLock = false;
@@ -427,12 +439,20 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
       return;
     }
 
-    // reverse 列表:getOffsetToReveal 的 alignment 相对滚动前缘(视觉下方),
-    // 要贴视觉顶得传 1
-    final offset = _scrollController.topAlignOffsetForScrollIndex(
-      messageId,
-      alignment: 1.0,
-    );
+    // center 双向 sliver 的 reveal 偏移不能直接作为滚动坐标。
+    // 使用已布局行相对视口的真实位置，反向列表 pixels 增大时行向下移动。
+    final tagBox = _scrollController.tagMap[messageId]?.context
+        .findRenderObject();
+    final listBox = _listKey.currentContext?.findRenderObject();
+    final offset =
+        tagBox is RenderBox &&
+            listBox is RenderBox &&
+            tagBox.attached &&
+            tagBox.hasSize &&
+            listBox.hasSize
+        ? _scrollController.offset -
+              tagBox.localToGlobal(Offset.zero, ancestor: listBox).dy
+        : null;
     if (offset == null) {
       if (retry >= _settleMaxRetry) {
         // 极端情况(行始终没挂上):退回包内爬行定位,尽力而为
@@ -721,11 +741,16 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   /// 未到底)时清锚点原地重载——provider key 变化自动拉最新窗口,
   /// 页面路由不动(旧版整页 pushReplacement 有转场闪断)
   void _jumpToLatest() {
+    if (_jumpLock) return;
     final state = ref.read(chatMessagesProvider(_streamKey)).value;
     if (state != null && !state.canLoadMoreFuture) {
       unawaited(_scrollToLatest(animate: true));
       return;
     }
+    setState(() {
+      _windowAnchorMessageId = null;
+      _listKey = GlobalKey();
+    });
     if (_anchorMessageId != null) {
       // key 变化 → 新 provider 按 fetchFromLastRead 拉最新窗口
       setState(() => _anchorMessageId = null);
@@ -1274,6 +1299,8 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _onScrollNotification,
                   child: messagesAsync.when(
+                    // 回到最新/手动刷新需要明确的加载反馈，不沿用旧窗口。
+                    skipLoadingOnRefresh: false,
                     // 跳转换窗口期间同样整屏转圈(与首屏加载一个观感)。
                     // 由页面自己的 _jumping 驱动、不进 provider 状态:标志位
                     // 放进 state 会被 MessageBus 广播的 copyWith 带着走,
@@ -1532,6 +1559,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
     return _ChatMessageList(
       key: _listKey,
       controller: _scrollController,
+      initialAnchorMessageId: _windowAnchorMessageId ?? _anchorMessageId,
       messages: messages,
       composerHeight: _composerHeight,
       itemBuilder: (context, i) {
