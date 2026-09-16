@@ -54,9 +54,12 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     String? order,
     bool? ascending,
     String? subset,
+    List<int>? topicIds,
   }) async {
     String path;
-    final queryParams = <String, dynamic>{};
+    final queryParams = <String, dynamic>{
+      if (topicIds != null) 'topic_ids': topicIds.join(','),
+    };
 
     if (page > 0) {
       queryParams['page'] = page;

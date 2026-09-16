@@ -1,4 +1,6 @@
 {
+  "topics_viewNewOnlyTopics": "See {count} new topics",
+  "topics_viewUnreadTopics": "See {count} unread topics",
   "@@locale": "en",
   "topicDetail_addToReadLater": "Add to float",
   "topicDetail_addToReadLaterSuccess": "Added to float",

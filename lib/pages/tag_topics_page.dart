@@ -11,6 +11,8 @@ import '../utils/pagination_helper.dart';
 import '../utils/topic_keyword_filter.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/topic/keyword_filter_hint_bar.dart';
+import '../widgets/topic/topic_list_update_banner.dart';
+import '../widgets/topic/topic_list_updates_mixin.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/sort_and_tags_bar.dart';
 import '../widgets/topic/tag_notification_button.dart';
@@ -37,7 +39,8 @@ class TagTopicsPage extends ConsumerStatefulWidget {
   ConsumerState<TagTopicsPage> createState() => _TagTopicsPageState();
 }
 
-class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
+class _TagTopicsPageState extends ConsumerState<TagTopicsPage>
+    with TopicListUpdatesMixin<TagTopicsPage> {
   final ScrollController _scrollController = ScrollController();
   final TopicLoadMoreCoordinator _loadMoreCoordinator =
       TopicLoadMoreCoordinator();
@@ -57,6 +60,51 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   List<String> _lastAutoLoadKeywords = const [];
   Set<String> _lastAutoLoadBlockedUsernames = const <String>{};
   bool? _lastAutoLoadWholeWord;
+
+  TopicListUpdateQuery get _topicUpdatesQuery => TopicListUpdateQuery(
+    filter: _currentFilter,
+    subset: _currentSubset,
+    tags: [widget.tagName],
+    order: _currentOrder.apiValue,
+    ascending: _ascending,
+    newNewView: newNewViewEnabled,
+  );
+
+  Future<void> _showTopicUpdates() async {
+    final inserted = await loadTopicUpdates((ids) async {
+      if (_isLoading || _isLoadingMore) return null;
+      final generation = topicUpdates.generation;
+      final query = _topicUpdatesQuery;
+      final response = await ref
+          .read(discourseServiceProvider)
+          .getFilteredTopics(
+            filter: query.filter.filterName,
+            tags: query.tags,
+            order: query.order,
+            ascending: query.order == null ? null : query.ascending,
+            subset: query.filter == TopicListFilter.newTopics
+                ? query.subset.apiValue
+                : null,
+            topicIds: ids,
+          );
+      if (!isCurrentTopicUpdatesRefresh(generation) ||
+          !query.sameRequest(_topicUpdatesQuery) ||
+          _isLoading ||
+          _isLoadingMore) {
+        return null;
+      }
+      completeTopicUpdatesRefresh(const {}, response);
+      setState(() => _topics = prependTopicUpdates(_topics, response.topics));
+      return response.topics.map((topic) => topic.id).toList();
+    });
+    if (mounted && inserted.isNotEmpty && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   static final _paginationHelper = PaginationHelpers.forTopics<Topic>(
     keyExtractor: (topic) => topic.id,
@@ -116,8 +164,11 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   }
 
   Future<void> _loadTopics() async {
+    final ticket = beginTopicUpdatesRefresh(_topicUpdatesQuery);
     setState(() {
       _isLoading = true;
+      _isLoadingMore = false;
+      _isLoadMoreFailed = false;
       _error = null;
     });
 
@@ -137,6 +188,8 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             : null,
       );
 
+      if (!isCurrentTopicUpdatesRefresh(ticket.generation)) return;
+      completeTopicUpdatesRefresh(ticket.snapshot, response);
       final result = _paginationHelper.processRefresh(
         PaginationResult(
           items: response.topics,
@@ -144,7 +197,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         ),
       );
 
-      if (mounted) {
+      if (isCurrentTopicUpdatesRefresh(ticket.generation)) {
         setState(() {
           _topics = result.items;
           _hasMore = result.hasMore;
@@ -154,7 +207,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         _loadMoreCoordinator.resetCooldown();
       }
     } catch (e) {
-      if (mounted) {
+      if (isCurrentTopicUpdatesRefresh(ticket.generation)) {
         setState(() {
           _error = e;
           _isLoading = false;
@@ -167,6 +220,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   /// 原地合并,不整表替换。整表替换会把已 load more 的多页数据截断回
   /// 第一页,列表变短后滚动位置被 clamp 到第一页底部。
   Future<void> _silentSyncTopics() async {
+    final generation = topicUpdates.generation;
     try {
       final service = ref.read(discourseServiceProvider);
       final response = await service.getFilteredTopics(
@@ -183,7 +237,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             : null,
       );
 
-      if (!mounted) return;
+      if (!isCurrentTopicUpdatesRefresh(generation)) return;
       final updates = {for (final t in response.topics) t.id: t};
       setState(() {
         _topics = [for (final t in _topics) updates[t.id] ?? t];
@@ -196,6 +250,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   }
 
   Future<void> _loadMore() async {
+    final generation = topicUpdates.generation;
     if (_isLoadMoreFailed) return;
     if (!_hasMore || _isLoadingMore || _isLoading) return;
 
@@ -218,6 +273,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
             : null,
       );
 
+      if (!isCurrentTopicUpdatesRefresh(generation)) return;
       final currentState = PaginationState(items: _topics);
       final result = _paginationHelper.processLoadMore(
         currentState,
@@ -227,7 +283,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         ),
       );
 
-      if (mounted) {
+      if (isCurrentTopicUpdatesRefresh(generation)) {
         setState(() {
           _hasMore = result.hasMore;
           if (response.topics.isEmpty) {
@@ -240,7 +296,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (isCurrentTopicUpdatesRefresh(generation)) {
         setState(() {
           _isLoadingMore = false;
           _isLoadMoreFailed = true;
@@ -385,29 +441,15 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
   }
 
   Widget _buildBody(int? selectedTopicId) {
+    watchTopicUpdates(_topicUpdatesQuery);
+    final updateCount = topicUpdateSnapshot.length;
+    final updateOffset = updateCount > 0 || isLoadingTopicUpdates ? 1 : 0;
     if (_isLoading) {
       return const TopicListSkeleton(padding: EdgeInsets.all(12));
     }
 
     if (_error != null) {
       return ErrorView(error: _error!, onRetry: _loadTopics);
-    }
-
-    if (_topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Symbols.inbox_rounded,
-              size: 48,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            const SizedBox(height: 12),
-            Text(context.l10n.tagTopics_empty),
-          ],
-        ),
-      );
     }
 
     final keywords = ref.watch(
@@ -441,16 +483,37 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(12),
-        itemCount: visible.length + hintOffset + 1,
+        itemCount: visible.length + updateOffset + hintOffset + 1,
         itemBuilder: (context, index) {
-          if (hintOffset > 0 && index == 0) {
+          if (updateOffset > 0 && index == 0) {
+            return TopicListUpdateBanner(
+              count: updateCount, filter: _currentFilter,
+              newNewView: newNewViewEnabled, loading: isLoadingTopicUpdates,
+              onTap: _showTopicUpdates,
+            );
+          }
+          if (hintOffset > 0 && index == updateOffset) {
             return KeywordFilterHintBar(
               hiddenCount: hidden,
               hiddenByBlocked: hiddenByBlocked,
             );
           }
-          final topicIndex = index - hintOffset;
+          final topicIndex = index - hintOffset - updateOffset;
           if (topicIndex >= visible.length) {
+            if (visible.isEmpty && !_hasMore) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 100),
+                child: Center(child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Symbols.inbox_rounded, size: 48,
+                      color: Theme.of(context).colorScheme.outline),
+                    const SizedBox(height: 12),
+                    Text(context.l10n.tagTopics_empty),
+                  ],
+                )),
+              );
+            }
             return PagedListFooter(
               hasMore: _hasMore,
               isLoadingMore: _isLoadingMore,

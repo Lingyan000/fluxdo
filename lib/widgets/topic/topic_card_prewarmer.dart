@@ -88,6 +88,7 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
 
   void _restart() {
     final generation = ++_generation;
+    if (widget.items.isEmpty) return;
     var index = 0;
     bool canceled() => !mounted || generation != _generation;
 

@@ -124,7 +124,6 @@ class AppStateRefresher {
     (c) => c.invalidate(userStatusProvider),
     (c) => c.invalidate(userDraftCountProvider),
     (c) => c.invalidate(reviewableCountsProvider),
-    (c) => c.invalidate(latestChannelProvider),
     (c) => c.invalidate(messageBusInitProvider),
     (c) => c.invalidate(ldcUserInfoProvider),
     (c) => c.invalidate(cdkUserInfoProvider),

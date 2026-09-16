@@ -15,6 +15,10 @@ import 'package:fluxdo/pages/category_topics_page.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/message_bus/topic_tracking_providers.dart';
+import 'package:fluxdo/providers/message_bus/topic_list_events.dart';
+import 'package:fluxdo/providers/topic_list/filter_provider.dart';
+import 'package:fluxdo/widgets/topic/topic_list_update_banner.dart';
+import 'package:fluxdo/widgets/topic/topic_card_prewarmer.dart';
 import 'package:fluxdo/providers/tag_notification_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
@@ -30,6 +34,7 @@ class _NotificationService extends Fake implements DiscourseService {
   TagNotificationLevel level = TagNotificationLevel.regular;
   Future<TagNotificationLevel> Function()? load;
   Future<void> Function()? save;
+  Future<TopicListResponse> Function(List<int>)? loadUpdates;
   final reads = <String>[];
   final writes = <(String, TagNotificationLevel)>[];
   final categoryWrites = <(int, int)>[];
@@ -68,7 +73,14 @@ class _NotificationService extends Fake implements DiscourseService {
     String? order,
     bool? ascending,
     String? subset,
-  }) async => TopicListResponse(topics: []);
+    List<int>? topicIds,
+  }) async {
+    if (topicIds != null && loadUpdates != null) return loadUpdates!(topicIds);
+    return TopicListResponse(
+      topics: [],
+      tags: [const Tag(id: 42, name: '开发')],
+    );
+  }
 }
 
 class _CurrentUser extends CurrentUserNotifier {
@@ -82,6 +94,11 @@ class _CurrentUser extends CurrentUserNotifier {
   void setUser(User? user) => state = AsyncData(user);
 }
 
+class _NoMessageBus extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
+
 class _EmptyTopicTracking extends TopicTrackingStateNotifier {
   @override
   Map<int, TrackedTopicState> build() => {};
@@ -93,8 +110,11 @@ Future<ProviderContainer> _pumpPage(
   _CurrentUser? currentUser,
   Widget? page,
   Size size = const Size(390, 844),
+  TopicListFilter initialFilter = TopicListFilter.latest,
 }) async {
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    'topic_sort_filter': initialFilter.name,
+  });
   final prefs = await SharedPreferences.getInstance();
   PlatformUtils.debugDesktopOverride = size.width >= 900;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
@@ -108,6 +128,7 @@ Future<ProviderContainer> _pumpPage(
       discourseServiceProvider.overrideWithValue(service),
       categoriesProvider.overrideWith((_) async => [_category]),
       topicTrackingStateProvider.overrideWith(_EmptyTopicTracking.new),
+      messageBusInitProvider.overrideWith(_NoMessageBus.new),
       currentUserProvider.overrideWith(
         () =>
             currentUser ??
@@ -163,6 +184,128 @@ Future<void> _selectLevel(WidgetTester tester, String label) async {
 }
 
 void main() {
+  for (final isCategory in [true, false]) {
+    testWidgets('${isCategory ? "分类" : "标签"} 空的新话题列表能显示横幅，失败后可重试', (
+      tester,
+    ) async {
+      final pending = Completer<TopicListResponse>();
+      final service = _NotificationService()
+        ..loadUpdates = (_) => pending.future;
+      final container = await _pumpPage(
+        tester,
+        service,
+        initialFilter: TopicListFilter.newTopics,
+        page: isCategory
+            ? CategoryTopicsPage(category: _category)
+            : const TagTopicsPage(tagName: '开发'),
+      );
+      expect(find.byType(TopicListUpdateBanner), findsNothing);
+      container
+          .read(topicListEventsProvider.notifier)
+          .publish(
+            const TopicListEvent(
+              topicId: 101,
+              type: 'new_topic',
+              categoryId: 7,
+              tags: [
+                {'id': 42},
+              ],
+            ),
+          );
+      await tester.pumpAndSettle();
+      expect(find.byType(TopicListUpdateBanner), findsOneWidget);
+      await tester.tap(find.byType(TopicListUpdateBanner));
+      await tester.pump();
+      expect(
+        tester
+            .widget<TopicListUpdateBanner>(find.byType(TopicListUpdateBanner))
+            .loading,
+        isTrue,
+      );
+      pending.completeError(
+        DioException(requestOptions: RequestOptions(path: '/new.json')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TopicListUpdateBanner>(find.byType(TopicListUpdateBanner))
+            .loading,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<TopicListUpdateBanner>(find.byType(TopicListUpdateBanner))
+            .count,
+        1,
+      );
+      service.loadUpdates = (_) async => TopicListResponse(topics: []);
+      await tester.tap(find.byType(TopicListUpdateBanner));
+      await tester.pumpAndSettle();
+      expect(find.byType(TopicListUpdateBanner), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final isCategory in [true, false]) {
+    testWidgets('${isCategory ? "分类" : "标签"} 横幅加载中切换筛选不插入旧响应', (tester) async {
+      final pending = Completer<TopicListResponse>();
+      final service = _NotificationService()
+        ..loadUpdates = (_) => pending.future;
+      final container = await _pumpPage(
+        tester,
+        service,
+        initialFilter: TopicListFilter.newTopics,
+        page: isCategory
+            ? CategoryTopicsPage(category: _category)
+            : const TagTopicsPage(tagName: '开发'),
+      );
+      container
+          .read(topicListEventsProvider.notifier)
+          .publish(
+            const TopicListEvent(
+              topicId: 101,
+              type: 'new_topic',
+              categoryId: 7,
+              tags: [
+                {'id': 42},
+              ],
+            ),
+          );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TopicListUpdateBanner));
+      await tester.pump();
+      tester
+          .widget<SortAndTagsBar>(find.byType(SortAndTagsBar))
+          .onFilterChanged(TopicListFilter.latest);
+      await tester.pumpAndSettle();
+      pending.complete(
+        TopicListResponse(
+          topics: [
+            Topic(
+              id: 101,
+              title: 'outdated',
+              slug: 'outdated',
+              postsCount: 1,
+              replyCount: 0,
+              views: 0,
+              likeCount: 0,
+              categoryId: '7',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TopicCardPrewarmScope>(find.byType(TopicCardPrewarmScope))
+            .topics,
+        isEmpty,
+      );
+      expect(find.byType(TopicListUpdateBanner), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final width in [320.0, 1200.0]) {
     for (final isCategory in [true, false]) {
       testWidgets('${isCategory ? "分类" : "标签"} $width：订阅与搜索对齐并能保存', (

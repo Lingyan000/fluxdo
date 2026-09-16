@@ -1,4 +1,8 @@
 {
+  "topics_viewNewOnlyTopics": "查看 {count} 個新話題",
+  "@topics_viewNewOnlyTopics": {"placeholders": {"count": {"type": "int"}}},
+  "topics_viewUnreadTopics": "查看 {count} 個未讀話題",
+  "@topics_viewUnreadTopics": {"placeholders": {"count": {"type": "int"}}},
   "@@locale": "zh_HK",
   "topicDetail_addToReadLater": "加入浮窗",
   "topicDetail_addToReadLaterSuccess": "已加入浮窗",
