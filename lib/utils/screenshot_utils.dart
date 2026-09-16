@@ -38,12 +38,12 @@ class ScreenshotUtils {
       // 纹理尺寸未超限，直接截图
       if (textureWidth <= _maxTextureSize && textureHeight <= _maxTextureSize) {
         debugPrint('[ScreenshotUtils] 直接截图 (${widgetWidth}x$widgetHeight @ $pixelRatio)');
-        return _captureDirectly(boundary, pixelRatio);
+        return await _captureDirectly(boundary, pixelRatio);
       }
 
       // 纹理超限，分块截图拼接，保持原始 pixelRatio
       debugPrint('[ScreenshotUtils] 分块截图 (${widgetWidth}x$widgetHeight @ $pixelRatio)');
-      return _captureInChunks(boundary, pixelRatio);
+      return await _captureInChunks(boundary, pixelRatio);
     } catch (e) {
       debugPrint('[ScreenshotUtils] captureWidget error: $e');
       return null;

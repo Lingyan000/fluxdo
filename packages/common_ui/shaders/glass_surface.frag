@@ -100,7 +100,9 @@ vec3 applyColorControls(vec3 c) {
 // 物理像素坐标 → 纹理采样 uv(含 GLES y 轴反转)
 vec2 toUv(vec2 px) {
   vec2 uv = px / u_size;
-#ifdef IMPELLER_TARGET_OPENGLES
+// Flutter 3.47 起 GLES 渲染目标与 Metal/Vulkan 一样自顶向下。
+// 仅为旧 SDK 保留翻转，不能影响新 SDK 的采样方向。
+#if defined(IMPELLER_TARGET_OPENGLES) && !defined(IMPELLER_OPENGLES_UNFLIPPED_DEPRECATED)
   uv.y = 1.0 - uv.y;
 #endif
   return uv;

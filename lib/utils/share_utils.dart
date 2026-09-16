@@ -197,7 +197,7 @@ class ShareUtils {
           );
         }
         // null = 系统版本没有 MediaStore.Downloads 集合，落到私有目录分支
-        return _saveToAppDownloads(file);
+        return await _saveToAppDownloads(file);
       } catch (e) {
         debugPrint('[ShareUtils] saveToDownloads failed, fallback: $e');
         return _saveToAppDownloads(file);

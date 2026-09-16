@@ -4,6 +4,14 @@ import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/message_bus/pm_tracking_providers.dart';
 import 'package:fluxdo/services/message_bus_service.dart';
+import 'package:fluxdo/providers/message_bus/topic_tracking_providers.dart';
+
+// 本测试只验证消息分派，不启动网络轮询及平台存储。
+class _NoMessageBusInit extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
+
 
 /// 私信追踪消息分派（对齐 Discourse 网页版 pm-topic-tracking-state.js
 /// 的 _processMessage）。
@@ -41,6 +49,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         currentUserProvider.overrideWith(_FakeCurrentUser.new),
+        messageBusInitProvider.overrideWith(_NoMessageBusInit.new),
       ],
     );
   });

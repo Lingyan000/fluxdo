@@ -43,12 +43,9 @@ float ign(vec2 p) {
 void main() {
   vec2 frag = FlutterFragCoord().xy;
 
-  // 距区域顶部的距离(物理)。GLES 的 gl_FragCoord 原点在底部:
-  // 不反转的话渐变整个上下颠倒(底糊顶清)
+  // FlutterFragCoord 返回几何坐标，所有 Impeller 后端均以顶部为原点。
+  // 不要按 GLES 的 gl_FragCoord 再翻转，否则会导致底糊顶清。
   float yTop = frag.y;
-#ifdef IMPELLER_TARGET_OPENGLES
-  yTop = u_size.y - frag.y;
-#endif
   // 视觉纵向位置 t:1=区域顶部,0=区域底部(按滤镜区域高度归一,
   // 与输入纹理尺寸无关)—— 模糊与色罩都随之连续变化
   float t = clamp(1.0 - yTop / u_region_h, 0.0, 1.0);
@@ -56,7 +53,9 @@ void main() {
 
   vec2 suv = frag / u_size;
   // GLES 纹理 y 轴反转(采样坐标)
-#ifdef IMPELLER_TARGET_OPENGLES
+// Flutter 3.47 起 GLES 渲染目标与 Metal/Vulkan 一样自顶向下。
+// 仅为旧 SDK 保留翻转，不能影响新 SDK 的采样方向。
+#if defined(IMPELLER_TARGET_OPENGLES) && !defined(IMPELLER_OPENGLES_UNFLIPPED_DEPRECATED)
   suv.y = 1.0 - suv.y;
 #endif
 

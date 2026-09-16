@@ -131,7 +131,7 @@ class DohResolver {
           durationMs: stopwatch.elapsedMilliseconds,
           error: 'empty response',
         );
-        return _fallbackResolveAll(host);
+        return await _fallbackResolveAll(host);
       }
 
       // 根据设置排序地址（IPv6 优先 / IPv4 优先）

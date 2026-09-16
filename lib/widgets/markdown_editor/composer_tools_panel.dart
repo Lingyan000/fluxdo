@@ -279,7 +279,7 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
                                     4,
                                   ),
                                   child: Semantics(
-                                    header: true,
+                                    headingLevel: 2,
                                     child: Text(
                                       entry.key.label,
                                       key: ValueKey(

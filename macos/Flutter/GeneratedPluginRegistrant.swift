@@ -41,6 +41,7 @@ import video_player_avfoundation
 import volume_controller
 import wakelock_plus
 import window_manager
+import workmanager_apple
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   AppLinksMacosPlugin.register(with: registry.registrar(forPlugin: "AppLinksMacosPlugin"))
@@ -79,4 +80,5 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   VolumeControllerPlugin.register(with: registry.registrar(forPlugin: "VolumeControllerPlugin"))
   WakelockPlusMacosPlugin.register(with: registry.registrar(forPlugin: "WakelockPlusMacosPlugin"))
   WindowManagerPlugin.register(with: registry.registrar(forPlugin: "WindowManagerPlugin"))
+  WorkmanagerPlugin.register(with: registry.registrar(forPlugin: "WorkmanagerPlugin"))
 }

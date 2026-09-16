@@ -4,7 +4,8 @@ publish_to: 'none'
 version: 0.2.28+2026090421
 
 environment:
-  sdk: ^3.10.4
+  sdk: ^3.13.0
+  flutter: ">=3.47.4"
 
 # sqlite3(经 sqflite_common_ffi 引入)的 build hook 默认在构建期从 GitHub
 # 下载预编译库,Flatpak 离线沙箱内必然失败;指向 vendored amalgamation
@@ -226,10 +227,9 @@ melos:
   useRootAsPackage: true
 
 flutter:
-  # 关闭 SwiftPM：Flutter 3.44 生成的 FlutterGeneratedPluginSwiftPackage 把
-  # macOS deployment target 写死 10.15，未读 Runner 的 11.0，导致 gal 等要求
-  # macOS 11.0 的插件 SPM 构建失败。CocoaPods 链路无此 bug。
-  # 待 Flutter 上游修复后移除（CocoaPods registry 2026-12-02 起转只读）。
+  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、rhttp、
+  # super_native_extensions 等插件未支持 SwiftPM，不能只升级 SDK 就切换。
+  # Apple 最低版本已同步 iOS 15 / macOS 12；待插件链路验证后独立迁移。
   config:
     enable-swift-package-manager: false
   uses-material-design: true

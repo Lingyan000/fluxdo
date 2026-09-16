@@ -5,274 +5,280 @@ import WebKit
 import workmanager_apple
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  // 窗口由 UIScene 持有，不能再从 AppDelegate.window 获取界面。
+  private weak var flutterViewController: FlutterViewController?
+
+  func connectFlutterViewController(_ controller: FlutterViewController) {
+    flutterViewController = controller
+    // 文件导出需要已连接场景的控制器；隐式引擎回调时控制器尚未绑定。
+    PublicFileHandler.shared.register(
+      messenger: controller.binaryMessenger,
+      viewController: controller
+    )
+  }
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
-
     // 注册 iOS 后台任务 handler（必须在 didFinishLaunchingWithOptions 返回前调用）
     WorkmanagerPlugin.registerPeriodicTask(withIdentifier: "com.fluxdo.notificationPoll", frequency: nil)
 
-    // 注册 cookie 同步 channel，用于将 cookie 写入 HTTPCookieStorage.shared
-    // WKWebView 的 sharedCookiesEnabled 在创建时从 HTTPCookieStorage.shared 读取 cookie
-    if let controller = window?.rootViewController as? FlutterViewController {
-      // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
-      MediaTranscodeHandler.shared.register(
-        messenger: controller.binaryMessenger
-      )
-      // 文件导出通道(UIDocumentPicker「另存为」,直接交文件 URL 给系统拷贝,
-      // 不必像 file_picker 那样把整份文件读成 bytes 过 Dart)
-      PublicFileHandler.shared.register(
-        messenger: controller.binaryMessenger,
-        viewController: controller
-      )
-      // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
-      let proxyCertChannel = FlutterMethodChannel(
-        name: "com.fluxdo/proxy_cert",
-        binaryMessenger: controller.binaryMessenger
-      )
-      proxyCertChannel.setMethodCallHandler { (call, result) in
-        switch call.method {
-        case "setCaCertPem":
-          guard let pem = call.arguments as? String else {
-            result(false)
-            return
-          }
-          DohProxyCertHandler.shared.setCaCertPem(pem)
-          result(true)
-        case "clear":
-          DohProxyCertHandler.shared.clearCaCert()
-          result(true)
-        default:
-          result(FlutterMethodNotImplemented)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    registerNativeChannels(messenger: engineBridge.applicationRegistrar.messenger())
+  }
+
+  private func registerNativeChannels(messenger: FlutterBinaryMessenger) {
+    // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
+    MediaTranscodeHandler.shared.register(
+      messenger: messenger
+    )
+    // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
+    let proxyCertChannel = FlutterMethodChannel(
+      name: "com.fluxdo/proxy_cert",
+      binaryMessenger: messenger
+    )
+    proxyCertChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setCaCertPem":
+        guard let pem = call.arguments as? String else {
+          result(false)
+          return
         }
-      }
-
-      // 注册描述文件安装 channel
-      let profileChannel = FlutterMethodChannel(
-        name: "com.fluxdo/profile_install",
-        binaryMessenger: controller.binaryMessenger
-      )
-      profileChannel.setMethodCallHandler { [weak self] (call, result) in
-        switch call.method {
-        case "installProfile":
-          guard let mobileconfig = call.arguments as? String else {
-            result(FlutterError(code: "INVALID_ARGS", message: "Expected mobileconfig string", details: nil))
-            return
-          }
-          self?.serveMobileconfigViaSafari(mobileconfig) { success in
-            result(success)
-          }
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-      // 注册浏览器 channel（应用链接解析与启动）
-      let browserChannel = FlutterMethodChannel(
-        name: "com.github.lingyan000.fluxdo/browser",
-        binaryMessenger: controller.binaryMessenger
-      )
-      browserChannel.setMethodCallHandler { (call, result) in
-        switch call.method {
-        case "resolveAppLink":
-          // iOS 无法获取目标应用的名称和图标
-          result(["canResolve": false, "appName": nil, "packageName": nil, "appIcon": nil])
-
-        case "launchAppLink":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let url = URL(string: urlString) else {
-            result(false)
-            return
-          }
-          UIApplication.shared.open(url, options: [:]) { success in
-            result(success)
-          }
-
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-      let appIconChannel = FlutterMethodChannel(
-        name: "com.github.lingyan000.fluxdo/app_icon",
-        binaryMessenger: controller.binaryMessenger
-      )
-      appIconChannel.setMethodCallHandler { (call, result) in
-        switch call.method {
-        case "supportsAlternateIcons":
-          if #available(iOS 10.3, *) {
-            result(UIApplication.shared.supportsAlternateIcons)
-          } else {
-            result(false)
-          }
-
-        case "getAlternateIconName":
-          if #available(iOS 10.3, *) {
-            result(UIApplication.shared.alternateIconName)
-          } else {
-            result(nil)
-          }
-
-        case "setAlternateIcon":
-          guard #available(iOS 10.3, *) else {
-            result(FlutterError(code: "UNAVAILABLE", message: "Alternate icons require iOS 10.3+", details: nil))
-            return
-          }
-
-          let args = call.arguments as? [String: Any]
-          let iconName = args?["iconName"] as? String
-          self.setAlternateIcon(iconName, result: result)
-
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-      let channel = FlutterMethodChannel(
-        name: "com.fluxdo/cookie_storage",
-        binaryMessenger: controller.binaryMessenger
-      )
-      channel.setMethodCallHandler { [weak self] (call, result) in
-        switch call.method {
-        case "setCookies":
-          guard let args = call.arguments as? [[String: Any?]] else {
-            result(FlutterError(code: "INVALID_ARGS", message: "Expected list of cookie maps", details: nil))
-            return
-          }
-          self?.setCookiesToSharedStorage(args)
-          result(true)
-        case "clearCookies":
-          let url = (call.arguments as? String) ?? ""
-          self?.clearCookiesFromSharedStorage(url: url)
-          result(true)
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-
-      // Raw Set-Cookie 写入通道
-      // 用 HTTPCookie.cookies(withResponseHeaderFields:for:) 从原始头构造 cookie
-      // 保留 host-only 等完整语义
-      let rawCookieChannel = FlutterMethodChannel(
-        name: "com.fluxdo/raw_cookie",
-        binaryMessenger: controller.binaryMessenger
-      )
-
-      // Cookie store 变化观察通道 (Phase B)
-      // 注册 WKHTTPCookieStoreObserver, WV 网络层等外部修改 cookie 时
-      // 通知 Dart 端 sweep。internalWriteCount > 0 时 observer 忽略,
-      // 避免我们自己 setCookie/delete 导致 sweep 循环。
-      let cookieObserverChannel = FlutterMethodChannel(
-        name: "com.fluxdo/cookie_observer",
-        binaryMessenger: controller.binaryMessenger
-      )
-      CookieStoreObserverHandler.shared.attach(channel: cookieObserverChannel)
-
-      rawCookieChannel.setMethodCallHandler { (call, result) in
-        switch call.method {
-        case "setRawCookie":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let rawSetCookie = args["rawSetCookie"] as? String,
-                let url = URL(string: urlString) else {
-            result(false)
-            return
-          }
-          let headers = ["Set-Cookie": rawSetCookie]
-          let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
-          guard let cookie = cookies.first else {
-            result(false)
-            return
-          }
-          let writeSharedStorage = args["writeSharedStorage"] as? Bool ?? true
-          CookieStoreObserverHandler.shared.beginInternalWrite()
-          let storage = HTTPCookieStorage.shared
-          if writeSharedStorage {
-            // 同时写入 HTTPCookieStorage.shared，配合 sharedCookiesEnabled
-            // 确保 WKWebView 在创建时即可从 shared storage 读取到 cookie。
-            storage.setCookie(cookie)
-          } else {
-            AppDelegate.deleteSharedCookieIOS(storage: storage, url: url, cookie: cookie)
-          }
-          let store = WKWebsiteDataStore.default().httpCookieStore
-          store.setCookie(cookie) {
-            CookieStoreObserverHandler.shared.endInternalWrite()
-            result(true)
-          }
-
-        // v0.4.0 Cookie 引擎新增原语
-        // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.4
-
-        case "nukeAllVariants":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let name = args["name"] as? String,
-                let pathCandidates = args["pathCandidates"] as? [String],
-                let url = URL(string: urlString) else {
-            result(0)
-            return
-          }
-          let rawDomainCandidates = args["domainCandidates"] as? [Any] ?? []
-          let domainCandidates: [String?] = rawDomainCandidates.map {
-            $0 is NSNull ? nil : ($0 as? String)
-          }
-          AppDelegate.nukeAllVariantsIOS(
-            url: url,
-            name: name,
-            domainCandidates: domainCandidates,
-            pathCandidates: pathCandidates,
-            result: result
-          )
-
-        case "deleteExactCookie":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let name = args["name"] as? String,
-                let path = args["path"] as? String,
-                let url = URL(string: urlString) else {
-            result(false)
-            return
-          }
-          let domain = args["domain"] as? String
-          AppDelegate.deleteExactCookieIOS(
-            url: url,
-            name: name,
-            domain: domain,
-            path: path,
-            result: result
-          )
-
-        case "getAllCookieInfos":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let url = URL(string: urlString) else {
-            result([])
-            return
-          }
-          AppDelegate.getAllCookieInfosIOS(url: url, result: result)
-
-        case "countCookiesByName":
-          guard let args = call.arguments as? [String: Any],
-                let urlString = args["url"] as? String,
-                let name = args["name"] as? String,
-                let url = URL(string: urlString) else {
-            result(0)
-            return
-          }
-          AppDelegate.countCookiesByNameIOS(url: url, name: name, result: result)
-
-        default:
-          result(FlutterMethodNotImplemented)
-        }
+        DohProxyCertHandler.shared.setCaCertPem(pem)
+        result(true)
+      case "clear":
+        DohProxyCertHandler.shared.clearCaCert()
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
       }
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // 注册描述文件安装 channel
+    let profileChannel = FlutterMethodChannel(
+      name: "com.fluxdo/profile_install",
+      binaryMessenger: messenger
+    )
+    profileChannel.setMethodCallHandler { [weak self] (call, result) in
+      switch call.method {
+      case "installProfile":
+        guard let mobileconfig = call.arguments as? String else {
+          result(FlutterError(code: "INVALID_ARGS", message: "Expected mobileconfig string", details: nil))
+          return
+        }
+        self?.serveMobileconfigViaSafari(mobileconfig) { success in
+          result(success)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // 注册浏览器 channel（应用链接解析与启动）
+    let browserChannel = FlutterMethodChannel(
+      name: "com.github.lingyan000.fluxdo/browser",
+      binaryMessenger: messenger
+    )
+    browserChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "resolveAppLink":
+        // iOS 无法获取目标应用的名称和图标
+        result(["canResolve": false, "appName": nil, "packageName": nil, "appIcon": nil])
+
+      case "launchAppLink":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url, options: [:]) { success in
+          result(success)
+        }
+
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let appIconChannel = FlutterMethodChannel(
+      name: "com.github.lingyan000.fluxdo/app_icon",
+      binaryMessenger: messenger
+    )
+    appIconChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "supportsAlternateIcons":
+        if #available(iOS 10.3, *) {
+          result(UIApplication.shared.supportsAlternateIcons)
+        } else {
+          result(false)
+        }
+
+      case "getAlternateIconName":
+        if #available(iOS 10.3, *) {
+          result(UIApplication.shared.alternateIconName)
+        } else {
+          result(nil)
+        }
+
+      case "setAlternateIcon":
+        guard #available(iOS 10.3, *) else {
+          result(FlutterError(code: "UNAVAILABLE", message: "Alternate icons require iOS 10.3+", details: nil))
+          return
+        }
+
+        let args = call.arguments as? [String: Any]
+        let iconName = args?["iconName"] as? String
+        self.setAlternateIcon(iconName, result: result)
+
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let channel = FlutterMethodChannel(
+      name: "com.fluxdo/cookie_storage",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { [weak self] (call, result) in
+      switch call.method {
+      case "setCookies":
+        guard let args = call.arguments as? [[String: Any?]] else {
+          result(FlutterError(code: "INVALID_ARGS", message: "Expected list of cookie maps", details: nil))
+          return
+        }
+        self?.setCookiesToSharedStorage(args)
+        result(true)
+      case "clearCookies":
+        let url = (call.arguments as? String) ?? ""
+        self?.clearCookiesFromSharedStorage(url: url)
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+
+    // Raw Set-Cookie 写入通道
+    // 用 HTTPCookie.cookies(withResponseHeaderFields:for:) 从原始头构造 cookie
+    // 保留 host-only 等完整语义
+    let rawCookieChannel = FlutterMethodChannel(
+      name: "com.fluxdo/raw_cookie",
+      binaryMessenger: messenger
+    )
+
+    // Cookie store 变化观察通道 (Phase B)
+    // 注册 WKHTTPCookieStoreObserver, WV 网络层等外部修改 cookie 时
+    // 通知 Dart 端 sweep。internalWriteCount > 0 时 observer 忽略,
+    // 避免我们自己 setCookie/delete 导致 sweep 循环。
+    let cookieObserverChannel = FlutterMethodChannel(
+      name: "com.fluxdo/cookie_observer",
+      binaryMessenger: messenger
+    )
+    CookieStoreObserverHandler.shared.attach(channel: cookieObserverChannel)
+
+    rawCookieChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setRawCookie":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let rawSetCookie = args["rawSetCookie"] as? String,
+              let url = URL(string: urlString) else {
+          result(false)
+          return
+        }
+        let headers = ["Set-Cookie": rawSetCookie]
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+        guard let cookie = cookies.first else {
+          result(false)
+          return
+        }
+        let writeSharedStorage = args["writeSharedStorage"] as? Bool ?? true
+        CookieStoreObserverHandler.shared.beginInternalWrite()
+        let storage = HTTPCookieStorage.shared
+        if writeSharedStorage {
+          // 同时写入 HTTPCookieStorage.shared，配合 sharedCookiesEnabled
+          // 确保 WKWebView 在创建时即可从 shared storage 读取到 cookie。
+          storage.setCookie(cookie)
+        } else {
+          AppDelegate.deleteSharedCookieIOS(storage: storage, url: url, cookie: cookie)
+        }
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        store.setCookie(cookie) {
+          CookieStoreObserverHandler.shared.endInternalWrite()
+          result(true)
+        }
+
+      // v0.4.0 Cookie 引擎新增原语
+      // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.4
+
+      case "nukeAllVariants":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let name = args["name"] as? String,
+              let pathCandidates = args["pathCandidates"] as? [String],
+              let url = URL(string: urlString) else {
+          result(0)
+          return
+        }
+        let rawDomainCandidates = args["domainCandidates"] as? [Any] ?? []
+        let domainCandidates: [String?] = rawDomainCandidates.map {
+          $0 is NSNull ? nil : ($0 as? String)
+        }
+        AppDelegate.nukeAllVariantsIOS(
+          url: url,
+          name: name,
+          domainCandidates: domainCandidates,
+          pathCandidates: pathCandidates,
+          result: result
+        )
+
+      case "deleteExactCookie":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let name = args["name"] as? String,
+              let path = args["path"] as? String,
+              let url = URL(string: urlString) else {
+          result(false)
+          return
+        }
+        let domain = args["domain"] as? String
+        AppDelegate.deleteExactCookieIOS(
+          url: url,
+          name: name,
+          domain: domain,
+          path: path,
+          result: result
+        )
+
+      case "getAllCookieInfos":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString) else {
+          result([])
+          return
+        }
+        AppDelegate.getAllCookieInfosIOS(url: url, result: result)
+
+      case "countCookiesByName":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let name = args["name"] as? String,
+              let url = URL(string: urlString) else {
+          result(0)
+          return
+        }
+        AppDelegate.countCookiesByNameIOS(url: url, name: name, result: result)
+
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func isRequestedIconApplied(_ iconName: String?) -> Bool {
@@ -686,7 +692,7 @@ import workmanager_apple
       // 使用 SFSafariViewController 在应用内打开，保持前台运行
       let url = URL(string: "http://127.0.0.1:\(port)/ca.mobileconfig")!
       DispatchQueue.main.async {
-        guard let rootVC = self.window?.rootViewController else {
+        guard let rootVC = self.flutterViewController else {
           completion(false)
           return
         }
@@ -742,9 +748,25 @@ import workmanager_apple
       // 如果超时未提供文件，关闭 SFSafariViewController
       if !served {
         DispatchQueue.main.async {
-          self.window?.rootViewController?.presentedViewController?.dismiss(animated: true)
+          self.flutterViewController?.presentedViewController?.dismiss(animated: true)
         }
       }
+    }
+  }
+}
+
+// 场景连接后再绑定依赖界面的通道，其余生命周期交给 Flutter 转发给插件。
+// 与 AppDelegate 放在同一编译文件中，无需修改 Xcode 工程文件引用。
+class SceneDelegate: FlutterSceneDelegate {
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+    if let controller = window?.rootViewController as? FlutterViewController,
+       let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+      appDelegate.connectFlutterViewController(controller)
     }
   }
 }

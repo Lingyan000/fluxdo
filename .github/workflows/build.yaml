@@ -7,7 +7,7 @@ on:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
-  FLUTTER_LINUX_VERSION: '3.44.8'
+  FLUTTER_VERSION: '3.47.4'
   ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
@@ -83,7 +83,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Setup Rust
@@ -313,7 +313,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_LINUX_VERSION }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Setup Rust

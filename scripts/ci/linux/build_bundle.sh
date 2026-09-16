@@ -5,7 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-FLUTTER_VERSION="${FLUTTER_VERSION:-3.41.5}"
+# 与 FVM/CI 共用项目固定版本，仍允许构建环境显式覆盖。
+FLUTTER_VERSION="${FLUTTER_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["flutter"])' "${PROJECT_ROOT}/.fvmrc")}"
 FLUTTER_ROOT="${FLUTTER_ROOT:-$HOME/flutter}"
 FLUTTER_ARCHIVE="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
 FLUTTER_URL="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/${FLUTTER_ARCHIVE}"

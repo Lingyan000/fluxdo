@@ -8,6 +8,7 @@ import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/navigation/nav_action_bus.dart';
 import 'package:fluxdo/pages/bookmarks_page.dart';
+import 'package:fluxdo/pages/bookmarks/bookmarks_models.dart';
 import 'package:fluxdo/pages/topics_page.dart';
 import 'package:fluxdo/providers/bookmark_name_suggestions_provider.dart';
 import 'package:fluxdo/providers/bookmarks_reconciler.dart';
@@ -150,6 +151,21 @@ Future<ProviderContainer> _createContainerForWidgetTest(
     () => _createContainer(suggestionRequests: suggestionRequests),
   ))!;
   ProviderSubscription<AsyncValue<List<Topic>>>? sub;
+  // 初始化或断言失败也先卸载页面，让延迟清理在容器仍存活时完成。
+  // 此回调后注册，先于 repository 和 Hive 存储的清理执行。
+  addTearDown(() async {
+    try {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+      await tester.pumpAndSettle();
+    } finally {
+      try {
+        sub?.close();
+      } finally {
+        container.dispose();
+      }
+    }
+  });
   await tester.runAsync(() async {
     sub = container.listen<AsyncValue<List<Topic>>>(
       bookmarksProvider,
@@ -160,7 +176,6 @@ Future<ProviderContainer> _createContainerForWidgetTest(
         .read(bookmarkNameSuggestionsProvider.notifier)
         .ensureLoaded();
   });
-  addTearDown(() => sub?.close());
   return container;
 }
 
@@ -170,12 +185,21 @@ Future<void> _pumpPage(WidgetTester tester) async {
   }
 }
 
-Finder _findBookmarkInList(String title) {
+Finder _findBookmarkInList(Topic topic) {
+  // 自绘卡片没有标题 Text，使用与生产代码一致的书签身份。
   return find.descendant(
     of: find.byType(BookmarksListContent),
-    matching: find.text(title),
+    matching: find.byKey(ValueKey(bookmarkTopicIdentity(topic))),
   );
 }
+
+final _alphaBookmark = _bookmarkTopic(
+  topicId: 1,
+  bookmarkId: 101,
+  title: 'Alpha',
+  bookmarkName: 'image',
+  bookmarkableType: 'Post',
+);
 
 Finder _findWorkspaceTab(String title) {
   return find.descendant(
@@ -184,8 +208,21 @@ Finder _findWorkspaceTab(String title) {
   );
 }
 
+// Widget 测试的不变量检查早于 addTearDown，必须在测试体退出前
+// 卸载页面并处理 disposeDeferred 的事件队列任务。
+void _testPage(String description, Future<void> Function(WidgetTester) body) {
+  testWidgets(description, (tester) async {
+    try {
+      await body(tester);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    }
+  });
+}
+
 void main() {
-  testWidgets('工作区会复用同一话题标签并在关闭后回到书签页', (tester) async {
+  _testPage('工作区会复用同一话题标签并在关闭后回到书签页', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
@@ -194,7 +231,6 @@ void main() {
       tester,
       suggestionRequests: suggestionRequests,
     );
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -210,7 +246,7 @@ void main() {
     expect(loaded, ['beta', 'image']);
     expect(suggestionRequests, isEmpty);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsOneWidget);
@@ -220,32 +256,29 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsNWidgets(2));
+    expect(_findWorkspaceTab('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsOneWidget);
     expect(_findWorkspaceTab('Alpha'), findsOneWidget);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsNothing);
 
     await tester.tap(find.byIcon(Symbols.close_rounded));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsNothing);
     expect(_findWorkspaceTab('Alpha'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
   });
 
-  testWidgets('离开书签页时会清空工作区标签', (tester) async {
+  _testPage('离开书签页时会清空工作区标签', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -259,7 +292,7 @@ void main() {
       find.byType(_BookmarksPageLifecycleHost),
     );
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(_findWorkspaceTab('Alpha'), findsOneWidget);
@@ -273,9 +306,9 @@ void main() {
 
     expect(_findWorkspaceTab('Alpha'), findsNothing);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(_findWorkspaceTab('Alpha'), findsOneWidget);
@@ -288,15 +321,14 @@ void main() {
 
     expect(_findWorkspaceTab('Alpha'), findsNothing);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
   });
 
-  testWidgets('打开书签话题时会把书签上下文传给工作区详情页', (tester) async {
+  _testPage('打开书签话题时会把书签上下文传给工作区详情页', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -328,20 +360,19 @@ void main() {
     );
     await _pumpPage(tester);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 bookmark:101 type:Post'), findsOneWidget);
   });
 
-  testWidgets('手机端标签页模式会显示数字方框并可打开切换器', (tester) async {
+  _testPage('手机端标签页模式会显示数字方框并可打开切换器', (tester) async {
     PlatformUtils.debugDesktopOverride = false;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -353,7 +384,7 @@ void main() {
 
     expect(find.byType(BookmarksWorkspaceTabBar), findsNothing);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsOneWidget);
@@ -405,7 +436,13 @@ void main() {
       find.byKey(const ValueKey('bookmark-workspace-switcher-sheet')),
       findsOneWidget,
     );
-    expect(find.text('Alpha'), findsAtLeastNWidgets(1));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('bookmark-workspace-switcher-sheet')),
+        matching: find.text('Alpha'),
+      ),
+      findsOneWidget,
+    );
 
     Navigator.of(
       tester.element(
@@ -427,14 +464,13 @@ void main() {
     expect(find.text('已打开 1 个'), findsNothing);
   });
 
-  testWidgets('手机端工作区返回按钮会回到书签列表并保留已打开话题', (tester) async {
+  _testPage('手机端工作区返回按钮会回到书签列表并保留已打开话题', (tester) async {
     PlatformUtils.debugDesktopOverride = false;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -444,7 +480,7 @@ void main() {
     );
     await _pumpPage(tester);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsOneWidget);
@@ -456,21 +492,20 @@ void main() {
 
     expect(container.read(barVisibilityProvider), 1);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(_findBookmarkInList('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
     expect(
       find.byKey(const ValueKey('bookmark-workspace-mobile-title-bar')),
       findsNothing,
     );
   });
 
-  testWidgets('手机端工作区关闭按钮会关闭当前标签页', (tester) async {
+  _testPage('手机端工作区关闭按钮会关闭当前标签页', (tester) async {
     PlatformUtils.debugDesktopOverride = false;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -480,7 +515,7 @@ void main() {
     );
     await _pumpPage(tester);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     await tester.tap(
@@ -490,17 +525,16 @@ void main() {
 
     expect(container.read(barVisibilityProvider), 1);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(_findBookmarkInList('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
   });
 
-  testWidgets('手机端重选底栏书签会回到书签列表', (tester) async {
+  _testPage('手机端重选底栏书签会回到书签列表', (tester) async {
     PlatformUtils.debugDesktopOverride = false;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));
 
     final container = await _createContainerForWidgetTest(tester);
-    addTearDown(container.dispose);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -510,7 +544,7 @@ void main() {
     );
     await _pumpPage(tester);
 
-    await tester.tap(_findBookmarkInList('Alpha'));
+    await tester.tap(_findBookmarkInList(_alphaBookmark));
     await _pumpPage(tester);
 
     container.read(navActionBusProvider.notifier).state = const NavActionEvent(
@@ -521,7 +555,7 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(_findBookmarkInList('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList(_alphaBookmark), findsOneWidget);
   });
 }
 
