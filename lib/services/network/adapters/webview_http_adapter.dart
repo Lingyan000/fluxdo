@@ -1665,13 +1665,18 @@ document.close();
     return value.toString().trim();
   }
 
-  void _setNetworkLogField(RequestOptions options, String key, Object? value) {
-    final currentFields = options.extra['_networkLogFields'];
-    if (currentFields is Map<String, dynamic>) {
-      currentFields[key] = value;
-      return;
-    }
+  void _setNetworkLogField(RequestOptions options, String key, Object? value) =>
+      setNetworkLogField(options, key, value);
 
+  @visibleForTesting
+  static void setNetworkLogField(
+    RequestOptions options,
+    String key,
+    Object? value,
+  ) {
+    final currentFields = options.extra['_networkLogFields'];
+    // Map<String, String> 也能通过 Map<String, dynamic> 类型检查，但
+    // 写入整数会抛 TypeError；调用方还可能传只读映射，统一复制后追加。
     final mergedFields = <String, dynamic>{};
     if (currentFields is Map) {
       currentFields.forEach((fieldKey, fieldValue) {
