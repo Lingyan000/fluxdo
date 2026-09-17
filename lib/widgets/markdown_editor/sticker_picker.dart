@@ -98,9 +98,8 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   }
 
   void _openMarket() {
-    // 桌面悬浮弹层:市场 sheet 在 Navigator 路由层,会被 root overlay
-    // 的弹层盖住 —— 先收弹层再开 sheet
-    widget.onDismissRequested?.call();
+    // 先创建市场路由并捕获主题，再收起可能销毁当前 State 的宿主弹层。
+    final dismissPicker = widget.onDismissRequested;
     // 市场面板带搜索框,必须走可拖拽外壳(expandToFill):固定高度那条分支会
     // 叠加 viewInsets,键盘弹出时把标题栏与搜索框顶出屏幕。initialSize 沿用
     // 原先的 0.8,打开时观感不变。
@@ -110,18 +109,22 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       showTitleDivider: true,
       initialSize: 0.8,
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+        Builder(
+          builder: (sheetContext) => TextButton(
+            // 按钮属于市场路由，不能引用已随选择器销毁的 State.context。
+            onPressed: () => Navigator.pop(sheetContext),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(S.current.common_done),
           ),
-          child: Text(S.current.common_done),
         ),
       ],
       bodyBuilder: (context, scrollController) =>
           StickerMarketSheet(scrollController: scrollController),
     );
+    dismissPicker?.call();
   }
 
   void _onStickerTap(StickerItem sticker) {
