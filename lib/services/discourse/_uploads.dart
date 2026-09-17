@@ -398,17 +398,18 @@ mixin _UploadsMixin on _DiscourseServiceBase {
   Future<UploadResult> uploadImage(String filePath) => uploadFile(filePath);
 
   /// 媒体上传的站点体积上限(linux.do 4MB;超限服务端 413)。
-  static const int maxMediaUploadBytes = 4 * 1024 * 1024;
+
 
   /// 音视频改名上传(与社区「媒体上传」脚本同 hack):站点扩展名白名单
   /// 不含音视频,把文件名换 `.xz`(application/x-xz)绕过 —— 播放端
   /// (本 app MediaCompatService 嗅探 / 网页原生 audio·video 标签)不受
-  /// 扩展名影响。4MB 前置检查,超限直接抛(不做压缩,调用方提示)。
+  /// 扩展名影响。站点附件上限前置检查,超限直接抛(不做压缩,调用方提示)。
   Future<UploadResult> uploadMediaAsXz(String filePath) async {
     final size = await File(filePath).length();
-    if (size >= maxMediaUploadBytes) {
+    final maxBytes = await MediaUploadLimits.load();
+    if (maxBytes != null && size >= maxBytes) {
       throw Exception(
-        '媒体文件须小于 4MB,当前 ${UploadResult.formatFileSize(size)};'
+        '媒体文件须小于 ${UploadResult.formatFileSize(maxBytes)},当前 ${UploadResult.formatFileSize(size)};'
         '请先压缩后再上传',
       );
     }

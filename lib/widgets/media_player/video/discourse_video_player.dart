@@ -11,6 +11,7 @@ import '../../common/anchor_guard_sliver.dart';
 import '../controls/media_controls_overlay.dart';
 import 'fullscreen_video_page.dart';
 import 'video_player_session.dart';
+import 'video_playback_surface.dart';
 
 /// 帖内 inline 视频播放器(自绘控制层,六端统一)。
 ///
@@ -314,7 +315,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
             Center(
               child: AspectRatio(
                 aspectRatio: session.controller.value.aspectRatio,
-                child: VideoPlayer(session.controller),
+                child: VideoPlaybackSurface(controller: session.controller),
               ),
             ),
             // 出画前露封面,播放/seek 过即淡出(硬切会闪一帧)
