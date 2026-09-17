@@ -1,4 +1,10 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+
+// ignore: depend_on_referenced_packages
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -14,11 +20,22 @@ import 'package:fluxdo/pages/chat/channel/chat_channel_page.dart';
 import 'package:fluxdo/providers/chat/chat_channels_provider.dart';
 import 'package:fluxdo/providers/chat/chat_messages_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
+import 'package:fluxdo/providers/theme_provider.dart'
+    show sharedPreferencesProvider;
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
+
+class _ImagePicker extends ImagePickerPlatform {
+  _ImagePicker(this.paths);
+  final List<String> paths;
+  @override
+  Future<List<XFile>> getMultiImageWithOptions({
+    MultiImagePickerOptions options = const MultiImagePickerOptions(),
+  }) async => paths.map(XFile.new).toList();
+}
 
 const _streamKey = (channelId: 1, threadId: 1, targetMessageId: null);
 const _pastLoading = ValueKey('chat_loading_past');
@@ -201,9 +218,11 @@ Future<ScrollController> _pumpPage(
   _Messages messages, {
   TargetPlatform platform = TargetPlatform.android,
 }) async {
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
         currentUserProvider.overrideWith(_CurrentUser.new),
         chatChannelsProvider.overrideWith(_Channels.new),
         chatMessagesProvider(_streamKey).overrideWith(() => messages),
@@ -263,6 +282,41 @@ void main() {
   });
 
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  for (final count in [1, 2]) {
+    testWidgets('聊天选图进入共用确认框，取消不创建附件 count=$count', (tester) async {
+      final dir = Directory.systemTemp.createTempSync('chat-images');
+      final image = File('${dir.path}/image.gif');
+      image.writeAsBytesSync(
+        base64Decode(
+          'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+        ),
+      );
+      final original = ImagePickerPlatform.instance;
+      ImagePickerPlatform.instance = _ImagePicker(
+        List.filled(count, image.path),
+      );
+      addTearDown(() async {
+        ImagePickerPlatform.instance = original;
+        dir.deleteSync(recursive: true);
+      });
+      await _pumpPage(tester, _Messages());
+      await tester.tap(find.byTooltip(S.current.chat_attach));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.chat_attachGallery));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(count == 1 ? ImageUploadDialog : MultiImageUploadDialog),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
+      expect(find.byType(ImageUploadDialog), findsNothing);
+      expect(find.byType(MultiImageUploadDialog), findsNothing);
+      expect(find.text('image.gif'), findsNothing);
+      await _disposePage(tester);
+    });
+  }
 
   testWidgets('首屏布局和程序定位不触发分页', (tester) async {
     final messages = _Messages();

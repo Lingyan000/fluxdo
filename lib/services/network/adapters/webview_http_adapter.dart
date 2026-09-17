@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+
 import '../../../constants.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../auth_session.dart';
@@ -362,11 +364,17 @@ document.close();
 
       final completer = Completer<String>();
       _pendingRequests[requestId] = completer;
+      final traceUpload =
+          options.extra[resourceKindExtraKey] == resourceKindUpload;
+      final uploadDiagnosticsScript = traceUpload
+          ? buildUploadDiagnosticsScript(requestId)
+          : 'const uploadTrace = function() {};';
 
       final script =
           '''
       (async function() {
         const requestId = ${jsonEncode(requestId)};
+        $uploadDiagnosticsScript
         try {
           window.__fluxdoFetchAborters = window.__fluxdoFetchAborters || {};
           window.__fluxdoAbortFetch = window.__fluxdoAbortFetch || function(id) {
@@ -388,9 +396,12 @@ document.close();
           };
           $bodyScript
 
+          uploadTrace('fetch_started', fetchOptions.body ? fetchOptions.body.size : null);
           const response = await fetch(${jsonEncode(url)}, fetchOptions);
+          uploadTrace('response_headers', response.status);
 
           const bodyData = await response.text();
+          uploadTrace('response_body');
 
           const headersObj = {};
           response.headers.forEach((v, k) => headersObj[k] = v);
@@ -404,15 +415,21 @@ document.close();
             isBase64: false
           });
 
-          window.flutter_inappwebview.callHandler('fetchResult', {
+          uploadTrace('result_dispatch');
+          await window.flutter_inappwebview.callHandler('fetchResult', {
             requestId: requestId,
             result: result
           });
         } catch (e) {
-          window.flutter_inappwebview.callHandler('fetchResult', {
-            requestId: requestId,
-            result: JSON.stringify({ok: false, error: e.toString()})
-          });
+          uploadTrace('javascript_error');
+          try {
+            await window.flutter_inappwebview.callHandler('fetchResult', {
+              requestId: requestId,
+              result: JSON.stringify({ok: false, error: e.toString()})
+            });
+          } catch (_) {
+            uploadTrace('result_bridge_error');
+          }
         } finally {
           if (window.__fluxdoFetchAborters) {
             delete window.__fluxdoFetchAborters[requestId];
@@ -541,6 +558,26 @@ document.close();
         statusCode,
         headers: responseHeaders,
       );
+    } catch (error) {
+      // 失败也保留已完成阶段，不记录文件名、正文、Cookie 或 JS 错误原文。
+      _setNetworkLogField(
+        options,
+        'webViewErrorType',
+        error is DioException ? error.type.name : error.runtimeType.toString(),
+      );
+      if (bodyRequestId != null &&
+          options.extra[resourceKindExtraKey] == resourceKindUpload) {
+        await _collectUploadDiagnostics(options, bodyRequestId);
+      }
+      _recordTimings(
+        options,
+        total: totalWatch.elapsed,
+        cookiePrep: cookiePrepElapsed,
+        jsEval: jsEvalElapsed,
+        browserWait: browserWaitElapsed,
+        cookieBackSync: cookieBackSyncElapsed,
+      );
+      rethrow;
     } finally {
       if (bodyRequestId != null) {
         unawaited(_clearRequestBody(bodyRequestId));
@@ -1302,11 +1339,70 @@ document.close();
     }
   }
 
+  /// 页面内保存有限诊断字段；不依赖可能失效的 fetchResult 桥回传。
+  @visibleForTesting
+  static String buildUploadDiagnosticsScript(String requestId) =>
+      '''
+    window.__fluxdoUploadDiagnostics = window.__fluxdoUploadDiagnostics || {};
+    const uploadDiagnostic = {phase: 'script_started'};
+    window.__fluxdoUploadDiagnostics[${jsonEncode(requestId)}] = uploadDiagnostic;
+    const uploadTrace = function(phase, value) {
+      uploadDiagnostic.phase = phase;
+      if (phase === 'fetch_started' && typeof value === 'number') {
+        uploadDiagnostic.bodyBytes = value;
+      }
+      if (phase === 'response_headers') uploadDiagnostic.status = value;
+    };
+  ''';
+
+  Future<void> _collectUploadDiagnostics(
+    RequestOptions options,
+    String requestId,
+  ) async {
+    try {
+      final raw = await _controller
+          ?.evaluateJavascript(
+            source:
+                'JSON.stringify(window.__fluxdoUploadDiagnostics && '
+                'window.__fluxdoUploadDiagnostics[${jsonEncode(requestId)}] || null)',
+          )
+          .timeout(const Duration(seconds: 1));
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is! Map) return;
+      final phase = decoded['phase'];
+      if (phase is String &&
+          const {
+            'script_started',
+            'fetch_started',
+            'response_headers',
+            'response_body',
+            'result_dispatch',
+            'javascript_error',
+            'result_bridge_error',
+          }.contains(phase)) {
+        _setNetworkLogField(options, 'webViewFetchPhase', phase);
+      }
+      for (final field in ['bodyBytes', 'status']) {
+        final value = decoded[field];
+        if (value is num) {
+          _setNetworkLogField(
+            options,
+            field == 'status' ? 'webViewResponseStatus' : 'webViewUploadBytes',
+            value,
+          );
+        }
+      }
+    } catch (_) {
+      _setNetworkLogField(options, 'webViewDiagnosticsUnavailable', true);
+    }
+  }
+
   Future<void> _clearRequestBody(String requestId) async {
     try {
       await _controller?.evaluateJavascript(
         source:
-            'window.__fluxdoDiscardRequestBody && window.__fluxdoDiscardRequestBody(${jsonEncode(requestId)});',
+            'window.__fluxdoDiscardRequestBody && window.__fluxdoDiscardRequestBody(${jsonEncode(requestId)});'
+            'if (window.__fluxdoUploadDiagnostics) delete window.__fluxdoUploadDiagnostics[${jsonEncode(requestId)}];',
       );
     } catch (_) {
       // WebView 销毁时页面内存已释放，清理异常不能覆盖原请求错误。

@@ -132,5 +132,8 @@
   "rhttpEngine_proxyDohOnly": "僅代理/DOH",
   "rhttpEngine_title": "rhttp 引擎",
   "rhttpEngine_useMode": "使用模式",
-  "rhttpEngine_initFailedHint": "rhttp 引擎初始化失敗，已退回至備用網路介面卡，下次啟動將自動重試"
+  "rhttpEngine_initFailedHint": "rhttp 引擎初始化失敗，已退回至備用網路介面卡，下次啟動將自動重試",
+  "networkSettings_upload": "檔案上傳",
+  "networkSettings_forceDisableMultipart": "強制關閉分片上傳",
+  "networkSettings_forceDisableMultipartDescription": "開啟後，所有檔案均使用一般上傳，忽略站點分片設定。伺服器分片異常時可開啟，對下一次上傳生效。"
 }

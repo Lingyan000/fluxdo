@@ -136,5 +136,8 @@
   "webviewAdapter_disabledDesc": "使用浏览器内核发送请求，可改善登录稳定性",
   "webviewAdapter_enabledDesc": "主站 API 请求通过浏览器内核发送",
   "webviewAdapter_hint": "仅主站 API 请求通过 WebView 发送，图片加载和消息推送不受影响",
-  "webviewAdapter_title": "WebView 网络引擎"
+  "webviewAdapter_title": "WebView 网络引擎",
+  "networkSettings_upload": "文件上传",
+  "networkSettings_forceDisableMultipart": "强制关闭分片上传",
+  "networkSettings_forceDisableMultipartDescription": "开启后，所有文件均使用普通上传，忽略站点分片配置。服务端分片异常时可开启，对下一次上传生效。"
 }

@@ -50,6 +50,7 @@ import '../../../widgets/user/user_card.dart';
 import '../../../widgets/markdown_editor/emoji_popover.dart';
 import '../../../widgets/markdown_editor/emoji_sticker_panel.dart';
 import '../../../widgets/markdown_editor/markdown_renderer.dart';
+import '../../../widgets/markdown_editor/image_upload_dialog.dart';
 import '../../image_viewer_page.dart';
 import '../chat_list_page.dart' show ChatChannelAvatar, chatPreviewText;
 import '../chat_channel_info_page.dart';

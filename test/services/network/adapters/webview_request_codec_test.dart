@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/network/adapters/webview_request_codec.dart';
+import 'package:fluxdo/services/network/adapters/webview_http_adapter.dart';
 
 void main() {
   for (final base64 in [true, false]) {
@@ -47,6 +48,27 @@ console.log(Buffer.concat(state.chunks).toString('base64'));
       });
     }
   }
+
+  test('上传诊断保留响应头及字节数，不依赖结果回调', () async {
+    final script = WebViewHttpAdapter.buildUploadDiagnosticsScript('upload-1');
+    final result = await Process.run('node', [
+      '-e',
+      '''
+      const window = {};
+      $script
+      uploadTrace('fetch_started', 1024);
+      uploadTrace('response_headers', 422);
+      uploadTrace('result_bridge_error');
+      console.log(JSON.stringify(window.__fluxdoUploadDiagnostics['upload-1']));
+    ''',
+    ]);
+    expect(result.exitCode, 0, reason: result.stderr.toString());
+    expect(jsonDecode(result.stdout.toString()), {
+      'phase': 'result_bridge_error',
+      'bodyBytes': 1024,
+      'status': 422,
+    });
+  });
 
   test('传输中失败不重读流，保留原始异常', () async {
     var sends = 0;

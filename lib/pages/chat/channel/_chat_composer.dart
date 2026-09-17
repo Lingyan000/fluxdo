@@ -26,7 +26,7 @@ class _PendingAttachment {
 /// 输入条:视觉规格对齐 AiChatInput
 /// (外壳 surfaceContainerLow + 顶部圆角 16;输入框 filled surface 圆角 20;
 ///  发送键 IconButton.filled 36×36)
-/// 能力:附件(拍照/相册/文件,选即传,带 upload_ids 发送)、@提及自动补全。
+/// 能力:附件(图片确认处理后上传、文件选即传，带 upload_ids 发送)、@提及自动补全。
 class _ChatComposer extends ConsumerStatefulWidget {
   final ChatComposerController controller;
   final FocusNode focusNode;
@@ -259,53 +259,106 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   // ========== 附件 ==========
 
   Future<void> _pickFromCamera() async {
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 4096,
-      maxHeight: 4096,
-    );
-    if (picked != null) _addAndUpload(picked.path, isImage: true);
+    final picked = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (picked == null || !mounted) return;
+    await _confirmAndUploadImages([picked.path], [picked.name]);
   }
 
   Future<void> _pickFromGallery() async {
-    final picked = await _imagePicker.pickMultiImage(
-      maxWidth: 4096,
-      maxHeight: 4096,
+    final picked = await _imagePicker.pickMultiImage();
+    if (picked.isEmpty || !mounted) return;
+    await _confirmAndUploadImages(
+      picked.map((file) => file.path).toList(),
+      picked.map((file) => file.name).toList(),
     );
-    for (final file in picked) {
-      _addAndUpload(file.path, isImage: true);
-    }
   }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result == null) return;
+    if (result == null || !mounted) return;
+    final imagePaths = <String>[];
+    final imageNames = <String>[];
     for (final file in result.files) {
       final path = file.path;
       if (path == null) continue;
       final ext = file.extension?.toLowerCase() ?? '';
-      _addAndUpload(
-        path,
-        isImage: const {
-          'jpg',
-          'jpeg',
-          'png',
-          'gif',
-          'webp',
-          'avif',
-        }.contains(ext),
-      );
+      if (const {
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+        'avif',
+        'heic',
+        'heif',
+        'bmp',
+        'svg',
+        'ico',
+      }.contains(ext)) {
+        imagePaths.add(path);
+        imageNames.add(file.name);
+      } else {
+        unawaited(_addAndUpload(path, isImage: false, fileName: file.name));
+      }
+    }
+    if (imagePaths.isNotEmpty) {
+      await _confirmAndUploadImages(imagePaths, imageNames);
     }
   }
 
-  void _addAndUpload(String path, {required bool isImage}) {
+  Future<void> _confirmAndUploadImages(
+    List<String> paths,
+    List<String> names,
+  ) async {
+    if (!mounted || paths.isEmpty) return;
+    final List<ImageUploadResult> results;
+    if (paths.length == 1) {
+      final result = await showImageUploadDialog(
+        context,
+        imagePath: paths.single,
+        imageName: names.single,
+      );
+      if (result == null || !mounted) return;
+      results = [result];
+    } else {
+      final confirmed = await showMultiImageUploadDialog(
+        context,
+        imagePaths: paths,
+        imageNames: names,
+      );
+      if (confirmed == null || !mounted) return;
+      results = confirmed;
+    }
+    // 一次加入全部待发项，避免串行上传间隙误把尚未上传的图片漏发。
+    final attachments = [
+      for (final result in results)
+        _PendingAttachment(
+          filePath: result.path,
+          fileName: result.originalName,
+          isImage: true,
+        ),
+    ];
+    setState(() => _attachments.addAll(attachments));
+    for (final attachment in attachments) {
+      if (!mounted) return;
+      if (!_attachments.contains(attachment)) continue;
+      await _upload(attachment);
+    }
+  }
+
+  Future<void> _addAndUpload(
+    String path, {
+    required bool isImage,
+    String? fileName,
+  }) async {
+    if (!mounted) return;
     final attachment = _PendingAttachment(
       filePath: path,
-      fileName: path.split(Platform.pathSeparator).last,
+      fileName: fileName ?? path.split(Platform.pathSeparator).last,
       isImage: isImage,
     );
     setState(() => _attachments.add(attachment));
-    _upload(attachment);
+    await _upload(attachment);
   }
 
   Future<void> _upload(_PendingAttachment attachment) async {
@@ -1063,4 +1116,3 @@ class _PendingAttachmentTile extends StatelessWidget {
 class _SendIntent extends Intent {
   const _SendIntent();
 }
-

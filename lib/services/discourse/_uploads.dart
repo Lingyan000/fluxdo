@@ -272,36 +272,50 @@ mixin _UploadsMixin on _DiscourseServiceBase {
     String? filenameOverride,
     DioMediaType? contentTypeOverride,
   }) async {
+    final uploadTrace = UploadTrace();
+    final direct = await UploadSettings.shouldUseMultipart(
+      trace: uploadTrace,
+      loadSiteSettings: PreloadedDataService().getSiteSettings,
+    );
     const maxRetries = 3;
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         final fileName = filenameOverride ?? filePath.split('/').last;
 
-        final formData = FormData.fromMap({
-          'upload_type': 'composer',
-          'synchronous': true,
-          'file': await MultipartFile.fromFile(
-            filePath,
-            filename: fileName,
-            contentType: contentTypeOverride,
-          ),
-        });
+        dynamic data;
+        if (direct) {
+          data = await S3MultipartUpload(
+            _dio,
+            trace: uploadTrace,
+          ).upload(File(filePath), fileName);
+        } else {
+          final formData = FormData.fromMap({
+            'upload_type': 'composer',
+            'synchronous': true,
+            'file': await MultipartFile.fromFile(
+              filePath,
+              filename: fileName,
+              contentType: contentTypeOverride,
+            ),
+          });
 
-        final response = await _dio.post(
-          '/uploads.json',
-          queryParameters: {'client_id': MessageBusService().clientId},
-          data: formData,
-          options: Options(
-            extra: {
-              'showErrorToast': attempt >= maxRetries,
-              WebViewHttpAdapter.resourceKindExtraKey:
-                  WebViewHttpAdapter.resourceKindUpload,
-            },
-          ), // 仅最后一次尝试才弹 toast
-        );
+          final response = await _dio.post(
+            '/uploads.json',
+            queryParameters: {'client_id': MessageBusService().clientId},
+            data: formData,
+            options: Options(
+              extra: {
+                'showErrorToast': attempt >= maxRetries,
+                '_networkLogFields': {'uploadTraceId': uploadTrace.id},
+                WebViewHttpAdapter.resourceKindExtraKey:
+                    WebViewHttpAdapter.resourceKindUpload,
+              },
+            ), // 仅最后一次尝试才弹 toast
+          );
 
-        final data = response.data;
+          data = response.data;
+        }
         if (data is Map) {
           final shortUrl = data['short_url'] as String?;
           if (shortUrl != null) {
@@ -347,7 +361,9 @@ mixin _UploadsMixin on _DiscourseServiceBase {
         // ErrorInterceptor 把 429 转成 DioException.error = RateLimitException
         // (response 保留),这里按类型判定重试
         final innerError = e.error;
-        if (innerError is RateLimitException && attempt < maxRetries) {
+        if (!direct &&
+            innerError is RateLimitException &&
+            attempt < maxRetries) {
           final waitSeconds = innerError.retryAfterSeconds ?? 10;
           debugPrint(
             '[DiscourseService] 速率限制，等待 ${waitSeconds}s 后重试 '
