@@ -175,6 +175,8 @@ class BlobImageCache {
     if (cached != null) return cached;
 
     final inflightKey = '$bucket|$url';
+    // 高优请求复用后台下载时仍需提升队列位置，而不是只复用 Future。
+    if (priority == DownloadPriority.high) bump(bucket, url);
     return _inflight[inflightKey] ??=
         _download(bucket, url, priority, onProgress).whenComplete(() {
       _inflight.remove(inflightKey);
