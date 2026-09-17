@@ -125,15 +125,19 @@ class JankProfiler {
     _captureInto(pending.$1, pending.$2);
   }
 
+  /// 同一单调时钟计算窗口；墙上时钟只能与系统日志对齐，不能相减。
+  @visibleForTesting
+  static (int, int) frameWindow(FrameTiming timing) {
+    final start = timing.timestampInMicroseconds(FramePhase.vsyncStart);
+    final end = timing.timestampInMicroseconds(FramePhase.rasterFinish);
+    return (start, (end - start).clamp(1000, _maxWindowUs));
+  }
+
   static void _captureInto(FrameTiming timing, JankRecord record) {
     final service = _service;
     if (service == null) return;
 
-    final startUs =
-        timing.timestampInMicroseconds(FramePhase.vsyncStart);
-    final endUs =
-        timing.timestampInMicroseconds(FramePhase.rasterFinishWallTime);
-    final extent = (endUs - startUs).clamp(1000, _maxWindowUs);
+    final (startUs, extent) = frameWindow(timing);
 
     unawaited(() async {
       try {
