@@ -1,7 +1,10 @@
+import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
+
 import '../widgets/markdown_editor/uploads/upload_task_labels.dart';
 import '../widgets/markdown_editor/composer_chrome.dart';
 import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +30,7 @@ import 'package:fluxdo/widgets/common/character_counts_overlay.dart';
 import 'package:fluxdo/services/toast_service.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_renderer.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
+
 import '../l10n/s.dart';
 
 /// 编辑话题结果
@@ -90,6 +94,30 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
 
   /// 富文本降级态(导入门禁不过/用户主动切源码;可经工具栏切回)。
   bool _richFallback = false;
+  bool _allowClose = false;
+
+  void _closeWithCurrentContent(dynamic result) {
+    if (!_flushRichContent()) return;
+    setState(() => _allowClose = true);
+    // 等待 PopScope 更新许可后再关闭，失败时保持当前编辑文档。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
+  bool _flushRichContent() {
+    final rich = _richKey.currentState;
+    final ready = rich != null
+        ? rich.flushToController()
+        : (_showPreview ||
+              _richFallback ||
+              !ref.read(preferencesProvider).useRichComposer);
+    if (!ready) {
+      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+    }
+    return ready;
+  }
 
   int _contentLength = 0;
 
@@ -261,7 +289,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       return;
     }
     final hadFocus = _contentFocusNode.hasFocus;
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     _editorKey.currentState?.closeEmojiPanel();
     _richKey.currentState?.closeEmojiPanel();
     _contentFocusNode.unfocus();
@@ -282,7 +310,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     final leaving = _showPreview;
     if (!leaving) {
       _previewHadFocus = _contentFocusNode.hasFocus;
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
       _editorKey.currentState?.closeEmojiPanel();
       _richKey.currentState?.closeEmojiPanel();
       FocusScope.of(context).unfocus();
@@ -306,7 +334,26 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     });
   }
 
+  List<Object?> _submissionValues() => [
+    _contentController.text,
+    _titleController.text,
+    _selectedCategory?.id,
+    ..._selectedTags,
+  ];
+
+  bool _submissionPending = false;
+
   Future<void> _submit() async {
+    if (_submissionPending || _isSubmitting) return;
+    _submissionPending = true;
+    try {
+      await _submitChecked();
+    } finally {
+      _submissionPending = false;
+    }
+  }
+
+  Future<void> _submitChecked() async {
     if ((_editorKey.currentState?.hasPendingUploads ?? false) ||
         (_richKey.currentState?.hasPendingUploads ?? false)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -316,7 +363,8 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     }
 
     // 富文本模式:镜像 debounce 窗口内提交也不丢内容,先强制序列化
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
+    final approved = ComposerSubmissionSnapshot(_submissionValues());
     if (!_formKey.currentState!.validate()) {
       // 预览模式下验证错误不可见，切回编辑模式并提示
       if (_showPreview) {
@@ -375,6 +423,13 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       return;
     }
 
+    if (!mounted) return;
+    if (!approved.verify(
+      synchronize: _flushRichContent,
+      read: _submissionValues,
+    )) {
+      return;
+    }
     setState(() => _isSubmitting = true);
 
     try {
@@ -405,6 +460,15 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
           categoryId: categoryChanged ? _selectedCategory!.id : null,
           tags: tagsChanged ? _selectedTags : null,
         );
+      }
+
+      // 元数据请求也可能等待网络；正文写入前不能发送等待期间的旧快照。
+      if (!mounted) return;
+      if (!approved.verify(
+        synchronize: _flushRichContent,
+        read: _submissionValues,
+      )) {
+        return;
       }
 
       // 更新首贴内容（如果有变化且有权限）
@@ -484,9 +548,13 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       tagsAsync,
     );
     final page = PopScope(
-      canPop: !_showEmojiPanel,
+      canPop: _allowClose && !_showEmojiPanel,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
+        if (!_showEmojiPanel) {
+          _closeWithCurrentContent(result);
+          return;
+        }
         _editorKey.currentState?.closeEmojiPanel();
         _richKey.currentState?.closeEmojiPanel();
       },
@@ -654,13 +722,12 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
             maxLines: null,
             maxLength: 200,
             // 计数改用悬浮层(见下方 Stack),这里不占位
-            buildCounter:
-                (
-                  context, {
-                  required currentLength,
-                  required isFocused,
-                  maxLength,
-                }) => null,
+            buildCounter: (
+              context, {
+              required currentLength,
+              required isFocused,
+              maxLength,
+            }) => null,
             validator: _canEditMetadata
                 ? (value) {
                     if (value == null || value.trim().isEmpty) {

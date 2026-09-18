@@ -1,10 +1,16 @@
+import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
+
 import '../markdown_editor/uploads/upload_task_labels.dart';
+
 import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
+
 import '../../utils/platform_utils.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../providers/draft_store_provider.dart';
 
 import 'pm_recipient_field.dart';
@@ -33,7 +39,9 @@ import '../../services/emoji_handler.dart';
 import '../../services/draft_controller.dart';
 import '../../services/dynamic_content_suspension_service.dart';
 import '../../services/embedded_browser_controller_pool.dart';
+
 import 'package:dio/dio.dart';
+
 import '../../services/app_error_handler.dart';
 import '../../services/network/exceptions/api_exception.dart';
 import '../../services/toast_service.dart';
@@ -42,6 +50,7 @@ import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
 import '../ai/ai_post_review_button.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// Windows 平台视图从 Widget 树移除到 WebView2 Controller 真正析构存在
@@ -209,6 +218,31 @@ class ReplySheet extends ConsumerStatefulWidget {
 class _ReplySheetState extends ConsumerState<ReplySheet> {
   /// 富文本导入失败(cook 不可用)时本次会话降级纯文本
   bool _richFallback = false;
+  bool _allowClose = false;
+  bool _richModeEnabled = false;
+
+  void _closeWithCurrentContent(dynamic result) {
+    if (!_submitted && !_discarded && !_flushRichContent()) return;
+    setState(() => _allowClose = true);
+    // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
+  bool _flushRichContent() {
+    final rich = _richKey.currentState;
+    final ready = rich != null
+        ? rich.flushToController()
+        : (_showPreview ||
+              _richFallback ||
+              !ref.read(preferencesProvider).useRichComposer);
+    if (!ready) {
+      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+    }
+    return ready;
+  }
 
   /// 预览渲染。与 MarkdownEditor 内部预览同款（MarkdownBody + 空态文案），
   /// 但对富文本/源码两种模式都生效。
@@ -246,7 +280,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
     final hadFocus = _contentFocusNode.hasFocus;
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     _editorKey.currentState?.closeEmojiPanel();
     _richKey.currentState?.closeEmojiPanel();
     _contentFocusNode.unfocus();
@@ -305,7 +339,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     final leaving = _showPreview;
     if (!leaving) {
       _previewHadFocus = _contentFocusNode.hasFocus;
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
       _editorKey.currentState?.closeEmojiPanel();
       _richKey.currentState?.closeEmojiPanel();
       FocusScope.of(context).unfocus();
@@ -352,7 +386,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         ? (builder) => AiPostReviewButton(
             titleBuilder: () => widget.topicTitle,
             contentBuilder: () {
-              _richKey.currentState?.flushToController();
+              if (!_flushRichContent()) return '';
               return _contentController.text;
             },
             target: AiPostReviewTarget.reply,
@@ -626,7 +660,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       },
       currentEditorData: () {
         if (!mounted || (_isLoadingDraft && !_reloadingDraft)) return null;
-        _richKey.currentState?.flushToController();
+        if (!_flushRichContent()) return null;
         return _currentDraftData();
       },
     );
@@ -758,7 +792,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
         _discarded) {
       return;
     }
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     if (refresh) {
       _draftController?.scheduleSave(_currentDraftData());
       _draftController?.retryPending();
@@ -791,7 +825,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     if (_isSubmitting || _retryingDraft || _draftController == null) return;
     _retryingDraft = true;
     try {
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
       final force = _draftController!.hasConflict;
       if (force &&
           !await confirmComposerDraftOverwrite(
@@ -843,6 +877,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
   @override
   void dispose() {
+    final rich = _richKey.currentState;
+    final currentContentSafe = rich != null
+        ? rich.flushToController()
+        : (_allowClose || _showPreview || _richFallback || !_richModeEnabled);
     _draftLifecycle?.dispose();
     // 移除监听器
     _contentController.removeListener(_onContentChanged);
@@ -850,7 +888,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     _contentController.removeListener(_onContentLengthChanged);
 
     // 关闭时处理草稿：已提交则跳过，有内容则保存，无内容则删除
-    if (_draftController != null &&
+    if (currentContentSafe &&
+        _draftController != null &&
         !_submitted &&
         !_discarded &&
         !_isLoadingDraft) {
@@ -900,7 +939,25 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     );
   }
 
+  List<Object?> _submissionValues() => [
+    _contentController.text,
+    _titleController.text,
+    ..._recipients,
+  ];
+
+  bool _submissionPending = false;
+
   Future<void> _submit() async {
+    if (_submissionPending || _isSubmitting) return;
+    _submissionPending = true;
+    try {
+      await _submitChecked();
+    } finally {
+      _submissionPending = false;
+    }
+  }
+
+  Future<void> _submitChecked() async {
     if ((_editorKey.currentState?.hasPendingUploads ?? false) ||
         (_richKey.currentState?.hasPendingUploads ?? false)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -910,7 +967,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
     }
 
     // 富文本模式:镜像 debounce 窗口内提交也不丢内容,先强制序列化
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
+    final approved = ComposerSubmissionSnapshot(_submissionValues());
     final content = _contentController.text.trim();
     if (content.isEmpty) {
       _showError(S.current.post_contentRequired);
@@ -971,6 +1029,13 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
       return;
     }
     if (!mounted) return;
+    if (!mounted) return;
+    if (!approved.verify(
+      synchronize: _flushRichContent,
+      read: _submissionValues,
+    )) {
+      return;
+    }
     setState(() => _isSubmitting = true);
     // 对齐 Discourse 前端 composer.set("disableDrafts", true):
     // 发送途中关掉自动保存,避免与 PostCreator 推进的 draft_sequence 撞 409
@@ -1066,6 +1131,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
 
   @override
   Widget build(BuildContext context) {
+    _richModeEnabled = ref.watch(preferencesProvider).useRichComposer;
     final theme = Theme.of(context);
 
     // 使用 FractionallySizedBox 固定 0.95 高度
@@ -1083,9 +1149,13 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
           resizeToAvoidBottomInset: false,
           // PopScope 用于处理表情面板开启时的返回逻辑
           body: PopScope(
-            canPop: !_showEmojiPanel,
+            canPop: _allowClose && !_showEmojiPanel,
             onPopInvokedWithResult: (bool didPop, dynamic result) async {
               if (didPop) return;
+              if (!_showEmojiPanel) {
+                _closeWithCurrentContent(result);
+                return;
+              }
               if (_showEmojiPanel) {
                 _editorKey.currentState?.closeEmojiPanel();
                 _richKey.currentState?.closeEmojiPanel();

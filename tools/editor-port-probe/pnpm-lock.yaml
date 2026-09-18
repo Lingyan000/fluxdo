@@ -1,0 +1,841 @@
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+devDependencies:
+  esbuild:
+    specifier: 0.28.0
+    version: 0.28.0
+  jsdom:
+    specifier: 25.0.1
+    version: 25.0.1
+  orderedmap:
+    specifier: 2.1.1
+    version: 2.1.1
+  prosemirror-inputrules:
+    specifier: 1.5.1
+    version: 1.5.1
+  prosemirror-markdown:
+    specifier: 1.13.4
+    version: 1.13.4
+  prosemirror-model:
+    specifier: 1.25.4
+    version: 1.25.4
+  prosemirror-state:
+    specifier: 1.4.4
+    version: 1.4.4
+  prosemirror-transform:
+    specifier: 1.12.0
+    version: 1.12.0
+  prosemirror-view:
+    specifier: 1.41.8
+    version: 1.41.8
+
+packages:
+
+  /@asamuzakjp/css-color@3.2.0:
+    resolution: {integrity: sha1-zEL1uFxZP3nx+k8l0rmzIeYdF5Q=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@asamuzakjp/css-color/download/@asamuzakjp/css-color-3.2.0.tgz}
+    dependencies:
+      '@csstools/css-calc': 2.1.4(@csstools/css-parser-algorithms@3.0.5)(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-color-parser': 3.1.0(@csstools/css-parser-algorithms@3.0.5)(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-parser-algorithms': 3.0.5(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-tokenizer': 3.0.4
+      lru-cache: 10.4.3
+    dev: true
+
+  /@csstools/color-helpers@5.1.0:
+    resolution: {integrity: sha1-EGxUyAjKv9GrTGAthQXuWEwplu8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@csstools/color-helpers/download/@csstools/color-helpers-5.1.0.tgz}
+    engines: {node: '>=18'}
+    dev: true
+
+  /@csstools/css-calc@2.1.4(@csstools/css-parser-algorithms@3.0.5)(@csstools/css-tokenizer@3.0.4):
+    resolution: {integrity: sha1-hHP2Pi/NbkWYON1BJAHVlI8iTGU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@csstools/css-calc/download/@csstools/css-calc-2.1.4.tgz}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@csstools/css-parser-algorithms': ^3.0.5
+      '@csstools/css-tokenizer': ^3.0.4
+    dependencies:
+      '@csstools/css-parser-algorithms': 3.0.5(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-tokenizer': 3.0.4
+    dev: true
+
+  /@csstools/css-color-parser@3.1.0(@csstools/css-parser-algorithms@3.0.5)(@csstools/css-tokenizer@3.0.4):
+    resolution: {integrity: sha1-Tjhq86md02xG/vATz+TBw0Hu1vA=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@csstools/css-color-parser/download/@csstools/css-color-parser-3.1.0.tgz}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@csstools/css-parser-algorithms': ^3.0.5
+      '@csstools/css-tokenizer': ^3.0.4
+    dependencies:
+      '@csstools/color-helpers': 5.1.0
+      '@csstools/css-calc': 2.1.4(@csstools/css-parser-algorithms@3.0.5)(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-parser-algorithms': 3.0.5(@csstools/css-tokenizer@3.0.4)
+      '@csstools/css-tokenizer': 3.0.4
+    dev: true
+
+  /@csstools/css-parser-algorithms@3.0.5(@csstools/css-tokenizer@3.0.4):
+    resolution: {integrity: sha1-V1U3Cpopq67FUVtDyLPyz5wuMHY=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@csstools/css-parser-algorithms/download/@csstools/css-parser-algorithms-3.0.5.tgz}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@csstools/css-tokenizer': ^3.0.4
+    dependencies:
+      '@csstools/css-tokenizer': 3.0.4
+    dev: true
+
+  /@csstools/css-tokenizer@3.0.4:
+    resolution: {integrity: sha1-Mz/tq8P9Go5dAQABNzHPGeaoxdM=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@csstools/css-tokenizer/download/@csstools/css-tokenizer-3.0.4.tgz}
+    engines: {node: '>=18'}
+    dev: true
+
+  /@esbuild/aix-ppc64@0.28.0:
+    resolution: {integrity: sha1-eiicFY4py/WeoK/IPMgPBtHIlAI=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/aix-ppc64/download/@esbuild/aix-ppc64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [ppc64]
+    os: [aix]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/android-arm64@0.28.0:
+    resolution: {integrity: sha1-uIKNnt+jqSZgZE643m5PPCA9exc=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/android-arm64/download/@esbuild/android-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [android]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/android-arm@0.28.0:
+    resolution: {integrity: sha1-XsGEdgXgW12+XfkNuf9+PkxY3Kc=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/android-arm/download/@esbuild/android-arm-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm]
+    os: [android]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/android-x64@0.28.0:
+    resolution: {integrity: sha1-OQZCF1uI74K61MzgP4qxP+mxkS4=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/android-x64/download/@esbuild/android-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [android]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/darwin-arm64@0.28.0:
+    resolution: {integrity: sha1-rkUyWWDVlQzWlR5PlzlvTh/32NM=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/darwin-arm64/download/@esbuild/darwin-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [darwin]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/darwin-x64@0.28.0:
+    resolution: {integrity: sha1-wHkkfViba5lEllnZTwaVG4S/8uQ=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/darwin-x64/download/@esbuild/darwin-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [darwin]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/freebsd-arm64@0.28.0:
+    resolution: {integrity: sha1-RcRWIVpIZZPJSQApcgLcEciAo3o=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/freebsd-arm64/download/@esbuild/freebsd-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [freebsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/freebsd-x64@0.28.0:
+    resolution: {integrity: sha1-A5lJTByF5DiOm3BAvWDUjypbDSw=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/freebsd-x64/download/@esbuild/freebsd-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [freebsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-arm64@0.28.0:
+    resolution: {integrity: sha1-1tnwnvDeVBFr9Fmk1TysfglS/jk=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-arm64/download/@esbuild/linux-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-arm@0.28.0:
+    resolution: {integrity: sha1-e0L/qEwoiulP3EMcGyionjw7kng=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-arm/download/@esbuild/linux-arm-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-ia32@0.28.0:
+    resolution: {integrity: sha1-3rFdES7Y3WBTRra5U9I6If+BJT8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-ia32/download/@esbuild/linux-ia32-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [ia32]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-loong64@0.28.0:
+    resolution: {integrity: sha1-gfuJ0H7sx5sVfephAzdXcm/ODKQ=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-loong64/download/@esbuild/linux-loong64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [loong64]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-mips64el@0.28.0:
+    resolution: {integrity: sha1-0OQmkbP/evn7Ihe3D8AfNDvbYrs=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-mips64el/download/@esbuild/linux-mips64el-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [mips64el]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-ppc64@0.28.0:
+    resolution: {integrity: sha1-OJ8+XpjxfUd8RnzIcTbhoHburYc=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-ppc64/download/@esbuild/linux-ppc64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [ppc64]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-riscv64@0.28.0:
+    resolution: {integrity: sha1-djvWDVmyQr4S2h5n1XKfMCTGBfo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-riscv64/download/@esbuild/linux-riscv64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [riscv64]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-s390x@0.28.0:
+    resolution: {integrity: sha1-qsYGFjSHLkZ33mk7zoAw1zsf0FU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-s390x/download/@esbuild/linux-s390x-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [s390x]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/linux-x64@0.28.0:
+    resolution: {integrity: sha1-TykXdHGI/ndjK87GWy2EtCJBl3k=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/linux-x64/download/@esbuild/linux-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/netbsd-arm64@0.28.0:
+    resolution: {integrity: sha512-CR/RYotgtCKwtftMwJlUU7xCVNg3lMYZ0RzTmAHSfLCXw3NtZtNpswLEj/Kkf6kEL3Gw+BpOekRX0BYCtklhUw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [netbsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/netbsd-x64@0.28.0:
+    resolution: {integrity: sha1-4BvffmD6GgjkbUbZYLDZu4rCEK8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/netbsd-x64/download/@esbuild/netbsd-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [netbsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/openbsd-arm64@0.28.0:
+    resolution: {integrity: sha512-cXb5vApOsRsxsEl4mcZ1XY3D4DzcoMxR/nnc4IyqYs0rTI8ZKmW6kyyg+11Z8yvgMfAEldKzP7AdP64HnSC/6g==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [openbsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/openbsd-x64@0.28.0:
+    resolution: {integrity: sha1-R15hAUmKjszjAI18OIER16J8F70=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/openbsd-x64/download/@esbuild/openbsd-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [openbsd]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/openharmony-arm64@0.28.0:
+    resolution: {integrity: sha512-FLGfyizszcef5C3YtoyQDACyg95+dndv79i2EekILBofh5wpCa1KuBqOWKrEHZg3zrL3t5ouE5jgr94vA+Wb2w==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [openharmony]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/sunos-x64@0.28.0:
+    resolution: {integrity: sha1-oBPIVv7KzRw67Jhciv4dHLAXSX0=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/sunos-x64/download/@esbuild/sunos-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [sunos]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/win32-arm64@0.28.0:
+    resolution: {integrity: sha1-6uBeDzUnHK04mLQxaNPpo7uvR+U=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/win32-arm64/download/@esbuild/win32-arm64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [win32]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/win32-ia32@0.28.0:
+    resolution: {integrity: sha1-BhYevFv3XAjWn+s8ayJWBRWROZg=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/win32-ia32/download/@esbuild/win32-ia32-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [ia32]
+    os: [win32]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@esbuild/win32-x64@0.28.0:
+    resolution: {integrity: sha1-BNkNV1K0zmXStqwl66CP92JP4Hw=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@esbuild/win32-x64/download/@esbuild/win32-x64-0.28.0.tgz}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /@types/linkify-it@5.0.0:
+    resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@types/linkify-it/-/linkify-it-5.0.0.tgz}
+    dev: true
+
+  /@types/markdown-it@14.2.0:
+    resolution: {integrity: sha512-NoQ2yGlLWj4wpxMs+TYmRKk3thDrQ97agr7sFqfLsAlvoS8SNQuTrlObhFqG9iugdTtgOE9jpJ6FNM4ZGsa5xQ==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@types/markdown-it/-/markdown-it-14.2.0.tgz}
+    dependencies:
+      '@types/linkify-it': 5.0.0
+      '@types/mdurl': 2.0.0
+    dev: true
+
+  /@types/mdurl@2.0.0:
+    resolution: {integrity: sha512-RGdgjQUZba5p6QEFAVx2OGb8rQDL/cPRG7GiedRzMcJ1tYnUANBncjbSB1NRGwbvjcPeikRABz2nshyPk1bhWg==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/@types/mdurl/-/mdurl-2.0.0.tgz}
+    dev: true
+
+  /agent-base@7.1.4:
+    resolution: {integrity: sha1-48121MVI7oldPD/Y3B9sW5Ay56g=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/agent-base/download/agent-base-7.1.4.tgz}
+    engines: {node: '>= 14'}
+    dev: true
+
+  /argparse@2.0.1:
+    resolution: {integrity: sha1-JG9Q88p4oyQPbJl+ipvR6sSeSzg=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/argparse/download/argparse-2.0.1.tgz}
+    dev: true
+
+  /asynckit@0.4.0:
+    resolution: {integrity: sha1-x57Zf380y48robyXkLzDZkdLS3k=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/asynckit/download/asynckit-0.4.0.tgz}
+    dev: true
+
+  /call-bind-apply-helpers@1.0.2:
+    resolution: {integrity: sha1-S1QowiK+mF15w9gmV0edvgtZstY=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/call-bind-apply-helpers/download/call-bind-apply-helpers-1.0.2.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      es-errors: 1.3.0
+      function-bind: 1.1.2
+    dev: true
+
+  /combined-stream@1.0.8:
+    resolution: {integrity: sha1-w9RaizT9cwYxoRCoolIGgrMdWn8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/combined-stream/download/combined-stream-1.0.8.tgz}
+    engines: {node: '>= 0.8'}
+    dependencies:
+      delayed-stream: 1.0.0
+    dev: true
+
+  /cssstyle@4.6.0:
+    resolution: {integrity: sha1-6hgAcCTjFn9PEFMV8+wtmCv0jtk=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/cssstyle/download/cssstyle-4.6.0.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      '@asamuzakjp/css-color': 3.2.0
+      rrweb-cssom: 0.8.0
+    dev: true
+
+  /data-urls@5.0.0:
+    resolution: {integrity: sha1-L3aQa84YJEKf/stpIPRaCzDwDd4=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/data-urls/download/data-urls-5.0.0.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      whatwg-mimetype: 4.0.0
+      whatwg-url: 14.2.0
+    dev: true
+
+  /debug@4.4.3:
+    resolution: {integrity: sha1-xq5DLZvZZiWC/OCHCbA4xY6ePWo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/debug/download/debug-4.4.3.tgz}
+    engines: {node: '>=6.0'}
+    peerDependencies:
+      supports-color: '*'
+    peerDependenciesMeta:
+      supports-color:
+        optional: true
+    dependencies:
+      ms: 2.1.3
+    dev: true
+
+  /decimal.js@10.6.0:
+    resolution: {integrity: sha1-5kmkPjq5U6chkv9Zg4ZeUJ837Zo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/decimal.js/download/decimal.js-10.6.0.tgz}
+    dev: true
+
+  /delayed-stream@1.0.0:
+    resolution: {integrity: sha1-3zrhmayt+31ECqrgsp4icrJOxhk=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/delayed-stream/download/delayed-stream-1.0.0.tgz}
+    engines: {node: '>=0.4.0'}
+    dev: true
+
+  /dunder-proto@1.0.1:
+    resolution: {integrity: sha1-165mfh3INIL4tw/Q9u78UNow9Yo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/dunder-proto/download/dunder-proto-1.0.1.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      call-bind-apply-helpers: 1.0.2
+      es-errors: 1.3.0
+      gopd: 1.2.0
+    dev: true
+
+  /entities@4.5.0:
+    resolution: {integrity: sha1-XSaOpecRPsdMTQM7eepaNaSI+0g=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/entities/download/entities-4.5.0.tgz}
+    engines: {node: '>=0.12'}
+    dev: true
+
+  /entities@6.0.1:
+    resolution: {integrity: sha1-wow0pDN5yn9h0HQTCy9fcCCjBpQ=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/entities/download/entities-6.0.1.tgz}
+    engines: {node: '>=0.12'}
+    dev: true
+
+  /es-define-property@1.0.1:
+    resolution: {integrity: sha1-mD6y+aZyTpMD9hrd8BHHLgngsPo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-define-property/download/es-define-property-1.0.1.tgz}
+    engines: {node: '>= 0.4'}
+    dev: true
+
+  /es-errors@1.3.0:
+    resolution: {integrity: sha1-BfdaJdq5jk+x3NXhRywFRtUFfI8=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-errors/download/es-errors-1.3.0.tgz}
+    engines: {node: '>= 0.4'}
+    dev: true
+
+  /es-object-atoms@1.1.2:
+    resolution: {integrity: sha1-otCzcyBXJN+lJdI7DD4bHKWCyZs=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-object-atoms/download/es-object-atoms-1.1.2.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      es-errors: 1.3.0
+    dev: true
+
+  /es-set-tostringtag@2.1.0:
+    resolution: {integrity: sha1-8x274MGDsAptJutjJcgQwP0YvU0=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/es-set-tostringtag/download/es-set-tostringtag-2.1.0.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      es-errors: 1.3.0
+      get-intrinsic: 1.3.0
+      has-tostringtag: 1.0.2
+      hasown: 2.0.4
+    dev: true
+
+  /esbuild@0.28.0:
+    resolution: {integrity: sha1-Xe40f/s+OHQhKjWmmDawd7HObZY=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/esbuild/download/esbuild-0.28.0.tgz}
+    engines: {node: '>=18'}
+    hasBin: true
+    requiresBuild: true
+    optionalDependencies:
+      '@esbuild/aix-ppc64': 0.28.0
+      '@esbuild/android-arm': 0.28.0
+      '@esbuild/android-arm64': 0.28.0
+      '@esbuild/android-x64': 0.28.0
+      '@esbuild/darwin-arm64': 0.28.0
+      '@esbuild/darwin-x64': 0.28.0
+      '@esbuild/freebsd-arm64': 0.28.0
+      '@esbuild/freebsd-x64': 0.28.0
+      '@esbuild/linux-arm': 0.28.0
+      '@esbuild/linux-arm64': 0.28.0
+      '@esbuild/linux-ia32': 0.28.0
+      '@esbuild/linux-loong64': 0.28.0
+      '@esbuild/linux-mips64el': 0.28.0
+      '@esbuild/linux-ppc64': 0.28.0
+      '@esbuild/linux-riscv64': 0.28.0
+      '@esbuild/linux-s390x': 0.28.0
+      '@esbuild/linux-x64': 0.28.0
+      '@esbuild/netbsd-arm64': 0.28.0
+      '@esbuild/netbsd-x64': 0.28.0
+      '@esbuild/openbsd-arm64': 0.28.0
+      '@esbuild/openbsd-x64': 0.28.0
+      '@esbuild/openharmony-arm64': 0.28.0
+      '@esbuild/sunos-x64': 0.28.0
+      '@esbuild/win32-arm64': 0.28.0
+      '@esbuild/win32-ia32': 0.28.0
+      '@esbuild/win32-x64': 0.28.0
+    dev: true
+
+  /form-data@4.0.6:
+    resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/form-data/-/form-data-4.0.6.tgz}
+    engines: {node: '>= 6'}
+    dependencies:
+      asynckit: 0.4.0
+      combined-stream: 1.0.8
+      es-set-tostringtag: 2.1.0
+      hasown: 2.0.4
+      mime-types: 2.1.35
+    dev: true
+
+  /function-bind@1.1.2:
+    resolution: {integrity: sha1-LALYZNl/PqbIgwxGTL0Rq26rehw=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/function-bind/download/function-bind-1.1.2.tgz}
+    dev: true
+
+  /get-intrinsic@1.3.0:
+    resolution: {integrity: sha1-dD8OO2lkqTpUke0b/6rgVNf5jQE=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/get-intrinsic/download/get-intrinsic-1.3.0.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      call-bind-apply-helpers: 1.0.2
+      es-define-property: 1.0.1
+      es-errors: 1.3.0
+      es-object-atoms: 1.1.2
+      function-bind: 1.1.2
+      get-proto: 1.0.1
+      gopd: 1.2.0
+      has-symbols: 1.1.0
+      hasown: 2.0.4
+      math-intrinsics: 1.1.0
+    dev: true
+
+  /get-proto@1.0.1:
+    resolution: {integrity: sha1-FQs/J0OGnvPoUewMSdFbHRTQDuE=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/get-proto/download/get-proto-1.0.1.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      dunder-proto: 1.0.1
+      es-object-atoms: 1.1.2
+    dev: true
+
+  /gopd@1.2.0:
+    resolution: {integrity: sha1-ifVrghe9vIgCvSmd9tfxCB1+UaE=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/gopd/download/gopd-1.2.0.tgz}
+    engines: {node: '>= 0.4'}
+    dev: true
+
+  /has-symbols@1.1.0:
+    resolution: {integrity: sha1-/JxqeDoISVHQuXH+EBjegTcHozg=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/has-symbols/download/has-symbols-1.1.0.tgz}
+    engines: {node: '>= 0.4'}
+    dev: true
+
+  /has-tostringtag@1.0.2:
+    resolution: {integrity: sha1-LNxC1AvvLltO6rfAGnPFTOerWrw=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/has-tostringtag/download/has-tostringtag-1.0.2.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      has-symbols: 1.1.0
+    dev: true
+
+  /hasown@2.0.4:
+    resolution: {integrity: sha1-jGLYy5C+sqrV0KW2dYGtmFTD8AM=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/hasown/download/hasown-2.0.4.tgz}
+    engines: {node: '>= 0.4'}
+    dependencies:
+      function-bind: 1.1.2
+    dev: true
+
+  /html-encoding-sniffer@4.0.0:
+    resolution: {integrity: sha1-aW31KafP2CRGNp3FGT5ZCjc1tEg=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/html-encoding-sniffer/download/html-encoding-sniffer-4.0.0.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      whatwg-encoding: 3.1.1
+    dev: true
+
+  /http-proxy-agent@7.0.2:
+    resolution: {integrity: sha1-mosfJGhmwChQlIZYX2K48sGMJw4=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/http-proxy-agent/download/http-proxy-agent-7.0.2.tgz}
+    engines: {node: '>= 14'}
+    dependencies:
+      agent-base: 7.1.4
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+    dev: true
+
+  /https-proxy-agent@7.0.6:
+    resolution: {integrity: sha1-2o3+rH2hMLBcK6S1nJts1mYRprk=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/https-proxy-agent/download/https-proxy-agent-7.0.6.tgz}
+    engines: {node: '>= 14'}
+    dependencies:
+      agent-base: 7.1.4
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+    dev: true
+
+  /iconv-lite@0.6.3:
+    resolution: {integrity: sha1-pS+AvzjaGVLrXGgXkHGYcaGnJQE=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/iconv-lite/download/iconv-lite-0.6.3.tgz}
+    engines: {node: '>=0.10.0'}
+    dependencies:
+      safer-buffer: 2.1.2
+    dev: true
+
+  /is-potential-custom-element-name@1.0.1:
+    resolution: {integrity: sha1-Fx7W8Z46xVQ5Tt94yqBXhKRb67U=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/is-potential-custom-element-name/download/is-potential-custom-element-name-1.0.1.tgz}
+    dev: true
+
+  /jsdom@25.0.1:
+    resolution: {integrity: sha512-8i7LzZj7BF8uplX+ZyOlIz86V6TAsSs+np6m1kpW9u0JWi4z/1t+FzcK1aek+ybTnAC4KhBL4uXCNT0wcUIeCw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/jsdom/-/jsdom-25.0.1.tgz}
+    engines: {node: '>=18'}
+    peerDependencies:
+      canvas: ^2.11.2
+    peerDependenciesMeta:
+      canvas:
+        optional: true
+    dependencies:
+      cssstyle: 4.6.0
+      data-urls: 5.0.0
+      decimal.js: 10.6.0
+      form-data: 4.0.6
+      html-encoding-sniffer: 4.0.0
+      http-proxy-agent: 7.0.2
+      https-proxy-agent: 7.0.6
+      is-potential-custom-element-name: 1.0.1
+      nwsapi: 2.2.27
+      parse5: 7.3.0
+      rrweb-cssom: 0.7.1
+      saxes: 6.0.0
+      symbol-tree: 3.2.4
+      tough-cookie: 5.1.2
+      w3c-xmlserializer: 5.0.0
+      webidl-conversions: 7.0.0
+      whatwg-encoding: 3.1.1
+      whatwg-mimetype: 4.0.0
+      whatwg-url: 14.2.0
+      ws: 8.21.3
+      xml-name-validator: 5.0.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+    dev: true
+
+  /linkify-it@5.0.2:
+    resolution: {integrity: sha512-ONTm2jCMAVZjgQa/Fy1kScXsuOoF5NPTsoFBdE1KVIZ2vAh/r9+Bqo+0jINCBYnavTPQZz38QzFTme79ENoN3Q==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/linkify-it/-/linkify-it-5.0.2.tgz}
+    dependencies:
+      uc.micro: 2.1.0
+    dev: true
+
+  /lru-cache@10.4.3:
+    resolution: {integrity: sha1-QQ/IoXtw5ZgBPfJXwkRrfzOD8Rk=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/lru-cache/download/lru-cache-10.4.3.tgz}
+    dev: true
+
+  /markdown-it@14.3.2:
+    resolution: {integrity: sha512-sHHjZ5fJKlgrG4qns2YwVcdNep35h5fERrfkD2YNsb9UFk0UIHarbiTaHKVMlPuWAoiilyK8Fv/jAm11slsY7Q==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/markdown-it/-/markdown-it-14.3.2.tgz}
+    hasBin: true
+    dependencies:
+      argparse: 2.0.1
+      entities: 4.5.0
+      linkify-it: 5.0.2
+      mdurl: 2.1.0
+      punycode.js: 2.3.1
+      uc.micro: 2.1.0
+    dev: true
+
+  /math-intrinsics@1.1.0:
+    resolution: {integrity: sha1-oN10voHiqlwvJ+Zc4oNgXuTit/k=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/math-intrinsics/download/math-intrinsics-1.1.0.tgz}
+    engines: {node: '>= 0.4'}
+    dev: true
+
+  /mdurl@2.1.0:
+    resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/mdurl/-/mdurl-2.1.0.tgz}
+    dev: true
+
+  /mime-db@1.52.0:
+    resolution: {integrity: sha1-u6vNwChZ9JhzAchW4zh85exDv3A=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/mime-db/download/mime-db-1.52.0.tgz}
+    engines: {node: '>= 0.6'}
+    dev: true
+
+  /mime-types@2.1.35:
+    resolution: {integrity: sha1-OBqHG2KnNEUGYK497uRIE/cNlZo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/mime-types/download/mime-types-2.1.35.tgz}
+    engines: {node: '>= 0.6'}
+    dependencies:
+      mime-db: 1.52.0
+    dev: true
+
+  /ms@2.1.3:
+    resolution: {integrity: sha1-V0yBOM4dK1hh8LRFedut1gxmFbI=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/ms/download/ms-2.1.3.tgz}
+    dev: true
+
+  /nwsapi@2.2.27:
+    resolution: {integrity: sha512-gQPNF78qebCQ6tvVFBYrvJdBNOrYZm90ZlXgpIFm06p6qHDHq/XC4TnJftN6OMbxVE0UTBAoRgcsDeJBBooITw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/nwsapi/-/nwsapi-2.2.27.tgz}
+    dev: true
+
+  /orderedmap@2.1.1:
+    resolution: {integrity: sha1-YUgSacRAMcRJkVSXv1pK0nPFEtI=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/orderedmap/download/orderedmap-2.1.1.tgz}
+    dev: true
+
+  /parse5@7.3.0:
+    resolution: {integrity: sha1-1+Ik+nI5nHoXUJn0X8KtAksF7AU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/parse5/download/parse5-7.3.0.tgz}
+    dependencies:
+      entities: 6.0.1
+    dev: true
+
+  /prosemirror-inputrules@1.5.1:
+    resolution: {integrity: sha512-7wj4uMjKaXWAQ1CDgxNzNtR9AlsuwzHfdFH1ygEHA2KHF2DOEaXl1CJfNPAKCg9qNEh4rum975QLaCiQPyY6Fw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-inputrules/-/prosemirror-inputrules-1.5.1.tgz}
+    dependencies:
+      prosemirror-state: 1.4.4
+      prosemirror-transform: 1.12.0
+    dev: true
+
+  /prosemirror-markdown@1.13.4:
+    resolution: {integrity: sha512-D98dm4cQ3Hs6EmjK500TdAOew4Z03EV71ajEFiWra3Upr7diytJsjF4mPV2dW+eK5uNectiRj0xFxYI9NLXDbw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-markdown/-/prosemirror-markdown-1.13.4.tgz}
+    dependencies:
+      '@types/markdown-it': 14.2.0
+      markdown-it: 14.3.2
+      prosemirror-model: 1.25.4
+    dev: true
+
+  /prosemirror-model@1.25.4:
+    resolution: {integrity: sha512-PIM7E43PBxKce8OQeezAs9j4TP+5yDpZVbuurd1h5phUxEKIu+G2a+EUZzIC5nS1mJktDJWzbqS23n1tsAf5QA==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-model/-/prosemirror-model-1.25.4.tgz}
+    dependencies:
+      orderedmap: 2.1.1
+    dev: true
+
+  /prosemirror-state@1.4.4:
+    resolution: {integrity: sha512-6jiYHH2CIGbCfnxdHbXZ12gySFY/fz/ulZE333G6bPqIZ4F+TXo9ifiR86nAHpWnfoNjOb3o5ESi7J8Uz1jXHw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-state/-/prosemirror-state-1.4.4.tgz}
+    dependencies:
+      prosemirror-model: 1.25.4
+      prosemirror-transform: 1.12.0
+      prosemirror-view: 1.41.8
+    dev: true
+
+  /prosemirror-transform@1.12.0:
+    resolution: {integrity: sha512-GxboyN4AMIsoHNtz5uf2r2Ru551i5hWeCMD6E2Ib4Eogqoub0NflniaBPVQ4MrGE5yZ8JV9tUHg9qcZTTrcN4w==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-transform/-/prosemirror-transform-1.12.0.tgz}
+    dependencies:
+      prosemirror-model: 1.25.4
+    dev: true
+
+  /prosemirror-view@1.41.8:
+    resolution: {integrity: sha512-TnKDdohEatgyZNGCDWIdccOHXhYloJwbwU+phw/a23KBvJIR9lWQWW7WHHK3vBdOLDNuF7TaX98GObUZOWkOnA==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/prosemirror-view/-/prosemirror-view-1.41.8.tgz}
+    dependencies:
+      prosemirror-model: 1.25.4
+      prosemirror-state: 1.4.4
+      prosemirror-transform: 1.12.0
+    dev: true
+
+  /punycode.js@2.3.1:
+    resolution: {integrity: sha512-uxFIHU0YlHYhDQtV4R9J6a52SLx28BCjT+4ieh7IGbgwVJWO+km431c4yRlREUAsAmt/uMjQUyQHNEPf0M39CA==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/punycode.js/-/punycode.js-2.3.1.tgz}
+    engines: {node: '>=6'}
+    dev: true
+
+  /punycode@2.3.1:
+    resolution: {integrity: sha1-AnQi4vrsCyXhVJw+G9gwm5EztuU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/punycode/download/punycode-2.3.1.tgz}
+    engines: {node: '>=6'}
+    dev: true
+
+  /rrweb-cssom@0.7.1:
+    resolution: {integrity: sha1-xzRRpIS4bdfPseCyiY30twMYPks=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/rrweb-cssom/download/rrweb-cssom-0.7.1.tgz}
+    dev: true
+
+  /rrweb-cssom@0.8.0:
+    resolution: {integrity: sha1-MCHRtDUvvzthSq7tC8DVc5q+C8I=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/rrweb-cssom/download/rrweb-cssom-0.8.0.tgz}
+    dev: true
+
+  /safer-buffer@2.1.2:
+    resolution: {integrity: sha1-RPoWGwGHuVSd2Eu5GAL5vYOFzWo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/safer-buffer/download/safer-buffer-2.1.2.tgz}
+    dev: true
+
+  /saxes@6.0.0:
+    resolution: {integrity: sha1-/ltKR2jfTxSiAbG6amXB89mYjMU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/saxes/download/saxes-6.0.0.tgz}
+    engines: {node: '>=v12.22.7'}
+    dependencies:
+      xmlchars: 2.2.0
+    dev: true
+
+  /symbol-tree@3.2.4:
+    resolution: {integrity: sha1-QwY30ki6d+B4iDlR+5qg7tfGP6I=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/symbol-tree/download/symbol-tree-3.2.4.tgz}
+    dev: true
+
+  /tldts-core@6.1.86:
+    resolution: {integrity: sha1-qT5u2dUFy1TFQs5D/rFMc5EyZdg=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/tldts-core/download/tldts-core-6.1.86.tgz}
+    dev: true
+
+  /tldts@6.1.86:
+    resolution: {integrity: sha1-CH4FVbMblyXuSMp+d+3FYRXNgvc=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/tldts/download/tldts-6.1.86.tgz}
+    hasBin: true
+    dependencies:
+      tldts-core: 6.1.86
+    dev: true
+
+  /tough-cookie@5.1.2:
+    resolution: {integrity: sha1-Ztd0tKHZ4S3HUIlyWvOsdewxvtc=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/tough-cookie/download/tough-cookie-5.1.2.tgz}
+    engines: {node: '>=16'}
+    dependencies:
+      tldts: 6.1.86
+    dev: true
+
+  /tr46@5.1.1:
+    resolution: {integrity: sha1-lq6GfN24/bZKScwwWajUKLzyOMo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/tr46/download/tr46-5.1.1.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      punycode: 2.3.1
+    dev: true
+
+  /uc.micro@2.1.0:
+    resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/uc.micro/-/uc.micro-2.1.0.tgz}
+    dev: true
+
+  /w3c-xmlserializer@5.0.0:
+    resolution: {integrity: sha1-+SW6JoVRWFlNkHMTzt0UdsWWf2w=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/w3c-xmlserializer/download/w3c-xmlserializer-5.0.0.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      xml-name-validator: 5.0.0
+    dev: true
+
+  /webidl-conversions@7.0.0:
+    resolution: {integrity: sha1-JWtOGIK+feu/AdBfCqIDl3jqCAo=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/webidl-conversions/download/webidl-conversions-7.0.0.tgz}
+    engines: {node: '>=12'}
+    dev: true
+
+  /whatwg-encoding@3.1.1:
+    resolution: {integrity: sha1-0PTvdpkF1CbhaI8+NDgambYLduU=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/whatwg-encoding/download/whatwg-encoding-3.1.1.tgz}
+    engines: {node: '>=18'}
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+    dependencies:
+      iconv-lite: 0.6.3
+    dev: true
+
+  /whatwg-mimetype@4.0.0:
+    resolution: {integrity: sha1-vBv5SphdxQOI1UqSWKxAXDyi/Ao=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/whatwg-mimetype/download/whatwg-mimetype-4.0.0.tgz}
+    engines: {node: '>=18'}
+    dev: true
+
+  /whatwg-url@14.2.0:
+    resolution: {integrity: sha1-TuAtXXJRVdrgBPaulcc+fvXZVmM=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/whatwg-url/download/whatwg-url-14.2.0.tgz}
+    engines: {node: '>=18'}
+    dependencies:
+      tr46: 5.1.1
+      webidl-conversions: 7.0.0
+    dev: true
+
+  /ws@8.21.3:
+    resolution: {integrity: sha1-ZgtPrdtqPldchuB4EmkZlh9N5Pw=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/ws/download/ws-8.21.3.tgz}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+    dev: true
+
+  /xml-name-validator@5.0.0:
+    resolution: {integrity: sha1-gr6blX96/az5YeWYDxvyJ8C/dnM=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/xml-name-validator/download/xml-name-validator-5.0.0.tgz}
+    engines: {node: '>=18'}
+    dev: true
+
+  /xmlchars@2.2.0:
+    resolution: {integrity: sha1-Bg/hvLf5x2/ioX24apvDq4lCEMs=, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/xmlchars/download/xmlchars-2.2.0.tgz}
+    dev: true

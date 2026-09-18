@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,9 @@ import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/providers/draft_store_provider.dart';
+
 import '../../helpers/memory_draft_store.dart';
+
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
@@ -41,6 +44,7 @@ Future<void> _pumpReply(
   Draft? Function()? remoteDraft,
   MemoryDraftStore? draftStore,
   List<Map>? draftWrites,
+  List<String>? requests,
 }) async {
   PlatformUtils.debugDesktopOverride = desktop;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
@@ -59,6 +63,7 @@ Future<void> _pumpReply(
   FlutterSecureStorage.setMockInitialValues({'linux_do_username': 'tester'});
   final mock = InterceptorsWrapper(
     onRequest: (options, handler) {
+      requests?.add('${options.method} ${options.path}');
       final draft = remoteDraft?.call();
       if (options.method == 'POST' && options.path == '/drafts.json') {
         draftWrites?.add(Map.of(options.data as Map));
@@ -130,9 +135,8 @@ Future<void> _pumpReply(
             platform: desktop ? TargetPlatform.macOS : TargetPlatform.android,
           ),
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: TextScaler.linear(scale)),
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
             child: child!,
           ),
           home: Scaffold(body: sheet ?? const ReplySheet()),
@@ -164,9 +168,8 @@ Future<void> _waitForRichDraft(WidgetTester tester, String text) async {
     await tester.pump(const Duration(milliseconds: 20));
     final editors = find.byType(FluxdoEditor).evaluate();
     if (editors.length == 1 &&
-        docToMarkdown(
-              (editors.single.widget as FluxdoEditor).state.blocks,
-            ).trim() ==
+        docToMarkdown((editors.single.widget as FluxdoEditor).state.blocks)
+                .trim() ==
             text) {
       return;
     }
@@ -522,6 +525,86 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
+  testWidgets('富文本失效时真实发送与预览按钮均停止消费旧镜像', (tester) async {
+    final requests = <String>[];
+    await _pumpReply(
+      tester,
+      rich: true,
+      requests: requests,
+      sheet: const ReplySheet(topicId: 1),
+    );
+    await _waitForRichDraft(tester, '');
+    final host = tester.state<RichComposerEditorState>(
+      find.byType(RichComposerEditor),
+    );
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: editor.blocks.first.id, offset: 0),
+      ),
+    );
+    editor.insertText('旧镜像正文');
+    expect(host.flushToController(), isTrue);
+    await tester.pump();
+    editor.insertText('未同步的新内容');
+    // 注入真实导出异常，保留语义树而不是退回旧镜像。
+    RichComposerEditorState.debugBeforeExport = () =>
+        throw StateError('测试导出失败');
+    addTearDown(() => RichComposerEditorState.debugBeforeExport = null);
+    requests.clear();
+    await tester.tap(find.byKey(const ValueKey('composer-header-submit')));
+    await tester.pump();
+    expect(requests.where((request) => request.contains('/posts')), isEmpty);
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('reply-preview')), findsNothing);
+    expect(find.byType(RichComposerEditor), findsOneWidget);
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final backups = prefs.getStringList(
+      RichComposerEditorState.recoveryStorageKey,
+    );
+    expect(backups, isNotEmpty);
+    expect(backups!.join(), contains('未同步的新内容'));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('富文本关闭前同步 debounce 窗口中的最新草稿', (tester) async {
+    final writes = <Map>[];
+    await _pumpReply(
+      tester,
+      rich: true,
+      draftWrites: writes,
+      sheet: const ReplySheet(topicId: 1),
+    );
+    await _waitForRichDraft(tester, '');
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: editor.blocks.first.id, offset: 0),
+      ),
+    );
+    editor.insertText('关闭前尚未 debounce 的最新正文');
+    await tester.tap(find.byType(CloseButton));
+    await tester.pump();
+    // 测试根路由不能被 pop，强制卸载模拟路由最终移除。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    expect(writes, isNotEmpty);
+    expect(
+      writes.map((write) => jsonDecode(write['data'] as String)['reply']),
+      contains(contains('关闭前尚未 debounce 的最新正文')),
+    );
+  });
+
   testWidgets('富文本实际回复：预览使用最新内容并保留内核历史', (tester) async {
     await _pumpReply(tester, rich: true);
     final host = tester.state<RichComposerEditorState>(

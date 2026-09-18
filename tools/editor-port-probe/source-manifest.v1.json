@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "commit": "b3b561e5fad412c038e222499ebe22050b4a8de4",
+  "sources": {
+    "frontend/discourse/app/static/prosemirror/extensions/link.js": "9f5aa2a6b1b4e3bd046a5fb0c92f5289a83736b83f3688f7013c7e2f5ad8e5fd",
+    "frontend/discourse/app/static/prosemirror/extensions/quote.js": "251e8c568153366486017a187dbbac9cc8b4ee90db89d76786c14075461a3748",
+    "frontend/discourse/app/static/prosemirror/extensions/bullet-list.js": "340b1b67a50a5328c80d6c285c49be59b1420ebac2d301983d2b1d470c06643e",
+    "frontend/discourse/app/static/prosemirror/extensions/ordered-list.js": "a3f1ad6b230afbaaab735aaa3be8ee7f78f4906e3d5ad3eeadbd0829cce00581",
+    "frontend/discourse/app/static/prosemirror/extensions/html-inline.js": "86198ffd0770809e63d530ec74df353038f9565d3f67f967bb652bb42b009b56",
+    "frontend/discourse/app/static/prosemirror/extensions/html-block.js": "41a9e4f69d4c3f58a9b4795d708c93bea01bd99e0bf6300a40eb3b128d9129cc",
+    "plugins/discourse-details/assets/javascripts/lib/rich-editor-extension.js": "501787a7704695b227cbde9fe386ea460d9c17297f5b2868e8017b0d27229edc",
+    "plugins/footnote/assets/javascripts/lib/rich-editor-extension.js": "7399bf464d992bafced38675b54ca63c6460a31a2a389956d5baebe61cd3842c",
+    "frontend/discourse/app/static/prosemirror/core/parser.js": "561bf36eb5853cc83228ccfcf31a05b713e1846fb50fc899dfca23dc8c79c4af",
+    "frontend/discourse/app/static/prosemirror/core/schema.js": "b5fdca8b73038ab8fc90e94ae7a10e410e8d9e5643024747636347942a384935",
+    "frontend/discourse-markdown-it/src/features/custom-typographer-replacements.js": "c4f51afab19ff27d93f42350d635b2d2682ac1ad9ea9e7223d62f6484358babb",
+    "frontend/discourse/app/static/prosemirror/extensions/typographer-replacements.js": "c9d92c82f047394d89e843b1b42c65897e706313d709d384572f6bc133d00641",
+    "frontend/discourse/app/static/prosemirror/core/serializer.js": "c042557563fd47c1b407bb302e87de8bd306297a8ef300aa778cc37a3f5dd7a7",
+    "pnpm-lock.yaml": "bc43ea03ef620d36a760fb8adac85fe3087c55bdb8c455e43783f488d5913499"
+  },
+  "tokenizer": {
+    "path": "assets/cook/discourse-cook.js",
+    "sha256": "49647ea0b381f235adee2f4350a5caedecbaa4e65ab5e4ce487846ab6c75ef3a"
+  },
+  "testLockSha256": "ad167dbf01e90fb539f23c8f8df3be6700eb05628f121bedae8a33d168a60fa6",
+  "dependencies": {
+    "esbuild": "0.28.0",
+    "orderedmap": "2.1.1",
+    "prosemirror-markdown": "1.13.4",
+    "prosemirror-model": "1.25.4",
+    "prosemirror-transform": "1.12.0",
+    "prosemirror-inputrules": "1.5.1",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.41.8",
+    "jsdom": "25.0.1"
+  }
+}

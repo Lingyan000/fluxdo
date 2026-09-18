@@ -2,7 +2,7 @@
 /// 主 app 宿主。实现 MarkdownEditor 的接口面,宿主页面(reply_sheet /
 /// create_topic_page)按 feature flag 二选一渲染,其余逻辑零改动。
 ///
-/// **controller 镜像策略**:TextEditingController 保持为对外真相源 ——
+/// **controller 镜像策略**:SemanticEditorSession 是唯一文档事实来源 ——
 /// 编辑文档每次变更 debounce 序列化回写 controller.text,宿主的草稿保存
 /// (监听 controller)/提交(controller.text → raw)/字数校验全部照旧。
 /// 初始文本(草稿恢复)经 cook 链路导入;导入失败回调 onFallbackToPlain
@@ -14,21 +14,24 @@ import 'insertion_bookmark.dart';
 import '../composer_chrome.dart';
 
 import 'dart:async';
+import 'semantic_recovery_store.dart';
+import '../../../providers/core_providers.dart';
+import '../../../services/preloaded_data_service.dart';
+import '../../../utils/time_utils.dart';
 import 'dart:io' show File;
 import 'dart:math' show max;
-import 'dart:math' as math;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
 import 'package:flutter/foundation.dart'
-    show Uint8List, ValueListenable, debugPrint, kDebugMode, listEquals;
+    show Uint8List, ValueListenable, debugPrint, kDebugMode, listEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
+import 'package:fluxdo_render/semantic_editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
         BlockNode,
-        ParagraphNode,
         ImageGridNode,
         TableNode,
         CalloutKind,
@@ -38,6 +41,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
         ImageRun,
         InlineNode,
         LocalDateRun,
+        LinkRun,
         MentionRun,
         NodeFactory;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -49,7 +53,7 @@ import 'package:super_clipboard/super_clipboard.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
-    show ProviderScope, ProviderSubscription;
+    show Consumer, ProviderScope, ProviderSubscription;
 
 import '../../../constants.dart';
 import '../../../l10n/s.dart';
@@ -100,7 +104,8 @@ import '../markdown_toolbar.dart' show MarkdownToolbarState;
 import '../../crypto/crypto_encrypt_sheet.dart';
 import 'callout_edit_dialog.dart';
 import 'block_completion_rules.dart';
-import 'composer_doc_codec.dart';
+import 'composer_raw_mirror.dart';
+import 'semantic_composer_codec.dart';
 import 'rich_editor_tools.dart';
 import 'html_to_markdown.dart';
 import 'local_date_edit_dialog.dart';
@@ -178,9 +183,13 @@ class RichComposerEditor extends StatefulWidget {
     this.mentionDataSource,
     this.onFallbackToPlain,
     this.onSwitchToSource,
+    this.semanticCodec,
   });
 
-  /// 对外真相源镜像(宿主草稿/提交读它)。
+  /// 可注入编解码边界；生产默认使用 Discourse 的严格 cook 门禁。
+  final SemanticComposerCodec? semanticCodec;
+
+  /// 对外 Markdown 镜像（宿主草稿/提交读它，不拥有文档）。
   final TextEditingController controller;
 
   final FocusNode? focusNode;
@@ -218,7 +227,145 @@ class RichComposerEditor extends StatefulWidget {
 }
 
 class RichComposerEditorState extends State<RichComposerEditor> {
-  EditorState? _editor;
+  /// 仅用于测试导出失败；生产环境保持 null。
+  @visibleForTesting
+  static void Function()? debugBeforeExport;
+
+  /// 紧急恢复记录独立于 raw 草稿，归属在打开编辑器时固定。
+  static const recoveryStorageKey = SemanticRecoveryStore.storageKey;
+  final _recoveryStore = SemanticRecoveryStore();
+  SemanticRecoveryScope? _recoveryScope;
+  ProviderSubscription<dynamic>? _recoveryUserSub;
+  String? _recoveryId;
+  List<SemanticRecoveryRecord> _recoveries = [];
+  bool _recoveryBusy = false;
+  bool _recoveryFailed = false;
+
+  SemanticRecoveryScope? _currentRecoveryScope() {
+    final user = ProviderScope.containerOf(context, listen: false)
+        .read(currentUserProvider).value;
+    if (user == null || user.id <= 0) return null;
+    return SemanticRecoveryScope(
+      site: '${AppConstants.baseUrl}${PreloadedDataService().baseUri}',
+      userId: user.id,
+    );
+  }
+
+  bool _sameRecoveryScope(SemanticRecoveryScope scope) {
+    final current = _currentRecoveryScope();
+    return current != null && current.site == scope.site &&
+        current.userId == scope.userId;
+  }
+
+  Future<void> _readRecoveries() async {
+    final scope = _recoveryScope;
+    if (scope == null) return;
+    try {
+      final records = await _recoveryStore.read(scope);
+      if (mounted && _sameRecoveryScope(scope)) {
+        setState(() => _recoveries = records);
+      }
+    } catch (error) {
+      debugPrint('[RichComposer] 恢复记录读取失败：$error');
+    }
+  }
+
+  void _backupFailedExport() {
+    final session = _session;
+    final scope = _recoveryScope;
+    if (session == null || scope == null) return;
+    try {
+      final record = SemanticRecoveryRecord(
+        id: _recoveryId ??= DateTime.now().microsecondsSinceEpoch.toString(),
+        scope: scope,
+        savedAt: DateTime.now(),
+        lastRaw: widget.controller.text,
+        tree: session.exportTree(),
+        description: '',
+      );
+      unawaited(_recoveryStore.save(record).catchError((Object error) {
+        debugPrint('[RichComposer] 紧急恢复记录保存失败：$error');
+      }));
+    } catch (error) {
+      debugPrint('[RichComposer] 语义树快照失败：$error');
+    }
+  }
+
+  Future<void> _applyRecovery(SemanticRecoveryRecord record, {required bool restore}) async {
+    if (_recoveryBusy || !_sameRecoveryScope(record.scope)) return;
+    setState(() { _recoveryBusy = true; _recoveryFailed = false; });
+    SemanticEditorSession? pending;
+    try {
+      if (restore) {
+        // lastRaw 相同也不能证明是同一篇文章，始终要求用户确认替换。
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(S.current.createTopic_restoreDraft),
+            content: Text('${S.current.createTopic_restoreDraftContent}\n${record.preview}'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.current.common_cancel)),
+              TextButton(onPressed: () => Navigator.pop(context, true), child: Text(S.current.common_confirm)),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted || !_sameRecoveryScope(record.scope) ||
+            _documentReplaced || !_rawMirror.isCurrent || hasPendingUploads) {
+          return;
+        }
+        // 先验证导出及投影，失败保留原文和备份；不将旧 raw 当作恢复文本。
+        final raw = _semanticCodec.export(record.tree);
+        final next = pending = SemanticEditorSession(record.tree);
+        final exported = _semanticCodec.export(next.exportTree());
+        next.editor.enterInsertsSoftBreak = _enterSoftBreakPref;
+        next.editor.mode = _liveRenderPref ? EditorMode.ir : EditorMode.wysiwyg;
+        _serializeDebounce?.cancel();
+        _serializeDeadline?.cancel();
+        final previous = _session;
+        previous?.editor.removeListener(_onDocChanged);
+        _rawMirror.dispose();
+        widget.controller.value = TextEditingValue(text: raw, selection: TextSelection.collapsed(offset: raw.length));
+        _rawMirror = ComposerRawMirror(widget.controller, onExternalChange: _fallbackPreservingRaw)
+          ..install(exported: exported, revision: next.editor.docRevision);
+        next.editor.addListener(_onDocChanged);
+        setState(() {
+          _session = next;
+          _chromeDocRevision = next.editor.docRevision;
+        });
+        pending = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous?.dispose());
+        if (widget.controller.text != raw || !_rawMirror.isCurrent) return;
+      }
+      await _recoveryStore.remove(record.scope, record.id);
+      if (mounted) setState(() => _recoveries.removeWhere((r) => r.id == record.id));
+    } catch (error) {
+      pending?.dispose();
+      if (mounted) setState(() => _recoveryFailed = true);
+      debugPrint('[RichComposer] 恢复操作失败，保留快照：$error');
+    } finally {
+      if (mounted) setState(() => _recoveryBusy = false);
+    }
+  }
+
+  Widget _recoveryBanner() => Consumer(builder: (context, ref, _) {
+    ref.watch(currentUserProvider);
+    if (_recoveries.isEmpty || !_sameRecoveryScope(_recoveries.first.scope)) {
+      return const SizedBox.shrink();
+    }
+    final record = _recoveries.first;
+    return MaterialBanner(
+      content: Text('${S.current.createTopic_restoreDraft} · ${TimeUtils.formatDetailTime(record.savedAt)}\n${record.preview}${_recoveryFailed ? '\n${S.current.common_failed}' : ''}'),
+      actions: [
+        TextButton(onPressed: _recoveryBusy ? null : () => _applyRecovery(record, restore: false), child: Text(S.current.common_discard)),
+        TextButton(onPressed: _recoveryBusy ? null : () => _applyRecovery(record, restore: true), child: Text(S.current.common_restore)),
+      ],
+    );
+  });
+
+  SemanticEditorSession? _session;
+  EditorState? get _editor => _session?.editor;
+  late final SemanticComposerCodec _semanticCodec =
+      widget.semanticCodec ?? SemanticComposerCodec();
   bool _importing = true;
   late final _uploads = UploadTaskController(onCompleted: _completeUpload);
   final Map<String, String> _uploadBlocks = {};
@@ -234,6 +381,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ) ||
       _uploadingCount > 0;
 
+  /// 外部拖放/平台上传入口，同样使用语义临时节点及任务控制器。
+  void queueUpload(String path, String name, {
+    bool image = false,
+    required UploadExecutor execute,
+  }) => _queueUpload(path, name, image: image, execute: execute);
+
   void _queueUpload(
     String path,
     String name, {
@@ -241,6 +394,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     String? gridId,
     PreparedMediaUpload? media,
     EditorSelection? insertionSelection,
+    UploadExecutor? execute,
   }) {
     final editor = _editor;
     if (editor == null || _documentReplaced) return;
@@ -258,7 +412,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         name: name,
         isImage: image,
         execute:
-            media?.execute ??
+            execute ?? media?.execute ??
             ((token, progress) => image
                 ? DiscourseService().uploadImage(
                     path,
@@ -279,70 +433,26 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return;
     }
     if (media != null) _uploadMedia[id] = media;
-    final selection = insertionSelection ?? editor.selection;
-    final anchor = selection?.extent.blockId ?? editor.blocks.last.id;
-    final index = editor.indexOfBlock(anchor);
-    final block = editor.blocks[index];
-    // 图片本身是段落内联原子，占位也必须携带容器栈，不能用无容器的孤岛拆开引用。
-    final EditorBlock placeholder = image && block is TextBlock
-        ? TextBlock(
-            id: editor.nextBlockId(),
-            content: EditableTextContent.empty,
-            containers: block.containers,
-          )
-        : IslandBlock(
-            id: editor.nextBlockId(),
-            node: ParagraphNode(id: id, inlines: const []),
-          );
-    _placeholderNodes.add(id);
-    _placeholderNodes.add(placeholder.id);
-    _uploadBlocks[id] = placeholder.id;
-    // 块级卡片在光标位置拆段，不改变正文内容；临时路径只在任务内存中。
-    if (gridId == null &&
-        selection?.isCollapsed == true &&
-        block is TextBlock) {
-      final offset = selection!.extent.offset.clamp(0, block.content.length);
-      final tail = TextBlock(
-        id: editor.nextBlockId(),
-        content: block.content.slice(offset, block.content.length),
-        kind: block.kind,
-        headingLevel: block.headingLevel,
-        ordered: block.ordered,
-        depth: block.depth,
-        listStart: block.listStart,
-        containers: block.containers,
+    final selection = insertionSelection ?? editor.selection ??
+        EditorSelection.collapsed(EditorPosition(
+          blockId: editor.blocks.last.id,
+          offset: editor.blocks.last.selectionLength,
+        ));
+    final current = insertionSelection != null && editor.selection != selection
+        ? InsertionBookmark(editor) : null;
+    try {
+      _session!.insertTransientAtSelection(
+        id, SemanticNode('pending_upload'), selection: selection,
       );
-      final liveSelection = editor.selection;
-      EditorPosition mapLive(EditorPosition position) =>
-          position.blockId == block.id && position.offset > offset
-          ? EditorPosition(blockId: tail.id, offset: position.offset - offset)
-          : position;
-      editor.replaceBlockRange(
-        index,
-        index,
-        [
-          block.copyWith(content: block.content.slice(0, offset)),
-          placeholder,
-          tail,
-        ],
-        selection:
-            insertionSelection != null &&
-                liveSelection != null &&
-                liveSelection != selection
-            ? EditorSelection(
-                base: mapLive(liveSelection.base),
-                extent: mapLive(liveSelection.extent),
-              )
-            : EditorSelection.collapsed(
-                EditorPosition(blockId: tail.id, offset: 0),
-              ),
-      );
-    } else {
-      editor.replaceBlockRange(index, index, [
-        block,
-        placeholder,
-      ], selection: selection);
+      if (current != null && current.valid) {
+        editor.updateSelection(current.selection);
+      }
+    } finally {
+      current?.dispose();
     }
+    final blockId = _session!.transientBlockIds(id).single;
+    _placeholderNodes.add(blockId);
+    _uploadBlocks[id] = blockId;
     _uploadGrids[id] = gridId;
     setState(() {});
   }
@@ -360,14 +470,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   Widget? _buildUploadPlaceholder(BuildContext context, BlockNode node) {
     if (!_placeholderNodes.contains(node.id)) return null;
-    if (!_uploadBlocks.containsKey(node.id)) return const SizedBox.shrink();
-    // 撤销恢复的失效占位不恢复上传，也不会迟到插入。
-    final tasks = _uploads.tasks.where((task) => task.id == node.id);
+    final taskId = _uploadBlocks.entries
+        .where((entry) => entry.value == node.id).firstOrNull?.key;
+    if (taskId == null) return const SizedBox.shrink();
+    final tasks = _uploads.tasks.where((task) => task.id == taskId);
     if (tasks.isEmpty) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: _uploads,
       builder: (context, _) {
-        final current = _uploads.tasks.where((item) => item.id == node.id);
+        final current = _uploads.tasks.where((item) => item.id == taskId);
         if (current.isEmpty) return const SizedBox.shrink();
         return UploadTaskCard(controller: _uploads, task: current.single);
       },
@@ -379,11 +490,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _uploadGrids.remove(id);
     _uploads.remove(id);
     _uploadMedia.remove(id);
-    final editor = _editor;
-    if (editor == null || block == null) return;
-    final index = editor.indexOfBlock(block);
-    if (index >= 0) editor.replaceBlockRange(index, index, const []);
-    editor.forgetTransientBlockInHistory(block);
+    if (_session == null || block == null) return;
+    // 同时清理当前、撤销和重做来源，不能用旧历史补丁复活上传。
+    _session!.resolveTransient(id);
+    _placeholderNodes.remove(block);
   }
 
   Future<void> _completeUpload(UploadTask task, UploadResult result) async {
@@ -425,119 +535,65 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (!mounted || _documentReplaced || editor == null || blockId == null) {
       return;
     }
-    final grid = _uploadGrids[task.id];
+    final session = _session!;
     final size = result.humanFilesize;
     final fragment = task.isImage
-        ? null
-        : await markdownToDoc(
+        ? SemanticNode('doc', content: [
+            SemanticNode('paragraph', content: [
+              SemanticNode('image', attrs: {
+                'src': result.shortUrl,
+                'alt': task.name,
+                if (result.width != null) 'width': result.width,
+                if (result.height != null) 'height': result.height,
+              }),
+            ]),
+          ])
+        : (await _semanticCodec.import(
             _uploadMedia[task.id]?.markdown(result) ??
                 '[${result.originalFilename}|attachment](${result.shortUrl})'
                     '${size == null ? '' : ' ($size)'}',
-          );
-    if (!mounted ||
-        _documentReplaced ||
-        !identical(editor, _editor) ||
-        _uploadBlocks[task.id] != blockId ||
-        editor.indexOfBlock(blockId) < 0) {
+          )).document;
+    if (!mounted || _documentReplaced || !identical(session, _session) ||
+        _uploadBlocks[task.id] != blockId) {
       return;
     }
-    if (grid != null && editor.indexOfBlock(grid) < 0) {
-      _removeUpload(task.id);
-      return;
-    }
-    if (!task.isImage && fragment == null) {
-      // 上传已成功但正文转换不可用；保留占位及发布门禁，避免静默丢附件。
+    if (fragment == null) {
+      // 失败保留发布门禁，不能静默丢失已经上传的附件。
       throw StateError('附件正文转换失败');
     }
+    // 即使占位已撤销也清理 redo，但不会在当前文档重新插入。
+    session.resolveTransientFragment(task.id, fragment);
     _uploadBlocks.remove(task.id);
     _uploadGrids.remove(task.id);
     _uploadMedia.remove(task.id);
-    final index = editor.indexOfBlock(blockId);
-    if (task.isImage) {
-      if (result.url != null) {
-        DiscourseImageUtils.seedUploadUrl(result.shortUrl, result.url!);
-      }
-      if (grid != null) {
-        final gridIndex = editor.indexOfBlock(grid);
-        final gridBlock = editor.blocks[gridIndex];
-        if (gridBlock is! IslandBlock || gridBlock.node is! ImageGridNode) {
-          return;
-        }
-        final node = gridBlock.node as ImageGridNode;
-        final updated = IslandBlock(
-          id: gridBlock.id,
-          node: ImageGridNode(
-            id: node.id,
-            columns: node.columns,
-            mode: node.mode,
-            images: [
-              ...node.images,
-              ImageRun(
-                src: result.shortUrl,
-                alt: task.name,
-                width: result.width?.toDouble(),
-                height: result.height?.toDouble(),
-              ),
-            ],
-          ),
-        );
-        final first = math.min(gridIndex, index);
-        final last = math.max(gridIndex, index);
-        final selection = editor.selection;
-        editor.replaceBlockRange(
-          first,
-          last,
-          [
-            for (var i = first; i <= last; i++)
-              if (i == gridIndex) updated else if (i != index) editor.blocks[i],
-          ],
-          selection: selection?.extent.blockId == blockId
-              ? EditorSelection.collapsed(
-                  EditorPosition(blockId: grid, offset: 1),
-                )
-              : selection,
-        );
-      } else {
-        final previous = editor.blocks[index];
-        final image = TextBlock(
-          id: editor.nextBlockId(),
-          containers: previous is TextBlock ? previous.containers : const [],
-          content: EditableTextContent.fromInlines([
-            ImageRun(
-              src: result.shortUrl,
-              alt: task.name,
-              width: result.width?.toDouble(),
-              height: result.height?.toDouble(),
-            ),
-          ]),
-        );
-        final selection = editor.selection;
-        editor.replaceBlockRange(
-          index,
-          index,
-          [image],
-          selection: selection?.extent.blockId == blockId
-              ? EditorSelection.collapsed(
-                  EditorPosition(blockId: image.id, offset: 1),
-                )
-              : selection,
-        );
-      }
-    } else if (fragment != null) {
-      final selection = editor.selection;
-      editor.replaceIsland(blockId, fragment);
-      if (selection != null &&
-          selection.extent.blockId != blockId &&
-          selection.base.blockId != blockId) {
-        editor.updateSelection(selection);
-      }
+    _placeholderNodes.remove(blockId);
+    if (result.url != null) {
+      DiscourseImageUtils.seedUploadUrl(result.shortUrl, result.url!);
     }
-    editor.forgetTransientBlockInHistory(blockId);
   }
 
   Timer? _serializeDebounce;
   Timer? _serializeDeadline;
   bool _documentReplaced = false;
+  late ComposerRawMirror _rawMirror;
+
+  void _fallbackPreservingRaw() {
+    prepareForDocumentReplacement();
+    // 外部 controller 通知可能发生在宿主 build 内，延后 UI 收尾。
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      setState(() => _importing = false);
+      widget.onFallbackToPlain?.call();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant RichComposerEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      _fallbackPreservingRaw();
+    }
+  }
 
   bool _showEmojiPanel = false;
 
@@ -617,6 +673,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void initState() {
     super.initState();
+    _rawMirror = ComposerRawMirror(
+      widget.controller,
+      onExternalChange: _fallbackPreservingRaw,
+    );
     _uploads.addListener(_onUploadsChanged);
     // 预热 cook 引擎:551K JS bundle 的同步 eval 挪到打开编辑器时,
     // 否则落在首次序列化触发预览 cook 的时刻 —— 表现为"打第一个字超卡"。
@@ -641,35 +701,48 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   Future<void> _importInitial() async {
     // 门禁导入:序列化回写 → 二次 cook 与原 raw 的 cook 对比,不等价
     // (不可序列化岛/语法缺口)→ 回调降级纯文本,防止编辑-提交毁帖。
-    // 空文档/富 composer 自己存的草稿天然过门禁;唯一代价是打开时多一次
-    // cook(warmUp 后毫秒级)。
-    final doc = await markdownToDocGuarded(widget.controller.text);
-    if (!mounted || _documentReplaced) return;
-    if (doc == null) {
-      widget.onFallbackToPlain?.call();
-      return;
+    // 当前导入包含原文 cook、编辑导入 cook 和回写 cook；整体预算由 codec 控制。
+    SemanticEditorSession? pendingSession;
+    try {
+      final imported = await _semanticCodec.import(_rawMirror.initialValue.text);
+      final doc = imported.document;
+      if (!mounted || _documentReplaced || !_rawMirror.isCurrent) return;
+      if (doc == null) {
+        _fallbackPreservingRaw();
+        return;
+      }
+      // 投影、光标落点和历史均由语义会话持有，宿主不重建扁平文档。
+      final session = pendingSession = SemanticEditorSession(doc);
+      final editor = session.editor;
+      // 注意:**不要**在这里预设 selection。此刻 FluxdoEditor 还没 build、
+      // IME client 未 attach,抢跑的选区会让输入连接以错位状态初始化 ——
+      // 实测表现为光标不渲染、按键路由失灵(Ctrl+Enter 等宿主快捷键全废)。
+      // 选区交给聚焦流程正常建立;引用下方的落点由上面的逃生空段提供。
+      // 回车语义(软换行 / 分段)。硬件按键链在 _interceptKeyEvent 里按
+      // Shift 临时反转,IME 路径直接读这个值。
+      editor.enterInsertsSoftBreak = _enterSoftBreakPref;
+      // 编辑器模式:即时渲染(ir,光标处显形格式符)/ 纯所见即所得。
+      // 非响应式直读,开关切换后下次打开 composer 生效。
+      editor.mode = _liveRenderPref ? EditorMode.ir : EditorMode.wysiwyg;
+      _rawMirror.install(
+        exported: _semanticCodec.export(session.exportTree()),
+        revision: editor.docRevision,
+      );
+      _chromeDocRevision = editor.docRevision;
+      editor.addListener(_onDocChanged);
+      setState(() {
+        _session = session;
+        _importing = false;
+      });
+      pendingSession = null;
+      _recoveryScope ??= _currentRecoveryScope();
+      await _readRecoveries();
+    } catch (error) {
+      pendingSession?.dispose();
+      if (!mounted || _documentReplaced) return;
+      debugPrint('[RichComposer] 导入失败，保留原文：${error.runtimeType}');
+      _fallbackPreservingRaw();
     }
-    // 逃生口:导入的文档若以非空引用/岛结尾、或有相邻困住块,补顶层空段,
-    // 让光标有落点跳出(引用回复正文才不会被吸进引用块)。只在导入这一
-    // 处补,不动 EditorState 命令契约;序列化时未填的空段自动回收。
-    var gapN = 0;
-    final gapped = insertEscapeGaps(doc, () => 'e_gap_${gapN++}');
-    final editor = EditorState(blocks: gapped);
-    // 注意:**不要**在这里预设 selection。此刻 FluxdoEditor 还没 build、
-    // IME client 未 attach,抢跑的选区会让输入连接以错位状态初始化 ——
-    // 实测表现为光标不渲染、按键路由失灵(Ctrl+Enter 等宿主快捷键全废)。
-    // 选区交给聚焦流程正常建立;引用下方的落点由上面的逃生空段提供。
-    // 回车语义(软换行 / 分段)。硬件按键链在 _interceptKeyEvent 里按
-    // Shift 临时反转,IME 路径直接读这个值。
-    editor.enterInsertsSoftBreak = _enterSoftBreakPref;
-    // 编辑器模式:即时渲染(ir,光标处显形格式符)/ 纯所见即所得。
-    // 非响应式直读,开关切换后下次打开 composer 生效。
-    editor.mode = _liveRenderPref ? EditorMode.ir : EditorMode.wysiwyg;
-    editor.addListener(_onDocChanged);
-    setState(() {
-      _editor = editor;
-      _importing = false;
-    });
   }
 
   @override
@@ -679,6 +752,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         MediaQuery.viewInsetsOf(context).bottom >= _panelHeight - 1) {
       _returningToKeyboard = false;
     }
+    _recoveryScope ??= _currentRecoveryScope();
+    _recoveryUserSub ??= ProviderScope.containerOf(context, listen: false).listen(
+      currentUserProvider,
+      (_, next) {
+        if (!mounted || _recoveryScope != null) return;
+        _recoveryScope = _currentRecoveryScope();
+        if (!_importing) unawaited(_readRecoveries());
+      },
+    );
     _subscribePrefs();
   }
 
@@ -691,12 +773,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void dispose() {
     _uploads.dispose();
+    _recoveryUserSub?.close();
     _prefsSub?.close();
     // 镜像 debounce(800ms)窗口内的最后编辑先落盘到 controller ——
     // unmount 后序遍历,子先于宿主 dispose,此刻 controller 还活着、
     // 宿主的草稿监听也还挂着;不 flush 的话宿主 dispose 里的兜底草稿
     // 保存读到旧文本(丢最后一句话)。
     flushToController();
+    _rawMirror.dispose();
     _toolsAnchor.dispose();
     _emojiPopover?.dispose();
     _serializeDebounce?.cancel();
@@ -711,7 +795,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _editorAreaFocus.dispose();
     _scrollController.dispose();
     _editor?.removeListener(_onDocChanged);
-    _editor?.dispose();
+    _session?.dispose();
     super.dispose();
   }
 
@@ -729,7 +813,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       ToastService.showError(UploadTaskLabels.of(context).pendingSubmit);
       return;
     }
-    flushToController();
+    if (!flushToController()) return;
     widget.onSwitchToSource?.call();
   }
 
@@ -854,7 +938,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             searchText: 'markdown source',
             group: ComposerToolGroup.editing,
             run: () {
-              flushToController();
               _switchToSource();
             },
           ),
@@ -906,16 +989,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         _uploads.remove(entry.key);
       }
     }
-    for (final entry in _uploadBlocks.entries.toList()) {
-      final grid = _uploadGrids[entry.key];
-      if (_editor!.indexOfBlock(entry.value) < 0 ||
-          (grid != null && _editor!.indexOfBlock(grid) < 0)) {
-        _editor!.forgetTransientBlockInHistory(entry.value);
-        _uploadBlocks.remove(entry.key);
-        _uploadGrids.remove(entry.key);
-        _uploads.remove(entry.key);
-      }
-    }
+    // 占位暂时不在当前快照可能只是 undo；保留任务关联，完成/取消统一
+    // resolveTransient 映射历史，禁止在监听中修改正文或清理旧扁平历史。
     final revision = _editor?.docRevision ?? 0;
     final documentChanged = revision != _chromeDocRevision;
     if (documentChanged && mounted) {
@@ -970,43 +1045,39 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 立即序列化(宿主提交前调用,确保 controller 是最新;镜像 debounce
   /// 窗口内提交也不丢内容)。
-  void flushToController() {
+  bool flushToController() {
     _serializeDebounce?.cancel();
     _serializeDeadline?.cancel();
     _serializeDeadline = null;
-    if (_documentReplaced) return;
+    if (_documentReplaced || _importing || !_rawMirror.isCurrent) return false;
     final editor = _editor;
-    if (editor == null) return;
-    final raw = _exportForMirror(editor);
-    if (raw != widget.controller.text || !widget.controller.selection.isValid) {
-      // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
-      // collapsed(-1);切到源码模式时 TextField attach 的**首帧**
-      // setEditingState 就带着 -1 发给平台(EditableText 的聚焦纠偏
-      // 发生在 _openInputConnection 之后)——Android restartInput /
-      // macOS 输入模型以"无光标态"初始化,Gboard 等 IME 的退格基于
-      // 其光标缓存,从此对既有文本失效 = 真机"切过去旧文字删不掉、
-      // 新输入正常"。选区必须在这里就合法。
-      widget.controller.value = TextEditingValue(
-        text: raw,
-        selection: TextSelection.collapsed(offset: raw.length),
+    if (editor == null) return false;
+    try {
+      _rawMirror.flush(
+        revision: editor.docRevision,
+        export: () => _exportForMirror(editor),
       );
+      return _rawMirror.isCurrent;
+    } catch (error) {
+      debugPrint('[RichComposer] 导出失败，保留已有原文：${error.runtimeType}');
+      // 保留当前语义树，允许重试；不能卸载后将旧镜像误当成最新正文。
+      _backupFailedExport();
+      return false;
     }
   }
 
-  String _exportForMirror(EditorState editor) => editor.exportMarkdown(
-    fragment: editor.blocks
-        .where(
-          (block) =>
-              !_placeholderNodes.contains(block.id) &&
-              (block is! IslandBlock ||
-                  !_placeholderNodes.contains(block.node.id)),
-        )
-        .toList(),
-  );
+  String _exportForMirror(EditorState editor) {
+    assert(() {
+      debugBeforeExport?.call();
+      return true;
+    }());
+    return _semanticCodec.export(_session!.exportTree());
+  }
 
   /// 宿主已经采用另一份文档，即将重建编辑器；旧文档不能在卸载时回写。
   void prepareForDocumentReplacement() {
     _documentReplaced = true;
+    _rawMirror.invalidate();
     for (final task in _uploads.tasks.toList()) {
       _uploads.remove(task.id);
     }
@@ -2136,7 +2207,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final bookmark = insertionBookmark ?? InsertionBookmark(editor);
     final originalSelection = bookmark.selection;
     try {
-      final fragment = await markdownToDoc(markdown);
+      final imported = await _semanticCodec.import(markdown);
+      final fragment = imported.document;
       if (!mounted ||
           !identical(editor, _editor) ||
           _documentReplaced ||
@@ -2152,9 +2224,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         bookmark.dispose();
         final previousIds = editor.blocks.map((block) => block.id).toSet();
         editor.updateSelection(target);
-        if (fragment != null && fragment.isNotEmpty) {
-          editor.pasteBlocks(fragment);
+        if (fragment != null) {
+          _session!.insertFragmentAtSelection(fragment);
         } else {
+          // 不支持的语法保留为文字，不借旧扁平转换丢失来源。
           editor.pastePlainText(markdown);
         }
         if (currentBookmark != null && currentBookmark.valid) {
@@ -2353,6 +2426,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null) return;
     final sel = editor.selection;
     final hasRange = sel != null && !sel.isCollapsed && sel.isSingleBlock;
+    final norm = editor.normalizedSelection();
+    if (hasRange &&
+        norm != null &&
+        norm.$2.offset == norm.$1.offset + 1 &&
+        editor.textBlockById(norm.$1.blockId)?.content.atoms[norm.$1.offset]
+            is LinkRun &&
+        _linkCaret != null) {
+      await _editLinkAtCaret();
+      return;
+    }
 
     final result = await showLinkInsertDialog(context);
     if (result == null || !mounted) return;
@@ -2562,7 +2645,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final editor = _editor;
     if (editor == null) return;
 
-    final source = serializeIslandNode(island.node);
+    final islandSelection = EditorSelection(
+      base: EditorPosition(blockId: island.id, offset: 0),
+      extent: EditorPosition(blockId: island.id, offset: 1),
+    );
+    final savedSelection = editor.selection;
+    editor.updateSelection(islandSelection);
+    final source = editor.copySelectionAsMarkdown();
+    if (savedSelection != null) editor.updateSelection(savedSelection);
 
     // poll 岛优先走表单编辑(创建同款构建器,BBCode 反解析预填);
     // 解析不了(嵌套块/ranked_choice 等表单不建模)回退源码编辑
@@ -2573,9 +2663,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         if (edited == null || !mounted) return;
         final markdown = edited.toBBCode();
         if (markdown == source) return; // 没改
-        final fragment = await markdownToDoc(markdown);
-        if (!mounted || fragment == null) return;
-        editor.replaceIsland(island.id, fragment);
+        final fragment = (await _semanticCodec.import(markdown)).document;
+        if (!mounted || fragment == null || _documentReplaced ||
+            !identical(editor.blockById(island.id), island)) {
+          return;
+        }
+        _session!.insertFragmentAtSelection(fragment, selection: islandSelection);
         return;
       }
     }
@@ -2585,19 +2678,26 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       confirmLabel: '应用',
       initialText: source,
     );
-    if (text == null || !mounted) return;
+    if (text == null || !mounted || _documentReplaced ||
+        !identical(editor.blockById(island.id), island)) {
+      return;
+    }
     if (text.trim().isEmpty) {
-      editor.replaceIsland(island.id, const []);
+      editor.updateSelection(islandSelection);
+      editor.deleteSelection();
       return;
     }
     if (text == source) return; // 没改
-    final fragment = await markdownToDoc(text);
-    if (!mounted) return;
+    final fragment = (await _semanticCodec.import(text)).document;
+    if (!mounted || _documentReplaced ||
+        !identical(editor.blockById(island.id), island)) {
+      return;
+    }
     if (fragment == null) {
       // cook 不可用:不动原岛(比替换成纯文本更安全)
       return;
     }
-    editor.replaceIsland(island.id, fragment);
+    _session!.insertFragmentAtSelection(fragment, selection: islandSelection);
   }
 
   /// 表格 cell 原位编辑确认:新表格 markdown → cook → 替换岛。
@@ -2608,32 +2708,31 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null) return;
     final version = (_tableEditVersions[island.id] ?? 0) + 1;
     _tableEditVersions[island.id] = version;
-    final fragment = await markdownToDoc(markdown);
+    final fragment = (await _semanticCodec.import(markdown)).document;
     if (!mounted ||
         !identical(editor, _editor) ||
         _documentReplaced ||
         _tableEditVersions[island.id] != version ||
-        fragment == null)
+        fragment == null) {
       return;
+    }
     final current = editor.blockById(island.id);
     // 撤销/删除/外部替换已改变表格时，迟到的转换结果不得复活旧内容。
-    if (current is! IslandBlock || !identical(current.node, island.node))
+    if (current is! IslandBlock || !identical(current.node, island.node)) {
       return;
-    final tables = fragment.whereType<IslandBlock>().where(
-      (block) => block.node is TableNode,
-    );
+    }
+    // 仅提取新单元格字段，原表 attrs 由会话绑定局部合并，不替换来源。
+    final tables = SemanticEditorProjection.project(fragment).blocks
+        .whereType<IslandBlock>().where((block) => block.node is TableNode);
     if (tables.length != 1) return;
     final table = tables.single.node as TableNode;
-    editor.updateIslandNode(
-      island.id,
-      TableNode(
-        id: island.node.id,
-        rows: table.rows,
-        columnCount: table.columnCount,
-        hasHeader: table.hasHeader,
-        textAlign: (island.node as TableNode).textAlign,
-      ),
-    );
+    editor.updateIslandNode(island.id, TableNode(
+      id: island.node.id,
+      rows: table.rows,
+      columnCount: table.columnCount,
+      hasHeader: table.hasHeader,
+      textAlign: (island.node as TableNode).textAlign,
+    ));
   }
 
   /// 代码块岛内编辑提交:结构化节点原位形变,不经 cook(fence 冲突由
@@ -2643,7 +2742,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null || island.node is! CodeBlockNode) return;
     editor.updateIslandNode(
       island.id,
-      CodeBlockNode(id: island.node.id, code: code, language: language),
+      CodeBlockNode(
+        id: island.node.id,
+        code: code,
+        language: language,
+        rawHtml: (island.node as CodeBlockNode).rawHtml,
+        rawMarkdown: (island.node as CodeBlockNode).rawMarkdown,
+      ),
     );
   }
 
@@ -2658,25 +2763,52 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   ///   避免双插。
   ///
   /// 任一步落空返回 null,FluxdoEditor 回落纯文本路径 —— 内容不丢。
-  Future<List<EditorBlock>?> _importRichPaste() async {
+  Future<bool> _insertSemanticMarkdown(String markdown, EditorSelection? selection) async {
+    final editor = _editor;
+    if (editor == null || _documentReplaced) return false;
+    final bookmark = InsertionBookmark(editor, selection: selection);
+    try {
+      final fragment = (await _semanticCodec.import(markdown)).document;
+      if (!mounted || _documentReplaced || !identical(editor, _editor) ||
+          !bookmark.valid) {
+        return true;
+      }
+      if (fragment == null) return false;
+      final moved = editor.selection != selection;
+      final current = moved ? InsertionBookmark(editor) : null;
+      try {
+        _session!.insertFragmentAtSelection(fragment, selection: bookmark.selection);
+        if (current != null && current.valid) {
+          editor.updateSelection(current.selection);
+        }
+      } finally {
+        current?.dispose();
+      }
+      return true;
+    } finally {
+      bookmark.dispose();
+    }
+  }
+
+  Future<bool> _importRichPaste(EditorSelection? selection) async {
     final clipboard = SystemClipboard.instance;
-    if (clipboard == null) return null; // 平台无系统剪贴板访问
+    if (clipboard == null) return false; // 平台无系统剪贴板访问
     final reader = await clipboard.read();
     if (reader.canProvide(Formats.htmlText)) {
       final html = await reader.readValue(Formats.htmlText);
       if (html != null && html.trim().isNotEmpty) {
         final md = clipboardHtmlToMarkdown(html);
-        if (md != null) return markdownToDoc(md);
+        if (md != null) return _insertSemanticMarkdown(md, selection);
       }
       // html 存在但转换落空 → 文本回落。不碰位图:带 html 的位图多是
       // 网页复制附带的渲染快照,上传它反而错。
-      return null;
+      return false;
     }
     if (!reader.canProvide(Formats.plainText)) {
       final img = await MarkdownToolbarState.readImageFromReader(reader);
       if (img != null) {
         unawaited(_uploadPastedImage(img.$1, img.$2));
-        return null;
+        return true;
       }
       // 原生兜底(Windows):剪贴板历史(Win+V)放的 OLE data object 只在
       // OLE 层声明标记类格式,位图挂在原始 Win32 剪贴板上,super_clipboard
@@ -2685,14 +2817,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       final native = readClipboardImageNative();
       if (native != null) {
         unawaited(_uploadPastedImage(native, 'png'));
+        return true;
       }
     }
-    return null;
+    return false;
   }
 
   /// 粘贴位图上传:临时文件 → 确认框(与选图插入同 UX,可改名/取消误粘)
   /// → 上传 → 图原子插入。与 [_pickAndUploadImages] 单图流程同构。
   Future<void> _uploadPastedImage(Uint8List bytes, String ext) async {
+    final editor = _editor;
+    if (editor == null) return;
+    final bookmark = InsertionBookmark(editor);
     try {
       final tempDir = await getTemporaryDirectory();
       final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
@@ -2706,9 +2842,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       );
       if (confirmed == null) return;
       if (!mounted) return;
-      _queueUpload(confirmed.path, confirmed.originalName, image: true);
+      if (_documentReplaced || !identical(editor, _editor) || !bookmark.valid) return;
+      _queueUpload(confirmed.path, confirmed.originalName, image: true,
+          insertionSelection: bookmark.selection);
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      bookmark.dispose();
     }
   }
 
@@ -2928,10 +3068,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       initialUrl: info.href,
       editing: true,
     );
-    if (result == null || !mounted) return;
+    if (result == null || !mounted || !_linkCaretAlive(info)) return;
     final url = result['url'] ?? '';
     if (url.isEmpty) return;
     final text = (result['text'] ?? '').trim();
+    if (editor.editLinkAtomAt(
+      info.blockId,
+      info.start,
+      text: text.isEmpty ? url : text,
+      href: url,
+    )) {
+      return;
+    }
     editor.updateSelection(
       EditorSelection(
         base: EditorPosition(blockId: info.blockId, offset: info.start),
@@ -3372,7 +3520,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 插入投票:构建对话框 → [poll] BBCode 经 cook 成岛。同帖多投票时
   /// name 必须唯一,先 flush 后按现有 raw 统计 poll 数决定 name=pollN。
   Future<void> _insertPoll() async {
-    flushToController();
+    if (!flushToController()) return;
     final existing = RegExp(r'\[poll[\s\]]')
         .allMatches(widget.controller.text)
         .length;
@@ -3512,6 +3660,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                       child: CustomScrollView(
                         controller: _scrollController,
                         slivers: [
+                          SliverToBoxAdapter(child: _recoveryBanner()),
                           SliverToBoxAdapter(
                             child: UploadTaskPanel(controller: _uploads),
                           ),
@@ -3561,8 +3710,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             transientBlockBuilder:
                                                 (context, block) {
                                                   if (!_placeholderNodes
-                                                      .contains(block.id))
+                                                      .contains(block.id)) {
                                                     return null;
+                                                  }
                                                   final taskId = _uploadBlocks
                                                       .entries
                                                       .where(
@@ -3646,13 +3796,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // 粘贴导入:剪贴板 markdown → cook 链路 →
                                             // 编辑块(失败/不可用时 FluxdoEditor 内部
                                             // 降级纯文本粘贴)
-                                            markdownImporter: markdownToDoc,
+                                            semanticMarkdownInserter: _insertSemanticMarkdown,
                                             virtualPointer: _virtualPointer,
                                             contentActions: _contentActions,
                                             // 富粘贴:剪贴板 text/html(网页/Word)
                                             // → markdown 清洗 → 同一条 cook 导入链;
                                             // 无 html/转换落空回落上面纯文本路径
-                                            richPasteImporter: _importRichPaste,
+                                            semanticRichPasteInserter: _importRichPaste,
                                             // 双击岛 → 源码编辑对话框
                                             onIslandEditRequest: _editIsland,
                                             // 点 details/callout 壳标题 → 原位改标题
@@ -3774,7 +3924,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             : () {
                 // 先落盘再切换:controller.text 即最新 markdown,
                 // 宿主换 MarkdownEditor 后内容无缝衔接
-                flushToController();
+                if (!flushToController()) return;
                 // 关键:两编辑器共用同一 focusNode,富文本用自管 IME
                 // (EditorImeClient 持全局 TextInput 连接)。切换是
                 // AnimatedSwitcher 150ms 动画,期间富↔源并存;焦点始终

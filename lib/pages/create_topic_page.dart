@@ -1,13 +1,20 @@
+import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
+
 import '../widgets/markdown_editor/uploads/upload_task_labels.dart';
+
 import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
+
 import '../widgets/markdown_editor/composer_chrome.dart';
 import '../utils/platform_utils.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/draft_store_provider.dart';
+
 import 'package:fluxdo/widgets/common/error_view.dart';
 import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -40,6 +47,7 @@ import 'package:fluxdo/providers/shortcut_provider.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+
 import '../constants.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -72,6 +80,32 @@ class CreateTopicPage extends ConsumerStatefulWidget {
 class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   /// 富文本导入失败时本次会话降级纯文本
   bool _richFallback = false;
+  bool _allowClose = false;
+  bool _richModeEnabled = false;
+
+  void _closeWithCurrentContent(dynamic result) {
+    if (!_submitted && !_discarded && !_flushRichContent()) return;
+    setState(() => _allowClose = true);
+    // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
+  bool _flushRichContent() {
+    final rich = _richKey.currentState;
+    final ready = rich != null
+        ? rich.flushToController()
+        : (_showPreview ||
+              _richFallback ||
+              !ref.read(preferencesProvider).useRichComposer);
+    if (!ready) {
+      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+    }
+    return ready;
+  }
+
   var _richKey = GlobalKey<RichComposerEditorState>();
 
   final _formKey = GlobalKey<FormState>();
@@ -145,7 +179,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       },
       currentEditorData: () {
         if (!mounted || (_isLoadingDraft && !_reloadingDraft)) return null;
-        _richKey.currentState?.flushToController();
+        if (!_flushRichContent()) return null;
         return _currentDraftData();
       },
     );
@@ -323,7 +357,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         _discarded) {
       return;
     }
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     if (refresh) {
       _draftController.scheduleSave(_currentDraftData());
       _draftController.retryPending();
@@ -356,7 +390,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     if (_isSubmitting || _retryingDraft) return;
     _retryingDraft = true;
     try {
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
       final force = _draftController.hasConflict;
       if (force &&
           !await confirmComposerDraftOverwrite(
@@ -434,6 +468,10 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   @override
   void dispose() {
+    final rich = _richKey.currentState;
+    final currentContentSafe = rich != null
+        ? rich.flushToController()
+        : (_allowClose || _showPreview || _richFallback || !_richModeEnabled);
     _draftCategorySubscription?.close();
     _draftLifecycle?.dispose();
     _chrome.dispose();
@@ -444,7 +482,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     _contentController.removeListener(_onDraftContentChanged);
 
     // 关闭时处理草稿：已提交则跳过，有内容则保存，无内容则删除
-    if (!_submitted && !_discarded && !_isLoadingDraft) {
+    if (currentContentSafe && !_submitted && !_discarded && !_isLoadingDraft) {
       if (_titleController.text.trim().isNotEmpty ||
           _contentController.text.trim().isNotEmpty) {
         final data = DraftData(
@@ -797,7 +835,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       return;
     }
     final hadFocus = _contentFocusNode.hasFocus;
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     _editorKey.currentState?.closeEmojiPanel();
     _richKey.currentState?.closeEmojiPanel();
     _contentFocusNode.unfocus();
@@ -818,7 +856,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     final leaving = _showPreview;
     if (!leaving) {
       _previewHadFocus = _contentFocusNode.hasFocus;
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
       _editorKey.currentState?.closeEmojiPanel();
       _richKey.currentState?.closeEmojiPanel();
       FocusScope.of(context).unfocus();
@@ -842,7 +880,28 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     });
   }
 
+  List<Object?> _submissionValues() => [
+    _contentController.text,
+    _titleController.text,
+    _selectedCategory?.id,
+    ..._selectedTags,
+    _featuredLink,
+    _createAsPostVoting,
+  ];
+
+  bool _submissionPending = false;
+
   Future<void> _submit() async {
+    if (_submissionPending || _isSubmitting) return;
+    _submissionPending = true;
+    try {
+      await _submitChecked();
+    } finally {
+      _submissionPending = false;
+    }
+  }
+
+  Future<void> _submitChecked() async {
     if ((_editorKey.currentState?.hasPendingUploads ?? false) ||
         (_richKey.currentState?.hasPendingUploads ?? false)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -854,7 +913,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     // 富文本模式:先强制序列化镜像。
     // 必须排在下面两步**之前**：它俩都要读 _contentController 判断正文是否
     // 仍为默认态，而富文本的内容在 flush 前还在 EditorState 里。
-    _richKey.currentState?.flushToController();
+    if (!_flushRichContent()) return;
     // 标题是纯 URL 但 onebox 还在飞（或还在 debounce 窗口内）时，不阻断提交：
     // featured link 本身不依赖 onebox 结果，直接用当前标题里的 URL 定案。
     _settlePendingFeaturedLink();
@@ -864,8 +923,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     if (pendingLink != null) {
       await _applyFeaturedLinkToContent(pendingLink);
       // 富文本插入后需要重新序列化，否则 controller 拿不到刚插的链接。
-      _richKey.currentState?.flushToController();
+      if (!_flushRichContent()) return;
     }
+    final approved = ComposerSubmissionSnapshot(_submissionValues());
     if (!_formKey.currentState!.validate()) {
       // 预览模式下验证错误不可见，切回编辑模式并提示
       if (_showPreview) {
@@ -949,6 +1009,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       return;
     }
     if (!mounted) return;
+    if (!mounted) return;
+    if (!approved.verify(
+      synchronize: _flushRichContent,
+      read: _submissionValues,
+    )) {
+      return;
+    }
     setState(() => _isSubmitting = true);
     _draftController.disable();
 
@@ -1044,13 +1111,12 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                     ? null
                     : PreloadedDataService().maxTopicTitleLengthSync,
                 // 计数改用悬浮层(见下方 Stack),这里不占位
-                buildCounter:
-                    (
-                      context, {
-                      required currentLength,
-                      required isFocused,
-                      maxLength,
-                    }) => null,
+                buildCounter: (
+                  context, {
+                  required currentLength,
+                  required isFocused,
+                  maxLength,
+                }) => null,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return context.l10n.createTopic_enterTitle;
@@ -1156,6 +1222,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
 
   @override
   Widget build(BuildContext context) {
+    _richModeEnabled = ref.watch(preferencesProvider).useRichComposer;
     final categoriesAsync = ref.watch(categoriesProvider);
     final tagsAsync = ref.watch(tagsProvider);
     final canTagTopics = ref.watch(canTagTopicsProvider).value ?? false;
@@ -1177,9 +1244,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     );
 
     final page = PopScope(
-      canPop: !_showEmojiPanel,
+      canPop: _allowClose && !_showEmojiPanel,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
+        if (!_showEmojiPanel) {
+          _closeWithCurrentContent(result);
+          return;
+        }
         _editorKey.currentState?.closeEmojiPanel();
         _richKey.currentState?.closeEmojiPanel();
       },
@@ -1246,7 +1317,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                     ? (builder) => AiPostReviewButton(
                         titleBuilder: () => _titleController.text,
                         contentBuilder: () {
-                          _richKey.currentState?.flushToController();
+                          if (!_flushRichContent()) return '';
                           return _contentController.text;
                         },
                         target: AiPostReviewTarget.topic,

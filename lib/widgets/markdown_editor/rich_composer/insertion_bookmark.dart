@@ -3,7 +3,8 @@ import 'package:fluxdo_render/editor.dart';
 /// 异步转换期间追踪原选区。目标块被删除或选中文字被修改时失效，
 /// 不把迟到内容插到用户的新光标，也不覆盖用户在等待期间修改的文字。
 class InsertionBookmark {
-  InsertionBookmark(this.editor) : selection = editor.selection {
+  InsertionBookmark(this.editor, {EditorSelection? selection})
+    : selection = selection ?? editor.selection {
     _capture();
     editor.addListener(_update);
   }
