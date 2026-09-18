@@ -1,3 +1,4 @@
+import '../widgets/markdown_editor/uploads/upload_task_labels.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 import '../widgets/markdown_editor/composer_chrome.dart';
 import '../utils/platform_utils.dart';
@@ -842,6 +843,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   }
 
   Future<void> _submit() async {
+    if ((_editorKey.currentState?.hasPendingUploads ?? false) ||
+        (_richKey.currentState?.hasPendingUploads ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(UploadTaskLabels.of(context).pendingSubmit)),
+      );
+      return;
+    }
+
     // 富文本模式:先强制序列化镜像。
     // 必须排在下面两步**之前**：它俩都要读 _contentController 判断正文是否
     // 仍为默认态，而富文本的内容在 flush 前还在 EditorState 里。

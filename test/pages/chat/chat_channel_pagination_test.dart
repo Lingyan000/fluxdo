@@ -7,6 +7,8 @@ import 'package:image_picker_platform_interface/image_picker_platform_interface.
 import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_submit_button.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -87,6 +89,18 @@ class _Messages extends ChatMessagesNotifier {
   int futureCalls = 0;
   Completer<void>? _pastRequest;
   Completer<void>? _futureRequest;
+
+  Completer<void>? sendRequest;
+  int sendCalls = 0;
+  @override
+  Future<void> send(
+    String raw, {
+    int? inReplyToId,
+    List<int> uploadIds = const [],
+  }) async {
+    sendCalls++;
+    await sendRequest!.future;
+  }
 
   Completer<ChatMessagesState>? reloadRequest;
   @override
@@ -317,6 +331,35 @@ void main() {
       await _disposePage(tester);
     });
   }
+
+  testWidgets('聊天工具条玻璃与发送忙碌状态不重复提交', (tester) async {
+    final messages = _Messages()..sendRequest = Completer<void>();
+    await _pumpPage(tester, messages);
+    final surface = tester.widget<GlassSurfaceFrame>(
+      find.byKey(const ValueKey('chat-composer-surface')),
+    );
+    expect(surface.recipe, GlassRecipe.toolbar);
+    tester.widget<TextField>(find.byType(TextField)).controller!.text = '测试发送';
+    await tester.pumpAndSettle();
+    final submit = find.byType(ComposerSubmitButton);
+    expect(tester.getSize(submit), const Size.square(36));
+    final fieldRect = tester.getRect(find.byType(TextField));
+    expect(
+      (tester.getCenter(submit).dy - fieldRect.center.dy).abs(),
+      lessThanOrEqualTo(3),
+    );
+    await tester.tap(submit);
+    await tester.pump();
+    expect(messages.sendCalls, 1);
+    expect(tester.widget<ComposerSubmitButton>(submit).busy, true);
+    await tester.tap(submit);
+    await tester.pump();
+    expect(messages.sendCalls, 1);
+    messages.sendRequest!.complete();
+    await tester.pumpAndSettle();
+    expect(tester.widget<ComposerSubmitButton>(submit).busy, false);
+    await _disposePage(tester);
+  });
 
   testWidgets('首屏布局和程序定位不触发分页', (tester) async {
     final messages = _Messages();

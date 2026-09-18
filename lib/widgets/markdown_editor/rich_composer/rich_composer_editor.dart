@@ -9,11 +9,14 @@
 /// 让宿主切回纯文本编辑器。
 library;
 
+import 'insertion_bookmark.dart';
+
 import '../composer_chrome.dart';
 
 import 'dart:async';
 import 'dart:io' show File;
 import 'dart:math' show max;
+import 'dart:math' as math;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
 import 'package:flutter/foundation.dart'
@@ -24,6 +27,10 @@ import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
+        BlockNode,
+        ParagraphNode,
+        ImageGridNode,
+        TableNode,
         CalloutKind,
         CodeBlockNode,
         PollNode,
@@ -83,6 +90,8 @@ import '../content_actions_providers.dart';
 import '../emoji_popover.dart';
 import '../emoji_sticker_panel.dart';
 import '../image_upload_dialog.dart';
+import '../uploads/task_controller.dart';
+import '../uploads/upload_task_panel.dart';
 import '../link_insert_dialog.dart';
 import '../poll_builder_dialog.dart';
 import '../template_insert_dialog.dart';
@@ -102,11 +111,15 @@ import '../voice_recorder_sheet.dart';
 
 /// 孤岛渲染工厂:复用 generic callbacks 的全部 builder(emoji 缓存池/
 /// 图片管线/代码高亮…),编辑器里的岛与阅读端视觉一致。
-NodeFactory buildComposerNodeFactory(BuildContext context) {
+NodeFactory buildComposerNodeFactory(
+  BuildContext context, {
+  Widget? Function(BuildContext, BlockNode)? uploadBuilder,
+}) {
   final callbacks = FluxdoRenderCallbacks.generic(
     heroTagNamespace: 'rich_composer',
   );
-  return NodeFactory(
+  return _UploadNodeFactory(
+    uploadBuilder: uploadBuilder,
     emojiImageBuilder: callbacks.emojiImageBuilder,
     imageContentBuilder: callbacks.imageContentBuilder,
     codeBlockHighlighter: callbacks.codeBlockHighlighter,
@@ -121,6 +134,34 @@ NodeFactory buildComposerNodeFactory(BuildContext context) {
     // 编辑器里插入投票后所见即所发,而非「接入主项目」fallback 占位
     pollBuilder: callbacks.pollBuilder,
   );
+}
+
+/// 占位只使用空节点和内存 ID，不携带本地路径或可序列化的标记。
+class _UploadNodeFactory extends NodeFactory {
+  _UploadNodeFactory({
+    this.uploadBuilder,
+    super.emojiImageBuilder,
+    super.imageContentBuilder,
+    super.codeBlockHighlighter,
+    super.quoteAvatarBuilder,
+    super.oneboxBuilder,
+    super.imageGridBuilder,
+    super.localDateBuilder,
+    super.mathBlockBuilder,
+    super.mathInlineBuilder,
+    super.svgBuilder,
+    super.pollBuilder,
+  });
+  final Widget? Function(BuildContext, BlockNode)? uploadBuilder;
+  @override
+  Widget build(
+    BuildContext context,
+    BlockNode node, {
+    bool trimTop = false,
+    bool trimBottom = false,
+  }) =>
+      uploadBuilder?.call(context, node) ??
+      super.build(context, node, trimTop: trimTop, trimBottom: trimBottom);
 }
 
 class RichComposerEditor extends StatefulWidget {
@@ -179,6 +220,320 @@ class RichComposerEditor extends StatefulWidget {
 class RichComposerEditorState extends State<RichComposerEditor> {
   EditorState? _editor;
   bool _importing = true;
+  late final _uploads = UploadTaskController(onCompleted: _completeUpload);
+  final Map<String, String> _uploadBlocks = {};
+  final Map<String, String?> _uploadGrids = {};
+  final Set<String> _placeholderNodes = {};
+  final Map<String, PreparedMediaUpload> _uploadMedia = {};
+  bool get hasPendingUploads =>
+      _uploads.hasPending ||
+      _uploadBlocks.keys.any(
+        (id) => _uploads.tasks.any(
+          (task) => task.id == id && task.phase == UploadTaskPhase.succeeded,
+        ),
+      ) ||
+      _uploadingCount > 0;
+
+  void _queueUpload(
+    String path,
+    String name, {
+    bool image = false,
+    String? gridId,
+    PreparedMediaUpload? media,
+    EditorSelection? insertionSelection,
+  }) {
+    final editor = _editor;
+    if (editor == null || _documentReplaced) return;
+    if (gridId != null) {
+      final index = editor.indexOfBlock(gridId);
+      if (index < 0 ||
+          editor.blocks[index] is! IslandBlock ||
+          (editor.blocks[index] as IslandBlock).node is! ImageGridNode) {
+        return;
+      }
+    }
+    final ids = _uploads.addBatch([
+      UploadTaskRequest(
+        path: path,
+        name: name,
+        isImage: image,
+        execute:
+            media?.execute ??
+            ((token, progress) => image
+                ? DiscourseService().uploadImage(
+                    path,
+                    cancelToken: token,
+                    onProgress: progress,
+                  )
+                : DiscourseService().uploadFile(
+                    path,
+                    cancelToken: token,
+                    onProgress: progress,
+                  )),
+      ),
+    ]);
+    final id = ids.single;
+    if (gridId != null) {
+      _uploadGrids[id] = gridId;
+      setState(() {});
+      return;
+    }
+    if (media != null) _uploadMedia[id] = media;
+    final selection = insertionSelection ?? editor.selection;
+    final anchor = selection?.extent.blockId ?? editor.blocks.last.id;
+    final index = editor.indexOfBlock(anchor);
+    final block = editor.blocks[index];
+    // 图片本身是段落内联原子，占位也必须携带容器栈，不能用无容器的孤岛拆开引用。
+    final EditorBlock placeholder = image && block is TextBlock
+        ? TextBlock(
+            id: editor.nextBlockId(),
+            content: EditableTextContent.empty,
+            containers: block.containers,
+          )
+        : IslandBlock(
+            id: editor.nextBlockId(),
+            node: ParagraphNode(id: id, inlines: const []),
+          );
+    _placeholderNodes.add(id);
+    _placeholderNodes.add(placeholder.id);
+    _uploadBlocks[id] = placeholder.id;
+    // 块级卡片在光标位置拆段，不改变正文内容；临时路径只在任务内存中。
+    if (gridId == null &&
+        selection?.isCollapsed == true &&
+        block is TextBlock) {
+      final offset = selection!.extent.offset.clamp(0, block.content.length);
+      final tail = TextBlock(
+        id: editor.nextBlockId(),
+        content: block.content.slice(offset, block.content.length),
+        kind: block.kind,
+        headingLevel: block.headingLevel,
+        ordered: block.ordered,
+        depth: block.depth,
+        listStart: block.listStart,
+        containers: block.containers,
+      );
+      final liveSelection = editor.selection;
+      EditorPosition mapLive(EditorPosition position) =>
+          position.blockId == block.id && position.offset > offset
+          ? EditorPosition(blockId: tail.id, offset: position.offset - offset)
+          : position;
+      editor.replaceBlockRange(
+        index,
+        index,
+        [
+          block.copyWith(content: block.content.slice(0, offset)),
+          placeholder,
+          tail,
+        ],
+        selection:
+            insertionSelection != null &&
+                liveSelection != null &&
+                liveSelection != selection
+            ? EditorSelection(
+                base: mapLive(liveSelection.base),
+                extent: mapLive(liveSelection.extent),
+              )
+            : EditorSelection.collapsed(
+                EditorPosition(blockId: tail.id, offset: 0),
+              ),
+      );
+    } else {
+      editor.replaceBlockRange(index, index, [
+        block,
+        placeholder,
+      ], selection: selection);
+    }
+    _uploadGrids[id] = gridId;
+    setState(() {});
+  }
+
+  void _onUploadsChanged() {
+    scheduleMicrotask(() {
+      if (!mounted || _documentReplaced) return;
+      final ids = _uploads.tasks.map((task) => task.id).toSet();
+      for (final id in {..._uploadBlocks.keys, ..._uploadGrids.keys}.toList()) {
+        if (!ids.contains(id)) _removeUpload(id);
+      }
+      setState(() {});
+    });
+  }
+
+  Widget? _buildUploadPlaceholder(BuildContext context, BlockNode node) {
+    if (!_placeholderNodes.contains(node.id)) return null;
+    if (!_uploadBlocks.containsKey(node.id)) return const SizedBox.shrink();
+    // 撤销恢复的失效占位不恢复上传，也不会迟到插入。
+    final tasks = _uploads.tasks.where((task) => task.id == node.id);
+    if (tasks.isEmpty) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _uploads,
+      builder: (context, _) {
+        final current = _uploads.tasks.where((item) => item.id == node.id);
+        if (current.isEmpty) return const SizedBox.shrink();
+        return UploadTaskCard(controller: _uploads, task: current.single);
+      },
+    );
+  }
+
+  void _removeUpload(String id) {
+    final block = _uploadBlocks.remove(id);
+    _uploadGrids.remove(id);
+    _uploads.remove(id);
+    _uploadMedia.remove(id);
+    final editor = _editor;
+    if (editor == null || block == null) return;
+    final index = editor.indexOfBlock(block);
+    if (index >= 0) editor.replaceBlockRange(index, index, const []);
+    editor.forgetTransientBlockInHistory(block);
+  }
+
+  Future<void> _completeUpload(UploadTask task, UploadResult result) async {
+    final editor = _editor;
+    final targetGrid = _uploadGrids[task.id];
+    if (mounted && !_documentReplaced && editor != null && targetGrid != null) {
+      final index = editor.indexOfBlock(targetGrid);
+      if (index < 0) return;
+      final block = editor.blocks[index];
+      if (block is! IslandBlock || block.node is! ImageGridNode) return;
+      final node = block.node as ImageGridNode;
+      final selection = editor.selection;
+      editor.replaceBlockRange(index, index, [
+        IslandBlock(
+          id: block.id,
+          node: ImageGridNode(
+            id: node.id,
+            columns: node.columns,
+            mode: node.mode,
+            images: [
+              ...node.images,
+              ImageRun(
+                src: result.shortUrl,
+                alt: task.name,
+                width: result.width?.toDouble(),
+                height: result.height?.toDouble(),
+              ),
+            ],
+          ),
+        ),
+      ], selection: selection);
+      _uploadGrids.remove(task.id);
+      if (result.url != null) {
+        DiscourseImageUtils.seedUploadUrl(result.shortUrl, result.url!);
+      }
+      return;
+    }
+    final blockId = _uploadBlocks[task.id];
+    if (!mounted || _documentReplaced || editor == null || blockId == null) {
+      return;
+    }
+    final grid = _uploadGrids[task.id];
+    final size = result.humanFilesize;
+    final fragment = task.isImage
+        ? null
+        : await markdownToDoc(
+            _uploadMedia[task.id]?.markdown(result) ??
+                '[${result.originalFilename}|attachment](${result.shortUrl})'
+                    '${size == null ? '' : ' ($size)'}',
+          );
+    if (!mounted ||
+        _documentReplaced ||
+        !identical(editor, _editor) ||
+        _uploadBlocks[task.id] != blockId ||
+        editor.indexOfBlock(blockId) < 0) {
+      return;
+    }
+    if (grid != null && editor.indexOfBlock(grid) < 0) {
+      _removeUpload(task.id);
+      return;
+    }
+    if (!task.isImage && fragment == null) {
+      // 上传已成功但正文转换不可用；保留占位及发布门禁，避免静默丢附件。
+      throw StateError('附件正文转换失败');
+    }
+    _uploadBlocks.remove(task.id);
+    _uploadGrids.remove(task.id);
+    _uploadMedia.remove(task.id);
+    final index = editor.indexOfBlock(blockId);
+    if (task.isImage) {
+      if (result.url != null) {
+        DiscourseImageUtils.seedUploadUrl(result.shortUrl, result.url!);
+      }
+      if (grid != null) {
+        final gridIndex = editor.indexOfBlock(grid);
+        final gridBlock = editor.blocks[gridIndex];
+        if (gridBlock is! IslandBlock || gridBlock.node is! ImageGridNode) {
+          return;
+        }
+        final node = gridBlock.node as ImageGridNode;
+        final updated = IslandBlock(
+          id: gridBlock.id,
+          node: ImageGridNode(
+            id: node.id,
+            columns: node.columns,
+            mode: node.mode,
+            images: [
+              ...node.images,
+              ImageRun(
+                src: result.shortUrl,
+                alt: task.name,
+                width: result.width?.toDouble(),
+                height: result.height?.toDouble(),
+              ),
+            ],
+          ),
+        );
+        final first = math.min(gridIndex, index);
+        final last = math.max(gridIndex, index);
+        final selection = editor.selection;
+        editor.replaceBlockRange(
+          first,
+          last,
+          [
+            for (var i = first; i <= last; i++)
+              if (i == gridIndex) updated else if (i != index) editor.blocks[i],
+          ],
+          selection: selection?.extent.blockId == blockId
+              ? EditorSelection.collapsed(
+                  EditorPosition(blockId: grid, offset: 1),
+                )
+              : selection,
+        );
+      } else {
+        final previous = editor.blocks[index];
+        final image = TextBlock(
+          id: editor.nextBlockId(),
+          containers: previous is TextBlock ? previous.containers : const [],
+          content: EditableTextContent.fromInlines([
+            ImageRun(
+              src: result.shortUrl,
+              alt: task.name,
+              width: result.width?.toDouble(),
+              height: result.height?.toDouble(),
+            ),
+          ]),
+        );
+        final selection = editor.selection;
+        editor.replaceBlockRange(
+          index,
+          index,
+          [image],
+          selection: selection?.extent.blockId == blockId
+              ? EditorSelection.collapsed(
+                  EditorPosition(blockId: image.id, offset: 1),
+                )
+              : selection,
+        );
+      }
+    } else if (fragment != null) {
+      final selection = editor.selection;
+      editor.replaceIsland(blockId, fragment);
+      if (selection != null &&
+          selection.extent.blockId != blockId &&
+          selection.base.blockId != blockId) {
+        editor.updateSelection(selection);
+      }
+    }
+    editor.forgetTransientBlockInHistory(blockId);
+  }
 
   Timer? _serializeDebounce;
   Timer? _serializeDeadline;
@@ -262,6 +617,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void initState() {
     super.initState();
+    _uploads.addListener(_onUploadsChanged);
     // 预热 cook 引擎:551K JS bundle 的同步 eval 挪到打开编辑器时,
     // 否则落在首次序列化触发预览 cook 的时刻 —— 表现为"打第一个字超卡"。
     DiscourseCookService().warmUp();
@@ -334,6 +690,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   @override
   void dispose() {
+    _uploads.dispose();
     _prefsSub?.close();
     // 镜像 debounce(800ms)窗口内的最后编辑先落盘到 controller ——
     // unmount 后序遍历,子先于宿主 dispose,此刻 controller 还活着、
@@ -365,6 +722,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       _panelController.updatePanelType(ChatBottomPanelType.keyboard);
       SystemChannels.textInput.invokeMethod('TextInput.show');
     }
+  }
+
+  void _switchToSource() {
+    if (hasPendingUploads) {
+      ToastService.showError(UploadTaskLabels.of(context).pendingSubmit);
+      return;
+    }
+    flushToController();
+    widget.onSwitchToSource?.call();
   }
 
   bool _toolsOpen = false;
@@ -489,7 +855,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             group: ComposerToolGroup.editing,
             run: () {
               flushToController();
-              widget.onSwitchToSource!();
+              _switchToSource();
             },
           ),
       ];
@@ -530,6 +896,26 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   int _chromeDocRevision = 0;
 
   void _onDocChanged() {
+    for (final entry in _uploadGrids.entries.toList()) {
+      if (entry.value == null) continue;
+      final index = _editor!.indexOfBlock(entry.value!);
+      if (index < 0 ||
+          _editor!.blocks[index] is! IslandBlock ||
+          (_editor!.blocks[index] as IslandBlock).node is! ImageGridNode) {
+        _uploadGrids.remove(entry.key);
+        _uploads.remove(entry.key);
+      }
+    }
+    for (final entry in _uploadBlocks.entries.toList()) {
+      final grid = _uploadGrids[entry.key];
+      if (_editor!.indexOfBlock(entry.value) < 0 ||
+          (grid != null && _editor!.indexOfBlock(grid) < 0)) {
+        _editor!.forgetTransientBlockInHistory(entry.value);
+        _uploadBlocks.remove(entry.key);
+        _uploadGrids.remove(entry.key);
+        _uploads.remove(entry.key);
+      }
+    }
     final revision = _editor?.docRevision ?? 0;
     final documentChanged = revision != _chromeDocRevision;
     if (documentChanged && mounted) {
@@ -591,7 +977,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (_documentReplaced) return;
     final editor = _editor;
     if (editor == null) return;
-    final raw = editor.exportMarkdown();
+    final raw = _exportForMirror(editor);
     if (raw != widget.controller.text || !widget.controller.selection.isValid) {
       // 原子赋值 + 合法末尾选区。text setter 会把 selection 置
       // collapsed(-1);切到源码模式时 TextField attach 的**首帧**
@@ -607,9 +993,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
+  String _exportForMirror(EditorState editor) => editor.exportMarkdown(
+    fragment: editor.blocks
+        .where(
+          (block) =>
+              !_placeholderNodes.contains(block.id) &&
+              (block is! IslandBlock ||
+                  !_placeholderNodes.contains(block.node.id)),
+        )
+        .toList(),
+  );
+
   /// 宿主已经采用另一份文档，即将重建编辑器；旧文档不能在卸载时回写。
   void prepareForDocumentReplacement() {
     _documentReplaced = true;
+    for (final task in _uploads.tasks.toList()) {
+      _uploads.remove(task.id);
+    }
+    _uploadBlocks.clear();
+    _uploadGrids.clear();
     _serializeDebounce?.cancel();
     _serializeDeadline?.cancel();
   }
@@ -1694,9 +2096,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         extent: EditorPosition(blockId: toBlockId, offset: toOffset),
       ),
     );
-    editor.deleteSelection();
-    // cook 是异步的;期间用户可能继续打字,insertMarkdownSnippet 自身
-    // 按当前选区插入,与斜杠菜单同一语义。
+    // 保留选区到转换完成，由统一插入事务一次替换，避免先删后异步失败。
     unawaited(() async {
       final before = editor.blocks.map((b) => b.id).toSet();
       await insertMarkdownSnippet(markdown);
@@ -1718,7 +2118,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }());
   }
 
-  Future<void> insertMarkdownSnippet(String markdown) async {
+  Future<void> insertMarkdownSnippet(
+    String markdown, {
+    InsertionBookmark? insertionBookmark,
+  }) async {
     final editor = _editor;
     if (editor == null || markdown.isEmpty) return;
     // 从未聚焦过(选区 null)→ 落到文档末尾,插入不静默丢
@@ -1730,21 +2133,52 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         ),
       );
     }
-    final sw = kDebugMode ? (Stopwatch()..start()) : null;
-    final fragment = await markdownToDoc(markdown);
-    if (!mounted) return;
-    final before = editor.blocks.length;
-    if (fragment != null && fragment.isNotEmpty) {
-      editor.pasteBlocks(fragment);
-    } else {
-      editor.pastePlainText(markdown);
-    }
-    if (kDebugMode) {
-      debugPrint(
-        '[RichComposer] insert "${markdown.split('\n').first}" '
-        'cook=${sw!.elapsedMilliseconds}ms frag=${fragment?.length} '
-        'blocks $before→${editor.blocks.length} sel=${editor.selection}',
-      );
+    final bookmark = insertionBookmark ?? InsertionBookmark(editor);
+    final originalSelection = bookmark.selection;
+    try {
+      final fragment = await markdownToDoc(markdown);
+      if (!mounted ||
+          !identical(editor, _editor) ||
+          _documentReplaced ||
+          !bookmark.valid) {
+        return;
+      }
+      final currentSelection = editor.selection;
+      final moved = currentSelection != originalSelection;
+      // 用户已移动光标时，插入后映射其新位置，不能把光标拉回旧位置。
+      final currentBookmark = moved ? InsertionBookmark(editor) : null;
+      try {
+        final target = bookmark.selection;
+        bookmark.dispose();
+        final previousIds = editor.blocks.map((block) => block.id).toSet();
+        editor.updateSelection(target);
+        if (fragment != null && fragment.isNotEmpty) {
+          editor.pasteBlocks(fragment);
+        } else {
+          editor.pastePlainText(markdown);
+        }
+        if (currentBookmark != null && currentBookmark.valid) {
+          editor.updateSelection(currentBookmark.selection);
+        } else if (!moved) {
+          final inserted = editor.blocks.where(
+            (block) => !previousIds.contains(block.id),
+          );
+          final editableIsland = inserted
+              .whereType<IslandBlock>()
+              .where(
+                (block) =>
+                    block.node is TableNode || block.node is CodeBlockNode,
+              )
+              .firstOrNull;
+          if (editableIsland != null) {
+            editor.requestIslandEdit(editableIsland.id);
+          }
+        }
+      } finally {
+        currentBookmark?.dispose();
+      }
+    } finally {
+      bookmark.dispose();
     }
   }
 
@@ -1755,6 +2189,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         (gridId != null && _addingImageGrids.contains(gridId))) {
       return;
     }
+    final bookmark = InsertionBookmark(editor);
     if (gridId != null) setState(() => _addingImageGrids.add(gridId));
     try {
       final images = await ImagePicker().pickMultiImage();
@@ -1772,35 +2207,20 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           ToastService.showError('图片组已被移除，无法添加图片');
           return;
         }
-        setState(() => _uploadingCount++);
-        try {
-          final uploadResult = await DiscourseService().uploadImage(
-            confirmed.path,
-          );
-          // 预置 short_url → 完整 url 解析缓存(编辑器里的图立即可显)
-          final url = uploadResult.url;
-          if (url != null) {
-            DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
-          }
-          if (!mounted || !identical(editor, _editor)) return;
-          final inserted = insertUploadedImage(
-            targetGridId: gridId,
-            shortUrl: uploadResult.shortUrl,
-            alt: confirmed.originalName,
-            width: uploadResult.width,
-            height: uploadResult.height,
-          );
-          if (!inserted && gridId != null) {
-            ToastService.showError('图片组已被移除，无法添加图片');
-            return;
-          }
-        } finally {
-          if (mounted) setState(() => _uploadingCount--);
-        }
+        if (!bookmark.valid) return;
+        _queueUpload(
+          confirmed.path,
+          confirmed.originalName,
+          image: true,
+          gridId: gridId,
+          insertionSelection: bookmark.selection,
+        );
+        bookmark.moveTo(editor.selection);
       }
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
+      bookmark.dispose();
       if (mounted && gridId != null) {
         setState(() => _addingImageGrids.remove(gridId));
       }
@@ -1813,24 +2233,37 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 音视频上传插入(插入菜单):file_picker 选 → .xz 改名上传 →
   /// <audio>/<video> 标签经 cook 岛化插入。
   Future<void> _pickAndInsertMedia({required bool isAudio}) async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: isAudio ? FileType.audio : FileType.video,
-    );
-    final file = picked?.files.single;
-    final path = file?.path;
-    if (file == null || path == null || !mounted) return;
-    setState(() => _uploadingCount++);
+    final editor = _editor;
+    if (editor == null) return;
+    final bookmark = InsertionBookmark(editor);
     try {
-      final tag = await uploadMediaFileAsTag(
-        context,
-        path: path,
-        name: file.name,
-        isAudio: isAudio,
+      final picked = await FilePicker.platform.pickFiles(
+        type: isAudio ? FileType.audio : FileType.video,
       );
-      if (tag == null || !mounted) return;
-      await insertMarkdownSnippet(tag);
+      final file = picked?.files.single;
+      final path = file?.path;
+      if (file == null || path == null || !mounted) return;
+      setState(() => _uploadingCount++);
+      try {
+        final prepared = await prepareMediaUpload(
+          context,
+          path: path,
+          name: file.name,
+          isAudio: isAudio,
+        );
+        if (prepared == null || !mounted) return;
+        if (!bookmark.valid || !identical(editor, _editor)) return;
+        _queueUpload(
+          prepared.path,
+          prepared.name,
+          media: prepared,
+          insertionSelection: bookmark.selection,
+        );
+      } finally {
+        if (mounted) setState(() => _uploadingCount--);
+      }
     } finally {
-      if (mounted) setState(() => _uploadingCount--);
+      bookmark.dispose();
     }
   }
 
@@ -1840,66 +2273,77 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// 语法 `[文件名|attachment](upload://...) (大小)`,cook 后渲染成
   /// 网页端同款的附件下载条。
   Future<void> _pickAndInsertFile() async {
-    // 白名单从站点配置动态派生(staff 名单叠加);null = 站点通配或
-    // 配置未加载,不设限让服务端裁决。
-    final allowed = attachmentAllowedExtensions();
-    final picked = await FilePicker.platform.pickFiles(
-      type: allowed == null ? FileType.any : FileType.custom,
-      allowedExtensions: allowed,
-    );
-    final file = picked?.files.single;
-    final path = file?.path;
-    if (file == null || path == null || !mounted) return;
-    setState(() => _uploadingCount++);
+    final editor = _editor;
+    if (editor == null) return;
+    final bookmark = InsertionBookmark(editor);
     try {
-      final uploadResult = await DiscourseService().uploadFile(path);
-      if (!mounted) return;
-      final size = uploadResult.humanFilesize;
-      final snippet =
-          '[${uploadResult.originalFilename}|attachment]'
-          '(${uploadResult.shortUrl})'
-          '${size != null ? ' ($size)' : ''}';
-      await insertMarkdownSnippet(snippet);
-    } catch (e, s) {
-      if (mounted) {
-        final msg = e is Exception
-            ? e.toString().replaceFirst('Exception: ', '')
-            : '文件上传失败';
-        ToastService.showError(msg);
-      } else {
-        AppErrorHandler.handleUnexpected(e, s);
-      }
+      // 白名单从站点配置动态派生(staff 名单叠加);null = 站点通配或
+      // 配置未加载,不设限让服务端裁决。
+      final allowed = attachmentAllowedExtensions();
+      final picked = await FilePicker.platform.pickFiles(
+        type: allowed == null ? FileType.any : FileType.custom,
+        allowedExtensions: allowed,
+      );
+      final file = picked?.files.single;
+      final path = file?.path;
+      if (file == null || path == null || !mounted) return;
+      if (!bookmark.valid || !identical(editor, _editor)) return;
+      _queueUpload(path, file.name, insertionSelection: bookmark.selection);
     } finally {
-      if (mounted) setState(() => _uploadingCount--);
+      bookmark.dispose();
     }
   }
 
   /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
   Future<void> _recordAndInsertVoice() async {
-    final path = await showVoiceRecorderSheet(context);
-    if (path == null || !mounted) return;
-    setState(() => _uploadingCount++);
+    final editor = _editor;
+    if (editor == null) return;
+    final bookmark = InsertionBookmark(editor);
     try {
-      final tag = await uploadMediaFileAsTag(
-        context,
-        path: path,
-        name: path.split('/').last,
-        isAudio: true,
-        voice: true,
-      );
-      if (tag == null || !mounted) return;
-      await insertMarkdownSnippet(tag);
+      final path = await showVoiceRecorderSheet(context);
+      if (path == null || !mounted) return;
+      setState(() => _uploadingCount++);
+      try {
+        final prepared = await prepareMediaUpload(
+          context,
+          path: path,
+          name: path.split('/').last,
+          isAudio: true,
+          voice: true,
+        );
+        if (prepared == null || !mounted) return;
+        if (!bookmark.valid || !identical(editor, _editor)) return;
+        _queueUpload(
+          prepared.path,
+          prepared.name,
+          media: prepared,
+          insertionSelection: bookmark.selection,
+        );
+      } finally {
+        if (mounted) setState(() => _uploadingCount--);
+      }
     } finally {
-      if (mounted) setState(() => _uploadingCount--);
+      bookmark.dispose();
     }
   }
 
   /// 用户自定义模板(MD 模式「模板」同一选择器):内容为 markdown,
   /// 经 cook 导入链富内容化插入。
   Future<void> _insertTemplate() async {
-    final template = await showTemplateInsertDialog(context);
-    if (template == null || !mounted) return;
-    await insertMarkdownSnippet(template.content);
+    final editor = _editor;
+    if (editor == null) return;
+    final bookmark = InsertionBookmark(editor);
+    try {
+      final template = await showTemplateInsertDialog(context);
+      if (template == null || !mounted) return;
+      if (!bookmark.valid || !identical(editor, _editor)) return;
+      await insertMarkdownSnippet(
+        template.content,
+        insertionBookmark: bookmark,
+      );
+    } finally {
+      bookmark.dispose();
+    }
   }
 
   /// 插入/施加链接:选区非空 → 对选中文字加 link mark(文字保留);
@@ -2157,12 +2601,39 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   /// 表格 cell 原位编辑确认:新表格 markdown → cook → 替换岛。
+  final Map<String, int> _tableEditVersions = {};
+
   Future<void> _onTableEdited(IslandBlock island, String markdown) async {
     final editor = _editor;
     if (editor == null) return;
+    final version = (_tableEditVersions[island.id] ?? 0) + 1;
+    _tableEditVersions[island.id] = version;
     final fragment = await markdownToDoc(markdown);
-    if (!mounted || fragment == null || fragment.isEmpty) return;
-    editor.replaceIsland(island.id, fragment);
+    if (!mounted ||
+        !identical(editor, _editor) ||
+        _documentReplaced ||
+        _tableEditVersions[island.id] != version ||
+        fragment == null)
+      return;
+    final current = editor.blockById(island.id);
+    // 撤销/删除/外部替换已改变表格时，迟到的转换结果不得复活旧内容。
+    if (current is! IslandBlock || !identical(current.node, island.node))
+      return;
+    final tables = fragment.whereType<IslandBlock>().where(
+      (block) => block.node is TableNode,
+    );
+    if (tables.length != 1) return;
+    final table = tables.single.node as TableNode;
+    editor.updateIslandNode(
+      island.id,
+      TableNode(
+        id: island.node.id,
+        rows: table.rows,
+        columnCount: table.columnCount,
+        hasHeader: table.hasHeader,
+        textAlign: (island.node as TableNode).textAlign,
+      ),
+    );
   }
 
   /// 代码块岛内编辑提交:结构化节点原位形变,不经 cook(fence 冲突由
@@ -2234,25 +2705,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         imageName: fileName,
       );
       if (confirmed == null) return;
-      setState(() => _uploadingCount++);
-      try {
-        final uploadResult = await DiscourseService().uploadImage(
-          confirmed.path,
-        );
-        final url = uploadResult.url;
-        if (url != null) {
-          DiscourseImageUtils.seedUploadUrl(uploadResult.shortUrl, url);
-        }
-        if (!mounted) return;
-        insertUploadedImage(
-          shortUrl: uploadResult.shortUrl,
-          alt: confirmed.originalName,
-          width: uploadResult.width,
-          height: uploadResult.height,
-        );
-      } finally {
-        if (mounted) setState(() => _uploadingCount--);
-      }
+      if (!mounted) return;
+      _queueUpload(confirmed.path, confirmed.originalName, image: true);
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
     }
@@ -2919,9 +3373,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   /// name 必须唯一,先 flush 后按现有 raw 统计 poll 数决定 name=pollN。
   Future<void> _insertPoll() async {
     flushToController();
-    final existing = RegExp(
-      r'\[poll[\s\]]',
-    ).allMatches(widget.controller.text).length;
+    final existing = RegExp(r'\[poll[\s\]]')
+        .allMatches(widget.controller.text)
+        .length;
     final spec = await showPollBuilderDialog(
       context,
       existingPollCount: existing,
@@ -3058,6 +3512,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                       child: CustomScrollView(
                         controller: _scrollController,
                         slivers: [
+                          SliverToBoxAdapter(
+                            child: UploadTaskPanel(controller: _uploads),
+                          ),
                           if (widget.header != null)
                             SliverToBoxAdapter(child: widget.header),
                           if (_isDesktop && widget.metaBar != null)
@@ -3101,6 +3558,33 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                           ),
                                           child: FluxdoEditor(
                                             state: editor,
+                                            transientBlockBuilder:
+                                                (context, block) {
+                                                  if (!_placeholderNodes
+                                                      .contains(block.id))
+                                                    return null;
+                                                  final taskId = _uploadBlocks
+                                                      .entries
+                                                      .where(
+                                                        (entry) =>
+                                                            entry.value ==
+                                                            block.id,
+                                                      )
+                                                      .firstOrNull
+                                                      ?.key;
+                                                  final task = _uploads.tasks
+                                                      .where(
+                                                        (task) =>
+                                                            task.id == taskId,
+                                                      )
+                                                      .firstOrNull;
+                                                  return task == null
+                                                      ? const SizedBox.shrink()
+                                                      : UploadTaskCard(
+                                                          controller: _uploads,
+                                                          task: task,
+                                                        );
+                                                },
                                             onEditingActivity: () {
                                               if (!_isDesktop) {
                                                 ComposerChromeScope.maybeOf(
@@ -3114,6 +3598,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                   gridId: id,
                                                 ),
                                             addingImageGrids: _addingImageGrids,
+                                            gridPendingUploadsBuilder:
+                                                (context, id) => [
+                                                  for (final task
+                                                      in _uploads.tasks)
+                                                    if (_uploadGrids[task.id] ==
+                                                        id)
+                                                      UploadGridTile(
+                                                        controller: _uploads,
+                                                        task: task,
+                                                      ),
+                                                ],
                                             gridControlSurfaceBuilder:
                                                 (_, child) =>
                                                     ComposerObjectSurface(
@@ -3145,6 +3640,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             nodeFactory: _nodeFactory ??=
                                                 buildComposerNodeFactory(
                                                   context,
+                                                  uploadBuilder:
+                                                      _buildUploadPlaceholder,
                                                 ),
                                             // 粘贴导入:剪贴板 markdown → cook 链路 →
                                             // 编辑块(失败/不可用时 FluxdoEditor 内部
@@ -3288,7 +3785,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 // 退场,挂着它的源码 TextField attach 即干净重连,
                 // 切完立刻能打能删(不用点一下正文)。
                 _editorFocus.unfocus();
-                widget.onSwitchToSource!();
+                _switchToSource();
                 if (!_ownsFocus) {
                   final node = _editorFocus;
                   final controller = widget.controller;
@@ -3710,6 +4207,14 @@ class _RichToolbarState extends State<_RichToolbar> {
     final tools = ids == null ? richEditorTools : resolveVisibleRichTools(ids);
 
     return [
+      if (!tools.any((tool) => tool.id == 'image'))
+        _btn(
+          FontAwesomeIcons.image,
+          richEditorTools.firstWhere((tool) => tool.id == 'image').label,
+          toolId: 'image',
+          anchored: anchored,
+          onTap: widget.onPickImage,
+        ),
       if (ctx != null)
         for (final t in tools)
           _btn(

@@ -10,6 +10,10 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
+
+import '../../services/uploads/upload_progress.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mime/mime.dart' show lookupMimeType;
@@ -90,6 +94,66 @@ String buildMediaTag({
   return '<video width="640" height="360" controls>\n'
       '  <source src="$srcPath" type="$mime">\n'
       '</video>';
+}
+
+/// 准备与上传分离，失败重试只重传处理后的文件，不重新压缩。
+class PreparedMediaUpload {
+  const PreparedMediaUpload({
+    required this.path,
+    required this.name,
+    required this.isAudio,
+    required this.voice,
+  });
+  final String path;
+  final String name;
+  final bool isAudio;
+  final bool voice;
+
+  Future<UploadResult> execute(
+    CancelToken cancelToken,
+    UploadProgressCallback onProgress,
+  ) => DiscourseService().uploadMediaAsXz(
+    path,
+    cancelToken: cancelToken,
+    onProgress: onProgress,
+  );
+
+  String markdown(UploadResult result) => buildMediaTag(
+    isAudio: isAudio,
+    voice: voice,
+    srcPath: mediaShortUrlToXzPath(result.shortUrl),
+    mime: lookupMimeType(path) ?? (isAudio ? 'audio/mpeg' : 'video/mp4'),
+  );
+}
+
+Future<PreparedMediaUpload?> prepareMediaUpload(
+  BuildContext context, {
+  required String path,
+  required String name,
+  required bool isAudio,
+  bool voice = false,
+}) async {
+  final size = await File(path).length();
+  final maxBytes = await MediaUploadLimits.load();
+  if (!context.mounted) return null;
+  var preparedPath = path;
+  if (maxBytes != null && size >= maxBytes) {
+    final compressed = await compressMediaWithDialog(
+      context,
+      path: path,
+      isAudio: isAudio,
+      voice: voice,
+      maxBytes: maxBytes,
+    );
+    if (compressed == null || !context.mounted) return null;
+    preparedPath = compressed;
+  }
+  return PreparedMediaUpload(
+    path: preparedPath,
+    name: name,
+    isAudio: isAudio,
+    voice: voice,
+  );
 }
 
 /// 已有本地媒体文件 → 上传 → 标签文本。失败弹 SnackBar 并返回 null

@@ -10,11 +10,19 @@ class ComposerSubmitButton extends StatefulWidget {
     required this.onPressed,
     required this.busy,
     this.icon,
+    this.animateFlight = true,
+    this.compact = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final bool busy;
+
+  /// 紧凑输入条使用 36px，顶栏保持原有 48px 触控外框。
+  final bool compact;
+
+  /// 上传准备等等待状态不播放提交起飞。
+  final bool animateFlight;
 
   /// 保存编辑等动作可提供自己的图标；默认纸飞机才播放起飞。
   final IconData? icon;
@@ -47,7 +55,7 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
     if (!widget.busy) {
       _flight.value = 0;
     } else if (!oldWidget.busy) {
-      if (_animate && widget.icon == null) {
+      if (_animate && widget.animateFlight && widget.icon == null) {
         _flight.forward(from: 0);
       } else {
         _flight.value = 1;
@@ -66,21 +74,24 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final size = widget.compact ? 36.0 : 40.0;
     return Tooltip(
       message: widget.label,
       excludeFromSemantics: true,
       child: SizedBox.square(
-        dimension: 48,
+        dimension: widget.compact ? 36 : 48,
         child: Center(
           child: FilledButton(
             key: const ValueKey('composer-header-submit'),
             onPressed: widget.busy ? null : widget.onPressed,
             style: FilledButton.styleFrom(
-              minimumSize: const Size.square(40),
-              maximumSize: const Size.square(40),
-              fixedSize: const Size.square(40),
+              minimumSize: Size.square(size),
+              maximumSize: Size.square(size),
+              fixedSize: Size.square(size),
               visualDensity: VisualDensity.standard,
-              tapTargetSize: MaterialTapTargetSize.padded,
+              tapTargetSize: widget.compact
+                  ? MaterialTapTargetSize.shrinkWrap
+                  : MaterialTapTargetSize.padded,
               padding: EdgeInsets.zero,
               shape: const CircleBorder(),
               disabledBackgroundColor: widget.busy ? colors.primary : null,
@@ -94,7 +105,7 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
                   builder: (context, _) {
                     final progress = widget.busy ? _flight.value : 0.0;
                     return SizedBox.square(
-                      dimension: 40,
+                      dimension: size,
                       child: ClipOval(
                         child: Stack(
                           alignment: Alignment.center,

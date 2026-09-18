@@ -6,26 +6,7 @@ part of 'chat_channel_page.dart';
 /// 移动端输入条底部面板类型(键盘位互换,编辑器同款机制)
 enum _ComposerPanel { none, keyboard, emoji }
 
-/// 待发附件:本地文件 + 上传状态(上传成功持有 upload id)
-class _PendingAttachment {
-  final String filePath;
-  final String fileName;
-  final bool isImage;
-  int? uploadId;
-  bool failed = false;
-
-  _PendingAttachment({
-    required this.filePath,
-    required this.fileName,
-    required this.isImage,
-  });
-
-  bool get uploading => uploadId == null && !failed;
-}
-
-/// 输入条:视觉规格对齐 AiChatInput
-/// (外壳 surfaceContainerLow + 顶部圆角 16;输入框 filled surface 圆角 20;
-///  发送键 IconButton.filled 36×36)
+/// 输入条复用工具条玻璃材质与统一提交按钮。
 /// 能力:附件(图片确认处理后上传、文件选即传，带 upload_ids 发送)、@提及自动补全。
 class _ChatComposer extends ConsumerStatefulWidget {
   final ChatComposerController controller;
@@ -35,7 +16,7 @@ class _ChatComposer extends ConsumerStatefulWidget {
   final ChatMessage? replyingTo;
 
   /// 发送回调,附带已上传完成的 upload id 列表
-  final void Function(List<int> uploadIds) onSend;
+  final Future<void> Function(List<int> uploadIds) onSend;
 
   /// 表情包直发:不进输入框,选中即作为独立消息发出
   final void Function(String markdown) onSendSticker;
@@ -64,6 +45,8 @@ class _ChatComposer extends ConsumerStatefulWidget {
 
 class _ChatComposerState extends ConsumerState<_ChatComposer> {
   final ImagePicker _imagePicker = ImagePicker();
+  bool _sending = false;
+  bool _sendingEdit = false;
 
   /// 桌面表情弹层:锚定输入条表情按钮
   final EmojiPopoverController? _emojiPopover = PlatformUtils.isDesktop
@@ -141,7 +124,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     if (_readOnly != value) setState(() => _readOnly = value);
   }
 
-  final List<_PendingAttachment> _attachments = [];
+  final _uploads = UploadTaskController();
 
   // ---- @提及自动补全 ----
   Timer? _mentionDebounce;
@@ -158,6 +141,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   @override
   void initState() {
     super.initState();
+    _uploads.addListener(_onUploadsChanged);
     widget.controller.addListener(_onTextChanged);
     // 弹层开合同步表情按钮高亮:关闭路径不止按钮(外点/ESC/resize
     // 都走 controller 内部),必须监听而非在点击处手动 setState
@@ -182,8 +166,14 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     if (mounted) setState(() {});
   }
 
+  void _onUploadsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _uploads.removeListener(_onUploadsChanged);
+    _uploads.dispose();
     widget.controller.removeListener(_onTextChanged);
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
@@ -247,14 +237,21 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     Overlay.of(context).insert(_mentionOverlay!);
   }
 
-  bool get _hasReadyAttachment => _attachments.any((a) => a.uploadId != null);
-  bool get _hasUploading => _attachments.any((a) => a.uploading);
+  bool get _hasReadyAttachment =>
+      _uploads.tasks.any((a) => a.result?.id != null);
+  bool get _hasUploading => _uploads.tasks.any(
+    (task) =>
+        task.phase == UploadTaskPhase.queued ||
+        task.phase == UploadTaskPhase.uploading,
+  );
 
   bool get _canSendNow =>
+      !_sending &&
+      (
       // 编辑态不允许带新附件(网页版同语义:编辑只改文本)
       widget.editing != null
-      ? widget.canSend
-      : (widget.canSend || _hasReadyAttachment) && !_hasUploading;
+          ? widget.canSend
+          : (widget.canSend || _hasReadyAttachment) && !_uploads.hasPending);
 
   // ========== 附件 ==========
 
@@ -329,21 +326,32 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       if (confirmed == null || !mounted) return;
       results = confirmed;
     }
-    // 一次加入全部待发项，避免串行上传间隙误把尚未上传的图片漏发。
-    final attachments = [
+    _uploads.addBatch([
       for (final result in results)
-        _PendingAttachment(
-          filePath: result.path,
-          fileName: result.originalName,
-          isImage: true,
-        ),
-    ];
-    setState(() => _attachments.addAll(attachments));
-    for (final attachment in attachments) {
-      if (!mounted) return;
-      if (!_attachments.contains(attachment)) continue;
-      await _upload(attachment);
-    }
+        _uploadRequest(result.path, result.originalName, isImage: true),
+    ]);
+  }
+
+  UploadTaskRequest _uploadRequest(
+    String path,
+    String name, {
+    required bool isImage,
+  }) {
+    final service = ref.read(discourseServiceProvider);
+    return UploadTaskRequest(
+      path: path,
+      name: name,
+      isImage: isImage,
+      execute: (cancelToken, onProgress) async {
+        final result = await service.uploadFile(
+          path,
+          cancelToken: cancelToken,
+          onProgress: onProgress,
+        );
+        if (result.id == null) throw StateError('上传响应缺少附件编号');
+        return result;
+      },
+    );
   }
 
   Future<void> _addAndUpload(
@@ -352,39 +360,33 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     String? fileName,
   }) async {
     if (!mounted) return;
-    final attachment = _PendingAttachment(
-      filePath: path,
-      fileName: fileName ?? path.split(Platform.pathSeparator).last,
-      isImage: isImage,
+    _uploads.add(
+      _uploadRequest(
+        path,
+        fileName ?? path.split(Platform.pathSeparator).last,
+        isImage: isImage,
+      ),
     );
-    setState(() => _attachments.add(attachment));
-    await _upload(attachment);
   }
 
-  Future<void> _upload(_PendingAttachment attachment) async {
-    try {
-      final service = ref.read(discourseServiceProvider);
-      final result = await service.uploadFile(attachment.filePath);
-      if (!mounted) return;
-      setState(() {
-        attachment.uploadId = result.id;
-        attachment.failed = result.id == null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => attachment.failed = true);
-      ToastService.showError(e.toString());
-    }
-  }
-
-  void _handleSend() {
+  Future<void> _handleSend() async {
     if (!_canSendNow) return;
     final uploadIds = [
-      for (final a in _attachments)
-        if (a.uploadId != null) a.uploadId!,
+      for (final a in _uploads.tasks)
+        if (a.result?.id != null) a.result!.id!,
     ];
-    widget.onSend(uploadIds);
-    setState(_attachments.clear);
+    setState(() {
+      _sending = true;
+      _sendingEdit = widget.editing != null;
+      for (final task in _uploads.tasks) {
+        _uploads.remove(task.id);
+      }
+    });
+    try {
+      await widget.onSend(uploadIds);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   // ========== @提及 ==========
@@ -475,45 +477,18 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
               ? 8 + bottomPadding
               : (_currentPanel == _ComposerPanel.none ? 0 : 8),
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+        child: GlassSurfaceFrame(
+          key: const ValueKey('chat-composer-surface'),
+          radius: 24,
+          recipe: GlassRecipe.toolbar,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 待发附件预览行
-                if (_attachments.isNotEmpty) ...[
-                  SizedBox(
-                    height: 64,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _attachments.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 6),
-                      itemBuilder: (context, index) => _PendingAttachmentTile(
-                        attachment: _attachments[index],
-                        onRemove: () =>
-                            setState(() => _attachments.removeAt(index)),
-                        onRetry: () {
-                          setState(() => _attachments[index].failed = false);
-                          _upload(_attachments[index]);
-                        },
-                      ),
-                    ),
-                  ),
+                // 与编辑器共用任务卡，失败保留重试，取消会终止请求。
+                if (_uploads.tasks.isNotEmpty) ...[
+                  ChatUploadStrip(controller: _uploads),
                   const SizedBox(height: 6),
                 ],
                 // 编辑/回复上下文条
@@ -640,29 +615,15 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     const SizedBox(width: 6),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 1),
-                      child: IconButton.filled(
+                      child: ComposerSubmitButton(
+                        compact: true,
+                        label: context.l10n.chat_send,
                         onPressed: _canSendNow ? _handleSend : null,
-                        icon: _hasUploading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: LoadingSpinner(),
-                              )
-                            : Icon(
-                                editing != null
-                                    ? Symbols.check_rounded
-                                    : Symbols.send_rounded,
-                                size: 20,
-                              ),
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(36, 36),
-                          padding: EdgeInsets.zero,
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
-                          disabledBackgroundColor: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.1),
-                        ),
-                        tooltip: context.l10n.chat_send,
+                        busy: _sending || _hasUploading,
+                        animateFlight: _sending,
+                        icon: (_sending ? _sendingEdit : editing != null)
+                            ? Symbols.check_rounded
+                            : null,
                       ),
                     ),
                   ],
@@ -1006,109 +967,6 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         },
         child: field,
       ),
-    );
-  }
-}
-
-/// 待发附件缩略卡:图片显示缩略图,文件显示图标;上传中蒙层转圈,
-/// 失败蒙层可点重试;右上角删除
-class _PendingAttachmentTile extends StatelessWidget {
-  final _PendingAttachment attachment;
-  final VoidCallback onRemove;
-  final VoidCallback onRetry;
-
-  const _PendingAttachmentTile({
-    required this.attachment,
-    required this.onRemove,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Stack(
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: attachment.isImage
-              ? Image.file(
-                  File(attachment.filePath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(Symbols.broken_image_rounded),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Symbols.description_rounded, size: 22),
-                      const SizedBox(height: 2),
-                      Text(
-                        attachment.fileName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 8,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-        ),
-        // 上传中/失败蒙层
-        if (attachment.uploading || attachment.failed)
-          Positioned.fill(
-            child: Material(
-              color: Colors.black.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(12),
-              child: attachment.failed
-                  ? InkWell(
-                      onTap: onRetry,
-                      borderRadius: BorderRadius.circular(12),
-                      child: const Icon(
-                        Symbols.refresh_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    )
-                  : const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: LoadingSpinner(),
-                      ),
-                    ),
-            ),
-          ),
-        // 删除按钮
-        Positioned(
-          top: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Symbols.close_rounded,
-                size: 12,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

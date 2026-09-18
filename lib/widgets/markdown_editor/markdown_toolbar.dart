@@ -11,6 +11,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 
 import '../../widgets/crypto/crypto_encrypt_sheet.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:super_clipboard/super_clipboard.dart';
@@ -18,6 +19,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:dio/dio.dart';
+
 import '../../services/app_error_handler.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
@@ -35,6 +37,9 @@ import 'composer_shortcuts.dart';
 import 'editor_tools.dart';
 import 'emoji_popover.dart';
 import 'media_upload_helper.dart';
+import 'uploads/task_controller.dart';
+import 'uploads/upload_task_panel.dart';
+import 'uploads/markdown_insertion_anchor.dart';
 import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
 import 'content_actions_button.dart';
@@ -42,7 +47,9 @@ import 'content_actions_providers.dart';
 import 'link_insert_dialog.dart';
 import 'poll_builder_dialog.dart';
 import 'template_insert_dialog.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../../../../../l10n/s.dart';
 
 /// Markdown 工具栏组件
@@ -135,18 +142,38 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   /// 宿主未传 focusNode 时的兑底（只建一次，不能在 build 里 new）
   FocusNode? _fallbackFocusNode;
   int _uploadingCount = 0;
-  String? _uploadProgress; // 批量上传进度，如 "3/22"
-  bool get _isUploading => _uploadingCount > 0;
+  late MarkdownInsertionAnchors _uploadAnchors;
+  final _uploads = UploadTaskController();
+
+  /// 失败待处理的任务也阻止发布；媒体旧流程仍计入保护。
+  bool get hasPendingUploads => _uploads.hasPending || _uploadingCount > 0;
+
+  bool get isInsertingUpload => _uploadAnchors.isInserting;
 
   @override
   void initState() {
     super.initState();
+    _uploadAnchors = MarkdownInsertionAnchors(widget.controller);
     HardwareKeyboard.instance.addHandler(_handleRawKeyEvent);
+  }
+
+  @override
+  void didUpdateWidget(covariant MarkdownToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      for (final task in _uploads.tasks) {
+        _uploads.remove(task.id);
+      }
+      _uploadAnchors.dispose();
+      _uploadAnchors = MarkdownInsertionAnchors(widget.controller);
+    }
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleRawKeyEvent);
+    _uploads.dispose();
+    _uploadAnchors.dispose();
     _fallbackFocusNode?.dispose();
     super.dispose();
   }
@@ -168,7 +195,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
         primaryModifierHeldForReversibleAction(event)) {
-      _handlePasteImage();
+      pasteImageFromClipboard();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理
       return false;
@@ -233,10 +260,12 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   }
 
   /// 处理粘贴事件：仅检测剪贴板图片，文本粘贴由 TextField 自行处理
-  Future<void> _handlePasteImage() async {
+  Future<bool> pasteImageFromClipboard() async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
       final clipboard = SystemClipboard.instance;
-      if (clipboard == null) return;
+      if (clipboard == null) return false;
       final reader = await clipboard.read();
       final result = await readImageFromReader(reader);
       if (result != null) {
@@ -246,15 +275,21 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         final tempFile = File(p.join(tempDir.path, fileName));
         await tempFile.writeAsBytes(bytes);
 
-        if (!mounted) return;
+        if (!mounted) return false;
         await uploadImageFromPath(
           imagePath: tempFile.path,
           imageName: fileName,
+          insertionAnchor: _uploadAnchors.fork(anchor),
         );
+        return true;
       }
     } catch (_) {
       // 读取图片失败，忽略，文本粘贴由 TextField 自行处理
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
+    return false;
   }
 
   /// 从字节数据上传图片（供 markdown_editor.dart 调用）
@@ -262,17 +297,26 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     required Uint8List bytes,
     required String fileName,
   }) async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
       final tempDir = await getTemporaryDirectory();
       final tempFile = File(p.join(tempDir.path, fileName));
       await tempFile.writeAsBytes(bytes);
 
       if (!mounted) return;
-      await uploadImageFromPath(imagePath: tempFile.path, imageName: fileName);
+      await uploadImageFromPath(
+        imagePath: tempFile.path,
+        imageName: fileName,
+        insertionAnchor: _uploadAnchors.fork(anchor),
+      );
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
   }
 
@@ -886,175 +930,187 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     }
   }
 
+  void _enqueueUpload({
+    required String path,
+    required String name,
+    required MarkdownInsertionAnchor anchor,
+    required bool image,
+  }) {
+    _uploads.add(
+      UploadTaskRequest(
+        path: path,
+        name: name,
+        isImage: image,
+        execute: (token, progress) => image
+            ? DiscourseService().uploadImage(
+                path,
+                cancelToken: token,
+                onProgress: progress,
+              )
+            : DiscourseService().uploadFile(
+                path,
+                cancelToken: token,
+                onProgress: progress,
+              ),
+        onCompleted: (task, result) {
+          if (!mounted) return;
+          _seedUploadCache(result);
+          _uploadAnchors.insertBlock(
+            anchor,
+            image ? result.toMarkdown(alt: name) : result.toAutoMarkdown(),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> uploadImageFromPath({
     required String imagePath,
     required String imageName,
+    MarkdownInsertionAnchor? insertionAnchor,
   }) async {
+    final anchor = insertionAnchor ?? _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
-      // 显示确认弹框
       if (!mounted) return;
       final result = await showImageUploadDialog(
         context,
         imagePath: imagePath,
         imageName: imageName,
       );
-      if (result == null) return; // 用户取消
-
-      setState(() => _uploadingCount++);
-
-      try {
-        final service = DiscourseService();
-        final uploadResult = await service.uploadImage(result.path);
-        _seedUploadCache(uploadResult);
-
-        if (!mounted) return;
-        // 使用 Discourse 格式：![alt|widthxheight](url)
-        // 图片独占一行：光标前不是换行符或文本开头时，先补一个换行
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline =
-            selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-        insertText(
-          '$prefix${uploadResult.toMarkdown(alt: result.originalName)}\n',
-        );
-      } finally {
-        if (mounted) {
-          setState(() => _uploadingCount--);
-        }
-      }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      if (result == null || !mounted) return;
+      _enqueueUpload(
+        path: result.path,
+        name: result.originalName,
+        anchor: anchor,
+        image: true,
+      );
+      registered = true;
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
-  /// 选择并上传图片（公开方法，供工具面板调用）
+  /// 在选择器打开前捕获位置，不以网络完成时的光标为准。
   Future<void> pickAndUploadImages() async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
-      final List<XFile> images = await _picker.pickMultiImage();
-      if (images.isEmpty) return;
-
-      // 只选了一张，走单图流程
+      final images = await _picker.pickMultiImage();
+      if (!mounted || images.isEmpty) return;
       if (images.length == 1) {
         await uploadImageFromPath(
           imagePath: images.first.path,
           imageName: images.first.name,
+          insertionAnchor: _uploadAnchors.fork(anchor),
         );
         return;
       }
-
-      // 多张图片，走多图确认弹框
-      if (!mounted) return;
       final results = await showMultiImageUploadDialog(
         context,
         imagePaths: images.map((e) => e.path).toList(),
         imageNames: images.map((e) => e.name).toList(),
       );
-      if (results == null || results.isEmpty) return;
-
-      final count = results.length;
-      setState(() => _uploadingCount += count);
-
-      try {
-        final service = DiscourseService();
-
-        // 串行上传，避免触发服务端速率限制
-        final markdowns = <String>[];
-        for (int i = 0; i < results.length; i++) {
-          final result = results[i];
-          if (mounted) {
-            setState(() => _uploadProgress = '${i + 1}/${results.length}');
-          }
-          final uploadResult = await service.uploadImage(result.path);
-          _seedUploadCache(uploadResult);
-          markdowns.add(uploadResult.toMarkdown(alt: result.originalName));
-        }
-
-        if (!mounted) return;
-
-        // 插入 markdown
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline =
-            selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-
-        if (markdowns.length >= 3) {
-          // ≥3 张自动包裹 [grid]
-          insertText('$prefix[grid]\n${markdowns.join('\n')}\n[/grid]\n');
-        } else {
-          insertText('$prefix${markdowns.join('\n')}\n');
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _uploadingCount -= count;
-            _uploadProgress = null;
-          });
-        }
+      if (!mounted || results == null || results.isEmpty) return;
+      // 先创建全部锚点，完成顺序不影响正文中的原始选择顺序。
+      final anchors = [for (final _ in results) _uploadAnchors.fork(anchor)];
+      for (var i = 0; i < results.length; i++) {
+        _enqueueUpload(
+          path: results[i].path,
+          name: results[i].originalName,
+          anchor: anchors[i],
+          image: true,
+        );
       }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
   }
 
-  /// 选择并上传附件（支持任意文件类型，公开方法，供工具面板调用）
   Future<void> pickAndUploadFile() async {
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
       final result = await FilePicker.platform.pickFiles();
-      if (result == null || result.files.isEmpty) return;
+      if (!mounted || result == null || result.files.isEmpty) return;
       final file = result.files.first;
       if (file.path == null) return;
-
-      setState(() => _uploadingCount++);
-
-      try {
-        final service = DiscourseService();
-        final uploadResult = await service.uploadFile(file.path!);
-        _seedUploadCache(uploadResult);
-
-        if (!mounted) return;
-
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline =
-            selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-        insertText('$prefix${uploadResult.toAutoMarkdown()}\n');
-      } finally {
-        if (mounted) {
-          setState(() => _uploadingCount--);
-        }
-      }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      _enqueueUpload(
+        path: file.path!,
+        name: file.name,
+        anchor: anchor,
+        image: false,
+      );
+      registered = true;
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
   /// 音/视频改名上传(.xz 绕扩展名白名单,4MB 上限)→ 插 HTML 标签。
+  Future<bool> _prepareMediaTask({
+    required String path,
+    required String name,
+    required bool isAudio,
+    required MarkdownInsertionAnchor anchor,
+    bool voice = false,
+  }) async {
+    final prepared = await prepareMediaUpload(
+      context,
+      path: path,
+      name: name,
+      isAudio: isAudio,
+      voice: voice,
+    );
+    if (prepared == null || !mounted) return false;
+    _uploads.add(
+      UploadTaskRequest(
+        path: prepared.path,
+        name: prepared.name,
+        execute: prepared.execute,
+        onCompleted: (task, result) {
+          if (!mounted) return;
+          _uploadAnchors.insertBlock(anchor, prepared.markdown(result));
+        },
+      ),
+    );
+    return true;
+  }
+
   Future<void> pickAndUploadMedia({required bool isAudio}) async {
-    final tag = await pickAndUploadMediaTag(context, isAudio: isAudio);
-    if (tag == null || !mounted) return;
-    final selection = widget.controller.selection;
-    final text = widget.controller.text;
-    final needsLeadingNewline =
-        selection.isValid &&
-        selection.start > 0 &&
-        text[selection.start - 1] != '\n';
-    final prefix = needsLeadingNewline ? '\n' : '';
-    insertText('$prefix$tag\n');
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: isAudio ? FileType.audio : FileType.video,
+      );
+      if (!mounted || picked == null || picked.files.isEmpty) return;
+      final file = picked.files.first;
+      if (file.path == null) return;
+      registered = await _prepareMediaTask(
+        path: file.path!,
+        name: file.name,
+        isAudio: isAudio,
+        anchor: anchor,
+      );
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
+    }
   }
 
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
@@ -1074,9 +1130,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   /// 插入投票:构建对话框 → [poll] BBCode 块级插入。同帖多投票时
   /// name 必须唯一,按现有文本统计 poll 数决定 name=pollN。
   Future<void> insertPoll(BuildContext context) async {
-    final existing = RegExp(
-      r'\[poll[\s\]]',
-    ).allMatches(widget.controller.text).length;
+    final existing = RegExp(r'\[poll[\s\]]')
+        .allMatches(widget.controller.text)
+        .length;
     final spec = await showPollBuilderDialog(
       context,
       existingPollCount: existing,
@@ -1087,28 +1143,24 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
   Future<void> recordAndInsertVoice() async {
-    final path = await showVoiceRecorderSheet(context);
-    if (path == null || !mounted) return;
-    setState(() => _uploadingCount++);
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
-      final tag = await uploadMediaFileAsTag(
-        context,
+      final path = await showVoiceRecorderSheet(context);
+      if (path == null || !mounted) return;
+      registered = await _prepareMediaTask(
         path: path,
-        name: path.split('/').last,
+        name: p.basename(path),
         isAudio: true,
         voice: true,
+        anchor: anchor,
       );
-      if (tag == null || !mounted) return;
-      final selection = widget.controller.selection;
-      final text = widget.controller.text;
-      final needsLeadingNewline =
-          selection.isValid &&
-          selection.start > 0 &&
-          text[selection.start - 1] != '\n';
-      final prefix = needsLeadingNewline ? '\n' : '';
-      insertText('$prefix$tag\n');
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
     } finally {
-      if (mounted) setState(() => _uploadingCount--);
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
@@ -1126,9 +1178,6 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
               _buildToolButton(tool)
         else
           _buildToolButton(tool, anchored: false),
-      // 图片工具未外显时，上传中在中部显示进度指示
-      if (_isUploading && ids != null && !ids.contains(kEditorToolImage))
-        _UploadIndicator(progress: _uploadProgress),
     ];
   }
 
@@ -1162,17 +1211,11 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       );
     }
 
-    final isImage = tool.id == kEditorToolImage;
-    final isUpload = isImage || tool.id == 'attachment';
     return _ToolbarButton(
       icon: icon,
-      onPressed: _isUploading && isUpload
-          ? null
-          : () => anchored
-                ? tool.action!(this)
-                : _desktopAction(() => tool.action!(this)),
-      isLoading: isImage && _isUploading,
-      label: isImage ? _uploadProgress : null,
+      onPressed: () => anchored
+          ? tool.action!(this)
+          : _desktopAction(() => tool.action!(this)),
       tooltip: tooltip,
     );
   }
@@ -1239,6 +1282,37 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   @override
   Widget build(BuildContext context) {
+    final viewport = ComposerDesktopViewport.maybeOf(context);
+    if (PlatformUtils.isDesktop && viewport != null) {
+      // 桌面工作区是铺满编辑区域的定位 Stack，不能作为 Column 的
+      // 非 flex 子节点，否则失去高度约束，所有 TapRegion 都无法布局。
+      return Stack(
+        children: [
+          Positioned.fill(child: _buildWorkbench(context)),
+          Positioned(
+            top: viewport.topInset + 8,
+            left: viewport.useRail
+                ? ComposerDesktopViewport.documentSideInset
+                : 16,
+            right: viewport.useRail
+                ? ComposerDesktopViewport.documentSideInset
+                : 16,
+            child: SourceUploadPanel(controller: _uploads),
+          ),
+        ],
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SourceUploadPanel(controller: _uploads),
+        _buildWorkbench(context),
+      ],
+    );
+  }
+
+  Widget _buildWorkbench(BuildContext context) {
     final theme = Theme.of(context);
     if (PlatformUtils.isDesktop &&
         ComposerDesktopViewport.maybeOf(context) != null) {
@@ -1322,82 +1396,19 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   }
 }
 
-/// 上传进度指示（图片工具未外显时显示在中部滚动区）
-class _UploadIndicator extends StatelessWidget {
-  final String? progress;
-
-  const _UploadIndicator({this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          if (progress != null) ...[
-            const SizedBox(width: 6),
-            Text(
-              progress!,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _ToolbarButton extends StatelessWidget {
   final Widget icon;
   final VoidCallback? onPressed;
-  final bool isLoading;
   final String? tooltip;
-  final String? label;
 
-  const _ToolbarButton({
-    required this.icon,
-    this.onPressed,
-    this.isLoading = false,
-    this.tooltip,
-    this.label,
-  });
+  const _ToolbarButton({required this.icon, this.onPressed, this.tooltip});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    Widget child;
-    if (isLoading && label != null) {
-      // 批量上传进度：显示 "3/22" 文本
-      child = Text(
-        label!,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: theme.colorScheme.primary,
-        ),
-      );
-    } else if (isLoading) {
-      child = const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    } else {
-      child = IconTheme.merge(data: const IconThemeData(size: 16), child: icon);
-    }
+    final child = IconTheme.merge(
+      data: const IconThemeData(size: 16),
+      child: icon,
+    );
 
     return IconButton(
       visualDensity: VisualDensity.standard,

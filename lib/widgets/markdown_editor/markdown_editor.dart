@@ -1,6 +1,6 @@
 import 'composer_chrome.dart';
+
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
@@ -8,9 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse_cook_service.dart';
@@ -28,7 +25,9 @@ import 'emoji_popover.dart';
 import 'emoji_sticker_panel.dart';
 import 'markdown_renderer.dart';
 import 'markdown_toolbar.dart';
+
 import 'package:pangutext/pangutext.dart';
+
 import '../../../../../l10n/s.dart';
 
 /// 编辑器面板类型
@@ -120,6 +119,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   bool _ownsFocusNode = false;
 
   final _toolbarKey = GlobalKey<MarkdownToolbarState>();
+
+  /// 包括失败待处理任务，供宿主发布保护使用。
+  bool get hasPendingUploads =>
+      _toolbarKey.currentState?.hasPendingUploads ?? false;
   final _scrollController = ScrollController();
 
   /// 正文 TextField 定位锚。_scrollToCursor 的 RenderEditable 搜索必须
@@ -396,6 +399,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   void _handleTextChange() {
     final currentText = widget.controller.text;
     final selection = widget.controller.selection;
+    // 异步上传插入不是键入换行，不续列表，也不滚动到新附件。
+    if (_toolbarKey.currentState?.isInsertingUpload ?? false) {
+      _previousText = currentText;
+      return;
+    }
     if (currentText != _previousText) {
       ComposerChromeScope.maybeOf(context)?.reveal();
     }
@@ -436,9 +444,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       );
 
       // 检测无序列表：- item 或 * item 或 + item
-      final unorderedMatch = RegExp(
-        r'^(\s*)([-*+])\s+(.*)$',
-      ).firstMatch(prevLine);
+      final unorderedMatch = RegExp(r'^(\s*)([-*+])\s+(.*)$')
+          .firstMatch(prevLine);
       if (unorderedMatch != null) {
         final indent = unorderedMatch.group(1)!;
         final marker = unorderedMatch.group(2)!;
@@ -479,9 +486,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       }
 
       // 检测有序列表：1. item
-      final orderedMatch = RegExp(
-        r'^(\s*)(\d+)\.\s+(.*)$',
-      ).firstMatch(prevLine);
+      final orderedMatch = RegExp(r'^(\s*)(\d+)\.\s+(.*)$')
+          .firstMatch(prevLine);
       if (orderedMatch != null) {
         final indent = orderedMatch.group(1)!;
         final number = int.parse(orderedMatch.group(2)!);
@@ -814,24 +820,8 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
   void _handleCustomPaste(EditableTextState editableTextState) async {
     editableTextState.hideToolbar();
 
-    final hasImage = await MarkdownToolbarState.clipboardHasImage();
-    if (hasImage) {
-      final clipboard = SystemClipboard.instance;
-      if (clipboard != null) {
-        final reader = await clipboard.read();
-        final result = await MarkdownToolbarState.readImageFromReader(reader);
-        if (result != null) {
-          final (bytes, ext) = result;
-          final fileName =
-              'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
-          _toolbarKey.currentState?.uploadImageFromBytes(
-            bytes: bytes,
-            fileName: fileName,
-          );
-          return;
-        }
-      }
-    }
+    final handled = await _toolbarKey.currentState?.pasteImageFromClipboard();
+    if (!mounted || handled == true) return;
     // 无图片，回退到默认文本粘贴
     editableTextState.pasteText(SelectionChangedCause.toolbar);
   }
@@ -894,14 +884,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
 
     final ext = content.mimeType.split('/').last;
     final fileName = 'ime_paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File(p.join(tempDir.path, fileName));
-    await tempFile.writeAsBytes(data);
-
     if (!mounted) return;
-    _toolbarKey.currentState?.uploadImageFromPath(
-      imagePath: tempFile.path,
-      imageName: fileName,
+    await _toolbarKey.currentState?.uploadImageFromBytes(
+      bytes: data,
+      fileName: fileName,
     );
   }
 

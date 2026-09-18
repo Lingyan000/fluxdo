@@ -1,3 +1,4 @@
+import '../widgets/markdown_editor/uploads/upload_task_labels.dart';
 import '../widgets/markdown_editor/composer_chrome.dart';
 import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
@@ -306,6 +307,14 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   }
 
   Future<void> _submit() async {
+    if ((_editorKey.currentState?.hasPendingUploads ?? false) ||
+        (_richKey.currentState?.hasPendingUploads ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(UploadTaskLabels.of(context).pendingSubmit)),
+      );
+      return;
+    }
+
     // 富文本模式:镜像 debounce 窗口内提交也不丢内容,先强制序列化
     _richKey.currentState?.flushToController();
     if (!_formKey.currentState!.validate()) {

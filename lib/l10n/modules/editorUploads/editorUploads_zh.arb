@@ -1,0 +1,12 @@
+{
+  "@@locale": "zh",
+  "editorUploads_title": "上传任务",
+  "editorUploads_pendingSubmit": "仍有附件正在上传或上传失败，请等待完成、重试或移除后再发布",
+  "editorUploads_queued": "等待上传",
+  "editorUploads_preparing": "正在准备",
+  "editorUploads_uploading": "正在上传",
+  "editorUploads_processing": "正在处理",
+  "editorUploads_succeeded": "上传完成",
+  "editorUploads_failed": "上传失败，请重试或移除",
+  "editorUploads_cancelled": "已取消"
+}

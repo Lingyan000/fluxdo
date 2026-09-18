@@ -15,9 +15,8 @@ void main() {
             builder: (context, setState) {
               update = setState;
               return MediaQuery(
-                data: MediaQuery.of(
-                  context,
-                ).copyWith(disableAnimations: reduced),
+                data: MediaQuery.of(context)
+                    .copyWith(disableAnimations: reduced),
                 child: Scaffold(
                   body: Center(
                     child: ComposerSubmitButton(
@@ -81,6 +80,31 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('附件上传等待不播放发送起飞', (tester) async {
+    late StateSetter update;
+    var busy = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return ComposerSubmitButton(
+              label: '发送',
+              onPressed: () {},
+              busy: busy,
+              animateFlight: false,
+            );
+          },
+        ),
+      ),
+    );
+    update(() => busy = true);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('composer-submit-flight')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('没有进入提交状态时不播放起飞', (tester) async {
     var calls = 0;
