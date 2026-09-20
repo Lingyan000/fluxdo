@@ -18,7 +18,7 @@ class ComposerSubmitButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final bool busy;
 
-  /// 紧凑输入条使用 36px，顶栏保持原有 48px 触控外框。
+  /// 紧凑输入条的圆形表面为 36px，触控外框仍为 48px。
   final bool compact;
 
   /// 上传准备等等待状态不播放提交起飞。
@@ -79,7 +79,7 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
       message: widget.label,
       excludeFromSemantics: true,
       child: SizedBox.square(
-        dimension: widget.compact ? 36 : 48,
+        dimension: kMinInteractiveDimension,
         child: Center(
           child: FilledButton(
             key: const ValueKey('composer-header-submit'),
@@ -89,9 +89,7 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
               maximumSize: Size.square(size),
               fixedSize: Size.square(size),
               visualDensity: VisualDensity.standard,
-              tapTargetSize: widget.compact
-                  ? MaterialTapTargetSize.shrinkWrap
-                  : MaterialTapTargetSize.padded,
+              tapTargetSize: MaterialTapTargetSize.padded,
               padding: EdgeInsets.zero,
               shape: const CircleBorder(),
               disabledBackgroundColor: widget.busy ? colors.primary : null,

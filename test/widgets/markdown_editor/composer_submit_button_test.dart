@@ -4,6 +4,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submit_button.dart';
 
 void main() {
+  for (final compact in [false, true]) {
+    testWidgets('紧凑按钮只缩小外观，保留48px点击范围 compact=$compact', (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ComposerSubmitButton(
+                label: '发送',
+                compact: compact,
+                busy: false,
+                onPressed: () => calls++,
+              ),
+            ),
+          ),
+        ),
+      );
+      final button = find.byType(ComposerSubmitButton);
+      expect(tester.getSize(button), const Size.square(48));
+      expect(
+        tester.getSize(
+          find.descendant(of: button, matching: find.byType(Material)),
+        ),
+        Size.square(compact ? 36 : 40),
+      );
+      // 圆形表面外、触控区域内仍可点击，不能用透明但不可点击的外框补齐尺寸。
+      await tester.tapAt(tester.getCenter(button) + const Offset(22, 0));
+      expect(calls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   for (final reduced in [false, true]) {
     testWidgets('发送起飞不阻塞提交，失败恢复后可重试 reduced=$reduced', (tester) async {
       var busy = false;

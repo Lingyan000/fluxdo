@@ -454,6 +454,28 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   // ========== UI ==========
 
+  static const _fieldPadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 10,
+  );
+
+  /// 操作区与单行输入框等高；字体放大时一起增长，多行时贴底对齐最后一行。
+  /// 使用与 TextField 相同的样式和缩放，不按固定像素补偿按钮位置。
+  double _inputActionHeight(BuildContext context, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: ' ', style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.maybeLocaleOf(context),
+    );
+    final height = math.max(
+      kMinInteractiveDimension,
+      painter.preferredLineHeight + _fieldPadding.vertical,
+    );
+    painter.dispose();
+    return height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -461,6 +483,21 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     final editing = widget.editing;
     final replyingTo = widget.replyingTo;
     final contextMessage = editing ?? replyingTo;
+    final inputStyle = (theme.useMaterial3
+        ? theme.textTheme.bodyLarge
+        : theme.textTheme.titleMedium)!;
+    final actionHeight = _inputActionHeight(context, inputStyle);
+    Widget actionSlot(Widget child) => SizedBox(
+      width: kMinInteractiveDimension,
+      height: actionHeight,
+      child: Center(child: child),
+    );
+    final actionStyle = IconButton.styleFrom(
+      minimumSize: const Size.square(36),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.padded,
+    );
 
     // 悬浮卡:四周圆角 + 外边距 + 描边投影;移动端底部安全区/键盘
     // 占位交给下方 ChatBottomPanelContainer,卡本身静止态不再留间距
@@ -560,62 +597,67 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     // 表情按钮(桌面锚定弹层,移动底部面板);
                     // 移动端面板开着时换键盘图标(示意再点切回键盘)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 1, right: 4),
-                      child: _wrapEmojiAnchor(
-                        Builder(
-                          builder: (context) {
-                            final panelOpen =
-                                _emojiPopover?.isOpen == true ||
-                                _intendedPanel == _ComposerPanel.emoji;
-                            return IconButton(
-                              onPressed: _pickEmoji,
-                              icon: Icon(
-                                panelOpen && !PlatformUtils.isDesktop
-                                    ? Symbols.keyboard_alt_rounded
-                                    : Symbols.sentiment_satisfied_rounded,
-                                size: 22,
-                                fill: panelOpen ? 1 : 0,
-                              ),
-                              style: IconButton.styleFrom(
-                                minimumSize: const Size(36, 36),
-                                padding: EdgeInsets.zero,
-                              ),
-                              color: panelOpen
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.onSurfaceVariant,
-                              tooltip: context.l10n.chat_emoji,
-                            );
-                          },
+                      padding: const EdgeInsets.only(right: 4),
+                      child: actionSlot(
+                        _wrapEmojiAnchor(
+                          Builder(
+                            builder: (context) {
+                              final panelOpen =
+                                  _emojiPopover?.isOpen == true ||
+                                  _intendedPanel == _ComposerPanel.emoji;
+                              return IconButton(
+                                onPressed: _pickEmoji,
+                                icon: Icon(
+                                  panelOpen && !PlatformUtils.isDesktop
+                                      ? Symbols.keyboard_alt_rounded
+                                      : Symbols.sentiment_satisfied_rounded,
+                                  size: 22,
+                                  fill: panelOpen ? 1 : 0,
+                                ),
+                                style: actionStyle,
+                                color: panelOpen
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                                tooltip: context.l10n.chat_emoji,
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
-                    Expanded(child: _buildField(context, theme)),
+                    Expanded(
+                      child: _buildField(
+                        context,
+                        theme,
+                        style: inputStyle,
+                        minimumHeight: actionHeight,
+                      ),
+                    ),
                     // 附件(编辑态隐藏):输入框右侧、发送键左边
                     // (通用 IM 秩序 [表情][输入框][附件][发送];之前在最左
                     // 不合 IM 习惯,用户点名)
                     if (editing == null)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 1, left: 4),
-                        child: Builder(
-                          builder: (buttonContext) => IconButton(
-                            onPressed: () => _showAttachmentMenu(buttonContext),
-                            icon: const Icon(
-                              Symbols.attach_file_rounded,
-                              size: 22,
+                        padding: const EdgeInsets.only(left: 4),
+                        child: actionSlot(
+                          Builder(
+                            builder: (buttonContext) => IconButton(
+                              onPressed: () =>
+                                  _showAttachmentMenu(buttonContext),
+                              icon: const Icon(
+                                Symbols.attach_file_rounded,
+                                size: 22,
+                              ),
+                              style: actionStyle,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              tooltip: context.l10n.chat_attach,
                             ),
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(36, 36),
-                              padding: EdgeInsets.zero,
-                            ),
-                            color: theme.colorScheme.onSurfaceVariant,
-                            tooltip: context.l10n.chat_attach,
                           ),
                         ),
                       ),
                     const SizedBox(width: 6),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 1),
-                      child: ComposerSubmitButton(
+                    actionSlot(
+                      ComposerSubmitButton(
                         compact: true,
                         label: context.l10n.chat_send,
                         onPressed: _canSendNow ? _handleSend : null,
@@ -889,8 +931,13 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
   }
 
-  InputDecoration _fieldDecoration(BuildContext context, ThemeData theme) {
+  InputDecoration _fieldDecoration(
+    BuildContext context,
+    ThemeData theme, {
+    required double minimumHeight,
+  }) {
     return InputDecoration(
+      constraints: BoxConstraints(minHeight: minimumHeight),
       hintText: context.l10n.chat_inputHint,
       hintStyle: TextStyle(
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -907,7 +954,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         borderRadius: BorderRadius.circular(20),
         borderSide: BorderSide.none,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      contentPadding: _fieldPadding,
       isDense: true,
       filled: true,
       fillColor: theme.colorScheme.surface,
@@ -915,10 +962,17 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     );
   }
 
-  Widget _buildField(BuildContext context, ThemeData theme) {
+  Widget _buildField(
+    BuildContext context,
+    ThemeData theme, {
+    required TextStyle style,
+    required double minimumHeight,
+  }) {
     final field = TextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
+      style: style,
+      textAlignVertical: TextAlignVertical.center,
       // 全端自动聚焦:桌面正常输入;移动端初始 readOnly,聚焦只点亮光标
       // 闪烁、不弹键盘(配合 showCursor)。要输入,点输入框唤起键盘
       autofocus: true,
@@ -933,7 +987,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       // 退格命中 :shortcode: 局部时扩删整个表情(boost 输入条同款),
       // 否则删一下只掉个冒号,表情"炸回"文本
       inputFormatters: const [EmojiShortcodeDeleteFormatter()],
-      decoration: _fieldDecoration(context, theme),
+      decoration: _fieldDecoration(
+        context,
+        theme,
+        minimumHeight: minimumHeight,
+      ),
     );
     if (!PlatformUtils.isDesktop) {
       // 面板开着(readOnly)时点输入框=收面板换键盘(编辑器同款)
