@@ -39,7 +39,9 @@ import 'package:fluxdo_render/semantic_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/semantic_composer_codec.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/composer_import_pipeline.dart';
 import 'package:fluxdo_render/src/editor/widget/editor_caret.dart';
-import 'package:fluxdo_render/fluxdo_render.dart' show ImageRun, LinkRun, TextRun;
+import 'package:fluxdo_render/src/editor/widget/editor_table_grid.dart';
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show ImageRun, LinkRun, TextRun;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -132,27 +134,50 @@ Future<void> _pump(
 
 class _TableFixtureCodec extends SemanticComposerCodec {
   @override
-  Future<ComposerImportResult<SemanticNode>> import(String raw, {
-    Duration timeout = const Duration(seconds: 10), bool guarded = true,
+  Future<ComposerImportResult<SemanticNode>> import(
+    String raw, {
+    Duration timeout = const Duration(seconds: 10),
+    bool guarded = true,
   }) async {
-    if (raw != '表格测试草稿') return super.import(raw, timeout: timeout, guarded: guarded);
-    SemanticNode cell(String text) => SemanticNode('table_cell',
-      attrs: {'header': true, 'style': 'text-align:center', 'unknownCell': '保留'},
+    if (raw != '表格测试草稿') {
+      return super.import(raw, timeout: timeout, guarded: guarded);
+    }
+    SemanticNode cell(String text) => SemanticNode(
+      'table_cell',
+      attrs: {
+        'header': true,
+        'style': 'text-align:center',
+        'unknownCell': '保留',
+      },
       content: [SemanticNode('text', text: text)],
     );
-    return ComposerImportResult.success(SemanticNode('doc', content: [
-      SemanticNode('table', attrs: {'unknownTable': '保留'}, content: [
-        SemanticNode('table_row', attrs: {'unknownRow': '保留'},
-          content: [cell('原单元格'), cell('旁列')]),
-        SemanticNode('table_row', content: [
-          cell('正文').copy(attrs: {'header': false}),
-          cell('内容').copy(attrs: {'header': false}),
-        ]),
-      ]),
-      SemanticNode('paragraph'),
-    ]));
+    return ComposerImportResult.success(
+      SemanticNode(
+        'doc',
+        content: [
+          SemanticNode(
+            'table',
+            attrs: {'unknownTable': '保留'},
+            content: [
+              SemanticNode(
+                'table_row',
+                attrs: {'unknownRow': '保留'},
+                content: [cell('原单元格'), cell('旁列')],
+              ),
+              SemanticNode(
+                'table_row',
+                content: [
+                  cell('正文').copy(attrs: {'header': false}),
+                  cell('内容').copy(attrs: {'header': false}),
+                ],
+              ),
+            ],
+          ),
+          SemanticNode('paragraph'),
+        ],
+      ),
+    );
   }
-
 }
 
 void main() {
@@ -163,12 +188,26 @@ void main() {
     final codec = _TableFixtureCodec();
     final controller = TextEditingController(text: '表格测试草稿');
     final key = GlobalKey<RichComposerEditorState>();
-    await _pump(tester, RichComposerEditor(key: key, controller: controller,
-      semanticCodec: codec));
+    await _pump(
+      tester,
+      RichComposerEditor(
+        key: key,
+        controller: controller,
+        semanticCodec: codec,
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 800));
     await tester.tap(find.text('原单元格').first);
     await tester.pump();
-    await tester.enterText(find.byType(TextField).first, '新单元格');
+    await tester.enterText(
+      find
+          .descendant(
+            of: find.byType(EditorTableGrid),
+            matching: find.byType(EditableText),
+          )
+          .first,
+      '新单元格',
+    );
     await tester.runAsync(() async {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -176,7 +215,8 @@ void main() {
     await tester.pump();
     key.currentState!.flushToController();
     final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
-    final tree = (editor.documentBindingState as SemanticEditorProjection).source;
+    final tree =
+        (editor.documentBindingState as SemanticEditorProjection).source;
     final table = tree.content.first;
     expect(table.attrs['unknownTable'], '保留');
     expect(table.content.first.attrs['unknownRow'], '保留');
@@ -188,6 +228,62 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('真实宿主键盘下内容末尾表格完整避开工具岛', (tester) async {
+    final controller = TextEditingController(text: '表格测试草稿');
+    final focus = FocusNode();
+    await _pump(
+      tester,
+      RichComposerEditor(
+        controller: controller,
+        focusNode: focus,
+        semanticCodec: _TableFixtureCodec(),
+        header: const SizedBox(height: 220),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    final cellText = find.text('原单元格').first;
+    await tester.tap(cellText);
+    await tester.pump();
+    await tester.pump();
+    final field = find.descendant(
+      of: find.byType(EditorTableGrid),
+      matching: find.byType(EditableText),
+    );
+    expect(field, findsOneWidget);
+    for (final inset in [40.0, 100.0, 180.0, 260.0, 300.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 150));
+    final surface = find.byKey(const ValueKey('composer-island-surface'));
+    expect(surface, findsOneWidget);
+    final fieldRect = tester.getRect(field);
+    final surfaceRect = tester.getRect(surface);
+    final scrollable = tester.state<ScrollableState>(
+      find
+          .ancestor(
+            of: find.byType(FluxdoEditor),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(
+      scrollable.position.pixels,
+      greaterThan(0),
+      reason: '应发生实际滚动而非仅改变布局',
+    );
+    expect(
+      fieldRect.bottom,
+      lessThanOrEqualTo(surfaceRect.top),
+      reason: '编辑格必须完整位于真实工具岛上方',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    focus.dispose();
+  });
+
   testWidgets('语义宿主粘贴回调在原选区插入并保留两侧正文', (tester) async {
     final controller = TextEditingController();
     final key = GlobalKey<RichComposerEditorState>();
@@ -196,9 +292,9 @@ void main() {
     final widget = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
     final editor = widget.state;
     final id = editor.blocks.first.id;
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: id, offset: 0),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(EditorPosition(blockId: id, offset: 0)),
+    );
     editor.insertText('前后');
     final selection = EditorSelection.collapsed(
       EditorPosition(blockId: id, offset: 1),
@@ -224,13 +320,18 @@ void main() {
     await _pump(tester, RichComposerEditor(key: key, controller: controller));
     await tester.pump(const Duration(milliseconds: 800));
     final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: editor.blocks.first.id, offset: 0),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(
+        EditorPosition(blockId: editor.blocks.first.id, offset: 0),
+      ),
+    );
     editor.insertText('保留');
     final completion = Completer<UploadResult>();
-    key.currentState!.queueUpload('/模拟/取消.png', '取消图片',
-      image: true, execute: (_, _) => completion.future,
+    key.currentState!.queueUpload(
+      '/模拟/取消.png',
+      '取消图片',
+      image: true,
+      execute: (_, _) => completion.future,
     );
     await tester.pump();
     editor.insertText('后来输入');
@@ -247,8 +348,12 @@ void main() {
     key.currentState!.flushToController();
     expect(controller.text, isNot(contains('pending_upload')));
     expect(controller.text, contains('后来输入'));
-    completion.complete(UploadResult(shortUrl: 'upload://cancelled.png',
-      originalFilename: '取消.png'));
+    completion.complete(
+      UploadResult(
+        shortUrl: 'upload://cancelled.png',
+        originalFilename: '取消.png',
+      ),
+    );
     await tester.pump();
     key.currentState!.flushToController();
     expect(controller.text, isNot(contains('cancelled.png')));
@@ -263,16 +368,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 800));
     final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
     final first = editor.blocks.first;
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: first.id, offset: 0),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(EditorPosition(blockId: first.id, offset: 0)),
+    );
     editor.insertText('前后');
-    editor.updateSelection(EditorSelection.collapsed(
-      EditorPosition(blockId: first.id, offset: 1),
-    ));
+    editor.updateSelection(
+      EditorSelection.collapsed(EditorPosition(blockId: first.id, offset: 1)),
+    );
     final completion = Completer<UploadResult>();
-    key.currentState!.queueUpload('/模拟/图片.png', '模拟图片',
-      image: true, execute: (_, _) => completion.future,
+    key.currentState!.queueUpload(
+      '/模拟/图片.png',
+      '模拟图片',
+      image: true,
+      execute: (_, _) => completion.future,
     );
     await tester.pump();
     key.currentState!.flushToController();
@@ -280,10 +388,13 @@ void main() {
     expect(controller.text, contains('前'));
     expect(controller.text, contains('后'));
     editor.insertText('新增');
-    completion.complete(UploadResult(
-      shortUrl: 'upload://semantic-mock.png', originalFilename: '模拟图片.png',
-      url: 'https://mock.example.test/semantic-mock.png',
-    ));
+    completion.complete(
+      UploadResult(
+        shortUrl: 'upload://semantic-mock.png',
+        originalFilename: '模拟图片.png',
+        url: 'https://mock.example.test/semantic-mock.png',
+      ),
+    );
     await tester.pump();
     await tester.pump();
     key.currentState!.flushToController();
@@ -298,17 +409,23 @@ void main() {
     final controller = TextEditingController();
     final key = GlobalKey<RichComposerEditorState>();
     String? switched;
-    await _pump(tester, RichComposerEditor(
-      key: key,
-      controller: controller,
-      onSwitchToSource: () => switched = controller.text,
-    ));
+    await _pump(
+      tester,
+      RichComposerEditor(
+        key: key,
+        controller: controller,
+        onSwitchToSource: () => switched = controller.text,
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 800));
     await tester.tap(find.byType(FluxdoEditor));
     await tester.pump();
-    tester.testTextInput.updateEditingValue(const TextEditingValue(
-      text: ' 真实输入', selection: TextSelection.collapsed(offset: 5),
-    ));
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: ' 真实输入',
+        selection: TextSelection.collapsed(offset: 5),
+      ),
+    );
     await tester.pump();
     key.currentState!.flushToController();
     expect(controller.text, '真实输入');
@@ -316,9 +433,11 @@ void main() {
     editor.insertText('未等防抖');
     // 源码模式回调沿用生产 flush 契约。
     await tester.pump();
-    await tester.tap(find.byTooltip(
-      '${S.current.composerView_switch}: ${S.current.composerView_source}',
-    ));
+    await tester.tap(
+      find.byTooltip(
+        '${S.current.composerView_switch}: ${S.current.composerView_source}',
+      ),
+    );
     await tester.pump();
     expect(switched, '真实输入未等防抖');
     editor.insertText('卸载');
@@ -333,24 +452,31 @@ void main() {
     await _pump(tester, RichComposerEditor(key: key, controller: controller));
     await tester.pump(const Duration(milliseconds: 800));
     final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
-    editor.insertAtom(const LinkRun(
-      href: 'https://mock.example.test/file',
-      children: [TextRun('模拟附件')],
-      isAttachment: true,
-      filename: '模拟附件',
-      editorLinkTitle: '保留标题',
-    ));
+    editor.insertAtom(
+      const LinkRun(
+        href: 'https://mock.example.test/file',
+        children: [TextRun('模拟附件')],
+        isAttachment: true,
+        filename: '模拟附件',
+        editorLinkTitle: '保留标题',
+      ),
+    );
     await tester.pump();
-    final rendered = find.byWidgetPredicate((w) =>
-      w is RichText && w.text.toPlainText().contains('模拟附件'));
-    await tester.tapAt(tester.getTopLeft(rendered.first) + const Offset(10, 10));
+    final rendered = find.byWidgetPredicate(
+      (w) => w is RichText && w.text.toPlainText().contains('模拟附件'),
+    );
+    await tester.tapAt(
+      tester.getTopLeft(rendered.first) + const Offset(10, 10),
+    );
     await tester.pump();
     await tester.pump();
     await tester.tap(find.byTooltip('编辑链接'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, '模拟附件'), '修改名称');
-    await tester.enterText(find.widgetWithText(TextField,
-      'https://mock.example.test/file'), 'https://mock.example.test/new');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'https://mock.example.test/file'),
+      'https://mock.example.test/new',
+    );
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     key.currentState!.flushToController();
