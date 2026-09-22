@@ -84,9 +84,9 @@ Future<void> _editAndInsert(WidgetTester tester, _Host host) async {
   await tester.tap(find.text('原值'));
   await tester.pump();
   await tester.pump();
-  await tester.enterText(find.byType(TextField), '用户新文字');
+  await tester.enterText(find.byType(EditableText), '用户新文字');
   expect(
-    tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+    tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
     isTrue,
   );
   // 不发送 done、不手动失焦：直接点网格的加列入口。

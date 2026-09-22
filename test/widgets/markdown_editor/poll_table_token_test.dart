@@ -142,10 +142,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(
-      tester.widget<TextField>(find.byType(TextField)).textAlign,
+      tester.widget<EditableText>(find.byType(EditableText)).textAlign,
       TextAlign.right,
     );
-    await tester.enterText(find.byType(TextField), '模拟新值');
+    await tester.enterText(find.byType(EditableText), '模拟新值');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
     expect(changed, contains('| ---: |'));
