@@ -279,6 +279,33 @@ void main() {
       lessThanOrEqualTo(surfaceRect.top),
       reason: '编辑格必须完整位于真实工具岛上方',
     );
+
+    // 用户主动往上翻文档后必须取消表格自动跟随。后续键盘/工具岛布局
+    // 重建只能保持用户位置，不能把页面重新拉回聚焦 cell。
+    final automaticPixels = scrollable.position.pixels;
+    final gesture = await tester.startGesture(const Offset(200, 160));
+    await gesture.moveBy(const Offset(0, 48));
+    await tester.pump(const Duration(milliseconds: 80));
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 200));
+    final manualPixels = scrollable.position.pixels;
+    expect(manualPixels, lessThan(automaticPixels));
+    expect(
+      tester.widget<EditableText>(field).focusNode.hasFocus,
+      isTrue,
+      reason: '滚动不应退出 cell 编辑态',
+    );
+    for (final inset in [260.0, 300.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      scrollable.position.pixels,
+      closeTo(manualPixels, 1),
+      reason: '用户滚离后布局变化不能把页面拉回聚焦 cell',
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
     focus.dispose();
