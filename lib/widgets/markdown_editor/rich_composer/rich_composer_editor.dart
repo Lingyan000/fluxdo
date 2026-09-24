@@ -85,6 +85,7 @@ import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
 import '../composer_table_panel.dart';
+import '../composer_anchored_panel.dart';
 import '../composer_tool_style.dart';
 import '../composer_object_toolbar.dart';
 import '../composer_object_surface.dart';
@@ -2810,6 +2811,29 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     });
   }
 
+  Future<void> _showTableStructureMenu(String tableId, bool row, Rect anchor) async {
+    final target = _tableContext.value;
+    if (target == null || target.tableId != tableId) return;
+    final releaseChrome = ComposerChromeScope.maybeOf(context)?.hold();
+    try {
+      await showComposerAnchoredPanel<void>(
+        context: context,
+        globalAnchor: anchor,
+        requestFocus: false,
+        width: 300,
+        maxHeight: 360,
+        builder: (menuContext) => ComposerTablePanel(
+          contextListenable: _tableContext,
+          row: row,
+          target: target,
+          onClose: () => Navigator.of(menuContext).pop(),
+        ),
+      );
+    } finally {
+      releaseChrome?.call();
+    }
+  }
+
   void _tableExtentChanged() {
     if (mounted) setState(() {});
   }
@@ -3948,6 +3972,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // cook 替换
                                             onTableEdited: _onTableEdited,
                                             onTableCommit: _onTableEdited,
+                                            tableStructureControlsBuilder: _isDesktop ? null : (context, cell, open) => ComposerTableControls(cell: cell, onOpen: open),
+                                            onTableStructureMenuRequested: _isDesktop ? null : _showTableStructureMenu,
                                             onTableContextChanged: _isDesktop
                                                 ? null
                                                 : _updateTableContext,
@@ -4449,29 +4475,21 @@ class _RichToolbarState extends State<_RichToolbar> {
         valueListenable: widget.tableContext,
         builder: (context, table, child) => table == null
             ? child!
-            : Row(
-                children: [
-                  TextButton.icon(
-                    key: const ValueKey('table-operations'),
-                    icon: const Icon(Icons.table_chart_outlined),
-                    label: Text(context.l10n.editor.table_operations),
-                    onPressed: () => widget.toolsAnchor?.expandContext(
-                      ComposerTablePanel(
-                        contextListenable: widget.tableContext,
-                        onClose: () => widget.toolsAnchor?.collapse(),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      context.l10n.editor.table_position(
-                        row: table.cell.$1 + 1,
-                        column: table.cell.$2 + 1,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+            : Tooltip(
+                message: context.l10n.editor.table_format_unavailable,
+                child: ExcludeFocus(child: AbsorbPointer(
+                  child: Opacity(opacity: .45, child: Row(
+                    key: const ValueKey('table-format-tools'),
+                    children: [
+                      _buildEmojiButton(theme),
+                      Expanded(child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(children: _buildMiddleTools(theme)),
+                      )),
+                      if (widget.onToggleTools != null) _buildToolsButton(theme),
+                    ],
+                  )),
+                )),
               ),
         child: ValueListenableBuilder<ComposerObjectSelection?>(
           valueListenable: widget.objectSelection,

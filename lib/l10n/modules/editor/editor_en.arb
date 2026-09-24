@@ -139,5 +139,22 @@
         "type": "int"
       }
     }
+  },
+  "table_row_target": "Row {number}",
+  "table_column_target": "Column {number}",
+  "table_format_unavailable": "Cell text formatting is not supported yet",
+  "@table_row_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "@table_column_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
   }
 }

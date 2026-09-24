@@ -10,9 +10,13 @@ class ComposerTablePanel extends StatefulWidget {
     super.key,
     required this.contextListenable,
     required this.onClose,
+    required this.row,
+    required this.target,
   });
   final ValueListenable<EditorTableContext?> contextListenable;
   final VoidCallback onClose;
+  final bool row;
+  final EditorTableContext target;
   @override
   State<ComposerTablePanel> createState() => _ComposerTablePanelState();
 }
@@ -51,9 +55,14 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
         valueListenable: widget.contextListenable,
         builder: (context, table, _) {
           final t = context.l10n.editor;
-          final confirming =
-              _confirmation != null &&
+          final valid =
               table != null &&
+              table.tableId == widget.target.tableId &&
+              table.cell == widget.target.cell &&
+              table.revision == widget.target.revision;
+          final confirming =
+              valid &&
+              _confirmation != null &&
               _confirmedContext?.tableId == table.tableId &&
               _confirmedContext?.cell == table.cell &&
               _confirmedContext?.revision == table.revision;
@@ -83,7 +92,7 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
               _ => Icons.delete_outline,
             }),
             label: Text(label(action)),
-            onPressed: table == null || _busy || !table.enabled(action)
+            onPressed: !valid || _busy || !table.enabled(action)
                 ? null
                 : () {
                     if (table.needsConfirmation(action)) {
@@ -96,37 +105,21 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
                     }
                   },
           );
-          Widget pair(EditorTableAction first, EditorTableAction second) =>
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth < 320 ||
-                      MediaQuery.textScalerOf(context).scale(14) > 18) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        button(first),
-                        const SizedBox(height: 8),
-                        button(second),
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: button(first)),
-                      const SizedBox(width: 8),
-                      Expanded(child: button(second)),
-                    ],
-                  );
-                },
-              );
           return TextFieldTapRegion(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        t.table_operations,
+                        widget.row
+                            ? t.table_row_target(
+                                number: widget.target.cell.$1 + 1,
+                              )
+                            : t.table_column_target(
+                                number: widget.target.cell.$2 + 1,
+                              ),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
@@ -137,22 +130,14 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
                     ),
                   ],
                 ),
-                Expanded(
+                Flexible(
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.all(8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (table != null)
-                            Text(
-                              t.table_position(
-                                row: table.cell.$1 + 1,
-                                column: table.cell.$2 + 1,
-                              ),
-                            ),
-                          if (_failed || (_confirmation != null && !confirming))
-                            Text(t.table_changed),
+                          if (_failed || !valid) Text(t.table_changed),
                           if (_busy) const LinearProgressIndicator(),
                           if (confirming) ...[
                             Text('${label(_confirmation!)}？'),
@@ -180,22 +165,19 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
                               child: Text(t.table_confirm_delete),
                             ),
                           ] else if (table != null) ...[
-                            const SizedBox(height: 8),
-                            pair(
-                              EditorTableAction.rowBefore,
-                              EditorTableAction.rowAfter,
-                            ),
-                            const SizedBox(height: 8),
-                            button(EditorTableAction.deleteRow),
-                            if (table.rows <= 1) Text(t.table_keep_row),
-                            const Divider(),
-                            pair(
-                              EditorTableAction.columnBefore,
-                              EditorTableAction.columnAfter,
-                            ),
-                            const SizedBox(height: 8),
-                            button(EditorTableAction.deleteColumn),
-                            if (table.columns <= 1) Text(t.table_keep_column),
+                            if (widget.row) ...[
+                              button(EditorTableAction.rowBefore),
+                              button(EditorTableAction.rowAfter),
+                              const Divider(),
+                              button(EditorTableAction.deleteRow),
+                              if (table.rows <= 1) Text(t.table_keep_row),
+                            ] else ...[
+                              button(EditorTableAction.columnBefore),
+                              button(EditorTableAction.columnAfter),
+                              const Divider(),
+                              button(EditorTableAction.deleteColumn),
+                              if (table.columns <= 1) Text(t.table_keep_column),
+                            ],
                           ] else
                             Text(t.table_select_cell),
                         ],
@@ -208,4 +190,42 @@ class _ComposerTablePanelState extends State<ComposerTablePanel> {
           );
         },
       );
+}
+
+/// 表格自身的结构入口，不占用工具岛格式行，也不随宽表横向滚走。
+class ComposerTableControls extends StatelessWidget {
+  const ComposerTableControls({
+    super.key,
+    required this.cell,
+    required this.onOpen,
+  });
+  final (int, int)? cell;
+  final void Function(bool row, Rect anchor) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.l10n.editor;
+    Widget control(bool row) => Builder(
+      builder: (context) => TextButton.icon(
+        key: ValueKey(row ? 'table-row-operations' : 'table-column-operations'),
+        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+        onPressed: cell == null
+            ? null
+            : () {
+                final box = context.findRenderObject() as RenderBox;
+                onOpen(row, box.localToGlobal(Offset.zero) & box.size);
+              },
+        icon: Icon(
+          row ? Icons.table_rows_outlined : Icons.view_column_outlined,
+          size: 20,
+        ),
+        label: Text(
+          row
+              ? t.table_row_target(number: (cell?.$1 ?? 0) + 1)
+              : t.table_column_target(number: (cell?.$2 ?? 0) + 1),
+        ),
+      ),
+    );
+    return Wrap(spacing: 8, children: [control(true), control(false)]);
+  }
 }

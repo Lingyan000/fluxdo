@@ -228,6 +228,57 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('手机表格保留格式行且列菜单不混入行操作', (tester) async {
+    final controller = TextEditingController(text: '表格测试草稿');
+    await _pump(
+      tester,
+      RichComposerEditor(
+        controller: controller,
+        semanticCodec: _TableFixtureCodec(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.tap(find.text('原单元格').first);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    final format = find.byKey(const ValueKey('table-format-tools'));
+    expect(format, findsOneWidget);
+    expect(
+      find.ancestor(of: format, matching: find.byType(AbsorbPointer)),
+      findsWidgets,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('composer-format-row')),
+        matching: find.byKey(const ValueKey('table-row-operations')),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('table-column-operations')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey('table-action-columnBefore')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('table-action-rowBefore')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('table-action-columnAfter')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      tester
+          .widget<EditorTableGrid>(find.byType(EditorTableGrid))
+          .node
+          .columnCount,
+      3,
+    );
+    expect(find.byKey(const ValueKey('table-format-tools')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets('手机表格插入前提交中文组合文本，撤销结构保留输入', (tester) async {
     final controller = TextEditingController(text: '表格测试草稿');
     await _pump(
@@ -250,7 +301,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.tap(find.byKey(const ValueKey('table-row-operations')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
@@ -301,7 +352,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.tap(find.byKey(const ValueKey('table-row-operations')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
@@ -359,7 +410,7 @@ void main() {
     await tester.pump();
     final grid = find.byType(EditorTableGrid);
     final before = tester.widget<EditorTableGrid>(grid).node.rows.length;
-    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.tap(find.byKey(const ValueKey('table-row-operations')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
