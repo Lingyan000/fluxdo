@@ -65,6 +65,12 @@ class ComposerMinLengthContext {
   /// 是否为与非真人用户的私信
   final bool isPmWithNonHumanUser;
 
+  /// 当前用户是否有服务端明确下发的专属回复字数下限。
+  ///
+  /// 例如 linux.do 的 `premium_min_post_length`。这类值已经是针对当前用户
+  /// 计算出的有效限制，分类插件不能再用通用分类下限覆盖它。
+  final bool hasUserSpecificMinPostLength;
+
   /// 站点 `max_post_length`,用于给插件抬高的下限封顶
   final int maxPostLength;
 
@@ -73,6 +79,7 @@ class ComposerMinLengthContext {
     required this.isFirstPost,
     required this.isPrivateMessage,
     required this.isPmWithNonHumanUser,
+    this.hasUserSpecificMinPostLength = false,
     required this.maxPostLength,
   });
 
