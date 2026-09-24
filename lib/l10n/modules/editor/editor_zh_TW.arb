@@ -141,5 +141,31 @@
   "composer_collapseToolbar": "收起工具列",
   "composer_draftUseRemote": "使用雲端版本",
   "composer_draftResolve": "選擇版本",
-  "composer_draftReloadFailed": "無法載入雲端草稿，已保留本機內容"
+  "composer_draftReloadFailed": "無法載入雲端草稿，已保留本機內容",
+  "table_operations": "表格操作",
+  "table_position": "第 {row} 行 · 第 {column} 欄",
+  "table_row_before": "上方插入行",
+  "table_row_after": "下方插入行",
+  "table_column_before": "左側插入欄",
+  "table_column_after": "右側插入欄",
+  "table_delete_row": "刪除此行",
+  "table_delete_column": "刪除此欄",
+  "table_close": "關閉",
+  "table_cancel": "取消",
+  "table_confirm_delete": "刪除",
+  "table_delete_warning": "將刪除整行或整欄內容，可透過復原恢復。",
+  "table_changed": "表格已變更或操作失敗，請重新操作。",
+  "table_keep_row": "至少保留一行",
+  "table_keep_column": "至少保留一欄",
+  "table_select_cell": "點選儲存格後操作行欄",
+  "@table_position": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      },
+      "column": {
+        "type": "int"
+      }
+    }
+  }
 }

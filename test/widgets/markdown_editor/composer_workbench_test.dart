@@ -228,6 +228,161 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('手机表格插入前提交中文组合文本，撤销结构保留输入', (tester) async {
+    final controller = TextEditingController(text: '表格测试草稿');
+    await _pump(
+      tester,
+      RichComposerEditor(
+        controller: controller,
+        semanticCodec: _TableFixtureCodec(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.tap(find.text('原单元格').first);
+    await tester.pump();
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '中文输入',
+        selection: TextSelection.collapsed(offset: 4),
+        composing: TextRange(start: 0, end: 4),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('table-action-rowBefore')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    });
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+    }
+    final grid = tester.widget<EditorTableGrid>(find.byType(EditorTableGrid));
+    expect(grid.node.rows.length, 3);
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.undo();
+    await tester.pump();
+    expect(
+      tester
+          .widget<EditorTableGrid>(find.byType(EditorTableGrid))
+          .node
+          .rows
+          .length,
+      2,
+    );
+    expect(find.text('中文输入'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+    controller.dispose();
+  });
+
+  testWidgets('手机表格删除有内容行需确认，取消不修改', (tester) async {
+    final controller = TextEditingController(text: '表格测试草稿');
+    await _pump(
+      tester,
+      RichComposerEditor(
+        controller: controller,
+        semanticCodec: _TableFixtureCodec(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.tap(find.text('原单元格').first);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    final action = find.byKey(const ValueKey('table-action-deleteRow'));
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('table-confirm-delete')), findsOneWidget);
+    expect(
+      tester
+          .widget<EditorTableGrid>(find.byType(EditorTableGrid))
+          .node
+          .rows
+          .length,
+      2,
+    );
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('table-confirm-delete')), findsNothing);
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('table-confirm-delete')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(
+      tester
+          .widget<EditorTableGrid>(find.byType(EditorTableGrid))
+          .node
+          .rows
+          .length,
+      1,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('手机表格工具岛保留键盘并插入行，支持撤销', (tester) async {
+    final controller = TextEditingController(text: '表格测试草稿');
+    await _pump(
+      tester,
+      RichComposerEditor(
+        controller: controller,
+        semanticCodec: _TableFixtureCodec(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.tap(find.text('原单元格').first);
+    await tester.pump();
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    final grid = find.byType(EditorTableGrid);
+    final before = tester.widget<EditorTableGrid>(grid).node.rows.length;
+    await tester.tap(find.byKey(const ValueKey('table-operations')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    final field = find.descendant(
+      of: grid,
+      matching: find.byType(EditableText),
+    );
+    expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
+    expect(tester.view.viewInsets.bottom, 300);
+    await tester.tap(find.byKey(const ValueKey('table-action-rowBefore')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    expect(tester.widget<EditorTableGrid>(grid).node.rows.length, before + 1);
+    expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
+    tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state.undo();
+    await tester.pump();
+    expect(tester.widget<EditorTableGrid>(grid).node.rows.length, before);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets('真实宿主键盘下内容末尾表格完整避开工具岛', (tester) async {
     final controller = TextEditingController(text: '表格测试草稿');
     final focus = FocusNode();

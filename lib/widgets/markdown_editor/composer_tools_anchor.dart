@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import 'composer_tool_action.dart';
 import '../../l10n/s.dart';
 import 'composer_tool_style.dart';
@@ -12,6 +14,16 @@ class ComposerToolsAnchor extends ChangeNotifier {
   final targets = <String, GlobalKey>{};
   Completer<ComposerToolAction?>? _result;
   bool expanded = false;
+  Widget? contextPanel;
+  final contextExtent = ValueNotifier<double>(0);
+  bool get preservesKeyboard => contextPanel != null;
+
+  Future<ComposerToolAction?> expandContext(Widget panel) {
+    if (presenting) return _result!.future;
+    contextPanel = panel;
+    return expand(const [], const []);
+  }
+
   bool restoreInput = true;
   bool customizing = false;
   ComposerToolAction? _picked;
@@ -67,6 +79,8 @@ class ComposerToolsAnchor extends ChangeNotifier {
     expanded = false;
     animation = null;
     targets.clear();
+    contextPanel = null;
+    contextExtent.value = 0;
     result?.complete(_picked);
     if (result != null) notifyListeners();
   }
@@ -79,6 +93,7 @@ class ComposerToolsAnchor extends ChangeNotifier {
   @override
   void dispose() {
     finish();
+    contextExtent.dispose();
     super.dispose();
   }
 
@@ -336,9 +351,8 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
               width: 28,
               height: 3,
               decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurfaceVariant.withValues(alpha: .35),
+                color: Theme.of(context).colorScheme.onSurfaceVariant
+                    .withValues(alpha: .35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),

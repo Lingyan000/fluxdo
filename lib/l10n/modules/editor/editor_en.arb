@@ -113,5 +113,31 @@
   "composer_collapseToolbar": "Collapse toolbar",
   "composer_draftUseRemote": "Use online version",
   "composer_draftResolve": "Choose version",
-  "composer_draftReloadFailed": "Could not load the online draft. Your current content has been kept."
+  "composer_draftReloadFailed": "Could not load the online draft. Your current content has been kept.",
+  "table_operations": "Table operations",
+  "table_position": "Row {row} · Column {column}",
+  "table_row_before": "Insert row above",
+  "table_row_after": "Insert row below",
+  "table_column_before": "Insert column left",
+  "table_column_after": "Insert column right",
+  "table_delete_row": "Delete row",
+  "table_delete_column": "Delete column",
+  "table_close": "Close",
+  "table_cancel": "Cancel",
+  "table_confirm_delete": "Delete",
+  "table_delete_warning": "The entire row or column will be deleted. You can undo this action.",
+  "table_changed": "The table changed or the operation failed. Please try again.",
+  "table_keep_row": "Keep at least one row",
+  "table_keep_column": "Keep at least one column",
+  "table_select_cell": "Select a cell to edit rows and columns",
+  "@table_position": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      },
+      "column": {
+        "type": "int"
+      }
+    }
+  }
 }

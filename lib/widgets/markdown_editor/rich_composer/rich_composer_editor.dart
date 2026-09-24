@@ -14,16 +14,24 @@ import 'insertion_bookmark.dart';
 import '../composer_chrome.dart';
 
 import 'dart:async';
+
 import 'semantic_recovery_store.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/preloaded_data_service.dart';
 import '../../../utils/time_utils.dart';
+
 import 'dart:io' show File;
 import 'dart:math' show max;
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
 import 'package:flutter/foundation.dart'
-    show Uint8List, ValueListenable, debugPrint, kDebugMode, listEquals, visibleForTesting;
+    show
+        Uint8List,
+        ValueListenable,
+        debugPrint,
+        kDebugMode,
+        listEquals,
+        visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -76,6 +84,7 @@ import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
 import '../composer_workbench.dart';
+import '../composer_table_panel.dart';
 import '../composer_tool_style.dart';
 import '../composer_object_toolbar.dart';
 import '../composer_object_surface.dart';
@@ -242,8 +251,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   bool _recoveryFailed = false;
 
   SemanticRecoveryScope? _currentRecoveryScope() {
-    final user = ProviderScope.containerOf(context, listen: false)
-        .read(currentUserProvider).value;
+    final user = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(currentUserProvider).value;
     if (user == null || user.id <= 0) return null;
     return SemanticRecoveryScope(
       site: '${AppConstants.baseUrl}${PreloadedDataService().baseUri}',
@@ -253,7 +264,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   bool _sameRecoveryScope(SemanticRecoveryScope scope) {
     final current = _currentRecoveryScope();
-    return current != null && current.site == scope.site &&
+    return current != null &&
+        current.site == scope.site &&
         current.userId == scope.userId;
   }
 
@@ -283,17 +295,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         tree: session.exportTree(),
         description: '',
       );
-      unawaited(_recoveryStore.save(record).catchError((Object error) {
-        debugPrint('[RichComposer] 紧急恢复记录保存失败：$error');
-      }));
+      unawaited(
+        _recoveryStore.save(record).catchError((Object error) {
+          debugPrint('[RichComposer] 紧急恢复记录保存失败：$error');
+        }),
+      );
     } catch (error) {
       debugPrint('[RichComposer] 语义树快照失败：$error');
     }
   }
 
-  Future<void> _applyRecovery(SemanticRecoveryRecord record, {required bool restore}) async {
+  Future<void> _applyRecovery(
+    SemanticRecoveryRecord record, {
+    required bool restore,
+  }) async {
     if (_recoveryBusy || !_sameRecoveryScope(record.scope)) return;
-    setState(() { _recoveryBusy = true; _recoveryFailed = false; });
+    setState(() {
+      _recoveryBusy = true;
+      _recoveryFailed = false;
+    });
     SemanticEditorSession? pending;
     try {
       if (restore) {
@@ -302,15 +322,27 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           context: context,
           builder: (context) => AlertDialog(
             title: Text(S.current.createTopic_restoreDraft),
-            content: Text('${S.current.createTopic_restoreDraftContent}\n${record.preview}'),
+            content: Text(
+              '${S.current.createTopic_restoreDraftContent}\n${record.preview}',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.current.common_cancel)),
-              TextButton(onPressed: () => Navigator.pop(context, true), child: Text(S.current.common_confirm)),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(S.current.common_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(S.current.common_confirm),
+              ),
             ],
           ),
         );
-        if (confirmed != true || !mounted || !_sameRecoveryScope(record.scope) ||
-            _documentReplaced || !_rawMirror.isCurrent || hasPendingUploads) {
+        if (confirmed != true ||
+            !mounted ||
+            !_sameRecoveryScope(record.scope) ||
+            _documentReplaced ||
+            !_rawMirror.isCurrent ||
+            hasPendingUploads) {
           return;
         }
         // 先验证导出及投影，失败保留原文和备份；不将旧 raw 当作恢复文本。
@@ -324,20 +356,29 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         final previous = _session;
         previous?.editor.removeListener(_onDocChanged);
         _rawMirror.dispose();
-        widget.controller.value = TextEditingValue(text: raw, selection: TextSelection.collapsed(offset: raw.length));
-        _rawMirror = ComposerRawMirror(widget.controller, onExternalChange: _fallbackPreservingRaw)
-          ..install(exported: exported, revision: next.editor.docRevision);
+        widget.controller.value = TextEditingValue(
+          text: raw,
+          selection: TextSelection.collapsed(offset: raw.length),
+        );
+        _rawMirror = ComposerRawMirror(
+          widget.controller,
+          onExternalChange: _fallbackPreservingRaw,
+        )..install(exported: exported, revision: next.editor.docRevision);
         next.editor.addListener(_onDocChanged);
         setState(() {
           _session = next;
           _chromeDocRevision = next.editor.docRevision;
         });
         pending = null;
-        WidgetsBinding.instance.addPostFrameCallback((_) => previous?.dispose());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => previous?.dispose(),
+        );
         if (widget.controller.text != raw || !_rawMirror.isCurrent) return;
       }
       await _recoveryStore.remove(record.scope, record.id);
-      if (mounted) setState(() => _recoveries.removeWhere((r) => r.id == record.id));
+      if (mounted) {
+        setState(() => _recoveries.removeWhere((r) => r.id == record.id));
+      }
     } catch (error) {
       pending?.dispose();
       if (mounted) setState(() => _recoveryFailed = true);
@@ -347,20 +388,34 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
-  Widget _recoveryBanner() => Consumer(builder: (context, ref, _) {
-    ref.watch(currentUserProvider);
-    if (_recoveries.isEmpty || !_sameRecoveryScope(_recoveries.first.scope)) {
-      return const SizedBox.shrink();
-    }
-    final record = _recoveries.first;
-    return MaterialBanner(
-      content: Text('${S.current.createTopic_restoreDraft} · ${TimeUtils.formatDetailTime(record.savedAt)}\n${record.preview}${_recoveryFailed ? '\n${S.current.common_failed}' : ''}'),
-      actions: [
-        TextButton(onPressed: _recoveryBusy ? null : () => _applyRecovery(record, restore: false), child: Text(S.current.common_discard)),
-        TextButton(onPressed: _recoveryBusy ? null : () => _applyRecovery(record, restore: true), child: Text(S.current.common_restore)),
-      ],
-    );
-  });
+  Widget _recoveryBanner() => Consumer(
+    builder: (context, ref, _) {
+      ref.watch(currentUserProvider);
+      if (_recoveries.isEmpty || !_sameRecoveryScope(_recoveries.first.scope)) {
+        return const SizedBox.shrink();
+      }
+      final record = _recoveries.first;
+      return MaterialBanner(
+        content: Text(
+          '${S.current.createTopic_restoreDraft} · ${TimeUtils.formatDetailTime(record.savedAt)}\n${record.preview}${_recoveryFailed ? '\n${S.current.common_failed}' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: _recoveryBusy
+                ? null
+                : () => _applyRecovery(record, restore: false),
+            child: Text(S.current.common_discard),
+          ),
+          TextButton(
+            onPressed: _recoveryBusy
+                ? null
+                : () => _applyRecovery(record, restore: true),
+            child: Text(S.current.common_restore),
+          ),
+        ],
+      );
+    },
+  );
 
   SemanticEditorSession? _session;
   EditorState? get _editor => _session?.editor;
@@ -382,7 +437,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       _uploadingCount > 0;
 
   /// 外部拖放/平台上传入口，同样使用语义临时节点及任务控制器。
-  void queueUpload(String path, String name, {
+  void queueUpload(
+    String path,
+    String name, {
     bool image = false,
     required UploadExecutor execute,
   }) => _queueUpload(path, name, image: image, execute: execute);
@@ -412,7 +469,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         name: name,
         isImage: image,
         execute:
-            execute ?? media?.execute ??
+            execute ??
+            media?.execute ??
             ((token, progress) => image
                 ? DiscourseService().uploadImage(
                     path,
@@ -433,16 +491,23 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       return;
     }
     if (media != null) _uploadMedia[id] = media;
-    final selection = insertionSelection ?? editor.selection ??
-        EditorSelection.collapsed(EditorPosition(
-          blockId: editor.blocks.last.id,
-          offset: editor.blocks.last.selectionLength,
-        ));
+    final selection =
+        insertionSelection ??
+        editor.selection ??
+        EditorSelection.collapsed(
+          EditorPosition(
+            blockId: editor.blocks.last.id,
+            offset: editor.blocks.last.selectionLength,
+          ),
+        );
     final current = insertionSelection != null && editor.selection != selection
-        ? InsertionBookmark(editor) : null;
+        ? InsertionBookmark(editor)
+        : null;
     try {
       _session!.insertTransientAtSelection(
-        id, SemanticNode('pending_upload'), selection: selection,
+        id,
+        SemanticNode('pending_upload'),
+        selection: selection,
       );
       if (current != null && current.valid) {
         editor.updateSelection(current.selection);
@@ -471,7 +536,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   Widget? _buildUploadPlaceholder(BuildContext context, BlockNode node) {
     if (!_placeholderNodes.contains(node.id)) return null;
     final taskId = _uploadBlocks.entries
-        .where((entry) => entry.value == node.id).firstOrNull?.key;
+        .where((entry) => entry.value == node.id)
+        .firstOrNull
+        ?.key;
     if (taskId == null) return const SizedBox.shrink();
     final tasks = _uploads.tasks.where((task) => task.id == taskId);
     if (tasks.isEmpty) return const SizedBox.shrink();
@@ -538,22 +605,33 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     final session = _session!;
     final size = result.humanFilesize;
     final fragment = task.isImage
-        ? SemanticNode('doc', content: [
-            SemanticNode('paragraph', content: [
-              SemanticNode('image', attrs: {
-                'src': result.shortUrl,
-                'alt': task.name,
-                if (result.width != null) 'width': result.width,
-                if (result.height != null) 'height': result.height,
-              }),
-            ]),
-          ])
+        ? SemanticNode(
+            'doc',
+            content: [
+              SemanticNode(
+                'paragraph',
+                content: [
+                  SemanticNode(
+                    'image',
+                    attrs: {
+                      'src': result.shortUrl,
+                      'alt': task.name,
+                      if (result.width != null) 'width': result.width,
+                      if (result.height != null) 'height': result.height,
+                    },
+                  ),
+                ],
+              ),
+            ],
+          )
         : (await _semanticCodec.import(
             _uploadMedia[task.id]?.markdown(result) ??
                 '[${result.originalFilename}|attachment](${result.shortUrl})'
                     '${size == null ? '' : ' ($size)'}',
           )).document;
-    if (!mounted || _documentReplaced || !identical(session, _session) ||
+    if (!mounted ||
+        _documentReplaced ||
+        !identical(session, _session) ||
         _uploadBlocks[task.id] != blockId) {
       return;
     }
@@ -673,6 +751,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   @override
   void initState() {
     super.initState();
+    _toolsAnchor.contextExtent.addListener(_tableExtentChanged);
     _rawMirror = ComposerRawMirror(
       widget.controller,
       onExternalChange: _fallbackPreservingRaw,
@@ -704,7 +783,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 当前导入包含原文 cook、编辑导入 cook 和回写 cook；整体预算由 codec 控制。
     SemanticEditorSession? pendingSession;
     try {
-      final imported = await _semanticCodec.import(_rawMirror.initialValue.text);
+      final imported = await _semanticCodec.import(
+        _rawMirror.initialValue.text,
+      );
       final doc = imported.document;
       if (!mounted || _documentReplaced || !_rawMirror.isCurrent) return;
       if (doc == null) {
@@ -753,14 +834,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       _returningToKeyboard = false;
     }
     _recoveryScope ??= _currentRecoveryScope();
-    _recoveryUserSub ??= ProviderScope.containerOf(context, listen: false).listen(
-      currentUserProvider,
-      (_, next) {
-        if (!mounted || _recoveryScope != null) return;
-        _recoveryScope = _currentRecoveryScope();
-        if (!_importing) unawaited(_readRecoveries());
-      },
-    );
+    _recoveryUserSub ??= ProviderScope.containerOf(context, listen: false)
+        .listen(currentUserProvider, (_, next) {
+          if (!mounted || _recoveryScope != null) return;
+          _recoveryScope = _currentRecoveryScope();
+          if (!_importing) unawaited(_readRecoveries());
+        });
     _subscribePrefs();
   }
 
@@ -781,6 +860,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 保存读到旧文本(丢最后一句话)。
     flushToController();
     _rawMirror.dispose();
+    _toolsAnchor.contextExtent.removeListener(_tableExtentChanged);
     _toolsAnchor.dispose();
     _emojiPopover?.dispose();
     _serializeDebounce?.cancel();
@@ -791,6 +871,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     _linkToolbarOverlay?.remove();
     _removeBlockPicker();
     _objectSelection.dispose();
+    _tableContext.dispose();
     if (_ownsFocus) _editorFocus.dispose();
     _editorAreaFocus.dispose();
     _scrollController.dispose();
@@ -2664,11 +2745,16 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         final markdown = edited.toBBCode();
         if (markdown == source) return; // 没改
         final fragment = (await _semanticCodec.import(markdown)).document;
-        if (!mounted || fragment == null || _documentReplaced ||
+        if (!mounted ||
+            fragment == null ||
+            _documentReplaced ||
             !identical(editor.blockById(island.id), island)) {
           return;
         }
-        _session!.insertFragmentAtSelection(fragment, selection: islandSelection);
+        _session!.insertFragmentAtSelection(
+          fragment,
+          selection: islandSelection,
+        );
         return;
       }
     }
@@ -2678,7 +2764,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       confirmLabel: '应用',
       initialText: source,
     );
-    if (text == null || !mounted || _documentReplaced ||
+    if (text == null ||
+        !mounted ||
+        _documentReplaced ||
         !identical(editor.blockById(island.id), island)) {
       return;
     }
@@ -2689,7 +2777,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
     if (text == source) return; // 没改
     final fragment = (await _semanticCodec.import(text)).document;
-    if (!mounted || _documentReplaced ||
+    if (!mounted ||
+        _documentReplaced ||
         !identical(editor.blockById(island.id), island)) {
       return;
     }
@@ -2702,10 +2791,32 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   /// 表格 cell 原位编辑确认:新表格 markdown → cook → 替换岛。
   final Map<String, int> _tableEditVersions = {};
+  final _tableContext = ValueNotifier<EditorTableContext?>(null);
 
-  Future<void> _onTableEdited(IslandBlock island, String markdown) async {
+  void _updateTableContext(EditorTableContext? value) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final previous = _tableContext.value;
+      if (previous?.tableId == value?.tableId &&
+          previous?.cell == value?.cell &&
+          previous?.revision == value?.revision &&
+          previous?.busy == value?.busy) {
+        return;
+      }
+      _tableContext.value = value;
+      if (value == null && _toolsAnchor.preservesKeyboard) {
+        _toolsAnchor.collapse();
+      }
+    });
+  }
+
+  void _tableExtentChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<bool> _onTableEdited(IslandBlock island, String markdown) async {
     final editor = _editor;
-    if (editor == null) return;
+    if (editor == null) return false;
     final version = (_tableEditVersions[island.id] ?? 0) + 1;
     _tableEditVersions[island.id] = version;
     final fragment = (await _semanticCodec.import(markdown)).document;
@@ -2714,25 +2825,30 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         _documentReplaced ||
         _tableEditVersions[island.id] != version ||
         fragment == null) {
-      return;
+      return false;
     }
     final current = editor.blockById(island.id);
     // 撤销/删除/外部替换已改变表格时，迟到的转换结果不得复活旧内容。
     if (current is! IslandBlock || !identical(current.node, island.node)) {
-      return;
+      return false;
     }
     // 仅提取新单元格字段，原表 attrs 由会话绑定局部合并，不替换来源。
     final tables = SemanticEditorProjection.project(fragment).blocks
-        .whereType<IslandBlock>().where((block) => block.node is TableNode);
-    if (tables.length != 1) return;
+        .whereType<IslandBlock>()
+        .where((block) => block.node is TableNode);
+    if (tables.length != 1) return false;
     final table = tables.single.node as TableNode;
-    editor.updateIslandNode(island.id, TableNode(
-      id: island.node.id,
-      rows: table.rows,
-      columnCount: table.columnCount,
-      hasHeader: table.hasHeader,
-      textAlign: (island.node as TableNode).textAlign,
-    ));
+    editor.updateIslandNode(
+      island.id,
+      TableNode(
+        id: island.node.id,
+        rows: table.rows,
+        columnCount: table.columnCount,
+        hasHeader: table.hasHeader,
+        textAlign: (island.node as TableNode).textAlign,
+      ),
+    );
+    return true;
   }
 
   /// 代码块岛内编辑提交:结构化节点原位形变,不经 cook(fence 冲突由
@@ -2763,13 +2879,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   ///   避免双插。
   ///
   /// 任一步落空返回 null,FluxdoEditor 回落纯文本路径 —— 内容不丢。
-  Future<bool> _insertSemanticMarkdown(String markdown, EditorSelection? selection) async {
+  Future<bool> _insertSemanticMarkdown(
+    String markdown,
+    EditorSelection? selection,
+  ) async {
     final editor = _editor;
     if (editor == null || _documentReplaced) return false;
     final bookmark = InsertionBookmark(editor, selection: selection);
     try {
       final fragment = (await _semanticCodec.import(markdown)).document;
-      if (!mounted || _documentReplaced || !identical(editor, _editor) ||
+      if (!mounted ||
+          _documentReplaced ||
+          !identical(editor, _editor) ||
           !bookmark.valid) {
         return true;
       }
@@ -2777,7 +2898,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       final moved = editor.selection != selection;
       final current = moved ? InsertionBookmark(editor) : null;
       try {
-        _session!.insertFragmentAtSelection(fragment, selection: bookmark.selection);
+        _session!.insertFragmentAtSelection(
+          fragment,
+          selection: bookmark.selection,
+        );
         if (current != null && current.valid) {
           editor.updateSelection(current.selection);
         }
@@ -2842,9 +2966,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       );
       if (confirmed == null) return;
       if (!mounted) return;
-      if (_documentReplaced || !identical(editor, _editor) || !bookmark.valid) return;
-      _queueUpload(confirmed.path, confirmed.originalName, image: true,
-          insertionSelection: bookmark.selection);
+      if (_documentReplaced || !identical(editor, _editor) || !bookmark.valid) {
+        return;
+      }
+      _queueUpload(
+        confirmed.path,
+        confirmed.originalName,
+        image: true,
+        insertionSelection: bookmark.selection,
+      );
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
@@ -3768,7 +3898,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                     ),
                                             caretViewportInsets:
                                                 EdgeInsets.only(
-                                                  bottom: bottomInset,
+                                                  bottom:
+                                                      bottomInset +
+                                                      _toolsAnchor
+                                                          .contextExtent
+                                                          .value,
                                                 ),
                                             showTrailingParagraph: true,
                                             emptyParagraphHint:
@@ -3796,13 +3930,15 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // 粘贴导入:剪贴板 markdown → cook 链路 →
                                             // 编辑块(失败/不可用时 FluxdoEditor 内部
                                             // 降级纯文本粘贴)
-                                            semanticMarkdownInserter: _insertSemanticMarkdown,
+                                            semanticMarkdownInserter:
+                                                _insertSemanticMarkdown,
                                             virtualPointer: _virtualPointer,
                                             contentActions: _contentActions,
                                             // 富粘贴:剪贴板 text/html(网页/Word)
                                             // → markdown 清洗 → 同一条 cook 导入链;
                                             // 无 html/转换落空回落上面纯文本路径
-                                            semanticRichPasteInserter: _importRichPaste,
+                                            semanticRichPasteInserter:
+                                                _importRichPaste,
                                             // 双击岛 → 源码编辑对话框
                                             onIslandEditRequest: _editIsland,
                                             // 点 details/callout 壳标题 → 原位改标题
@@ -3811,6 +3947,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // 表格 cell 原位编辑 → 重建 markdown 经
                                             // cook 替换
                                             onTableEdited: _onTableEdited,
+                                            onTableCommit: _onTableEdited,
+                                            onTableContextChanged: _isDesktop
+                                                ? null
+                                                : _updateTableContext,
                                             // 代码块岛内原位编辑 → 结构化节点直换
                                             // (不经 cook)
                                             onCodeBlockEdited:
@@ -3895,6 +4035,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       toolbar: _RichToolbar(
         state: editor,
         objectSelection: _objectSelection,
+        tableContext: _tableContext,
         objectToolbarKey: _objectToolbarKey,
         onResumeEditing: resumeEditing,
         metaBar: _isDesktop ? null : widget.metaBar,
@@ -4064,6 +4205,7 @@ class _RichToolbar extends StatefulWidget {
   const _RichToolbar({
     required this.state,
     required this.objectSelection,
+    required this.tableContext,
     required this.objectToolbarKey,
     required this.isEmojiPanelVisible,
     required this.onToggleEmoji,
@@ -4089,6 +4231,7 @@ class _RichToolbar extends StatefulWidget {
   final Widget? metaBar;
   final EditorState state;
   final ValueListenable<ComposerObjectSelection?> objectSelection;
+  final ValueListenable<EditorTableContext?> tableContext;
   final GlobalKey objectToolbarKey;
   final bool isEmojiPanelVisible;
   final VoidCallback onToggleEmoji;
@@ -4302,33 +4445,62 @@ class _RichToolbarState extends State<_RichToolbar> {
         if (widget.onSwitchToSource != null)
           ComposerModeButton(rich: true, onPressed: widget.onSwitchToSource),
       ],
-      tools: ValueListenableBuilder<ComposerObjectSelection?>(
-        valueListenable: widget.objectSelection,
-        builder: (context, selection, child) => selection == null
+      tools: ValueListenableBuilder<EditorTableContext?>(
+        valueListenable: widget.tableContext,
+        builder: (context, table, child) => table == null
             ? child!
-            : ComposerObjectToolbar(
-                menuAnchorKey: widget.objectToolbarKey,
-                selection: selection,
+            : Row(
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('table-operations'),
+                    icon: const Icon(Icons.table_chart_outlined),
+                    label: Text(context.l10n.editor.table_operations),
+                    onPressed: () => widget.toolsAnchor?.expandContext(
+                      ComposerTablePanel(
+                        contextListenable: widget.tableContext,
+                        onClose: () => widget.toolsAnchor?.collapse(),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      context.l10n.editor.table_position(
+                        row: table.cell.$1 + 1,
+                        column: table.cell.$2 + 1,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-        child: Row(
-          children: [
-            _buildEmojiButton(theme),
-            const SizedBox(width: 3),
-            Expanded(
-              child: ComposerCompactTools(
-                anchor: widget.toolsAnchor,
-                child: FadingEdgeScrollView(
-                  fadeLeft: true,
-                  fadeRight: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(children: _buildMiddleTools(theme)),
+        child: ValueListenableBuilder<ComposerObjectSelection?>(
+          valueListenable: widget.objectSelection,
+          builder: (context, selection, child) => selection == null
+              ? child!
+              : ComposerObjectToolbar(
+                  menuAnchorKey: widget.objectToolbarKey,
+                  selection: selection,
+                ),
+          child: Row(
+            children: [
+              _buildEmojiButton(theme),
+              const SizedBox(width: 3),
+              Expanded(
+                child: ComposerCompactTools(
+                  anchor: widget.toolsAnchor,
+                  child: FadingEdgeScrollView(
+                    fadeLeft: true,
+                    fadeRight: true,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(children: _buildMiddleTools(theme)),
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (widget.onToggleTools != null) _buildToolsButton(theme),
-          ],
+              if (widget.onToggleTools != null) _buildToolsButton(theme),
+            ],
+          ),
         ),
       ),
     );

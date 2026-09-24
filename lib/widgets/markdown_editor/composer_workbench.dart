@@ -150,7 +150,7 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
           ),
       ];
       _presenting = true;
-      if (!PlatformUtils.isDesktop) {
+      if (!PlatformUtils.isDesktop && !anchor.preservesKeyboard) {
         final viewport = context
             .dependOnInheritedWidgetOfExactType<_WorkbenchViewport>();
         final panelHeight = viewport?.panelHeight ?? 0;
@@ -160,15 +160,17 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
           _input?.begin(View.of(context), panelHeight);
         }
       }
-      _expandedTools = ComposerExpandedTools(
-        anchor: anchor,
-        animation: _toolAnimation,
-        flyingIds: _flightIds.toSet(),
-        onCollapseStart: PlatformUtils.isDesktop ? null : _startDrag,
-        onCollapseUpdate: PlatformUtils.isDesktop ? null : _dragFromPanel,
-        onCollapseEnd: PlatformUtils.isDesktop ? null : _endDrag,
-        onCollapseCancel: PlatformUtils.isDesktop ? null : _cancelDrag,
-      );
+      _expandedTools =
+          anchor.contextPanel ??
+          ComposerExpandedTools(
+            anchor: anchor,
+            animation: _toolAnimation,
+            flyingIds: _flightIds.toSet(),
+            onCollapseStart: PlatformUtils.isDesktop ? null : _startDrag,
+            onCollapseUpdate: PlatformUtils.isDesktop ? null : _dragFromPanel,
+            onCollapseEnd: PlatformUtils.isDesktop ? null : _endDrag,
+            onCollapseCancel: PlatformUtils.isDesktop ? null : _cancelDrag,
+          );
       anchor.animation = _toolAnimation;
       _history = LocalHistoryEntry(
         impliesAppBarDismissal: false,
@@ -487,6 +489,18 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                       _mobileLift * _animation.value,
                                 )
                               : expansionHeight * _animation.value;
+                          if (widget.toolsAnchor?.preservesKeyboard == true) {
+                            final extent = widget.toolsAnchor!.contextExtent;
+                            if ((extent.value - revealed).abs() > .1) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted &&
+                                    widget.toolsAnchor?.preservesKeyboard ==
+                                        true) {
+                                  extent.value = revealed.toDouble();
+                                }
+                              });
+                            }
+                          }
                           final progress = expansionHeight > 0
                               ? (revealed / expansionHeight).clamp(0.0, 1.0)
                               : _animation.value;

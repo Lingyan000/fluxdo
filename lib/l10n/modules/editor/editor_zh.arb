@@ -141,5 +141,31 @@
   "composer_collapseToolbar": "收起工具栏",
   "composer_draftUseRemote": "使用云端版本",
   "composer_draftResolve": "选择版本",
-  "composer_draftReloadFailed": "无法加载云端草稿，已保留本机内容"
+  "composer_draftReloadFailed": "无法加载云端草稿，已保留本机内容",
+  "table_operations": "表格操作",
+  "table_position": "第 {row} 行 · 第 {column} 列",
+  "table_row_before": "上方插入行",
+  "table_row_after": "下方插入行",
+  "table_column_before": "左侧插入列",
+  "table_column_after": "右侧插入列",
+  "table_delete_row": "删除此行",
+  "table_delete_column": "删除此列",
+  "table_close": "关闭",
+  "table_cancel": "取消",
+  "table_confirm_delete": "删除",
+  "table_delete_warning": "将删除整行或整列内容，可通过撤销恢复。",
+  "table_changed": "表格已变化或操作失败，请重新操作。",
+  "table_keep_row": "至少保留一行",
+  "table_keep_column": "至少保留一列",
+  "table_select_cell": "点选单元格后操作行列",
+  "@table_position": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      },
+      "column": {
+        "type": "int"
+      }
+    }
+  }
 }
