@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/category.dart';
 import '../../models/topic.dart';
+import '../../models/topic_card_style.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/discourse_providers.dart';
 import '../../services/topic_preview_preloader.dart';
@@ -8,6 +9,7 @@ import '../../utils/responsive.dart';
 import 'painted_topic_card.dart';
 import 'topic_card.dart';
 import 'topic_card_layout.dart';
+import 'topic_expandable_excerpt.dart';
 import 'topic_preview_dialog.dart';
 
 /// 话题卡排版宽:与 [buildTopicItem] 的壳层约束同源(移动 = 视口宽
@@ -115,10 +117,25 @@ Widget buildTopicItem({
         )
       : null;
 
+  // 检查是否启用了正文摘要展示（类 X/推特信息流风格）
+  final currentStyle = messageStyle
+      ? TopicCardStyle.defaults
+      : TopicCardStyleScope.current;
+  final isFullyRead =
+      !topic.unseen && topic.unread == 0 && topic.lastReadPostNumber != null;
+  final effectiveMiddleWidget = middleWidget ??
+      (currentStyle.showExcerpt
+          ? TopicExpandableExcerpt(
+              topic: topic,
+              maxCollapsedLines: currentStyle.maxCollapsedLines,
+              isFullyRead: isFullyRead,
+            )
+          : null);
+
   // 自绘路径的排版在 Builder 外先取好:入参(context/theme/宽度)与
   // Builder 内一致,避免逐分支重复。
   final usePainted =
-      kUsePaintedTopicCard && topWidget == null && middleWidget == null;
+      kUsePaintedTopicCard && topWidget == null && effectiveMiddleWidget == null;
   final paintedLayout = usePainted && !topic.pinned
       ? obtainTopicItemLayout(
           context: context,
@@ -166,7 +183,7 @@ Widget buildTopicItem({
         isSelected: isSelected,
         highlightColor: highlightColor,
         topWidget: topWidget,
-        middleWidget: middleWidget,
+        middleWidget: effectiveMiddleWidget,
         messageStyle: messageStyle,
         categoryMap: categoryMap,
         statsAvailableWidth: statsAvailableWidth,
