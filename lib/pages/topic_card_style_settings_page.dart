@@ -11,6 +11,8 @@ import '../providers/preferences_provider.dart';
 import '../utils/responsive.dart';
 import '../widgets/topic/painted_topic_card.dart';
 import '../widgets/topic/topic_card_layout.dart';
+import '../widgets/topic/topic_card.dart';
+import '../widgets/topic/topic_expandable_excerpt.dart';
 
 /// 话题卡片样式设置页
 ///
@@ -42,7 +44,12 @@ class _TopicCardStyleSettingsPageState
       replyCount: 24,
       views: 2048,
       likeCount: 128,
-      excerpt: l10n.topicCardStyle_previewExcerpt,
+      excerpt:
+          '这是话题正文的大致内容预览，展示类似于 X（原推特）的信息流排版风格。\n\n'
+          '当帖子的正文内容较长（默认超过 8 行）时，系统会自动将超出的文字收起，并在末尾展示“查看更多”交互按钮。\n'
+          '用户点击“查看更多”后，卡片将平滑展开显示完整正文内容，同时按钮变为“收起”。\n'
+          '此外，按钮点击具备独立手势拦截，绝不会误触触发进入帖子详情页。\n'
+          '通过这种类推特的排版，用户在无需频繁点入详情页的情况下，即可在首页信息流中一览帖子核心观点与精彩回复，大幅提升信息浏览效率！',
       lastPostedAt: DateTime.now().subtract(const Duration(minutes: 5)),
       categoryId: '1',
       tags: [Tag(name: l10n.topicCardStyle_previewTag)],
@@ -172,6 +179,14 @@ class _TopicCardStyleSettingsPageState
           children: [
             _fieldSwitch(
               theme,
+              icon: Symbols.subject_rounded,
+              title: '显示帖子正文 (X 信息流)',
+              subtitle: '在标题下方显示正文内容，超过 8 行自动折叠并提供“查看更多”',
+              value: style.showExcerpt,
+              onChanged: (v) => _update(style.copyWith(showExcerpt: v)),
+            ),
+            _fieldSwitch(
+              theme,
               icon: Symbols.person_rounded,
               title: l10n.topicCardStyle_showAuthor,
               value: style.showAuthor,
@@ -237,29 +252,24 @@ class _TopicCardStyleSettingsPageState
     );
   }
 
-  /// 实时预览:直接用自绘卡真实渲染(与列表逐像素一致)。
-  /// identity 用保留前缀,不与真实列表 `topic:{id}` 冲突;
-  /// 显式传 style,statsAvailableWidth 拉满让 likes/views 开关效果
-  /// 在窄屏预览上也可见
+  /// 实时预览:所见即所得渲染(与首页真实卡片逐像素一致)。
   Widget _buildPreviewCard(BuildContext context, TopicCardStyle style) {
     final cardWidth =
         (MediaQuery.sizeOf(context).width - 32)
             .clamp(0.0, Breakpoints.maxContentWidth - 32)
             .toDouble();
-    final layout = TopicCardLayout.obtain(
-      identity: 'style-preview:0',
-      topic: _previewTopic!,
+
+    return SizedBox(
       width: cardWidth,
-      theme: Theme.of(context),
-      category: _previewCategory,
-      emojiUrlOf: topicCardEmojiUrlResolver,
-      statsAvailableWidth: 9999,
-      style: style,
-    );
-    return IgnorePointer(
-      child: SizedBox(
-        width: cardWidth,
-        child: PaintedTopicCard(layout: layout),
+      child: TopicCard(
+        topic: _previewTopic!,
+        categoryMap: {1: _previewCategory!},
+        middleWidget: style.showExcerpt
+            ? TopicExpandableExcerpt(
+                topic: _previewTopic!,
+                maxCollapsedLines: style.maxCollapsedLines,
+              )
+            : null,
       ),
     );
   }

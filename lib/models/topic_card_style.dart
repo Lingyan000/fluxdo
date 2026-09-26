@@ -30,6 +30,12 @@ class TopicCardStyle {
   /// 关闭后话题卡头像强制静态(不下载/播放 gif 等动图),其他页面不受影响
   final bool animatedAvatar;
 
+  /// 是否显示帖子正文内容摘要(类似 X / 推特信息流模式)
+  final bool showExcerpt;
+
+  /// 正文折叠行数(默认 8 行，超出后显示“查看更多”)
+  final int maxCollapsedLines;
+
   const TopicCardStyle({
     this.showAuthor = true,
     this.showTags = true,
@@ -39,6 +45,8 @@ class TopicCardStyle {
     this.avatarLayout = TopicCardAvatarLayout.inline,
     this.titleFontSize = 15.0,
     this.animatedAvatar = true,
+    this.showExcerpt = true,
+    this.maxCollapsedLines = 8,
   });
 
   static const TopicCardStyle defaults = TopicCardStyle();
@@ -54,6 +62,8 @@ class TopicCardStyle {
     TopicCardAvatarLayout? avatarLayout,
     double? titleFontSize,
     bool? animatedAvatar,
+    bool? showExcerpt,
+    int? maxCollapsedLines,
   }) {
     return TopicCardStyle(
       showAuthor: showAuthor ?? this.showAuthor,
@@ -64,6 +74,8 @@ class TopicCardStyle {
       avatarLayout: avatarLayout ?? this.avatarLayout,
       titleFontSize: titleFontSize ?? this.titleFontSize,
       animatedAvatar: animatedAvatar ?? this.animatedAvatar,
+      showExcerpt: showExcerpt ?? this.showExcerpt,
+      maxCollapsedLines: maxCollapsedLines ?? this.maxCollapsedLines,
     );
   }
 
@@ -86,6 +98,8 @@ class TopicCardStyle {
             ((json['titleFontSize'] as num?)?.toDouble() ?? 15.0)
                 .clamp(13.0, 18.0),
         animatedAvatar: json['animatedAvatar'] as bool? ?? true,
+        showExcerpt: json['showExcerpt'] as bool? ?? true,
+        maxCollapsedLines: (json['maxCollapsedLines'] as num?)?.toInt() ?? 8,
       );
     } catch (_) {
       return defaults;
@@ -101,6 +115,8 @@ class TopicCardStyle {
     'avatarLayout': avatarLayout.name,
     'titleFontSize': titleFontSize,
     'animatedAvatar': animatedAvatar,
+    'showExcerpt': showExcerpt,
+    'maxCollapsedLines': maxCollapsedLines,
   });
 
   @override
@@ -114,7 +130,9 @@ class TopicCardStyle {
         other.showViews == showViews &&
         other.avatarLayout == avatarLayout &&
         other.titleFontSize == titleFontSize &&
-        other.animatedAvatar == animatedAvatar;
+        other.animatedAvatar == animatedAvatar &&
+        other.showExcerpt == showExcerpt &&
+        other.maxCollapsedLines == maxCollapsedLines;
   }
 
   @override
@@ -127,6 +145,8 @@ class TopicCardStyle {
     avatarLayout,
     titleFontSize,
     animatedAvatar,
+    showExcerpt,
+    maxCollapsedLines,
   );
 }
 
