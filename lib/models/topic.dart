@@ -341,6 +341,9 @@ class Topic {
   final int views;
   final int likeCount;
   final String? excerpt;
+
+  /// 列表接口自带的首图，无需额外请求首楼。
+  final String? imageUrl;
   final DateTime? createdAt;
   final DateTime? lastPostedAt;
   final String? lastPosterUsername;
@@ -388,6 +391,7 @@ class Topic {
     required this.views,
     required this.likeCount,
     this.excerpt,
+    this.imageUrl,
     this.createdAt,
     this.lastPostedAt,
     this.lastPosterUsername,
@@ -431,6 +435,7 @@ class Topic {
       views: views,
       likeCount: likeCount,
       excerpt: excerpt,
+      imageUrl: imageUrl,
       createdAt: createdAt,
       lastPostedAt: lastPostedAt,
       lastPosterUsername: lastPosterUsername,
@@ -473,6 +478,7 @@ class Topic {
       views: json['views'] as int? ?? 0,
       likeCount: json['like_count'] as int? ?? 0,
       excerpt: json['excerpt'] as String?,
+      imageUrl: json['image_url'] as String?,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       lastPostedAt: TimeUtils.parseUtcTime(json['last_posted_at'] as String?),
       lastPosterUsername: json['last_poster_username'] as String?,
