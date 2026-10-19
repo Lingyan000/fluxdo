@@ -41,7 +41,7 @@ class TopicSummaryWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final summaryAsync =
+    final AsyncValue<TopicSummary?> summaryAsync =
         summaryAsyncOverride ?? ref.watch(topicSummaryProvider(topicId));
     final theme = Theme.of(context);
 
@@ -224,6 +224,7 @@ class TopicSummaryWidget extends ConsumerWidget {
           const SizedBox(height: 12),
           // 摘要内容（Markdown 渲染）
           _StreamingMarkdownBody(
+            key: ValueKey(topicId),
             text: summary.summarizedText,
             isStreaming: summary.isStreaming,
             onInternalLinkTap: (linkTopicId, topicSlug, postNumber) {
@@ -306,6 +307,7 @@ class _StreamingMarkdownBody extends StatefulWidget {
       onInternalLinkTap;
 
   const _StreamingMarkdownBody({
+    super.key,
     required this.text,
     required this.isStreaming,
     this.onInternalLinkTap,
@@ -322,12 +324,14 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
 
   Timer? _typingTimer;
   Timer? _cursorTimer;
+  String _targetText = '';
   String _displayedText = '';
   bool _cursorVisible = true;
 
   @override
   void initState() {
     super.initState();
+    _targetText = widget.text;
     _displayedText = widget.isStreaming ? '' : widget.text;
     _syncStreamingState();
   }
@@ -336,8 +340,29 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
   void didUpdateWidget(covariant _StreamingMarkdownBody oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (!widget.text.startsWith(_displayedText)) {
-      _displayedText = widget.isStreaming ? '' : widget.text;
+    if (!widget.isStreaming) {
+      // 完成消息是最终结果，即使比中间结果短也必须采用。
+      _targetText = widget.text;
+    } else if (!oldWidget.isStreaming) {
+      // 只有开始新一轮生成时才重置打字进度。
+      _targetText = widget.text;
+      _displayedText = '';
+    } else if (widget.text.length > _targetText.length) {
+      // 对齐官方 SmoothStreamer：中间分片是累计文本，忽略较短或重复
+      // 更新。前缀发生修订时也保留显示进度，避免清空后从头打字。
+      _targetText = widget.text;
+      var visibleLength = _displayedText.length;
+      if (visibleLength > 0 && visibleLength < _targetText.length) {
+        final previous = _targetText.codeUnitAt(visibleLength - 1);
+        final next = _targetText.codeUnitAt(visibleLength);
+        if (previous >= 0xD800 &&
+            previous <= 0xDBFF &&
+            next >= 0xDC00 &&
+            next <= 0xDFFF) {
+          visibleLength--;
+        }
+      }
+      _displayedText = _targetText.substring(0, visibleLength);
     }
     _syncStreamingState();
   }
@@ -349,8 +374,8 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
       _typingTimer = null;
       _cursorTimer = null;
       _cursorVisible = false;
-      if (_displayedText != widget.text) {
-        _displayedText = widget.text;
+      if (_displayedText != _targetText) {
+        _displayedText = _targetText;
       }
       return;
     }
@@ -366,7 +391,7 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
 
   void _startTyping() {
     if (_typingTimer?.isActive == true ||
-        _displayedText.length >= widget.text.length) {
+        _displayedText.length >= _targetText.length) {
       return;
     }
 
@@ -376,7 +401,7 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
         return;
       }
 
-      final remaining = widget.text.length - _displayedText.length;
+      final remaining = _targetText.length - _displayedText.length;
       if (remaining <= 0) {
         timer.cancel();
         return;
@@ -384,9 +409,9 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
 
       setState(() {
         var nextLength = _displayedText.length + 1;
-        if (nextLength < widget.text.length) {
-          final currentCodeUnit = widget.text.codeUnitAt(nextLength - 1);
-          final nextCodeUnit = widget.text.codeUnitAt(nextLength);
+        if (nextLength < _targetText.length) {
+          final currentCodeUnit = _targetText.codeUnitAt(nextLength - 1);
+          final nextCodeUnit = _targetText.codeUnitAt(nextLength);
           final splitsSurrogatePair = currentCodeUnit >= 0xD800 &&
               currentCodeUnit <= 0xDBFF &&
               nextCodeUnit >= 0xDC00 &&
@@ -395,7 +420,7 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
             nextLength++;
           }
         }
-        _displayedText = widget.text.substring(0, nextLength);
+        _displayedText = _targetText.substring(0, nextLength);
       });
     });
   }
