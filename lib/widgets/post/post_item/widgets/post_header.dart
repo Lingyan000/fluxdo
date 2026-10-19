@@ -46,53 +46,6 @@ class _PostAnniversaryIcon extends StatelessWidget {
   }
 }
 
-class _PostIosDeviceNameBadge extends StatelessWidget {
-  const _PostIosDeviceNameBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = theme.colorScheme.onSurfaceVariant;
-
-    return Tooltip(
-      message: label,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 144),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.65,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.smartphone_rounded, size: 11, color: color),
-              const SizedBox(width: 3),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontSize: 10,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 帖子头像组件（独立widget避免不必要的重建）
 class PostAvatar extends StatefulWidget {
   final Post post;
@@ -335,14 +288,6 @@ class PostHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
-                    if (post.iosDeviceName != null) ...[
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: _PostIosDeviceNameBadge(
-                          label: post.iosDeviceName!,
-                        ),
-                      ),
-                    ],
                     if (post.userTitle != null) ...[
                       const SizedBox(width: 6),
                       Flexible(

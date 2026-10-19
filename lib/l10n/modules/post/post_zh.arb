@@ -76,6 +76,15 @@
   "post_contentRequired": "请输入内容",
   "post_deleteReplyConfirm": "确定要删除这条回复吗？此操作可以撤销。",
   "post_deleteReplyTitle": "删除回复",
+  "post_deviceSource": "来自 {device}",
+  "@post_deviceSource": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "post_deviceSourceTitle": "帖子来源",
   "post_detail": "帖子详情",
   "post_discardConfirm": "你想放弃你的帖子吗？",
   "post_discardTitle": "放弃帖子",

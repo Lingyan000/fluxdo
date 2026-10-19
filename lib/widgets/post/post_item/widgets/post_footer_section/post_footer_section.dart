@@ -22,6 +22,7 @@ import '../../../../../services/notion/notion_bookmark_auto_sync.dart';
 import '../../../../../services/toast_service.dart';
 import '../../../post_links.dart';
 import '../post_action_bar.dart';
+import '../post_device_source.dart';
 import '../post_voting_control.dart';
 import '../post_voting_comments_view.dart';
 import '../../../../bookmark/bookmark_edit_sheet_launcher.dart';
@@ -349,7 +350,10 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
               child: widget.opTopSlot,
             ),
           ],
-          const SizedBox(height: 12),
+          if (widget.post.iosDeviceName case final deviceName?)
+            PostDeviceSource(deviceName: deviceName)
+          else
+            const SizedBox(height: 12),
           PostActionBar(
             post: widget.post,
             isGuest: isGuest,
