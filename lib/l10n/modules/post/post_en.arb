@@ -13,6 +13,14 @@
   "boost_flagSubmitted": "Flag submitted",
   "boost_flagTitle": "Flag Boost",
   "boost_limitReached": "Boost limit reached for this post",
+  "boost_replyMentionTip": "Reply and mention @{username}",
+  "@boost_replyMentionTip": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "boost_placeholder": "Say something...",
   "boost_send": "Send",
   "boost_tooLong": "Content too long, max {count} characters",

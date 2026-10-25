@@ -12,6 +12,7 @@ import '../../../../../providers/discourse_providers.dart';
 import '../../../../../providers/ai_translation_provider.dart';
 import '../../../../../providers/preferences_provider.dart';
 import '../../../../../utils/blocked_user_filter.dart';
+import '../../../../../utils/quote_builder.dart';
 import '../../../../../utils/share_utils.dart';
 import '../../../../../utils/frame_jank_monitor.dart';
 import 'package:dio/dio.dart';
@@ -27,6 +28,7 @@ import '../post_voting_control.dart';
 import '../post_voting_comments_view.dart';
 import '../../../../bookmark/bookmark_edit_sheet_launcher.dart';
 import '../../../../post/post_boost/boost_actions.dart';
+import '../../../../post/post_boost/boost_content.dart';
 import '../../../../post/post_boost/boost_list.dart';
 import '../../../../post/post_boost/boost_input.dart';
 import '../post_flag_sheet.dart';
@@ -266,6 +268,23 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
         onBoostDeleted: _onBoostDeletedLocal,
       );
 
+  /// 点选 boost 气泡末尾的「@」:引用该 boost 内容并 @ 作者,预填进
+  /// 回复编辑器(Web 端选中 boost 后一键 mention 的同款行为)。
+  void _replyToBoost(Boost boost) {
+    final username = boost.user.username;
+    if (username.isEmpty) return;
+    final content = BoostContentParser.parse(boost.cooked).displayText;
+    final initialContent = content.isEmpty
+        ? '@$username '
+        : '${QuoteBuilder.build(
+            markdown: content,
+            username: username,
+            postNumber: widget.post.postNumber,
+            topicId: widget.topicId,
+          )}@$username ';
+    widget.onReply?.call(initialContent: initialContent);
+  }
+
   Future<void> _openBoostInput() async {
     final result = await showBoostInputSheet(context);
     if (result == null || !mounted) return;
@@ -309,6 +328,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
       canBoost: _canBoost,
       onAddBoost: _openBoostInput,
       onBoostTap: _showBoostActions,
+      onBoostReply: widget.onReply == null ? null : _replyToBoost,
       highlightUsername: widget.highlightBoostUsername,
     );
   }
