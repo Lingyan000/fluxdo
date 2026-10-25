@@ -53,6 +53,14 @@
   "boost_danmaku": "彈幕",
   "boost_danmakuDismiss": "暫時關閉此貼彈幕",
   "boost_danmakuShow": "顯示此貼彈幕",
+  "boost_replyMentionTip": "回覆並 @{username}",
+  "@boost_replyMentionTip": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "post_flagMessageUser": "向 @{username} 傳送訊息",
   "@post_flagMessageUser": {
     "placeholders": {

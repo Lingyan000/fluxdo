@@ -13,6 +13,14 @@
   "boost_flagSubmitted": "举报已提交",
   "boost_flagTitle": "举报 Boost",
   "boost_limitReached": "此帖子的 Boost 数量已达上限",
+  "boost_replyMentionTip": "回复并 @{username}",
+  "@boost_replyMentionTip": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "boost_placeholder": "说点什么...",
   "boost_send": "发送",
   "boost_tooLong": "内容过长，最多 {count} 个字符",

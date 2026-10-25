@@ -26,6 +26,9 @@ class BoostList extends StatefulWidget {
   final bool canBoost;
   final VoidCallback? onAddBoost;
   final BoostTapCallback? onBoostTap;
+  /// 点击选中气泡末尾的「@」按钮时回调(引用该 boost 并 @ 作者)。
+  /// 为 null(未登录/所在场景不支持回复)时不进入选中态。
+  final void Function(Boost boost)? onBoostReply;
   /// 高亮指定用户的 boost（自动展开并滚动到位）
   final String? highlightUsername;
 
@@ -35,6 +38,7 @@ class BoostList extends StatefulWidget {
     required this.canBoost,
     this.onAddBoost,
     this.onBoostTap,
+    this.onBoostReply,
     this.highlightUsername,
   });
 
@@ -50,6 +54,7 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
   bool _showAllRows = false;
   String? _activeGroupKey;
   BuildContext? _activePopoverContext;
+  int? _selectedBoostId;
   late final AnimationController _highlightController;
   late final Animation<double> _highlightOpacity;
   final GlobalKey _highlightKey = GlobalKey();
@@ -125,6 +130,12 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
       _closeActivePopover();
       _activeGroupKey = null;
     }
+
+    // 选中的 boost 被删除/刷新掉时同步清空选中态
+    if (_selectedBoostId != null &&
+        !widget.boosts.any((b) => b.id == _selectedBoostId)) {
+      _selectedBoostId = null;
+    }
   }
 
   BoostGroup? _findGroupByKey(List<BoostGroup> groups, String groupingKey) {
@@ -158,6 +169,24 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
     try {
       Navigator.of(popoverContext).pop();
     } catch (_) {}
+  }
+
+  /// 是否可为该 boost 提供「@」回复入口(需要回复回调且用户名可 @)
+  bool _canReplyBoost(Boost boost) =>
+      widget.onBoostReply != null && boost.user.username.isNotEmpty;
+
+  /// 点击/长按气泡:置为选中(末尾出现「@」按钮)后走原有操作流
+  /// (弹作者 popover)。选中态由 [TapRegion] 点外部取消。
+  void _selectBoost(Boost boost, VoidCallback proceed) {
+    if (_canReplyBoost(boost) && _selectedBoostId != boost.id) {
+      setState(() => _selectedBoostId = boost.id);
+    }
+    proceed();
+  }
+
+  void _handleMentionTap(Boost boost) {
+    setState(() => _selectedBoostId = null);
+    widget.onBoostReply?.call(boost);
   }
 
   void _toggleRows() {
@@ -288,16 +317,29 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
 
     if (group.count == 1) {
       final boost = group.boosts.first;
+      final isSelected = _selectedBoostId == boost.id && _canReplyBoost(boost);
       Widget bubble = BoostBubble(
         boost: boost,
+        selected: isSelected,
+        onMentionTap: isSelected ? () => _handleMentionTap(boost) : null,
         onTapWithContext: widget.onBoostTap == null
             ? null
-            : (bubbleContext) =>
-                widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
+            : (bubbleContext) => _selectBoost(
+                boost,
+                () => widget.onBoostTap!(
+                  boost,
+                  _globalRectOf(bubbleContext),
+                ),
+              ),
         onLongPressWithContext: widget.onBoostTap == null
             ? null
-            : (bubbleContext) =>
-                widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
+            : (bubbleContext) => _selectBoost(
+                boost,
+                () => widget.onBoostTap!(
+                  boost,
+                  _globalRectOf(bubbleContext),
+                ),
+              ),
       );
       if (isHighlighted) {
         bubble = _wrapHighlight(bubble);
@@ -498,13 +540,21 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
           }
         }
 
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Wrap(
-            spacing: _chipSpacing,
-            runSpacing: _chipSpacing,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: children,
+        return TapRegion(
+          // 选中态与作者 popover 的非模态 barrier 互相独立:
+          // 点气泡外任意处取消选中(popover 自行关闭),与 Web 端
+          // 点击 boost 外区域取消选中一致。
+          onTapOutside: _selectedBoostId == null
+              ? null
+              : (_) => setState(() => _selectedBoostId = null),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Wrap(
+              spacing: _chipSpacing,
+              runSpacing: _chipSpacing,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: children,
+            ),
           ),
         );
       },

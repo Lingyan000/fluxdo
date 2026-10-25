@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../common/emoji_text.dart';
 import '../../common/smart_avatar.dart';
@@ -15,6 +16,10 @@ class BoostBubble extends StatelessWidget {
   final VoidCallback? onLongPress;
   final void Function(BuildContext bubbleContext)? onTapWithContext;
   final void Function(BuildContext bubbleContext)? onLongPressWithContext;
+  /// 选中态:气泡末尾显示「@」回复按钮(参考 Web 端选中 boost 后的
+  /// mention 按钮),仅单 boost 气泡支持
+  final bool selected;
+  final VoidCallback? onMentionTap;
 
   const BoostBubble({
     super.key,
@@ -23,6 +28,8 @@ class BoostBubble extends StatelessWidget {
     this.onLongPress,
     this.onTapWithContext,
     this.onLongPressWithContext,
+    this.selected = false,
+    this.onMentionTap,
   }) : group = null,
        expanded = false;
 
@@ -34,6 +41,8 @@ class BoostBubble extends StatelessWidget {
     this.onLongPress,
     this.onTapWithContext,
     this.onLongPressWithContext,
+    this.selected = false,
+    this.onMentionTap,
   }) : boost = null;
 
   @override
@@ -54,6 +63,7 @@ class BoostBubble extends StatelessWidget {
     final displayText = parsed.displayText.isNotEmpty
         ? parsed.displayText
         : 'Boost';
+    final mentionEnabled = selected && onMentionTap != null;
 
     return Builder(
       builder: (bubbleContext) => GestureDetector(
@@ -66,10 +76,16 @@ class BoostBubble extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.only(left: 3, top: 3, bottom: 3, right: 6),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.4,
-            ),
+            color: selected
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
+                : theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.4,
+                  ),
             borderRadius: BorderRadius.circular(12),
+            border: selected
+                ? Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.6))
+                : null,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -96,7 +112,55 @@ class BoostBubble extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (mentionEnabled) ...[
+                const SizedBox(width: 4),
+                _BoostMentionButton(
+                  username: boost!.user.username,
+                  onTap: onMentionTap!,
+                ),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 选中 boost 气泡末尾的「@」回复按钮(对应 Web 端选中气泡后追加的
+/// mention 按钮):点击后引用该 boost 并 @ 其作者。
+class _BoostMentionButton extends StatelessWidget {
+  final String username;
+  final VoidCallback onTap;
+
+  const _BoostMentionButton({required this.username, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: context.l10n.boost_replyMentionTip(username),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Text(
+            '@',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              color: theme.colorScheme.primary,
+            ),
           ),
         ),
       ),
