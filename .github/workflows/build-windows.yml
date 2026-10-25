@@ -1,0 +1,66 @@
+name: Build Windows (test)
+
+on:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/doh_proxy
+          key: windows-test
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Build Windows
+        run: |
+          dart tool/flutterw.dart build windows --release
+          $releaseDir = "build\windows\x64\runner\Release"
+          if (-not (Test-Path "$releaseDir\native\doh_proxy.dll")) { throw "Missing doh_proxy.dll" }
+          if (-not (Test-Path "$releaseDir\native\doh_proxy_bin.exe")) { throw "Missing doh_proxy_bin.exe" }
+          mkdir dist
+        shell: pwsh
+
+      - name: Package Windows ZIP
+        run: |
+          cd build\windows\x64\runner\Release
+          7z a -tzip "..\..\..\..\..\dist\fluxdo-windows-x86_64.zip" .
+        shell: pwsh
+
+      - name: Build Windows Installer (exe)
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value.Split('+')[0]
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version windows\setup.iss
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxdo-windows
+          path: ./dist
