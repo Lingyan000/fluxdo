@@ -63,14 +63,16 @@ bool _isImageLinkUrl(String url) {
 
 /// 打开外部链接
 ///
-/// 根据用户偏好决定使用内置浏览器还是外部浏览器
-/// 如果启用了链接安全检查，会根据链接风险等级显示确认对话框
+/// 如果启用了链接安全检查，会根据链接风险等级弹出确认对话框，
+/// 由用户选择使用内置浏览器还是系统浏览器；未弹框（信任/内部链接，
+/// 或未启用离站确认）时按「外部链接使用内置浏览器」偏好分流
 Future<void> launchExternalLink(BuildContext context, String url) async {
   if (url.isEmpty) return;
   final uri = Uri.tryParse(url);
   if (uri == null) return;
 
   // 链接安全检查
+  ExternalLinkOpenChoice? explicitChoice;
   final config = AppConstants.siteCustomization.linkSecurityConfig;
   if (config != null && config.enableExitConfirmation) {
     final riskLevel = LinkSecurity.checkUrl(url, config);
@@ -87,13 +89,13 @@ Future<void> launchExternalLink(BuildContext context, String url) async {
       case LinkRiskLevel.normal:
       case LinkRiskLevel.risky:
       case LinkRiskLevel.dangerous:
-        // 需要确认的链接，显示确认对话框
-        final confirmed = await showExternalLinkConfirmDialog(
+        // 需要确认的链接，显示确认对话框，由用户选择打开方式
+        explicitChoice = await showExternalLinkConfirmDialog(
           context,
           url,
           riskLevel,
         );
-        if (confirmed != true) return;
+        if (explicitChoice == null) return;
         break;
     }
   }
@@ -101,11 +103,20 @@ Future<void> launchExternalLink(BuildContext context, String url) async {
   // 安全确认对话框关闭时，原帖子/页面可能已经被滚动回收或导航销毁。
   if (!context.mounted) return;
 
+  // 确认弹层中已显式选择「内置浏览器」：不经偏好，直接进内置 WebView
+  if (explicitChoice == ExternalLinkOpenChoice.inAppBrowser) {
+    WebViewPage.open(context, url);
+    return;
+  }
+
   final prefs = ProviderScope.containerOf(
     context,
     listen: false,
   ).read(preferencesProvider);
-  final preferInApp = prefs.openExternalLinksInAppBrowser;
+  // 确认弹层中已显式选择「系统浏览器」：尊重本次选择，忽略偏好
+  final preferInApp = explicitChoice == ExternalLinkOpenChoice.systemBrowser
+      ? false
+      : prefs.openExternalLinksInAppBrowser;
 
   if (preferInApp && (uri.scheme == 'http' || uri.scheme == 'https')) {
     WebViewPage.open(context, url);
