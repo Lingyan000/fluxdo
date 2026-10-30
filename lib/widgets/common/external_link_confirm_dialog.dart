@@ -7,15 +7,24 @@ import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import 'app_bottom_sheet.dart';
 
+/// 外部链接的打开方式选择结果
+enum ExternalLinkOpenChoice {
+  /// 系统浏览器
+  systemBrowser,
+
+  /// 应用内置浏览器
+  inAppBrowser,
+}
+
 /// 显示外部链接确认对话框
 ///
-/// 返回 `true` 表示用户确认继续访问，`false` 或 `null` 表示取消
-Future<bool?> showExternalLinkConfirmDialog(
+/// 返回用户选择的打开方式，`null` 表示取消或关闭
+Future<ExternalLinkOpenChoice?> showExternalLinkConfirmDialog(
   BuildContext context,
   String url,
   LinkRiskLevel riskLevel,
 ) {
-  return showAppBottomSheet<bool>(
+  return showAppBottomSheet<ExternalLinkOpenChoice>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -47,6 +56,10 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final config = _getConfigForLevel(riskLevel, theme);
     final urlInfo = _parseUrl(url);
+    // 内置浏览器（WebView）只能加载 http(s)，其余 scheme 仍交由系统处理
+    final uri = Uri.tryParse(url);
+    final canOpenInApp =
+        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
 
     return AppSheetScaffold(
       style: AppSheetStyle.card,
@@ -186,7 +199,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -199,7 +212,10 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () => Navigator.pop(
+                    context,
+                    ExternalLinkOpenChoice.systemBrowser,
+                  ),
                   style: FilledButton.styleFrom(
                     backgroundColor: config.buttonColor,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -207,11 +223,36 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(context.l10n.common_continueVisit),
+                  child: Text(context.l10n.externalLink_openInSystemBrowser),
                 ),
               ),
             ],
           ),
+
+          // 内置浏览器选项
+          if (canOpenInApp) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(
+                  context,
+                  ExternalLinkOpenChoice.inAppBrowser,
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(
+                  Symbols.open_in_browser_rounded,
+                  size: 18,
+                ),
+                label: Text(context.l10n.externalLink_openInAppBrowser),
+              ),
+            ),
+          ],
         ],
       ),
     );
