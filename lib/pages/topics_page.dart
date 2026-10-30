@@ -7,7 +7,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
@@ -16,7 +15,6 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
-import '../providers/message_bus_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/pinned_categories_provider.dart';
 import 'login_page.dart';
@@ -27,6 +25,8 @@ import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/anchor_guard_sliver.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/keyword_filter_hint_bar.dart';
+import '../widgets/topic/topic_list_update_banner.dart';
+import '../widgets/topic/topic_list_updates_mixin.dart';
 import '../widgets/topic/topic_filter_menu.dart';
 import '../widgets/common/topic_badges.dart';
 import '../widgets/common/search_capsule.dart';
@@ -71,9 +71,6 @@ final scrollToTopProvider = StateNotifierProvider<ScrollToTopNotifier, int>((
 
 /// 顶栏/底栏可见性进度（0.0 = 完全隐藏, 1.0 = 完全显示）
 final barVisibilityProvider = StateProvider<double>((ref) => 1.0);
-
-/// FAB 是否处于刷新模式（用户正在向上滚动时为 true）
-final fabRefreshModeProvider = StateProvider<bool>((ref) => false);
 
 /// FAB 触发刷新信号
 final fabRefreshSignalProvider =
@@ -1146,7 +1143,6 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     // 监听滚动到顶部的通知：动画展开头部；列表回顶由 _TopicListState
     // 各自监听同一信号处理（overlay 头部与列表滚动已解耦）
     ref.listen(scrollToTopProvider, (previous, next) {
-      ref.read(fabRefreshModeProvider.notifier).state = false;
       _headerController.expand();
     });
 
@@ -1554,27 +1550,6 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
       }
       // 发布"距顶进度"到 NavActionBus，底栏据此做动态图标切换
       _publishHomeScrollProgress(metrics.pixels);
-
-      // 列表到达顶部时恢复创建模式
-      if (metrics.pixels <= 0 && ref.read(fabRefreshModeProvider)) {
-        ref.read(fabRefreshModeProvider.notifier).state = false;
-      }
-    }
-
-    // 用 UserScrollNotification 追踪用户主动滚动方向（FAB 刷新/创建
-    // 模式切换;回弹/惯性不误触发）
-    if (notification is UserScrollNotification) {
-      if (notification.direction == ScrollDirection.forward) {
-        // 向上滚动（朝顶部方向）→ 刷新模式
-        if (!ref.read(fabRefreshModeProvider)) {
-          ref.read(fabRefreshModeProvider.notifier).state = true;
-        }
-      } else if (notification.direction == ScrollDirection.reverse) {
-        // 向下滚动（深入列表）→ 创建模式
-        if (ref.read(fabRefreshModeProvider)) {
-          ref.read(fabRefreshModeProvider.notifier).state = false;
-        }
-      }
     }
 
     // 拖拽滚动开始时，清理 pointer scroll 的状态，避免影响松手吸附;
@@ -2506,7 +2481,7 @@ class _TopicList extends ConsumerStatefulWidget {
 }
 
 class _TopicListState extends ConsumerState<_TopicList>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, TopicListUpdatesMixin<_TopicList> {
   final _refreshIndicatorKey = GlobalKey<M3eRefreshIndicatorState>();
 
   /// overlay 头部架构下无 NestedScrollView 注入的 PrimaryScrollController，
@@ -2518,7 +2493,6 @@ class _TopicListState extends ConsumerState<_TopicList>
     // IndexedStack 常驻:宿主 tab 不活跃时注册失效
     enabled: () => widget.parentActive,
   );
-  bool _isLoadingNewTopics = false;
 
   /// 需要高亮的话题 IDs（loadBefore 插入后设置，渐变消失后清除）
   final Set<int> _highlightedTopicIds = {};
@@ -2615,9 +2589,7 @@ class _TopicListState extends ConsumerState<_TopicList>
   /// 清除当前 tab 的高亮和"新话题"计数
   void _clearIncomingState() {
     _highlightedTopicIds.clear();
-    ref
-        .read(latestChannelProvider.notifier)
-        .clearNewTopicsForCategory(widget.categoryId);
+    topicUpdates.reset();
   }
 
   /// J/K 键盘导航：移动焦点（含 150ms 防抖）
@@ -2667,13 +2639,16 @@ class _TopicListState extends ConsumerState<_TopicList>
     if (focusIndex < 0 || focusIndex >= topics.length) return;
 
     final topic = topics[focusIndex];
+    final scrollToPostNumber = ref.read(preferencesProvider).defaultNestedView
+        ? null
+        : topic.lastReadPostNumber;
     // 强制用 Navigator push 打开（而非 Master-Detail 内选中）
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,
-          scrollToPostNumber: topic.lastReadPostNumber,
+          scrollToPostNumber: scrollToPostNumber,
         ),
       ),
     );
@@ -2780,6 +2755,10 @@ class _TopicListState extends ConsumerState<_TopicList>
   }
 
   void _openTopic(Topic topic) {
+    // 树形视图从完整话题开始，续读楼层只用于平铺视图。
+    final scrollToPostNumber = ref.read(preferencesProvider).defaultNestedView
+        ? null
+        : topic.lastReadPostNumber;
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
     if (canShowDetailPane) {
@@ -2788,7 +2767,7 @@ class _TopicListState extends ConsumerState<_TopicList>
           .select(
             topicId: topic.id,
             initialTitle: topic.title,
-            scrollToPostNumber: topic.lastReadPostNumber,
+            scrollToPostNumber: scrollToPostNumber,
           );
       return;
     }
@@ -2798,7 +2777,7 @@ class _TopicListState extends ConsumerState<_TopicList>
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,
-          scrollToPostNumber: topic.lastReadPostNumber,
+          scrollToPostNumber: scrollToPostNumber,
           autoSwitchToMasterDetail: true,
         ),
       ),
@@ -2923,51 +2902,23 @@ class _TopicListState extends ConsumerState<_TopicList>
       });
     }
 
+    final updateQuery = TopicListUpdateQuery(
+      filter: ref.read(topicFilterProvider),
+      subset: ref.read(topicNewSubsetProvider),
+      categoryId: widget.categoryId,
+      tags: ref.read(tabTagsProvider(widget.categoryId)),
+      order: ref.read(topicSortOrderProvider).apiValue,
+      ascending: ref.read(topicSortAscendingProvider),
+      newNewView: newNewViewEnabled,
+    );
+    watchTopicUpdates(updateQuery, tags: isCurrentTab
+        ? ref.read(topicListProvider(providerKey).notifier).knownTags
+        : const []);
+
     return visibleTopicsAsync.when(
       data: (topics) {
-        if (topics.isEmpty) {
-          // 空态列表滚动范围 ~0，与头部无位置互动，让位同骨架屏走
-          // 实时口径（静态 _headerInset 在折叠态下露空洞）
-          return ListenableBuilder(
-            listenable: widget.headerController,
-            builder: (context, _) {
-              final visible = widget.headerController.visibleExtentFor(
-                widget.topInset,
-              );
-              return M3eRefreshIndicator(
-                edgeOffset: visible,
-                onRefresh: () async {
-                  _loadMoreCoordinator.resetCooldown();
-                  try {
-                    // ignore: unused_result
-                    await ref.refresh(topicListProvider(providerKey).future);
-                  } catch (_) {}
-                },
-                child: ClipRRect(
-                  borderRadius: _topBorderRadius,
-                  child: ListView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.only(top: visible),
-                    children: [
-                      const SizedBox(height: 100),
-                      Center(child: Text(context.l10n.topics_noTopics)),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        }
-
-        final incomingState = ref.watch(latestChannelProvider);
-        final currentFilter = ref.read(topicFilterProvider);
-        final hasNewTopics =
-            currentFilter == TopicListFilter.latest &&
-            incomingState.hasIncomingForCategory(widget.categoryId);
-        final newTopicCount = incomingState.incomingCountForCategory(
-          widget.categoryId,
-        );
+        final newTopicCount = topicUpdateSnapshot.length;
+        final hasNewTopics = newTopicCount > 0 || isLoadingTopicUpdates;
         final newTopicOffset = hasNewTopics ? 1 : 0;
         final hintOffset = (showFilterHint && hiddenCount > 0) ? 1 : 0;
         final headerOffset = newTopicOffset + hintOffset;
@@ -2994,15 +2945,14 @@ class _TopicListState extends ConsumerState<_TopicList>
               ref.read(currentTabCategoryIdProvider) == widget.categoryId,
           onRefresh: () async {
             _loadMoreCoordinator.resetCooldown();
+            final ticket = beginTopicUpdatesRefresh(updateQuery);
             try {
               // ignore: unused_result
               await ref.refresh(topicListProvider(providerKey).future);
+              if (isCurrentTopicUpdatesRefresh(ticket.generation)) {
+                setState(() => topicUpdates.acknowledge(ticket.snapshot));
+              }
             } catch (_) {}
-            if (ref.read(topicFilterProvider) == TopicListFilter.latest) {
-              ref
-                  .read(latestChannelProvider.notifier)
-                  .clearNewTopicsForCategory(widget.categoryId);
-            }
           },
           child: ClipRRect(
             borderRadius: _topBorderRadius,
@@ -3275,94 +3225,25 @@ class _TopicListState extends ConsumerState<_TopicList>
     int count,
     int? providerKey,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Theme.of(
-          context,
-        ).colorScheme.primaryContainer.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: _isLoadingNewTopics
-              ? null
-              : () async {
-                  setState(() {
-                    _isLoadingNewTopics = true;
-                  });
-                  try {
-                    // 对齐网页版 showInserted：按 topic_ids 增量加载并插入顶部
-                    final incomingState = ref.read(latestChannelProvider);
-                    final topicIds = incomingState.incomingTopicIdsForCategory(
-                      providerKey,
-                    );
-                    final insertedIds = await ref
-                        .read(topicListProvider(providerKey).notifier)
-                        .loadBefore(topicIds);
-                    ref
-                        .read(latestChannelProvider.notifier)
-                        .clearIncoming(topicIds);
-
-                    if (mounted && insertedIds.isNotEmpty) {
-                      // 标记插入的话题以显示高亮动画
-                      _highlightedTopicIds.addAll(insertedIds);
-                      // 定时清除高亮，避免不可见卡片的动画无法触发 onEnd
-                      final idsToRemove = insertedIds.toSet();
-                      Future.delayed(const Duration(milliseconds: 2500), () {
-                        if (!mounted) return;
-                        final hadHighlights = _highlightedTopicIds
-                            .intersection(idsToRemove)
-                            .isNotEmpty;
-                        _highlightedTopicIds.removeAll(idsToRemove);
-                        if (hadHighlights) setState(() {});
-                      });
-                      scrollToTop();
-                    }
-                  } finally {
-                    if (mounted) {
-                      setState(() {
-                        _isLoadingNewTopics = false;
-                      });
-                    }
-                  }
-                },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Center(
-              child: _isLoadingNewTopics
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Symbols.arrow_upward_rounded,
-                          size: 14,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          context.l10n.topics_viewNewTopics(count),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ),
+    return TopicListUpdateBanner(
+      count: count,
+      filter: topicUpdates.query!.filter,
+      newNewView: newNewViewEnabled,
+      loading: isLoadingTopicUpdates,
+      onTap: () async {
+        final insertedIds = await loadTopicUpdates(
+          (ids) =>
+              ref.read(topicListProvider(providerKey).notifier).loadBefore(ids),
+        );
+        if (!mounted || insertedIds.isEmpty) return;
+        setState(() => _highlightedTopicIds.addAll(insertedIds));
+        final idsToRemove = insertedIds.toSet();
+        Future.delayed(const Duration(milliseconds: 2500), () {
+          if (!mounted) return;
+          setState(() => _highlightedTopicIds.removeAll(idsToRemove));
+        });
+        scrollToTop();
+      },
     );
   }
 }

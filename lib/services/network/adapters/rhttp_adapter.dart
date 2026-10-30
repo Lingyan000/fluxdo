@@ -160,7 +160,7 @@ class RhttpAdapter implements HttpClientAdapter {
       '[DIO] RhttpAdapter 重建完成 ${config.host} '
       '(DNS: ${config.dnsOverrides.isEmpty ? "system" : config.dnsOverrides.join(", ")}'
       '${config.stickyIp != null ? " [sticky]" : ""}, '
-      'ECH: ${config.echConfig == null ? "off" : "on"})',
+      'ECH config: ${config.echConfig == null ? "absent" : "present"})',
     );
     return delegate;
   }

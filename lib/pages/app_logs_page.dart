@@ -190,7 +190,14 @@ class _AppLogsPageState extends State<AppLogsPage> {
   }
 
   Future<void> _saveLog() async {
-    final path = await LoggerUtils.getShareFilePath();
+    final String path;
+    try {
+      path = await LoggerUtils.getShareFilePath();
+    } catch (_) {
+      // 生成阶段的异常由 LoggerUtils 记录，保存面板尚未打开。
+      ToastService.showError(S.current.share_saveFailed);
+      return;
+    }
     final outcome = await ShareUtils.saveFile(XFile(path));
     if (outcome.shared) {
       final name = outcome.displayName ?? p.basename(path);

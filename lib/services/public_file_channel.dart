@@ -16,25 +16,38 @@ class PublicSaveResult {
   final String displayName;
 }
 
-/// 把文件落到系统「公共」位置的原生通道（目前只有 Android 腿）。
+/// 把文件保存到系统位置的原生通道（Android：MediaStore / SAF；iOS：导出面板）。
 ///
 /// Android 的公共「下载」目录在 scoped storage 下不能用 File API 直写，
 /// 必须走 MediaStore；Flutter 生态没有维护中的通用包（media_store_plus
 /// 停更、file_saver 实际写的是应用私有目录），所以自己接一条通道。
-/// 其它平台没有「公共目录」这一概念（桌面直接写 ~/Downloads、iOS 只有
-/// 应用 Documents），[isSupported] 为 false，由调用方走各自的路径。
+/// 桌面端由调用方使用文件保存对话框。
 abstract final class PublicFileChannel {
   static const MethodChannel _channel = MethodChannel('com.fluxdo/public_file');
 
+  @visibleForTesting
+  static TargetPlatform? debugPlatformOverride;
+
+  static bool get _isAndroid => debugPlatformOverride != null
+      ? debugPlatformOverride == TargetPlatform.android
+      : Platform.isAndroid;
+  static bool get _isIOS => debugPlatformOverride != null
+      ? debugPlatformOverride == TargetPlatform.iOS
+      : Platform.isIOS;
+
   /// 当前平台是否有原生腿（Android：MediaStore + SAF；iOS：导出面板）。
-  static bool get isSupported =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  static bool get isSupported => !kIsWeb && (_isAndroid || _isIOS);
 
   /// 当前平台是否存在「公共下载目录」这种落点。
   ///
   /// 只有 Android 有（MediaStore）：桌面靠另存为对话框，iOS 沙盒里根本没有
   /// 对外可见的目录。用它来决定要不要给「静默保存到下载目录」这个入口。
-  static bool get hasPublicDownloads => isSupported;
+  static bool get hasPublicDownloads => !kIsWeb && _isAndroid;
+
+  /// iOS 应用内的 Downloads 目录可重新下载，不占用用户的 iCloud 备份。
+  /// 调用方须先创建 Documents/Downloads；失败时抛出平台异常。
+  static Future<void> excludeDownloadsFromBackup() =>
+      _channel.invokeMethod<void>('excludeDownloadsFromBackup');
 
   /// 静默写入公共「下载」目录（Android 10+ 走 MediaStore，零权限）。
   ///
@@ -45,7 +58,7 @@ abstract final class PublicFileChannel {
     required String sourcePath,
     required String fileName,
   }) async {
-    if (!isSupported) return null;
+    if (!hasPublicDownloads) return null;
     final res = await _channel.invokeMapMethod<String, Object?>(
       'saveToDownloads',
       {'sourcePath': sourcePath, 'fileName': fileName},

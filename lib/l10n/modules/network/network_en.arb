@@ -115,5 +115,8 @@
   "webviewAdapter_disabledDesc": "Use browser engine for requests, may improve login stability",
   "webviewAdapter_enabledDesc": "Main site API requests sent via browser engine",
   "webviewAdapter_hint": "Only main site API requests go through WebView; images and push notifications are not affected",
-  "webviewAdapter_title": "WebView Network Engine"
+  "webviewAdapter_title": "WebView Network Engine",
+  "networkSettings_upload": "File uploads",
+  "networkSettings_forceDisableMultipart": "Force disable multipart uploads",
+  "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload."
 }

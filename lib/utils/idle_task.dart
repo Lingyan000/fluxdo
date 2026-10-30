@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/scheduler.dart';
 
 /// 空闲任务调度:替代 `SchedulerBinding.scheduleTask(..., Priority.idle)`。
@@ -11,15 +13,17 @@ import 'package:flutter/scheduler.dart';
 ///
 /// 语义:动画进行中每 8ms 探测一次(代价可忽略),动画停止后执行;
 /// 连续礼让超过 [maxDeferral] 后强制执行,避免常驻动画把任务饿死。
-void scheduleIdleTask(
+IdleTaskHandle scheduleIdleTask(
   void Function() task, {
   bool Function()? isCanceled,
   Duration maxDeferral = const Duration(seconds: 2),
 }) {
+  final handle = IdleTaskHandle();
   final deadline = DateTime.now().add(maxDeferral);
   void attempt() {
-    Future<void>.delayed(const Duration(milliseconds: 8), () {
-      if (isCanceled?.call() ?? false) return;
+    handle._timer = Timer(const Duration(milliseconds: 8), () {
+      handle._timer = null;
+      if (handle._canceled || (isCanceled?.call() ?? false)) return;
       if (SchedulerBinding.instance.transientCallbackCount > 0 &&
           DateTime.now().isBefore(deadline)) {
         attempt();
@@ -30,4 +34,17 @@ void scheduleIdleTask(
   }
 
   attempt();
+  return handle;
+}
+
+/// 取消尚未执行的探测计时器；重复取消安全，不影响其他任务。
+class IdleTaskHandle {
+  Timer? _timer;
+  bool _canceled = false;
+
+  void cancel() {
+    _canceled = true;
+    _timer?.cancel();
+    _timer = null;
+  }
 }

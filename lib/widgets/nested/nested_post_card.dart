@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
+import '../../models/nested_reading_position.dart';
+import 'nested_reading_scope.dart';
 import '../../models/topic.dart';
 import '../../providers/nested_topic_provider.dart';
 import '../../providers/preferences_provider.dart';
@@ -61,6 +64,7 @@ class NestedPostCard extends ConsumerStatefulWidget {
   final NestedTopicParams params;
   final int depth;
   final int maxDepth;
+  final int? rootPostNumber;
   final bool isLastChild;
   final bool isLoggedIn;
   final Set<String> blockedUsernames;
@@ -93,6 +97,7 @@ class NestedPostCard extends ConsumerStatefulWidget {
     required this.params,
     required this.depth,
     this.maxDepth = 10,
+    this.rootPostNumber,
     this.isLastChild = false,
     required this.isLoggedIn,
     required this.blockedUsernames,
@@ -124,6 +129,9 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   bool _hasMore = false;
   int _page = 0;
   bool _depthLineHovered = false;
+  NestedReadingScope? _reading;
+  int _visibleChildCount = 3;
+  final List<NestedNode> _pendingChildren = [];
 
   /// 过滤结果缓存：visibleNestedNodes 递归复制整棵子树，开销不小；
   /// _children 只在明确的变更点（insert/addAll）改动，名单变化走
@@ -136,12 +144,23 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   @override
   void didUpdateWidget(covariant NestedPostCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final expanded = widget.expansionState?[widget.node.post.postNumber];
+    if (expanded != null && expanded != _expanded) {
+      _expanded = expanded;
+      _collapsed = !expanded && _hasReplies;
+    }
     if (!identical(oldWidget.blockedUsernames, widget.blockedUsernames) ||
         !identical(oldWidget.node, widget.node)) {
       _visibleChildrenCache = null;
     }
     // provider 同步解决方案状态后(node 换新)回填盖章
     if (!identical(oldWidget.node, widget.node)) {
+      final merged = mergeNestedNode(
+        widget.node.copyWith(children: _children),
+        widget.node,
+      );
+      _children = merged.children;
+      _cacheBranch();
       _acceptedAnswer = widget.node.post.acceptedAnswer;
     }
   }
@@ -165,11 +184,43 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
     _listenChildCreated();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reading = NestedReadingScope.maybeOf(context);
+    if (identical(reading, _reading)) return;
+    _reading = reading;
+    final cached = reading?.session.branches[widget.node.post.postNumber];
+    if (cached != null) {
+      _children = mergeNestedNode(
+        widget.node.copyWith(children: cached.children),
+        widget.node,
+      ).children;
+      _hasMore = cached.hasMore;
+      _page = cached.page;
+      _visibleChildCount = cached.visibleCount;
+      _pendingChildren
+        ..clear()
+        ..addAll(cached.pendingChildren);
+      _visibleChildrenCache = null;
+    }
+    _cacheBranch();
+  }
+
+  void _cacheBranch() {
+    _reading?.session.branches[widget.node.post.postNumber] = NestedBranchState(
+      children: List.of(_children),
+      hasMore: _hasMore,
+      page: _page,
+      visibleCount: _visibleChildCount,
+      pendingChildren: List.of(_pendingChildren),
+    );
+  }
+
   void _listenChildCreated() {
     ref.listenManual(
-      nestedTopicProvider(
-        widget.params,
-      ).select((s) => s.value?.lastChildCreated),
+      nestedTopicProvider(widget.params)
+          .select((s) => s.value?.lastChildCreated),
       (previous, next) {
         if (next == null || next == previous) return;
         if (next.parentPostNumber != widget.node.post.postNumber) return;
@@ -177,12 +228,27 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         // 去重
         if (_children.any((n) => n.post.id == next.post.id)) return;
 
+        if (!next.isOwnPost) {
+          if (!_pendingChildren.any((node) => node.post.id == next.post.id)) {
+            setState(() {
+              _pendingChildren.add(NestedNode(post: next.post));
+              _cacheBranch();
+            });
+          }
+          return;
+        }
         setState(() {
-          _children.insert(0, NestedNode(post: next.post));
+          if (_reading?.session.sort == 'new') {
+            _children.insert(0, NestedNode(post: next.post));
+          } else {
+            _children.add(NestedNode(post: next.post));
+          }
+          _visibleChildCount = _children.length;
           _visibleChildrenCache = null;
           _expanded = true;
           _collapsed = false;
           widget.expansionState?[widget.node.post.postNumber] = true;
+          _cacheBranch();
         });
       },
     );
@@ -190,7 +256,15 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
 
   bool get _hasReplies =>
       widget.node.directReplyCount > 0 || _visibleChildren.isNotEmpty;
-  bool get _atMaxDepth => widget.depth >= widget.maxDepth;
+  bool get _containsHighlight {
+    bool contains(NestedNode node) =>
+        node.post.postNumber == widget.highlightPostNumber ||
+        node.children.any(contains);
+    return widget.highlightPostNumber != null && contains(widget.node);
+  }
+
+  bool get _atMaxDepth =>
+      !_containsHighlight && widget.depth >= widget.maxDepth;
   bool get _showDepthLine => _hasReplies && !_collapsed && !_atMaxDepth;
 
   int get _replyCount {
@@ -230,11 +304,16 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       );
       if (!mounted) return;
       setState(() {
-        _children.addAll(response.children);
+        final ids = _children.map((node) => node.post.id).toSet();
+        _children.addAll(
+          response.children.where((node) => !ids.contains(node.post.id)),
+        );
+        _visibleChildCount = _children.length;
         _visibleChildrenCache = null;
         _hasMore = response.hasMore;
         _page = response.page + 1;
         _isLoadingMore = false;
+        _cacheBranch();
       });
     } catch (e) {
       if (!mounted) return;
@@ -405,13 +484,27 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       }
     }
 
+    final reading = _reading;
+    if (reading != null) {
+      mainRow = NestedPostAnchor(
+        controller: reading.controller,
+        postNumber: post.postNumber,
+        rootPostNumber: widget.rootPostNumber ?? post.postNumber,
+        trackRead: !_collapsed && !isDeletedPlaceholder,
+        child: mainRow,
+      );
+    }
+
     // 子节点
     final bool showContinueThread = _atMaxDepth && _hasReplies;
     final bool showChildren =
         !_atMaxDepth &&
         _expanded &&
         !_collapsed &&
-        (_visibleChildren.isNotEmpty || _isLoadingMore || _hasMore);
+        (_visibleChildren.isNotEmpty ||
+            _isLoadingMore ||
+            _hasMore ||
+            _pendingChildren.isNotEmpty);
     final bool showExpandBtn =
         !_atMaxDepth && !_expanded && !_collapsed && _hasReplies;
 
@@ -419,7 +512,12 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (widget.highlightPostNumber == post.postNumber &&
+            reading?.targetBanner != null)
+          reading!.targetBanner!,
         mainRow,
+        if (!showChildren && _pendingChildren.isNotEmpty)
+          _buildPendingChildrenButton(),
         if (showChildren)
           Padding(
             padding: EdgeInsets.only(left: childIndent),
@@ -651,7 +749,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
                       onQuoteReply: widget.onQuoteSelection == null
                           ? null
                           : (plaintext) =>
-                              widget.onQuoteSelection!(plaintext, post),
+                                widget.onQuoteSelection!(plaintext, post),
                     ),
                     decryptTextDetector: isDecryptableText,
                   ),
@@ -882,18 +980,30 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   }
 
   Widget _buildChildren(ThemeData theme, {bool isMobile = false}) {
-    final children = _visibleChildren;
+    final allChildren = _visibleChildren;
+    // 定位路径与显式恢复的展开状态必须能直接看到目标，不受预览条数限制。
+    final showAll =
+        widget.highlightPostNumber != null ||
+        widget.expansionState?[widget.node.post.postNumber] == true;
+    final children = showAll
+        ? allChildren
+        : allChildren.take(_visibleChildCount).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         for (int i = 0; i < children.length; i++)
           NestedPostCard(
+            key: ValueKey(children[i].post.id),
             node: children[i],
             topicId: widget.topicId,
             detail: widget.detail,
             params: widget.params,
-            depth: widget.depth + 1,
+            rootPostNumber:
+                widget.rootPostNumber ?? widget.node.post.postNumber,
+            depth: widget.depth >= widget.maxDepth && _containsHighlight
+                ? 0
+                : widget.depth + 1,
             maxDepth: widget.maxDepth,
             isLastChild: i == children.length - 1 && !_hasMore,
             isLoggedIn: widget.isLoggedIn,
@@ -909,13 +1019,49 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
             highlightPostNumber: widget.highlightPostNumber,
             highlightKey: widget.highlightKey,
           ),
-        if (_hasMore)
+        if (children.length < allChildren.length)
+          TextButton(
+            onPressed: () => setState(() {
+              _visibleChildCount += 10;
+              _cacheBranch();
+            }),
+            child: Text(
+              context.l10n.nested_showMoreReplies(
+                allChildren.length - children.length,
+              ),
+            ),
+          ),
+        if (_pendingChildren.isNotEmpty) _buildPendingChildrenButton(),
+        if (_hasMore && children.length == allChildren.length)
           isMobile
               ? _buildLoadMoreSimple(theme)
               : _buildLoadMoreWithConnector(theme),
       ],
     );
   }
+
+  Widget _buildPendingChildrenButton() => TextButton(
+    onPressed: () => setState(() {
+      final incoming = _pendingChildren
+          .where(
+            (node) => !_children.any((child) => child.post.id == node.post.id),
+          )
+          .toList();
+      if (_reading?.session.sort == 'new') {
+        _children.insertAll(0, incoming.reversed);
+      } else {
+        _children.addAll(incoming);
+      }
+      _pendingChildren.clear();
+      _visibleChildrenCache = null;
+      _visibleChildCount = _children.length;
+      _expanded = true;
+      _collapsed = false;
+      widget.expansionState?[widget.node.post.postNumber] = true;
+      _cacheBranch();
+    }),
+    child: Text(context.l10n.nested_newReplies(_pendingChildren.length)),
+  );
 
   /// 为子树区域内的操作按钮添加 L 形连接线
   Widget _wrapWithConnector(
@@ -1007,6 +1153,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
         detail: widget.detail,
         params: widget.params,
         maxDepth: widget.maxDepth,
+        rootPostNumber: widget.rootPostNumber ?? widget.node.post.postNumber,
         isLoggedIn: widget.isLoggedIn,
         onReply: widget.onReply,
         onEdit: widget.onEdit,

@@ -1,5 +1,5 @@
 /// 音视频改名上传公共链路(社区「媒体上传」脚本思路的 App 端实现):
-/// 选文件 → 4MB 前置检查 → `.xz` 改名上传(绕站点扩展名白名单)→
+/// 选文件 → 站点附件大小前置检查 → `.xz` 改名上传(绕站点扩展名白名单)→
 /// 生成 `<audio>/<video>` HTML 标签文本插 raw(cook 原样保留)。
 ///
 /// 播放兼容:标签 `type` 写原文件真实 MIME(网页端浏览器/本 app
@@ -9,6 +9,10 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+
+import 'package:dio/dio.dart';
+
+import '../../services/uploads/upload_progress.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +25,8 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/media_transcoder/media_compressor.dart';
 import '../../services/media_transcoder/media_transcoder.dart';
 import '../../services/preloaded_data_service.dart';
+import '../../services/uploads/media_upload_limits.dart';
+import '../../l10n/s.dart';
 
 /// 站点允许上传的扩展名 —— 从 preloaded siteSettings 的
 /// `authorized_extensions`(staff 追加 `authorized_extensions_for_staff`)
@@ -90,8 +96,68 @@ String buildMediaTag({
       '</video>';
 }
 
+/// 准备与上传分离，失败重试只重传处理后的文件，不重新压缩。
+class PreparedMediaUpload {
+  const PreparedMediaUpload({
+    required this.path,
+    required this.name,
+    required this.isAudio,
+    required this.voice,
+  });
+  final String path;
+  final String name;
+  final bool isAudio;
+  final bool voice;
+
+  Future<UploadResult> execute(
+    CancelToken cancelToken,
+    UploadProgressCallback onProgress,
+  ) => DiscourseService().uploadMediaAsXz(
+    path,
+    cancelToken: cancelToken,
+    onProgress: onProgress,
+  );
+
+  String markdown(UploadResult result) => buildMediaTag(
+    isAudio: isAudio,
+    voice: voice,
+    srcPath: mediaShortUrlToXzPath(result.shortUrl),
+    mime: lookupMimeType(path) ?? (isAudio ? 'audio/mpeg' : 'video/mp4'),
+  );
+}
+
+Future<PreparedMediaUpload?> prepareMediaUpload(
+  BuildContext context, {
+  required String path,
+  required String name,
+  required bool isAudio,
+  bool voice = false,
+}) async {
+  final size = await File(path).length();
+  final maxBytes = await MediaUploadLimits.load();
+  if (!context.mounted) return null;
+  var preparedPath = path;
+  if (maxBytes != null && size >= maxBytes) {
+    final compressed = await compressMediaWithDialog(
+      context,
+      path: path,
+      isAudio: isAudio,
+      voice: voice,
+      maxBytes: maxBytes,
+    );
+    if (compressed == null || !context.mounted) return null;
+    preparedPath = compressed;
+  }
+  return PreparedMediaUpload(
+    path: preparedPath,
+    name: name,
+    isAudio: isAudio,
+    voice: voice,
+  );
+}
+
 /// 已有本地媒体文件 → 上传 → 标签文本。失败弹 SnackBar 并返回 null
-/// (4MB 超限的提示文案来自 [uploadMediaAsXz] 的异常信息)。
+/// (站点大小超限的提示文案来自 [uploadMediaAsXz] 的异常信息)。
 Future<String?> uploadMediaFileAsTag(
   BuildContext context, {
   required String path,
@@ -102,22 +168,25 @@ Future<String?> uploadMediaFileAsTag(
   try {
     var uploadPath = path;
     var uploadName = name;
-    // 超 4MB 先压缩(原生转码,进度对话框可取消);压缩产物换用
+    // 超站点上限先压缩(原生转码,进度对话框可取消);压缩产物换用
     // 新文件名算 MIME(m4a/mp4)。取消/失败返回 null(已提示)。
     final size = await File(path).length();
-    if (size >= kMaxMediaBytes) {
+    final maxBytes = await MediaUploadLimits.load();
+    if (maxBytes != null && size >= maxBytes) {
       if (!context.mounted) return null;
       final compressed = await compressMediaWithDialog(
         context,
         path: path,
         isAudio: isAudio,
+        maxBytes: maxBytes,
+        voice: voice,
       );
       if (compressed == null) return null;
       uploadPath = compressed;
       uploadName = compressed.split(Platform.pathSeparator).last;
     }
-    final mime = lookupMimeType(uploadName) ??
-        (isAudio ? 'audio/mpeg' : 'video/mp4');
+    final mime =
+        lookupMimeType(uploadName) ?? (isAudio ? 'audio/mpeg' : 'video/mp4');
     final result = await DiscourseService().uploadMediaAsXz(uploadPath);
     return buildMediaTag(
       isAudio: isAudio,
@@ -164,23 +233,77 @@ Future<String?> compressMediaWithDialog(
   BuildContext context, {
   required String path,
   required bool isAudio,
+  required int maxBytes,
+  bool voice = false,
 }) async {
   final transcoder = MediaTranscoder.forCurrentPlatform();
   if (transcoder == null) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('当前平台不支持压缩,请压到 4MB 内再上传')),
+      SnackBar(
+        content: Text(
+          '当前平台不支持压缩，请压到 ${(maxBytes / 1048576).toStringAsFixed(1)} MiB 内再上传',
+        ),
+      ),
     );
     return null;
+  }
+  var mode = MediaCompressionMode.compatible;
+  if (!isAudio) {
+    final selected = await showDialog<MediaCompressionMode>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(dialogContext.l10n.mediaPlayer_compressionMode),
+        children: [
+          for (final option in MediaCompressionMode.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, option),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(switch (option) {
+                      MediaCompressionMode.compatible =>
+                        dialogContext.l10n.mediaPlayer_compressionCompatible,
+                      MediaCompressionMode.screen =>
+                        dialogContext.l10n.mediaPlayer_compressionScreen,
+                      MediaCompressionMode.efficient =>
+                        dialogContext.l10n.mediaPlayer_compressionEfficient,
+                    }),
+                    Text(switch (option) {
+                      MediaCompressionMode.compatible =>
+                        dialogContext
+                            .l10n
+                            .mediaPlayer_compressionCompatibleHint,
+                      MediaCompressionMode.screen =>
+                        dialogContext.l10n.mediaPlayer_compressionScreenHint,
+                      MediaCompressionMode.efficient =>
+                        dialogContext.l10n.mediaPlayer_compressionEfficientHint,
+                    }, style: Theme.of(dialogContext).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected == null || !context.mounted) return null;
+    mode = selected;
   }
   final tempDir = await getTemporaryDirectory();
   if (!context.mounted) return null;
 
+  final cancellation = MediaCompressionCancellation();
   final status = ValueNotifier<String>('准备压缩…');
   final resultFuture = compressMediaToFit(
     transcoder,
     path,
     isAudio: isAudio,
     outputDir: tempDir.path,
+    maxBytes: maxBytes,
+    voice: voice,
+    mode: mode,
+    cancellation: cancellation,
     onStatus: (s) => status.value = s,
   );
 
@@ -189,13 +312,14 @@ Future<String?> compressMediaWithDialog(
     barrierDismissible: false,
     builder: (dialogCtx) => _CompressProgressDialog(
       transcoder: transcoder,
+      cancellation: cancellation,
       status: status,
       resultFuture: resultFuture,
     ),
   );
-  status.dispose();
-  // 对话框被意外关闭(极端路径)也要等结果收尾
+  // 意外关闭时等待任务结束后再释放状态，避免迟到进度写入已销毁 notifier。
   final r = result ?? await resultFuture;
+  status.dispose();
   if (r.isOk) return r.path;
   if (!r.cancelled && r.error != null && context.mounted) {
     ScaffoldMessenger.maybeOf(context)
@@ -207,11 +331,13 @@ Future<String?> compressMediaWithDialog(
 class _CompressProgressDialog extends StatefulWidget {
   const _CompressProgressDialog({
     required this.transcoder,
+    required this.cancellation,
     required this.status,
     required this.resultFuture,
   });
 
   final MediaTranscoder transcoder;
+  final MediaCompressionCancellation cancellation;
   final ValueNotifier<String> status;
   final Future<CompressResult> resultFuture;
 
@@ -228,8 +354,12 @@ class _CompressProgressDialogState extends State<_CompressProgressDialog> {
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(milliseconds: 300), (_) async {
-      final p = await widget.transcoder.progress();
-      if (mounted) setState(() => _progress = p);
+      try {
+        final p = await widget.transcoder.progress();
+        if (mounted) setState(() => _progress = p);
+      } catch (_) {
+        // 进度查询失败不应中断实际转码任务。
+      }
     });
     widget.resultFuture.then((r) {
       if (mounted) Navigator.of(context).pop(r);
@@ -239,6 +369,7 @@ class _CompressProgressDialogState extends State<_CompressProgressDialog> {
   @override
   void dispose() {
     _timer?.cancel();
+    widget.cancellation.cancel();
     super.dispose();
   }
 
@@ -264,7 +395,12 @@ class _CompressProgressDialogState extends State<_CompressProgressDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => widget.transcoder.cancel(),
+          onPressed: () async {
+            widget.cancellation.cancel();
+            try {
+              await widget.transcoder.cancel();
+            } catch (_) {}
+          },
           child: const Text('取消'),
         ),
       ],

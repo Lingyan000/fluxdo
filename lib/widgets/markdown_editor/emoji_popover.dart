@@ -53,6 +53,13 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
 
   bool get isOpen => _entry != null && !_closing;
 
+  bool _preferSide = false;
+  bool _positionUpdateQueued = false;
+  void setPreferSide(bool value) {
+    _preferSide = value;
+    _schedulePositionUpdate();
+  }
+
   void toggle(BuildContext context, {required Widget panel}) {
     if (isOpen) {
       hide();
@@ -128,8 +135,14 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
   /// 锚点没了(编辑器被移出树)直接关闭
   @override
   void didChangeMetrics() {
-    if (!isOpen) return;
+    _schedulePositionUpdate();
+  }
+
+  void _schedulePositionUpdate() {
+    if (!isOpen || _positionUpdateQueued) return;
+    _positionUpdateQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _positionUpdateQueued = false;
       if (!isOpen) return;
       final box = anchorKey.currentContext?.findRenderObject();
       if (box is RenderBox && box.attached) {
@@ -146,8 +159,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
     if (anchorBox == null || !anchorBox.attached) {
       return const SizedBox.shrink();
     }
-    final anchorRect =
-        anchorBox.localToGlobal(Offset.zero) & anchorBox.size;
+    final anchorRect = anchorBox.localToGlobal(Offset.zero) & anchorBox.size;
     final screenSize = MediaQuery.sizeOf(context);
     final viewPadding = MediaQuery.viewPaddingOf(context);
 
@@ -156,18 +168,27 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
       kEmojiPopoverSize.width,
       screenSize.width - _kPopoverMargin * 2,
     );
+    final beside =
+        _preferSide &&
+        anchorRect.left - viewPadding.left - _kPopoverMargin * 2 >= width;
 
     // 上/下翻转:优先上方(按钮在编辑器工具栏,弹上方不遮编辑区),
     // 两侧都不足取大侧并缩高,防窗口极矮 overflow
-    final spaceAbove =
-        anchorRect.top - viewPadding.top - _kPopoverMargin * 2;
-    final spaceBelow = screenSize.height -
+    final spaceAbove = anchorRect.top - viewPadding.top - _kPopoverMargin * 2;
+    final spaceBelow =
+        screenSize.height -
         viewPadding.bottom -
         anchorRect.bottom -
         _kPopoverMargin * 2;
     final bool showAbove;
     final double height;
-    if (spaceAbove >= kEmojiPopoverSize.height) {
+    if (beside) {
+      showAbove = false;
+      height = math.min(
+        kEmojiPopoverSize.height,
+        screenSize.height - viewPadding.vertical - _kPopoverMargin * 2,
+      );
+    } else if (spaceAbove >= kEmojiPopoverSize.height) {
       showAbove = true;
       height = kEmojiPopoverSize.height;
     } else if (spaceBelow >= kEmojiPopoverSize.height) {
@@ -186,7 +207,20 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
       _kPopoverMargin,
       screenSize.width - width - _kPopoverMargin,
     );
-    final left = anchorRect.left.clamp(_kPopoverMargin, maxLeft);
+    final left = beside
+        ? anchorRect.left - _kPopoverMargin - width
+        : anchorRect.left.clamp(_kPopoverMargin, maxLeft);
+    final top = beside
+        ? (anchorRect.center.dy - height / 2).clamp(
+            viewPadding.top + _kPopoverMargin,
+            math.max(
+              viewPadding.top + _kPopoverMargin,
+              screenSize.height - viewPadding.bottom - height - _kPopoverMargin,
+            ),
+          )
+        : showAbove
+        ? anchorRect.top - _kPopoverMargin - height
+        : anchorRect.bottom + _kPopoverMargin;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -195,13 +229,15 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
       width: width,
       height: height,
       // 静态定位:上弹以按钮顶为底边,下弹以按钮底为顶边
-      top: showAbove
-          ? anchorRect.top - _kPopoverMargin - height
-          : anchorRect.bottom + _kPopoverMargin,
+      top: top.toDouble(),
       // 动画壳:从按钮侧的角缩放生长 + 淡入,退场反向
       child: _PopoverShell(
         key: _shellKey,
-        alignment: showAbove ? Alignment.bottomLeft : Alignment.topLeft,
+        alignment: beside
+            ? Alignment.centerRight
+            : showAbove
+            ? Alignment.bottomLeft
+            : Alignment.topLeft,
         // TextFieldTapRegion:点弹层不触发编辑器 TextField 失焦;
         // TapRegion(groupId: this):点弹层与锚点按钮之外才关闭
         child: TextFieldTapRegion(
@@ -209,6 +245,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
             groupId: this,
             onTapOutside: (_) => hide(),
             child: Container(
+              key: const ValueKey('composer-emoji-popover'),
               width: width,
               height: height,
               clipBehavior: Clip.antiAlias,
@@ -219,17 +256,13 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
                 // 比 Material elevation 的默认投影轻盈(桌面弹层观感)
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: isDark ? 0.45 : 0.14,
-                    ),
+                    color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.14),
                     blurRadius: 32,
                     spreadRadius: -4,
                     offset: const Offset(0, 12),
                   ),
                   BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: isDark ? 0.30 : 0.08,
-                    ),
+                    color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.08),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -246,10 +279,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
                 ),
               ),
               // Overlay 里没有 Material 祖先,面板内 InkWell 需要
-              child: Material(
-                type: MaterialType.transparency,
-                child: panel,
-              ),
+              child: Material(type: MaterialType.transparency, child: panel),
             ),
           ),
         ),
@@ -291,8 +321,10 @@ class _PopoverShellState extends State<_PopoverShell>
     curve: Curves.easeOutCubic,
     reverseCurve: Curves.easeInCubic,
   );
-  late final Animation<double> _scale =
-      Tween<double>(begin: 0.94, end: 1.0).animate(_scaleCurve);
+  late final Animation<double> _scale = Tween<double>(
+    begin: 0.94,
+    end: 1.0,
+  ).animate(_scaleCurve);
 
   @override
   void initState() {
@@ -332,15 +364,18 @@ class _PopoverShellState extends State<_PopoverShell>
 class EmojiPopoverAnchor extends StatelessWidget {
   final EmojiPopoverController controller;
   final Widget child;
+  final bool preferSide;
 
   const EmojiPopoverAnchor({
     super.key,
     required this.controller,
     required this.child,
+    this.preferSide = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    controller.setPreferSide(preferSide);
     return TapRegion(
       groupId: controller,
       child: KeyedSubtree(key: controller.anchorKey, child: child),

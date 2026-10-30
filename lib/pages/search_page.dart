@@ -14,7 +14,6 @@ import '../widgets/search/search_filter_panel.dart';
 import '../widgets/search/search_list_skeleton.dart';
 import '../widgets/search/search_post_card.dart';
 import '../widgets/search/search_preview_dialog.dart';
-import '../widgets/topic/topic_preview_dialog.dart' show topicCardAnchorRect;
 import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
@@ -1274,22 +1273,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   final enableLongPress = ref
                       .watch(preferencesProvider)
                       .longPressPreview;
-                  // Builder 紧贴卡片:一镜到底要卡片自身的屏幕 rect 作
-                  // 起点(外层 context 在桌面端 Center 包装下是满宽);
-                  // bottomGap 8 裁掉外壳底部间距
-                  return Builder(
-                    builder: (cardContext) => SearchPostCard(
-                      post: searchPost,
-                      onTap: () => _openTopicResult(searchPost),
-                      onLongPress: enableLongPress
-                          ? () => SearchPreviewDialog.show(
-                              context,
-                              post: searchPost,
-                              onOpen: () => _openTopicResult(searchPost),
-                              anchorRect: topicCardAnchorRect(cardContext),
-                            )
-                          : null,
-                    ),
+
+                  return SearchPostCard(
+                    post: searchPost,
+                    onTap: () => _openTopicResult(searchPost),
+                    onLongPress: enableLongPress
+                        ? (cardContext) => SearchPreviewDialog.show(
+                            context,
+                            post: searchPost,
+                            onOpen: () => _openTopicResult(searchPost),
+                            sourceContext: cardContext,
+                          )
+                        : null,
                   );
                 }
 

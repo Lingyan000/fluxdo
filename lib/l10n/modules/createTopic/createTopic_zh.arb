@@ -40,6 +40,14 @@
       }
     }
   },
+  "createTopic_maxTitleLength": "标题最多 {max} 个字符",
+  "@createTopic_maxTitleLength": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "createTopic_noContent": "（无内容）",
   "createTopic_noTitle": "（无标题）",
   "createTopic_pendingReview": "你的帖子已提交，正在等待审核",
@@ -49,6 +57,7 @@
   "createTopic_templateNotModified": "您尚未修改分类模板内容，确定要发布吗？",
   "createTopic_title": "创建话题",
   "createTopic_titleHint": "键入一个吸引人的标题...",
+  "createTopic_titleOrLinkHint": "输入标题，或在此处粘贴链接",
   "editTopic_editPm": "编辑私信",
   "editTopic_editTopic": "编辑话题",
   "editTopic_loadContentFailed": "加载内容失败: {error}",

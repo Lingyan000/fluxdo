@@ -18,10 +18,7 @@ import '../../../services/media/playback_position_store.dart';
 /// (全屏页持有),控制器安然无恙;宿主滚回来重建时 obtain() 命中现存
 /// session 直接复用(顺带获得重进秒开)。
 class VideoPlayerSession {
-  VideoPlayerSession._({
-    required this.url,
-    required this.controller,
-  });
+  VideoPlayerSession._({required this.url, required this.controller});
 
   /// 已解析好的真实播放 URL(session 身份键)。
   final String url;
@@ -137,6 +134,7 @@ class VideoSessionRegistry {
     final controller = VideoPlayerController.networkUrl(
       Uri.parse(url),
       formatHint: videoFormatHintFromMime(mimeType),
+      viewType: videoViewTypeForPlatform(defaultTargetPlatform),
     );
     final session = VideoPlayerSession._(url: url, controller: controller);
     session._start();
@@ -168,3 +166,10 @@ VideoFormat? videoFormatHintFromMime(String? mimeType) {
   }
   return null;
 }
+
+/// Android 使用原生视频表面处理解码器裁切，避免 ImageReader 全缓冲区采样。
+@visibleForTesting
+VideoViewType videoViewTypeForPlatform(TargetPlatform platform) =>
+    !kIsWeb && platform == TargetPlatform.android
+    ? VideoViewType.platformView
+    : VideoViewType.textureView;

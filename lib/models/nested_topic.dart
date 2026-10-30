@@ -114,8 +114,9 @@ class NestedContextResponse {
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
           .toList(),
       ancestorsTruncated: json['ancestors_truncated'] as bool? ?? false,
-      targetPost:
-          NestedNode.fromJson(json['target_post'] as Map<String, dynamic>),
+      targetPost: NestedNode.fromJson(
+        json['target_post'] as Map<String, dynamic>,
+      ),
     );
   }
 
@@ -137,11 +138,13 @@ class NestedContextResponse {
 class NestedChildCreatedEvent {
   final Post post;
   final int parentPostNumber;
+  final bool isOwnPost;
   final int _id;
 
   NestedChildCreatedEvent({
     required this.post,
     required this.parentPostNumber,
+    this.isOwnPost = false,
   }) : _id = _nextId++;
 
   static int _nextId = 0;
@@ -177,4 +180,18 @@ class NestedChildrenResponse {
       page: json['page'] as int? ?? 0,
     );
   }
+}
+
+/// 保留已加载的分支与元数据，同时补入定位路径；按帖子身份去重。
+NestedNode mergeNestedNode(NestedNode original, NestedNode incoming) {
+  final children = [...original.children];
+  for (final child in incoming.children) {
+    final index = children.indexWhere((node) => node.post.id == child.post.id);
+    if (index < 0) {
+      children.add(child);
+    } else {
+      children[index] = mergeNestedNode(children[index], child);
+    }
+  }
+  return original.copyWith(children: children);
 }

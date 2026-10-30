@@ -1,0 +1,12 @@
+{
+  "@@locale": "en",
+  "editorUploads_title": "Uploads",
+  "editorUploads_pendingSubmit": "Some uploads are pending or failed. Wait, retry or remove them before posting.",
+  "editorUploads_queued": "Queued",
+  "editorUploads_preparing": "Preparing",
+  "editorUploads_uploading": "Uploading",
+  "editorUploads_processing": "Processing",
+  "editorUploads_succeeded": "Uploaded",
+  "editorUploads_failed": "Upload failed. Retry or remove.",
+  "editorUploads_cancelled": "Cancelled"
+}

@@ -67,12 +67,22 @@ class MediaTranscodeHandler: NSObject {
         DispatchQueue.main.async { result(nil) }
         return
       }
+      let audioTrack = asset.tracks(withMediaType: .audio).first
       let videoTrack = asset.tracks(withMediaType: .video).first
       var out: [String: Any] = [
         "durationMs": Int(seconds * 1000),
         "hasVideo": videoTrack != nil,
+        "hasAudio": audioTrack != nil,
       ]
+      if let description = audioTrack?.formatDescriptions.first {
+        let format = description as! CMAudioFormatDescription
+        if let audio = CMAudioFormatDescriptionGetStreamBasicDescription(format) {
+          out["audioChannels"] = Int(audio.pointee.mChannelsPerFrame)
+          out["audioSampleRate"] = Int(audio.pointee.mSampleRate)
+        }
+      }
       if let v = videoTrack {
+        out["fps"] = Double(v.nominalFrameRate)
         let size = v.naturalSize.applying(v.preferredTransform)
         out["width"] = Int(abs(size.width))
         out["height"] = Int(abs(size.height))
@@ -305,7 +315,10 @@ class MediaTranscodeHandler: NSObject {
         }
       }
     }
-    group.wait()
+    // cancelWriting 后 readiness 回调可能不再执行，不能无限等待泵退出。
+    while group.wait(timeout: .now() + .milliseconds(100)) == .timedOut {
+      if cancelled || writer.status == .failed || reader.status == .failed { break }
+    }
 
     if cancelled {
       reader.cancelReading()
@@ -316,6 +329,10 @@ class MediaTranscodeHandler: NSObject {
     if reader.status == .failed {
       writer.cancelWriting()
       throw reader.error ?? TranscodeError(message: "读取失败")
+    }
+    if writer.status == .failed {
+      reader.cancelReading()
+      throw writer.error ?? TranscodeError(message: "写出失败")
     }
     let sem = DispatchSemaphore(value: 0)
     writer.finishWriting { sem.signal() }

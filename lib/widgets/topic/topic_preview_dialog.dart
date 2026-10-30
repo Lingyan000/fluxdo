@@ -13,9 +13,8 @@ import '../../utils/color_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import '../common/relative_time_text.dart';
-import '../common/morphing_dialog_shell.dart';
+import '../common/morphing_preview_route.dart';
 import '../common/skeleton.dart';
-import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
 import '../common/smart_avatar.dart';
@@ -39,22 +38,6 @@ class PreviewAction {
   });
 }
 
-/// 取卡片(或任意锚点 widget)的屏幕 rect 作为一镜到底动画起点。
-/// [cardContext] 必须是卡片自身的 context(Builder 紧贴卡片构造);
-/// 卡片外壳含底部间距(Padding),[bottomGap] 裁掉后才是视觉卡身:
-/// 普通/自绘卡 8、置顶紧凑卡 6。卡片未挂载/未布局时返回 null。
-Rect? topicCardAnchorRect(BuildContext cardContext, {double bottomGap = 8}) {
-  final box = cardContext.findRenderObject();
-  if (box is! RenderBox || !box.hasSize) return null;
-  final origin = box.localToGlobal(Offset.zero);
-  return Rect.fromLTRB(
-    origin.dx,
-    origin.dy,
-    origin.dx + box.size.width,
-    origin.dy + box.size.height - bottomGap,
-  );
-}
-
 /// 话题预览弹窗 - 长按卡片时显示
 class TopicPreviewDialog extends ConsumerStatefulWidget {
   final Topic topic;
@@ -68,21 +51,8 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
   /// 压回锚点的栈(与正文内链同语义),没有则全屏 push。
   final SelectedTopicProvider? paneStack;
 
-  /// 一镜到底模式:非空时弹窗壳从 [anchorRect](长按卡片的屏幕 rect)
-  /// 连续变形到居中弹窗 —— 内容自始至终嵌在壳内随其变形(裁剪窗从
-  /// 卡片大小展开),没有"空壳飞行"段;关闭沿同路径收回。由路由
-  /// animation 驱动([show] 的 anchorRect 路径传入)。
-  final Animation<double>? morphAnimation;
-
-  /// 一镜到底起点:卡片的屏幕 rect(已裁掉卡片底部间距)
-  final Rect? anchorRect;
-
-  /// 一镜到底起点底色:卡片外壳底色(surfaceContainerLow 系),
-  /// 与弹窗壳 surface 做插值,起步无缝
-  final Color? anchorColor;
-
-  /// 一镜到底起点圆角(卡片 10 → 弹窗 20)
-  final double anchorRadius;
+  /// 弹窗路由提供统一表面时，只构建内部内容。
+  final bool embedded;
 
   const TopicPreviewDialog({
     super.key,
@@ -92,20 +62,13 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     this.customActionPanelBuilder,
     this.firstPostLoader,
     this.paneStack,
-    this.morphAnimation,
-    this.anchorRect,
-    this.anchorColor,
-    this.anchorRadius = 10,
+    this.embedded = false,
   });
 
   @override
   ConsumerState<TopicPreviewDialog> createState() => _TopicPreviewDialogState();
 
-  /// 显示预览弹窗
-  ///
-  /// [anchorRect] 为长按卡片的全局 rect(已裁掉卡片底部间距)。
-  /// 传入时走一镜到底:弹窗壳从卡片位置/底色/圆角连续变形到居中
-  /// 弹窗,关闭沿同路径收回;未传入回退为中心缩放(防御兜底)。
+  /// 从源卡片连续展开预览；没有来源时使用轻量淡入。
   static Future<void> show(
     BuildContext context, {
     required Topic topic,
@@ -113,71 +76,28 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     List<PreviewAction>? actions,
     WidgetBuilder? customActionPanelBuilder,
     Future<String?> Function()? firstPostLoader,
+    BuildContext? sourceContext,
     Rect? anchorRect,
     Color? anchorColor,
     double anchorRadius = 10,
   }) {
-    // 触觉反馈
     HapticFeedback.mediumImpact();
-
-    // pop 弹窗后锚点 context 可能已失效,进弹窗前先捕获平行视界栈。
     final paneStack = EmbeddedStackScope.maybeOf(context);
-
-    if (anchorRect != null) {
-      // 一镜到底:变形由弹窗内部根据路由 animation 自驱(内容嵌在壳内
-      // 随壳变形),这里 transitionBuilder 必须恒等 —— 默认的整页淡入
-      // 会让壳从透明浮现,破坏"卡片浮起"的连续性
-      return showAppGeneralDialog(
-        context: context,
-        barrierDismissible: true,
-        barrierLabel: S.current.common_closePreview,
-        barrierColor: Colors.black54,
-        transitionDuration: const Duration(milliseconds: 350),
-        transitionBuilder: (context, animation, secondaryAnimation, child) =>
-            child,
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return TopicPreviewDialog(
-            topic: topic,
-            onOpen: onOpen,
-            actions: actions,
-            customActionPanelBuilder: customActionPanelBuilder,
-            firstPostLoader: firstPostLoader,
-            paneStack: paneStack,
-            morphAnimation: animation,
-            anchorRect: anchorRect,
-            anchorColor: anchorColor,
-            anchorRadius: anchorRadius,
-          );
-        },
-      );
-    }
-
-    return showAppGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: S.current.common_closePreview,
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return TopicPreviewDialog(
-          topic: topic,
-          onOpen: onOpen,
-          actions: actions,
-          customActionPanelBuilder: customActionPanelBuilder,
-          firstPostLoader: firstPostLoader,
-          paneStack: paneStack,
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curvedAnimation = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutBack,
-        );
-        return ScaleTransition(
-          scale: curvedAnimation,
-          child: FadeTransition(opacity: animation, child: child),
-        );
-      },
+    return showMorphingPreviewDialog(
+      context,
+      sourceContext: sourceContext,
+      anchorRect: anchorRect,
+      anchorColor: anchorColor,
+      anchorRadius: anchorRadius,
+      builder: (context) => TopicPreviewDialog(
+        topic: topic,
+        onOpen: onOpen,
+        actions: actions,
+        customActionPanelBuilder: customActionPanelBuilder,
+        firstPostLoader: firstPostLoader,
+        paneStack: paneStack,
+        embedded: true,
+      ),
     );
   }
 }
@@ -234,7 +154,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     final hasActions = widget.actions != null && widget.actions!.isNotEmpty;
     final hasCustomActionPanel = widget.customActionPanelBuilder != null;
 
-    final morphing = widget.morphAnimation != null;
+    final morphing = widget.embedded;
 
     // 壳体内容(两种模式共用):自定义面板(书签快捷重命名,固定) + 整体
     // 滚动区(标题/元信息/标签/正文一起滚,内容可视区最大化) + 固定底栏。
@@ -300,15 +220,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
       ],
     );
 
-    if (morphing) {
-      return MorphingDialogShell(
-        animation: widget.morphAnimation!,
-        anchorRect: widget.anchorRect!,
-        anchorColor: widget.anchorColor,
-        anchorRadius: widget.anchorRadius,
-        child: contentColumn,
-      );
-    }
+    if (morphing) return contentColumn;
 
     return Center(
       child: ConstrainedBox(

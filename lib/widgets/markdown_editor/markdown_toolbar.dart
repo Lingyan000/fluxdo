@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fluxdo_render/editor.dart' show
+import 'package:fluxdo_render/editor.dart'
+    show
         observeModifierKeyEvent,
         primaryModifierHeldForReversibleAction,
         shiftModifierHeld;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../widgets/crypto/crypto_encrypt_sheet.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:super_clipboard/super_clipboard.dart';
@@ -18,22 +19,37 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:dio/dio.dart';
+
 import '../../services/app_error_handler.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/platform_utils.dart';
 import '../common/fading_edge_scroll_view.dart';
 import '../content/discourse_html_content/image_utils.dart';
+import 'composer_workbench.dart';
+import 'composer_tool_style.dart';
+import 'composer_desktop_layout.dart';
+import 'composer_desktop_workbench.dart';
+import 'composer_tools_anchor.dart';
+import 'composer_view_mode_switcher.dart';
+import 'cursor_swipe_control.dart';
 import 'composer_shortcuts.dart';
 import 'editor_tools.dart';
 import 'emoji_popover.dart';
 import 'media_upload_helper.dart';
+import 'uploads/task_controller.dart';
+import 'uploads/upload_task_panel.dart';
+import 'uploads/markdown_insertion_anchor.dart';
 import 'voice_recorder_sheet.dart';
 import 'image_upload_dialog.dart';
+import 'content_actions_button.dart';
+import 'content_actions_providers.dart';
 import 'link_insert_dialog.dart';
 import 'poll_builder_dialog.dart';
 import 'template_insert_dialog.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../../../../../l10n/s.dart';
 
 /// Markdown 工具栏组件
@@ -45,6 +61,9 @@ class MarkdownToolbar extends StatefulWidget {
   /// 内容焦点节点（可选，用于恢复焦点）
   final FocusNode? focusNode;
 
+  /// 正文撤销历史（宿主与正文 TextField 共用同一实例；null = 不显示
+  /// 撤销/恢复按钮，用于不带正文输入框的场景）
+  final UndoHistoryController? undoController;
 
   /// 是否显示预览按钮
   final bool showPreviewButton;
@@ -70,25 +89,31 @@ class MarkdownToolbar extends StatefulWidget {
   /// 表情面板是否可见（控制表情/键盘按钮图标切换）
   final bool isEmojiPanelVisible;
 
-  /// 「更多工具」按钮点击回调
-  /// 提供时为移动端模式：右侧显示「更多」按钮，全部工具收进网格面板
+  /// 展开/收起工具岛，两端共用。
   final VoidCallback? onToggleTools;
 
-  /// 工具面板是否可见（控制「更多工具」按钮高亮）
+  /// 工具岛是否展开（控制入口高亮）。
   final bool isToolsPanelVisible;
 
   /// 外显工具 id 列表（见 editor_tools.dart）
-  /// null（桌面端）= 显示全部工具；空列表 = 中部不显示任何工具
+  /// null = 显示全部工具；实际两端沿用用户固定列表，空列表不显示固定工具。
   final List<String>? visibleToolIds;
 
   /// 桌面端表情悬浮弹层控制器(非 null 时表情按钮被锚点包裹,
   /// 弹层跟随按钮定位且点按钮不触发弹层的 onTapOutside)
   final EmojiPopoverController? emojiPopover;
+  final ComposerToolsAnchor? toolsAnchor;
+
+  final Widget? metaBar;
+  final VoidCallback? onResumeEditing;
+  final void Function(int direction, {required bool extend})?
+  onMoveCursorVertical;
 
   const MarkdownToolbar({
     super.key,
     required this.controller,
     this.focusNode,
+    this.undoController,
     this.showPreviewButton = true,
     this.isPreview = false,
     this.onTogglePreview,
@@ -101,6 +126,10 @@ class MarkdownToolbar extends StatefulWidget {
     this.isToolsPanelVisible = false,
     this.visibleToolIds,
     this.emojiPopover,
+    this.toolsAnchor,
+    this.metaBar,
+    this.onResumeEditing,
+    this.onMoveCursorVertical,
   });
 
   @override
@@ -109,19 +138,43 @@ class MarkdownToolbar extends StatefulWidget {
 
 class MarkdownToolbarState extends State<MarkdownToolbar> {
   final _picker = ImagePicker();
+
+  /// 宿主未传 focusNode 时的兑底（只建一次，不能在 build 里 new）
+  FocusNode? _fallbackFocusNode;
   int _uploadingCount = 0;
-  String? _uploadProgress; // 批量上传进度，如 "3/22"
-  bool get _isUploading => _uploadingCount > 0;
+  late MarkdownInsertionAnchors _uploadAnchors;
+  final _uploads = UploadTaskController();
+
+  /// 失败待处理的任务也阻止发布；媒体旧流程仍计入保护。
+  bool get hasPendingUploads => _uploads.hasPending || _uploadingCount > 0;
+
+  bool get isInsertingUpload => _uploadAnchors.isInserting;
 
   @override
   void initState() {
     super.initState();
+    _uploadAnchors = MarkdownInsertionAnchors(widget.controller);
     HardwareKeyboard.instance.addHandler(_handleRawKeyEvent);
+  }
+
+  @override
+  void didUpdateWidget(covariant MarkdownToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      for (final task in _uploads.tasks) {
+        _uploads.remove(task.id);
+      }
+      _uploadAnchors.dispose();
+      _uploadAnchors = MarkdownInsertionAnchors(widget.controller);
+    }
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleRawKeyEvent);
+    _uploads.dispose();
+    _uploadAnchors.dispose();
+    _fallbackFocusNode?.dispose();
     super.dispose();
   }
 
@@ -142,7 +195,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         !shiftModifierHeld() &&
         !HardwareKeyboard.instance.isAltPressed &&
         primaryModifierHeldForReversibleAction(event)) {
-      _handlePasteImage();
+      pasteImageFromClipboard();
       // 不返回 true：让 TextField 自行处理文本粘贴，
       // 仅在检测到图片时通过上传流程处理
       return false;
@@ -159,29 +212,35 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   ];
 
   /// 从 DataReader 读取图片字节（支持 PNG/JPEG/GIF/WebP）
-  static Future<(Uint8List, String)?> readImageFromReader(DataReader reader) async {
+  static Future<(Uint8List, String)?> readImageFromReader(
+    DataReader reader,
+  ) async {
     for (final format in _imageFormats) {
       if (reader.canProvide(format)) {
         final completer = Completer<Uint8List?>();
-        reader.getFile(format, (file) async {
-          final stream = file.getStream();
-          final chunks = <int>[];
-          await for (final chunk in stream) {
-            chunks.addAll(chunk);
-          }
-          completer.complete(Uint8List.fromList(chunks));
-        }, onError: (error) {
-          completer.complete(null);
-        });
+        reader.getFile(
+          format,
+          (file) async {
+            final stream = file.getStream();
+            final chunks = <int>[];
+            await for (final chunk in stream) {
+              chunks.addAll(chunk);
+            }
+            completer.complete(Uint8List.fromList(chunks));
+          },
+          onError: (error) {
+            completer.complete(null);
+          },
+        );
         final bytes = await completer.future;
         if (bytes != null && bytes.isNotEmpty) {
           final ext = format == Formats.png
               ? 'png'
               : format == Formats.jpeg
-                  ? 'jpg'
-                  : format == Formats.gif
-                      ? 'gif'
-                      : 'webp';
+              ? 'jpg'
+              : format == Formats.gif
+              ? 'gif'
+              : 'webp';
           return (bytes, ext);
         }
       }
@@ -201,10 +260,12 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   }
 
   /// 处理粘贴事件：仅检测剪贴板图片，文本粘贴由 TextField 自行处理
-  Future<void> _handlePasteImage() async {
+  Future<bool> pasteImageFromClipboard() async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
       final clipboard = SystemClipboard.instance;
-      if (clipboard == null) return;
+      if (clipboard == null) return false;
       final reader = await clipboard.read();
       final result = await readImageFromReader(reader);
       if (result != null) {
@@ -214,27 +275,48 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         final tempFile = File(p.join(tempDir.path, fileName));
         await tempFile.writeAsBytes(bytes);
 
-        if (!mounted) return;
-        await uploadImageFromPath(imagePath: tempFile.path, imageName: fileName);
+        if (!mounted) return false;
+        await uploadImageFromPath(
+          imagePath: tempFile.path,
+          imageName: fileName,
+          insertionAnchor: _uploadAnchors.fork(anchor),
+        );
+        return true;
       }
     } catch (_) {
       // 读取图片失败，忽略，文本粘贴由 TextField 自行处理
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
+    return false;
   }
 
   /// 从字节数据上传图片（供 markdown_editor.dart 调用）
-  Future<void> uploadImageFromBytes({required Uint8List bytes, required String fileName}) async {
+  Future<void> uploadImageFromBytes({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
       final tempDir = await getTemporaryDirectory();
       final tempFile = File(p.join(tempDir.path, fileName));
       await tempFile.writeAsBytes(bytes);
 
       if (!mounted) return;
-      await uploadImageFromPath(imagePath: tempFile.path, imageName: fileName);
+      await uploadImageFromPath(
+        imagePath: tempFile.path,
+        imageName: fileName,
+        insertionAnchor: _uploadAnchors.fork(anchor),
+      );
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
   }
 
@@ -333,7 +415,11 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
     if (currentLine.startsWith(prefix)) {
       // 已有前缀，移除它
-      final newText = text.replaceRange(lineStart, lineStart + prefix.length, '');
+      final newText = text.replaceRange(
+        lineStart,
+        lineStart + prefix.length,
+        '',
+      );
       widget.controller.value = TextEditingValue(
         text: newText,
         selection: TextSelection.collapsed(
@@ -362,7 +448,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       final placeholder = S.current.toolbar_codePlaceholder;
       final codeBlock = '```\n$placeholder\n```';
       final newText = text.isEmpty ? codeBlock : '$text\n$codeBlock';
-      final placeholderStart = newText.length - codeBlock.length + 4; // 4 = '```\n'.length
+      final placeholderStart =
+          newText.length - codeBlock.length + 4; // 4 = '```\n'.length
 
       widget.controller.value = TextEditingValue(
         text: newText,
@@ -518,7 +605,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
         text: newText,
         selection: TextSelection(
           baseOffset: selection.start + '[spoiler]'.length,
-          extentOffset: selection.start + '[spoiler]'.length + selectedText.length,
+          extentOffset:
+              selection.start + '[spoiler]'.length + selectedText.length,
         ),
       );
     }
@@ -587,11 +675,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       // 有选中文本，用代码包裹
       final selectedText = selection.textInside(text);
       final code = '`$selectedText`';
-      final newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        code,
-      );
+      final newText = text.replaceRange(selection.start, selection.end, code);
 
       // 选中代码内容
       widget.controller.value = TextEditingValue(
@@ -624,11 +708,17 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       if (images.length >= 2) {
         // 选中区域包含多张图片，直接包裹
         final wrappedText = '[grid]\n$selectedText\n[/grid]';
-        final newText = text.replaceRange(selection.start, selection.end, wrappedText);
+        final newText = text.replaceRange(
+          selection.start,
+          selection.end,
+          wrappedText,
+        );
 
         widget.controller.value = TextEditingValue(
           text: newText,
-          selection: TextSelection.collapsed(offset: selection.start + wrappedText.length),
+          selection: TextSelection.collapsed(
+            offset: selection.start + wrappedText.length,
+          ),
         );
         widget.focusNode?.requestFocus();
         return;
@@ -667,7 +757,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       }
 
       // 检查光标是否在这个图片附近
-      if (cursorPos >= allImages[consecutiveStart].start && cursorPos <= match.end + 10) {
+      if (cursorPos >= allImages[consecutiveStart].start &&
+          cursorPos <= match.end + 10) {
         groupStart = allImages[consecutiveStart].start;
         groupEnd = match.end;
 
@@ -703,7 +794,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     // 检查是否已经在 grid 内
     final beforeGroup = text.substring(0, groupStart);
     final afterGroup = text.substring(groupEnd);
-    if (beforeGroup.trimRight().endsWith('[grid]') && afterGroup.trimLeft().startsWith('[/grid]')) {
+    if (beforeGroup.trimRight().endsWith('[grid]') &&
+        afterGroup.trimLeft().startsWith('[/grid]')) {
       _showToast(S.current.toolbar_imagesAlreadyInGrid);
       return;
     }
@@ -714,7 +806,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
     widget.controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: groupStart + wrappedText.length),
+      selection: TextSelection.collapsed(
+        offset: groupStart + wrappedText.length,
+      ),
     );
     widget.focusNode?.requestFocus();
   }
@@ -753,7 +847,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       );
 
       // 选中占位符
-      final placeholderStart = insertPos + (needNewline ? 1 : 0) + '> [!$type]\n> '.length;
+      final placeholderStart =
+          insertPos + (needNewline ? 1 : 0) + '> [!$type]\n> '.length;
       widget.controller.value = TextEditingValue(
         text: newText,
         selection: TextSelection(
@@ -807,7 +902,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       );
 
       // 选中占位符
-      final placeholderStart = insertPos + (needNewline ? 1 : 0) + 2; // '> '.length
+      final placeholderStart =
+          insertPos + (needNewline ? 1 : 0) + 2; // '> '.length
       widget.controller.value = TextEditingValue(
         text: newText,
         selection: TextSelection(
@@ -834,166 +930,187 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     }
   }
 
-  Future<void> uploadImageFromPath({required String imagePath, required String imageName}) async {
+  void _enqueueUpload({
+    required String path,
+    required String name,
+    required MarkdownInsertionAnchor anchor,
+    required bool image,
+  }) {
+    _uploads.add(
+      UploadTaskRequest(
+        path: path,
+        name: name,
+        isImage: image,
+        execute: (token, progress) => image
+            ? DiscourseService().uploadImage(
+                path,
+                cancelToken: token,
+                onProgress: progress,
+              )
+            : DiscourseService().uploadFile(
+                path,
+                cancelToken: token,
+                onProgress: progress,
+              ),
+        onCompleted: (task, result) {
+          if (!mounted) return;
+          _seedUploadCache(result);
+          _uploadAnchors.insertBlock(
+            anchor,
+            image ? result.toMarkdown(alt: name) : result.toAutoMarkdown(),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> uploadImageFromPath({
+    required String imagePath,
+    required String imageName,
+    MarkdownInsertionAnchor? insertionAnchor,
+  }) async {
+    final anchor = insertionAnchor ?? _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
-      // 显示确认弹框
       if (!mounted) return;
       final result = await showImageUploadDialog(
         context,
         imagePath: imagePath,
         imageName: imageName,
       );
-      if (result == null) return; // 用户取消
-
-      setState(() => _uploadingCount++);
-
-      try {
-        final service = DiscourseService();
-        final uploadResult = await service.uploadImage(result.path);
-        _seedUploadCache(uploadResult);
-
-        if (!mounted) return;
-        // 使用 Discourse 格式：![alt|widthxheight](url)
-        // 图片独占一行：光标前不是换行符或文本开头时，先补一个换行
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline = selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-        insertText('$prefix${uploadResult.toMarkdown(alt: result.originalName)}\n');
-      } finally {
-        if (mounted) {
-          setState(() => _uploadingCount--);
-        }
-      }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      if (result == null || !mounted) return;
+      _enqueueUpload(
+        path: result.path,
+        name: result.originalName,
+        anchor: anchor,
+        image: true,
+      );
+      registered = true;
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
-  /// 选择并上传图片（公开方法，供工具面板调用）
+  /// 在选择器打开前捕获位置，不以网络完成时的光标为准。
   Future<void> pickAndUploadImages() async {
+    final anchor = _uploadAnchors.capture();
+    _uploadingCount++;
     try {
-      final List<XFile> images = await _picker.pickMultiImage();
-      if (images.isEmpty) return;
-
-      // 只选了一张，走单图流程
+      final images = await _picker.pickMultiImage();
+      if (!mounted || images.isEmpty) return;
       if (images.length == 1) {
         await uploadImageFromPath(
           imagePath: images.first.path,
           imageName: images.first.name,
+          insertionAnchor: _uploadAnchors.fork(anchor),
         );
         return;
       }
-
-      // 多张图片，走多图确认弹框
-      if (!mounted) return;
       final results = await showMultiImageUploadDialog(
         context,
         imagePaths: images.map((e) => e.path).toList(),
         imageNames: images.map((e) => e.name).toList(),
       );
-      if (results == null || results.isEmpty) return;
-
-      final count = results.length;
-      setState(() => _uploadingCount += count);
-
-      try {
-        final service = DiscourseService();
-
-        // 串行上传，避免触发服务端速率限制
-        final markdowns = <String>[];
-        for (int i = 0; i < results.length; i++) {
-          final result = results[i];
-          if (mounted) {
-            setState(() => _uploadProgress = '${i + 1}/${results.length}');
-          }
-          final uploadResult = await service.uploadImage(result.path);
-          _seedUploadCache(uploadResult);
-          markdowns.add(uploadResult.toMarkdown(alt: result.originalName));
-        }
-
-        if (!mounted) return;
-
-        // 插入 markdown
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline = selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-
-        if (markdowns.length >= 3) {
-          // ≥3 张自动包裹 [grid]
-          insertText('$prefix[grid]\n${markdowns.join('\n')}\n[/grid]\n');
-        } else {
-          insertText('$prefix${markdowns.join('\n')}\n');
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _uploadingCount -= count;
-            _uploadProgress = null;
-          });
-        }
+      if (!mounted || results == null || results.isEmpty) return;
+      // 先创建全部锚点，完成顺序不影响正文中的原始选择顺序。
+      final anchors = [for (final _ in results) _uploadAnchors.fork(anchor)];
+      for (var i = 0; i < results.length; i++) {
+        _enqueueUpload(
+          path: results[i].path,
+          name: results[i].originalName,
+          anchor: anchors[i],
+          image: true,
+        );
       }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      _uploadAnchors.release(anchor);
     }
   }
 
-  /// 选择并上传附件（支持任意文件类型，公开方法，供工具面板调用）
   Future<void> pickAndUploadFile() async {
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
       final result = await FilePicker.platform.pickFiles();
-      if (result == null || result.files.isEmpty) return;
+      if (!mounted || result == null || result.files.isEmpty) return;
       final file = result.files.first;
       if (file.path == null) return;
-
-      setState(() => _uploadingCount++);
-
-      try {
-        final service = DiscourseService();
-        final uploadResult = await service.uploadFile(file.path!);
-        _seedUploadCache(uploadResult);
-
-        if (!mounted) return;
-
-        final selection = widget.controller.selection;
-        final text = widget.controller.text;
-        final needsLeadingNewline = selection.isValid &&
-            selection.start > 0 &&
-            text[selection.start - 1] != '\n';
-        final prefix = needsLeadingNewline ? '\n' : '';
-        insertText('$prefix${uploadResult.toAutoMarkdown()}\n');
-      } finally {
-        if (mounted) {
-          setState(() => _uploadingCount--);
-        }
-      }
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
+      _enqueueUpload(
+        path: file.path!,
+        name: file.name,
+        anchor: anchor,
+        image: false,
+      );
+      registered = true;
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
   /// 音/视频改名上传(.xz 绕扩展名白名单,4MB 上限)→ 插 HTML 标签。
+  Future<bool> _prepareMediaTask({
+    required String path,
+    required String name,
+    required bool isAudio,
+    required MarkdownInsertionAnchor anchor,
+    bool voice = false,
+  }) async {
+    final prepared = await prepareMediaUpload(
+      context,
+      path: path,
+      name: name,
+      isAudio: isAudio,
+      voice: voice,
+    );
+    if (prepared == null || !mounted) return false;
+    _uploads.add(
+      UploadTaskRequest(
+        path: prepared.path,
+        name: prepared.name,
+        execute: prepared.execute,
+        onCompleted: (task, result) {
+          if (!mounted) return;
+          _uploadAnchors.insertBlock(anchor, prepared.markdown(result));
+        },
+      ),
+    );
+    return true;
+  }
+
   Future<void> pickAndUploadMedia({required bool isAudio}) async {
-    final tag = await pickAndUploadMediaTag(context, isAudio: isAudio);
-    if (tag == null || !mounted) return;
-    final selection = widget.controller.selection;
-    final text = widget.controller.text;
-    final needsLeadingNewline = selection.isValid &&
-        selection.start > 0 &&
-        text[selection.start - 1] != '\n';
-    final prefix = needsLeadingNewline ? '\n' : '';
-    insertText('$prefix$tag\n');
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: isAudio ? FileType.audio : FileType.video,
+      );
+      if (!mounted || picked == null || picked.files.isEmpty) return;
+      final file = picked.files.first;
+      if (file.path == null) return;
+      registered = await _prepareMediaTask(
+        path: file.path!,
+        name: file.name,
+        isAudio: isAudio,
+        anchor: anchor,
+      );
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
+    }
   }
 
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
@@ -1002,7 +1119,8 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   void insertBlockSnippet(String snippet) {
     final selection = widget.controller.selection;
     final text = widget.controller.text;
-    final needsLeadingNewline = selection.isValid &&
+    final needsLeadingNewline =
+        selection.isValid &&
         selection.start > 0 &&
         text[selection.start - 1] != '\n';
     final prefix = needsLeadingNewline ? '\n' : '';
@@ -1012,8 +1130,9 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
   /// 插入投票:构建对话框 → [poll] BBCode 块级插入。同帖多投票时
   /// name 必须唯一,按现有文本统计 poll 数决定 name=pollN。
   Future<void> insertPoll(BuildContext context) async {
-    final existing =
-        RegExp(r'\[poll[\s\]]').allMatches(widget.controller.text).length;
+    final existing = RegExp(r'\[poll[\s\]]')
+        .allMatches(widget.controller.text)
+        .length;
     final spec = await showPollBuilderDialog(
       context,
       existingPollCount: existing,
@@ -1024,51 +1143,44 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
 
   /// 语音消息:录音面板 → 上传([wrap=voice] 语音条标签)→ 插入。
   Future<void> recordAndInsertVoice() async {
-    final path = await showVoiceRecorderSheet(context);
-    if (path == null || !mounted) return;
-    setState(() => _uploadingCount++);
+    final anchor = _uploadAnchors.capture();
+    var registered = false;
+    _uploadingCount++;
     try {
-      final tag = await uploadMediaFileAsTag(
-        context,
+      final path = await showVoiceRecorderSheet(context);
+      if (path == null || !mounted) return;
+      registered = await _prepareMediaTask(
         path: path,
-        name: path.split('/').last,
+        name: p.basename(path),
         isAudio: true,
         voice: true,
+        anchor: anchor,
       );
-      if (tag == null || !mounted) return;
-      final selection = widget.controller.selection;
-      final text = widget.controller.text;
-      final needsLeadingNewline = selection.isValid &&
-          selection.start > 0 &&
-          text[selection.start - 1] != '\n';
-      final prefix = needsLeadingNewline ? '\n' : '';
-      insertText('$prefix$tag\n');
+    } catch (e, s) {
+      AppErrorHandler.handleUnexpected(e, s);
     } finally {
-      if (mounted) setState(() => _uploadingCount--);
+      _uploadingCount--;
+      if (!registered) _uploadAnchors.release(anchor);
     }
   }
 
   /// 构建中部滚动区域的工具按钮
   ///
-  /// [MarkdownToolbar.visibleToolIds] 为 null（桌面端）时显示全部工具，
-  /// 否则只显示用户自定义的外显工具（默认空，全部收进「更多」面板）。
-  List<Widget> _buildToolButtons() {
+  /// 两端按用户保存的顺序显示固定工具；null 仅作为独立使用时的兼容默认值。
+  List<Widget> _buildToolButtons({bool anchored = true}) {
     final ids = widget.visibleToolIds;
     final tools = ids == null ? editorTools : resolveVisibleTools(ids);
 
     return [
-      for (final tool in tools) _buildToolButton(tool),
-      // 图片工具未外显时，上传中在中部显示进度指示
-      if (_isUploading && ids != null && !ids.contains(kEditorToolImage))
-        _UploadIndicator(progress: _uploadProgress),
+      for (final tool in tools) _buildToolButton(tool, anchored: anchored),
     ];
   }
 
-  Widget _buildToolButton(EditorTool tool) {
+  Widget _buildToolButton(EditorTool tool, {bool anchored = true}) {
+    final icon = tool.icon;
     final s = S.current;
     // 桌面端 tooltip 标注快捷键(如「粗体 (⌘B)」;移动端无物理键盘不标)
-    final hint =
-        PlatformUtils.isDesktop ? composerShortcutHint(tool.id) : null;
+    final hint = PlatformUtils.isDesktop ? composerShortcutHint(tool.id) : null;
     final tooltip = '${tool.label(s)}${hint ?? ''}';
 
     if (tool.hasMenu) {
@@ -1079,228 +1191,198 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
             size: 16,
             color: theme.colorScheme.onSurfaceVariant,
           ),
-          child: tool.icon,
+          child: icon,
         ),
         tooltip: tooltip,
         itemBuilder: (context) => tool.menuItems!(s),
-        onSelected: (value) => tool.onMenuSelected!(this, value),
+        onSelected: (value) => anchored
+            ? tool.onMenuSelected!(this, value)
+            : _desktopAction(() => tool.onMenuSelected!(this, value)),
         padding: EdgeInsets.zero,
         iconSize: 20,
-        style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
+        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
       );
     }
 
-    final isImage = tool.id == kEditorToolImage;
-    final isUpload = isImage || tool.id == 'attachment';
     return _ToolbarButton(
-      icon: tool.icon,
-      onPressed: _isUploading && isUpload ? null : () => tool.action!(this),
-      isLoading: isImage && _isUploading,
-      label: isImage ? _uploadProgress : null,
+      icon: icon,
+      onPressed: () => anchored
+          ? tool.action!(this)
+          : _desktopAction(() => tool.action!(this)),
       tooltip: tooltip,
     );
   }
 
-  /// 表情按钮:桌面端(emojiPopover != null)由弹层锚点包裹,且不切
-  /// keyboard 图标(那是移动端"切回键盘"语义,悬浮弹层不收键盘)
-  Widget _buildEmojiButton(ThemeData theme, Color pillColor) {
-    final popover = widget.emojiPopover;
-    final button = _ToolbarPill(
-      color: pillColor,
-      child: IconButton(
-        visualDensity: VisualDensity.compact,
-        icon: FaIcon(
-          widget.isEmojiPanelVisible && popover == null
-              ? FontAwesomeIcons.keyboard
-              : FontAwesomeIcons.faceSmile,
-          size: 20,
-          color: widget.isEmojiPanelVisible
-              ? theme.colorScheme.primary
-              : theme.colorScheme.onSurfaceVariant,
-        ),
-        onPressed: widget.onToggleEmoji,
+  Widget _buildEmojiButton(ThemeData theme) {
+    final button = IconButton(
+      icon: Icon(
+        widget.isEmojiPanelVisible && widget.emojiPopover == null
+            ? Symbols.keyboard_rounded
+            : Symbols.sentiment_satisfied_rounded,
+      ),
+      tooltip: S.current.emoji_tab,
+      onPressed: widget.onToggleEmoji,
+      isSelected: widget.isEmojiPanelVisible,
+      style: composerToolButtonStyle(
+        context,
+        active: widget.isEmojiPanelVisible,
       ),
     );
-    if (popover == null) return button;
-    return EmojiPopoverAnchor(controller: popover, child: button);
+    final popover = widget.emojiPopover;
+    return popover == null
+        ? button
+        : EmojiPopoverAnchor(
+            controller: popover,
+            preferSide:
+                ComposerDesktopViewport.maybeOf(context)?.useRail ?? false,
+            child: button,
+          );
+  }
+
+  void _moveCursor(int direction, {required bool extend}) {
+    final next = moveTextSelectionByGrapheme(
+      widget.controller.value,
+      direction,
+      extend: extend,
+    );
+    if (next != null) widget.controller.selection = next;
+  }
+
+  Widget _contentActions() {
+    final undo = widget.undoController!;
+    return ContentActionsButton(
+      provider: SourceContentActions(
+        controller: widget.controller,
+        undoController: undo,
+        focusNode: widget.focusNode ?? (_fallbackFocusNode ??= FocusNode()),
+      ),
+      listenable: Listenable.merge([undo, widget.controller]),
+    );
+  }
+
+  Widget _buildToolsButton(ThemeData theme) => ComposerToolsToggle(
+    anchor: widget.toolsAnchor,
+    active: widget.isToolsPanelVisible,
+    compact: false,
+    onPressed: widget.onToggleTools,
+  );
+
+  void _desktopAction(VoidCallback action) {
+    widget.toolsAnchor?.dismiss();
+    widget.onResumeEditing?.call();
+    action();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final pillColor =
-        theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45);
-    final isMobile = widget.onToggleTools != null;
+    final viewport = ComposerDesktopViewport.maybeOf(context);
+    if (PlatformUtils.isDesktop && viewport != null) {
+      // 桌面工作区是铺满编辑区域的定位 Stack，不能作为 Column 的
+      // 非 flex 子节点，否则失去高度约束，所有 TapRegion 都无法布局。
+      return Stack(
+        children: [
+          Positioned.fill(child: _buildWorkbench(context)),
+          Positioned(
+            top: viewport.topInset + 8,
+            left: viewport.useRail
+                ? ComposerDesktopViewport.documentSideInset
+                : 16,
+            right: viewport.useRail
+                ? ComposerDesktopViewport.documentSideInset
+                : 16,
+            child: SourceUploadPanel(controller: _uploads),
+          ),
+        ],
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SourceUploadPanel(controller: _uploads),
+        _buildWorkbench(context),
+      ],
+    );
+  }
 
-    return Container(
-      color: theme.colorScheme.surface,
-      child: Focus(
-        canRequestFocus: false,
-        descendantsAreFocusable: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-          child: Row(
-            children: [
-              // 左：表情按钮（胶囊背景，固定）
-              _buildEmojiButton(theme, pillColor),
-              // 中：外显工具（可滚动，无背景）
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: FadingEdgeScrollView(
-                    fadeLeft: true,
-                    fadeRight: true,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(children: _buildToolButtons()),
-                    ),
-                  ),
+  Widget _buildWorkbench(BuildContext context) {
+    final theme = Theme.of(context);
+    if (PlatformUtils.isDesktop &&
+        ComposerDesktopViewport.maybeOf(context) != null) {
+      final undo = widget.undoController;
+      return ComposerDesktopWorkbench(
+        anchor: widget.toolsAnchor,
+        onExpandTools: widget.onToggleTools,
+        emoji: _buildEmojiButton(theme),
+        tools: _buildToolButtons(anchored: false),
+        contentActions: undo == null ? null : _contentActions(),
+        history: [
+          if (undo != null)
+            for (final redo in [false, true])
+              ValueListenableBuilder(
+                valueListenable: undo,
+                builder: (context, value, _) => IconButton(
+                  tooltip:
+                      '${redo ? S.current.toolbar_redo : S.current.toolbar_undo}${composerShortcutHint(redo ? 'redo' : 'undo') ?? ''}',
+                  icon: Icon(redo ? AppIcons.redo : AppIcons.undo, size: 20),
+                  onPressed: (redo ? value.canRedo : value.canUndo)
+                      ? () => _desktopAction(redo ? undo.redo : undo.undo)
+                      : null,
                 ),
               ),
-              // 右：预览 +「更多」（移动端）/ 混排 + 预览（桌面端），胶囊背景
-              _ToolbarPill(
-                color: pillColor,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!isMobile && widget.showPanguButton)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          Symbols.auto_fix_high_rounded,
-                          size: 20,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: widget.onApplyPangu,
-                        tooltip: S.current.toolbar_mixOptimize,
-                      ),
-                    if (widget.showPreviewButton)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          widget.isPreview
-                              ? Symbols.visibility_off_rounded
-                              : Symbols.visibility_rounded,
-                          size: 20,
-                          color: widget.isPreview
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: widget.onTogglePreview,
-                        tooltip: widget.isPreview
-                            ? S.current.common_edit
-                            : S.current.common_preview,
-                      ),
-                    // 源码 → 富文本(与 RichComposer 的「MD」按钮互为
-                    // 往返;富文本开关未开时宿主不传,不显示)
-                    if (widget.onSwitchToRich != null)
-                      Tooltip(
-                        message: '切换到富文本模式',
-                        child: InkWell(
-                          onTap: widget.onSwitchToRich,
-                          borderRadius: BorderRadius.circular(18),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 7),
-                            child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Symbols.wysiwyg_rounded,
-                                    size: 18,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    'Aa',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      height: 1.0,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.3,
-                                      color:
-                                          theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ]),
-                          ),
-                        ),
-                      ),
-                    if (isMobile)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: FaIcon(
-                          FontAwesomeIcons.circlePlus,
-                          size: 20,
-                          color: widget.isToolsPanelVisible
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: widget.onToggleTools,
-                        tooltip: S.current.toolbar_moreTools,
-                      ),
-                  ],
-                ),
+        ],
+        controls: [
+          if (widget.onSwitchToRich != null)
+            ComposerModeButton(rich: false, onPressed: widget.onSwitchToRich),
+          if (widget.showPreviewButton)
+            ComposerPreviewButton(
+              previewing: widget.isPreview,
+              onPressed: widget.onTogglePreview,
+            ),
+        ],
+      );
+    }
+    return ComposerWorkbench(
+      toolsAnchor: widget.toolsAnchor,
+      onExpandTools: widget.onToggleTools,
+      metadata: widget.metaBar,
+      controls: [
+        if (!PlatformUtils.isDesktop)
+          ComposerEditingControls(
+            children: [
+              if (widget.undoController != null) _contentActions(),
+              CursorSwipeControl(
+                onMove: _moveCursor,
+                onMoveVertical: widget.onMoveCursorVertical,
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 工具栏两侧的胶囊背景容器
-class _ToolbarPill extends StatelessWidget {
-  final Color color;
-  final Widget child;
-
-  const _ToolbarPill({required this.color, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      padding: const EdgeInsets.all(2),
-      child: child,
-    );
-  }
-}
-
-/// 上传进度指示（图片工具未外显时显示在中部滚动区）
-class _UploadIndicator extends StatelessWidget {
-  final String? progress;
-
-  const _UploadIndicator({this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
+        if (widget.onSwitchToRich != null)
+          ComposerModeButton(rich: false, onPressed: widget.onSwitchToRich),
+        if (widget.showPreviewButton)
+          ComposerPreviewButton(
+            previewing: widget.isPreview,
+            onPressed: widget.onTogglePreview,
           ),
-          if (progress != null) ...[
-            const SizedBox(width: 6),
-            Text(
-              progress!,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.primary,
+      ],
+      tools: Row(
+        children: [
+          _buildEmojiButton(theme),
+          const SizedBox(width: 3),
+          Expanded(
+            child: ComposerCompactTools(
+              anchor: widget.toolsAnchor,
+              child: FadingEdgeScrollView(
+                fadeLeft: true,
+                fadeRight: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: _buildToolButtons()),
+                ),
               ),
             ),
-          ],
+          ),
+          if (widget.onToggleTools != null) _buildToolsButton(theme),
         ],
       ),
     );
@@ -1310,54 +1392,23 @@ class _UploadIndicator extends StatelessWidget {
 class _ToolbarButton extends StatelessWidget {
   final Widget icon;
   final VoidCallback? onPressed;
-  final bool isLoading;
   final String? tooltip;
-  final String? label;
 
-  const _ToolbarButton({
-    required this.icon,
-    this.onPressed,
-    this.isLoading = false,
-    this.tooltip,
-    this.label,
-  });
+  const _ToolbarButton({required this.icon, this.onPressed, this.tooltip});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    Widget child;
-    if (isLoading && label != null) {
-      // 批量上传进度：显示 "3/22" 文本
-      child = Text(
-        label!,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: theme.colorScheme.primary,
-        ),
-      );
-    } else if (isLoading) {
-      child = const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    } else {
-      child = IconTheme.merge(
-        data: const IconThemeData(size: 16),
-        child: icon,
-      );
-    }
+    final child = IconTheme.merge(
+      data: const IconThemeData(size: 16),
+      child: icon,
+    );
 
     return IconButton(
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity.standard,
       icon: child,
       onPressed: onPressed,
       tooltip: tooltip,
-      style: IconButton.styleFrom(
-        foregroundColor: theme.colorScheme.onSurfaceVariant,
-      ),
+      style: composerToolButtonStyle(context),
     );
   }
 }

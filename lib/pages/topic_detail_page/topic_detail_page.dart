@@ -26,6 +26,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../../models/draft.dart';
 import '../../models/nested_topic.dart';
+import '../../models/nested_reading_position.dart';
+import '../../providers/nested_reading_provider.dart';
 import '../../models/topic.dart';
 import '../../models/pending_post.dart';
 import '../../utils/blocked_user_filter.dart';
@@ -238,6 +240,16 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   int? _nestedTargetPostNumber; // 树形 context 定位的目标楼层（通知等带楼层进入）
   int _nestedRelocateToken = 0; // 同目标重跳令牌:递增触发 NestedPostList 重新滚动定位+高亮重播
   bool _nestedAutoEnabled = false; // 树形视图是否为默认配置自动开启（失败时静默回落平铺）
+  late NestedReadingStore _nestedReadingStore;
+  late NestedReadingSession _nestedReadingSession;
+  NestedReadingPosition? _nestedResumePosition;
+  NestedReadingPosition? _nestedRestorePosition;
+  NestedReadingPosition? get _nestedBrowsePosition =>
+      _nestedReadingSession.browsePosition;
+  set _nestedBrowsePosition(NestedReadingPosition? value) =>
+      _nestedReadingSession.browsePosition = value;
+  int? _nestedFullTarget;
+  bool _hadNestedSession = false;
   bool _nestedFallbackNotified = false; // 回落提示只弹一次
   // 搜索相关
   final TextEditingController _searchController = TextEditingController();
@@ -310,6 +322,25 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
+    _nestedReadingStore = ref.read(nestedReadingStoreProvider);
+    _hadNestedSession = _nestedReadingStore.existingSession(_instanceId) != null;
+    _nestedReadingSession = _nestedReadingStore.session(_instanceId);
+    if (!_hadNestedSession) {
+      _nestedReadingSession.sort = _nestedReadingStore.sort;
+    }
+    _nestedResumePosition = _nestedReadingStore.position(widget.topicId);
+    if (_hadNestedSession) {
+      _nestedRestorePosition = _nestedReadingSession.position;
+    }
+    _isNestedView = _hadNestedSession
+        ? _nestedReadingSession.enabled
+        : ref.read(preferencesProvider).defaultNestedView;
+    _nestedReadingSession.enabled = _isNestedView;
+    _nestedAutoEnabled = _isNestedView;
+    _nestedTargetPostNumber = _hadNestedSession
+        ? _nestedReadingSession.contextTarget
+        : (widget.scrollToPostNumber != null && widget.scrollToPostNumber! > 1
+            ? widget.scrollToPostNumber : null);
     _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
 
     _expandController = AnimationController(
@@ -687,9 +718,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     ref.invalidate(pmArchiveProvider);
   }
 
-  /// 离开当前私信页。不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子
-  /// 模式，仍把这条私信留在屏幕上。
-  void _leavePrivateMessagePage() {
+  /// 退出当前话题页（兼容嵌入式平行视界与普通路由两种形态）。
+  ///
+  /// 不能复用 Esc 语义：后者会在搜索或 AI 页中只退出子模式，
+  /// 仍把这条话题留在屏幕上。
+  void _leaveTopicPage() {
     if (!mounted) return;
     if (widget.embeddedMode) {
       widget.onEmbeddedBack?.call();
@@ -700,7 +733,19 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _closeRemovedPrivateMessage() {
     _invalidatePrivateMessageLists();
-    _leavePrivateMessagePage();
+    _leaveTopicPage();
+  }
+
+  /// 当前话题被彻底销毁：提示并退出详情页
+  ///
+  /// 对齐网页版 onDestroyMessage 的 redirectTo("/")，但这里只退一层：
+  /// 移动端把用户一脚踢回首页会丢掉整个导航栈（比如从搜索结果进来的），
+  /// 返回上一层更符合预期。复用 [_leaveTopicPage] 是因为它已经
+  /// 处理了嵌入式（平行视界）与普通路由两种形态。
+  void _handleTopicDestroyed() {
+    if (!mounted) return;
+    ToastService.showInfo(S.current.topicDetail_topicDestroyed);
+    _leaveTopicPage();
   }
 
   KeyEventResult _handleSearchKeyEvent(FocusNode _, KeyEvent event) {
@@ -827,6 +872,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _currentPageNotifier.dispose();
     _controller.scrollController.removeListener(_onScroll);
     _screenTrack.stop();
+    unawaited(_nestedReadingStore.flush());
     _controller.dispose();
     _tocController.dispose();
     if (PlatformUtils.isDesktop) {
@@ -842,6 +888,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final hasFocus = state == AppLifecycleState.resumed;
     _screenTrack.setHasFocus(hasFocus);
+    if (!hasFocus) {
+      unawaited(_nestedReadingStore.flush());
+    }
   }
 
   @override
@@ -875,6 +924,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void _setRouteVisible(bool visible, String reason) {
     if (_isRouteVisible == visible) return;
     _isRouteVisible = visible;
+    if (mounted && _isNestedView) setState(() {});
     _syncScreenTrackState(reason: reason);
   }
 
@@ -1064,20 +1114,61 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (route.isActive) navigator.removeRoute(route);
   }
 
+  Future<void> _resumeNestedReading() async {
+    final saved = _nestedResumePosition;
+    if (saved == null) return;
+    await _nestedReadingStore.setSort(saved.sort);
+    if (!mounted) return;
+    _nestedReadingSession.sort = saved.sort;
+    _nestedReadingSession.expanded.addAll(saved.expanded);
+    await _jumpToPostInTopic(saved.postNumber, restorePosition: saved);
+    _nestedBrowsePosition = null;
+    final params = _activeNestedParams;
+    try {
+      final data = await ref.read(nestedTopicProvider(params).future);
+      if (mounted &&
+          _nestedTargetPostNumber == saved.postNumber &&
+          data.sort != saved.sort) {
+        await ref.read(nestedTopicProvider(params).notifier).changeSort(saved.sort);
+      }
+    } catch (_) {
+      // 定位接口失败由树形视图的错误/平铺回落入口处理。
+    }
+  }
+
+  void _returnToFullNestedTopic() {
+    final position = _nestedBrowsePosition ?? _nestedReadingSession.position;
+    final target = position?.postNumber ?? _nestedTargetPostNumber;
+    setState(() {
+      _nestedRestorePosition = position;
+      _nestedFullTarget = target;
+      _nestedTargetPostNumber = null;
+      _nestedReadingSession.contextTarget = null;
+    });
+  }
+
   /// 话题内跳转统一入口（对齐 Discourse nested 视图的路由层重定向思路：
   /// 网页版所有带楼层 URL 在 nested 话题下由 topic/from-params 统一
   /// replaceWith 到 nestedPost context 路由，各功能对视图模式零感知）。
   ///
   /// 树形视图下平铺滚动定位链路不可用（平铺列表未挂载），带楼层跳转
   /// 一律切 context 定位视图（祖先链+目标+子树）；平铺下走原滚动定位。
-  Future<void> _jumpToPostInTopic(int postNumber) async {
+  Future<void> _jumpToPostInTopic(
+    int postNumber, {
+    NestedReadingPosition? restorePosition,
+  }) async {
     if (_isNestedView) {
       if (postNumber <= 1) {
         // OP 恒在树形视图顶部区域，直接回顶
         await _controller.scrollToTop();
         return;
       }
+      if (_nestedTargetPostNumber == null) {
+        _nestedBrowsePosition = _nestedReadingSession.position;
+      }
       setState(() {
+        _nestedReadingSession.contextTarget = postNumber;
+        _nestedRestorePosition = restorePosition;
         // 同目标重跳也要生效（滚走后想跳回来）：递增令牌触发
         // NestedPostList 重置定位守卫、换 key 重播高亮。
         _nestedRelocateToken++;
@@ -2178,6 +2269,17 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
 
+    ref.listen(nestedReadingStoreProvider, (previous, next) {
+      _nestedReadingStore = next;
+      _nestedReadingSession = next.session(_instanceId);
+      _nestedReadingSession.enabled = _isNestedView;
+      _nestedReadingSession.sort = next.sort;
+      _nestedResumePosition = next.position(widget.topicId);
+      _nestedRestorePosition = null;
+      _nestedBrowsePosition = null;
+      if (mounted) setState(() {});
+    });
+
     ref.listen<AsyncValue<void>>(authStateProvider, (_, _) {
       if (!context.mounted) return;
       final stillLoggedIn = ref.read(currentUserProvider).value != null;
@@ -2227,6 +2329,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // ref.read 可能作用在已失效的 widget 上而报错（表现为点头像/内部
     // 链接后卡死不响应——实测复现过）。整个回调包一层 try-catch：面板
     // 反正要没了，跳过这次更新是安全的，比让异常直接把交互链路搅死强。
+    // 当前话题被彻底销毁（/destroy 频道）：页面已没有存在的意义，直接退出。
+    // 不走上面那个 topicChannel 监听：话题被销毁后 /topic/:id 不会再有消息，
+    // 必须听全局的 /destroy。同样包 try-catch，理由见上方注释。
+    ref.listen(destroyedTopicsProvider, (previous, next) {
+      if (!context.mounted) return;
+      if (!next.contains(widget.topicId)) return;
+      if (previous?.contains(widget.topicId) ?? false) return;
+      try {
+        _handleTopicDestroyed();
+      } catch (e) {
+        debugPrint('[TopicDetail] 处理话题销毁失败: $e');
+      }
+    });
+
     ref.listen(topicChannelProvider(widget.topicId), (previous, next) {
       if (!context.mounted) return;
       try {
@@ -2345,38 +2461,29 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               .setTopicTitle(detail.title);
         } catch (_) {}
       }
-      // 首次拿到 detail 后再决定是否应用默认嵌套视图：
-      // 私信场景下树形视图 API 拉不到数据，跳过该配置
+      // 默认树形在首屏即进入骨架，详情到达后只做适用性判断，避免先画平铺。
       if (!_defaultNestedViewApplied && detail != null) {
         _defaultNestedViewApplied = true;
-        if (!detail.isPrivateMessage &&
-            ref.read(preferencesProvider).defaultNestedView) {
-          // 预检:一楼被软删时树形接口必 500(服务端 op_post 未处理
-          // default_scope 过滤),已知场景直接跳过,省一次注定失败的请求。
-          // 只有从头加载(无目标楼层)时平铺流的首帖缺失/被删才是可靠信号;
-          // 带楼层进入时流从中间开始,一楼不在首块属正常。
-          final target = widget.scrollToPostNumber;
-          final fromTop = target == null || target <= 1;
-          final streamPosts = detail.postStream.posts;
-          final opMissingOrDeleted =
-              fromTop &&
-              streamPosts.isNotEmpty &&
-              (streamPosts.first.postNumber != 1 ||
-                  streamPosts.first.isDeleted);
-          if (!opMissingOrDeleted) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isNestedView = true;
-                  _nestedAutoEnabled = true;
-                  // 通知等带楼层进入:树形下走 context 定位视图
-                  _nestedTargetPostNumber = (target != null && target > 1)
-                      ? target
-                      : null;
-                });
-              }
-            });
-          }
+        final target = widget.scrollToPostNumber;
+        final fromTop = target == null || target <= 1;
+        final posts = detail.postStream.posts;
+        final opMissingOrDeleted =
+            fromTop &&
+            posts.isNotEmpty &&
+            (posts.first.postNumber != 1 || posts.first.isDeleted);
+        if (detail.isPrivateMessage || opMissingOrDeleted) {
+          _isNestedView = false;
+          _nestedReadingSession.enabled = false;
+          _nestedAutoEnabled = false;
+          _nestedTargetPostNumber = null;
+        }
+        if (_nestedResumePosition == null &&
+            (detail.lastReadPostNumber ?? 0) > 1) {
+          // 兼容尚未保存本地树形落点的历史话题，仍需用户主动选择续读。
+          _nestedResumePosition = NestedReadingPosition(
+            postNumber: detail.lastReadPostNumber!,
+            rootPostNumber: detail.lastReadPostNumber!,
+          );
         }
       }
       // 与 _buildPostListContent 一致，用过滤后列表判断 1 楼是否存在
@@ -2737,7 +2844,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // 跳转中：等待包含目标帖子的新数据 - 显示骨架屏
     final jumpTarget = _controller.jumpTargetPostNumber;
-    if (jumpTarget != null && detail != null) {
+    if (!_isNestedView && jumpTarget != null && detail != null) {
       final posts = detail.postStream.posts;
       // 检查目标帖子是否在当前加载的范围内
       final hasTarget =
@@ -2941,7 +3048,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 无爬行、无估算。收尾（贴底 anchor + markPositioned）在帧后完成。
     // _viewportAnchor 不在此处重置：残留值由 _finalizeInitialPosition
     // 按真实几何重新评估（避免刷新场景闪一帧顶对齐）。
-    if (!_controller.hasInitialScrolled && posts.isNotEmpty) {
+    if (!_isNestedView && !_controller.hasInitialScrolled && posts.isNotEmpty) {
       final target = _resolveInitialTarget(posts, dividerPostIndex);
       _controller.markInitialScrolled(
         target != null
@@ -2970,6 +3077,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 嵌套视图模式
     if (_isNestedView) {
       final nestedParams = NestedTopicParams(
+        instanceId: _instanceId,
         topicId: widget.topicId,
         targetPostNumber: _nestedTargetPostNumber,
       );
@@ -2986,6 +3094,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           final pendingTarget = _nestedTargetPostNumber;
           setState(() {
             _isNestedView = false;
+            _nestedReadingSession.enabled = false;
             _nestedTargetPostNumber = null;
           });
           _scheduleCheckTitleVisibility();
@@ -3012,8 +3121,35 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     ref.invalidate(nestedTopicProvider(nestedParams)),
               ),
         data: (nestedState) => NestedPostList(
+          key: ValueKey('nested-$_instanceId-${_nestedReadingStore.sortKey}'),
           nestedState: nestedState,
           params: nestedParams,
+          session: _nestedReadingSession,
+          resumePosition: (_nestedResumePosition?.postNumber ?? 0) > 1
+              ? _nestedResumePosition
+              : null,
+          restorePosition: _nestedRestorePosition,
+          fullTargetPostNumber: _nestedFullTarget,
+          active: _isRouteVisible &&
+              _isParentActive &&
+              !ref.read(topicSearchProvider(widget.topicId)).isSearchMode,
+          onViewportPostChanged: (postNumber) {
+            if (!_controller.isPositioned) _controller.markPositioned();
+            _controller.updateViewportPostNumber(postNumber);
+            ref
+                .read(detailScrollPositionProvider((
+                  topicId: widget.topicId,
+                  instanceId: _instanceId,
+                )).notifier)
+                .state = postNumber;
+          },
+          onPositionChanged: (position) =>
+              _nestedReadingStore.save(widget.topicId, position),
+          onResume: _resumeNestedReading,
+          onFullTargetConsumed: () {
+            _nestedFullTarget = null;
+            _nestedRestorePosition = null;
+          },
           detail: detail,
           blockedUsernames: blockedUsernames,
           topicId: widget.topicId,
@@ -3047,10 +3183,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onVisiblePostsChanged: _updateVisiblePosts,
           relocateToken: _nestedRelocateToken,
           onViewFullTopic: _nestedTargetPostNumber != null
-              ? () => setState(() => _nestedTargetPostNumber = null)
+              ? _returnToFullNestedTopic
               : null,
           onViewParentContext: (postNumber) =>
-              setState(() => _nestedTargetPostNumber = postNumber),
+              unawaited(_jumpToPostInTopic(postNumber)),
         ),
       );
 

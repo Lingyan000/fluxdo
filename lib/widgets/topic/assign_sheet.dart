@@ -734,6 +734,8 @@ class _AssignNoteEditorPageState extends State<_AssignNoteEditorPage> {
           controller: _controller,
           hintText: '指定备注',
           expands: true,
+          // 简短备注字段，不需要预览
+          showPreviewButton: false,
         ),
       ),
     );

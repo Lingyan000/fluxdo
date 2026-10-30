@@ -19,6 +19,16 @@
       }
     }
   },
+  "composer_draftLocal": "草稿已存於本機，待同步",
+  "composer_draftConflict": "草稿版本衝突",
+  "composer_draftConflictTitle": "草稿版本衝突",
+  "composer_draftConflictBody": "本機和雲端都有修改。使用雲端版本會取代本機目前內容；覆蓋雲端會上傳本機目前內容。取消可繼續保留本機內容。",
+  "composer_draftOverwrite": "覆蓋雲端",
+  "composer_draftAutoSave": "草稿自動儲存",
+  "composer_draftPending": "草稿待儲存",
+  "composer_draftSaving": "正在儲存草稿",
+  "composer_draftSaved": "草稿已儲存",
+  "composer_draftError": "草稿儲存失敗",
   "draft_untitled": "無標題",
   "drafts_deleteContent": "確定要刪除這個草稿嗎？",
   "drafts_deleteDraft": "刪除草稿",
@@ -98,9 +108,81 @@
   "toolbar_mixOptimize": "混排優化",
   "toolbar_moreTools": "更多工具",
   "toolbar_quotePlaceholder": "引用文本",
+  "composerView_preview": "預覽",
+  "composerView_rich": "富文本",
+  "composerView_source": "原始碼",
+  "composerView_switch": "切換檢視",
+  "toolbar_contentActions": "內容操作",
+  "toolbar_cut": "剪下",
+  "toolbar_selectAll": "全選",
+  "toolbar_redo": "重做",
+  "toolbar_undo": "復原",
   "toolbar_spoilerPlaceholder": "劇透內容",
   "toolbar_spoilerTooltip": "劇透",
   "toolbar_calloutPlaceholder": "內容",
   "toolbar_calloutTooltip": "插入標注",
-  "toolbar_strikethroughPlaceholder": "刪除線文本"
+  "toolbar_strikethroughPlaceholder": "刪除線文本",
+  "composer_searchTools": "搜尋全部工具",
+  "composer_noTools": "沒有符合的工具",
+  "composer_cursorLeft": "向左移動",
+  "composer_cursorRight": "向右移動",
+  "composer_cursorUp": "向上移動",
+  "composer_cursorDown": "向下移動",
+  "composer_cursorSelect": "擴展選取範圍",
+  "composer_kindTopic": "創建話題",
+  "composer_kindQuestion": "創建問答",
+  "composer_toolsNavigate": "選擇",
+  "composer_toolsApply": "套用",
+  "composer_toolsFormat": "格式",
+  "composer_toolsInsert": "插入",
+  "composer_toolsEditing": "編輯",
+  "composer_quickPanel": "快捷面板",
+  "composer_expandToolbar": "展開工具列",
+  "composer_collapseToolbar": "收起工具列",
+  "composer_draftUseRemote": "使用雲端版本",
+  "composer_draftResolve": "選擇版本",
+  "composer_draftReloadFailed": "無法載入雲端草稿，已保留本機內容",
+  "table_operations": "表格操作",
+  "table_position": "第 {row} 行 · 第 {column} 欄",
+  "table_row_before": "上方插入行",
+  "table_row_after": "下方插入行",
+  "table_column_before": "左側插入欄",
+  "table_column_after": "右側插入欄",
+  "table_delete_row": "刪除此行",
+  "table_delete_column": "刪除此欄",
+  "table_close": "關閉",
+  "table_cancel": "取消",
+  "table_confirm_delete": "刪除",
+  "table_delete_warning": "將刪除整行或整欄內容，可透過復原恢復。",
+  "table_changed": "表格已變更或操作失敗，請重新操作。",
+  "table_keep_row": "至少保留一行",
+  "table_keep_column": "至少保留一欄",
+  "table_select_cell": "點選儲存格後操作行欄",
+  "@table_position": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      },
+      "column": {
+        "type": "int"
+      }
+    }
+  },
+  "table_row_target": "第 {number} 行",
+  "table_column_target": "第 {number} 欄",
+  "table_format_unavailable": "暫不支援儲存格文字格式",
+  "@table_row_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "@table_column_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  }
 }

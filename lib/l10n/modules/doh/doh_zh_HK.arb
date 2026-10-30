@@ -167,5 +167,31 @@
   },
   "doh_serverTencent": "騰訊 DNS",
   "doh_startTimeout": "代理啓動超時（5秒內未響應）",
-  "doh_unknownReason": "未知原因"
+  "doh_unknownReason": "未知原因",
+  "dohDetail_publicEch": "公用 ECH 入口",
+  "dohDetail_publicEchDesc": "透過 Cloudflare 公用入口解析指定網域，減少 DNS 污染影響",
+  "dohDetail_publicEchDisabledDesc": "按原網域解析，仍可使用網站本身的 ECH",
+  "dohDetail_echDomains": "適用網域",
+  "dohDetail_echDomainsCount": "{builtinCount} 個內置 · {customCount} 個自訂",
+  "dohDetail_echDomainsHint": "只新增支援 Cloudflare ECH 的網域。所有規則均包含子網域，內置網域毋須重複新增。",
+  "dohDetail_builtinDomains": "內置網域",
+  "dohDetail_customDomains": "自訂網域",
+  "dohDetail_includesSubdomains": "包含所有子網域",
+  "dohDetail_noCustomDomains": "暫無自訂網域，內置規則已涵蓋論壇及靜態資源。",
+  "dohDetail_addEchDomain": "新增網域",
+  "dohDetail_editEchDomain": "編輯網域",
+  "dohDetail_domain": "網域",
+  "dohDetail_domainHelper": "只輸入網域，不含協定、路徑或萬用字元；儲存後同時匹配子網域。",
+  "dohDetail_invalidDomain": "請輸入有效網域，不含協定、連接埠、路徑或萬用字元",
+  "dohDetail_domainAlreadyCovered": "此網域已由現有規則涵蓋",
+  "@dohDetail_echDomainsCount": {
+    "placeholders": {
+      "builtinCount": {
+        "type": "int"
+      },
+      "customCount": {
+        "type": "int"
+      }
+    }
+  }
 }

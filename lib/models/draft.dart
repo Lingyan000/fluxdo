@@ -52,7 +52,12 @@ class DraftData {
       reply: json['reply'] as String?,
       title: json['title'] as String?,
       categoryId: json['categoryId'] as int?,
-      tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      // Discourse 的 serializeTags 将标签保存为 {id?, name}，旧草稿仍可能是字符串。
+      tags: (json['tags'] as List<dynamic>?)
+          ?.map((tag) => tag is Map ? tag['name'] : tag)
+          .whereType<String>()
+          .where((name) => name.isNotEmpty)
+          .toList(),
       replyToPostNumber: json['replyToPostNumber'] as int?,
       action: json['action'] as String?,
       recipients: (json['recipients'] as List<dynamic>?)
@@ -86,6 +91,30 @@ class DraftData {
 
   /// 转换为 JSON 字符串
   String toJsonString() => jsonEncode(toJson());
+
+  /// 比较文档语义：时长、空字段写法和标签顺序不代表内容修改。
+  String get contentFingerprint {
+    final normalizedAction = switch (action) {
+      'create_topic' => 'createTopic',
+      'private_message' => 'privateMessage',
+      null => 'reply',
+      _ => action,
+    };
+    return jsonEncode({
+      'reply': reply ?? '',
+      'title': title ?? '',
+      'categoryId': categoryId == 0 ? null : categoryId,
+      'tags': (tags ?? const <String>[]).toSet().toList()..sort(),
+      'replyToPostNumber': replyToPostNumber == 0 ? null : replyToPostNumber,
+      'action': normalizedAction,
+      'recipients': (recipients ?? const <String>[]).toSet().toList()..sort(),
+      'archetypeId':
+          archetypeId ??
+          (normalizedAction == 'privateMessage'
+              ? 'private_message'
+              : 'regular'),
+    });
+  }
 
   /// 是否有有效内容
   bool get hasContent {

@@ -9,6 +9,139 @@ import 'dart:ui' as ui show PathOperation;
 
 import 'package:flutter/material.dart';
 
+/// 对称的摊开书本；中间书脊和左右书页使用同一套线宽。
+class OpenBookPainter extends CustomPainter {
+  const OpenBookPainter({required this.color, required this.strokeWidth});
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 24;
+    canvas.save();
+    canvas.translate(
+      (size.width - 24 * scale) / 2,
+      (size.height - 24 * scale) / 2,
+    );
+    canvas.scale(scale);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final pages = Path()
+      ..moveTo(12, 7)
+      ..cubicTo(12, 4.8, 10.2, 3, 8, 3)
+      ..lineTo(3, 3)
+      ..quadraticBezierTo(2, 3, 2, 4)
+      ..lineTo(2, 17)
+      ..quadraticBezierTo(2, 18, 3, 18)
+      ..lineTo(8, 18)
+      ..cubicTo(10.2, 18, 12, 19, 12, 21)
+      ..cubicTo(12, 19, 13.8, 18, 16, 18)
+      ..lineTo(21, 18)
+      ..quadraticBezierTo(22, 18, 22, 17)
+      ..lineTo(22, 4)
+      ..quadraticBezierTo(22, 3, 21, 3)
+      ..lineTo(16, 3)
+      ..cubicTo(13.8, 3, 12, 4.8, 12, 7)
+      ..lineTo(12, 21);
+    canvas.drawPath(pages, stroke);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant OpenBookPainter oldDelegate) =>
+      color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth;
+}
+
+/// 朝右上方的纸飞机；折线与飞行动画使用同一个方向。
+class PaperPlanePainter extends CustomPainter {
+  const PaperPlanePainter({required this.color, required this.strokeWidth});
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 24;
+    canvas.save();
+    canvas.translate(
+      (size.width - 24 * scale) / 2,
+      (size.height - 24 * scale) / 2,
+    );
+    canvas.scale(scale);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final plane = Path()
+      ..moveTo(21, 3)
+      ..lineTo(14, 21)
+      ..lineTo(10.5, 13.5)
+      ..lineTo(3, 10)
+      ..close()
+      ..moveTo(10.5, 13.5)
+      ..lineTo(21, 3);
+    canvas.drawPath(plane, stroke);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant PaperPlanePainter oldDelegate) =>
+      color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth;
+}
+
+/// 文本框与省略号：文字内容的操作菜单，保持线框以匹配操作类图标。
+class ContentActionsPainter extends CustomPainter {
+  const ContentActionsPainter({required this.color, required this.strokeWidth});
+
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 24;
+    canvas.save();
+    canvas.translate(
+      (size.width - 24 * scale) / 2,
+      (size.height - 24 * scale) / 2,
+    );
+    canvas.scale(scale);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(8, 21)
+      ..lineTo(6.5, 21)
+      ..quadraticBezierTo(4, 21, 4, 18.5)
+      ..lineTo(4, 5.5)
+      ..quadraticBezierTo(4, 3, 6.5, 3)
+      ..lineTo(17.5, 3)
+      ..quadraticBezierTo(20, 3, 20, 5.5)
+      ..lineTo(20, 12.5)
+      ..moveTo(7.5, 8)
+      ..lineTo(16.5, 8)
+      ..moveTo(7.5, 12)
+      ..lineTo(13.5, 12);
+    canvas.drawPath(path, stroke);
+    final dot = Paint()..color = color;
+    for (final x in [11.5, 15.5, 19.5]) {
+      canvas.drawCircle(Offset(x, 19.5), strokeWidth * .55, dot);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant ContentActionsPainter oldDelegate) =>
+      color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth;
+}
+
 /// 笑脸（emoji tab）。
 ///
 /// 设计参考 Material Symbols Rounded 的 `sentiment_satisfied`，但绘制更圆润、
@@ -130,9 +263,7 @@ class SmileyPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SmileyPainter old) =>
-      old.color != color ||
-      old.fill != fill ||
-      old.strokeWidth != strokeWidth;
+      old.color != color || old.fill != fill || old.strokeWidth != strokeWidth;
 }
 
 /// 表情包/贴纸包图标（sticker tab）。
@@ -383,18 +514,10 @@ class StickerPainter extends CustomPainter {
       center: Offset(center.dx, center.dy + r * 0.05),
       radius: r * 0.55,
     );
-    canvas.drawArc(
-      mouthRect,
-      math.pi / 6,
-      math.pi - math.pi / 3,
-      false,
-      cut,
-    );
+    canvas.drawArc(mouthRect, math.pi / 6, math.pi - math.pi / 3, false, cut);
   }
 
   @override
   bool shouldRepaint(covariant StickerPainter old) =>
-      old.color != color ||
-      old.fill != fill ||
-      old.strokeWidth != strokeWidth;
+      old.color != color || old.fill != fill || old.strokeWidth != strokeWidth;
 }

@@ -149,6 +149,64 @@ class DiscourseCookService {
     return postProcessCooked(cooked, baseUri: PreloadedDataService().baseUri);
   }
 
+  /// 编辑器原文导入：官方独立引擎的版本化 token DTO，不经过 HTML。
+  /// 失败返回 null；日志只包含阶段，不记录用户原文或 JS 异常正文。
+  Future<Map<String, dynamic>?> parseForEditor(String raw) async {
+    try {
+      if (!await ensureInitialized()) return null;
+      var failed = false;
+      final result = _engine?.evaluate(
+        '__fluxdoCook.parseForEditor(${jsonEncode(raw)})',
+        onError: (_) => failed = true,
+      );
+      if (failed || result == null) return null;
+      final data = jsonDecode(result);
+      if (data is! Map<String, dynamic> ||
+          data['version'] != 1 ||
+          data['tokens'] is! List ||
+          !(data['tokens'] as List).every(_isEditorToken)) {
+        debugPrint('[DiscourseCook] 编辑 token DTO 无效');
+        return null;
+      }
+      return data;
+    } catch (_) {
+      debugPrint('[DiscourseCook] 编辑 token 解析失败');
+      return null;
+    }
+  }
+
+  static bool _isEditorToken(dynamic value, [int depth = 0]) {
+    if (depth >= 256 || value is! Map<String, dynamic>) return false;
+    const fields = [
+      'type', 'tag', 'nesting', 'attrs', 'content', 'markup', 'info',
+      'children', 'meta', 'map', 'block', 'hidden',
+    ];
+    if (!fields.every(value.containsKey)) return false;
+    for (final key in ['type', 'tag', 'content', 'markup', 'info']) {
+      if (value[key] is! String) return false;
+    }
+    if (value['nesting'] is! int ||
+        !const [-1, 0, 1].contains(value['nesting']) ||
+        value['block'] is! bool || value['hidden'] is! bool) {
+      return false;
+    }
+    final attrs = value['attrs'];
+    if (attrs != null && (attrs is! List || !attrs.every((pair) =>
+        pair is List && pair.length == 2 && pair[0] is String &&
+        (pair[1] is String || pair[1] is num || pair[1] is bool)))) {
+      return false;
+    }
+    final map = value['map'];
+    if (map != null && (map is! List || map.length != 2 ||
+        map[0] is! int || map[1] is! int ||
+        map[0] < 0 || map[1] < map[0])) {
+      return false;
+    }
+    final children = value['children'];
+    return children == null || (children is List &&
+        children.every((child) => _isEditorToken(child, depth + 1)));
+  }
+
   /// 客户端 cook 输出的 Dart 后处理（纯函数，可单测）。
   ///
   /// mention：客户端 cook 输出 `<span class="mention">@user</span>`（服务端

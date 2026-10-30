@@ -805,24 +805,36 @@ class FluxdoRenderCallbacks {
       return FutureBuilder<String?>(
         future: DiscourseImageUtils.resolveUploadUrl(image.src),
         builder: (ctx, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return SizedBox(
-              width: image.width ?? 120,
-              height: image.height ?? 80,
-              child: const Center(
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            );
-          }
-          if (snap.data == null) {
-            return Icon(
-              Symbols.broken_image_rounded,
-              color: Theme.of(ctx).colorScheme.outline,
-              size: 24,
+          final loading = snap.connectionState != ConnectionState.done;
+          if (loading || snap.data == null) {
+            // 短链解析前后使用同一显示尺寸，避免原图高度占位在窄屏
+            // 缩短数屏，导致正在编辑的正文与光标位置突然变化。
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final (width, height) = _imageDisplayDimensions(
+                  context,
+                  constraints,
+                  image.width ?? 120,
+                  image.height ?? 80,
+                );
+                return SizedBox(
+                  width: width,
+                  height: height,
+                  child: Center(
+                    child: loading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Symbols.broken_image_rounded,
+                            color: Theme.of(context).colorScheme.outline,
+                            size: 24,
+                          ),
+                  ),
+                );
+              },
             );
           }
           return _buildImageWidget(
@@ -1119,6 +1131,28 @@ class FluxdoRenderCallbacks {
     );
   }
 
+  /// 解析占位和实际图片共用的显示尺寸。
+  static (double?, double?) _imageDisplayDimensions(
+    BuildContext context,
+    BoxConstraints constraints,
+    double? width,
+    double? height,
+  ) {
+    if (GridTileScope.of(context) &&
+        constraints.hasTightWidth &&
+        constraints.hasTightHeight) {
+      return (constraints.maxWidth, constraints.maxHeight);
+    }
+    if (width != null &&
+        height != null &&
+        width > 0 &&
+        constraints.maxWidth.isFinite &&
+        width > constraints.maxWidth) {
+      return (constraints.maxWidth, height * constraints.maxWidth / width);
+    }
+    return (width, height);
+  }
+
   /// 把已解析好的图片 URL 包装成 LazyImage + Hero + tap → openViewer。
   /// SVG 走 jovial_svg(ScalableImageWidget),非 SVG 走 LazyImage。
   ///
@@ -1154,19 +1188,12 @@ class FluxdoRenderCallbacks {
         // 落点正确(配合查看器/HeroImage 的裁切插值 shuttle,飞行中
         // 裁切窗口随缩放连续张合,两端像素级对齐)。
         final bool inGridTile = GridTileScope.of(lbCtx);
-        double? dispW = image.width;
-        double? dispH = image.height;
-        if (inGridTile && lbc.hasTightWidth && lbc.hasTightHeight) {
-          dispW = lbc.maxWidth;
-          dispH = lbc.maxHeight;
-        } else if (dispW != null &&
-            dispH != null &&
-            dispW > 0 &&
-            lbc.maxWidth.isFinite &&
-            dispW > lbc.maxWidth) {
-          dispH = dispH * (lbc.maxWidth / dispW);
-          dispW = lbc.maxWidth;
-        }
+        final (dispW, dispH) = _imageDisplayDimensions(
+          lbCtx,
+          lbc,
+          image.width,
+          image.height,
+        );
         if (isSvg) {
           // SVG 统一走 DiscourseSvgView(内容嗅探动画:静态 jovial_svg,
           // 动画 full_svg_flutter 首帧快照+点击播放);外包 GestureDetector

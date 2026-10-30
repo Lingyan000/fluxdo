@@ -29,9 +29,7 @@ class FfmpegProcessTranscoder extends MediaTranscoder {
   bool _cancelled = false;
 
   @override
-  Future<String?> ensureReady({
-    void Function(String status)? onStatus,
-  }) async {
+  Future<String?> ensureReady({void Function(String status)? onStatus}) async {
     if (_ffmpegPath != null) return null;
     // ① 随包分发:与主程序同目录(CMake install 到 bundle 根)
     final exeDir = File(Platform.resolvedExecutable).parent.path;
@@ -42,10 +40,9 @@ class FfmpegProcessTranscoder extends MediaTranscoder {
       return null;
     }
     // ② 系统 PATH(用户自装的 ffmpeg)
-    final probe = await Process.run(
-      Platform.isWindows ? 'where' : 'which',
-      ['ffmpeg'],
-    );
+    final probe = await Process.run(Platform.isWindows ? 'where' : 'which', [
+      'ffmpeg',
+    ]);
     final found = (probe.stdout as String)
         .trim()
         .split(RegExp(r'[\r\n]+'))
@@ -69,7 +66,31 @@ class FfmpegProcessTranscoder extends MediaTranscoder {
     final err = res.stderr as String;
     final dur = parseFfmpegDuration(err);
     if (dur == null) return null;
+    final videoLine =
+        err.split('\n').where((line) => line.contains('Video:')).firstOrNull ??
+        '';
+    final audioLine =
+        err.split('\n').where((line) => line.contains('Audio:')).firstOrNull ??
+        '';
+    final dimensions = RegExp(r'\b(\d{2,5})x(\d{2,5})\b').firstMatch(videoLine);
+    final fps = RegExp(r'([\d.]+) fps').firstMatch(videoLine);
+    final sampleRate = RegExp(r'(\d+) Hz').firstMatch(audioLine);
+    final rotation = RegExp(r'rotation of (-?[\d.]+)').firstMatch(err);
+    final quarterTurn =
+        ((double.tryParse(rotation?[1] ?? '') ?? 0).abs().round() % 180) == 90;
+    final width = int.tryParse(dimensions?[1] ?? '');
+    final height = int.tryParse(dimensions?[2] ?? '');
     return MediaProbeInfo(
+      width: quarterTurn ? height : width,
+      height: quarterTurn ? width : height,
+      fps: double.tryParse(fps?[1] ?? ''),
+      hasAudio: audioLine.isNotEmpty,
+      audioSampleRate: int.tryParse(sampleRate?[1] ?? ''),
+      audioChannels: audioLine.contains('mono')
+          ? 1
+          : audioLine.contains('stereo')
+          ? 2
+          : null,
       duration: dur,
       hasVideo: RegExp(r'Stream #\d+:\d+.*: Video:').hasMatch(err),
     );
@@ -112,7 +133,16 @@ class FfmpegProcessTranscoder extends MediaTranscoder {
       if (spec.fps != null) args.addAll(['-r', '${spec.fps}']);
       final v = spec.videoBitrate!;
       args.addAll(['-b:v', '$v', '-maxrate', '$v', '-bufsize', '${v * 2}']);
-      args.addAll(['-c:a', 'aac', '-b:a', '${spec.audioBitrate}']);
+      args.addAll([
+        '-c:a',
+        'aac',
+        '-b:a',
+        '${spec.audioBitrate}',
+        '-ac',
+        '${spec.audioChannels}',
+        '-ar',
+        '${spec.audioSampleRate}',
+      ]);
     }
     args.addAll(['-movflags', '+faststart']);
     args.addAll(['-progress', 'pipe:1', '-nostats']);
@@ -132,16 +162,14 @@ class FfmpegProcessTranscoder extends MediaTranscoder {
     final proc = await Process.start(ffmpeg, buildArgs(spec));
     _proc = proc;
     // 进度行:out_time_ms=1234567(微秒,ffmpeg 历史命名坑)
-    proc.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
+    proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((
+      line,
+    ) {
       if (_total == Duration.zero) return;
       final m = RegExp(r'^out_time_ms=(\d+)').firstMatch(line);
       if (m != null) {
         final us = int.parse(m[1]!);
-        _progress =
-            (us / 1000 / _total.inMilliseconds).clamp(0.0, 1.0);
+        _progress = (us / 1000 / _total.inMilliseconds).clamp(0.0, 1.0);
       }
     });
     // stderr 必须排空(不排 ffmpeg 写满管道会卡死)

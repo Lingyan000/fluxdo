@@ -1,206 +1,445 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
-/// 一镜到底壳层(长按预览的容器变形):飞行壳(Material)从 [anchorRect]
-/// (长按卡片的屏幕 rect)连续变形到内容最终 rect;内容自始至终嵌在壳
-/// 内(OverflowBox 按目标宽布局、顶部对齐),裁剪窗随壳从卡片大小展开
-/// —— 内容全程随壳飞行,没有"空壳移动"段;关闭沿同路径收回。
+import 'morphing_dialog_anchor.dart';
+
+/// 卡片与预览共享同一个运动表面，展开途中再交接正文。
 ///
-/// 使用方式:
-/// - 路由:transitionBuilder 必须恒等(变形由本组件自驱,整页淡入会让
-///   壳从透明浮现),transitionDuration 350ms;
-/// - 弹窗 page 根返回本组件,animation 传路由 animation;
-/// - 内容尺寸由 SizeChangedLayoutNotifier 实时上报:异步内容加载完成
-///   壳自动跟随长高;反向收回时从内容当前实际尺寸飞回锚点。
-///
-/// 动画节奏(M3 容器变形规范):rect 走 spatial 弹簧(带过冲的落座感);
-/// 圆角/颜色/阴影走 effects 曲线(临界阻尼,前半程收敛) —— 形状变化
-/// 先于到达,避免"弹窗到位了圆角还在放大"。
-class MorphingDialogShell extends StatefulWidget {
+/// 正文按最终宽度排版，在同一次 layout 中决定表面尺寸，无需逐帧回传
+/// 测量结果。源卡片和正文只做等比缩放，长标题不会在飞行中反复换行。
+class MorphingDialogShell extends StatelessWidget {
   const MorphingDialogShell({
     super.key,
     required this.animation,
-    required this.anchorRect,
     required this.child,
+    this.anchorRect,
+    this.source,
     this.anchorColor,
     this.anchorRadius = 10,
     this.targetRadius = 20,
     this.dialogWidth,
-    this.transitionDuration = const Duration(milliseconds: 350),
   });
 
-  /// 路由 animation(正反向同一条空间曲线)
+  static const enterDuration = Duration(milliseconds: 420);
+  static const exitDuration = Duration(milliseconds: 280);
+  static const resizeDuration = Duration(milliseconds: 200);
+
   final Animation<double> animation;
-
-  /// 起点:长按卡片的屏幕 rect(已裁掉卡片底部间距)
-  final Rect anchorRect;
-
-  /// 内容柱(壳体 + 可能的底部操作面板),居中显示的最终布局
+  final Rect? anchorRect;
+  final MorphingDialogSnapshot? source;
   final Widget child;
-
-  /// 起点底色:卡片外壳底色,与弹窗壳 surface 做插值,起步无缝
   final Color? anchorColor;
-
-  /// 起点圆角(卡片 10)
   final double anchorRadius;
-
-  /// 终点圆角(弹窗 20)
   final double targetRadius;
-
-  /// 内容布局宽;默认 (屏宽*0.9).clamp(300, 500)
   final double? dialogWidth;
-
-  /// 弹簧曲线周期(与路由 transitionDuration 一致)
-  final Duration transitionDuration;
-
-  @override
-  State<MorphingDialogShell> createState() => _MorphingDialogShellState();
-}
-
-class _MorphingDialogShellState extends State<MorphingDialogShell> {
-  /// 内容柱的测量锚。框架禁止在 build 阶段读 Element.size,尺寸统一经
-  /// [_scheduleSizeSync] 在 postFrame / 尺寸变化通知里写入;写入前壳
-  /// 钳在锚点作蓄力起步
-  final GlobalKey _contentKey = GlobalKey();
-  Size? _contentSize;
-
-  /// 弹簧曲线缓存:curveFor 的解析解含二分/log 预热,不能逐帧重建
-  Curve? _spatialCurve;
-  Curve? _effectsCurve;
-  bool? _cachedM3e;
-
-  @override
-  void initState() {
-    super.initState();
-    // 首帧布局后尽快测得内容柱尺寸,让动画尽早起步
-    // (路由插入帧 page 可能 offstage 不参与布局,故逐帧重试)
-    _scheduleSizeSync();
-  }
-
-  void _ensureCurves(bool m3e) {
-    if (_cachedM3e == m3e && _spatialCurve != null) return;
-    _cachedM3e = m3e;
-    // 空间属性(位置/尺寸):欠阻尼弹簧,带轻微过冲的落座感;
-    // 效果属性(圆角/颜色/阴影/透明度):临界阻尼,不过冲
-    _spatialCurve = m3e
-        ? M3eMotion.defaultSpatial.curveFor(widget.transitionDuration)
-        : Curves.easeInOutCubic;
-    _effectsCurve = m3e
-        ? M3eMotion.defaultEffects.curveFor(widget.transitionDuration)
-        : Curves.easeInOut;
-  }
-
-  /// 内容尺寸变化(正文加载完成等)时安排重测,壳 rect 下一帧跟上
-  bool _onContentSizeChanged(SizeChangedLayoutNotification notification) {
-    _scheduleSizeSync();
-    return true;
-  }
-
-  /// postFrame 里读 [_contentKey] 的布局尺寸写入 [_contentSize];
-  /// 未布局(首帧 offstage 等)则逐帧重试直到测得
-  void _scheduleSizeSync() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final render = _contentKey.currentContext?.findRenderObject();
-      if (render is RenderBox && render.hasSize) {
-        if (render.size != _contentSize) {
-          setState(() => _contentSize = render.size);
-        }
-      } else {
-        _scheduleSizeSync();
-      }
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screen = MediaQuery.sizeOf(context);
-    final dialogWidth =
-        widget.dialogWidth ?? (screen.width * 0.9).clamp(300.0, 500.0);
-    final anchor = widget.anchorRect;
-    final anchorColor =
-        widget.anchorColor ??
-        theme.cardTheme.color ??
-        theme.colorScheme.surfaceContainerLow;
-    _ensureCurves(M3eFlags.of(context).enabled);
-
-    return AnimatedBuilder(
-      animation: widget.animation,
-      builder: (context, contentBody) {
-        final rawT = widget.animation.value;
-        // 内容尺寸经 postFrame 测得前(至多前两帧)壳钳在锚点,作蓄力起步
-        final size = _contentSize;
-        final spatialT = size == null ? 0.0 : _spatialCurve!.transform(rawT);
-        final effectsT = _effectsCurve!.transform(rawT);
-        final dest = size == null
-            ? anchor
-            : Rect.fromLTWH(
-                (screen.width - size.width) / 2,
-                (screen.height - size.height) / 2,
-                size.width,
-                size.height,
-              );
-        final shellRect = Rect.lerp(anchor, dest, spatialT)!;
-        // 起步快速淡入:柔化"卡片小标题 → 弹窗大标题"的换皮;
-        // 收回沿同一曲线,末段内容渐隐、壳缩回卡片后无缝交还
-        final contentOpacity = const Interval(
-          0.0,
-          0.22,
-          curve: Curves.easeOut,
-        ).transform(rawT);
-
-        return Stack(
-          children: [
-            Positioned.fromRect(
-              key: const ValueKey('morphing-shell'),
-              rect: shellRect,
-              child: Material(
-                elevation: 8 * effectsT,
-                borderRadius: BorderRadius.circular(
-                  widget.anchorRadius +
-                      (widget.targetRadius - widget.anchorRadius) * effectsT,
-                ),
-                clipBehavior: Clip.antiAlias,
-                color: Color.lerp(
-                  anchorColor,
-                  theme.colorScheme.surface,
-                  effectsT,
-                ),
-                child: OverflowBox(
-                  alignment: Alignment.topCenter,
-                  minWidth: dialogWidth,
-                  maxWidth: dialogWidth,
-                  // 必须显式给 0:null 会继承父级 tight 约束(壳高),
-                  // 内容被强制撑到壳高 → 测得的"内容高"失真自锁,
-                  // 落座后壳比内容高出一截(底部空白)
-                  minHeight: 0,
-                  maxHeight: screen.height,
-                  child: Opacity(
-                    opacity: contentOpacity,
-                    child: IgnorePointer(
-                      // 飞行期间不响应指针,落座后才开放交互
-                      ignoring: rawT < 1.0,
-                      child: contentBody!,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-      // 尺寸监听挂在 AnimatedBuilder 的常量 child 上,只建一次,
-      // 不随动画逐帧重建
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: _onContentSizeChanged,
-        child: SizeChangedLayoutNotifier(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: screen.height * 0.7),
-            child: KeyedSubtree(key: _contentKey, child: widget.child),
-          ),
+    final media = MediaQuery.of(context);
+    final reducedMotion = media.disableAnimations;
+    final insets = EdgeInsets.fromLTRB(
+      media.padding.left + 16,
+      media.padding.top + 16,
+      media.padding.right + 16,
+      math.max(media.viewInsets.bottom, media.viewPadding.bottom) + 16,
+    );
+    return TweenAnimationBuilder<EdgeInsets>(
+      tween: EdgeInsetsTween(begin: insets, end: insets),
+      duration: reducedMotion ? Duration.zero : resizeDuration,
+      curve: Curves.easeOutCubic,
+      builder: (context, padding, child) => _DialogViewport(
+        child: _DialogSurface(
+          key: const ValueKey('morphing-shell'),
+          animation: animation,
+          anchorRect: source?.rect ?? anchorRect,
+          source: source,
+          padding: padding,
+          anchorColor:
+              anchorColor ??
+              theme.cardTheme.color ??
+              theme.colorScheme.surfaceContainerLow,
+          color: theme.colorScheme.surface,
+          sourceBackground: theme.scaffoldBackgroundColor,
+          anchorRadius: anchorRadius,
+          targetRadius: targetRadius,
+          dialogWidth: dialogWidth,
+          spatialCurve: M3eFlags.of(context).enabled
+              ? Curves.easeInOutCubicEmphasized
+              : Curves.easeInOutCubic,
+          reducedMotion: reducedMotion,
+          child: child!,
         ),
       ),
+      child: reducedMotion
+          ? RepaintBoundary(child: child)
+          : AnimatedSize(
+              duration: resizeDuration,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              // 裁剪由飞行表面统一承担。
+              clipBehavior: Clip.none,
+              child: RepaintBoundary(child: child),
+            ),
     );
+  }
+}
+
+class _DialogViewport extends SingleChildRenderObjectWidget {
+  const _DialogViewport({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderDialogViewport();
+}
+
+class _RenderDialogViewport extends RenderShiftedBox {
+  _RenderDialogViewport() : super(null);
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    final surface = child! as _RenderDialogSurface;
+    surface.layout(BoxConstraints.loose(size), parentUsesSize: true);
+    (surface.parentData! as BoxParentData).offset = surface.rect.topLeft;
+  }
+}
+
+class _DialogSurface extends SingleChildRenderObjectWidget {
+  const _DialogSurface({
+    super.key,
+    required this.animation,
+    required this.anchorRect,
+    required this.source,
+    required this.padding,
+    required this.anchorColor,
+    required this.color,
+    required this.sourceBackground,
+    required this.anchorRadius,
+    required this.targetRadius,
+    required this.dialogWidth,
+    required this.spatialCurve,
+    required this.reducedMotion,
+    required super.child,
+  });
+
+  final Animation<double> animation;
+  final Rect? anchorRect;
+  final MorphingDialogSnapshot? source;
+  final EdgeInsets padding;
+  final Color anchorColor;
+  final Color color;
+  final Color sourceBackground;
+  final double anchorRadius;
+  final double targetRadius;
+  final double? dialogWidth;
+  final Curve spatialCurve;
+  final bool reducedMotion;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderDialogSurface(this);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderDialogSurface renderObject,
+  ) {
+    renderObject.configuration = this;
+  }
+}
+
+class _RenderDialogSurface extends RenderShiftedBox {
+  _RenderDialogSurface(this._configuration) : super(null);
+
+  _DialogSurface _configuration;
+  Rect rect = Rect.zero;
+  Rect? _closingRect;
+  Rect? _returnRect;
+  double _reverseStart = 1;
+  double _contentScale = 1;
+  double _openness = 0;
+  bool _orphaned = false;
+  final _clipLayer = LayerHandle<ClipRRectLayer>();
+  final _opacityLayer = LayerHandle<OpacityLayer>();
+  final _transformLayer = LayerHandle<TransformLayer>();
+
+  Animation<double> get _animation => _configuration.animation;
+
+  set configuration(_DialogSurface value) {
+    final animationChanged = _animation != value.animation;
+    if (animationChanged && attached) _unlisten();
+    _configuration = value;
+    if (animationChanged && attached) _listen();
+    markNeedsLayout();
+  }
+
+  void _listen() {
+    _animation.addListener(markNeedsLayout);
+    _animation.addStatusListener(_onStatus);
+  }
+
+  void _unlisten() {
+    _animation.removeListener(markNeedsLayout);
+    _animation.removeStatusListener(_onStatus);
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) {
+      // 从当前画面出发，正文加载和输入法变化不再改变返程轨迹。
+      _closingRect = rect;
+      _reverseStart = _animation.value;
+      final currentSource = _configuration.source?.currentRect();
+      _returnRect = currentSource ?? _configuration.anchorRect;
+      _orphaned = _configuration.source != null && currentSource == null;
+    } else if (status == AnimationStatus.forward) {
+      _closingRect = null;
+      _orphaned = false;
+    } else if (status == AnimationStatus.dismissed) {
+      _configuration.source?.restore();
+    }
+    markNeedsLayout();
+    markNeedsSemanticsUpdate();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _listen();
+  }
+
+  @override
+  void detach() {
+    _unlisten();
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _clipLayer.layer = null;
+    _opacityLayer.layer = null;
+    _transformLayer.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void performLayout() {
+    final config = _configuration;
+    final viewport = Offset.zero & constraints.biggest;
+    final available = config.padding.deflateRect(viewport);
+    final width = math.min(
+      config.dialogWidth ?? (viewport.width * 0.9).clamp(300.0, 500.0),
+      math.max(0.0, available.width),
+    );
+    child!.layout(
+      BoxConstraints(
+        minWidth: width,
+        maxWidth: width,
+        maxHeight: math.max(
+          0,
+          math.min(viewport.height * 0.7, available.height),
+        ),
+      ),
+      parentUsesSize: true,
+    );
+    final destination = Rect.fromCenter(
+      center: available.center,
+      width: child!.size.width,
+      height: child!.size.height,
+    );
+    final anchor =
+        config.anchorRect ??
+        Rect.fromCenter(
+          center: destination.center,
+          width: destination.width * 0.96,
+          height: destination.height * 0.96,
+        );
+    final raw = _animation.value.clamp(0.0, 1.0);
+    _openness = raw;
+    if (config.reducedMotion) {
+      rect = destination;
+      _openness = _animation.status == AnimationStatus.reverse ? 0 : 1;
+    } else if (_closingRect != null) {
+      final remaining = _reverseStart == 0
+          ? 0.0
+          : (raw / _reverseStart).clamp(0.0, 1.0);
+      final progress = Curves.easeInOutCubic.transform(1 - remaining);
+      rect = Rect.lerp(
+        _closingRect,
+        _orphaned ? _closingRect : (_returnRect ?? anchor),
+        progress,
+      )!;
+    } else {
+      rect = Rect.lerp(
+        anchor,
+        destination,
+        config.spatialCurve.transform(raw),
+      )!;
+    }
+    size = rect.size;
+    _contentScale = child!.size.width == 0
+        ? 1
+        : math.min(1, size.width / child!.size.width);
+    (child!.parentData! as BoxParentData).offset = Offset(
+      (size.width - child!.size.width * _contentScale) / 2,
+      0,
+    );
+  }
+
+  double get _contentOpacity {
+    if (_orphaned) return _surfaceOpacity;
+    if (_configuration.source == null) {
+      return Curves.easeOut.transform(_openness);
+    }
+    return const Interval(
+      0.22,
+      0.52,
+      curve: Curves.easeOutCubic,
+    ).transform(_openness);
+  }
+
+  double get _surfaceOpacity => _orphaned
+      ? Curves.easeInOut.transform(
+          _reverseStart == 0
+              ? 0
+              : (_animation.value / _reverseStart).clamp(0.0, 1.0),
+        )
+      : 1;
+
+  double get _sourceOpacity =>
+      1 -
+      const Interval(
+        0.10,
+        0.25,
+        curve: Curves.easeInOutCubic,
+      ).transform(_openness);
+
+  RRect _shape(Offset offset) {
+    final t = Curves.easeOutCubic.transform(_openness);
+    return RRect.fromRectAndRadius(
+      offset & size,
+      Radius.circular(
+        ui.lerpDouble(
+          _configuration.anchorRadius,
+          _configuration.targetRadius,
+          t,
+        )!,
+      ),
+    );
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => true;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (size.isEmpty) return;
+    final config = _configuration;
+    final opacity = _contentOpacity;
+    final shape = _shape(offset);
+    final effects = Curves.easeOutCubic.transform(_openness);
+    context.canvas.drawShadow(
+      Path()..addRRect(shape),
+      Colors.black.withValues(alpha: 0.22 * _surfaceOpacity),
+      12 * effects,
+      true,
+    );
+    // 有来源时表面始终实心。半透明置顶卡的快照叠在页面底色上，
+    // 起点仍是原来的颜色；展开后也不会透出列表文字。
+    final background = config.source != null
+        ? Color.lerp(config.sourceBackground, config.color, effects)!
+        : config.anchorRect != null
+        ? Color.lerp(config.anchorColor, config.color, effects)!
+        : config.color.withValues(alpha: opacity);
+    context.canvas.drawRRect(
+      shape,
+      Paint()
+        ..color = background.withValues(alpha: background.a * _surfaceOpacity),
+    );
+    _clipLayer.layer = context.pushClipRRect(
+      needsCompositing,
+      offset,
+      Offset.zero & size,
+      _shape(Offset.zero),
+      (context, offset) {
+        if (opacity > 0) {
+          _opacityLayer.layer = context.pushOpacity(
+            offset,
+            (opacity * 255).round(),
+            (context, offset) {
+              final childOffset = (child!.parentData! as BoxParentData).offset;
+              _transformLayer.layer = context.pushTransform(
+                needsCompositing,
+                offset,
+                Matrix4.identity()
+                  ..translateByDouble(childOffset.dx, childOffset.dy, 0, 1)
+                  ..scaleByDouble(_contentScale, _contentScale, 1, 1),
+                (context, offset) => context.paintChild(child!, offset),
+                oldLayer: _transformLayer.layer,
+              );
+            },
+            oldLayer: _opacityLayer.layer,
+          );
+        }
+        final source = config.source;
+        final sourceOpacity = _sourceOpacity;
+        if (source != null && sourceOpacity > 0 && !_orphaned) {
+          final scale = math.min(size.width / source.rect.width, 1.04);
+          final imageSize = source.rect.size * scale;
+          context.canvas.drawImageRect(
+            source.image,
+            Rect.fromLTWH(
+              0,
+              0,
+              source.image.width.toDouble(),
+              source.image.height.toDouble(),
+            ),
+            Rect.fromLTWH(
+              offset.dx + (size.width - imageSize.width) / 2,
+              offset.dy,
+              imageSize.width,
+              imageSize.height,
+            ),
+            Paint()
+              ..color = Colors.white.withValues(alpha: sourceOpacity)
+              ..filterQuality = FilterQuality.medium,
+          );
+        }
+      },
+      oldLayer: _clipLayer.layer,
+    );
+  }
+
+  @override
+  bool hitTestSelf(Offset position) => _shape(Offset.zero).contains(position);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    if (_animation.status != AnimationStatus.completed ||
+        !_shape(Offset.zero).contains(position)) {
+      return false;
+    }
+    return result.addWithPaintOffset(
+      offset: (child!.parentData! as BoxParentData).offset,
+      position: position,
+      hitTest: (result, position) => child!.hitTest(result, position: position),
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    super.applyPaintTransform(child, transform);
+    transform.scaleByDouble(_contentScale, _contentScale, 1, 1);
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    if (_animation.status == AnimationStatus.completed) {
+      super.visitChildrenForSemantics(visitor);
+    }
   }
 }

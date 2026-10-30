@@ -7,7 +7,7 @@ PODS:
     - FlutterMacOS
   - device_info_plus (0.0.1):
     - FlutterMacOS
-  - dynamic_color (0.0.2):
+  - dynamic_color (0.0.3):
     - FlutterMacOS
   - file_picker (0.0.1):
     - FlutterMacOS
@@ -77,11 +77,13 @@ PODS:
   - video_player_avfoundation (0.0.1):
     - Flutter
     - FlutterMacOS
-  - volume_controller (0.0.1):
+  - volume_controller (3.7.0):
     - FlutterMacOS
   - wakelock_plus (0.0.1):
     - FlutterMacOS
   - window_manager (0.5.0):
+    - FlutterMacOS
+  - workmanager_apple (0.0.1):
     - FlutterMacOS
 
 DEPENDENCIES:
@@ -123,6 +125,7 @@ DEPENDENCIES:
   - volume_controller (from `Flutter/ephemeral/.symlinks/plugins/volume_controller/macos`)
   - wakelock_plus (from `Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos`)
   - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
+  - workmanager_apple (from `Flutter/ephemeral/.symlinks/plugins/workmanager_apple/macos`)
 
 SPEC REPOS:
   trunk:
@@ -205,23 +208,25 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos
   window_manager:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
+  workmanager_apple:
+    :path: Flutter/ephemeral/.symlinks/plugins/workmanager_apple/macos
 
 SPEC CHECKSUMS:
   app_links: 05a6ec2341985eb05e9f97dc63f5837c39895c3f
   audio_session: eaca2512cf2b39212d724f35d11f46180ad3a33e
   connectivity_plus: 4adf20a405e25b42b9c9f87feff8f4b6fde18a4e
   device_info_plus: 4fb280989f669696856f8b129e4a5e3cd6c48f76
-  dynamic_color: cb7c2a300ee67ed3bd96c3e852df3af0300bf610
+  dynamic_color: 4f4c0d2861eb7ff36a2a5e8e2d441e1b6c681ddf
   file_picker: 7584aae6fa07a041af2b36a2655122d42f578c1a
   file_selector_macos: 9e9e068e90ebee155097d00e89ae91edb2374db7
   flutter_avif_macos: 9ed61d67adfbd6964eccb59971020fb55c31fc11
-  flutter_image_compress_macos: e68daf54bb4bf2144c580fd4d151c949cbf492f0
+  flutter_image_compress_macos: 525b2993bb7d77af94af6ccf1f5848c6a111de02
   flutter_inappwebview_macos: e69b76dd5c46a6d9471f195f3d8d36f11b3ab7a4
   flutter_js: 79c3c70d33ba464c67d8eb88639a61aa718cd8b8
   flutter_local_notifications: 1fc7ffb10a83d6a2eeeeddb152d43f1944b0aad0
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   flutter_timezone: d272288c69082ad571630e0d17140b3d6b93dc0c
-  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   gal: baecd024ebfd13c441269ca7404792a7152fde89
   irondash_engine_context: 893c7d96d20ce361d7e996f39d360c4c2f9869ba
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
@@ -243,10 +248,11 @@ SPEC CHECKSUMS:
   ua_client_hints: bb84da85d9d5d605d40598b3c1ae3bfd2598e201
   url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
   video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
-  volume_controller: 5c068e6d085c80dadd33fc2c918d2114b775b3dd
+  volume_controller: 96b8e381b9f7d227636335110bc82ee96386434b
   wakelock_plus: 917609be14d812ddd9e9528876538b2263aaa03b
   window_manager: b729e31d38fb04905235df9ea896128991cad99e
+  workmanager_apple: 573f1503f9752eadd70a35bb478dfd2a103c4d18
 
-PODFILE CHECKSUM: 346bfb2deb41d4a6ebd6f6799f92188bde2d246f
+PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac
 
 COCOAPODS: 1.17.0

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
+import '../../models/nested_reading_position.dart';
+import 'nested_reading_scope.dart';
 import '../../models/topic.dart';
 import '../../providers/nested_topic_provider.dart';
 import '../../providers/preferences_provider.dart';
@@ -22,6 +25,7 @@ void showNestedThreadSheet({
   required TopicDetail detail,
   required NestedTopicParams params,
   required int maxDepth,
+  int? rootPostNumber,
   required bool isLoggedIn,
   required void Function(Post? replyToPost, {String? initialContent}) onReply,
   required void Function(Post post) onEdit,
@@ -30,11 +34,14 @@ void showNestedThreadSheet({
   void Function(int postId, bool accepted)? onSolutionChanged,
   void Function(String selectedText, Post post)? onQuoteSelection,
 }) {
+  final reading = NestedReadingScope.maybeOf(context);
   showAppBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => _NestedThreadSheetContent(
+      sourceReading: reading,
+      rootPostNumber: rootPostNumber,
       node: node,
       topicId: topicId,
       detail: detail,
@@ -53,6 +60,8 @@ void showNestedThreadSheet({
 
 class _NestedThreadSheetContent extends ConsumerStatefulWidget {
   final NestedNode node;
+  final NestedReadingScope? sourceReading;
+  final int? rootPostNumber;
   final int topicId;
   final TopicDetail detail;
   final NestedTopicParams params;
@@ -67,6 +76,8 @@ class _NestedThreadSheetContent extends ConsumerStatefulWidget {
 
   const _NestedThreadSheetContent({
     required this.node,
+    this.sourceReading,
+    this.rootPostNumber,
     required this.topicId,
     required this.detail,
     required this.params,
@@ -92,15 +103,36 @@ class _NestedThreadSheetContentState
   bool _isLoadingMore = false;
   int _page = 0;
   final Map<int, bool> _expansionState = {};
+  final NestedViewportController _viewport = NestedViewportController();
+  final NestedReadingSession _session = NestedReadingSession();
+  bool _interacted = false;
 
   @override
   void initState() {
     super.initState();
+    widget.sourceReading?.controller.beginOverlay();
+    _viewport.onSample = (visible, position) => widget
+        .sourceReading
+        ?.controller
+        .onOverlaySample
+        ?.call(visible, position, _interacted);
+    _viewport.onOverlaySample = (visible, position, interacted) => widget
+        .sourceReading
+        ?.controller
+        .onOverlaySample
+        ?.call(visible, position, interacted);
     _children = List.from(widget.node.children);
     _hasMore = widget.node.hasMoreChildren;
     if (_children.isEmpty && widget.node.directReplyCount > 0) {
       _loadChildren();
     }
+  }
+
+  @override
+  void dispose() {
+    widget.sourceReading?.controller.endOverlay();
+    _viewport.dispose();
+    super.dispose();
   }
 
   Future<void> _loadChildren() async {
@@ -155,49 +187,65 @@ class _NestedThreadSheetContentState
             ),
             overflow: TextOverflow.ellipsis,
           ),
-          child: ListView(
-            controller: scrollController,
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              // 子回复列表，depth 从 0 重新开始
-              for (int i = 0; i < children.length; i++)
-                NestedPostCard(
-                  node: children[i],
-                  topicId: widget.topicId,
-                  detail: widget.detail,
-                  params: widget.params,
-                  depth: 0,
-                  maxDepth: widget.maxDepth,
-                  isLastChild: i == children.length - 1 && !_hasMore,
-                  isLoggedIn: widget.isLoggedIn,
-                  blockedUsernames: blockedUsernames,
-                  onReply: widget.onReply,
-                  onEdit: widget.onEdit,
-                  onRefreshPost: widget.onRefreshPost,
-                  onJumpToPost: widget.onJumpToPost,
-                  onSolutionChanged: widget.onSolutionChanged,
-                  onQuoteSelection: widget.onQuoteSelection,
-                  expansionState: _expansionState,
-                ),
-              // 加载更多
-              if (_hasMore)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: _isLoadingMore
-                      ? const Center(
-                          child: LoadingSpinner(size: 20),
-                        )
-                      : Center(
-                          child: TextButton(
-                            onPressed: _loadChildren,
-                            child: Text(context.l10n.nested_loadMore),
-                          ),
-                        ),
-                ),
-            ],
+          child: NestedReadingScope(
+            controller: _viewport,
+            session: _session,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  _interacted = true;
+                }
+                _viewport.scheduleSample();
+                return false;
+              },
+              child: ListView(
+                key: _viewport.viewportKey,
+                controller: scrollController,
+                padding: const EdgeInsets.only(bottom: 32),
+                children: [
+                  // 子回复列表，depth 从 0 重新开始
+                  for (int i = 0; i < children.length; i++)
+                    NestedPostCard(
+                      key: ValueKey(children[i].post.id),
+                      node: children[i],
+                      rootPostNumber:
+                          widget.rootPostNumber ?? widget.node.post.postNumber,
+                      topicId: widget.topicId,
+                      detail: widget.detail,
+                      params: widget.params,
+                      depth: 0,
+                      maxDepth: widget.maxDepth,
+                      isLastChild: i == children.length - 1 && !_hasMore,
+                      isLoggedIn: widget.isLoggedIn,
+                      blockedUsernames: blockedUsernames,
+                      onReply: widget.onReply,
+                      onEdit: widget.onEdit,
+                      onRefreshPost: widget.onRefreshPost,
+                      onJumpToPost: widget.onJumpToPost,
+                      onSolutionChanged: widget.onSolutionChanged,
+                      onQuoteSelection: widget.onQuoteSelection,
+                      expansionState: _expansionState,
+                    ),
+                  // 加载更多
+                  if (_hasMore)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: _isLoadingMore
+                          ? const Center(child: LoadingSpinner(size: 20))
+                          : Center(
+                              child: TextButton(
+                                onPressed: _loadChildren,
+                                child: Text(context.l10n.nested_loadMore),
+                              ),
+                            ),
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },

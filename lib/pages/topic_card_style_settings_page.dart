@@ -10,7 +10,9 @@ import '../models/topic_card_style.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/responsive.dart';
 import '../widgets/topic/painted_topic_card.dart';
+import '../widgets/topic/topic_card.dart';
 import '../widgets/topic/topic_card_layout.dart';
+import '../widgets/topic/topic_expandable_excerpt.dart';
 
 /// 话题卡片样式设置页
 ///
@@ -30,6 +32,7 @@ class _TopicCardStyleSettingsPageState
   /// (进 TopicCardLayout 的 stamp,实例漂移会导致每帧重排)
   Topic? _previewTopic;
   Category? _previewCategory;
+  bool _confirmingExcerptFetch = false;
 
   void _ensurePreviewData(BuildContext context) {
     if (_previewTopic != null) return;
@@ -71,6 +74,39 @@ class _TopicCardStyleSettingsPageState
 
   void _update(TopicCardStyle style) {
     ref.read(preferencesProvider.notifier).setTopicCardStyle(style);
+  }
+
+  Future<void> _setAllowExcerptFetch(bool value) async {
+    if (value) {
+      if (_confirmingExcerptFetch) return;
+      _confirmingExcerptFetch = true;
+      final l10n = context.l10n;
+      final bool? confirmed;
+      try {
+        confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(l10n.topicCardStyle_fetchWarningTitle),
+            content: Text(l10n.topicCardStyle_fetchWarningMessage),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(l10n.common_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(l10n.topicCardStyle_confirmFetch),
+              ),
+            ],
+          ),
+        );
+      } finally {
+        _confirmingExcerptFetch = false;
+      }
+      if (!mounted || confirmed != true) return;
+    }
+    final style = ref.read(preferencesProvider).topicCardStyle;
+    _update(style.copyWith(allowExcerptFetch: value));
   }
 
   @override
@@ -122,14 +158,12 @@ class _TopicCardStyleSettingsPageState
                 children: [
                   RadioListTile<TopicCardAvatarLayout>(
                     title: Text(l10n.topicCardStyle_avatarLayoutInline),
-                    subtitle:
-                        Text(l10n.topicCardStyle_avatarLayoutInlineDesc),
+                    subtitle: Text(l10n.topicCardStyle_avatarLayoutInlineDesc),
                     value: TopicCardAvatarLayout.inline,
                   ),
                   RadioListTile<TopicCardAvatarLayout>(
                     title: Text(l10n.topicCardStyle_avatarLayoutColumn),
-                    subtitle:
-                        Text(l10n.topicCardStyle_avatarLayoutColumnDesc),
+                    subtitle: Text(l10n.topicCardStyle_avatarLayoutColumnDesc),
                     value: TopicCardAvatarLayout.column,
                   ),
                 ],
@@ -206,6 +240,30 @@ class _TopicCardStyleSettingsPageState
               value: style.showViews,
               onChanged: (v) => _update(style.copyWith(showViews: v)),
             ),
+            _fieldSwitch(
+              theme,
+              icon: Symbols.subject_rounded,
+              title: l10n.topicCardStyle_showExcerpt,
+              subtitle: l10n.topicCardStyle_showExcerptDesc,
+              value: style.showExcerpt,
+              onChanged: (v) => _update(style.copyWith(showExcerpt: v)),
+            ),
+            _fieldSwitch(
+              theme,
+              icon: Symbols.image_rounded,
+              title: l10n.topicCardStyle_showImages,
+              subtitle: l10n.topicCardStyle_showImagesDesc,
+              value: style.showImages,
+              onChanged: (v) => _update(style.copyWith(showImages: v)),
+            ),
+            _fieldSwitch(
+              theme,
+              icon: Symbols.cloud_download_rounded,
+              title: l10n.topicCardStyle_allowExcerptFetch,
+              subtitle: l10n.topicCardStyle_allowExcerptFetchDesc,
+              value: style.allowExcerptFetch,
+              onChanged: _setAllowExcerptFetch,
+            ),
           ],
         ),
         const SizedBox(height: 24),
@@ -237,29 +295,46 @@ class _TopicCardStyleSettingsPageState
     );
   }
 
-  /// 实时预览:直接用自绘卡真实渲染(与列表逐像素一致)。
-  /// identity 用保留前缀,不与真实列表 `topic:{id}` 冲突;
-  /// 显式传 style,statsAvailableWidth 拉满让 likes/views 开关效果
-  /// 在窄屏预览上也可见
+  /// 实时预览:所见即所得渲染(与首页真实卡片逐像素一致)。
   Widget _buildPreviewCard(BuildContext context, TopicCardStyle style) {
-    final cardWidth =
-        (MediaQuery.sizeOf(context).width - 32)
-            .clamp(0.0, Breakpoints.maxContentWidth - 32)
-            .toDouble();
-    final layout = TopicCardLayout.obtain(
-      identity: 'style-preview:0',
-      topic: _previewTopic!,
-      width: cardWidth,
-      theme: Theme.of(context),
-      category: _previewCategory,
-      emojiUrlOf: topicCardEmojiUrlResolver,
-      statsAvailableWidth: 9999,
-      style: style,
-    );
-    return IgnorePointer(
-      child: SizedBox(
+    final cardWidth = (MediaQuery.sizeOf(context).width - 32)
+        .clamp(0.0, Breakpoints.maxContentWidth - 32)
+        .toDouble();
+
+    // 内容预览关闭时保留原有自绘预览和统计展示方式。
+    if (!style.showExcerpt && !style.showImages) {
+      final layout = TopicCardLayout.obtain(
+        identity: 'style-preview:0',
+        topic: _previewTopic!,
         width: cardWidth,
-        child: PaintedTopicCard(layout: layout),
+        theme: Theme.of(context),
+        category: _previewCategory,
+        emojiUrlOf: topicCardEmojiUrlResolver,
+        statsAvailableWidth: 9999,
+        style: style,
+      );
+      return IgnorePointer(
+        child: SizedBox(
+          width: cardWidth,
+          child: PaintedTopicCard(layout: layout),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: cardWidth,
+      child: TopicCard(
+        topic: _previewTopic!,
+        categoryMap: {1: _previewCategory!},
+        statsAvailableWidth: 9999,
+        middleWidget: (style.showExcerpt || style.showImages)
+            ? TopicExpandableExcerpt(
+                topic: _previewTopic!,
+                showText: style.showExcerpt,
+                showImages: style.showImages,
+                maxCollapsedLines: style.maxCollapsedLines,
+              )
+            : null,
       ),
     );
   }
@@ -279,8 +354,10 @@ class _TopicCardStyleSettingsPageState
         children: [
           Row(
             children: [
-              Icon(Symbols.format_size_rounded,
-                  color: theme.colorScheme.primary),
+              Icon(
+                Symbols.format_size_rounded,
+                color: theme.colorScheme.primary,
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -291,7 +368,8 @@ class _TopicCardStyleSettingsPageState
                       value == 15.0
                           ? '15 (${l10n.topicCardStyle_titleFontSizeDefault})'
                           : value.toStringAsFixed(
-                              value == value.roundToDouble() ? 0 : 1),
+                              value == value.roundToDouble() ? 0 : 1,
+                            ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -315,7 +393,8 @@ class _TopicCardStyleSettingsPageState
             max: 18,
             divisions: 10,
             label: value.toStringAsFixed(
-                value == value.roundToDouble() ? 0 : 1),
+              value == value.roundToDouble() ? 0 : 1,
+            ),
             onChanged: (v) => _update(style.copyWith(titleFontSize: v)),
           ),
         ],

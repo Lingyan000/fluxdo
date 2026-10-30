@@ -43,5 +43,12 @@
   "mediaPlayer_videoLoadTimeout": "视频加载超时",
   "mediaPlayer_tapToRetry": "点击重试",
   "mediaPlayer_audioLoadFailed": "音频加载失败",
-  "mediaPlayer_voiceLoadFailed": "语音加载失败"
+  "mediaPlayer_voiceLoadFailed": "语音加载失败",
+  "mediaPlayer_compressionMode": "视频压缩模式",
+  "mediaPlayer_compressionCompatible": "兼容优先（推荐）",
+  "mediaPlayer_compressionScreen": "录屏清晰优先",
+  "mediaPlayer_compressionEfficient": "体积优先",
+  "mediaPlayer_compressionCompatibleHint": "H.264，适合大多数播放器。",
+  "mediaPlayer_compressionScreenHint": "优先保留文字分辨率，最高15帧/秒。",
+  "mediaPlayer_compressionEfficientHint": "HEVC，编码失败回退H.264；部分播放器可能不兼容。"
 }

@@ -1,4 +1,6 @@
 {
+  "topics_viewNewOnlyTopics": "See {count} new topics",
+  "topics_viewUnreadTopics": "See {count} unread topics",
   "@@locale": "en",
   "topicDetail_addToReadLater": "Add to float",
   "topicDetail_addToReadLaterSuccess": "Added to float",
@@ -81,6 +83,7 @@
   "topicDetail_moveMessageToInbox": "Move to Inbox",
   "topicDetail_moveMessageToInboxHelp": "Move message back to Inbox",
   "topicDetail_messageArchived": "Message archived",
+  "topicDetail_topicDestroyed": "This topic has been deleted",
   "topicDetail_messageMovedToInbox": "Moved back to Inbox",
   "topicDetail_removeFromReadLater": "Remove from float",
   "topicDetail_removeFromReadLaterSuccess": "Removed from float",

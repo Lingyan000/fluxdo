@@ -1,12 +1,14 @@
-// Bundle 入口：把 Discourse 官方 cook 管线封成两个全局函数。
+// Bundle 入口：封装 Discourse 官方阅读 cook 与独立编辑 token 解析。
 //
 //   __fluxdoCook.init(optJsonString) -> "ok"        （站点数据注入，建 engine）
 //   __fluxdoCook.cook(rawMarkdown)   -> cooked HTML  （与服务端一致的输出）
+//   __fluxdoCook.parseForEditor(raw) -> DTO v1 JSON（原文直接 parse）
 //
 // 数据流对齐 discourse 服务端 lib/pretty_text.rb 的 MiniRacer 上下文：
 // 同一份 discourse-markdown-it + pretty-text 源码 + 官方插件 markdown
 // features，只是 optInput 由 app 侧从 PreloadedDataService 提供。
 import "./globals-setup.js";
+import { serializeEditorTokens } from "./editor-token-dto.js";
 
 import DiscourseMarkdownIt from "discourse-markdown-it";
 import {
@@ -218,6 +220,7 @@ function buildEmojiUnicodeReplacer() {
 // init / cook
 // ---------------------------------------------------------------------------
 let engine = null;
+let editorEngine = null;
 
 function normalizeCustomEmoji(customEmoji) {
   // 接受 [{name, url}] 或 {name: url} 两种形态，输出 pretty-text/emoji
@@ -247,7 +250,8 @@ function init(optJsonString) {
 
   const hashtagConfigurations = site.hashtag_configurations ?? {};
 
-  engine = DiscourseMarkdownIt.withCustomFeatures(PLUGIN_FEATURES).withOptions({
+  // 每次独立构造选项，官方 setup 会修改 options，不能共享引擎或 renderer。
+  const createOptions = () => ({
     siteSettings,
     getURL,
     formatUsername: (username) => username,
@@ -270,7 +274,49 @@ function init(optJsonString) {
     }),
   });
 
+  engine = DiscourseMarkdownIt.withCustomFeatures(PLUGIN_FEATURES)
+    .withOptions(createOptions());
+  editorEngine = DiscourseMarkdownIt.withCustomFeatures(
+    PLUGIN_FEATURES, ["onebox", "watched-words", "censored"]
+  ).withOptions(createOptions());
+  installEditorSourceRanges(editorEngine.options.engine);
+
   return "ok";
+}
+
+// 锁定上游版本的 bbcode rule 观测：state.line 是官方找到关闭标签后
+// 真正消费的末行（exclusive），不把原 map 擅自 +1，也不扫描原文猜边界。
+function installEditorSourceRanges(md) {
+  const ruler = md.block.ruler;
+  const rule = ruler.__rules__.find((entry) => entry.name === "bbcode");
+  if (!rule) throw new Error("官方 bbcode rule 不存在");
+  const original = rule.fn;
+  ruler.at("bbcode", (state, startLine, endLine, silent) => {
+    const tokenStart = state.tokens.length;
+    const root = state.level === 0 && state.blkIndent === 0;
+    const matched = original(state, startLine, endLine, silent);
+    if (matched && !silent && state.tokens.length > tokenStart) {
+      const token = state.tokens[tokenStart];
+      if (token.meta != null && (typeof token.meta !== "object" ||
+          Array.isArray(token.meta) || "fluxdoSource" in token.meta)) {
+        throw new Error("编辑源码范围与插件元数据冲突");
+      }
+      token.meta ??= {};
+      token.meta.fluxdoSource = {
+        startLine, endLine: state.line,
+        tokenCount: state.tokens.length - tokenStart,
+        root,
+      };
+    }
+    return matched;
+  }, { alt: rule.alt });
+}
+
+// 官方编辑器直接解析原文，不走 cook 的替换、渲染、sanitize 或 HTML 逆向。
+function parseForEditor(raw) {
+  if (!editorEngine) throw new Error("__fluxdoCook.init() must be called first");
+  if (typeof raw !== "string") throw new Error("编辑器原文必须是字符串");
+  return JSON.stringify(serializeEditorTokens(editorEngine.parse(raw)));
 }
 
 function cook(raw) {
@@ -317,6 +363,7 @@ function seedInlineOnebox(url, title, cssClass) {
 globalThis.__fluxdoCook = {
   init,
   cook,
+  parseForEditor,
   seedOnebox,
   seedInlineOnebox,
   isReady: () => engine != null,

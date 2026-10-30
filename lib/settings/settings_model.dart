@@ -61,6 +61,11 @@ final class SwitchModel extends SettingsModel {
   /// 「富文本编辑器」开启才有意义,前置关闭时展示无意义)。null = 恒显示。
   final bool Function(WidgetRef ref)? enabledWhen;
 
+  /// 动态副标题:需要根据运行时状态变化时使用(如渲染兼容模式在
+  /// 检测到崩溃后追加「建议开启」)。返回非 null 时覆盖 [subtitle];
+  /// 不提供时行为与以前完全一致。
+  final String? Function(WidgetRef ref)? subtitleBuilder;
+
   const SwitchModel({
     required super.id,
     required super.title,
@@ -69,6 +74,7 @@ final class SwitchModel extends SettingsModel {
     required this.getValue,
     required this.onChanged,
     this.enabledWhen,
+    this.subtitleBuilder,
   });
 
   @override

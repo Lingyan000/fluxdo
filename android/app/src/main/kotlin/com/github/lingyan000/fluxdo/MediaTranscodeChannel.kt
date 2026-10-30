@@ -1,6 +1,8 @@
 package com.github.lingyan000.fluxdo
 
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
@@ -9,6 +11,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.FrameDropEffect
+import androidx.media3.common.Effect
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
+import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.transformer.AudioEncoderSettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
@@ -28,9 +36,7 @@ import java.io.File
  * media3 Transformer,底层系统 MediaCodec 硬编,码率经 VideoEncoderSettings/
  * AudioEncoderSettings 精确指定。与 Dart 侧 MediaTranscoder 协议对应。
  *
- * 已知偏差(与 Apple/ffmpeg 腿相比,码率主导下可接受):
- * - 不降帧(Transformer 无逐帧丢帧 API);
- * - 不重采样/混单声道(audioSampleRate/audioChannels 参数忽略)。
+ * 通过音频处理器完成重采样/混声道，通过帧丢弃效果实现目标帧率。
  */
 @UnstableApi
 object MediaTranscodeChannel {
@@ -100,13 +106,38 @@ object MediaTranscodeChannel {
                 val height = r
                     .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
                     ?.toIntOrNull()
-                r.release()
+                val rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                val rotated = rotation == 90 || rotation == 270
+                val extractor = MediaExtractor()
+                var channels: Int? = null
+                var sampleRate: Int? = null
+                var fps: Float? = null
+                var hasAudio = false
+                try {
+                    extractor.setDataSource(path)
+                    for (index in 0 until extractor.trackCount) {
+                        val format = extractor.getTrackFormat(index)
+                        val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                        if (mime.startsWith("audio/")) {
+                            hasAudio = true
+                            if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        } else if (mime.startsWith("video/") && format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                            fps = try { format.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }
+                                catch (_: Exception) { format.getFloat(MediaFormat.KEY_FRAME_RATE) }
+                        }
+                    }
+                } finally { extractor.release(); r.release() }
                 if (durationMs != null && durationMs > 0) {
                     out = mapOf(
                         "durationMs" to durationMs.toInt(),
                         "hasVideo" to hasVideo,
-                        "width" to width,
-                        "height" to height,
+                        "hasAudio" to hasAudio,
+                        "fps" to fps,
+                        "audioChannels" to channels,
+                        "audioSampleRate" to sampleRate,
+                        "width" to if (rotated) height else width,
+                        "height" to if (rotated) width else height,
                     )
                 }
             } catch (_: Exception) {
@@ -144,17 +175,30 @@ object MediaTranscodeChannel {
         pendingResult = result
         File(output).delete()
 
-        val edited = EditedMediaItem.Builder(
-            MediaItem.fromUri(Uri.fromFile(File(input)))
-        ).apply {
-            if (audioOnly) {
-                setRemoveVideo(true)
-            } else if (maxHeight != null) {
-                setEffects(
-                    Effects(listOf(), listOf(Presentation.createForHeight(maxHeight)))
-                )
+        val sampleRate = (args["audioSampleRate"] as? Number)?.toInt() ?: 44100
+        val channels = (args["audioChannels"] as? Number)?.toInt() ?: 2
+        val fps = (args["fps"] as? Number)?.toFloat()
+        val audioProcessors = mutableListOf<AudioProcessor>()
+        val mixer = ChannelMixingAudioProcessor()
+        // 常见1～8声道输入转换到目标布局；普通单声道在Dart侧保持单声道。
+        for (inputChannels in 1..8) {
+            val coefficients = FloatArray(inputChannels * channels)
+            for (i in 0 until inputChannels) {
+                if (channels == 1) coefficients[i] = 1f / inputChannels
+                else coefficients[i * channels + (i % channels)] =
+                    1f / ((inputChannels + channels - 1 - (i % channels)) / channels)
             }
-        }.build()
+            mixer.putChannelMixingMatrix(ChannelMixingMatrix(inputChannels, channels, coefficients))
+        }
+        audioProcessors.add(mixer)
+        audioProcessors.add(SonicAudioProcessor().apply { setOutputSampleRateHz(sampleRate) })
+        val videoEffects = mutableListOf<Effect>()
+        if (!audioOnly && maxHeight != null) videoEffects.add(Presentation.createForHeight(maxHeight))
+        if (!audioOnly && fps != null && fps > 0) videoEffects.add(FrameDropEffect.createDefaultFrameDropEffect(fps))
+        val edited = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(File(input))))
+            .setRemoveVideo(audioOnly)
+            .setEffects(Effects(audioProcessors, videoEffects))
+            .build()
 
         val encoderFactory = DefaultEncoderFactory.Builder(context).apply {
             if (videoBitrate != null) {

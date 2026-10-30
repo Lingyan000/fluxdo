@@ -271,37 +271,68 @@ mixin _UploadsMixin on _DiscourseServiceBase {
     String filePath, {
     String? filenameOverride,
     DioMediaType? contentTypeOverride,
+    CancelToken? cancelToken,
+    UploadProgressCallback? onProgress,
   }) async {
+    checkUploadCancelled(cancelToken);
+    onProgress?.call(const UploadProgress(phase: UploadPhase.preparing));
+    final uploadTrace = UploadTrace();
+    final direct = await waitForUpload(
+      UploadSettings.shouldUseMultipart(
+        trace: uploadTrace,
+        loadSiteSettings: PreloadedDataService().getSiteSettings,
+      ),
+      cancelToken,
+    );
     const maxRetries = 3;
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        checkUploadCancelled(cancelToken);
         final fileName = filenameOverride ?? filePath.split('/').last;
 
-        final formData = FormData.fromMap({
-          'upload_type': 'composer',
-          'synchronous': true,
-          'file': await MultipartFile.fromFile(
-            filePath,
-            filename: fileName,
-            contentType: contentTypeOverride,
-          ),
-        });
+        dynamic data;
+        if (direct) {
+          data = await S3MultipartUpload(_dio, trace: uploadTrace).upload(
+            File(filePath),
+            fileName,
+            cancelToken: cancelToken,
+            onProgress: onProgress,
+          );
+        } else {
+          final formData = FormData.fromMap({
+            'upload_type': 'composer',
+            'synchronous': true,
+            'file': await MultipartFile.fromFile(
+              filePath,
+              filename: fileName,
+              contentType: contentTypeOverride,
+            ),
+          });
 
-        final response = await _dio.post(
-          '/uploads.json',
-          queryParameters: {'client_id': MessageBusService().clientId},
-          data: formData,
-          options: Options(
-            extra: {
-              'showErrorToast': attempt >= maxRetries,
-              WebViewHttpAdapter.resourceKindExtraKey:
-                  WebViewHttpAdapter.resourceKindUpload,
-            },
-          ), // 仅最后一次尝试才弹 toast
-        );
+          checkUploadCancelled(cancelToken);
+          // WebView 的流读取只是桥接编码，不是真实网络发送，不能显示百分比。
+          onProgress?.call(const UploadProgress(phase: UploadPhase.uploading));
+          final response = await _dio.post(
+            '/uploads.json',
+            cancelToken: cancelToken,
+            queryParameters: {'client_id': MessageBusService().clientId},
+            data: formData,
+            options: Options(
+              extra: {
+                FluxRequestKeys.noRecovery: true,
+                'showErrorToast': attempt >= maxRetries,
+                '_networkLogFields': {'uploadTraceId': uploadTrace.id},
+                WebViewHttpAdapter.resourceKindExtraKey:
+                    WebViewHttpAdapter.resourceKindUpload,
+              },
+            ), // 仅最后一次尝试才弹 toast
+          );
 
-        final data = response.data;
+          data = response.data;
+          onProgress?.call(const UploadProgress(phase: UploadPhase.processing));
+        }
+        checkUploadCancelled(cancelToken);
         if (data is Map) {
           final shortUrl = data['short_url'] as String?;
           if (shortUrl != null) {
@@ -342,18 +373,25 @@ mixin _UploadsMixin on _DiscourseServiceBase {
 
         throw Exception(S.current.error_uploadNoUrl);
       } on DioException catch (e) {
+        checkUploadCancelled(cancelToken);
+        if (CancelToken.isCancel(e)) rethrow;
         debugPrint('[DiscourseService] Upload image failed: $e');
 
         // ErrorInterceptor 把 429 转成 DioException.error = RateLimitException
         // (response 保留),这里按类型判定重试
         final innerError = e.error;
-        if (innerError is RateLimitException && attempt < maxRetries) {
+        if (!direct &&
+            innerError is RateLimitException &&
+            attempt < maxRetries) {
           final waitSeconds = innerError.retryAfterSeconds ?? 10;
           debugPrint(
             '[DiscourseService] 速率限制，等待 ${waitSeconds}s 后重试 '
             '(${attempt + 1}/$maxRetries)',
           );
-          await Future.delayed(Duration(seconds: waitSeconds));
+          await waitForUpload(
+            Future<void>.delayed(Duration(seconds: waitSeconds)),
+            cancelToken,
+          );
           continue;
         }
 
@@ -379,20 +417,31 @@ mixin _UploadsMixin on _DiscourseServiceBase {
   }
 
   /// 上传图片（uploadFile 的别名，保持向后兼容）
-  Future<UploadResult> uploadImage(String filePath) => uploadFile(filePath);
+  Future<UploadResult> uploadImage(
+    String filePath, {
+    CancelToken? cancelToken,
+    UploadProgressCallback? onProgress,
+  }) => uploadFile(filePath, cancelToken: cancelToken, onProgress: onProgress);
 
   /// 媒体上传的站点体积上限(linux.do 4MB;超限服务端 413)。
-  static const int maxMediaUploadBytes = 4 * 1024 * 1024;
 
   /// 音视频改名上传(与社区「媒体上传」脚本同 hack):站点扩展名白名单
   /// 不含音视频,把文件名换 `.xz`(application/x-xz)绕过 —— 播放端
   /// (本 app MediaCompatService 嗅探 / 网页原生 audio·video 标签)不受
-  /// 扩展名影响。4MB 前置检查,超限直接抛(不做压缩,调用方提示)。
-  Future<UploadResult> uploadMediaAsXz(String filePath) async {
+  /// 扩展名影响。站点附件上限前置检查,超限直接抛(不做压缩,调用方提示)。
+  Future<UploadResult> uploadMediaAsXz(
+    String filePath, {
+    CancelToken? cancelToken,
+    UploadProgressCallback? onProgress,
+  }) async {
+    checkUploadCancelled(cancelToken);
+    onProgress?.call(const UploadProgress(phase: UploadPhase.preparing));
     final size = await File(filePath).length();
-    if (size >= maxMediaUploadBytes) {
+    final maxBytes = await waitForUpload(MediaUploadLimits.load(), cancelToken);
+    checkUploadCancelled(cancelToken);
+    if (maxBytes != null && size >= maxBytes) {
       throw Exception(
-        '媒体文件须小于 4MB,当前 ${UploadResult.formatFileSize(size)};'
+        '媒体文件须小于 ${UploadResult.formatFileSize(maxBytes)},当前 ${UploadResult.formatFileSize(size)};'
         '请先压缩后再上传',
       );
     }
@@ -404,6 +453,8 @@ mixin _UploadsMixin on _DiscourseServiceBase {
       filePath,
       filenameOverride: xzName,
       contentTypeOverride: DioMediaType('application', 'x-xz'),
+      cancelToken: cancelToken,
+      onProgress: onProgress,
     );
   }
 

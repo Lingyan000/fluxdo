@@ -6,27 +6,8 @@ part of 'chat_channel_page.dart';
 /// 移动端输入条底部面板类型(键盘位互换,编辑器同款机制)
 enum _ComposerPanel { none, keyboard, emoji }
 
-/// 待发附件:本地文件 + 上传状态(上传成功持有 upload id)
-class _PendingAttachment {
-  final String filePath;
-  final String fileName;
-  final bool isImage;
-  int? uploadId;
-  bool failed = false;
-
-  _PendingAttachment({
-    required this.filePath,
-    required this.fileName,
-    required this.isImage,
-  });
-
-  bool get uploading => uploadId == null && !failed;
-}
-
-/// 输入条:视觉规格对齐 AiChatInput
-/// (外壳 surfaceContainerLow + 顶部圆角 16;输入框 filled surface 圆角 20;
-///  发送键 IconButton.filled 36×36)
-/// 能力:附件(拍照/相册/文件,选即传,带 upload_ids 发送)、@提及自动补全。
+/// 输入条复用工具条玻璃材质与统一提交按钮。
+/// 能力:附件(图片确认处理后上传、文件选即传，带 upload_ids 发送)、@提及自动补全。
 class _ChatComposer extends ConsumerStatefulWidget {
   final ChatComposerController controller;
   final FocusNode focusNode;
@@ -35,7 +16,7 @@ class _ChatComposer extends ConsumerStatefulWidget {
   final ChatMessage? replyingTo;
 
   /// 发送回调,附带已上传完成的 upload id 列表
-  final void Function(List<int> uploadIds) onSend;
+  final Future<void> Function(List<int> uploadIds) onSend;
 
   /// 表情包直发:不进输入框,选中即作为独立消息发出
   final void Function(String markdown) onSendSticker;
@@ -64,6 +45,8 @@ class _ChatComposer extends ConsumerStatefulWidget {
 
 class _ChatComposerState extends ConsumerState<_ChatComposer> {
   final ImagePicker _imagePicker = ImagePicker();
+  bool _sending = false;
+  bool _sendingEdit = false;
 
   /// 桌面表情弹层:锚定输入条表情按钮
   final EmojiPopoverController? _emojiPopover = PlatformUtils.isDesktop
@@ -141,7 +124,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     if (_readOnly != value) setState(() => _readOnly = value);
   }
 
-  final List<_PendingAttachment> _attachments = [];
+  final _uploads = UploadTaskController();
 
   // ---- @提及自动补全 ----
   Timer? _mentionDebounce;
@@ -158,6 +141,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   @override
   void initState() {
     super.initState();
+    _uploads.addListener(_onUploadsChanged);
     widget.controller.addListener(_onTextChanged);
     // 弹层开合同步表情按钮高亮:关闭路径不止按钮(外点/ESC/resize
     // 都走 controller 内部),必须监听而非在点击处手动 setState
@@ -182,8 +166,14 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     if (mounted) setState(() {});
   }
 
+  void _onUploadsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _uploads.removeListener(_onUploadsChanged);
+    _uploads.dispose();
     widget.controller.removeListener(_onTextChanged);
     _mentionDebounce?.cancel();
     _removeMentionOverlay();
@@ -247,91 +237,156 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     Overlay.of(context).insert(_mentionOverlay!);
   }
 
-  bool get _hasReadyAttachment => _attachments.any((a) => a.uploadId != null);
-  bool get _hasUploading => _attachments.any((a) => a.uploading);
+  bool get _hasReadyAttachment =>
+      _uploads.tasks.any((a) => a.result?.id != null);
+  bool get _hasUploading => _uploads.tasks.any(
+    (task) =>
+        task.phase == UploadTaskPhase.queued ||
+        task.phase == UploadTaskPhase.uploading,
+  );
 
   bool get _canSendNow =>
+      !_sending &&
+      (
       // 编辑态不允许带新附件(网页版同语义:编辑只改文本)
       widget.editing != null
-      ? widget.canSend
-      : (widget.canSend || _hasReadyAttachment) && !_hasUploading;
+          ? widget.canSend
+          : (widget.canSend || _hasReadyAttachment) && !_uploads.hasPending);
 
   // ========== 附件 ==========
 
   Future<void> _pickFromCamera() async {
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 4096,
-      maxHeight: 4096,
-    );
-    if (picked != null) _addAndUpload(picked.path, isImage: true);
+    final picked = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (picked == null || !mounted) return;
+    await _confirmAndUploadImages([picked.path], [picked.name]);
   }
 
   Future<void> _pickFromGallery() async {
-    final picked = await _imagePicker.pickMultiImage(
-      maxWidth: 4096,
-      maxHeight: 4096,
+    final picked = await _imagePicker.pickMultiImage();
+    if (picked.isEmpty || !mounted) return;
+    await _confirmAndUploadImages(
+      picked.map((file) => file.path).toList(),
+      picked.map((file) => file.name).toList(),
     );
-    for (final file in picked) {
-      _addAndUpload(file.path, isImage: true);
-    }
   }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result == null) return;
+    if (result == null || !mounted) return;
+    final imagePaths = <String>[];
+    final imageNames = <String>[];
     for (final file in result.files) {
       final path = file.path;
       if (path == null) continue;
       final ext = file.extension?.toLowerCase() ?? '';
-      _addAndUpload(
-        path,
-        isImage: const {
-          'jpg',
-          'jpeg',
-          'png',
-          'gif',
-          'webp',
-          'avif',
-        }.contains(ext),
+      if (const {
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+        'avif',
+        'heic',
+        'heif',
+        'bmp',
+        'svg',
+        'ico',
+      }.contains(ext)) {
+        imagePaths.add(path);
+        imageNames.add(file.name);
+      } else {
+        unawaited(_addAndUpload(path, isImage: false, fileName: file.name));
+      }
+    }
+    if (imagePaths.isNotEmpty) {
+      await _confirmAndUploadImages(imagePaths, imageNames);
+    }
+  }
+
+  Future<void> _confirmAndUploadImages(
+    List<String> paths,
+    List<String> names,
+  ) async {
+    if (!mounted || paths.isEmpty) return;
+    final List<ImageUploadResult> results;
+    if (paths.length == 1) {
+      final result = await showImageUploadDialog(
+        context,
+        imagePath: paths.single,
+        imageName: names.single,
       );
+      if (result == null || !mounted) return;
+      results = [result];
+    } else {
+      final confirmed = await showMultiImageUploadDialog(
+        context,
+        imagePaths: paths,
+        imageNames: names,
+      );
+      if (confirmed == null || !mounted) return;
+      results = confirmed;
     }
+    _uploads.addBatch([
+      for (final result in results)
+        _uploadRequest(result.path, result.originalName, isImage: true),
+    ]);
   }
 
-  void _addAndUpload(String path, {required bool isImage}) {
-    final attachment = _PendingAttachment(
-      filePath: path,
-      fileName: path.split(Platform.pathSeparator).last,
+  UploadTaskRequest _uploadRequest(
+    String path,
+    String name, {
+    required bool isImage,
+  }) {
+    final service = ref.read(discourseServiceProvider);
+    return UploadTaskRequest(
+      path: path,
+      name: name,
       isImage: isImage,
+      execute: (cancelToken, onProgress) async {
+        final result = await service.uploadFile(
+          path,
+          cancelToken: cancelToken,
+          onProgress: onProgress,
+        );
+        if (result.id == null) throw StateError('上传响应缺少附件编号');
+        return result;
+      },
     );
-    setState(() => _attachments.add(attachment));
-    _upload(attachment);
   }
 
-  Future<void> _upload(_PendingAttachment attachment) async {
-    try {
-      final service = ref.read(discourseServiceProvider);
-      final result = await service.uploadFile(attachment.filePath);
-      if (!mounted) return;
-      setState(() {
-        attachment.uploadId = result.id;
-        attachment.failed = result.id == null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => attachment.failed = true);
-      ToastService.showError(e.toString());
-    }
+  Future<void> _addAndUpload(
+    String path, {
+    required bool isImage,
+    String? fileName,
+  }) async {
+    if (!mounted) return;
+    _uploads.add(
+      _uploadRequest(
+        path,
+        fileName ?? path.split(Platform.pathSeparator).last,
+        isImage: isImage,
+      ),
+    );
   }
 
-  void _handleSend() {
+  Future<void> _handleSend() async {
     if (!_canSendNow) return;
     final uploadIds = [
-      for (final a in _attachments)
-        if (a.uploadId != null) a.uploadId!,
+      for (final a in _uploads.tasks)
+        if (a.result?.id != null) a.result!.id!,
     ];
-    widget.onSend(uploadIds);
-    setState(_attachments.clear);
+    setState(() {
+      _sending = true;
+      _sendingEdit = widget.editing != null;
+      for (final task in _uploads.tasks) {
+        _uploads.remove(task.id);
+      }
+    });
+    try {
+      await widget.onSend(uploadIds);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   // ========== @提及 ==========
@@ -399,6 +454,28 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   // ========== UI ==========
 
+  static const _fieldPadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 10,
+  );
+
+  /// 操作区与单行输入框等高；字体放大时一起增长，多行时贴底对齐最后一行。
+  /// 使用与 TextField 相同的样式和缩放，不按固定像素补偿按钮位置。
+  double _inputActionHeight(BuildContext context, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: ' ', style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.maybeLocaleOf(context),
+    );
+    final height = math.max(
+      kMinInteractiveDimension,
+      painter.preferredLineHeight + _fieldPadding.vertical,
+    );
+    painter.dispose();
+    return height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -406,6 +483,21 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     final editing = widget.editing;
     final replyingTo = widget.replyingTo;
     final contextMessage = editing ?? replyingTo;
+    final inputStyle = (theme.useMaterial3
+        ? theme.textTheme.bodyLarge
+        : theme.textTheme.titleMedium)!;
+    final actionHeight = _inputActionHeight(context, inputStyle);
+    Widget actionSlot(Widget child) => SizedBox(
+      width: kMinInteractiveDimension,
+      height: actionHeight,
+      child: Center(child: child),
+    );
+    final actionStyle = IconButton.styleFrom(
+      minimumSize: const Size.square(36),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.padded,
+    );
 
     // 悬浮卡:四周圆角 + 外边距 + 描边投影;移动端底部安全区/键盘
     // 占位交给下方 ChatBottomPanelContainer,卡本身静止态不再留间距
@@ -422,45 +514,18 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
               ? 8 + bottomPadding
               : (_currentPanel == _ComposerPanel.none ? 0 : 8),
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+        child: GlassSurfaceFrame(
+          key: const ValueKey('chat-composer-surface'),
+          radius: 24,
+          recipe: GlassRecipe.toolbar,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 待发附件预览行
-                if (_attachments.isNotEmpty) ...[
-                  SizedBox(
-                    height: 64,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _attachments.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 6),
-                      itemBuilder: (context, index) => _PendingAttachmentTile(
-                        attachment: _attachments[index],
-                        onRemove: () =>
-                            setState(() => _attachments.removeAt(index)),
-                        onRetry: () {
-                          setState(() => _attachments[index].failed = false);
-                          _upload(_attachments[index]);
-                        },
-                      ),
-                    ),
-                  ),
+                // 与编辑器共用任务卡，失败保留重试，取消会终止请求。
+                if (_uploads.tasks.isNotEmpty) ...[
+                  ChatUploadStrip(controller: _uploads),
                   const SizedBox(height: 6),
                 ],
                 // 编辑/回复上下文条
@@ -532,84 +597,75 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     // 表情按钮(桌面锚定弹层,移动底部面板);
                     // 移动端面板开着时换键盘图标(示意再点切回键盘)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 1, right: 4),
-                      child: _wrapEmojiAnchor(
-                        Builder(
-                          builder: (context) {
-                            final panelOpen =
-                                _emojiPopover?.isOpen == true ||
-                                _intendedPanel == _ComposerPanel.emoji;
-                            return IconButton(
-                              onPressed: _pickEmoji,
-                              icon: Icon(
-                                panelOpen && !PlatformUtils.isDesktop
-                                    ? Symbols.keyboard_alt_rounded
-                                    : Symbols.sentiment_satisfied_rounded,
-                                size: 22,
-                                fill: panelOpen ? 1 : 0,
-                              ),
-                              style: IconButton.styleFrom(
-                                minimumSize: const Size(36, 36),
-                                padding: EdgeInsets.zero,
-                              ),
-                              color: panelOpen
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.onSurfaceVariant,
-                              tooltip: context.l10n.chat_emoji,
-                            );
-                          },
+                      padding: const EdgeInsets.only(right: 4),
+                      child: actionSlot(
+                        _wrapEmojiAnchor(
+                          Builder(
+                            builder: (context) {
+                              final panelOpen =
+                                  _emojiPopover?.isOpen == true ||
+                                  _intendedPanel == _ComposerPanel.emoji;
+                              return IconButton(
+                                onPressed: _pickEmoji,
+                                icon: Icon(
+                                  panelOpen && !PlatformUtils.isDesktop
+                                      ? Symbols.keyboard_alt_rounded
+                                      : Symbols.sentiment_satisfied_rounded,
+                                  size: 22,
+                                  fill: panelOpen ? 1 : 0,
+                                ),
+                                style: actionStyle,
+                                color: panelOpen
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                                tooltip: context.l10n.chat_emoji,
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
-                    Expanded(child: _buildField(context, theme)),
+                    Expanded(
+                      child: _buildField(
+                        context,
+                        theme,
+                        style: inputStyle,
+                        minimumHeight: actionHeight,
+                      ),
+                    ),
                     // 附件(编辑态隐藏):输入框右侧、发送键左边
                     // (通用 IM 秩序 [表情][输入框][附件][发送];之前在最左
                     // 不合 IM 习惯,用户点名)
                     if (editing == null)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 1, left: 4),
-                        child: Builder(
-                          builder: (buttonContext) => IconButton(
-                            onPressed: () => _showAttachmentMenu(buttonContext),
-                            icon: const Icon(
-                              Symbols.attach_file_rounded,
-                              size: 22,
+                        padding: const EdgeInsets.only(left: 4),
+                        child: actionSlot(
+                          Builder(
+                            builder: (buttonContext) => IconButton(
+                              onPressed: () =>
+                                  _showAttachmentMenu(buttonContext),
+                              icon: const Icon(
+                                Symbols.attach_file_rounded,
+                                size: 22,
+                              ),
+                              style: actionStyle,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              tooltip: context.l10n.chat_attach,
                             ),
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(36, 36),
-                              padding: EdgeInsets.zero,
-                            ),
-                            color: theme.colorScheme.onSurfaceVariant,
-                            tooltip: context.l10n.chat_attach,
                           ),
                         ),
                       ),
                     const SizedBox(width: 6),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 1),
-                      child: IconButton.filled(
+                    actionSlot(
+                      ComposerSubmitButton(
+                        compact: true,
+                        label: context.l10n.chat_send,
                         onPressed: _canSendNow ? _handleSend : null,
-                        icon: _hasUploading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: LoadingSpinner(),
-                              )
-                            : Icon(
-                                editing != null
-                                    ? Symbols.check_rounded
-                                    : Symbols.send_rounded,
-                                size: 20,
-                              ),
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(36, 36),
-                          padding: EdgeInsets.zero,
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
-                          disabledBackgroundColor: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.1),
-                        ),
-                        tooltip: context.l10n.chat_send,
+                        busy: _sending || _hasUploading,
+                        animateFlight: _sending,
+                        icon: (_sending ? _sendingEdit : editing != null)
+                            ? Symbols.check_rounded
+                            : null,
                       ),
                     ),
                   ],
@@ -875,8 +931,13 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
   }
 
-  InputDecoration _fieldDecoration(BuildContext context, ThemeData theme) {
+  InputDecoration _fieldDecoration(
+    BuildContext context,
+    ThemeData theme, {
+    required double minimumHeight,
+  }) {
     return InputDecoration(
+      constraints: BoxConstraints(minHeight: minimumHeight),
       hintText: context.l10n.chat_inputHint,
       hintStyle: TextStyle(
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -893,7 +954,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         borderRadius: BorderRadius.circular(20),
         borderSide: BorderSide.none,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      contentPadding: _fieldPadding,
       isDense: true,
       filled: true,
       fillColor: theme.colorScheme.surface,
@@ -901,10 +962,17 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     );
   }
 
-  Widget _buildField(BuildContext context, ThemeData theme) {
+  Widget _buildField(
+    BuildContext context,
+    ThemeData theme, {
+    required TextStyle style,
+    required double minimumHeight,
+  }) {
     final field = TextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
+      style: style,
+      textAlignVertical: TextAlignVertical.center,
       // 全端自动聚焦:桌面正常输入;移动端初始 readOnly,聚焦只点亮光标
       // 闪烁、不弹键盘(配合 showCursor)。要输入,点输入框唤起键盘
       autofocus: true,
@@ -919,7 +987,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       // 退格命中 :shortcode: 局部时扩删整个表情(boost 输入条同款),
       // 否则删一下只掉个冒号,表情"炸回"文本
       inputFormatters: const [EmojiShortcodeDeleteFormatter()],
-      decoration: _fieldDecoration(context, theme),
+      decoration: _fieldDecoration(
+        context,
+        theme,
+        minimumHeight: minimumHeight,
+      ),
     );
     if (!PlatformUtils.isDesktop) {
       // 面板开着(readOnly)时点输入框=收面板换键盘(编辑器同款)
@@ -957,110 +1029,6 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   }
 }
 
-/// 待发附件缩略卡:图片显示缩略图,文件显示图标;上传中蒙层转圈,
-/// 失败蒙层可点重试;右上角删除
-class _PendingAttachmentTile extends StatelessWidget {
-  final _PendingAttachment attachment;
-  final VoidCallback onRemove;
-  final VoidCallback onRetry;
-
-  const _PendingAttachmentTile({
-    required this.attachment,
-    required this.onRemove,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Stack(
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: attachment.isImage
-              ? Image.file(
-                  File(attachment.filePath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(Symbols.broken_image_rounded),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Symbols.description_rounded, size: 22),
-                      const SizedBox(height: 2),
-                      Text(
-                        attachment.fileName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 8,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-        ),
-        // 上传中/失败蒙层
-        if (attachment.uploading || attachment.failed)
-          Positioned.fill(
-            child: Material(
-              color: Colors.black.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(12),
-              child: attachment.failed
-                  ? InkWell(
-                      onTap: onRetry,
-                      borderRadius: BorderRadius.circular(12),
-                      child: const Icon(
-                        Symbols.refresh_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    )
-                  : const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: LoadingSpinner(),
-                      ),
-                    ),
-            ),
-          ),
-        // 删除按钮
-        Positioned(
-          top: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Symbols.close_rounded,
-                size: 12,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _SendIntent extends Intent {
   const _SendIntent();
 }
-

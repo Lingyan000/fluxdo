@@ -22,6 +22,7 @@ import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
+import 'ech_dns_policy.dart';
 import 'webview_mitm_policy.dart';
 
 class NetworkSettings {
@@ -35,6 +36,7 @@ class NetworkSettings {
     this.serverIp,
     this.gatewayEnabled = true,
     this.h2Mitm = false,
+    this.echDnsPolicy = const EchDnsPolicy(),
   });
 
   final bool dohEnabled;
@@ -61,6 +63,8 @@ class NetworkSettings {
   /// WebView MITM 是否启用 HTTP/2 多路复用（实验性，默认关闭；需实测 CF 指纹）
   final bool h2Mitm;
 
+  final EchDnsPolicy echDnsPolicy;
+
   NetworkSettings copyWith({
     bool? dohEnabled,
     String? selectedServerUrl,
@@ -71,6 +75,7 @@ class NetworkSettings {
     String? Function()? serverIp,
     bool? gatewayEnabled,
     bool? h2Mitm,
+    EchDnsPolicy? echDnsPolicy,
   }) {
     return NetworkSettings(
       dohEnabled: dohEnabled ?? this.dohEnabled,
@@ -82,6 +87,7 @@ class NetworkSettings {
       gatewayEnabled: gatewayEnabled ?? this.gatewayEnabled,
       serverIp: serverIp != null ? serverIp() : this.serverIp,
       h2Mitm: h2Mitm ?? this.h2Mitm,
+      echDnsPolicy: echDnsPolicy ?? this.echDnsPolicy,
     );
   }
 }
@@ -204,6 +210,7 @@ class NetworkSettingsService {
   static const _echServerKey = 'doh_ech_server';
   static const _gatewayEnabledKey = 'doh_gateway_enabled';
   static const _h2MitmKey = 'doh_h2_mitm';
+  static const _echDnsPolicyKey = 'doh_ech_dns_policy';
 
   final ValueNotifier<NetworkSettings> notifier = ValueNotifier(
     NetworkSettings(
@@ -285,6 +292,17 @@ class NetworkSettingsService {
     final echServer = prefs.getString(_echServerKey);
     final gatewayEnabled = prefs.getBool(_gatewayEnabledKey) ?? true;
     final h2Mitm = prefs.getBool(_h2MitmKey) ?? false;
+    var echDnsPolicy = const EchDnsPolicy();
+    try {
+      final raw = prefs.getString(_echDnsPolicyKey);
+      if (raw != null) {
+        echDnsPolicy = EchDnsPolicy.fromJson(
+          (jsonDecode(raw) as Map).cast<String, dynamic>(),
+        );
+      }
+    } catch (_) {
+      // 旧配置损坏时恢复默认规则。
+    }
     final resolvedSelected = _resolveSelected(selected, custom);
     notifier.value = NetworkSettings(
       dohEnabled: dohEnabled,
@@ -296,12 +314,15 @@ class NetworkSettingsService {
       serverIp: serverIp,
       gatewayEnabled: gatewayEnabled,
       h2Mitm: h2Mitm,
+      echDnsPolicy: echDnsPolicy,
     );
     _resolver = DohResolver(
       serverUrl: notifier.value.selectedServerUrl,
       bootstrapIps: _getBootstrapIps(notifier.value.selectedServerUrl),
       preferIPv6: preferIPv6,
+      echDnsPolicy: echDnsPolicy,
     );
+    _rustProxyService.configureEchDnsPolicy(echDnsPolicy);
     await _applyProxyState();
     await refreshDnsCacheStats();
     _touch();
@@ -466,6 +487,20 @@ class NetworkSettingsService {
     } else {
       await prefs.remove(_echServerKey);
     }
+    _scheduleApplyProxyState();
+    _touch();
+  }
+
+  Future<void> setEchDnsPolicy(EchDnsPolicy policy) async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    // 持久化、Rust 查询和 Dart 后备解析共用同一份规范化配置。
+    final normalized = EchDnsPolicy.fromJson(policy.toJson());
+    notifier.value = current.copyWith(echDnsPolicy: normalized);
+    _resolver.echDnsPolicy = normalized;
+    _rustProxyService.configureEchDnsPolicy(normalized);
+    _clearResolvedHostCache();
+    await prefs.setString(_echDnsPolicyKey, jsonEncode(normalized.toJson()));
     _scheduleApplyProxyState();
     _touch();
   }
@@ -1134,6 +1169,7 @@ class NetworkSettingsService {
   }) async {
     final dohServer = current.selectedServerUrl;
     final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
+    final signature = _currentResolvedHostCacheSignature;
     final resolvedAt = DateTime.now();
 
     final rustResult = await _rustProxyService.lookupHost(
@@ -1143,6 +1179,9 @@ class NetworkSettingsService {
       preferIpv6: current.preferIPv6,
       forceRefresh: forceRefresh,
     );
+    if (signature != _currentResolvedHostCacheSignature) {
+      return current.dohEnabled ? _resolveHostEntry(host) : null;
+    }
     if (rustResult != null && rustResult.hasData) {
       final entry = _ResolvedHostEntry(
         ips: _normalizeIpList(rustResult.ips),
@@ -1157,7 +1196,7 @@ class NetworkSettingsService {
       debugPrint(
         '[DOH] Host 已解析 $host '
         '(DNS: ${entry.preferredIp ?? (entry.ips.isEmpty ? "none" : entry.ips.join(", "))}, '
-        'ECH: ${entry.echConfig == null ? "off" : "on"}, '
+        'ECH config: ${entry.echConfig == null ? "absent" : "present"}, '
         'TTL: ${entry.ttl.inSeconds}s)',
       );
       return entry;
@@ -1179,6 +1218,9 @@ class NetworkSettingsService {
       }
     }
 
+    if (signature != _currentResolvedHostCacheSignature) {
+      return current.dohEnabled ? _resolveHostEntry(host) : null;
+    }
     final hasData = ips.isNotEmpty || (echConfig?.isNotEmpty ?? false);
     // fallback 路径同样不要在真正连通前提前 pin 单 IP。
     // 让 rhttp 先拿完整候选集，避免把错误/不稳定边缘节点缓存成 sticky。
@@ -1325,7 +1367,7 @@ class NetworkSettingsService {
   }
 
   String? get _currentResolvedHostCacheSignature => current.dohEnabled
-      ? '${current.selectedServerUrl}|${_effectiveEchServerUrl ?? ""}|${current.preferIPv6 ? "v6" : "v4"}'
+      ? '${current.selectedServerUrl}|${_effectiveEchServerUrl ?? ""}|${current.preferIPv6 ? "v6" : "v4"}|${jsonEncode(current.echDnsPolicy.toJson())}'
       : null;
 
   List<String> _collectCommonHosts() {

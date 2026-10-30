@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 
-import '../../services/blob_image_cache.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 
@@ -36,6 +35,9 @@ class CachedImage extends StatelessWidget {
   /// 图片字节所在 blob bucket(默认正文 content;贴纸传 stickerOriginal,
   /// emoji 传 emoji)。
   final String bucket;
+
+  /// 用户正在操作的前景市场可越过后台预取队列。
+  final DownloadPriority priority;
 
   /// 限制图片在内存中的解码尺寸。
   ///
@@ -73,6 +75,7 @@ class CachedImage extends StatelessWidget {
     this.height,
     this.fit,
     this.bucket = BlobImageCache.contentBucket,
+    this.priority = DownloadPriority.normal,
     this.memCacheWidth,
     this.memCacheHeight,
     this.thumbnailMode = false,
@@ -85,8 +88,9 @@ class CachedImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasTargetSize = memCacheWidth != null || memCacheHeight != null;
-    final targetSize =
-        hasTargetSize ? (memCacheWidth ?? memCacheHeight)! : null;
+    final targetSize = hasTargetSize
+        ? (memCacheWidth ?? memCacheHeight)!
+        : null;
 
     final provider = _resolveProvider(hasTargetSize, targetSize);
 
@@ -123,6 +127,7 @@ class CachedImage extends StatelessWidget {
         url,
         targetSize: targetSize!,
         bucket: bucket,
+        priority: priority,
       );
     }
 
@@ -144,13 +149,17 @@ class CachedImage extends StatelessWidget {
         lower.endsWith('.webp') ||
         lower.endsWith('.apng')) {
       return NativeAnimatedImageProvider.fromBytesProvider(
-        loader: () => BlobImageCache.fetch(bucket, url),
+        loader: () => BlobImageCache.fetch(bucket, url, priority: priority),
         tag: url,
       );
     }
 
     // 静态格式:blob 直寻址 + ResizeImage(节省内存)
-    ImageProvider provider = BlobImageProvider(url, bucket: bucket);
+    ImageProvider provider = BlobImageProvider(
+      url,
+      bucket: bucket,
+      priority: priority,
+    );
     if (hasTargetSize) {
       provider = ResizeImage(
         provider,

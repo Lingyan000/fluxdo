@@ -71,11 +71,9 @@ class VpnAutoToggleService {
   ///   与曾导致周期性卡顿的 3s 同步轮询不同。
   Timer? _windowsFallbackTimer;
   static const _windowsFallbackInterval = Duration(seconds: 15);
-  bool _windowsSignalWatchStarted = false;
 
   void _ensureWindowsSignalWatch() {
-    if (_windowsSignalWatchStarted || !Platform.isWindows) return;
-    _windowsSignalWatchStarted = true;
+    if (_windowsFallbackTimer != null || !Platform.isWindows) return;
     SystemProxyService.instance.version.addListener(_redetectWindows);
     _windowsFallbackTimer = Timer.periodic(
       _windowsFallbackInterval,

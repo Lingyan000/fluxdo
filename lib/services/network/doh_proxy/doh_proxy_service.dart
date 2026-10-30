@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../../network_logger.dart';
 import '../../../l10n/s.dart';
 import 'doh_proxy_ffi.dart';
+import '../doh/ech_dns_policy.dart';
 
 /// DOH (DNS over HTTPS) 代理服务
 /// 使用 Rust 实现的本地代理，通过 DOH 解析 DNS 并支持 ECH
@@ -37,6 +38,14 @@ class DohProxyService {
   bool? _currentMitmConnect;
   bool? _currentH2Mitm;
   String? _currentUpstreamSignature;
+  EchDnsPolicy _echDnsPolicy = const EchDnsPolicy();
+  String? _currentEchDnsPolicySignature;
+
+  void configureEchDnsPolicy(EchDnsPolicy policy) {
+    _echDnsPolicy = policy;
+    DohProxyFfi.instance.configureEchDnsPolicy(policy);
+  }
+
   String? _lastError;
   // ignore: unused_field
   Isolate? _ffiIsolate; // 保持引用防止 GC
@@ -95,6 +104,7 @@ class DohProxyService {
           _currentServerIp == serverIp &&
           _currentMitmConnect == mitmConnect &&
           _currentH2Mitm == h2Mitm &&
+          _currentEchDnsPolicySignature == jsonEncode(_echDnsPolicy.toJson()) &&
           _currentUpstreamSignature == upstreamSignature;
       if (sameConfig) {
         NetworkLogger.log('[DOH] 代理已在运行，端口: $_port');
@@ -197,6 +207,7 @@ class DohProxyService {
           '[DOH] 使用 FFI 启动代理，模式: ${enableDoh ? "DoH 网关" : "纯上游代理"}',
         );
 
+        final policy = _echDnsPolicy;
         _currentPreferredPort = port;
         await _ensureFfiStopped();
         final resultPort = await _callFfiStart(
@@ -217,6 +228,7 @@ class DohProxyService {
           caKeyPem: caKeyPem,
           mitmConnect: mitmConnect,
           h2Mitm: h2Mitm,
+          echDnsPolicy: policy,
         );
         if (resultPort <= 0) {
           // _callFfiStart 已设置更详细的 _lastError，仅在未设置时补充
@@ -236,6 +248,7 @@ class DohProxyService {
         _currentServerIp = serverIp;
         _currentMitmConnect = mitmConnect;
         _currentH2Mitm = h2Mitm;
+        _currentEchDnsPolicySignature = jsonEncode(policy.toJson());
         _currentUpstreamSignature = _buildUpstreamSignature(
           protocol: upstreamProtocol,
           host: upstreamHost,
@@ -273,6 +286,7 @@ class DohProxyService {
     bool h2Mitm,
   ) async {
     try {
+      final policyJson = jsonEncode(_echDnsPolicy.toJson());
       final executablePath = await _getExecutablePath();
       if (executablePath == null) {
         _lastError = S.current.doh_executableNotFound;
@@ -287,6 +301,8 @@ class DohProxyService {
       // 构建命令行参数
       final args = <String>[
         preferredPort.toString(),
+        '--ech-dns-policy',
+        policyJson,
         if (!enableDoh) '--no-doh',
         if (gatewayMode) '--gateway',
         if (!mitmConnect) '--tunnel-connect',
@@ -352,6 +368,7 @@ class DohProxyService {
           _currentServerIp = serverIp;
           _currentMitmConnect = mitmConnect;
           _currentH2Mitm = h2Mitm;
+          _currentEchDnsPolicySignature = policyJson;
           _currentUpstreamSignature = _buildUpstreamSignature(
             protocol: upstreamProtocol,
             host: upstreamHost,
@@ -793,6 +810,7 @@ class DohProxyService {
     String? caKeyPem,
     bool mitmConnect = true,
     bool h2Mitm = false,
+    required EchDnsPolicy echDnsPolicy,
   }) async {
     final sendPort = await _ensureFfiIsolate();
     final response = ReceivePort();
@@ -802,6 +820,7 @@ class DohProxyService {
       'enableDoh': enableDoh,
       'gatewayMode': gatewayMode,
       'h2Mitm': h2Mitm,
+      'echDnsPolicy': echDnsPolicy.toJson(),
       'preferIpv6': preferIpv6,
       'dohServer': dohServer,
       'dohServerEch': dohServerEch,
@@ -1085,6 +1104,9 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
 
       switch (cmd) {
         case 'start':
+          final policy = EchDnsPolicy.fromJson(
+            (message['echDnsPolicy'] as Map).cast<String, dynamic>(),
+          );
           final portValue = message['port'] as int? ?? 0;
           final preferredPort = message['preferredPort'] as int? ?? 0;
           final enableDoh = message['enableDoh'] as bool? ?? true;
@@ -1121,6 +1143,7 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
             caKeyPem: caKeyPem,
             mitmConnect: mitmConnect,
             h2Mitm: h2Mitm,
+            echDnsPolicy: policy,
           );
           if (resultPort <= 0 && preferredPort != 0) {
             resultPort = DohProxyFfi.instance.start(
@@ -1141,6 +1164,7 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
               caKeyPem: caKeyPem,
               mitmConnect: mitmConnect,
               h2Mitm: h2Mitm,
+              echDnsPolicy: policy,
             );
           }
           if (resultPort <= 0) {

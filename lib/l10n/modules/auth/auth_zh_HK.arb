@@ -8,6 +8,7 @@
   "auth_ldcConfirmMessage": "Linux.do Credit 將獲取你的基本信息，是否允許？",
   "auth_ldcConfirmTitle": "授權確認",
   "auth_logSubject": "認證日誌",
+  "auth_loggedOutByServer": "您已被伺服器登出，請重新登錄",
   "auth_loginExpiredRelogin": "登錄已失效，請重新登錄",
   "auth_loginExpiredTitle": "登錄失效",
   "auth_oauthExpired": "{serviceName} 授權已過期",

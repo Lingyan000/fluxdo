@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/pages/bookmarks/bookmarks_models.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
@@ -26,6 +27,25 @@ Topic _topic({required int id, required String title, String? bookmarkName}) {
   );
 }
 
+// 标题由 Canvas 绘制，通过书签身份定位实际卡片，不切换渲染路径。
+Finder _findBookmarkInList(int topicId) {
+  final topic = _topic(id: topicId, title: '');
+  return find.descendant(
+    of: find.byType(BookmarksListContent),
+    matching: find.byKey(ValueKey(bookmarkTopicIdentity(topic))),
+  );
+}
+
+Future<void> _pumpList(WidgetTester tester, Widget widget) async {
+  // 即使断言失败也卸载卡片，释放监听器并完成延迟清理。
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpAndSettle();
+  });
+  await tester.pumpWidget(widget);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late SharedPreferences prefs;
@@ -36,7 +56,8 @@ void main() {
   });
 
   testWidgets('汇总条只统计非空名称并按数量降序展示', (tester) async {
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -62,7 +83,8 @@ void main() {
   });
 
   testWidgets('切换汇总项后只显示对应名称书签，切回全部恢复完整列表', (tester) async {
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -83,20 +105,21 @@ void main() {
     await tester.tap(find.text('codex (2)'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
-    expect(find.text('Beta'), findsNothing);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
+    expect(_findBookmarkInList(2), findsNothing);
 
     await tester.tap(find.text('全部'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Beta'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(2), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
   });
 
   testWidgets('点击未设置后只显示未命名书签', (tester) async {
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -117,13 +140,14 @@ void main() {
     await tester.tap(find.text('未设置 (2)'));
     await tester.pumpAndSettle();
 
-    expect(find.text('No Name 1'), findsOneWidget);
-    expect(find.text('No Name 2'), findsOneWidget);
-    expect(find.text('Alpha'), findsNothing);
+    expect(_findBookmarkInList(2), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
+    expect(_findBookmarkInList(1), findsNothing);
   });
 
   testWidgets('隐藏汇总条再恢复后保留之前的筛选状态', (tester) async {
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -151,24 +175,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('codex (2)'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
-    expect(find.text('Beta'), findsNothing);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
+    expect(_findBookmarkInList(2), findsNothing);
 
     state.showSummaryBar();
     await tester.pumpAndSettle();
 
     expect(find.text('codex (2)'), findsOneWidget);
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
-    expect(find.text('Beta'), findsNothing);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
+    expect(_findBookmarkInList(2), findsNothing);
   });
 
   testWidgets('桌面端可以拖动横向滚动顶部书签标签', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -212,7 +237,8 @@ void main() {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -272,7 +298,8 @@ void main() {
     PlatformUtils.debugDesktopOverride = false;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
 
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -304,31 +331,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(state._selectedBookmarkName, 'codex');
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
-    expect(find.text('Beta'), findsNothing);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
+    expect(_findBookmarkInList(2), findsNothing);
 
     await tester.drag(swipeRegion, const Offset(-320, 0));
     await tester.pumpAndSettle();
 
     expect(state._selectedBookmarkName, 'beta');
-    expect(find.text('Beta'), findsOneWidget);
-    expect(find.text('Alpha'), findsNothing);
+    expect(_findBookmarkInList(2), findsOneWidget);
+    expect(_findBookmarkInList(1), findsNothing);
 
     await tester.drag(swipeRegion, const Offset(320, 0));
     await tester.pumpAndSettle();
 
     expect(state._selectedBookmarkName, 'codex');
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
 
     await tester.drag(swipeRegion, const Offset(320, 0));
     await tester.pumpAndSettle();
 
     expect(state._selectedBookmarkName, isNull);
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('Beta'), findsOneWidget);
-    expect(find.text('Gamma'), findsOneWidget);
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(_findBookmarkInList(2), findsOneWidget);
+    expect(_findBookmarkInList(3), findsOneWidget);
   });
 
   testWidgets('手机端左右拖动顶部名称标签只滚动标签条不切换筛选项', (tester) async {
@@ -337,7 +364,8 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(320, 640));
 
-    await tester.pumpWidget(
+    await _pumpList(
+      tester,
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),

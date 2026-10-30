@@ -6,6 +6,7 @@ import '../../models/topic.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../utils/paged_async_notifier.dart';
+import '../../utils/topic_list_updates.dart';
 import '../../utils/pagination_helper.dart';
 import '../core_providers.dart';
 import '../category_provider.dart';
@@ -20,6 +21,29 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
   TopicListNotifier(this._categoryId);
 
   final int? _categoryId;
+  int _requestGeneration = 0;
+  final Map<int, Tag> _knownTags = {};
+  Iterable<Tag> get knownTags => _knownTags.values;
+
+  void _rememberTags(TopicListResponse response) {
+    for (final tag in [
+      ...response.tags,
+      for (final topic in response.topics) ...topic.tags,
+    ]) {
+      if (tag.id != null) _knownTags[tag.id!] = tag;
+    }
+  }
+
+  TopicListUpdateQuery get updateQuery => TopicListUpdateQuery(
+    filter: _currentFilter,
+    subset: ref.read(topicNewSubsetProvider),
+    categoryId: _categoryId,
+    tags: ref.read(tabTagsProvider(_categoryId)),
+    order: ref.read(topicSortOrderProvider).apiValue,
+    ascending: ref.read(topicSortAscendingProvider),
+    newNewView:
+        PreloadedDataService().currentUserSync?['new_new_view_enabled'] == true,
+  );
 
   /// 分页助手
   static final _paginationHelper = PaginationHelpers.forTopics<Topic>(
@@ -28,6 +52,7 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
 
   @override
   Future<List<Topic>> build() async {
+    _requestGeneration++;
     // 话题列表里每张卡的已读状态是拉取那一刻的快照,之后只有
     // topicTrackingStateProvider(MessageBus /latest /unread /read 频道
     // 实时更新)会变,列表卡本身不会跟着刷新——来了新回复数字不涨,
@@ -67,6 +92,7 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       final preloadedService = PreloadedDataService();
       final preloadedData = preloadedService.getInitialTopicListSync();
       if (preloadedData != null) {
+        _rememberTags(preloadedData);
         final result = _paginationHelper.processRefresh(
           PaginationResult(
             items: preloadedData.topics,
@@ -78,6 +104,7 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       if (preloadedService.hasInitialTopicList) {
         final asyncPreloaded = await preloadedService.getInitialTopicList();
         if (asyncPreloaded != null) {
+          _rememberTags(asyncPreloaded);
           final result = _paginationHelper.processRefresh(
             PaginationResult(
               items: asyncPreloaded.topics,
@@ -108,6 +135,28 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
   }
 
   Future<TopicListResponse> _fetchTopics(
+    DiscourseService service,
+    TopicListFilter filter,
+    int page,
+    TopicFilterParams params, {
+    String? order,
+    bool? ascending,
+    String? subset,
+  }) async {
+    final response = await _requestTopics(
+      service,
+      filter,
+      page,
+      params,
+      order: order,
+      ascending: ascending,
+      subset: subset,
+    );
+    if (ref.mounted) _rememberTags(response);
+    return response;
+  }
+
+  Future<TopicListResponse> _requestTopics(
     DiscourseService service,
     TopicListFilter filter,
     int page,
@@ -214,54 +263,36 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     return (orderParam, ascendingParam);
   }
 
-  /// 刷新列表
-  Future<void> refresh() async {
-    await runPagedRefresh(() async {
-      final service = ref.read(discourseServiceProvider);
-      final filterParams = _currentFilterParams();
-      final (order, ascending) = _currentSortParams();
-      final subset = _currentFilter == TopicListFilter.newTopics
-          ? ref.read(topicNewSubsetProvider).apiValue
-          : null;
-      final response = await _fetchTopics(
-        service,
-        _currentFilter,
-        0,
-        filterParams,
-        order: order,
-        ascending: ascending,
-        subset: subset,
-      );
+  /// 刷新列表。
+  Future<void> refresh() => _refreshTopics(silent: false);
 
-      final result = _paginationHelper.processRefresh(
-        PaginationResult(
-          items: response.topics,
-          moreUrl: response.moreTopicsUrl,
-        ),
-      );
-      return PagedPage.fromPagination(result);
-    });
-  }
+  Future<void> silentRefresh() => _refreshTopics(silent: true);
 
-  /// 静默刷新
-  Future<void> silentRefresh() async {
-    final service = ref.read(discourseServiceProvider);
+  Future<void> _refreshTopics({required bool silent}) async {
+    final generation = ++_requestGeneration;
+    final query = updateQuery;
     final filterParams = _currentFilterParams();
-    final (order, ascending) = _currentSortParams();
-    final subset = _currentFilter == TopicListFilter.newTopics
-        ? ref.read(topicNewSubsetProvider).apiValue
-        : null;
+    if (!silent) {
+      resetPagingState();
+      state = const AsyncValue.loading();
+    }
     try {
       final response = await _fetchTopics(
-        service,
-        _currentFilter,
+        ref.read(discourseServiceProvider),
+        query.filter,
         0,
         filterParams,
-        order: order,
-        ascending: ascending,
-        subset: subset,
+        order: query.order,
+        ascending: query.order == null ? null : query.ascending,
+        subset: query.filter == TopicListFilter.newTopics
+            ? query.subset.apiValue
+            : null,
       );
-
+      if (!ref.mounted ||
+          generation != _requestGeneration ||
+          !query.sameRequest(updateQuery)) {
+        return;
+      }
       final result = _paginationHelper.processRefresh(
         PaginationResult(
           items: response.topics,
@@ -271,41 +302,48 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       state = AsyncValue.data(
         completePagedRefresh(PagedPage.fromPagination(result)),
       );
-    } catch (e) {
-      debugPrint('Silent refresh failed: $e');
+    } catch (error, stack) {
+      if (!ref.mounted || generation != _requestGeneration) return;
+      if (silent) {
+        debugPrint('Silent refresh failed: $error');
+      } else {
+        state = AsyncValue.error(error, stack);
+      }
     }
   }
 
-  /// 按 topic_ids 加载并插入到列表顶部（对齐网页版 loadBefore）
-  ///
-  /// 1. 请求 /latest.json?topic_ids=xxx 获取这些话题的最新数据
-  /// 2. 从当前列表中移除同 ID 旧数据（处理"更新的话题"）
-  /// 3. 将 API 返回的话题全部插入列表顶部
-  ///
-  /// 返回实际被插入到顶部的 topic IDs（用于 UI 高亮）
-  Future<List<int>> loadBefore(List<int> topicIds) async {
+  /// 返回 null 表示请求已过期；失败向上传递以保留横幅。
+  Future<List<int>?> loadBefore(List<int> topicIds) async {
     if (topicIds.isEmpty) return [];
-    final currentTopics = state.value;
-    if (currentTopics == null) return [];
-
-    try {
-      final service = ref.read(discourseServiceProvider);
-      final response = await service.getTopicsByIds(topicIds);
-      final newTopics = response.topics;
-      if (newTopics.isEmpty) return [];
-
-      // 移除列表中已存在的同 ID 话题（刷新重复项，与网页版 removeValuesFromArray 一致）
-      final newTopicIds = newTopics.map((t) => t.id).toSet();
-      final remaining = currentTopics
-          .where((t) => !newTopicIds.contains(t.id))
-          .toList();
-      // 将新话题全部插入列表顶部
-      state = AsyncValue.data([...newTopics, ...remaining]);
-      return newTopics.map((t) => t.id).toList();
-    } catch (e) {
-      debugPrint('[TopicList] loadBefore 失败: $e');
-      return [];
+    if (state.isLoading || state.value == null) return null;
+    final generation = ++_requestGeneration;
+    final query = updateQuery;
+    final params = _currentFilterParams();
+    final response = await ref
+        .read(discourseServiceProvider)
+        .getFilteredTopics(
+          filter: query.filter.filterName,
+          categoryId: params.categoryId,
+          categorySlug: params.categorySlug,
+          parentCategorySlug: params.parentCategorySlug,
+          tags: params.tags,
+          order: query.order,
+          ascending: query.order == null ? null : query.ascending,
+          subset: query.filter == TopicListFilter.newTopics
+              ? query.subset.apiValue
+              : null,
+          topicIds: topicIds,
+        );
+    if (!ref.mounted ||
+        generation != _requestGeneration ||
+        !query.sameRequest(updateQuery) ||
+        state.isLoading ||
+        state.value == null) {
+      return null;
     }
+    _rememberTags(response);
+    state = AsyncValue.data(prependTopicUpdates(state.value!, response.topics));
+    return response.topics.map((topic) => topic.id).toList();
   }
 
   /// 加载更多

@@ -22,5 +22,12 @@
   "mediaPlayer_videoLoadTimeout": "影片載入逾時",
   "mediaPlayer_tapToRetry": "點擊重試",
   "mediaPlayer_audioLoadFailed": "音訊載入失敗",
-  "mediaPlayer_voiceLoadFailed": "語音載入失敗"
+  "mediaPlayer_voiceLoadFailed": "語音載入失敗",
+  "mediaPlayer_compressionMode": "影片壓縮模式",
+  "mediaPlayer_compressionCompatible": "相容優先（建議）",
+  "mediaPlayer_compressionScreen": "錄影文字清晰優先",
+  "mediaPlayer_compressionEfficient": "體積優先",
+  "mediaPlayer_compressionCompatibleHint": "H.264，適合大多數播放器。",
+  "mediaPlayer_compressionScreenHint": "優先保留文字解像度，最高15幀/秒。",
+  "mediaPlayer_compressionEfficientHint": "HEVC，編碼失敗退回H.264；部分播放器可能不相容。"
 }

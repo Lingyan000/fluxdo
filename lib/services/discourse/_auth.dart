@@ -1374,6 +1374,47 @@ mixin _AuthMixin on _DiscourseServiceBase {
     _cfChallenge.setContext(context);
   }
 
+  /// 服务端主动踢下线（MessageBus `/logout/:user_id` 频道）
+  ///
+  /// 与 [_handleAuthInvalid] 的关键区别：不走 User API Key 自愈。
+  /// 那条路径处理的是“疑似失效”（cookie 轮换窗口、传输抖动），所以要先尝试
+  /// 静默恢复；而 /logout 是服务端明确撤销了这个会话（管理员登出设备、账号被
+  /// 删除等），再拿 API Key 换一个新会话回来直接违背了服务端意图。
+  ///
+  /// 复用 [_isLoggingOut] 同一把锁：与接口 403 触发的登出互斥，避免两路并发
+  /// 时重复清理、重复弹框。
+  Future<void> handleServerForcedLogout({String source = 'message_bus'}) async {
+    if (_isLoggingOut) {
+      debugPrint('[Auth] 已在登出流程中，忽略 /logout 推送');
+      return;
+    }
+    _isLoggingOut = true;
+
+    AppLogger.warning(
+      '服务端推送强制登出',
+      tag: 'Auth',
+      fields: {
+        'type': 'auth',
+        'event': 'logout_server_forced',
+        'source': source,
+      },
+    );
+
+    // 先切断在途请求，避免失效会话继续产生 403 噪声
+    AuthSession().advance();
+
+    try {
+      // callApi: false —— 会话已被服务端撤销，再调 DELETE /session 只会 403
+      await logout(callApi: false, refreshPreload: true);
+    } finally {
+      // 无论清理是否抛错都要释锁并广播，否则会卡在“凭证已清、UI 以为还
+      // 登录着”的中间态（同 logout() 里第四~六步的 try/finally 理由）
+      _isLoggingOut = false;
+    }
+
+    _authErrorController.add(S.current.auth_loggedOutByServer);
+  }
+
   Future<void> _handleAuthInvalid(
     String message, {
     String? source,

@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
+import '../doh/ech_dns_policy.dart';
+
 class DohHostLookupResult {
   const DohHostLookupResult({
     required this.ips,
@@ -151,6 +153,7 @@ class DohProxyFfi {
 
   // FFI function types（使用 late 而非 late final，允许重新初始化）
   late int Function(Pointer<Utf8> configJson) _dohProxyStartWithConfigJson;
+  late int Function(Pointer<Utf8>) _dohProxySetEchDnsPolicy;
   late void Function() _dohProxyStop;
   late int Function() _dohProxyIsRunning;
   late int Function() _dohProxyGetPort;
@@ -198,6 +201,12 @@ class DohProxyFfi {
             'doh_proxy_start_with_config_json',
           )
           .asFunction();
+
+      _dohProxySetEchDnsPolicy = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Utf8>),
+            int Function(Pointer<Utf8>)
+          >('doh_proxy_set_ech_dns_policy_json');
 
       _dohProxyStop = _lib!
           .lookup<NativeFunction<Void Function()>>('doh_proxy_stop')
@@ -414,6 +423,17 @@ class DohProxyFfi {
   /// 最近一次初始化失败的原因
   String? lastInitError;
 
+  /// 更新 FFI 独立解析接口使用的公共 ECH 策略。
+  bool configureEchDnsPolicy(EchDnsPolicy policy) {
+    if (!_initialized && !initialize()) return false;
+    final ptr = jsonEncode(policy.toJson()).toNativeUtf8();
+    try {
+      return _dohProxySetEchDnsPolicy(ptr) == 0;
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
   /// Start the DOH proxy server
   /// Returns the port number on success, or -1 on failure
   ///
@@ -438,6 +458,7 @@ class DohProxyFfi {
     String? caKeyPem,
     bool mitmConnect = true,
     bool h2Mitm = false,
+    EchDnsPolicy echDnsPolicy = const EchDnsPolicy(),
   }) {
     if (!_initialized && !initialize()) {
       return -1;
@@ -450,6 +471,7 @@ class DohProxyFfi {
       'gateway_mode': gatewayMode,
       'mitm_connect': mitmConnect,
       'h2_mitm': h2Mitm,
+      'ech_dns_policy': echDnsPolicy.toJson(),
       'doh_server': dohServer ?? 'cloudflare',
       'prefer_ipv6': preferIpv6,
       'timeout_secs': 30,

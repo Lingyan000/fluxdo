@@ -9,10 +9,9 @@ import '../../models/search_result.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/preferences_provider.dart';
 import '../../utils/color_utils.dart';
-import '../../utils/dialog_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../utils/number_utils.dart';
-import '../common/morphing_dialog_shell.dart';
+import '../common/morphing_preview_route.dart';
 import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
 import '../../pages/category_topics_page.dart';
@@ -22,84 +21,39 @@ import '../../pages/tag_topics_page.dart';
 ///
 /// 排版与 [TopicPreviewDialog] 同款(标题置顶 + 元信息行 + 轻文本标签 +
 /// 纯文本摘要 + 统计/操作合一底栏);正文是搜索返回的 blurb(本地数据,
-/// 无需加载)。传入 anchorRect 时走一镜到底容器变形(见
-/// [MorphingDialogShell]),未传入回退中心缩放(防御兜底)。
+/// 无需加载)。与话题和书签预览共用卡片转场。
 class SearchPreviewDialog extends ConsumerWidget {
   final SearchPost post;
   final VoidCallback? onOpen;
 
-  /// 一镜到底模式:非空时弹窗壳从 [anchorRect] 连续变形到居中弹窗,
-  /// 关闭沿同路径收回(由路由 animation 驱动)
-  final Animation<double>? morphAnimation;
-  final Rect? anchorRect;
-  final Color? anchorColor;
-  final double anchorRadius;
+  final bool embedded;
 
   const SearchPreviewDialog({
     super.key,
     required this.post,
     this.onOpen,
-    this.morphAnimation,
-    this.anchorRect,
-    this.anchorColor,
-    this.anchorRadius = 10,
+    this.embedded = false,
   });
 
-  /// 显示预览弹窗
+  /// 从实际卡身展开，支持桌面居中列表。
   static Future<void> show(
     BuildContext context, {
     required SearchPost post,
     VoidCallback? onOpen,
+    BuildContext? sourceContext,
     Rect? anchorRect,
     Color? anchorColor,
     double anchorRadius = 10,
   }) {
-    // 触觉反馈
     HapticFeedback.mediumImpact();
-
-    if (anchorRect != null) {
-      // 一镜到底:变形由弹窗内部根据路由 animation 自驱(MorphingDialogShell),
-      // transitionBuilder 必须恒等 —— 默认整页淡入会让壳从透明浮现
-      return showAppGeneralDialog(
-        context: context,
-        barrierDismissible: true,
-        barrierLabel: S.current.common_closePreview,
-        barrierColor: Colors.black54,
-        transitionDuration: const Duration(milliseconds: 350),
-        transitionBuilder: (context, animation, secondaryAnimation, child) =>
-            child,
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return SearchPreviewDialog(
-            post: post,
-            onOpen: onOpen,
-            morphAnimation: animation,
-            anchorRect: anchorRect,
-            anchorColor: anchorColor,
-            anchorRadius: anchorRadius,
-          );
-        },
-      );
-    }
-
-    return showAppGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: S.current.common_closePreview,
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return SearchPreviewDialog(post: post, onOpen: onOpen);
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curvedAnimation = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutBack,
-        );
-        return ScaleTransition(
-          scale: curvedAnimation,
-          child: FadeTransition(opacity: animation, child: child),
-        );
-      },
+    return showMorphingPreviewDialog(
+      context,
+      sourceContext: sourceContext,
+      anchorRect: anchorRect,
+      anchorColor: anchorColor,
+      anchorRadius: anchorRadius,
+      builder: (context) =>
+          SearchPreviewDialog(post: post, onOpen: onOpen, embedded: true),
     );
   }
 
@@ -119,7 +73,7 @@ class SearchPreviewDialog extends ConsumerWidget {
       category = categoryMap[categoryId];
     }
 
-    final morphing = morphAnimation != null;
+    final morphing = embedded;
 
     // 壳体内容:整体滚动区(标题/元信息/标签/摘要一起滚) + 固定底栏
     final sheetBody = Column(
@@ -171,15 +125,7 @@ class SearchPreviewDialog extends ConsumerWidget {
       ],
     );
 
-    if (morphing) {
-      return MorphingDialogShell(
-        animation: morphAnimation!,
-        anchorRect: anchorRect!,
-        anchorColor: anchorColor,
-        anchorRadius: anchorRadius,
-        child: contentColumn,
-      );
-    }
+    if (morphing) return contentColumn;
 
     return Center(
       child: ConstrainedBox(

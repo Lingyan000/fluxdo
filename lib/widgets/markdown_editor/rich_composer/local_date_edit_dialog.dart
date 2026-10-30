@@ -39,12 +39,21 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
   TimeOfDay? _time;
   late final TextEditingController _timezoneController;
   late bool _countdown;
+  bool _timeChanged = false;
+  late final TextEditingController _endDateController;
+  late final TextEditingController _endTimeController;
 
   @override
   void initState() {
     super.initState();
     final init = widget.initial;
-    _date = DateTime.tryParse(init?.date ?? '') ?? DateTime.now();
+    // 日期 token 是无时区的日历日期，不按 UTC 时间戳解析。
+    final parts = (init?.date ?? '').split('-').map(int.tryParse).toList();
+    _date = parts.length == 3 && parts.every((v) => v != null)
+        ? DateTime(parts[0]!, parts[1]!, parts[2]!)
+        : DateTime.now();
+    _endDateController = TextEditingController(text: init?.endDate);
+    _endTimeController = TextEditingController(text: init?.endTime);
     final t = init?.time;
     if (t != null && t.length >= 5) {
       final h = int.tryParse(t.substring(0, 2));
@@ -53,7 +62,7 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
     }
     _timezoneController = TextEditingController(
       // 默认作者时区:官方 modal 同款(取系统时区名)
-      text: init?.timezone ?? DateTime.now().timeZoneName,
+      text: init == null ? DateTime.now().timeZoneName : init.timezone ?? '',
     );
     _countdown = init?.countdown ?? false;
   }
@@ -61,6 +70,8 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
   @override
   void dispose() {
     _timezoneController.dispose();
+    _endDateController.dispose();
+    _endTimeController.dispose();
     super.dispose();
   }
 
@@ -68,7 +79,9 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       '${_date.month.toString().padLeft(2, '0')}-'
       '${_date.day.toString().padLeft(2, '0')}';
 
-  String? get _timeStr => _time == null
+  String? get _timeStr => !_timeChanged && widget.initial != null
+      ? widget.initial!.time
+      : _time == null
       ? null
       : '${_time!.hour.toString().padLeft(2, '0')}:'
           '${_time!.minute.toString().padLeft(2, '0')}';
@@ -88,7 +101,15 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       context: context,
       initialTime: _time ?? const TimeOfDay(hour: 12, minute: 0),
     );
-    if (picked != null) setState(() => _time = picked);
+    if (picked != null) setState(() { _time = picked; _timeChanged = true; });
+  }
+
+  bool _validEndDate() {
+    final value = _endDateController.text.trim();
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;
+    final parts = value.split('-').map(int.parse).toList();
+    final date = DateTime(parts[0], parts[1], parts[2]);
+    return date.year == parts[0] && date.month == parts[1] && date.day == parts[2];
   }
 
   LocalDateRun _build() {
@@ -103,6 +124,10 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       format: init?.format,
       displayedTimezone: init?.displayedTimezone,
       countdown: _countdown,
+      countdownRaw: _countdown == init?.countdown ? init?.countdownRaw : (_countdown ? 'true' : 'false'),
+      recurring: init?.recurring,
+      endDate: init?.endDate == null ? null : _endDateController.text.trim(),
+      endTime: _endTimeController.text.trim().isEmpty ? null : _endTimeController.text.trim(),
       range: init?.range,
       // 编辑态显示文本:无服务端预渲染,拼本地可读串
       fallbackText:
@@ -138,9 +163,14 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
               IconButton(
                 tooltip: '清除时间',
                 icon: const Icon(Icons.close, size: 16),
-                onPressed: () => setState(() => _time = null),
+                onPressed: () => setState(() { _time = null; _timeChanged = true; }),
               ),
           ]),
+          if (widget.initial?.endDate != null) ...[
+            const SizedBox(height: 12),
+            TextField(controller: _endDateController, decoration: const InputDecoration(labelText: '结束日期（YYYY-MM-DD）')),
+            TextField(controller: _endTimeController, decoration: const InputDecoration(labelText: '结束时间（HH:mm，可留空）')),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _timezoneController,
@@ -168,7 +198,15 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _build()),
+          onPressed: () {
+            if (widget.initial?.endDate != null &&
+                (!_validEndDate() ||
+                 (_endTimeController.text.trim().isNotEmpty && !RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$').hasMatch(_endTimeController.text.trim())))) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请填写有效的结束日期和时间')));
+              return;
+            }
+            Navigator.pop(context, _build());
+          },
           child: const Text('应用'),
         ),
       ],

@@ -1,0 +1,5 @@
+{
+  "name": "editor-port-probe", "private": true, "type": "module",
+  "scripts": {"build": "node build.mjs", "generate": "node cli.mjs --generate", "test": "node --test test.mjs", "oracle": "node cli.mjs"},
+  "devDependencies": {"esbuild": "0.28.0", "orderedmap": "2.1.1", "prosemirror-markdown": "1.13.4", "prosemirror-model": "1.25.4", "prosemirror-transform": "1.12.0", "prosemirror-inputrules": "1.5.1", "prosemirror-state": "1.4.4", "prosemirror-view": "1.41.8", "jsdom": "25.0.1"}
+}

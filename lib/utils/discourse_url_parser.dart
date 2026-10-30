@@ -30,6 +30,20 @@ class ChatLinkInfo {
   const ChatLinkInfo({required this.channelId, this.threadId, this.messageId});
 }
 
+/// 标题中可自动解析的绝对 URL。
+class TitleUrlInfo {
+  /// 用户在标题里写的原文（仅 trim），用于与当前标题比对
+  final String url;
+
+  /// 规范化后的 URI（协议相对形式已补为 https）
+  final Uri uri;
+
+  /// 实际对外使用的绝对 URL（提交 featured_link / 请求 onebox 用这个）
+  String get absoluteUrl => uri.toString();
+
+  const TitleUrlInfo({required this.url, required this.uri});
+}
+
 class DiscourseUrlParser {
   DiscourseUrlParser._();
 
@@ -133,6 +147,32 @@ class DiscourseUrlParser {
     final match = _tagRegex.firstMatch(url);
     final encoded = match?.group(1);
     return encoded == null ? null : Uri.decodeComponent(encoded);
+  }
+
+  /// 解析标题中的单独 HTTP(S) URL。
+  ///
+  /// Discourse 只有在标题内容本身就是 URL 时才会触发行内 onebox，
+  /// 因此带有空格或其它文字的标题不应被当作 URL 处理。
+  ///
+  /// 对齐官方 `ComposerTitle#isAbsoluteUrl` 的
+  /// `/^(https?:)?\/\/[\w\.\-]+/i` + 无空白字符：协议相对 URL
+  /// （`//example.com`）也算，补齐为 https 后返回。
+  static TitleUrlInfo? parseTitleUrl(String value) {
+    final url = value.trim();
+    if (url.isEmpty || RegExp(r'\s').hasMatch(url)) return null;
+
+    // 协议相对形式：补上 https 再解析，否则 Uri 拿不到 scheme。
+    final normalized = url.startsWith('//') ? 'https:$url' : url;
+
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || uri.host.isEmpty) return null;
+
+    // 只放行 http/https，javascript: 等危险协议必须拦下。
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') return null;
+
+    // url 保留用户原文（仅 trim），uri 为规范化后的可用形式。
+    return TitleUrlInfo(url: url, uri: uri);
   }
 
   /// 解析聊天链接,返回 [ChatLinkInfo] 或 null(thread 形态优先匹配,

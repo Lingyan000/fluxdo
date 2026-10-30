@@ -101,6 +101,12 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   LoginResult _parseLoginError(String reason, Map<String, dynamic> body) {
     switch (reason) {
       case 'invalid_second_factor':
+      // Discourse 3.1 重构二步验证后移除了旧挑战契约:已启用 2FA 的账号
+      // 在登录请求未带 second_factor_method 时不再返回挑战包
+      // (reason=second_factor),而是直接拒绝并返回该 reason。
+      // 语义等同"需要二步验证"——由 caller 弹验证码框后带全参数重发
+      // (second_factor_token + second_factor_method=1)。
+      case 'invalid_second_factor_method':
       case 'second_factor':
         return LoginResult.error(
           LoginErrorKind.secondFactorRequired,

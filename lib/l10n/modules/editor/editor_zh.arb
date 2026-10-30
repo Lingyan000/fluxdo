@@ -19,6 +19,16 @@
       }
     }
   },
+  "composer_draftLocal": "草稿已存本机，待同步",
+  "composer_draftConflict": "草稿版本冲突",
+  "composer_draftConflictTitle": "草稿版本冲突",
+  "composer_draftConflictBody": "本机和云端都有修改。使用云端版本会替换本机当前内容；覆盖云端会上传本机当前内容。取消可继续保留本机内容。",
+  "composer_draftOverwrite": "覆盖云端",
+  "composer_draftAutoSave": "草稿自动保存",
+  "composer_draftPending": "草稿待保存",
+  "composer_draftSaving": "正在保存草稿",
+  "composer_draftSaved": "草稿已保存",
+  "composer_draftError": "草稿保存失败",
   "draft_untitled": "无标题",
   "drafts_deleteContent": "确定要删除这个草稿吗？",
   "drafts_deleteDraft": "删除草稿",
@@ -98,9 +108,81 @@
   "toolbar_mixOptimize": "混排优化",
   "toolbar_moreTools": "更多工具",
   "toolbar_quotePlaceholder": "引用文本",
+  "composerView_preview": "预览",
+  "composerView_rich": "富文本",
+  "composerView_source": "源码",
+  "composerView_switch": "切换视图",
+  "toolbar_contentActions": "内容操作",
+  "toolbar_cut": "剪切",
+  "toolbar_selectAll": "全选",
+  "toolbar_redo": "恢复",
+  "toolbar_undo": "撤销",
   "toolbar_spoilerPlaceholder": "剧透内容",
   "toolbar_spoilerTooltip": "剧透",
   "toolbar_calloutPlaceholder": "内容",
   "toolbar_calloutTooltip": "插入标注",
-  "toolbar_strikethroughPlaceholder": "删除线文本"
+  "toolbar_strikethroughPlaceholder": "删除线文本",
+  "composer_searchTools": "搜索全部工具",
+  "composer_noTools": "没有匹配的工具",
+  "composer_cursorLeft": "向左移动",
+  "composer_cursorRight": "向右移动",
+  "composer_cursorUp": "向上移动",
+  "composer_cursorDown": "向下移动",
+  "composer_cursorSelect": "扩展选区",
+  "composer_kindTopic": "创建话题",
+  "composer_kindQuestion": "创建问答",
+  "composer_toolsNavigate": "选择",
+  "composer_toolsApply": "应用",
+  "composer_toolsFormat": "格式",
+  "composer_toolsInsert": "插入",
+  "composer_toolsEditing": "编辑",
+  "composer_quickPanel": "快捷面板",
+  "composer_expandToolbar": "展开工具栏",
+  "composer_collapseToolbar": "收起工具栏",
+  "composer_draftUseRemote": "使用云端版本",
+  "composer_draftResolve": "选择版本",
+  "composer_draftReloadFailed": "无法加载云端草稿，已保留本机内容",
+  "table_operations": "表格操作",
+  "table_position": "第 {row} 行 · 第 {column} 列",
+  "table_row_before": "上方插入行",
+  "table_row_after": "下方插入行",
+  "table_column_before": "左侧插入列",
+  "table_column_after": "右侧插入列",
+  "table_delete_row": "删除此行",
+  "table_delete_column": "删除此列",
+  "table_close": "关闭",
+  "table_cancel": "取消",
+  "table_confirm_delete": "删除",
+  "table_delete_warning": "将删除整行或整列内容，可通过撤销恢复。",
+  "table_changed": "表格已变化或操作失败，请重新操作。",
+  "table_keep_row": "至少保留一行",
+  "table_keep_column": "至少保留一列",
+  "table_select_cell": "点选单元格后操作行列",
+  "@table_position": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      },
+      "column": {
+        "type": "int"
+      }
+    }
+  },
+  "table_row_target": "第 {number} 行",
+  "table_column_target": "第 {number} 列",
+  "table_format_unavailable": "暂不支持单元格文本格式",
+  "@table_row_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "@table_column_target": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  }
 }

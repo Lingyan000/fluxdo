@@ -76,6 +76,15 @@
   "post_contentRequired": "请输入内容",
   "post_deleteReplyConfirm": "确定要删除这条回复吗？此操作可以撤销。",
   "post_deleteReplyTitle": "删除回复",
+  "post_deviceSource": "来自 {device}",
+  "@post_deviceSource": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "post_deviceSourceTitle": "帖子来源",
   "post_detail": "帖子详情",
   "post_discardConfirm": "你想放弃你的帖子吗？",
   "post_discardTitle": "放弃帖子",
@@ -409,5 +418,23 @@
       "revision": {"type": "int"}
     }
   },
-  "postRevision_deleteAllSuccess": "已永久删除全部编辑历史"
+  "postRevision_deleteAllSuccess": "已永久删除全部编辑历史",
+  "nested_resumeReading": "继续上次阅读 · 第 {postNumber} 楼",
+  "@nested_resumeReading": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_nextRoot": "下一条主回复",
+  "nested_showMoreReplies": "展开其余 {count} 条回复",
+  "@nested_showMoreReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_restoreFailed": "暂时无法恢复该位置，请重试"
 }

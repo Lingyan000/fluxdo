@@ -11,6 +11,7 @@ import '../../pages/network_settings_page/widgets/http_proxy_card.dart';
 import '../../pages/network_settings_page/widgets/rate_limit_card.dart';
 import '../../pages/network_settings_page/widgets/vpn_auto_toggle_card.dart';
 import '../settings_model.dart';
+import '../../providers/preferences_provider.dart';
 
 /// 网络设置数据声明
 List<SettingsGroup> buildNetworkGroups(BuildContext context) {
@@ -69,6 +70,24 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
           title: l10n.cf_securityVerifyTitle,
           subtitle: l10n.networkSettings_auxiliary,
           builder: (context, ref) => const CfVerifyCard(),
+        ),
+      ],
+    ),
+
+    SettingsGroup(
+      title: l10n.networkSettings_upload,
+      icon: Symbols.cloud_upload_rounded,
+      items: [
+        SwitchModel(
+          id: 'forceDisableMultipartUpload',
+          title: l10n.networkSettings_forceDisableMultipart,
+          subtitle: l10n.networkSettings_forceDisableMultipartDescription,
+          icon: Symbols.cloud_upload_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).forceDisableMultipartUpload,
+          onChanged: (ref, value) => ref
+              .read(preferencesProvider.notifier)
+              .setForceDisableMultipartUpload(value),
         ),
       ],
     ),

@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../constants.dart';
 import '../l10n/s.dart';
+import '../services/app_logger.dart';
 import '../services/download_service.dart';
 import '../services/public_file_channel.dart';
 import '../services/toast_service.dart';
@@ -173,17 +175,16 @@ class ShareUtils {
   /// - Android 10+：MediaStore 静默写入公共「下载」目录（零权限、卸载不删），
   ///   [ShareOutcome.finalPath] 是 content uri；Android 9 及以下没有该集合，
   ///   回退到应用私有下载目录（系统文件管理器里不可达，只能在应用内取用）；
-  /// - iOS：沙盒里没有对外可见的落点（`getDownloadsDirectory` 返回的是
-  ///   `Library/Downloads`，而 UIFileSharingEnabled 只暴露 Documents，那里
-  ///   躺着数据库/cookie/日志，不能整目录暴露），因此转交 [saveFileAs] 走
-  ///   系统导出面板让用户挑位置。
+  /// - iOS：应用下载文件位于 Documents/Downloads；Documents 还存放数据库、
+  ///   Cookie 和日志，不整目录暴露给「文件」App，因此转交 [saveFileAs]
+  ///   走系统导出面板让用户挑位置。
   ///
   /// 成功提示交给调用方（各入口的成功文案不同），失败提示在此统一给出。
   static Future<ShareOutcome> saveFile(XFile file) async {
     if (PlatformUtils.isDesktop) {
       return _saveFileDialog(file, showSuccessToast: false);
     }
-    if (PublicFileChannel.isSupported) {
+    if (PublicFileChannel.hasPublicDownloads) {
       try {
         final saved = await PublicFileChannel.saveToDownloads(
           sourcePath: file.path,
@@ -197,9 +198,15 @@ class ShareUtils {
           );
         }
         // null = 系统版本没有 MediaStore.Downloads 集合，落到私有目录分支
-        return _saveToAppDownloads(file);
-      } catch (e) {
-        debugPrint('[ShareUtils] saveToDownloads failed, fallback: $e');
+        return await _saveToAppDownloads(file);
+      } catch (e, stackTrace) {
+        _logSaveFailure(
+          'publicDownloads',
+          file,
+          e,
+          stackTrace,
+          recoverable: true,
+        );
         return _saveToAppDownloads(file);
       }
     }
@@ -231,9 +238,9 @@ class ShareUtils {
           finalPath: saved.uri.isEmpty ? null : saved.uri,
           displayName: saved.displayName.isEmpty ? fileName : saved.displayName,
         );
-      } catch (e) {
-        // 原生腿不可用（未注册/旧版本）才落到下面的 file_picker
-        debugPrint('[ShareUtils] native saveAs unavailable, fallback: $e');
+      } catch (e, stackTrace) {
+        // 原生导出失败时尝试 file_picker，并保留原生异常供正式版排查。
+        _logSaveFailure('nativeSaveAs', file, e, stackTrace, recoverable: true);
       }
     }
     // 兜底：file_picker 的移动端 saveFile 必须带 bytes（大文件有内存尖峰，
@@ -251,8 +258,8 @@ class ShareUtils {
       // iOS 侧落点在应用沙盒外，返回值长期不保证可读，只当提示用，
       // 不作为可打开的引用交给导出历史。
       return ShareOutcome(shared: true, displayName: fileName);
-    } catch (e) {
-      debugPrint('[ShareUtils] saveFileAs (picker) failed: $e');
+    } catch (e, stackTrace) {
+      _logSaveFailure('pickerSaveAs', file, e, stackTrace);
       ToastService.showError(S.current.share_saveFailed);
       return const ShareOutcome(shared: false);
     }
@@ -278,8 +285,8 @@ class ShareUtils {
         finalPath: reservation.savePath,
         displayName: p.basename(reservation.savePath),
       );
-    } catch (e) {
-      debugPrint('[ShareUtils] saveFile to app downloads failed: $e');
+    } catch (e, stackTrace) {
+      _logSaveFailure('appDownloads', file, e, stackTrace);
       ToastService.showError(S.current.share_saveFailed);
       return const ShareOutcome(shared: false);
     }
@@ -293,18 +300,20 @@ class ShareUtils {
     final fileName = p.basename(file.path);
     final ext = p.extension(fileName).replaceFirst('.', '');
 
-    final outputPath = await FilePicker.platform.saveFile(
-      dialogTitle: S.current.share_selectSaveLocation,
-      fileName: fileName,
-      type: ext.isNotEmpty ? FileType.custom : FileType.any,
-      allowedExtensions: ext.isNotEmpty ? [ext] : null,
-    );
-
-    if (outputPath == null) {
-      return const ShareOutcome(shared: false);
-    }
-
+    var stage = 'desktopPicker';
     try {
+      final outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: S.current.share_selectSaveLocation,
+        fileName: fileName,
+        type: ext.isNotEmpty ? FileType.custom : FileType.any,
+        allowedExtensions: ext.isNotEmpty ? [ext] : null,
+      );
+
+      if (outputPath == null) {
+        return const ShareOutcome(shared: false);
+      }
+
+      stage = 'desktopCopy';
       final sourceFile = File(file.path);
       await sourceFile.copy(outputPath);
       if (showSuccessToast) ToastService.show(S.current.share_fileSaved);
@@ -313,10 +322,54 @@ class ShareUtils {
         finalPath: outputPath,
         displayName: p.basename(outputPath),
       );
-    } catch (e) {
-      debugPrint('[ShareUtils] saveFile failed: $e');
+    } catch (e, stackTrace) {
+      _logSaveFailure(stage, file, e, stackTrace);
       ToastService.showError(S.current.share_saveFailed);
       return const ShareOutcome(shared: false);
+    }
+  }
+
+  /// 公共保存入口的错误必须进入正式版日志，不能只写 debugPrint。
+  static void _logSaveFailure(
+    String stage,
+    XFile file,
+    Object error,
+    StackTrace stackTrace, {
+    bool recoverable = false,
+  }) {
+    final fields = <String, dynamic>{
+      'stage': stage,
+      'sourcePath': file.path,
+      'fileName': p.basename(file.path),
+      'platform': Platform.operatingSystem,
+      if (error is FileSystemException) ...{
+        'filePath': error.path,
+        'osErrorCode': error.osError?.errorCode,
+      },
+      if (error is PlatformException) ...{
+        'platformCode': error.code,
+        'platformDetails': error.details,
+      },
+    };
+    if (recoverable) {
+      AppLogger.warning(
+        '文件保存失败，尝试备用方式',
+        tag: 'FileSave',
+        fields: {
+          ...fields,
+          'error': error.toString(),
+          'errorType': error.runtimeType.toString(),
+          'stackTrace': stackTrace.toString(),
+        },
+      );
+    } else {
+      AppLogger.error(
+        '文件保存失败',
+        tag: 'FileSave',
+        error: error,
+        stackTrace: stackTrace,
+        fields: fields,
+      );
     }
   }
 }

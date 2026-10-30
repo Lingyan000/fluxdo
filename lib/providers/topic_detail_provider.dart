@@ -429,9 +429,21 @@ final topicUserFilterRequestProvider =
       TopicUserFilterRequestNotifier.new,
     );
 
-/// 话题 AI 摘要 Provider
+/// 话题 AI 摘要 Provider。
+///
+/// 普通展开优先复用 Discourse AI 的缓存摘要；没有缓存时服务层才会触发生成。
 final topicSummaryProvider = StreamProvider.autoDispose
     .family<TopicSummary?, int>((ref, topicId) {
   final service = ref.read(discourseServiceProvider);
   return service.watchTopicSummary(topicId);
+});
+
+/// 话题 AI 摘要重新生成 Provider。
+///
+/// 与普通加载分开，确保「重新生成」明确携带 skip_age_check=true，而不是
+/// 仅 invalidate 普通 Provider 后再次读回旧缓存。
+final topicSummaryRegenerationProvider = StreamProvider.autoDispose
+    .family<TopicSummary?, int>((ref, topicId) {
+  final service = ref.read(discourseServiceProvider);
+  return service.watchTopicSummary(topicId, skipAgeCheck: true);
 });

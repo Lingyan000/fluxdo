@@ -9,6 +9,7 @@ import '../preferences_provider.dart';
 import '../../utils/blocked_user_filter.dart';
 import 'models.dart';
 import 'message_bus_service_provider.dart';
+import 'session_channel_providers.dart';
 import 'topic_tracking_providers.dart';
 
 /// 通知计数 Notifier
@@ -252,6 +253,13 @@ class NotificationAlertChannelNotifier extends Notifier<void> {
             .read(preferencesProvider)
             .normalizedBlockedUsernames;
         if (BlockedUserFilter.isBlockedUsername(username, blockedUsernames)) {
+          return;
+        }
+
+        // 勿扰模式（服务端 /do-not-disturb/:id 推的结束时间）内不弹本地通知。
+        // 在别的端开启勿扰也能立即生效。
+        if (ref.read(doNotDisturbProvider.notifier).isActive) {
+          debugPrint('[NotificationAlert] 勿扰模式中，跳过本地通知');
           return;
         }
 

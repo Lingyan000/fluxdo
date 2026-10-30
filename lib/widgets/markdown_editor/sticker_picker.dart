@@ -14,7 +14,9 @@ import '../../utils/error_utils.dart';
 import '../common/app_bottom_sheet.dart';
 import '../common/cached_image.dart';
 import '../common/error_view.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'sticker_market_sheet.dart';
 import '../../../../../l10n/s.dart';
 
@@ -64,6 +66,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   List<StickerItem>? _recentSnapshot;
   bool _isProgrammaticScroll = false;
   bool _scrollThrottled = false;
+  bool _marketOpen = false;
 
   // ==================== 长按预览 ====================
   OverlayEntry? _previewEntry;
@@ -88,7 +91,8 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     // 时可见 cell 触发的 _loadThumbnail 队列,即使 widget unmount,内部
     // future 仍在排队等解码)。bump generation → 所有 await 检查点 throw
     // _ThumbnailCancelled。
-    StickerThumbnailProvider.cancelInflight();
+    // 打开市场前已取消旧一代任务；此时销毁不能再取消市场的新任务。
+    if (!_marketOpen) StickerThumbnailProvider.cancelInflight();
     _endPreview();
     _previewNotifier.dispose();
     _activeGroupIndex.dispose();
@@ -97,31 +101,46 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     super.dispose();
   }
 
-  void _openMarket() {
-    // 桌面悬浮弹层:市场 sheet 在 Navigator 路由层,会被 root overlay
-    // 的弹层盖住 —— 先收弹层再开 sheet
-    widget.onDismissRequested?.call();
+  Future<void> _openMarket() async {
+    if (_marketOpen) return;
+    setState(() => _marketOpen = true);
+    stickerPanelClosed();
+    StickerThumbnailProvider.cancelInflight();
+    // 先创建市场路由并捕获主题，再收起可能销毁当前 State 的宿主弹层。
+    final dismissPicker = widget.onDismissRequested;
     // 市场面板带搜索框,必须走可拖拽外壳(expandToFill):固定高度那条分支会
     // 叠加 viewInsets,键盘弹出时把标题栏与搜索框顶出屏幕。initialSize 沿用
     // 原先的 0.8,打开时观感不变。
-    AppBottomSheet.showDraggable(
+    final market = AppBottomSheet.showDraggable(
       context: context,
       title: S.current.sticker_marketTitle,
       showTitleDivider: true,
       initialSize: 0.8,
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+        Builder(
+          builder: (sheetContext) => TextButton(
+            // 按钮属于市场路由，不能引用已随选择器销毁的 State.context。
+            onPressed: () => Navigator.pop(sheetContext),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(S.current.common_done),
           ),
-          child: Text(S.current.common_done),
         ),
       ],
       bodyBuilder: (context, scrollController) =>
           StickerMarketSheet(scrollController: scrollController),
     );
+    dismissPicker?.call();
+    try {
+      await market;
+    } finally {
+      if (mounted) {
+        stickerPanelOpened();
+        setState(() => _marketOpen = false);
+      }
+    }
   }
 
   void _onStickerTap(StickerItem sticker) {
@@ -244,6 +263,8 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 市场位于前景时卸载下层图片监听，禁止继续构建/加载订阅网格。
+    if (_marketOpen) return const SizedBox.expand();
     // 已订阅分组含 tab 栏所需的 name/icon,prefs 同步读 —— 首帧就能画,
     // 不再为了拿这几个字段去拉全市场 288 组的分页索引。
     final subscribedGroups = ref.watch(subscribedStickerGroupsProvider);

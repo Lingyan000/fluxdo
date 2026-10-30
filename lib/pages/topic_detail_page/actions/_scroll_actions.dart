@@ -11,6 +11,7 @@ extension _ScrollActions on _TopicDetailPageState {
     _controller.handleScroll();
     // TOC scroll-spy(内部节流;无目录时零开销)
     _tocController.scheduleSpyUpdate();
+    if (_isNestedView) return;
 
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));

@@ -54,9 +54,12 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     String? order,
     bool? ascending,
     String? subset,
+    List<int>? topicIds,
   }) async {
     String path;
-    final queryParams = <String, dynamic>{};
+    final queryParams = <String, dynamic>{
+      if (topicIds != null) 'topic_ids': topicIds.join(','),
+    };
 
     if (page > 0) {
       queryParams['page'] = page;
@@ -280,17 +283,32 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     required String raw,
     required int categoryId,
     List<String>? tags,
+    String? featuredLink,
     bool createAsPostVoting = false,
+    String? draftKey,
+    ValueChanged<int>? onDraftSequence,
   }) async {
     final data = <String, dynamic>{
       'title': title,
       'raw': raw,
       'category': categoryId,
       'archetype': 'regular',
+      'draft_key': ?draftKey,
     };
 
     if (tags != null && tags.isNotEmpty) {
       data['tags[]'] = tags;
+    }
+
+    // 精选链接（标题为纯 URL 时自动解析）。
+    //
+    // 注：Discourse 除站点开关 topic_featured_link_enabled 外，还有分类级的
+    // topic_featured_link_allowed，而后者只在 CategorySerializer 下发、不在
+    // /site.json 用的 SiteCategorySerializer 里，客户端无法预先判断。分类
+    // 不允许时服务端会直接忽略该字段，不会连带整个发帖失败；叠加上正文
+    // 里已经追加了同一个 URL，降级后链接不会丢。
+    if (featuredLink != null && featuredLink.isNotEmpty) {
+      data['featured_link'] = featuredLink;
     }
 
     // post-voting(问答)话题:插件只认字符串 'true',且仅对新话题生效
@@ -305,6 +323,12 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     );
 
     final respData = response.data;
+    if (respData is Map) {
+      final target = respData['target'];
+      final sequence = (target is Map ? target['draft_sequence'] : null) ??
+          respData['draft_sequence'];
+      if (sequence is int) onDraftSequence?.call(sequence);
+    }
 
     // 帖子进入审核队列
     if (respData is Map && respData['action'] == 'enqueued') {
@@ -499,12 +523,21 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
   /// 获取话题 AI 摘要。
   ///
-  /// Discourse v2026.5.0 起，生成摘要改为 POST（aa3e44b32cf），传入
-  /// `stream=true` 后通过 MessageBus 频道推送增量结果。
+  /// 对齐 Discourse AI 当前 Web 行为：
+  /// - 普通打开先 GET，直接复用已有缓存摘要；
+  /// - GET 携带 `stream=true`，兼容旧版首次生成时的流式响应；
+  /// - 当前版本没有缓存（GET 404/405）时再 POST 触发生成；
+  /// - 重新生成时跳过缓存探测，POST `stream=true` +
+  ///   `skip_age_check=true`，并通过 MessageBus 接收增量结果。
+  ///
+  /// 旧版 Discourse 仅提供 GET 生成接口，因此 POST 404/405 时仍保留
+  /// GET + stream 参数的兼容回退。
   Stream<TopicSummary?> watchTopicSummary(
     int topicId, {
     bool skipAgeCheck = false,
   }) async* {
+    final endpoint = '/discourse-ai/summarization/t/$topicId';
+
     final messageBus = MessageBusService();
     final channel = '/discourse-ai/summaries/topic/$topicId';
     final updates = StreamController<Map<String, dynamic>>();
@@ -516,6 +549,7 @@ mixin _TopicsMixin on _DiscourseServiceBase {
       }
     }
 
+    // 旧版 GET 也可能触发生成，必须在任何请求之前订阅，避免丢失分片。
     messageBus.subscribe(channel, onMessage);
 
     try {
@@ -524,24 +558,32 @@ mixin _TopicsMixin on _DiscourseServiceBase {
         requestData['skip_age_check'] = 'true';
       }
 
-      late Response<dynamic> response;
-      try {
-        response = await _dio.post(
-          '/discourse-ai/summarization/t/$topicId',
-          data: requestData,
-          options: Options(contentType: Headers.formUrlEncodedContentType),
-        );
-      } on DioException catch (e) {
-        final statusCode = e.response?.statusCode;
-        if (statusCode != 404 && statusCode != 405) {
-          rethrow;
+      Response<dynamic>? response;
+      if (!skipAgeCheck) {
+        try {
+          // 当前版本直接返回缓存；旧版无缓存时异步生成并返回 success，
+          // 两者都不能再重复 POST。404/405 才进入当前版本的生成路径。
+          response = await _dio.get(endpoint, queryParameters: requestData);
+        } on DioException catch (e) {
+          final statusCode = e.response?.statusCode;
+          if (statusCode != 404 && statusCode != 405) rethrow;
         }
+      }
 
-        // 兼容 v2026.5.0 之前仅支持 GET 的 Discourse。
-        response = await _dio.get(
-          '/discourse-ai/summarization/t/$topicId',
-          queryParameters: requestData,
-        );
+      if (response == null) {
+        try {
+          response = await _dio.post(
+            endpoint,
+            data: requestData,
+            options: Options(contentType: Headers.formUrlEncodedContentType),
+          );
+        } on DioException catch (e) {
+          final statusCode = e.response?.statusCode;
+          if (statusCode != 404 && statusCode != 405) rethrow;
+
+          // 兼容尚未提供 POST create 路由的旧版 Discourse。
+          response = await _dio.get(endpoint, queryParameters: requestData);
+        }
       }
 
       final responseData = response.data;
@@ -579,7 +621,8 @@ mixin _TopicsMixin on _DiscourseServiceBase {
       rethrow;
     } finally {
       messageBus.unsubscribe(channel, onMessage);
-      await updates.close();
+      // 缓存命中或请求失败时尚未监听 updates，等待 close 会使请求无法结束。
+      unawaited(updates.close());
     }
   }
 

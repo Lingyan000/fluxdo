@@ -341,6 +341,9 @@ class Topic {
   final int views;
   final int likeCount;
   final String? excerpt;
+
+  /// 列表接口自带的首图，无需额外请求首楼。
+  final String? imageUrl;
   final DateTime? createdAt;
   final DateTime? lastPostedAt;
   final String? lastPosterUsername;
@@ -388,6 +391,7 @@ class Topic {
     required this.views,
     required this.likeCount,
     this.excerpt,
+    this.imageUrl,
     this.createdAt,
     this.lastPostedAt,
     this.lastPosterUsername,
@@ -431,6 +435,7 @@ class Topic {
       views: views,
       likeCount: likeCount,
       excerpt: excerpt,
+      imageUrl: imageUrl,
       createdAt: createdAt,
       lastPostedAt: lastPostedAt,
       lastPosterUsername: lastPosterUsername,
@@ -473,6 +478,7 @@ class Topic {
       views: json['views'] as int? ?? 0,
       likeCount: json['like_count'] as int? ?? 0,
       excerpt: json['excerpt'] as String?,
+      imageUrl: json['image_url'] as String?,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       lastPostedAt: TimeUtils.parseUtcTime(json['last_posted_at'] as String?),
       lastPosterUsername: json['last_poster_username'] as String?,
@@ -833,6 +839,9 @@ class Post {
   final String? userCakedate; // 加入社区的纪念日(年份为真实注册年份)
   final String? userBirthdate; // 生日(年份可能是隐私假值)
 
+  // Linux.do iOS App 帖子来源设备型号（服务端字段 ios_device_name）
+  final String? iosDeviceName;
+
   // 用户 ID（用于打赏等功能）
   final int? userId;
 
@@ -960,6 +969,7 @@ class Post {
     this.badgesGranted,
     this.userCakedate,
     this.userBirthdate,
+    this.iosDeviceName,
     this.userId,
     this.moderator = false,
     this.admin = false,
@@ -989,6 +999,8 @@ class Post {
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
+    final iosDeviceName = json['ios_device_name']?.toString().trim();
+
     return Post(
       id: json['id'] as int,
       name: json['name'] as String?,
@@ -1083,6 +1095,7 @@ class Post {
           .toList(),
       userCakedate: json['user_cakedate'] as String?,
       userBirthdate: json['user_birthdate'] as String?,
+      iosDeviceName: iosDeviceName?.isNotEmpty == true ? iosDeviceName : null,
       userId: json['user_id'] as int?,
       moderator: json['moderator'] as bool? ?? false,
       admin: json['admin'] as bool? ?? false,
@@ -1184,7 +1197,8 @@ class Post {
           publicVersion == other.publicVersion &&
           wiki == other.wiki &&
           lastWikiEdit == other.lastWikiEdit &&
-          editReason == other.editReason;
+          editReason == other.editReason &&
+          iosDeviceName == other.iosDeviceName;
 
   @override
   int get hashCode => Object.hash(
@@ -1197,6 +1211,7 @@ class Post {
     canBoost,
     version,
     wiki,
+    iosDeviceName,
   );
 
   /// 复制并修改部分字段
@@ -1259,6 +1274,7 @@ class Post {
     List<GrantedBadge>? badgesGranted,
     String? userCakedate,
     String? userBirthdate,
+    String? iosDeviceName,
     int? userId,
     bool? moderator,
     bool? admin,
@@ -1355,6 +1371,7 @@ class Post {
       badgesGranted: badgesGranted ?? this.badgesGranted,
       userCakedate: userCakedate ?? this.userCakedate,
       userBirthdate: userBirthdate ?? this.userBirthdate,
+      iosDeviceName: iosDeviceName ?? this.iosDeviceName,
       userId: userId ?? this.userId,
       moderator: moderator ?? this.moderator,
       admin: admin ?? this.admin,
@@ -2541,7 +2558,9 @@ class TopicListResponse {
   final List<Topic> topics;
   final String? moreTopicsUrl;
 
-  TopicListResponse({required this.topics, this.moreTopicsUrl});
+  final List<Tag> tags;
+
+  TopicListResponse({required this.topics, this.moreTopicsUrl, this.tags = const []});
 
   factory TopicListResponse.fromJson(Map<String, dynamic> json) {
     // Parse users map
@@ -2595,6 +2614,7 @@ class TopicListResponse {
           )
           .toList(),
       moreTopicsUrl: moreTopicsUrl,
+      tags: (topicList?['tags'] as List? ?? const []).map(Tag.fromJson).toList(),
     );
   }
 }

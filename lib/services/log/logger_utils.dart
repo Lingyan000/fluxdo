@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../constants.dart';
+import '../app_logger.dart';
 import '../network/adapters/cronet_fallback_service.dart';
 import '../network/doh/network_settings_service.dart';
 import '../network/health/network_health_controller.dart';
@@ -22,19 +23,44 @@ class LoggerUtils {
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
   static Future<String> getShareFilePath() async {
-    // 分享前补一条网络健康快照:用户反馈网络问题时,日志里往往只有"某请求
-    // 失败"的结果,没有引擎/降级/盾态/凭证这些状态,归因只能靠猜。
-    NetworkHealthController.instance.dumpToLog('log_share');
-    await LogWriter.instance.flushNow();
+    var stage = 'flushLogs';
+    String? sharePath;
+    try {
+      // 分享前补一条网络健康快照:用户反馈网络问题时,日志里往往只有"某请求
+      // 失败"的结果,没有引擎/降级/盾态/凭证这些状态,归因只能靠猜。
+      NetworkHealthController.instance.dumpToLog('log_share');
+      await LogWriter.instance.flushNow();
 
-    final header = await _buildShareHeader();
-    final logContent = await LogWriter.readAllContent();
+      stage = 'buildHeader';
+      final header = await _buildShareHeader();
+      stage = 'readLogs';
+      final logContent = await LogWriter.readAllContent();
 
-    final logFile = await getLogFile();
-    final dir = logFile.parent;
-    final shareFile = File('${dir.path}/app_log_share.jsonl');
-    await shareFile.writeAsString('$header$logContent');
-    return shareFile.path;
+      stage = 'resolveLogDirectory';
+      final logFile = await getLogFile();
+      final dir = logFile.parent;
+      final shareFile = File('${dir.path}/app_log_share.jsonl');
+      sharePath = shareFile.path;
+      stage = 'writeExportFile';
+      await shareFile.writeAsString('$header$logContent');
+      return shareFile.path;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        '生成日志导出文件失败',
+        tag: 'LogExport',
+        error: error,
+        stackTrace: stackTrace,
+        fields: {
+          'stage': stage,
+          'sourcePath': ?sharePath,
+          if (error is FileSystemException) ...{
+            'filePath': error.path,
+            'osErrorCode': error.osError?.errorCode,
+          },
+        },
+      );
+      rethrow;
+    }
   }
 
   /// 获取人类可读的设备和应用信息文本（用于复制）

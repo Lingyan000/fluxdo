@@ -28,14 +28,26 @@ object AnrTraceReporter {
 
     private const val TAG = "AnrTrace"
 
-    /** trace 全文按此长度分片写入 Crashlytics log(单条 log 有长度上限)。 */
+    /** trace 按此长度分片写入 Crashlytics log(单条 log 有长度上限)。 */
     private const val CHUNK_SIZE = 4000
 
     /** 单次最多上报几条历史退出记录(系统最多保留 16 条)。 */
     private const val MAX_RECORDS = 5
 
-    /** trace 最多上报多少字符,防止超大 dump 把配额吃光。 */
-    private const val MAX_TRACE_CHARS = 60_000
+    /**
+     * 压缩后的 trace 总预算(字节)。
+     *
+     * Crashlytics 的 log 区是 64 KB 环形队列(SDK 19.4.3:
+     * LogFileManager.MAX_LOG_SIZE = 65536,写满后从**最旧**的条目开始丢),
+     * 而一份单进程 ANR trace 实测 15~17 万字符 —— 全量写入物理上不可能。
+     * 留 48 KB 给 trace,剩余空间给 [ExitInfo] 等其他 log。
+     *
+     * 上一版的 `substring(0, 60000)` 错了两层:
+     * 1. 取开头丢后面 —— Flutter 引擎线程(1.ui / 1.raster)排在几十个
+     *    线程之后,恰好落在被丢的 64% 里;
+     * 2. 与 SDK 环形淘汰方向相反 —— 保留的头部反而被 SDK 优先丢弃。
+     */
+    private const val TRACE_BUDGET_BYTES = 48_000
 
     /** 已上报过的退出记录时间戳,避免每次启动重复上报同一条。 */
     private const val PREFS_NAME = "anr_trace_reporter"
@@ -107,18 +119,19 @@ object AnrTraceReporter {
         )
 
         // ANR 的 traceInputStream 才是重点:含全部线程栈。
-        // 其他退出原因通常没有 trace(native crash 的 tombstone 需要额外权限)。
-        val trace = readTrace(info)
+        // 其他退出原因通常没有 trace(实测 LOW_MEMORY / SIGNALED 均为 null;
+        // native crash 的 tombstone 需要额外权限)。
+        //
+        // 只在 ANR 时写 trace:64 KB 的 log 区是共享的,ANR 一天一两条,
+        // 独占这块空间才能装下压缩后的全线程栈。
+        val trace = if (info.reason == ApplicationExitInfo.REASON_ANR) readTrace(info) else null
         if (trace.isNullOrBlank()) {
-            crashlytics.log("[ExitInfo] 无 trace 数据")
+            crashlytics.log("[ExitInfo] 无 trace 数据(reason=$reasonName)")
         } else {
-            val clipped = if (trace.length > MAX_TRACE_CHARS) {
-                trace.substring(0, MAX_TRACE_CHARS) + "\n...[truncated ${trace.length - MAX_TRACE_CHARS} chars]"
-            } else {
-                trace
-            }
+            val compacted = compactTrace(trace)
             crashlytics.setCustomKey("exit_trace_chars", trace.length)
-            logInChunks(crashlytics, clipped)
+            crashlytics.setCustomKey("exit_trace_sent_chars", compacted.length)
+            logInChunks(crashlytics, compacted)
         }
 
         // 用一条非致命异常把这次现场"钉"成 Crashlytics 里的独立 issue,
@@ -134,6 +147,89 @@ object AnrTraceReporter {
     } catch (e: Throwable) {
         Log.w(TAG, "读取 trace 失败: ${e.message}")
         null
+    }
+
+    /**
+     * 按线程压缩 ANR trace,保证**一个线程都不丢**。
+     *
+     * 两遍法:
+     * 1. 先数线程总数,把 [TRACE_BUDGET_BYTES] 减去头部信息后均分给每个线程;
+     * 2. 逐线程写入,写满自己那份预算就停,剩余帧折叠成 `... +N f`。
+     *
+     * 为什么不能“每线程固定 N 帧 + 超总量就 break”(上一版写法):
+     * 实测真实 dump(com.google.android.gms,15.4 万字符/86 线程),固定 18/12/
+     * 8/6/4 帧全都先撞上总量上限而提前 break,只能写出 24~46 个线程,
+     * 后面的直接丢光 —— 而 1.ui / 1.raster 恰在后半段。按线程分预算后
+     * 同样样本 86/86 线程全保留,51 KB。
+     *
+     * 不预设“凶手在哪个线程”:前几轮排查里每次“确信知道该看哪里”都错了,
+     * 而阻塞点必在栈顶附近 —— “线程全留、每个只留栈顶”是唯一不赌的裁法。
+     *
+     * ART dump 格式:线程块以 `"线程名" prio=..` 开头,后跟 `at ` / `- ` /
+     * `native: ` 开头的帧。不解析语义,只按“引号开头 = 新线程”分块;
+     * 格式变化时退化为整体截断。
+     */
+    private fun compactTrace(trace: String): String {
+        return try {
+            val lines = trace.split('\n')
+            val threadCount = lines.count { it.startsWith("\"") }.coerceAtLeast(1)
+            val headEnd = lines.indexOfFirst { it.startsWith("\"") }
+                .let { if (it < 0) lines.size else it }
+
+            val out = StringBuilder(TRACE_BUDGET_BYTES)
+            var headBytes = 0
+            for (i in 0 until headEnd) {
+                out.append(lines[i]).append('\n')
+                headBytes += lines[i].length + 1
+            }
+
+            // 每线程预算:总预算扣掉头部后均分
+            val perThread = ((TRACE_BUDGET_BYTES - headBytes) / threadCount).coerceAtLeast(200)
+
+            var usedInThread = 0
+            var omitted = 0
+            fun flushOmitted() {
+                if (omitted > 0) {
+                    out.append("      ... +").append(omitted).append(" frames\n")
+                    omitted = 0
+                }
+            }
+
+            for (i in headEnd until lines.size) {
+                val line = lines[i]
+                val trimmed = line.trimStart()
+                val isThreadHeader = line.startsWith("\"")
+                val isFrame = trimmed.startsWith("at ") ||
+                    trimmed.startsWith("- ") ||
+                    trimmed.startsWith("native: ")
+
+                when {
+                    isThreadHeader -> {
+                        flushOmitted()
+                        usedInThread = line.length + 1
+                        out.append(line).append('\n')
+                    }
+                    isFrame -> {
+                        if (usedInThread + line.length + 1 <= perThread) {
+                            out.append(line).append('\n')
+                            usedInThread += line.length + 1
+                        } else {
+                            omitted++
+                        }
+                    }
+                    else -> {
+                        flushOmitted()
+                        out.append(line).append('\n')
+                        usedInThread += line.length + 1
+                    }
+                }
+            }
+            flushOmitted()
+            out.toString()
+        } catch (e: Throwable) {
+            Log.w(TAG, "压缩 trace 失败,退化为截断: ${e.message}")
+            if (trace.length > TRACE_BUDGET_BYTES) trace.substring(0, TRACE_BUDGET_BYTES) else trace
+        }
     }
 
     /**

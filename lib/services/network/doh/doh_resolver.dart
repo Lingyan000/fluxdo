@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../../network_logger.dart';
 import 'bootstrap_doh_client.dart';
+import 'ech_dns_policy.dart';
 
 class DohResolver {
   DohResolver({
@@ -10,10 +11,20 @@ class DohResolver {
     List<String> bootstrapIps = const [],
     this.enableFallback = true,
     bool preferIPv6 = false,
-  })  : _serverUrl = serverUrl,
-        _bootstrapIps = bootstrapIps,
-        _preferIPv6 = preferIPv6 {
+    EchDnsPolicy echDnsPolicy = const EchDnsPolicy(),
+  }) : _serverUrl = serverUrl,
+       _bootstrapIps = bootstrapIps,
+       _preferIPv6 = preferIPv6,
+       _echDnsPolicy = echDnsPolicy {
     _initClient();
+  }
+
+  EchDnsPolicy _echDnsPolicy;
+
+  set echDnsPolicy(EchDnsPolicy policy) {
+    _echDnsPolicy = policy;
+    _cacheAll.clear();
+    _inflight.clear();
   }
 
   String _serverUrl;
@@ -48,8 +59,7 @@ class DohResolver {
     );
   }
 
-  void updateServer(String serverUrl,
-      {List<String> bootstrapIps = const []}) {
+  void updateServer(String serverUrl, {List<String> bootstrapIps = const []}) {
     if (_serverUrl == serverUrl && _listEquals(_bootstrapIps, bootstrapIps)) {
       return;
     }
@@ -114,15 +124,17 @@ class DohResolver {
     try {
       return await future;
     } finally {
-      _inflight.remove(host);
+      if (identical(_inflight[host], future)) _inflight.remove(host);
     }
   }
 
   /// 实际执行解析
   Future<List<InternetAddress>> _doResolveAll(String host) async {
+    final policy = _echDnsPolicy;
     final stopwatch = Stopwatch()..start();
     try {
-      final result = await _client.lookupAllWithTtl(host);
+      final result = await _client.lookupAllWithTtl(policy.queryName(host));
+      if (!identical(policy, _echDnsPolicy)) return await resolveAll(host);
       stopwatch.stop();
 
       if (result.addresses.isEmpty) {
@@ -131,7 +143,7 @@ class DohResolver {
           durationMs: stopwatch.elapsedMilliseconds,
           error: 'empty response',
         );
-        return _fallbackResolveAll(host);
+        return await _fallbackResolveAll(host);
       }
 
       // 根据设置排序地址（IPv6 优先 / IPv4 优先）
@@ -144,15 +156,18 @@ class DohResolver {
       );
 
       // 使用 DNS TTL 缓存结果
-      _putCache(host, _DohCacheEntryAll(
-        addresses: sorted,
-        expiresAt:
-            DateTime.now().add(Duration(seconds: result.minTtl)),
-      ));
+      _putCache(
+        host,
+        _DohCacheEntryAll(
+          addresses: sorted,
+          expiresAt: DateTime.now().add(Duration(seconds: result.minTtl)),
+        ),
+      );
 
       return sorted;
     } catch (e) {
       stopwatch.stop();
+      if (!identical(policy, _echDnsPolicy)) return await resolveAll(host);
       NetworkLogger.logDoh(
         host: host,
         durationMs: stopwatch.elapsedMilliseconds,
@@ -165,21 +180,27 @@ class DohResolver {
   /// 系统 DNS 回退解析（全部）
   Future<List<InternetAddress>> _fallbackResolveAll(String host) async {
     if (!enableFallback) return [];
+    final policy = _echDnsPolicy;
 
     try {
-      final addresses = await InternetAddress.lookup(host);
+      final addresses = await InternetAddress.lookup(policy.queryName(host));
+      if (!identical(policy, _echDnsPolicy)) return await resolveAll(host);
       if (addresses.isEmpty) return [];
 
       final sorted = _sortAddresses(addresses);
 
       NetworkLogger.log(
-          '[DOH] 系统 DNS 回退成功: $host -> ${sorted.map((a) => a.address).join(', ')}');
+        '[DOH] 系统 DNS 回退成功: $host -> ${sorted.map((a) => a.address).join(', ')}',
+      );
 
       // 回退结果缓存时间短一些（2 分钟）
-      _putCache(host, _DohCacheEntryAll(
-        addresses: sorted,
-        expiresAt: DateTime.now().add(const Duration(minutes: 2)),
-      ));
+      _putCache(
+        host,
+        _DohCacheEntryAll(
+          addresses: sorted,
+          expiresAt: DateTime.now().add(const Duration(minutes: 2)),
+        ),
+      );
 
       return sorted;
     } catch (e) {
@@ -204,9 +225,7 @@ class DohResolver {
     List<InternetAddress> targets;
 
     if (bootstrapIps.isNotEmpty) {
-      targets = bootstrapIps
-          .map((ip) => InternetAddress(ip))
-          .toList();
+      targets = bootstrapIps.map((ip) => InternetAddress(ip)).toList();
     } else {
       try {
         targets = await InternetAddress.lookup(serverHost)
@@ -277,9 +296,12 @@ class DohResolver {
       // 仍然超限，淘汰最早过期的条目
       if (_cacheAll.length > _maxCacheSize) {
         final sortedKeys = _cacheAll.keys.toList()
-          ..sort((a, b) =>
-              _cacheAll[a]!.expiresAt.compareTo(_cacheAll[b]!.expiresAt));
-        final removeCount = _cacheAll.length - _maxCacheSize + _maxCacheSize ~/ 10;
+          ..sort(
+            (a, b) =>
+                _cacheAll[a]!.expiresAt.compareTo(_cacheAll[b]!.expiresAt),
+          );
+        final removeCount =
+            _cacheAll.length - _maxCacheSize + _maxCacheSize ~/ 10;
         for (var i = 0; i < removeCount && i < sortedKeys.length; i++) {
           _cacheAll.remove(sortedKeys[i]);
         }

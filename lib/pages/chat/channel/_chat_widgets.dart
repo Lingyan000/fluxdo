@@ -3,6 +3,48 @@
 
 part of 'chat_channel_page.dart';
 
+/// 分页提示浮在视口内，不拦截继续滑动，也不改变列表尺寸。
+class _PaginationLoading extends StatelessWidget {
+  const _PaginationLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return IgnorePointer(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: Semantics(
+            liveRegion: true,
+            child: Material(
+              color: theme.colorScheme.surfaceContainerHigh,
+              elevation: 2,
+              borderRadius: BorderRadius.circular(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const LoadingSpinner(size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      context.l10n.common_loading,
+                      style: theme.textTheme.labelMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 纯 emoji 消息判定:cooked 仅由 emoji 图(+ p 标签/空白)组成且 ≤6 个,
 /// 返回解析后的 emoji 图 URL 列表用于 jumbo 大图渲染;否则 null。
 List<String>? jumboEmojiUrls(String cooked) {
@@ -473,4 +515,3 @@ class _MessageUploads extends StatelessWidget {
     );
   }
 }
-

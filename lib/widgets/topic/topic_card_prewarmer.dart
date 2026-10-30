@@ -60,6 +60,7 @@ class CardPrewarmScope<T> extends StatefulWidget {
 class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
   /// 换代即弃:数据/环境变化重启扫描,老 idle 链自灭
   int _generation = 0;
+  IdleTaskHandle? _pendingWarmUp;
 
   Object? _lastSignature;
 
@@ -83,11 +84,15 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
   @override
   void dispose() {
     _generation++;
+    _pendingWarmUp?.cancel();
     super.dispose();
   }
 
   void _restart() {
+    _pendingWarmUp?.cancel();
+    _pendingWarmUp = null;
     final generation = ++_generation;
+    if (widget.items.isEmpty) return;
     var index = 0;
     bool canceled() => !mounted || generation != _generation;
 
@@ -119,11 +124,11 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
       }
       _bakeGlyphs(baked);
       if (index < limit) {
-        scheduleIdleTask(step, isCanceled: canceled);
+        _pendingWarmUp = scheduleIdleTask(step, isCanceled: canceled);
       }
     }
 
-    scheduleIdleTask(step, isCanceled: canceled);
+    _pendingWarmUp = scheduleIdleTask(step, isCanceled: canceled);
   }
 
   /// 字形预烤:把本步新排版的段落离屏光栅化一次,字形提前进引擎

@@ -30,6 +30,18 @@ class TopicCardStyle {
   /// 关闭后话题卡头像强制静态(不下载/播放 gif 等动图),其他页面不受影响
   final bool animatedAvatar;
 
+  /// 是否显示帖子正文内容摘要(类似 X / 推特信息流模式)
+  final bool showExcerpt;
+
+  /// 是否显示列表自带图片及允许补充加载的图片。
+  final bool showImages;
+
+  /// 是否额外请求首楼补充摘要和图片，默认关闭以避免增加列表请求量。
+  final bool allowExcerptFetch;
+
+  /// 正文折叠行数(默认 3 行，超出后显示“查看更多”)
+  final int maxCollapsedLines;
+
   const TopicCardStyle({
     this.showAuthor = true,
     this.showTags = true,
@@ -39,6 +51,10 @@ class TopicCardStyle {
     this.avatarLayout = TopicCardAvatarLayout.inline,
     this.titleFontSize = 15.0,
     this.animatedAvatar = true,
+    this.showExcerpt = false,
+    this.showImages = false,
+    this.allowExcerptFetch = false,
+    this.maxCollapsedLines = 3,
   });
 
   static const TopicCardStyle defaults = TopicCardStyle();
@@ -54,6 +70,10 @@ class TopicCardStyle {
     TopicCardAvatarLayout? avatarLayout,
     double? titleFontSize,
     bool? animatedAvatar,
+    bool? showExcerpt,
+    bool? showImages,
+    bool? allowExcerptFetch,
+    int? maxCollapsedLines,
   }) {
     return TopicCardStyle(
       showAuthor: showAuthor ?? this.showAuthor,
@@ -64,6 +84,10 @@ class TopicCardStyle {
       avatarLayout: avatarLayout ?? this.avatarLayout,
       titleFontSize: titleFontSize ?? this.titleFontSize,
       animatedAvatar: animatedAvatar ?? this.animatedAvatar,
+      showExcerpt: showExcerpt ?? this.showExcerpt,
+      showImages: showImages ?? this.showImages,
+      allowExcerptFetch: allowExcerptFetch ?? this.allowExcerptFetch,
+      maxCollapsedLines: maxCollapsedLines ?? this.maxCollapsedLines,
     );
   }
 
@@ -82,10 +106,14 @@ class TopicCardStyle {
         avatarLayout: json['avatarLayout'] == 'column'
             ? TopicCardAvatarLayout.column
             : TopicCardAvatarLayout.inline,
-        titleFontSize:
-            ((json['titleFontSize'] as num?)?.toDouble() ?? 15.0)
-                .clamp(13.0, 18.0),
+        titleFontSize: ((json['titleFontSize'] as num?)?.toDouble() ?? 15.0)
+            .clamp(13.0, 18.0),
         animatedAvatar: json['animatedAvatar'] as bool? ?? true,
+        showExcerpt: json['showExcerpt'] as bool? ?? false,
+        showImages: json['showImages'] as bool? ?? false,
+        allowExcerptFetch: json['allowExcerptFetch'] as bool? ?? false,
+        maxCollapsedLines: ((json['maxCollapsedLines'] as num?)?.toInt() ?? 3)
+            .clamp(1, 3),
       );
     } catch (_) {
       return defaults;
@@ -101,6 +129,10 @@ class TopicCardStyle {
     'avatarLayout': avatarLayout.name,
     'titleFontSize': titleFontSize,
     'animatedAvatar': animatedAvatar,
+    'showExcerpt': showExcerpt,
+    'showImages': showImages,
+    'allowExcerptFetch': allowExcerptFetch,
+    'maxCollapsedLines': maxCollapsedLines,
   });
 
   @override
@@ -114,7 +146,11 @@ class TopicCardStyle {
         other.showViews == showViews &&
         other.avatarLayout == avatarLayout &&
         other.titleFontSize == titleFontSize &&
-        other.animatedAvatar == animatedAvatar;
+        other.animatedAvatar == animatedAvatar &&
+        other.showExcerpt == showExcerpt &&
+        other.showImages == showImages &&
+        other.allowExcerptFetch == allowExcerptFetch &&
+        other.maxCollapsedLines == maxCollapsedLines;
   }
 
   @override
@@ -127,6 +163,10 @@ class TopicCardStyle {
     avatarLayout,
     titleFontSize,
     animatedAvatar,
+    showExcerpt,
+    showImages,
+    allowExcerptFetch,
+    maxCollapsedLines,
   );
 }
 

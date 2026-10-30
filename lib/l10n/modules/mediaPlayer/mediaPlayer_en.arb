@@ -22,5 +22,12 @@
   "mediaPlayer_videoLoadTimeout": "Video loading timed out",
   "mediaPlayer_tapToRetry": "Tap to retry",
   "mediaPlayer_audioLoadFailed": "Failed to load audio",
-  "mediaPlayer_voiceLoadFailed": "Failed to load voice message"
+  "mediaPlayer_voiceLoadFailed": "Failed to load voice message",
+  "mediaPlayer_compressionMode": "Video compression mode",
+  "mediaPlayer_compressionCompatible": "Compatibility (recommended)",
+  "mediaPlayer_compressionScreen": "Screen recording clarity",
+  "mediaPlayer_compressionEfficient": "Size efficiency",
+  "mediaPlayer_compressionCompatibleHint": "H.264 for broad playback compatibility.",
+  "mediaPlayer_compressionScreenHint": "Prioritize text resolution, up to 15 fps.",
+  "mediaPlayer_compressionEfficientHint": "HEVC with H.264 fallback on encoding failure; some players may not support HEVC."
 }

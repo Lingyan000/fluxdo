@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../controls/media_controls_overlay.dart';
 import 'fullscreen_coordinator.dart';
 import 'video_player_session.dart';
+import 'video_playback_surface.dart';
 
 /// 视频全屏页:自推路由(参照 ImageViewerPage.open),纯黑底 fade 转场。
 ///
@@ -112,7 +113,7 @@ class _FullscreenVideoPageState extends State<FullscreenVideoPage> {
             Center(
               child: AspectRatio(
                 aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
+                child: VideoPlaybackSurface(controller: _controller),
               ),
             ),
             MediaControlsOverlay(

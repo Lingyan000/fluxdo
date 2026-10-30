@@ -84,6 +84,8 @@ Future<void> _prefetchFirstScreenThumbnails(
   String groupId,
   List<StickerItem> emojis,
 ) async {
+  // 详情可能在市场打开后才返回；被遮住的选择器不能重新启动预取。
+  if (!_stickerPanelOpen) return;
   // sticker_picker grid 用 maxCrossAxisExtent=80,8 列 × 4 行 ≈ 32 张同屏。
   // 预解 30 张覆盖首屏 + 一点滚动 buffer。
   const prefetchCount = 30;

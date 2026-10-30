@@ -68,21 +68,21 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   /// 桌面端 Esc 退出书签页(maybePop 会依次经过 PopScope:搜索模式先退
   /// 搜索、手机工作区先回书签标签,最后才真正 pop 路由)。
-  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
-    ref: ref,
-    scope: ShortcutScope.context,
-    // 底栏 tab 形态挂在 IndexedStack 里:不活跃时注册失效,否则截胡
-    // 其他 tab 的 ESC(共享根路由,路由过滤分不出活跃 tab)。
-    enabled: () => widget.isActive,
-  );
+  ShortcutScopeBinding? _shortcutScopeBinding;
 
   @override
   void initState() {
     super.initState();
     if (PlatformUtils.isDesktop) {
+      // 手机端不创建桌面快捷键绑定，避免 dispose 首次触发懒初始化读取 ref。
+      _shortcutScopeBinding = ShortcutScopeBinding(
+        ref: ref,
+        scope: ShortcutScope.context,
+        enabled: () => widget.isActive,
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _shortcutScopeBinding.register(context, {
+        _shortcutScopeBinding?.register(context, {
           ShortcutAction.closeOverlay: () {
             if (mounted) Navigator.of(context).maybePop();
           },
@@ -112,7 +112,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   @override
   void dispose() {
-    _shortcutScopeBinding.disposeDeferred();
+    _shortcutScopeBinding?.disposeDeferred();
     _setMobileBottomBarHidden(false);
     _scrollController.dispose();
     Future.microtask(_searchNotifier.exitSearchMode);

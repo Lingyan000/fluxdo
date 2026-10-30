@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,6 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../navigation/nav_action_bus.dart';
 import '../../providers/preferences_provider.dart';
-import '../../utils/blur_config.dart';
 import '../../utils/platform_utils.dart';
 
 /// 导航目标项配置
@@ -370,9 +370,6 @@ class _AdaptiveBottomNavigationState
     final floating = ref.watch(
       preferencesProvider.select((p) => p.bottomNavFloating),
     );
-    final floatingBlur = ref.watch(
-      preferencesProvider.select((p) => p.bottomNavFloatingBlur),
-    );
 
     // 悬浮胶囊：自绘条目布局。M3 的「未选中图标居中、标签下垂」两段式
     // 结构在紧凑胶囊高度下必然失衡，改为压实的图标+标签整体。
@@ -383,7 +380,6 @@ class _AdaptiveBottomNavigationState
       );
       return _FloatingBottomBarShell(
         itemHeight: itemHeight,
-        blur: floatingBlur,
         itemCount: widget.destinations.length,
         child: _CapsuleNavBar(
           selectedIndex: widget.selectedIndex,
@@ -431,6 +427,34 @@ class _AdaptiveBottomNavigationState
 /// - 外边距/内边距对齐 Telegram（iOS `TabBarComponent` innerInset 4、
 ///   sideInset 12；Android `MainTabsActivity` inset ≈4、距导航栏 8）。
 abstract final class _CapsuleMetrics {
+  /// 选中 pill 的最大横向拉伸比例（18%）
+  static const double maxStretch = 0.18;
+
+  /// 达到最大拉伸所需的速度（槽位/秒）
+  static const double fullStretchSlotsPerSecond = 8;
+
+  /// pill 随速度的横向拉伸量。
+  ///
+  /// 快速连点时 pill 被“拉长”，停下来恢复原形 —— 这是悬浮底栏
+  /// 最显著的动态特征，比单纯平移多一层“有质量”的手感。
+  static double stretchFor(double slotsPerSecond) =>
+      (slotsPerSecond.abs() / fullStretchSlotsPerSecond * maxStretch).clamp(
+        0.0,
+        maxStretch,
+      );
+
+  /// 拉伸的变换原点（0=左缘，0.5=居中，1=右缘）。
+  ///
+  /// 原点朝运动方向偏移：向右飞时钉住右端、尾巴向左拖出，形成
+  /// “被甩在后面”的观感。固定居中的话两端均匀外撑，只像变胖。
+  /// 限幅 0.15~0.85：完全钉到端点会让回弹显得生硬。
+  static double stretchOriginX(double slotsPerSecond, double stretch) {
+    if (stretch <= 0 || slotsPerSecond == 0) return 0.5;
+    final direction = slotsPerSecond > 0 ? 1.0 : -1.0;
+    final normalized = (stretch / maxStretch).clamp(0.0, 1.0);
+    return (0.5 + direction * normalized * 0.35).clamp(0.15, 0.85);
+  }
+
   /// 带字态 item 基准高
   static const double itemHeightLabeled = 48;
 
@@ -569,7 +593,6 @@ class _ActiveDestinationIcon extends ConsumerWidget {
 class _FloatingBottomBarShell extends StatelessWidget {
   const _FloatingBottomBarShell({
     required this.itemHeight,
-    required this.blur,
     required this.itemCount,
     required this.child,
   });
@@ -577,23 +600,14 @@ class _FloatingBottomBarShell extends StatelessWidget {
   /// 单个条目高度（胶囊高 = 本值 + [_CapsuleMetrics.innerInset] × 2）
   final double itemHeight;
 
-  /// 毛玻璃模糊开关
-  final bool blur;
-
   /// 入口数量（自适应宽度的基准）
   final int itemCount;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final barHeight = itemHeight + _CapsuleMetrics.innerInset * 2;
     final radius = barHeight / 2;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(radius),
-    );
 
     // 内容留白（最内层，玻璃/实色两种底色共用）
     final content = Padding(
@@ -601,26 +615,18 @@ class _FloatingBottomBarShell extends StatelessWidget {
       child: child,
     );
 
-    // 模糊开：BackdropFilter + 半透明底色透出内容；模糊关：实色胶囊。
-    // 底色不透明度取 TG Android mainTabs（液态玻璃 0.85 / 关闭 0.76）。
-    final body = blur
-        ? BackdropFilter(
-            filter: createBlurFilter(blurSigma),
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                shape: shape,
-                color: scheme.surfaceContainer.withValues(alpha: 0.82),
-              ),
-              child: content,
-            ),
-          )
-        : DecoratedBox(
-            decoration: ShapeDecoration(
-              shape: shape,
-              color: scheme.surfaceContainer,
-            ),
-            child: content,
-          );
+    // 柔光玻璃材质：局部背景模糊 + 折射 + 方向性边缘光。
+    // 不支持 shader 时才使用均匀模糊与降级描边。
+    // 材质统一遵循全局玻璃策略；关闭时直接出实色，不建离屏层。
+    //
+    // 外壳 ClipRRect 只限制可见范围，不保证背景纹理原点归零。
+    // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
+    // surfaceContainer 会被主题色染成彩色塑料板，失去玻璃的中性感。
+    final body = GlassSurfaceFrame(
+      radius: radius,
+      recipe: GlassRecipe.navigation,
+      child: content,
+    );
 
     return SafeArea(
       top: false,
@@ -637,7 +643,9 @@ class _FloatingBottomBarShell extends StatelessWidget {
             maxWidth,
           );
           return Padding(
-            padding: const EdgeInsets.only(bottom: _CapsuleMetrics.bottomMargin),
+            padding: const EdgeInsets.only(
+              bottom: _CapsuleMetrics.bottomMargin,
+            ),
             child: Align(
               // 槽位约束是 looseConstraints.tighten(width)：maxHeight 几乎
               // 是整个页面高，Expand 类组件（Center）会把胶囊顶到屏幕中间。
@@ -647,41 +655,7 @@ class _FloatingBottomBarShell extends StatelessWidget {
               child: SizedBox(
                 width: width,
                 // 投影放在模糊层之外：玻璃下的内容清晰穿透，影子独立柔和
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    shape: shape,
-                    shadows: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: isDark ? 0.18 : 0.06,
-                        ),
-                        blurRadius: 24,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(radius),
-                    // 描边画在裁切之内（最上层）：0.4 宽的边如果落在
-                    // ClipRRect 外侧会被抗锯齿吃掉半条，看着忽隐忽现
-                    child: Stack(
-                      fit: StackFit.passthrough,
-                      children: [
-                        body,
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: _CapsuleBorderPainter(
-                                radius: radius,
-                                isDark: isDark,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                child: body,
               ),
             ),
           );
@@ -689,55 +663,6 @@ class _FloatingBottomBarShell extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 胶囊描边：上浅下深的单像素级细边。
-///
-/// TG Android `BlurredBackgroundProviderImpl.mainTabs` 用两个色分别画上下
-/// 边（浅色 top 黑 6.7% / bottom 黑 12.5%，深色 top 白 2.4% / bottom 白
-/// 6.7%），模拟玻璃边缘的受光差。这里用一条垂直渐变描边等价表达。
-///
-/// 不用 `scheme.outline`：那是中灰色，压在半透明玻璃上会显脏；TG 两端都
-/// 是纯黑/纯白低透明度。
-class _CapsuleBorderPainter extends CustomPainter {
-  const _CapsuleBorderPainter({required this.radius, required this.isDark});
-
-  final double radius;
-  final bool isDark;
-
-  static const double _width = 0.4;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 描边以路径为中心线各占一半，内缩半个宽度才能整条落在胶囊内
-    final rect = Offset.zero & size;
-    final inner = rect.deflate(_width / 2);
-    final rrect = RRect.fromRectAndRadius(
-      inner,
-      Radius.circular(radius - _width / 2),
-    );
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _width
-      ..shader = ui.Gradient.linear(
-        Offset(inner.center.dx, inner.top),
-        Offset(inner.center.dx, inner.bottom),
-        isDark
-            ? [
-                const Color(0x0AFFFFFF),
-                const Color(0x14FFFFFF),
-              ]
-            : [
-                const Color(0x11000000),
-                const Color(0x20000000),
-              ],
-      );
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(_CapsuleBorderPainter old) =>
-      old.radius != radius || old.isDark != isDark;
 }
 
 /// 悬浮胶囊底栏的条目区：图标+标签压实成一组，选中指示 pill 在槽位之间
@@ -837,7 +762,8 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
             final slot = constraints.maxWidth / count;
             return Stack(
               children: [
-                // 滑动选中 pill：铺满整个条目槽位，位置弹簧插值
+                // 滑动选中 pill：铺满整个条目槽位，位置弹簧插值，
+                // 并随弹簧速度横向拉伸（详见 _CapsuleMetrics.stretchFor）
                 AnimatedBuilder(
                   animation: _position,
                   builder: (context, _) {
@@ -846,16 +772,29 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
                       0.0,
                       (count - 1).toDouble(),
                     );
+                    // velocity 单位已经是「槽位/秒」，与拉伸公式同量纲
+                    final velocity = _position.velocity;
+                    final stretch = _CapsuleMetrics.stretchFor(velocity);
+                    final originX = _CapsuleMetrics.stretchOriginX(
+                      velocity,
+                      stretch,
+                    );
                     return Positioned(
                       left: slot * pos,
                       top: 0,
                       width: slot,
                       height: widget.itemHeight,
                       child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: ShapeDecoration(
-                            color: pillColor,
-                            shape: const StadiumBorder(),
+                        child: Transform(
+                          // 只横向拉伸；纵向不动（纵向一起缩会变成「弹性
+                          // 球」，而不是「被甩在后面的拖尾」）
+                          transform: Matrix4.diagonal3Values(1 + stretch, 1, 1),
+                          alignment: Alignment(originX * 2 - 1, 0),
+                          child: DecoratedBox(
+                            decoration: ShapeDecoration(
+                              color: pillColor,
+                              shape: const StadiumBorder(),
+                            ),
                           ),
                         ),
                       ),

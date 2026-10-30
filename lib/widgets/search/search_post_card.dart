@@ -11,6 +11,7 @@ import '../common/category_tags_line.dart';
 import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
 import '../topic/painted_topic_card.dart';
+import '../common/morphing_dialog_anchor.dart';
 import '../topic/topic_card_layout.dart';
 import '../topic/topic_card_prewarmer.dart';
 import '../topic/topic_item_builder.dart' show kUsePaintedTopicCard;
@@ -84,13 +85,45 @@ class SearchPostPrewarmScope extends ConsumerWidget {
 /// 2. 头像(32px,跨两行)+ 用户名 ······ 时间
 /// 3.                     ▪分类 + 标签 ······ 统计
 /// 无分类无标签时退化为单行署名:用户名 ······ 统计 + 时间
-class SearchPostCard extends ConsumerWidget {
+class SearchPostCard extends StatelessWidget {
+  const SearchPostCard({
+    super.key,
+    required this.post,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final SearchPost post;
+  final VoidCallback? onTap;
+  final ValueChanged<BuildContext>? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget card = MorphingDialogAnchor(
+      enabled: onLongPress != null,
+      builder: (cardContext) => _SearchPostCardContent(
+        post: post,
+        onTap: onTap,
+        onLongPress: onLongPress == null
+            ? null
+            : () => onLongPress!(cardContext),
+      ),
+    );
+    if (!Responsive.isMobile(context)) {
+      card = Center(
+        child: SizedBox(width: searchCardWidthFor(context), child: card),
+      );
+    }
+    return card;
+  }
+}
+
+class _SearchPostCardContent extends ConsumerWidget {
   final SearchPost post;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
-  const SearchPostCard({
-    super.key,
+  const _SearchPostCardContent({
     required this.post,
     this.onTap,
     this.onLongPress,
@@ -112,18 +145,12 @@ class SearchPostCard extends ConsumerWidget {
     // ── 自绘路径(默认):排版全局缓存 + 单渲染对象,与话题卡同引擎
     // (kUsePaintedTopicCard 总开关一键回退 widget 版)
     if (kUsePaintedTopicCard) {
-      final isMobile = Responsive.isMobile(context);
-      final cardWidth = searchCardWidthFor(context);
       final layout = obtainSearchPostLayout(context, post, categoryMap);
-      Widget card = PaintedTopicCard(
+      return PaintedTopicCard(
         layout: layout,
         onTap: onTap,
         onLongPress: onLongPress,
       );
-      if (!isMobile) {
-        card = Center(child: SizedBox(width: cardWidth, child: card));
-      }
-      return card;
     }
 
     // ── widget 版(回退保险丝)────────────────────────────────

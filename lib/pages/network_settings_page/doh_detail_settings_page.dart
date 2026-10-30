@@ -14,6 +14,7 @@ import '../../services/toast_service.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import 'widgets/ech_settings_card.dart';
 
 /// DOH 详细设置页面（服务器列表、IPv6、服务端 IP、ECH）
 class DohDetailSettingsPage extends StatefulWidget {
@@ -122,8 +123,10 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
               // ECH 服务器选择
               _buildSectionHeader(theme, 'ECH'),
               const SizedBox(height: 12),
-              SegmentedCardGroup(
-                children: [_buildEchServerSelector(theme, settings)],
+              EchSettingsCard(
+                policy: settings.echDnsPolicy,
+                serverSelector: _buildEchServerSelector(theme, settings),
+                onChanged: _service.setEchDnsPolicy,
               ),
               const SizedBox(height: 24),
 

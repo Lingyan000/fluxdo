@@ -1,384 +1,622 @@
 import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
+
 import '../models/draft.dart';
+import 'connectivity_service.dart';
 import 'discourse/discourse_service.dart';
 import 'local_draft_store.dart';
 
-/// 草稿保存状态
-enum DraftSaveStatus {
-  idle, // 无操作
-  pending, // 等待保存（防抖中）
-  saving, // 正在保存
-  saved, // 已保存
-  error, // 保存失败
-}
+enum DraftSaveStatus { idle, pending, saving, saved, local, conflict, error }
 
-/// 草稿控制器
-/// 负责自动保存草稿、防抖、序列号管理
+/// 沿用官方在线保存的 2 秒防抖、15 秒最长等待和串行请求。
+/// 本地快照独立更新，页面销毁不会中止已交给保存队列的任务。
 class DraftController {
-  final String draftKey;
-  final DiscourseService _service;
-  final LocalDraftStore _localStore;
-  final Future<String?> Function() _accountIdResolver;
-
-  /// 防抖延迟时间
-  static const _debounceDelay = Duration(seconds: 2);
-  static const _localDebounceDelay = Duration(milliseconds: 400);
-
-  /// 当前序列号
-  int _sequence = 0;
-  int get sequence => _sequence;
-
-  /// 上次保存的内容快照（用于检测变化）
-  String? _lastSavedData;
-
-  /// 防抖定时器
-  Timer? _debounceTimer;
-  Timer? _localDebounceTimer;
-  DraftData? _pendingLocalData;
-  Future<void> _localOperationFuture = Future.value();
-  Future<String?>? _accountIdFuture;
-
-  /// 保存状态
-  final _statusNotifier = ValueNotifier<DraftSaveStatus>(DraftSaveStatus.idle);
-  ValueNotifier<DraftSaveStatus> get statusNotifier => _statusNotifier;
-  DraftSaveStatus get status => _statusNotifier.value;
-
-  /// 编辑器打开时间戳（用于计算 composerTime）
-  final DateTime _openedAt = DateTime.now();
-
-  /// 是否已释放
-  bool _disposed = false;
-
-  /// 是否禁用草稿保存(对齐 Discourse 前端 composer.disableDrafts)
-  /// 发送/审核途中置 true,避免与帖子创建/草稿删除流程撞 409
-  bool _disabled = false;
-
-  /// 当前正在进行的保存操作
-  Future<void>? _saveFuture;
-
   DraftController({
     required this.draftKey,
     DiscourseService? service,
     LocalDraftStore? localStore,
     Future<String?> Function()? accountIdResolver,
+    Stream<bool>? connectionStream,
+    bool Function()? isConnected,
+    this.onRemoteDraftChanged,
+    this.currentEditorData,
   }) : _service = service ?? DiscourseService(),
        _localStore = localStore ?? LocalDraftStore(),
        _accountIdResolver =
            accountIdResolver ??
-           (() => (service ?? DiscourseService()).getUsername());
+           (() => (service ?? DiscourseService()).getUsername()),
+       _isConnected = isConnected ?? (() => ConnectivityService().isConnected) {
+    _connection = (connectionStream ?? ConnectivityService().connectionStream)
+        .listen((connected) {
+          if (connected) retryPending();
+        });
+  }
 
-  /// 加载现有草稿
-  /// 返回草稿数据，如果不存在返回 null
+  final String draftKey;
+  final DiscourseService _service;
+  final LocalDraftStore _localStore;
+  final Future<String?> Function() _accountIdResolver;
+  final bool Function() _isConnected;
+  final ValueChanged<DraftData>? onRemoteDraftChanged;
+  final DraftData? Function()? currentEditorData;
+  StreamSubscription<bool>? _connection;
+  Future<String?>? _accountIdFuture;
+  static const _debounceDelay = Duration(seconds: 2);
+  static const _maxWait = Duration(seconds: 15);
+  final _openedAt = DateTime.now();
+  final _statusNotifier = ValueNotifier<DraftSaveStatus>(DraftSaveStatus.idle);
+  ValueNotifier<DraftSaveStatus> get statusNotifier => _statusNotifier;
+  DraftSaveStatus get status => _statusNotifier.value;
+  int _sequence = 0;
+  int _confirmedSequence = 0;
+  int _sequenceEpoch = 0;
+  int get sequence => _sequence;
+  bool _disposed = false;
+  bool _disabled = false;
+  bool _conflict = false;
+  bool get hasConflict => _conflict;
+  bool _needsRemoteCheck = true;
+  bool _pendingDelete = false;
+  bool _explicitDelete = false;
+  bool _requested = false;
+  bool _forceNext = false;
+  bool _deleting = false;
+  bool _loading = false;
+  bool _refreshRequested = false;
+  bool _reloadRequested = false;
+  int _revision = 0;
+  DraftData? _latestData;
+  Draft? get currentDraft => _latestData?.hasContent == true
+      ? Draft(draftKey: draftKey, data: _latestData!, sequence: _sequence)
+      : null;
+  String? _lastSavedFingerprint;
+  String? _lastAttemptFingerprint;
+  String? _localFingerprint;
+  Timer? _debounceTimer;
+  Timer? _maxWaitTimer;
+  Future<void>? _saveFuture;
+  Future<void>? _remoteCheck;
+  Future<void> _localTail = Future.value();
+
+  void _setStatus(DraftSaveStatus value) {
+    if (value == DraftSaveStatus.conflict) _cancelTimers();
+    if (!_disposed && (!_disabled || value == DraftSaveStatus.idle)) {
+      _statusNotifier.value = value;
+    }
+  }
+
+  bool get _dirty =>
+      _pendingDelete ||
+      (_latestData?.hasContent == true &&
+          _latestData!.contentFingerprint != _lastSavedFingerprint);
+
+  DraftSaveStatus get _unsyncedStatus =>
+      _localFingerprint == _latestData?.contentFingerprint
+      ? DraftSaveStatus.local
+      : DraftSaveStatus.error;
+
+  void _cancelTimers() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _maxWaitTimer?.cancel();
+    _maxWaitTimer = null;
+  }
+
+  /// 在线时先核对云端；离线或请求失败时恢复本地未上传内容及缓存。
   Future<Draft?> loadDraft({Future<Draft?>? preloadedDraftFuture}) async {
-    Draft? serverDraft;
+    // 尽早接住预加载请求的异常，避免读取本地期间形成未处理 Future。
+    var preloadFailed = false;
+    final remote = preloadedDraftFuture?.then<Draft?>(
+      (value) => value,
+      onError: (Object error) {
+        preloadFailed = true;
+        return null;
+      },
+    );
+    _loading = true;
+    final revision = _revision;
     try {
-      serverDraft = await (preloadedDraftFuture ?? _service.getDraft(draftKey));
-    } catch (e) {
-      debugPrint('[DraftController] load server draft failed: $e');
-    }
-
-    if (serverDraft != null) {
-      _sequence = serverDraft.sequence;
-      _lastSavedData = serverDraft.data.toJsonString();
-    }
-
-    final localDraft = await _readLocalDraft();
-    if (localDraft == null) return serverDraft;
-
-    if (serverDraft != null &&
-        serverDraft.data.toJsonString() == localDraft.data.toJsonString()) {
-      await _deleteLocalIfMatches(localDraft.data);
-      return serverDraft;
-    }
-
-    _sequence = serverDraft?.sequence ?? localDraft.sequence;
-    return (serverDraft ??
-            Draft(
-              draftKey: draftKey,
-              data: localDraft.data,
-              sequence: _sequence,
-              updatedAt: localDraft.updatedAt,
-            ))
-        .copyWith(
-          data: localDraft.data,
-          sequence: _sequence,
-          updatedAt: localDraft.updatedAt,
+      final local = await _readLocalDraft();
+      if (_disposed) return null;
+      if (local != null && revision == _revision) {
+        _latestData = local.data;
+        _localFingerprint = local.data.contentFingerprint;
+        _sequence = _confirmedSequence = local.sequence;
+        _lastSavedFingerprint = local.synced
+            ? _localFingerprint
+            : local.baseFingerprint;
+        _pendingDelete = !local.data.hasContent;
+        _setStatus(
+          local.synced ? DraftSaveStatus.saved : DraftSaveStatus.local,
         );
+      }
+      if (_isConnected()) {
+        _remoteCheck = _checkRemote(
+          preloaded: remote,
+          preloadFailed: () => preloadFailed,
+        );
+        await _remoteCheck;
+      }
+      if (!_disposed &&
+          !_disabled &&
+          !_conflict &&
+          !_needsRemoteCheck &&
+          _dirty) {
+        unawaited(_requestSave());
+      }
+      return currentDraft;
+    } finally {
+      _loading = false;
+    }
   }
 
   Future<LocalDraftEntry?> _readLocalDraft() async {
     if (kIsWeb) return null;
     try {
-      final accountId = await _resolveAccountId();
-      if (accountId == null) return null;
-      return _localStore.read(accountId, draftKey);
+      final account = await _resolveAccountId();
+      if (account == null) return null;
+      return await _localStore.read(account, draftKey);
     } catch (e) {
       debugPrint('[DraftController] load local draft failed: $e');
       return null;
     }
   }
 
-  /// 触发自动保存（带防抖）
-  void scheduleSave(DraftData data) {
-    if (_disposed || _disabled) return;
+  bool _accept(DraftData data) {
+    if (_latestData?.contentFingerprint == data.contentFingerprint) {
+      return false;
+    }
+    final hadContent = _latestData?.hasContent == true;
+    _explicitDelete = false;
+    _latestData = data.copyWith(
+      tags: data.tags == null ? null : List.unmodifiable(data.tags!),
+      recipients: data.recipients == null
+          ? null
+          : List.unmodifiable(data.recipients!),
+    );
+    _revision++;
+    _pendingDelete =
+        !data.hasContent &&
+        (hadContent || _lastSavedFingerprint != null || _pendingDelete);
+    if (data.hasContent || _pendingDelete) unawaited(_persistLatest());
+    return true;
+  }
 
-    // 清空内容时取消尚未执行的保存，并清掉本地兜底。
-    if (!data.hasContent) {
-      _debounceTimer?.cancel();
-      _localDebounceTimer?.cancel();
-      _pendingLocalData = null;
-      unawaited(_deleteLocal());
-      _statusNotifier.value = DraftSaveStatus.idle;
+  void scheduleSave(DraftData data) {
+    if (_disposed || _disabled || !_accept(data)) return;
+    if (_conflict) {
+      _setStatus(DraftSaveStatus.conflict);
       return;
     }
-
-    // 检查内容是否有变化
-    if (!_hasContentChanged(data)) return;
-
-    _scheduleLocalSave(data);
-
+    if (!_dirty) {
+      _cancelTimers();
+      _requested =
+          _saveFuture != null &&
+          (_deleting || _lastAttemptFingerprint != data.contentFingerprint);
+      _setStatus(
+        data.hasContent ? DraftSaveStatus.saved : DraftSaveStatus.idle,
+      );
+      return;
+    }
+    _setStatus(
+      !data.hasContent
+          ? DraftSaveStatus.idle
+          : _isConnected()
+          ? DraftSaveStatus.pending
+          : _unsyncedStatus,
+    );
     _debounceTimer?.cancel();
-    _statusNotifier.value = DraftSaveStatus.pending;
+    _debounceTimer = Timer(_debounceDelay, () => unawaited(_requestSave()));
+    _maxWaitTimer ??= Timer(_maxWait, () => unawaited(_requestSave()));
+  }
 
-    _debounceTimer = Timer(_debounceDelay, () {
-      // 对齐 Discourse 前端 services/composer.js:正在保存就再延一轮,
-      // 不并发(配合乐观 sequence 共同防 409)
-      if (_saveFuture != null) {
-        scheduleSave(data);
+  Future<void> saveNow(DraftData data, {bool forceSave = false}) {
+    if (_disposed || _disabled) return Future.value();
+    _accept(data);
+    _forceNext |= forceSave;
+    if (forceSave && !data.hasContent) _pendingDelete = true;
+    return _requestSave();
+  }
+
+  /// 恢复网络/回到前台时，即使本机没有修改也核对其他设备的最新版本。
+  Future<void> retryPending() {
+    if (_disposed || _disabled) return Future.value();
+    _refreshRequested = true;
+    return _requestSave();
+  }
+
+  /// 用户明确选择使用云端版本；与保存串行，失败时保留本地内容。
+  Future<bool> reloadFromRemote() async {
+    if (_disposed || _disabled) return false;
+    _reloadRequested = true;
+    _needsRemoteCheck = true;
+    _forceNext = false;
+    await _requestSave();
+    return !_needsRemoteCheck && !_conflict && !_dirty;
+  }
+
+  Future<void> _requestSave() {
+    _cancelTimers();
+    if (_disabled && !_pendingDelete) return Future.value();
+    _requested = true;
+    if (_saveFuture != null) return _saveFuture!;
+    // 在任何 await 之前占用队列，连同本地写入一起串行化。
+    final done = Completer<void>();
+    _saveFuture = done.future;
+    unawaited(() async {
+      var rebases = 0;
+      try {
+        while (_requested && (!_disabled || _pendingDelete)) {
+          _requested = false;
+          await _remoteCheck;
+          if (!await _accountMatches()) {
+            _setStatus(_unsyncedStatus);
+            break;
+          }
+          if (_reloadRequested) {
+            _reloadRequested = false;
+            if (_isConnected()) {
+              await _checkRemote(replaceLocal: true);
+            } else {
+              _needsRemoteCheck = true;
+              _setStatus(_unsyncedStatus);
+            }
+            break;
+          }
+          if (_refreshRequested) {
+            _refreshRequested = false;
+            _needsRemoteCheck = true;
+          }
+          if (_needsRemoteCheck && _isConnected() && !_forceNext) {
+            await _checkRemote();
+          }
+          await _localTail;
+          if ((!_dirty && !_forceNext) || (_disabled && !_pendingDelete)) {
+            continue;
+          }
+          if (_conflict && !_forceNext) {
+            _setStatus(DraftSaveStatus.conflict);
+            break;
+          }
+          if (!_isConnected() || (_needsRemoteCheck && !_forceNext)) {
+            _setStatus(_unsyncedStatus);
+            break;
+          }
+          final data = _latestData!;
+          final revision = _revision;
+          if (_pendingDelete) {
+            if (!await _deleteRemote(revision)) break;
+            continue;
+          }
+          final force = _forceNext;
+          _forceNext = false;
+          final sentSequence = _sequence;
+          final epoch = _sequenceEpoch;
+          _sequence = sentSequence + 1;
+          _lastAttemptFingerprint = data.contentFingerprint;
+          _setStatus(DraftSaveStatus.saving);
+          try {
+            final next = await _service.saveDraft(
+              draftKey: draftKey,
+              sequence: sentSequence,
+              data: data.copyWith(
+                composerTime: DateTime.now()
+                    .difference(_openedAt)
+                    .inMilliseconds,
+              ),
+              forceSave: force,
+            );
+            _sequence = epoch == _sequenceEpoch
+                ? next
+                : math.max(next, _sequence);
+            _confirmedSequence = _sequence;
+            _lastSavedFingerprint = data.contentFingerprint;
+            _conflict = false;
+            _needsRemoteCheck = false;
+            await _persistLatest(confirmOnly: true);
+            if (!_disabled) {
+              _setStatus(
+                _latestData?.hasContent != true
+                    ? DraftSaveStatus.idle
+                    : _dirty
+                    ? DraftSaveStatus.pending
+                    : DraftSaveStatus.saved,
+              );
+            }
+          } on DraftSequenceConflictException {
+            if (epoch == _sequenceEpoch) _sequence = sentSequence;
+            _conflict = true;
+            _needsRemoteCheck = true;
+            await _checkRemote();
+            if (!_dirty && !_conflict) continue;
+            if (!_conflict &&
+                !_needsRemoteCheck &&
+                _sequence != sentSequence &&
+                rebases++ == 0) {
+              _requested = true;
+              continue;
+            }
+            _conflict = true;
+            _setStatus(DraftSaveStatus.conflict);
+            if (_requested) continue;
+            break;
+          } catch (e) {
+            if (epoch == _sequenceEpoch) _sequence = sentSequence;
+            _needsRemoteCheck = true;
+            debugPrint('[DraftController] save failed: $e');
+            _setStatus(_unsyncedStatus);
+            if (_requested) continue;
+            break;
+          }
+        }
+      } catch (e, stack) {
+        debugPrint('[DraftController] save queue failed: $e\n$stack');
+        _setStatus(_unsyncedStatus);
+      } finally {
+        _saveFuture = null;
+        done.complete();
+      }
+    }());
+    return done.future;
+  }
+
+  Future<void> _checkRemote({
+    Future<Draft?>? preloaded,
+    bool Function()? preloadFailed,
+    bool replaceLocal = false,
+  }) async {
+    final epoch = _sequenceEpoch;
+    final revision = _revision;
+    try {
+      if (!await _accountMatches()) return;
+      final remote = await (preloaded ?? _service.getDraft(draftKey));
+      if (epoch != _sequenceEpoch || !await _accountMatches()) return;
+      if (preloadFailed?.call() == true) {
+        _needsRemoteCheck = true;
+        _setStatus(_unsyncedStatus);
         return;
       }
-      _save(data);
-    });
-  }
-
-  /// 立即保存（关闭时调用）
-  Future<void> saveNow(DraftData data) async {
-    if (_disposed || _disabled) return;
-
-    _debounceTimer?.cancel();
-    await _saveLocalNow(data);
-    if (_disposed || _disabled) return;
-
-    // 没有内容时不保存
-    if (!data.hasContent) return;
-
-    // 如果没有内容变化，不需要保存
-    if (!_hasContentChanged(data)) return;
-
-    // 等正在进行的保存完成,拿到最新 sequence 后再发,避免 409
-    if (_saveFuture != null) {
-      await _saveFuture;
-    }
-
-    await _save(data);
-  }
-
-  /// 执行保存
-  Future<void> _save(DraftData data) async {
-    if (_disposed) return;
-
-    await _saveLocalNow(data);
-    if (_disposed || _disabled) return;
-
-    // 添加编辑时长信息
-    final composerTime = DateTime.now().difference(_openedAt).inMilliseconds;
-    final dataWithTime = data.copyWith(composerTime: composerTime);
-
-    _statusNotifier.value = DraftSaveStatus.saving;
-
-    final future = _doSave(dataWithTime, data);
-    _saveFuture = future;
-    await future;
-  }
-
-  Future<void> _doSave(DraftData dataWithTime, DraftData data) async {
-    // 对齐 Discourse 前端 composer.js:发请求前乐观递增 sequence,
-    // 这样保存中再来的请求会带 +1 后的值,不会再撞 409
-    final sentSequence = _sequence;
-    _sequence = sentSequence + 1;
-    try {
-      final newSequence = await _service.saveDraft(
-        draftKey: draftKey,
-        data: dataWithTime,
-        sequence: sentSequence,
-      );
-      _sequence = newSequence;
-      _lastSavedData = data.toJsonString();
-      await _deleteLocalIfMatches(data);
-      if (!_disposed) {
-        _statusNotifier.value = DraftSaveStatus.saved;
+      // 富文本镜像有防抖；远端返回时再收一次当前正文，不能漏掉等待期间的输入。
+      // 舍弃后编辑器仍保留旧正文，不能用它覆盖已排队的删除意图。
+      if (!_loading && !_disposed && !_disabled && !_explicitDelete) {
+        final current = currentEditorData?.call();
+        if (current != null) _accept(current);
       }
-    } on DraftSequenceConflictException {
-      // 服务端 sequence 与客户端不一致(例如网页端同时编辑、上次保存丢响应)。
-      // 服务端 409 不返回最新 sequence,只能 force_save 一次绕过校验。
-      try {
-        final newSequence = await _service.saveDraft(
-          draftKey: draftKey,
-          data: dataWithTime,
-          sequence: sentSequence,
-          forceSave: true,
-        );
-        _sequence = newSequence;
-        _lastSavedData = data.toJsonString();
-        await _deleteLocalIfMatches(data);
-        if (!_disposed) {
-          _statusNotifier.value = DraftSaveStatus.saved;
-        }
-      } catch (e) {
-        debugPrint('[DraftController] force save failed: $e');
-        if (!_disposed) {
-          _statusNotifier.value = DraftSaveStatus.error;
-        }
+      if (replaceLocal && revision != _revision) {
+        _conflict = true;
+        _needsRemoteCheck = true;
+        _setStatus(DraftSaveStatus.conflict);
+        return;
       }
+      final latest = _latestData;
+      if (replaceLocal || (!_dirty && !_disabled && !_disposed)) {
+        await _adoptRemote(remote);
+        return;
+      }
+      if (remote != null) {
+        final fingerprint = remote.data.contentFingerprint;
+        final acknowledged =
+            fingerprint == latest?.contentFingerprint ||
+            fingerprint == _lastSavedFingerprint ||
+            fingerprint == _lastAttemptFingerprint;
+        if (!acknowledged) {
+          _conflict = true;
+          _needsRemoteCheck = true;
+          _setStatus(DraftSaveStatus.conflict);
+          return;
+        }
+        _sequence = _confirmedSequence = remote.sequence;
+        _sequenceEpoch++;
+        _lastSavedFingerprint = fingerprint;
+        _conflict = false;
+        await _persistLatest(confirmOnly: true);
+        if (!_dirty && !_disabled) _setStatus(DraftSaveStatus.saved);
+      } else if (_lastSavedFingerprint != null && !_pendingDelete) {
+        // 其他设备已发送或删除草稿，本机未上传修改不能自动复活它。
+        _conflict = true;
+        _needsRemoteCheck = true;
+        _setStatus(DraftSaveStatus.conflict);
+        return;
+      } else {
+        _conflict = false;
+      }
+      _needsRemoteCheck = false;
     } catch (e) {
-      debugPrint('[DraftController] save failed: $e');
-      if (!_disposed) {
-        _statusNotifier.value = DraftSaveStatus.error;
-      }
-    } finally {
-      if (_saveFuture != null) {
-        _saveFuture = null;
-      }
+      _needsRemoteCheck = true;
+      debugPrint('[DraftController] check remote draft failed: $e');
+      _setStatus(_conflict ? DraftSaveStatus.conflict : _unsyncedStatus);
     }
   }
 
-  /// 删除草稿
-  /// 会等待正在进行的保存操作完成后再删除，避免并发竞态
-  Future<void> deleteDraft() async {
-    _debounceTimer?.cancel();
-    _localDebounceTimer?.cancel();
-    _pendingLocalData = null;
-
-    // 等待正在进行的保存完成，确保拿到最新的 sequence
-    if (_saveFuture != null) {
-      await _saveFuture;
+  Future<void> _adoptRemote(Draft? remote) async {
+    final previous = _latestData;
+    final data = remote?.data ?? const DraftData();
+    // 空编辑器的 action/category 等元数据不代表远端正文发生变化。
+    // 原生选图器返回触发刷新时，空 -> 空不能重建宿主，丢掉待确认的上传。
+    final changed =
+        (previous?.hasContent == true || data.hasContent) &&
+        previous?.contentFingerprint != data.contentFingerprint;
+    _latestData = data;
+    _revision++;
+    final revision = _revision;
+    _sequenceEpoch++;
+    if (remote != null) _sequence = _confirmedSequence = remote.sequence;
+    _lastSavedFingerprint = remote?.data.contentFingerprint;
+    _lastAttemptFingerprint = null;
+    _pendingDelete = false;
+    _explicitDelete = false;
+    _conflict = false;
+    _needsRemoteCheck = false;
+    if (changed && !_loading && !_disposed && !_disabled) {
+      onRemoteDraftChanged?.call(data);
     }
+    if (remote != null) {
+      await _persistLatest(
+        confirmOnly: true,
+        replacingFingerprint: previous?.contentFingerprint,
+      );
+    } else if (previous != null) {
+      await _enqueueLocal(() async {
+        final account = await _resolveAccountId();
+        if (account != null) {
+          await _localStore.deleteIfMatches(
+            accountId: account,
+            draftKey: draftKey,
+            data: previous,
+          );
+        }
+      });
+      if (_revision == revision) _localFingerprint = null;
+    }
+    if (!_dirty) {
+      _setStatus(
+        data.hasContent ? DraftSaveStatus.saved : DraftSaveStatus.idle,
+      );
+    }
+  }
 
+  Future<void> deleteDraft() {
+    _cancelTimers();
+    _explicitDelete = true;
+    _latestData = const DraftData();
+    _revision++;
+    _pendingDelete = true;
+    _conflict = false;
+    unawaited(_persistLatest());
+    return _requestSave();
+  }
+
+  Future<bool> _deleteRemote(int revision) async {
+    _deleting = true;
     try {
+      final remote = await _service.getDraft(draftKey);
+      if (_revision != revision) return true;
+      if (remote != null) {
+        final fingerprint = remote.data.contentFingerprint;
+        if (!_forceNext &&
+            remote.sequence != _confirmedSequence &&
+            fingerprint != _lastSavedFingerprint &&
+            fingerprint != _lastAttemptFingerprint) {
+          _conflict = true;
+          _setStatus(DraftSaveStatus.conflict);
+          return false;
+        }
+        _sequence = _confirmedSequence = remote.sequence;
+      }
+      _forceNext = false;
       await _service.deleteDraft(draftKey, sequence: _sequence);
+      _lastSavedFingerprint = null;
+      if (_revision == revision && _pendingDelete) {
+        await _enqueueLocal(() async {
+          final account = await _resolveAccountId();
+          if (account != null) await _localStore.delete(account, draftKey);
+        });
+        _pendingDelete = false;
+        _localFingerprint = null;
+        _lastSavedFingerprint = null;
+        _setStatus(DraftSaveStatus.idle);
+      }
+      return true;
     } catch (e) {
-      debugPrint('[DraftController] deleteDraft failed: $e');
+      debugPrint('[DraftController] delete failed: $e');
+      _setStatus(DraftSaveStatus.error);
+      return false;
     } finally {
-      await _deleteLocal();
+      _deleting = false;
     }
   }
 
-  void _scheduleLocalSave(DraftData data) {
-    if (kIsWeb) return;
-    _localDebounceTimer?.cancel();
-    _pendingLocalData = data;
-    _localDebounceTimer = Timer(_localDebounceDelay, () {
-      unawaited(_flushPendingLocalWrite());
+  Future<void> _persistLatest({
+    bool confirmOnly = false,
+    String? replacingFingerprint,
+  }) {
+    if (kIsWeb || _latestData == null) return Future.value();
+    final data = _latestData!;
+    final revision = _revision;
+    final sequence = _confirmedSequence;
+    final synced =
+        !_pendingDelete && data.contentFingerprint == _lastSavedFingerprint;
+    final base = _lastSavedFingerprint;
+    return _enqueueLocal(() async {
+      final account = await _resolveAccountId();
+      if (account == null || revision != _revision) return;
+      if (confirmOnly) {
+        final recorded = await _localStore.recordSync(
+          accountId: account,
+          draftKey: draftKey,
+          data: data,
+          sequence: sequence,
+          synced: synced,
+          baseFingerprint: base,
+          expectedFingerprint: replacingFingerprint,
+        );
+        if (!recorded) return;
+      } else {
+        await _localStore.write(
+          accountId: account,
+          draftKey: draftKey,
+          data: data,
+          sequence: sequence,
+          synced: synced,
+          baseFingerprint: base,
+        );
+      }
+      if (revision == _revision) {
+        _localFingerprint = data.contentFingerprint;
+        if (!_isConnected() && _dirty && !_conflict) {
+          _setStatus(DraftSaveStatus.local);
+        }
+      }
     });
   }
 
-  Future<void> _saveLocalNow(DraftData data) async {
-    if (kIsWeb) return;
-    _localDebounceTimer?.cancel();
-    if (!data.hasContent) return;
-    _pendingLocalData = null;
-    await _enqueueLocalWrite(data);
-  }
-
-  Future<void> _flushPendingLocalWrite() async {
-    final data = _pendingLocalData;
-    _pendingLocalData = null;
-    if (data == null || !data.hasContent) return;
-    await _enqueueLocalWrite(data);
-  }
-
-  Future<void> _enqueueLocalWrite(DraftData data) {
-    return _enqueueLocalOperation(() async {
-      final accountId = await _resolveAccountId();
-      if (accountId == null) return;
-      await _localStore.write(
-        accountId: accountId,
-        draftKey: draftKey,
-        data: data,
-        sequence: _sequence,
-      );
-    }, 'save local draft');
-  }
-
-  Future<void> _deleteLocalIfMatches(DraftData data) async {
-    if (kIsWeb) return;
-    _localDebounceTimer?.cancel();
-    await _flushPendingLocalWrite();
-    await _enqueueLocalOperation(() async {
-      final accountId = await _resolveAccountId();
-      if (accountId == null) return;
-      await _localStore.deleteIfMatches(
-        accountId: accountId,
-        draftKey: draftKey,
-        data: data,
-      );
-    }, 'clear synced local draft');
-  }
-
-  Future<void> _deleteLocal() {
-    if (kIsWeb) return Future.value();
-    return _enqueueLocalOperation(() async {
-      final accountId = await _resolveAccountId();
-      if (accountId == null) return;
-      await _localStore.delete(accountId, draftKey);
-    }, 'delete local draft');
-  }
-
-  Future<void> _enqueueLocalOperation(
-    Future<void> Function() operation,
-    String operationName,
-  ) {
-    final previous = _localOperationFuture;
-    final next = () async {
+  Future<void> _enqueueLocal(Future<void> Function() operation) {
+    final previous = _localTail;
+    return _localTail = () async {
+      await previous;
       try {
-        await previous;
         await operation();
       } catch (e) {
-        debugPrint('[DraftController] $operationName failed: $e');
+        debugPrint('[DraftController] local draft operation failed: $e');
       }
     }();
-    _localOperationFuture = next;
-    return next;
   }
 
   Future<String?> _resolveAccountId() async {
-    final accountId = await (_accountIdFuture ??= _accountIdResolver());
-    return accountId == null || accountId.isEmpty ? null : accountId;
+    final account = await (_accountIdFuture ??= _accountIdResolver());
+    return account == null || account.isEmpty ? null : account;
   }
 
-  /// 检查内容是否有变化
-  bool _hasContentChanged(DraftData data) {
-    return data.toJsonString() != _lastSavedData;
-  }
+  Future<bool> _accountMatches() async =>
+      await _resolveAccountId() == await _accountIdResolver();
 
-  /// 永久禁用本控制器的草稿保存
-  /// 用于发送/审核通过场景:停掉防抖定时器并阻断后续 [scheduleSave]/[saveNow]
   void disable() {
     _disabled = true;
-    _debounceTimer?.cancel();
-    if (!_disposed) {
-      _statusNotifier.value = DraftSaveStatus.idle;
+    _cancelTimers();
+    _requested = false;
+    _setStatus(DraftSaveStatus.idle);
+  }
+
+  void enable() {
+    _disabled = false;
+    if (_dirty && !_disposed) {
+      _debounceTimer = Timer(_debounceDelay, () => unawaited(retryPending()));
     }
   }
 
-  /// 恢复草稿保存(发送失败时调用,对应 Discourse 前端 composer.js:1439)
-  void enable() {
-    _disabled = false;
-  }
-
-  /// 用服务端返回的 sequence 同步本地(发送响应里带 draft_sequence 时调用)
-  /// 对齐 Discourse 前端 composer.js:1382 的 `topic.set("draft_sequence", ...)`
   void syncSequence(int sequence) {
-    _sequence = sequence;
+    _sequenceEpoch++;
+    _sequence = _confirmedSequence = sequence;
   }
 
-  /// 释放资源
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
-    _debounceTimer?.cancel();
-    _localDebounceTimer?.cancel();
-    _pendingLocalData = null;
+    _cancelTimers();
+    unawaited(_connection?.cancel());
+    // 队列继续完成已经接收的最后快照，只停止界面通知和新调度。
     _statusNotifier.dispose();
   }
 }

@@ -9,6 +9,17 @@ import 'dart:ui';
 /// - CupertinoPopupSurface 默认 sigma=30
 const blurSigma = 25.0;
 
+/// 全屏模态背景采用逻辑像素，区别于局部玻璃的物理像素配方。
+enum ModalBlurScene {
+  sheet(18, 0.12, 0.24),
+  dialog(25, 0.20, 0.32);
+
+  const ModalBlurScene(this.sigma, this.lightDim, this.darkDim);
+  final double sigma;
+  final double lightDim;
+  final double darkDim;
+}
+
 /// 饱和度增强系数（1.0 = 无变化，>1.0 增强饱和度）
 ///
 /// Telegram 源码中有饱和度增强代码但未启用（TODO 状态），
@@ -22,10 +33,26 @@ final ColorFilter saturationFilter = () {
   const sg = (1 - s) * 0.7152;
   const sb = (1 - s) * 0.0722;
   return ColorFilter.matrix(<double>[
-    sr + s, sg,     sb,     0, 0,
-    sr,     sg + s, sb,     0, 0,
-    sr,     sg,     sb + s, 0, 0,
-    0,      0,      0,      1, 0,
+    sr + s,
+    sg,
+    sb,
+    0,
+    0,
+    sr,
+    sg + s,
+    sb,
+    0,
+    0,
+    sr,
+    sg,
+    sb + s,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]);
 }();
 
@@ -46,7 +73,12 @@ ImageFilter createBlurFilter(double sigma) {
 /// sigma=25 的模糊本身已足以模糊内容，遮罩只需提供轻微对比度。
 /// 浅色模式使用低透明度遮罩，避免灰蒙蒙；深色模式稍高。
 /// 参考 Telegram BottomSheet dimBehindAlpha=51/255≈0.2。
-Color blurBarrierColor(Brightness brightness) {
+Color blurBarrierColor(Brightness brightness, {ModalBlurScene? scene}) {
+  if (scene != null) {
+    return const Color(0xFF000000).withValues(
+      alpha: brightness == Brightness.dark ? scene.darkDim : scene.lightDim,
+    );
+  }
   return brightness == Brightness.dark
       ? const Color(0x47000000) // ~28% 黑
       : const Color(0x26000000); // ~15% 黑

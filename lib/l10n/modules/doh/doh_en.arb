@@ -160,5 +160,31 @@
   "doh_serverError": "DOH server error: {statusLine}",
   "doh_serverTencent": "Tencent DNS",
   "doh_startTimeout": "Proxy start timeout (5s)",
-  "doh_unknownReason": "Unknown reason"
+  "doh_unknownReason": "Unknown reason",
+  "dohDetail_publicEch": "Public ECH endpoint",
+  "dohDetail_publicEchDesc": "Resolve selected domains through Cloudflare’s public endpoint to reduce DNS poisoning",
+  "dohDetail_publicEchDisabledDesc": "Resolve original domains and continue using each site’s own ECH",
+  "dohDetail_echDomains": "Included domains",
+  "dohDetail_echDomainsCount": "{builtinCount} built-in · {customCount} custom",
+  "dohDetail_echDomainsHint": "Only add domains that support Cloudflare ECH. All rules include subdomains; built-in domains do not need to be added again.",
+  "dohDetail_builtinDomains": "Built-in domains",
+  "dohDetail_customDomains": "Custom domains",
+  "dohDetail_includesSubdomains": "Includes all subdomains",
+  "dohDetail_noCustomDomains": "No custom domains. Built-in rules cover the forum and its static assets.",
+  "dohDetail_addEchDomain": "Add domain",
+  "dohDetail_editEchDomain": "Edit domain",
+  "dohDetail_domain": "Domain",
+  "dohDetail_domainHelper": "Enter a domain without a scheme, path, or wildcard. Subdomains are included.",
+  "dohDetail_invalidDomain": "Enter a valid domain without a scheme, port, path, or wildcard",
+  "dohDetail_domainAlreadyCovered": "This domain is already covered by an existing rule",
+  "@dohDetail_echDomainsCount": {
+    "placeholders": {
+      "builtinCount": {
+        "type": "int"
+      },
+      "customCount": {
+        "type": "int"
+      }
+    }
+  }
 }

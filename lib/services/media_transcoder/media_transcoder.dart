@@ -22,12 +22,20 @@ class MediaProbeInfo {
   const MediaProbeInfo({
     required this.duration,
     required this.hasVideo,
+    this.fps,
+    this.audioChannels,
+    this.audioSampleRate,
+    this.hasAudio,
     this.width,
     this.height,
   });
 
   final Duration duration;
   final bool hasVideo;
+  final double? fps;
+  final int? audioChannels;
+  final int? audioSampleRate;
+  final bool? hasAudio;
   final int? width;
   final int? height;
 }
@@ -74,17 +82,17 @@ class TranscodeSpec {
   final int audioChannels;
 
   Map<String, Object?> toChannelMap() => {
-        'input': input,
-        'output': output,
-        'audioOnly': audioOnly,
-        'audioBitrate': audioBitrate,
-        'videoBitrate': videoBitrate,
-        'videoCodec': videoCodec,
-        'maxHeight': maxHeight,
-        'fps': fps,
-        'audioSampleRate': audioSampleRate,
-        'audioChannels': audioChannels,
-      };
+    'input': input,
+    'output': output,
+    'audioOnly': audioOnly,
+    'audioBitrate': audioBitrate,
+    'videoBitrate': videoBitrate,
+    'videoCodec': videoCodec,
+    'maxHeight': maxHeight,
+    'fps': fps,
+    'audioSampleRate': audioSampleRate,
+    'audioChannels': audioChannels,
+  };
 }
 
 abstract class MediaTranscoder {
@@ -134,6 +142,10 @@ class _ChannelTranscoder extends MediaTranscoder {
     return MediaProbeInfo(
       duration: Duration(milliseconds: ms),
       hasVideo: res['hasVideo'] as bool? ?? false,
+      fps: (res['fps'] as num?)?.toDouble(),
+      audioChannels: res['audioChannels'] as int?,
+      audioSampleRate: res['audioSampleRate'] as int?,
+      hasAudio: res['hasAudio'] as bool?,
       width: res['width'] as int?,
       height: res['height'] as int?,
     );
@@ -141,8 +153,7 @@ class _ChannelTranscoder extends MediaTranscoder {
 
   @override
   Future<bool> transcode(TranscodeSpec spec) async {
-    final res =
-        await _ch.invokeMethod<bool>('transcode', spec.toChannelMap());
+    final res = await _ch.invokeMethod<bool>('transcode', spec.toChannelMap());
     return res ?? false;
   }
 

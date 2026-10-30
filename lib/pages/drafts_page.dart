@@ -16,6 +16,10 @@ import '../widgets/common/relative_time_text.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../services/drafts_signal.dart';
+import '../services/local_draft_store.dart';
+import '../services/connectivity_service.dart';
+import '../providers/connectivity_provider.dart';
+import '../providers/draft_store_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import 'create_topic_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
@@ -23,8 +27,33 @@ import 'topic_detail_page/topic_detail_page.dart';
 /// 草稿列表 Provider
 final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   final service = ref.watch(discourseServiceProvider);
-  final response = await service.getDrafts();
-  return response.drafts;
+  final store = ref.watch(localDraftStoreProvider);
+  final online =
+      ref.watch(isConnectedProvider).value ?? ConnectivityService().isConnected;
+  var local = <String, LocalDraftEntry>{};
+  String? account;
+  try {
+    account = await service.getUsername();
+    if (account != null) local = await store.list(account);
+  } catch (e) {
+    debugPrint('[DraftsPage] local drafts unavailable: $e');
+  }
+  if (!online) return mergeLocalDrafts([], local, serverAvailable: false);
+  try {
+    final response = await service.getDrafts();
+    if (account != null) {
+      try {
+        await store.cacheRemoteDrafts(account, response.drafts);
+        local = await store.list(account);
+      } catch (e) {
+        debugPrint('[DraftsPage] caching server drafts failed: $e');
+      }
+    }
+    return mergeLocalDrafts(response.drafts, local, serverAvailable: true);
+  } catch (_) {
+    if (local.isEmpty) rethrow;
+    return mergeLocalDrafts([], local, serverAvailable: false);
+  }
 });
 
 /// 草稿页:邮件式独立双栏。
@@ -101,7 +130,8 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.drafts));
     final atZero = progress == 0 && current != 0;
-    final crossed = (progress >= navScrollIconThreshold) !=
+    final crossed =
+        (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.drafts).notifier).state =
@@ -265,7 +295,9 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       // 宽屏:右栏打开话题+自动弹草稿回复框,列表留在左边接着处理下一条
       if (_canShowBothPanes) {
         setState(() => _selectedDraftKey = draftKey);
-        ref.read(selectedDraftPaneProvider.notifier).select(
+        ref
+            .read(selectedDraftPaneProvider.notifier)
+            .select(
               topicId: topicId,
               scrollToPostNumber: replyToPostNumber,
               autoOpenReply: true,
@@ -323,6 +355,13 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
                             draft.draftKey,
                             sequence: draft.sequence,
                           );
+                          final account = await DiscourseService()
+                              .getUsername();
+                          if (account != null) {
+                            await ref
+                                .read(localDraftStoreProvider)
+                                .delete(account, draft.draftKey);
+                          }
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext, true);
                           }

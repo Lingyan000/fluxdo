@@ -69,6 +69,15 @@
   "post_contentRequired": "Please enter content",
   "post_deleteReplyConfirm": "Delete this reply? This can be undone.",
   "post_deleteReplyTitle": "Delete reply",
+  "post_deviceSource": "From {device}",
+  "@post_deviceSource": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "post_deviceSourceTitle": "Post source",
   "post_detail": "Post Detail",
   "post_discardConfirm": "Discard your post?",
   "post_discardTitle": "Discard post",
@@ -323,5 +332,23 @@
       "revision": {"type": "int"}
     }
   },
-  "postRevision_deleteAllSuccess": "All revisions permanently deleted"
+  "postRevision_deleteAllSuccess": "All revisions permanently deleted",
+  "nested_resumeReading": "Continue reading · post #{postNumber}",
+  "@nested_resumeReading": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_nextRoot": "Next top-level reply",
+  "nested_showMoreReplies": "Show {count} more replies",
+  "@nested_showMoreReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_restoreFailed": "Could not restore this position. Please try again."
 }

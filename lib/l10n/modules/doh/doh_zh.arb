@@ -167,5 +167,31 @@
   },
   "doh_serverTencent": "腾讯 DNS",
   "doh_startTimeout": "代理启动超时（5秒内未响应）",
-  "doh_unknownReason": "未知原因"
+  "doh_unknownReason": "未知原因",
+  "dohDetail_publicEch": "公共 ECH 入口",
+  "dohDetail_publicEchDesc": "通过 Cloudflare 公共入口解析指定域名，减少 DNS 污染影响",
+  "dohDetail_publicEchDisabledDesc": "按原域名解析，仍可使用站点自身的 ECH",
+  "dohDetail_echDomains": "适用域名",
+  "dohDetail_echDomainsCount": "{builtinCount} 个内置 · {customCount} 个自定义",
+  "dohDetail_echDomainsHint": "仅添加支持 Cloudflare ECH 的域名。所有规则均包含子域名，内置域名无需重复添加。",
+  "dohDetail_builtinDomains": "内置域名",
+  "dohDetail_customDomains": "自定义域名",
+  "dohDetail_includesSubdomains": "包含所有子域名",
+  "dohDetail_noCustomDomains": "暂无自定义域名，内置规则已覆盖论坛和静态资源。",
+  "dohDetail_addEchDomain": "添加域名",
+  "dohDetail_editEchDomain": "编辑域名",
+  "dohDetail_domain": "域名",
+  "dohDetail_domainHelper": "仅输入域名，不含协议、路径或通配符；保存后同时匹配子域名。",
+  "dohDetail_invalidDomain": "请输入有效域名，不含协议、端口、路径或通配符",
+  "dohDetail_domainAlreadyCovered": "该域名已被现有规则覆盖",
+  "@dohDetail_echDomainsCount": {
+    "placeholders": {
+      "builtinCount": {
+        "type": "int"
+      },
+      "customCount": {
+        "type": "int"
+      }
+    }
+  }
 }

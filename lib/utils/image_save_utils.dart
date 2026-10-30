@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gal/gal.dart';
+import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -39,7 +40,7 @@ abstract final class ImageSaveUtils {
       ToastService.showError(S.current.image_fetchFailed);
       return false;
     }
-    final safeName = _resolveFileName(fileName);
+    final safeName = _resolveFileName(fileName, bytes);
     return PlatformUtils.isDesktop
         ? _saveAsFile(bytes, safeName)
         : _saveToGallery(bytes, safeName);
@@ -66,12 +67,24 @@ abstract final class ImageSaveUtils {
 
   /// 移动端：存进系统相册。
   static Future<bool> _saveToGallery(Uint8List bytes, String fileName) async {
+    Directory? stagingDir;
     try {
       if (!await Gal.hasAccess() && !await Gal.requestAccess()) {
         ToastService.showInfo(S.current.imageViewer_grantPermission);
         return false;
       }
-      await Gal.putImageBytes(bytes, name: fileName);
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        // Android 的 bytes 接口依赖 Commons Imaging 猜格式，无法识别
+        // 部分动图的实际容器（如 .gif URL 返回 AVIF）。文件接口直接复制
+        // 原始数据，使用按内容确定的后缀，保留全部动画帧。
+        final tempDir = await getTemporaryDirectory();
+        stagingDir = await tempDir.createTemp('fluxdo_image_save_');
+        final file = File(p.join(stagingDir.path, fileName));
+        await file.writeAsBytes(bytes);
+        await Gal.putImage(file.path);
+      } else {
+        await Gal.putImageBytes(bytes, name: fileName);
+      }
       ToastService.showSuccess(S.current.share_imageSaved);
       return true;
     } on GalException catch (e) {
@@ -82,15 +95,41 @@ abstract final class ImageSaveUtils {
       debugPrint('[ImageSaveUtils] saveToGallery failed: $e');
       ToastService.showError(S.current.share_saveFailed);
       return false;
+    } finally {
+      try {
+        await stagingDir?.delete(recursive: true);
+      } catch (e) {
+        debugPrint('[ImageSaveUtils] staging cleanup failed: $e');
+      }
     }
   }
 
-  /// 洗干净文件名并保证带扩展名。
-  static String _resolveFileName(String fileName) {
+  /// 后缀优先按文件头确定，避免 URL 后缀或内存图片的默认 PNG 名称失真。
+  static String _resolveFileName(String fileName, Uint8List bytes) {
     final base =
         ShareUtils.safeFileBaseName(fileName) ??
         'fluxdo_${DateTime.now().millisecondsSinceEpoch}';
-    final ext = p.extension(fileName).replaceFirst('.', '');
+    final ext =
+        _imageExtension(bytes) ??
+        p.extension(fileName).replaceFirst('.', '').toLowerCase();
     return ext.isEmpty ? '$base.png' : '$base.$ext';
+  }
+
+  static String? _imageExtension(Uint8List bytes) {
+    // mime 的文件头表未覆盖 AVIF；同时识别静态 avif 和序列 avis brand。
+    if (bytes.length >= 12 &&
+        String.fromCharCodes(bytes.sublist(4, 8)) == 'ftyp') {
+      final brand = String.fromCharCodes(bytes.sublist(8, 12));
+      if (brand == 'avif' || brand == 'avis') return 'avif';
+    }
+    return switch (lookupMimeType('', headerBytes: bytes)) {
+      'image/gif' => 'gif',
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      'image/webp' => 'webp',
+      'image/heic' => 'heic',
+      'image/tiff' => 'tiff',
+      _ => null,
+    };
   }
 }

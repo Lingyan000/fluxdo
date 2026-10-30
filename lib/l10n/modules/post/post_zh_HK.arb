@@ -19,6 +19,15 @@
   "post_contentRequired": "請輸入內容",
   "post_deleteReplyConfirm": "確定要刪除這條回覆嗎？此操作可以撤銷。",
   "post_deleteReplyTitle": "刪除回覆",
+  "post_deviceSource": "來自 {device}",
+  "@post_deviceSource": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "post_deviceSourceTitle": "帖子來源",
   "post_detail": "帖子詳情",
   "post_discardConfirm": "你想放棄你的帖子嗎？",
   "post_discardTitle": "放棄帖子",
@@ -329,5 +338,23 @@
   "@postRevision_showSuccess": {
     "placeholders": {"revision": {"type": "int"}}
   },
-  "postRevision_deleteAllSuccess": "已永久刪除全部編輯歷史"
+  "postRevision_deleteAllSuccess": "已永久刪除全部編輯歷史",
+  "nested_resumeReading": "繼續上次閱讀 · 第 {postNumber} 樓",
+  "@nested_resumeReading": {
+    "placeholders": {
+      "postNumber": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_nextRoot": "下一則主回覆",
+  "nested_showMoreReplies": "展開其餘 {count} 則回覆",
+  "@nested_showMoreReplies": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nested_restoreFailed": "暫時無法恢復此位置，請重試"
 }

@@ -244,6 +244,9 @@ class RequestSchedulerInterceptor extends Interceptor {
       '队列长度=${state.queue.length} 并发=${state.running}',
     );
 
+    // 入队也必须驱动调度：速率窗口满但 running=0 时，不会再有
+    // 响应触发 _release；由此安排窗口到期的 Timer，避免永久挂起。
+    _scheduleNext(state);
     await entry.completer.future;
 
     // 被唤醒后检查是否已取消

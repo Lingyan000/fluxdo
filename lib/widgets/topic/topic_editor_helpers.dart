@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -8,6 +10,7 @@ import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
+import '../../utils/platform_utils.dart';
 import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
@@ -637,31 +640,30 @@ class ComposerMetaBar extends StatelessWidget {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => CategorySelectionSheet(
+      builder: (_) => CategorySelectionSheet(
         categories: categories,
         selectedCategory: category,
       ),
     );
-    if (result != null) onCategorySelected(result);
+    if (context.mounted && result != null) onCategorySelected(result);
   }
 
   Future<void> _pickTags(BuildContext context) async {
-    final minTags = category?.minimumRequiredTags ?? 0;
     final result = await showAppBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => TagSelectionSheet(
+      builder: (_) => TagSelectionSheet(
         categoryId: category?.id,
         availableTags: filterAvailableTagsForCategory(category, allTags),
         selectedTags: selectedTags,
         maxTags: 5,
-        minTags: minTags,
+        minTags: category?.minimumRequiredTags ?? 0,
         filterForInput: true,
       ),
     );
-    if (result != null) onTagsChanged(result);
+    if (context.mounted && result != null) onTagsChanged(result);
   }
 
   Widget _pill(
@@ -669,24 +671,93 @@ class ComposerMetaBar extends StatelessWidget {
     required List<Widget> children,
     required VoidCallback onTap,
     Color? borderColor,
+    String? tooltip,
+    Key? key,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color:
-                  borderColor ??
-                  theme.colorScheme.outlineVariant.withValues(alpha: 0.8),
+    final desktop = PlatformUtils.isDesktop;
+    if (!desktop) {
+      final pill = Material(
+        key: key,
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Center(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: .42,
+                  ),
+                  shape: StadiumBorder(
+                    side: BorderSide(
+                      color:
+                          borderColor ??
+                          theme.colorScheme.outlineVariant.withValues(
+                            alpha: .55,
+                          ),
+                      width: .6,
+                    ),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: children,
+                  ),
+                ),
+              ),
             ),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: children),
+        ),
+      );
+      if (tooltip == null) return pill;
+      return Tooltip(
+        message: tooltip,
+        excludeFromSemantics: true,
+        child: Semantics(
+          button: true,
+          enabled: enabled,
+          label: tooltip,
+          onTap: enabled ? onTap : null,
+          child: ExcludeSemantics(child: pill),
+        ),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: desktop ? 4 : 0),
+      child: Material(
+        color: desktop
+            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .22)
+            : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          side: desktop
+              ? BorderSide(
+                  width: .6,
+                  color:
+                      borderColor ??
+                      theme.colorScheme.outlineVariant.withValues(alpha: .55),
+                )
+              : BorderSide.none,
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: desktop ? 36 : 48),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: desktop ? 10 : 4),
+              child: Row(mainAxisSize: MainAxisSize.min, children: children),
+            ),
+          ),
         ),
       ),
     );
@@ -697,6 +768,8 @@ class ComposerMetaBar extends StatelessWidget {
       // 未选:primary 引导色
       return _pill(
         theme,
+        key: const ValueKey('composer-category-chip'),
+        tooltip: S.current.topic_selectCategory,
         onTap: () => _pickCategory(context),
         borderColor: theme.colorScheme.primary.withValues(alpha: 0.5),
         children: [
@@ -722,6 +795,8 @@ class ComposerMetaBar extends StatelessWidget {
     final color = parseHexColor(category!.color);
     return _pill(
       theme,
+      key: const ValueKey('composer-category-chip'),
+      tooltip: category!.name,
       onTap: () => _pickCategory(context),
       children: [
         buildColorDot(color, size: 7),
@@ -732,8 +807,8 @@ class ComposerMetaBar extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),
@@ -747,7 +822,12 @@ class ComposerMetaBar extends StatelessWidget {
     );
   }
 
-  Widget _tagsPill(BuildContext context, ThemeData theme) {
+  Widget _tagsPill(
+    BuildContext context,
+    ThemeData theme, {
+    bool compact = false,
+  }) {
+    final desktop = PlatformUtils.isDesktop;
     final minTags = category?.minimumRequiredTags ?? 0;
     // 分类要求标签组且一个没选 → 不满足(与 TagsArea 同判据)
     final groupsSatisfied =
@@ -756,32 +836,48 @@ class ComposerMetaBar extends StatelessWidget {
             selectedTags.isEmpty);
     final satisfied = selectedTags.length >= minTags && groupsSatisfied;
 
-    final String label;
+    final String fullLabel;
     if (selectedTags.isEmpty) {
-      label = satisfied
+      fullLabel = satisfied
           ? S.current.topic_addTags
           : S.current.topic_minTagsRequired(minTags > 0 ? minTags : 1);
     } else {
       final shown = selectedTags.take(2).map((t) => '#$t').join(' ');
       final more = selectedTags.length - 2;
-      label = more > 0 ? '$shown +$more' : shown;
+      fullLabel = more > 0 ? '$shown +$more' : shown;
     }
+    final label = desktop
+        ? fullLabel
+        : selectedTags.isEmpty
+        ? (compact && satisfied ? S.current.tag_tabTags : fullLabel)
+        : compact
+        ? '${selectedTags.length}'
+        : selectedTags.first;
     final color = satisfied
-        ? (selectedTags.isEmpty
-              ? theme.colorScheme.onSurfaceVariant
-              : theme.colorScheme.onSurface)
+        ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.error;
 
     return _pill(
       theme,
+      key: const ValueKey('composer-tags-chip'),
+      tooltip: selectedTags.isEmpty
+          ? fullLabel
+          : '${S.current.tag_tabTags}: ${selectedTags.map((tag) => '#$tag').join(' ')}',
       onTap: () => _pickTags(context),
       borderColor: satisfied
           ? null
           : theme.colorScheme.error.withValues(alpha: 0.5),
       children: [
-        if (selectedTags.isEmpty) ...[
-          Icon(Symbols.add_rounded, size: 14, color: color),
-          const SizedBox(width: 2),
+        if (desktop) ...[
+          Icon(Symbols.sell_rounded, size: 14, color: color),
+          const SizedBox(width: 6),
+        ] else ...[
+          Icon(
+            selectedTags.isEmpty ? Symbols.add_rounded : Symbols.sell_rounded,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 4),
         ],
         Flexible(
           child: Text(
@@ -791,9 +887,91 @@ class ComposerMetaBar extends StatelessWidget {
             style: theme.textTheme.labelMedium?.copyWith(color: color),
           ),
         ),
+        if (!desktop && !compact && selectedTags.length > 1) ...[
+          const SizedBox(width: 4),
+          Text(
+            '+${selectedTags.length - 1}',
+            style: theme.textTheme.labelMedium?.copyWith(color: color),
+          ),
+        ],
+        if (desktop) ...[
+          const SizedBox(width: 6),
+          Icon(Symbols.expand_more_rounded, size: 16, color: color),
+        ],
       ],
     );
   }
+
+  Widget _mobileBar(BuildContext context, ThemeData theme) => LayoutBuilder(
+    builder: (context, bounds) {
+      double textWidth(String text) {
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: theme.textTheme.labelMedium),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final width = painter.width;
+        painter.dispose();
+        return width;
+      }
+
+      final categoryWidth =
+          textWidth(category?.name ?? S.current.topic_selectCategory) +
+          (category == null ? 32 : 47);
+      if (!showTags) {
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: math.min(categoryWidth, bounds.maxWidth),
+            child: _categoryPill(context, theme),
+          ),
+        );
+      }
+      const gap = 6.0;
+      final tagWidth =
+          textWidth(
+            selectedTags.isEmpty ? S.current.topic_addTags : selectedTags.first,
+          ) +
+          34 +
+          (selectedTags.length > 1
+              ? textWidth('+${selectedTags.length - 1}') + 4
+              : 0);
+      final available = math.max(0.0, bounds.maxWidth - gap);
+      final bothFit = categoryWidth + tagWidth <= available;
+      final tagBudget = bothFit ? tagWidth : available * .48;
+      final compact =
+          !bothFit &&
+          tagBudget < 100 * MediaQuery.textScalerOf(context).scale(12) / 12;
+      final tags = compact
+          ? math.min(
+              tagBudget,
+              math.max(
+                48.0,
+                textWidth(
+                      selectedTags.isEmpty
+                          ? S.current.tag_tabTags
+                          : '${selectedTags.length}',
+                    ) +
+                    34,
+              ),
+            )
+          : tagBudget;
+      return Row(
+        children: [
+          SizedBox(
+            width: math.min(categoryWidth, math.max(0, available - tags)),
+            child: _categoryPill(context, theme),
+          ),
+          const SizedBox(width: gap),
+          SizedBox(
+            width: tags,
+            child: _tagsPill(context, theme, compact: compact),
+          ),
+        ],
+      );
+    },
+  );
 
   /// 问答模式 pill:选中态 primary 描边+文字(同分类未选引导色语汇);
   /// 分类强制问答时锁定不可点。
@@ -811,11 +989,7 @@ class ComposerMetaBar extends StatelessWidget {
           ? theme.colorScheme.primary.withValues(alpha: 0.5)
           : null,
       children: [
-        Icon(
-          Symbols.thumbs_up_down_rounded,
-          size: 14,
-          color: color,
-        ),
+        Icon(Symbols.thumbs_up_down_rounded, size: 14, color: color),
         const SizedBox(width: 4),
         Text(
           S.current.createTopic_postVoting,
@@ -838,33 +1012,30 @@ class ComposerMetaBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bar = Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-      ),
-      // 字数展示已移出:不足时由 CharacterCountsOverlay 悬浮在输入区
-      // 右下角,达标后不再展示常驻字数(常驻计数只是噪音)。
-      child: Row(
-        children: [
-          Flexible(child: _categoryPill(context, theme)),
-          if (showTags) ...[
-            const SizedBox(width: 6),
-            Flexible(child: _tagsPill(context, theme)),
-          ],
-          if (showPostVotingToggle) ...[
-            const SizedBox(width: 6),
-            Flexible(child: _postVotingPill(theme)),
-          ],
-        ],
-      ),
-    );
+    final desktop = PlatformUtils.isDesktop;
+    final base = Theme.of(context);
+    final theme = desktop
+        ? base.copyWith(
+            textTheme: base.textTheme.copyWith(
+              labelMedium: base.textTheme.labelMedium?.copyWith(fontSize: 13),
+            ),
+          )
+        : base;
+    Widget item(Widget child) =>
+        desktop ? Flexible(child: child) : Expanded(child: child);
+    final bar = !desktop && !showPostVotingToggle
+        ? _mobileBar(context, theme)
+        : Row(
+            mainAxisSize: desktop ? MainAxisSize.min : MainAxisSize.max,
+            children: [
+              item(_categoryPill(context, theme)),
+              if (showTags) ...[
+                if (desktop) const SizedBox(width: 8),
+                item(_tagsPill(context, theme)),
+              ],
+              if (showPostVotingToggle) Flexible(child: _postVotingPill(theme)),
+            ],
+          );
     if (!enabled) {
       return IgnorePointer(child: Opacity(opacity: 0.6, child: bar));
     }
