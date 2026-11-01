@@ -49,6 +49,16 @@
 //    (故不会同时认领)。
 // 9. 手势计数由探测器统一配对，路由提前退出或探测器销毁时也会释放。
 //    cancel 不再把计数收尾交给框架，避免销毁时与框架回调重复释放。
+// 10. start 重入防护(上游同样缺失)。部分机型会在同一次按压内重发
+//    startBackGesture,前一轮既不 commit 也不 cancel(实录:拖出后进度
+//    瞬间回 0,右缘箭头重现,再拖出提交)。popGestureEnabled 只看
+//    animation.isCompleted、不看 userGestureInProgress,进度回 0 时路由
+//    动画恰为 completed,重发的 start 会被再次认领并再计一次
+//    didStartUserGesture,收尾只释放一次 → 计数永久卡 1 → 所有路由
+//    IgnorePointer,全局点击失效。拖到一半重发则相反:不认领、被 binding
+//    踢出认领列表,页面冻结在半途,后续 cancel 无人收尾。故手势活跃期的
+//    start 一律视为同一手势延续(不重复计数,按新进度同步);无法延续时
+//    自己收尾释放计数。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -175,6 +185,23 @@ class _PredictiveBackGestureDetectorState
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    // 差异点 10:手势活跃期又收到 start(前一轮没有 commit/cancel)。
+    if (_isDragging) {
+      if (!backEvent.isButtonEvent && widget.route.isCurrent) {
+        // 当作同一手势延续:计数已持有,只按新进度同步,不再 didStart。
+        _phase = _PredictiveBackPhase.start;
+        widget.route.handleUpdateBackGestureProgress(
+          progress: 1 - backEvent.progress,
+        );
+        return true;
+      }
+      // 不再认领:binding 已清空认领者列表,前一轮的收尾事件永远不会
+      // 送达,必须自己收尾,否则计数泄漏。
+      _phase = _PredictiveBackPhase.cancel;
+      _cancelAndSettle();
+      return false;
+    }
+
     final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
     if (!gestureInProgress) {
       return false;

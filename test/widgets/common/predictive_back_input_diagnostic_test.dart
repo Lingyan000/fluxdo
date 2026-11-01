@@ -118,4 +118,100 @@ void main() {
       }, variant: const TargetPlatformVariant({TargetPlatform.android}));
     }
   }
+
+  // 部分机型在同一次按压内重发 startBackGesture,前一轮既不 commit 也不
+  // cancel(实录:拖出后进度瞬间回 0,右缘箭头重现再拖出提交)。
+  // 重发的 start 若再计一次 didStartUserGesture,收尾只释放一次,计数
+  // 永久卡在 1 → 所有路由 IgnorePointer → 全局点击失效。
+  for (final restart in ['afterReturnToEdge', 'midDrag']) {
+    for (final ending in ['commitBackGesture', 'cancelBackGesture']) {
+      testWidgets('restart $restart then $ending', (tester) async {
+        final key = GlobalKey<NavigatorState>();
+        var homeTaps = 0;
+        var detailTaps = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: key,
+            theme: ThemeData(
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android:
+                      PredictiveBackCupertinoPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            home: Scaffold(
+              body: TextButton(
+                onPressed: () => homeTaps++,
+                child: const Text('tap home'),
+              ),
+            ),
+          ),
+        );
+        final route = MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            body: TextButton(
+              onPressed: () => detailTaps++,
+              child: const Text('tap detail'),
+            ),
+          ),
+        );
+        key.currentState!.push(route);
+        await tester.pumpAndSettle();
+        Future<void> send(String method, [double? progress]) async {
+          await binding.defaultBinaryMessenger.handlePlatformMessage(
+            'flutter/backgesture',
+            const StandardMethodCodec().encodeMethodCall(
+              MethodCall(
+                method,
+                progress == null
+                    ? null
+                    : {
+                        'touchOffset': <double>[380, 300],
+                        'progress': progress,
+                        'swipeEdge': 1,
+                      },
+              ),
+            ),
+            (_) {},
+          );
+        }
+
+        await send('startBackGesture', 0);
+        await send('updateBackGestureProgress', 0.4);
+        await tester.pump();
+        if (restart == 'afterReturnToEdge') {
+          await send('updateBackGestureProgress', 0);
+          await tester.pump();
+        }
+        await send('startBackGesture', 0);
+        await send('updateBackGestureProgress', 0.5);
+        await tester.pump();
+        expect(route.animation!.value, closeTo(0.5, 0.001));
+        await send(ending);
+        await tester.pumpAndSettle();
+
+        expect(key.currentState!.userGestureInProgress, isFalse);
+        if (ending == 'commitBackGesture') {
+          expect(route.isActive, isFalse);
+          await tester.tap(find.text('tap home'));
+          expect(homeTaps, 1);
+        } else {
+          expect(route.isCurrent, isTrue);
+          expect(route.animation!.value, 1.0);
+          await tester.tap(find.text('tap detail'));
+          expect(detailTaps, 1);
+          // 后续手势须正常认领并退出
+          await send('startBackGesture', 0);
+          await send('updateBackGestureProgress', 0.3);
+          await send('commitBackGesture');
+          await tester.pumpAndSettle();
+          expect(key.currentState!.userGestureInProgress, isFalse);
+          await tester.tap(find.text('tap home'));
+          expect(homeTaps, 1);
+        }
+        expect(tester.takeException(), isNull);
+      }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+    }
+  }
 }
