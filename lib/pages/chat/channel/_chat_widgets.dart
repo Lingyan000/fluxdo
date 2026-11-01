@@ -418,35 +418,56 @@ class _MessageUploads extends StatelessWidget {
         for (final file in files)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Symbols.description_rounded,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+            child: Material(
+              color: theme.colorScheme.surface.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(10),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: interactive && file.url != null
+                    ? () => _downloadFile(context, file)
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      file.originalFilename ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Symbols.description_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          file.originalFilename ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
       ],
     );
+  }
+
+  /// 非图片附件:复用帖子附件同一条内置下载链路(downloadProvider),
+  /// 文件名取服务端 original_filename(URL 里是 sha1 名)
+  void _downloadFile(BuildContext context, ChatUpload file) {
+    final name = file.originalFilename;
+    ProviderScope.containerOf(context, listen: false)
+        .read(downloadProvider.notifier)
+        .startDownload(
+          url: UrlHelper.resolveUrl(file.url!),
+          suggestedFilename: (name == null || name.isEmpty) ? null : name,
+        );
   }
 
   /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRRect 同值)。
