@@ -1200,6 +1200,8 @@ class FluxdoRenderCallbacks {
           // 支持长按/右键菜单(对齐 legacy buildGalleryImage 的 SVG 分支)。
           return Builder(
             builder: (svgCtx) => GestureDetector(
+              // 链接内 SVG(如外链卡片图):单击打开外层链接
+              onTap: ImageLinkScope.maybeOf(svgCtx),
               onLongPress: () => _showImageContextMenu(
                 svgCtx,
                 image: image,
@@ -1313,6 +1315,13 @@ class FluxdoRenderCallbacks {
                   // 打开大图前清掉自研选区:图片 tap 被 HeroImage 手势赢走,
                   // 选区层收不到不会自动清(否则返回后选区还残留)。
                   SelectionScope.clearAt(ctx);
+                  // 链接内图片(`<a href><img></a>`):单击打开外层链接,
+                  // 对齐网页端,不放大图片。
+                  final linkTap = ImageLinkScope.maybeOf(ctx);
+                  if (linkTap != null) {
+                    linkTap();
+                    return;
+                  }
                   // Discourse 契约:a.lightbox[href] 就是原图 URL,直接用;
                   // 只有裸 <img>(无 lightbox 包装)才用 /optimized/→
                   // /original/ 正则反推兜底(正则对 CDN 变体路径有漏配
