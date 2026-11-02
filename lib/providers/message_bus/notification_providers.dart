@@ -289,6 +289,7 @@ class NotificationAlertChannelNotifier extends Notifier<void> {
           isPrivateMessage:
               parsedType == NotificationType.privateMessage ||
               parsedType == NotificationType.invitedToPrivateMessage,
+          avatarUsername: username,
         );
       }
     }

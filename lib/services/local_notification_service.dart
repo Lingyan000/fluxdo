@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/s.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../utils/notification_navigation.dart';
+import 'notification_avatar_loader.dart';
 
 /// 全局 NavigatorKey，用于通知点击时导航
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -127,6 +130,9 @@ class LocalNotificationService {
   }
 
   /// 显示通知
+  ///
+  /// [avatarUsername] 发送者用户名,用于在通知上显示其头像;头像加载
+  /// 失败或超时则发无头像通知。
   Future<void> show({
     required String title,
     required String body,
@@ -135,6 +141,7 @@ class LocalNotificationService {
     int? postNumber,
     bool isPrivateMessage = false,
     int? chatChannelId,
+    String? avatarUsername,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -145,22 +152,10 @@ class LocalNotificationService {
       return;
     }
 
-    final androidDetails = AndroidNotificationDetails(
-      'discourse_notifications',
-      S.current.notification_channelDiscourse,
-      channelDescription: S.current.notification_channelDiscourseDesc,
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-
-    const darwinDetails = DarwinNotificationDetails();
-
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: darwinDetails,
-      macOS: darwinDetails,
-      windows: const WindowsNotificationDetails(),
-    );
+    final avatar = avatarUsername == null
+        ? null
+        : await NotificationAvatarLoader.load(avatarUsername);
+    final details = await _buildDetails(avatar, altText: avatarUsername);
 
     final notificationId = id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
     
@@ -179,6 +174,70 @@ class LocalNotificationService {
     
     await _plugin.show(id: notificationId, title: title, body: body, notificationDetails: details, payload: payload);
     debugPrint('[LocalNotification] 已发送: $title, payload=$payload');
+  }
+
+  /// 构建 Discourse 通知的各平台参数,[avatar] 按各平台能力挂上:
+  /// - Android:largeIcon(字节直传);
+  /// - iOS/macOS:通知附件缩略图(只认文件,且会被系统移走);
+  /// - Windows:替换应用图标位(只认文件路径);
+  /// - Linux:DBus image-data(原始像素直传)。
+  Future<NotificationDetails> _buildDetails(
+    NotificationAvatar? avatar, {
+    String? altText,
+  }) async {
+    List<DarwinNotificationAttachment>? darwinAttachments;
+    var windowsImages = const <WindowsImage>[];
+    LinuxNotificationIcon? linuxIcon;
+    if (avatar != null) {
+      try {
+        if (Platform.isIOS || Platform.isMacOS) {
+          final file = await avatar.writeFile(unique: true);
+          darwinAttachments = [DarwinNotificationAttachment(file.path)];
+        } else if (Platform.isWindows) {
+          final file = await avatar.writeFile(unique: false);
+          windowsImages = [
+            WindowsImage(
+              Uri.file(file.path, windows: true),
+              altText: altText ?? '',
+              placement: WindowsImagePlacement.appLogoOverride,
+            ),
+          ];
+        } else if (Platform.isLinux && avatar.rgba != null) {
+          linuxIcon = ByteDataLinuxIcon(
+            LinuxRawIconData(
+              data: avatar.rgba!,
+              width: avatar.side,
+              height: avatar.side,
+              channels: 4,
+              hasAlpha: true,
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('[LocalNotification] 头像落盘失败: $e');
+      }
+    }
+
+    final androidDetails = AndroidNotificationDetails(
+      'discourse_notifications',
+      S.current.notification_channelDiscourse,
+      channelDescription: S.current.notification_channelDiscourseDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      largeIcon: avatar != null ? ByteArrayAndroidBitmap(avatar.png) : null,
+    );
+
+    final darwinDetails = DarwinNotificationDetails(
+      attachments: darwinAttachments,
+    );
+
+    return NotificationDetails(
+      android: androidDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
+      windows: WindowsNotificationDetails(images: windowsImages),
+      linux: linuxIcon != null ? LinuxNotificationDetails(icon: linuxIcon) : null,
+    );
   }
 
   /// 显示 APK 下载进度通知（持续更新同一条）。

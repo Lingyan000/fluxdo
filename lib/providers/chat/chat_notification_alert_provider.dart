@@ -57,6 +57,7 @@ class ChatNotificationAlertNotifier extends Notifier<void> {
         body: excerpt,
         id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
         chatChannelId: channelId,
+        avatarUsername: username,
       );
     }
 

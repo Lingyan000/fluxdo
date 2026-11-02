@@ -75,10 +75,17 @@ mixin _UsersMixin on _DiscourseServiceBase {
   ///
   /// [includePostCountFor] 传话题 id 时响应注入该用户在此话题内的发帖数
   /// (topic_post_count),卡片据此决定是否显示「只看 TA」过滤按钮。
-  Future<User> getUserCard(String username, {int? includePostCountFor}) async {
+  ///
+  /// [isSilent] 后台查询(如系统通知取头像)失败时不弹错误提示。
+  Future<User> getUserCard(
+    String username, {
+    int? includePostCountFor,
+    bool isSilent = false,
+  }) async {
     final response = await _dio.get(
       '/u/$username/card.json',
       queryParameters: {'include_post_count_for': ?includePostCountFor},
+      options: isSilent ? Options(extra: const {'isSilent': true}) : null,
     );
     final data = response.data as Map<String, dynamic>;
     return User.fromJson(data['user'] ?? data);
