@@ -95,7 +95,13 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
         _rememberTags(preloadedData);
         final result = _paginationHelper.processRefresh(
           PaginationResult(
-            items: preloadedData.topics,
+            items: _syncFirstPage(
+              preloadedData.topics,
+              filter: currentFilter,
+              scoped: false,
+              subset: null,
+              moreUrl: preloadedData.moreTopicsUrl,
+            ),
             moreUrl: preloadedData.moreTopicsUrl,
           ),
         );
@@ -107,7 +113,13 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
           _rememberTags(asyncPreloaded);
           final result = _paginationHelper.processRefresh(
             PaginationResult(
-              items: asyncPreloaded.topics,
+              items: _syncFirstPage(
+                asyncPreloaded.topics,
+                filter: currentFilter,
+                scoped: false,
+                subset: null,
+                moreUrl: asyncPreloaded.moreTopicsUrl,
+              ),
               moreUrl: asyncPreloaded.moreTopicsUrl,
             ),
           );
@@ -129,9 +141,54 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     );
 
     final result = _paginationHelper.processRefresh(
-      PaginationResult(items: response.topics, moreUrl: response.moreTopicsUrl),
+      PaginationResult(
+        items: _syncFirstPage(
+          response.topics,
+          filter: currentFilter,
+          scoped: filter.isNotEmpty,
+          subset: subset,
+          moreUrl: response.moreTopicsUrl,
+        ),
+        moreUrl: response.moreTopicsUrl,
+      ),
     );
     return completePagedRefresh(PagedPage.fromPagination(result));
+  }
+
+  /// 第一页落地前后与追踪状态对账（对齐网页版 findTopicList 里的
+  /// tracking.sync）。延迟修正就地作用于返回的列表；回灌改的是另一个
+  /// provider，推到下一个事件循环：build 同步段里改别的 provider 会被
+  /// Riverpod 拦下，异步 build 的结果也要等微任务才落地——推迟后回灌
+  /// 触发的 _syncFromTrackingState 才会作用在新列表而不是旧列表上。
+  List<Topic> _syncFirstPage(
+    List<Topic> topics, {
+    required TopicListFilter filter,
+    required bool scoped,
+    required String? subset,
+    required String? moreUrl,
+  }) {
+    final fixed = ref
+        .read(topicTrackingStateProvider.notifier)
+        .fixDelayedServerState(
+          topics,
+          isNewList: filter == TopicListFilter.newTopics && !scoped,
+        );
+    final compensate =
+        !scoped &&
+            subset == null &&
+            moreUrl == null &&
+            (filter == TopicListFilter.newTopics ||
+                filter == TopicListFilter.unread)
+        ? filter
+        : null;
+    final generation = _requestGeneration;
+    Future(() {
+      if (!ref.mounted || generation != _requestGeneration) return;
+      ref
+          .read(topicTrackingStateProvider.notifier)
+          .syncFromTopicList(fixed, compensate: compensate);
+    });
+    return fixed;
   }
 
   Future<TopicListResponse> _fetchTopics(
@@ -295,7 +352,15 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       }
       final result = _paginationHelper.processRefresh(
         PaginationResult(
-          items: response.topics,
+          items: _syncFirstPage(
+            response.topics,
+            filter: query.filter,
+            scoped: filterParams.isNotEmpty,
+            subset: query.filter == TopicListFilter.newTopics
+                ? query.subset.apiValue
+                : null,
+            moreUrl: response.moreTopicsUrl,
+          ),
           moreUrl: response.moreTopicsUrl,
         ),
       );
@@ -342,7 +407,9 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
       return null;
     }
     _rememberTags(response);
-    state = AsyncValue.data(prependTopicUpdates(state.value!, response.topics));
+    state = AsyncValue.data(
+      prependTopicUpdates(state.value!, response.topics, topicIds),
+    );
     return response.topics.map((topic) => topic.id).toList();
   }
 

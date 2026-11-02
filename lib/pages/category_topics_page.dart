@@ -105,7 +105,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
         return null;
       }
       completeTopicUpdatesRefresh(const {}, response);
-      setState(() => _topics = prependTopicUpdates(_topics, response.topics));
+      setState(
+        () => _topics = prependTopicUpdates(_topics, response.topics, ids),
+      );
       return response.topics.map((topic) => topic.id).toList();
     });
     if (mounted && inserted.isNotEmpty && _scrollController.hasClients) {
@@ -216,7 +218,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
       completeTopicUpdatesRefresh(ticket.snapshot, response);
       final result = _paginationHelper.processRefresh(
         PaginationResult(
-          items: response.topics,
+          items: syncFirstPageWithTracking(response.topics),
           moreUrl: response.moreTopicsUrl,
         ),
       );
@@ -266,7 +268,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
       completeTopicUpdatesRefresh(ticket.snapshot, response);
       final result = _paginationHelper.processRefresh(
         PaginationResult(
-          items: response.topics,
+          items: syncFirstPageWithTracking(response.topics),
           moreUrl: response.moreTopicsUrl,
         ),
       );
@@ -313,7 +315,9 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
       );
 
       if (!isCurrentTopicUpdatesRefresh(generation)) return;
-      final updates = {for (final t in response.topics) t.id: t};
+      final updates = {
+        for (final t in syncFirstPageWithTracking(response.topics)) t.id: t,
+      };
       setState(() {
         _topics = [for (final t in _topics) updates[t.id] ?? t];
       });

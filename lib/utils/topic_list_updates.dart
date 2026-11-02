@@ -143,7 +143,14 @@ class TopicListUpdates {
   }
 }
 
-List<Topic> prependTopicUpdates(List<Topic> current, List<Topic> updates) {
-  final ids = updates.map((topic) => topic.id).toSet();
+/// 对齐网页版 TopicList.loadBefore：先移除本次请求的全部话题，再把返回
+/// 结果插到顶部。请求了但服务端没返回的话题（已删除、移入静音分类、
+/// 不再符合当前筛选）也要移除，否则旧卡片会一直留在列表里。
+List<Topic> prependTopicUpdates(
+  List<Topic> current,
+  List<Topic> updates,
+  Iterable<int> requestedIds,
+) {
+  final ids = {...requestedIds, for (final topic in updates) topic.id};
   return [...updates, ...current.where((topic) => !ids.contains(topic.id))];
 }

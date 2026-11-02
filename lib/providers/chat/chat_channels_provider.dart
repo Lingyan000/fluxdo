@@ -75,7 +75,15 @@ class ChatChannelsNotifier extends AsyncNotifier<ChatChannelsState> {
   @override
   Future<ChatChannelsState> build() async {
     ref.watch(messageBusInitProvider);
-    final user = ref.watch(currentUserProvider).value;
+    // 只认身份：整份 watch 会随每次 currentUser 刷新重拉频道列表并重订
+    // 全部 /chat 频道
+    final user = ref.watch(
+      currentUserProvider.select((value) {
+        final user = value.value;
+        if (user == null) return null;
+        return (id: user.id, username: user.username);
+      }),
+    );
     final service = ref.read(discourseServiceProvider);
 
     _teardown();

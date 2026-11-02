@@ -50,7 +50,17 @@ class PmTrackingNotifier extends Notifier<PmIncomingState> {
     // 确保 MessageBus 已 configure（域名配置），避免用主站域名轮询
     ref.watch(messageBusInitProvider);
     final messageBus = ref.watch(messageBusServiceProvider);
-    final currentUser = ref.watch(currentUserProvider).value;
+    // 只在「身份 / 有私信的群组集合」变化时重订。整份 watch 会随每次
+    // currentUser 刷新重订并把未读集合清空；群组集合放进 key 是因为它读
+    // 预加载 JSON——缓存用户先到时预加载未就绪，preloaded emit 到达后
+    // 集合才出现，需要那一次重订把群组频道补上。
+    final subscription = ref.watch(
+      currentUserProvider.select((value) {
+        final user = value.value;
+        if (user == null) return null;
+        return (id: user.id, groupIds: _groupIdsWithMessages().join(','));
+      }),
+    );
 
     // 清理旧订阅（换账号 / provider 重建）
     for (final entry in _callbacks.entries) {
@@ -58,12 +68,13 @@ class PmTrackingNotifier extends Notifier<PmIncomingState> {
     }
     _callbacks.clear();
 
-    if (currentUser == null) {
+    if (subscription == null) {
       return const PmIncomingState();
     }
+    final currentUserId = subscription.id;
 
     final channels = <String>[
-      '$_pmChannelPrefix/user/${currentUser.id}',
+      '$_pmChannelPrefix/user/$currentUserId',
       // 群组私信：只订阅「确实有私信」的群组，对齐 groupsWithMessages。
       // 全量订阅用户所在群组会白白扩大轮询 payload。
       for (final groupId in _groupIdsWithMessages())
@@ -75,7 +86,7 @@ class PmTrackingNotifier extends Notifier<PmIncomingState> {
     for (final channel in channels) {
       void onMessage(MessageBusMessage message) => _processMessage(
             message,
-            currentUserId: currentUser.id,
+            currentUserId: currentUserId,
           );
       _callbacks[channel] = onMessage;
       messageBus.subscribe(channel, onMessage);

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/topic.dart';
 import '../../services/message_bus_service.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/background/ios_background_fetch.dart';
@@ -438,66 +439,170 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
   }
 
   /// 批量忽略新话题：设置 isSeen=true
+  ///
+  /// 对齐网页版 _dismissNewTopics：只处理 payload 点名的话题。服务端
+  /// 自 2021 起 payload 只有 topic_ids（旧版按 category_id 的形态已废弃），
+  /// 空列表即"没有话题被忽略"，不能兜底成全量忽略。
   void _handleDismissNew(Map<String, dynamic> data) {
     final payload = data['payload'] as Map<String, dynamic>?;
     final topicIds = payload?['topic_ids'] as List?;
-    if (topicIds == null || topicIds.isEmpty) {
-      // 没有指定 topicIds，按分类忽略所有
-      final categoryId = payload?['category_id'] as int?;
-      final newState = Map<int, TrackedTopicState>.from(state);
-      for (final entry in newState.entries) {
-        if (_isNew(entry.value)) {
-          if (categoryId == null || entry.value.categoryId == categoryId) {
-            newState[entry.key] = entry.value.copyWith(isSeen: true);
-          }
-        }
+    if (topicIds == null || topicIds.isEmpty) return;
+
+    final newState = Map<int, TrackedTopicState>.from(state);
+    for (final id in topicIds.whereType<int>()) {
+      final existing = newState[id];
+      if (existing != null) {
+        newState[id] = existing.copyWith(isSeen: true);
       }
-      state = newState;
-    } else {
-      final ids = topicIds.cast<int>().toSet();
-      final newState = Map<int, TrackedTopicState>.from(state);
-      for (final id in ids) {
-        final existing = newState[id];
-        if (existing != null) {
-          newState[id] = existing.copyWith(isSeen: true);
-        }
-      }
-      state = newState;
     }
+    state = newState;
   }
 
   /// 批量忽略未读帖子：将 lastReadPostNumber 设为 highestPostNumber
+  ///
+  /// 对齐网页版 _dismissNewPosts。空 topic_ids 必须是空操作：服务端
+  /// reset_new 在范围内没有未读时照样发布 `topic_ids: []`（dismiss_posts
+  /// 不判空），旧逻辑把它当"全量忽略"，会把所有分类的未读一并清掉，
+  /// 再经列表单调合并把首页卡片的未读角标全部抹掉。
   void _handleDismissNewPosts(Map<String, dynamic> data) {
     final payload = data['payload'] as Map<String, dynamic>?;
     final topicIds = payload?['topic_ids'] as List?;
-    if (topicIds == null || topicIds.isEmpty) {
-      // 按分类忽略所有
-      final categoryId = payload?['category_id'] as int?;
-      final newState = Map<int, TrackedTopicState>.from(state);
-      for (final entry in newState.entries) {
-        if (_isUnread(entry.value)) {
-          if (categoryId == null || entry.value.categoryId == categoryId) {
-            newState[entry.key] = entry.value.copyWith(
-              lastReadPostNumber: entry.value.highestPostNumber,
-            );
-          }
-        }
+    if (topicIds == null || topicIds.isEmpty) return;
+
+    final newState = Map<int, TrackedTopicState>.from(state);
+    for (final id in topicIds.whereType<int>()) {
+      final existing = newState[id];
+      if (existing != null && _isUnread(existing)) {
+        newState[id] = existing.copyWith(
+          lastReadPostNumber: existing.highestPostNumber,
+        );
       }
-      state = newState;
-    } else {
-      final ids = topicIds.cast<int>().toSet();
-      final newState = Map<int, TrackedTopicState>.from(state);
-      for (final id in ids) {
-        final existing = newState[id];
-        if (existing != null && _isUnread(existing)) {
-          newState[id] = existing.copyWith(
-            lastReadPostNumber: existing.highestPostNumber,
-          );
-        }
-      }
-      state = newState;
     }
+    state = newState;
   }
+
+  // ─── 列表加载后的对账（对齐网页版 TopicTrackingState.sync）───
+  //
+  // 网页版每次加载列表第一页都调用 sync(list)：先修正列表里服务端还没
+  // 感知的本地已读，再用列表数据回灌追踪状态，最后对"完整的新话题/未读
+  // 列表"做缺失补偿——这是计数唯一的自我纠正途径（MessageBus 积压被
+  // 截断、离线期间漏消息都靠它兜底）。这里拆成两步，调用方在中间把列表
+  // 落地：[fixDelayedServerState] 是纯函数，[syncFromTopicList] 改状态。
+
+  /// 对齐网页版 _fixDelayedServerState：本地已读过、服务端列表却还当
+  /// 新话题的（列表缓存或阅读计时尚未上报），在顶层「新话题」列表里移除，
+  /// 其他列表里取消 unseen。
+  List<Topic> fixDelayedServerState(
+    List<Topic> topics, {
+    required bool isNewList,
+  }) {
+    final newNewView = _newNewViewEnabled;
+    var changed = false;
+    final result = <Topic>[];
+    for (final topic in topics) {
+      final tracked = state[topic.id];
+      final delayed =
+          tracked != null &&
+          (tracked.lastReadPostNumber ?? 0) > 0 &&
+          (topic.lastReadPostNumber == 0 || !newNewView);
+      if (!delayed) {
+        result.add(topic);
+      } else if (isNewList) {
+        changed = true;
+      } else if (topic.unseen) {
+        changed = true;
+        result.add(topic.copyWith(unseen: false));
+      } else {
+        result.add(topic);
+      }
+    }
+    return changed ? result : topics;
+  }
+
+  /// 用列表第一页回灌追踪状态（对齐网页版 sync 的 loadStates +
+  /// _correctMissingState）。
+  ///
+  /// [compensate] 仅在列表是完整的顶层新话题/未读列表时传入（无分类、
+  /// 无标签、无 subset 等额外参数、没有下一页，对齐 _shouldCompensateState）：
+  /// 追踪状态里有、列表里却没有的话题，按该列表语义视为已读/已看过。
+  void syncFromTopicList(List<Topic> topics, {TopicListFilter? compensate}) {
+    Map<int, TrackedTopicState>? next;
+
+    for (final topic in topics) {
+      final fromList = _stateFromListTopic(topic);
+      if (fromList == null || _sameState(state[topic.id], fromList)) continue;
+      (next ??= {...state})[topic.id] = fromList;
+    }
+
+    if (compensate == TopicListFilter.newTopics ||
+        compensate == TopicListFilter.unread) {
+      final listed = {for (final topic in topics) topic.id};
+      final corrections = <int, TrackedTopicState>{};
+      for (final entry in (next ?? state).entries) {
+        if (listed.contains(entry.key)) continue;
+        final s = entry.value;
+        if (compensate == TopicListFilter.unread && _isUnread(s)) {
+          corrections[entry.key] = s.copyWith(
+            lastReadPostNumber: s.highestPostNumber,
+          );
+        } else if (compensate == TopicListFilter.newTopics && _isNew(s)) {
+          corrections[entry.key] = s.copyWith(lastReadPostNumber: 1);
+        }
+      }
+      if (corrections.isNotEmpty) (next ??= {...state}).addAll(corrections);
+    }
+
+    if (next != null) state = next;
+  }
+
+  /// 对齐网页版 _newStateFromListTopic：只回灌新话题/有未读的话题；
+  /// 已读完的话题不动（官方只在状态表超限时才把它们移除）。
+  TrackedTopicState? _stateFromListTopic(Topic topic) {
+    final int? lastRead;
+    if (topic.unseen) {
+      lastRead = null;
+    } else if (topic.unread > 0) {
+      lastRead = topic.highestPostNumber - topic.unread;
+    } else {
+      return null;
+    }
+
+    final existing = state[topic.id];
+    final categoryId = int.tryParse(topic.categoryId);
+    final level = topic.notificationLevel;
+    return TrackedTopicState(
+      topicId: topic.id,
+      lastReadPostNumber: lastRead,
+      highestPostNumber: topic.highestPostNumber > 0
+          ? topic.highestPostNumber
+          : (existing?.highestPostNumber ?? 1),
+      categoryId: categoryId != null && categoryId > 0
+          ? categoryId
+          : existing?.categoryId,
+      // 官方 `if (topic.notification_level)`：0（静音）是假值，不覆盖
+      notificationLevel: level != null && level != 0
+          ? level
+          : (existing?.notificationLevel ?? 1),
+      // 列表不带以下字段：沿用已有状态；首次出现的话题按官方缺省
+      // （created_in_new_period 缺失 → 不计入新话题）
+      createdInNewPeriod: existing?.createdInNewPeriod ?? false,
+      isSeen: existing?.isSeen ?? false,
+      deleted: existing?.deleted ?? false,
+    );
+  }
+
+  static bool _sameState(TrackedTopicState? a, TrackedTopicState b) =>
+      a != null &&
+      a.lastReadPostNumber == b.lastReadPostNumber &&
+      a.highestPostNumber == b.highestPostNumber &&
+      a.categoryId == b.categoryId &&
+      a.notificationLevel == b.notificationLevel &&
+      a.createdInNewPeriod == b.createdInNewPeriod &&
+      a.isSeen == b.isSeen &&
+      a.deleted == b.deleted;
+
+  bool get _newNewViewEnabled =>
+      PreloadedDataService().currentUserSync?['new_new_view_enabled'] == true;
 
   /// 本地阅读话题后更新追踪状态（减少 new/unread 计数）
   void updateTopicRead(int topicId, int lastReadPostNumber, int highestPostNumber) {
@@ -587,7 +692,13 @@ class MessageBusInitNotifier extends Notifier<void> {
   @override
   void build() {
     final messageBus = ref.watch(messageBusServiceProvider);
-    final currentUser = ref.watch(currentUserProvider).value;
+    // 只认身份：currentUser 每次刷新都 emit 新对象（启动渐进 emit、
+    // refreshSilently、错误态），整份 watch 会让这里反复退订重订，频道
+    // 位点被倒回预加载 meta，服务端随即回放整段积压——横幅虚增、
+    // read 回放把已读游标往回拽。重订只应发生在换号/meta 换代时。
+    final currentUserId = ref.watch(
+      currentUserProvider.select((value) => value.value?.id),
+    );
     final metaAsync = ref.watch(topicTrackingStateMetaProvider);
     
     // 清理之前的订阅
@@ -619,10 +730,10 @@ class MessageBusInitNotifier extends Notifier<void> {
       '/delete': -1,
       '/recover': -1,
       '/destroy': -1,
-      if (currentUser != null) ...{
+      if (currentUserId != null) ...{
         '/new': -1,
         '/unread': -1,
-        '/unread/${currentUser.id}': -1,
+        '/unread/$currentUserId': -1,
       },
       ...?metaAsync.value,
     };

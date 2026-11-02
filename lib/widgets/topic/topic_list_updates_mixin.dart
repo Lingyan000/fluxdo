@@ -43,6 +43,16 @@ mixin TopicListUpdatesMixin<T extends ConsumerStatefulWidget>
     });
   }
 
+  /// 分类/标签列表第一页与追踪状态对账（对齐网页版 tracking.sync）。
+  /// 官方这类列表的 filter 是 `c/.../l/new` 形态，既不触发顶层新话题
+  /// 列表的移除，也不满足缺失补偿条件，只做取消 unseen 与状态回灌。
+  List<Topic> syncFirstPageWithTracking(List<Topic> topics) {
+    final tracking = ref.read(topicTrackingStateProvider.notifier);
+    final fixed = tracking.fixDelayedServerState(topics, isNewList: false);
+    tracking.syncFromTopicList(fixed);
+    return fixed;
+  }
+
   ({int generation, Map<int, int> snapshot}) beginTopicUpdatesRefresh(
     TopicListUpdateQuery query,
   ) {

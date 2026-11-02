@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../constants.dart';
 import '../utils/client_id_generator.dart';
 import '../utils/scroll_busy_signal.dart';
+import 'message_bus_latency_probe.dart';
 import 'network/discourse_dio.dart';
 import 'preloaded_data_service.dart';
 
@@ -20,11 +21,15 @@ class MessageBusMessage {
   final int messageId;
   final dynamic data;
 
+  /// 客户端收到的时刻（协议层解析时打点，早于滚动期延迟投递）
+  final DateTime receivedAt;
+
   MessageBusMessage({
     required this.channel,
     required this.messageId,
     required this.data,
-  });
+    DateTime? receivedAt,
+  }) : receivedAt = receivedAt ?? DateTime.now();
 
   factory MessageBusMessage.fromJson(Map<String, dynamic> json) {
     return MessageBusMessage(
@@ -91,6 +96,9 @@ class MessageBusService {
   // MessageBus 独立域名配置
   String? _baseUrl;
   String? _sharedSessionKey;
+
+  // /latest 投递时效诊断(聚合后落日志,见 MessageBusLatencyProbe)
+  final _latencyProbe = MessageBusLatencyProbe();
 
   // 消息流(用于全局监听)
   final _messageController = StreamController<MessageBusMessage>.broadcast();
@@ -536,7 +544,9 @@ class MessageBusService {
           if (next == null) break;
           consumed = next.endOffset;
           if (next.payload.isNotEmpty) {
-            if (await _processChunk(next.payload)) gotData = true;
+            if (await _processChunk(next.payload, chunked: true)) {
+              gotData = true;
+            }
           }
         }
 
@@ -553,7 +563,7 @@ class MessageBusService {
     // 服务端 long_polling 25s 超时无数据时,返回的是 `[]` 而不会带分隔符。
     final tail = buffer.toString().trim();
     if (tail.isNotEmpty && !cancelToken.isCancelled) {
-      if (await _processChunk(tail)) gotData = true;
+      if (await _processChunk(tail, chunked: true)) gotData = true;
     }
 
     return gotData;
@@ -572,7 +582,7 @@ class MessageBusService {
     if (bytes.isEmpty) return false;
     final body = utf8.decode(bytes, allowMalformed: true).trim();
     if (body.isEmpty) return false;
-    return _processChunk(body);
+    return _processChunk(body, chunked: false);
   }
 
   /// 提取下一个 chunk 块,返回 `(payload, endOffset)`;无完整 chunk 时返回 null
@@ -610,7 +620,7 @@ class MessageBusService {
   static const int _isolateDecodeThreshold = 32 * 1024;
 
   /// 处理单个消息块,返回是否产生了实际的数据消息
-  Future<bool> _processChunk(String chunk) async {
+  Future<bool> _processChunk(String chunk, {required bool chunked}) async {
     try {
       final parsed = chunk.length >= _isolateDecodeThreshold
           ? await compute(_decodeJsonChunk, chunk)
@@ -623,6 +633,7 @@ class MessageBusService {
       for (final item in parsed) {
         if (item is Map<String, dynamic>) {
           final message = MessageBusMessage.fromJson(item);
+          _latencyProbe.onReceived(message, chunked: chunked);
           _handleMessage(message);
           if (message.channel != '/__status') got = true;
         }
@@ -701,6 +712,7 @@ class MessageBusService {
 
   /// 投递给订阅回调与消息流(与协议推进分离,可被滚动期延迟)
   void _deliverMessage(MessageBusMessage message) {
+    _latencyProbe.onDelivered(message);
     final sub = _subscriptions[message.channel];
     if (sub != null) {
       for (final callback in sub.callbacks) {

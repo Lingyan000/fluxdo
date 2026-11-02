@@ -22,7 +22,9 @@ class ChatNotificationAlertNotifier extends Notifier<void> {
   void build() {
     ref.watch(messageBusInitProvider);
     final messageBus = ref.watch(messageBusServiceProvider);
-    final currentUser = ref.watch(currentUserProvider).value;
+    final currentUserId = ref.watch(
+      currentUserProvider.select((value) => value.value?.id),
+    );
 
     if (_subscribedChannel != null && _callback != null) {
       messageBus.unsubscribe(_subscribedChannel!, _callback);
@@ -30,9 +32,9 @@ class ChatNotificationAlertNotifier extends Notifier<void> {
       _callback = null;
     }
 
-    if (currentUser == null) return;
+    if (currentUserId == null) return;
 
-    final channel = '/chat/notification-alert/${currentUser.id}';
+    final channel = '/chat/notification-alert/$currentUserId';
 
     void onAlert(MessageBusMessage message) {
       final data = message.data;
