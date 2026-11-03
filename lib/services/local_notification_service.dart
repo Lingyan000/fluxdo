@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/s.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
@@ -15,6 +16,39 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 const int apkUpdateNotificationId = 99001;
 
 const String _apkUpdateChannelId = 'apk_update';
+
+const MethodChannel _conversationShortcutChannel =
+    MethodChannel('com.fluxdo/conversation_shortcut');
+
+/// 系统通知所属的会话。
+///
+/// Android 11+ 据此发会话通知:发送者头像占左侧图标位、右下角叠应用
+/// 角标;其他平台只用 [senderUsername] 取头像。
+class NotificationConversation {
+  const NotificationConversation({
+    required this.id,
+    required this.title,
+    required this.senderUsername,
+    required this.selfName,
+    required this.isGroup,
+  });
+
+  /// 会话快捷方式 id。会话图标取自快捷方式,一个 id 只有一个图标,所以
+  /// 要带上发送者:同一话题/频道里不同人的通知各自显示自己的头像。
+  final String id;
+
+  /// 通知首行标题(Android 会话通知取它,而非 show 的 title)。
+  final String title;
+
+  final String senderUsername;
+
+  /// 当前用户名。MessagingStyle 要求「自己」有非空名字(不显示);为空
+  /// 时退回普通通知样式。
+  final String selfName;
+
+  /// 群聊排版在正文前显示发送者名,单聊排版不显示。
+  final bool isGroup;
+}
 
 /// 本地系统通知服务
 class LocalNotificationService {
@@ -131,8 +165,8 @@ class LocalNotificationService {
 
   /// 显示通知
   ///
-  /// [avatarUsername] 发送者用户名,用于在通知上显示其头像;头像加载
-  /// 失败或超时则发无头像通知。
+  /// [conversation] 通知所属会话,用于显示发送者头像;头像加载失败或
+  /// 超时则发无头像通知。
   Future<void> show({
     required String title,
     required String body,
@@ -141,7 +175,7 @@ class LocalNotificationService {
     int? postNumber,
     bool isPrivateMessage = false,
     int? chatChannelId,
-    String? avatarUsername,
+    NotificationConversation? conversation,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -152,10 +186,21 @@ class LocalNotificationService {
       return;
     }
 
-    final avatar = avatarUsername == null
+    final avatar = conversation == null
         ? null
-        : await NotificationAvatarLoader.load(avatarUsername);
-    final details = await _buildDetails(avatar, altText: avatarUsername);
+        : await NotificationAvatarLoader.load(conversation.senderUsername);
+    // 「自己」名字为空时 MessagingStyle 会在原生侧抛异常、连通知一起丢,
+    // 宁可退回普通样式。
+    final asConversation = conversation != null &&
+        conversation.selfName.isNotEmpty &&
+        Platform.isAndroid &&
+        await _pushConversationShortcut(conversation, avatar);
+    final details = await _buildDetails(
+      avatar,
+      body: body,
+      conversation: asConversation ? conversation : null,
+      altText: conversation?.senderUsername,
+    );
 
     final notificationId = id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
     
@@ -172,17 +217,54 @@ class LocalNotificationService {
           : '$prefix:$topicId';
     }
     
-    await _plugin.show(id: notificationId, title: title, body: body, notificationDetails: details, payload: payload);
+    try {
+      await _plugin.show(id: notificationId, title: title, body: body, notificationDetails: details, payload: payload);
+    } finally {
+      if (asConversation) await _removeConversationShortcut(conversation.id);
+    }
     debugPrint('[LocalNotification] 已发送: $title, payload=$payload');
   }
 
+  /// 发布会话快捷方式(Android 11+),成功才能以会话通知呈现。
+  Future<bool> _pushConversationShortcut(
+    NotificationConversation conversation,
+    NotificationAvatar? avatar,
+  ) async {
+    try {
+      final ok = await _conversationShortcutChannel.invokeMethod<bool>('push', {
+        'id': conversation.id,
+        'label': conversation.title,
+        'senderName': conversation.senderUsername,
+        'senderKey': conversation.senderUsername.toLowerCase(),
+        'icon': avatar?.png,
+      });
+      return ok ?? false;
+    } catch (e) {
+      debugPrint('[LocalNotification] 会话快捷方式发布失败: $e');
+      return false;
+    }
+  }
+
+  /// 通知发出后撤掉动态快捷方式:系统发通知时已同步缓存了它,撤掉只是
+  /// 不让话题堆进桌面图标的长按菜单。
+  Future<void> _removeConversationShortcut(String id) async {
+    try {
+      await _conversationShortcutChannel.invokeMethod<void>('remove', {'id': id});
+    } catch (e) {
+      debugPrint('[LocalNotification] 会话快捷方式撤销失败: $e');
+    }
+  }
+
   /// 构建 Discourse 通知的各平台参数,[avatar] 按各平台能力挂上:
-  /// - Android:largeIcon(字节直传);
+  /// - Android:传入 [conversation](会话快捷方式已发布)时发会话通知,
+  ///   头像占左侧图标位;否则作右侧 largeIcon;
   /// - iOS/macOS:通知附件缩略图(只认文件,且会被系统移走);
   /// - Windows:替换应用图标位(只认文件路径);
   /// - Linux:DBus image-data(原始像素直传)。
   Future<NotificationDetails> _buildDetails(
     NotificationAvatar? avatar, {
+    required String body,
+    NotificationConversation? conversation,
     String? altText,
   }) async {
     List<DarwinNotificationAttachment>? darwinAttachments;
@@ -224,7 +306,30 @@ class LocalNotificationService {
       channelDescription: S.current.notification_channelDiscourseDesc,
       importance: Importance.high,
       priority: Priority.high,
-      largeIcon: avatar != null ? ByteArrayAndroidBitmap(avatar.png) : null,
+      // 会话通知的头像由快捷方式图标承担,不再设 largeIcon,免得左右
+      // 各显示一份。
+      largeIcon: avatar != null && conversation == null
+          ? ByteArrayAndroidBitmap(avatar.png)
+          : null,
+      styleInformation: conversation == null
+          ? null
+          : MessagingStyleInformation(
+              Person(name: conversation.selfName),
+              conversationTitle: conversation.title,
+              groupConversation: conversation.isGroup,
+              messages: [
+                Message(
+                  body,
+                  DateTime.now(),
+                  Person(
+                    name: conversation.senderUsername,
+                    key: conversation.senderUsername.toLowerCase(),
+                    icon: avatar != null ? ByteArrayAndroidIcon(avatar.png) : null,
+                  ),
+                ),
+              ],
+            ),
+      shortcutId: conversation?.id,
     );
 
     final darwinDetails = DarwinNotificationDetails(

@@ -177,6 +177,8 @@ class MainActivity : FlutterActivity() {
         MediaTranscodeChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         // 公共文件落盘通道(MediaStore 下载目录 / SAF 另存为 / 打开 content uri)
         PublicFileChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        // 会话通知快捷方式(系统通知左侧显示发送者头像)
+        ConversationShortcutChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "openInBrowser" -> {

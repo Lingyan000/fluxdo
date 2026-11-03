@@ -302,7 +302,18 @@ class NotificationAlertChannelNotifier extends Notifier<void> {
           isPrivateMessage:
               parsedType == NotificationType.privateMessage ||
               parsedType == NotificationType.invitedToPrivateMessage,
-          avatarUsername: username,
+          // 单聊排版:首行仍是话题标题、正文仍是摘要,只是发送者头像
+          // 占左侧图标位。不用群聊排版 —— 它会在摘要前加「发送者:」,
+          // 而点赞等通知的摘要是自己的帖子,会被误读成对方说的话。
+          conversation: topicId != null && username.isNotEmpty
+              ? NotificationConversation(
+                  id: 'topic_${topicId}_${username.toLowerCase()}',
+                  title: title,
+                  senderUsername: username,
+                  selfName: ref.read(currentUserProvider).value?.username ?? '',
+                  isGroup: false,
+                )
+              : null,
         );
       }
     }
