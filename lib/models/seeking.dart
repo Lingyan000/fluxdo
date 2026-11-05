@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'user_action.dart';
 
 /// 追觅动态类型
@@ -95,7 +96,7 @@ class SeekingUserProfile {
   String getAvatarUrl({int size = 120}) {
     final template = avatarTemplate;
     if (template == null || template.isEmpty) return '';
-    return template.replaceAll('{size}', '$size');
+    return AvatarUrl.resolve(template, size: size);
   }
 
   /// 值相等：provider 靠它判断「资料没变就不重建状态」，

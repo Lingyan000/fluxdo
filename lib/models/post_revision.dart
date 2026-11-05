@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 
@@ -76,7 +77,7 @@ class PostRevisionUserChange {
 
   static String? _avatarUrl(String? template, int size) {
     if (template == null || template.isEmpty) return null;
-    final filled = template.replaceAll('{size}', '$size');
+    final filled = AvatarUrl.resolve(template, size: size);
     return UrlHelper.resolveUrlWithCdn(filled);
   }
 }
@@ -236,7 +237,7 @@ class PostRevision {
 
   String getAvatarUrl({int size = 48}) {
     if (avatarTemplate.isEmpty) return '';
-    final filled = avatarTemplate.replaceAll('{size}', '$size');
+    final filled = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(filled);
   }
 

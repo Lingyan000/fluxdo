@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../../utils/url_helper.dart';
 
 /// Chat 消息/频道成员的轻量用户模型
@@ -25,7 +26,7 @@ class ChatUser {
 
   String getAvatarUrl({int size = 96}) {
     if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', size.toString());
+    final template = AvatarUrl.resolve(avatarTemplate!, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }

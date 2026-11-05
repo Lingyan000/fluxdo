@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

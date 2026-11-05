@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
@@ -291,7 +292,7 @@ class BadgeUser {
     if (animatedAvatar != null && animatedAvatar!.isNotEmpty) {
       return UrlHelper.resolveUrlWithCdn(animatedAvatar!);
     }
-    final template = avatarTemplate.replaceAll('{size}', size.toString());
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }

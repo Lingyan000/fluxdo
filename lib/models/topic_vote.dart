@@ -1,4 +1,5 @@
 // 话题投票相关数据模型
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../utils/url_helper.dart';
 
 /// 投票响应数据
@@ -59,7 +60,7 @@ class VotedUser {
   }
 
   String getAvatarUrl({int size = 40}) {
-    final url = avatarTemplate.replaceAll('{size}', '$size');
+    final url = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(url);
   }
 }
@@ -91,7 +92,7 @@ class PostVotingVoter {
   }
 
   String getAvatarUrl({int size = 40}) {
-    final url = avatarTemplate.replaceAll('{size}', '$size');
+    final url = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(url);
   }
 }

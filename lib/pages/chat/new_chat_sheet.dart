@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -235,7 +236,7 @@ class _UserPickerBodyState extends ConsumerState<_UserPickerBody> {
   static String? _avatarUrl(MentionUser user) {
     final template = user.avatarTemplate;
     if (template == null || template.isEmpty) return null;
-    return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
+    return UrlHelper.resolveUrlWithCdn(AvatarUrl.resolve(template, size: 96));
   }
 }
 
