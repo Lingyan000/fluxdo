@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import '../../../models/topic.dart';
@@ -77,7 +78,7 @@ class BoostBubble extends StatelessWidget {
               SmartAvatar(
                 imageUrl: boost!.user.avatarTemplate.isNotEmpty
                     ? UrlHelper.resolveUrlWithCdn(
-                        boost!.user.avatarTemplate.replaceAll('{size}', '48'),
+                        AvatarUrl.resolve(boost!.user.avatarTemplate, size: 48),
                       )
                     : null,
                 radius: 10,
@@ -236,10 +237,7 @@ class _AvatarStack extends StatelessWidget {
                 child: SmartAvatar(
                   imageUrl: visibleUsers[i].avatarTemplate.isNotEmpty
                       ? UrlHelper.resolveUrlWithCdn(
-                          visibleUsers[i].avatarTemplate.replaceAll(
-                            '{size}',
-                            '48',
-                          ),
+                          AvatarUrl.resolve(visibleUsers[i].avatarTemplate, size: 48),
                         )
                       : null,
                   radius: 10,

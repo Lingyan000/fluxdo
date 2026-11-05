@@ -1,6 +1,7 @@
 /// MessageBus 相关数据模型
 library;
 
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../../utils/url_helper.dart';
 
 /// 正在输入的用户信息
@@ -16,7 +17,7 @@ class TypingUser {
   });
 
   String getAvatarUrl({int size = 40}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 

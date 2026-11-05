@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert' show utf8;
@@ -70,7 +71,7 @@ class NotificationAvatarLoader {
 
   /// 请求档位取服务端 avatar_sizes 内的值:外部存储站点对非标准尺寸
   /// 会 302 到最近档,白绕一跳。
-  static const int _requestSize = 240;
+  static const int _requestSize = 192;
 
   /// 输出边长。Android largeIcon 64dp,xxhdpi 下 192px 已足够,再大只
   /// 是加重跨进程传输。
@@ -81,9 +82,9 @@ class NotificationAvatarLoader {
 
   static const int _memoCap = 64;
 
-  /// 小写用户名 → 头像 URL。会话级;换头像后 URL 带新版本号,重启即
+  /// 小写用户名 → 头像模板。会话级;换头像后 URL 带新版本号,重启即
   /// 刷新,通知场景容忍这点滞后。
-  static final LinkedHashMap<String, String> _urlByUsername = LinkedHashMap();
+  static final LinkedHashMap<String, String> _templateByUsername = LinkedHashMap();
 
   /// 头像 URL → 裁好的头像。同一发送者连发多条时免重复解码。
   static final LinkedHashMap<String, NotificationAvatar> _avatarByUrl =
@@ -105,21 +106,21 @@ class NotificationAvatarLoader {
   }
 
   static Future<NotificationAvatar?> _load(String username, String key) async {
-    var url = _urlByUsername[key];
-    if (url == null) {
+    var template = _templateByUsername[key];
+    if (template == null) {
       final user = await DiscourseService().getUserCard(
         username,
         isSilent: true,
       );
-      final template = user.avatarTemplate;
+      template = user.avatarTemplate;
       if (template == null || template.isEmpty) return null;
-      // 不用 User.getAvatarUrl:它优先动画头像(GIF 原图),通知只要
-      // 首帧,模板端点的静态小图更轻。
-      url = UrlHelper.resolveUrlWithCdn(
-        template.replaceAll('{size}', '$_requestSize'),
-      );
-      _remember(_urlByUsername, key, url);
+      _remember(_templateByUsername, key, template);
     }
+    // 每次按当前站点档位解析，避免配置刷新后沿用旧尺寸 URL。
+    // 模板端点仍是静态小图，不改走动画原件。
+    final url = UrlHelper.resolveUrlWithCdn(
+      AvatarUrl.resolve(template, size: _requestSize),
+    );
 
     final cached = _avatarByUrl[url];
     if (cached != null) return cached;

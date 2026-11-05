@@ -1,4 +1,5 @@
 // 搜索结果数据模型
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 import 'topic.dart';
@@ -116,7 +117,7 @@ class SearchPost {
 
   String getAvatarUrl({int size = 120}) {
     if (avatarTemplate.isEmpty) return '';
-    final url = avatarTemplate.replaceAll('{size}', '$size');
+    final url = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(url);
   }
 }
@@ -186,7 +187,7 @@ class SearchUser {
 
   String getAvatarUrl({int size = 120}) {
     if (avatarTemplate.isEmpty) return '';
-    final url = avatarTemplate.replaceAll('{size}', '$size');
+    final url = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(url);
   }
 }

@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -585,7 +586,7 @@ class _AvatarStrip extends StatelessWidget {
                 child: SmartAvatar(
                   imageUrl: visible[i].avatarTemplate.isNotEmpty
                       ? UrlHelper.resolveUrlWithCdn(
-                          visible[i].avatarTemplate.replaceAll('{size}', '48'),
+                          AvatarUrl.resolve(visible[i].avatarTemplate, size: 48),
                         )
                       : null,
                   radius: size / 2,

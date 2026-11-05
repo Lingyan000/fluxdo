@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -157,7 +158,7 @@ class _AnswerRow extends StatelessWidget {
     final timeText = TimeUtils.formatRelativeTime(answer.createdAt);
     final avatarUrl = (answer.avatarTemplate?.isNotEmpty ?? false)
         ? UrlHelper.resolveUrlWithCdn(
-            answer.avatarTemplate!.replaceAll('{size}', '48'),
+            AvatarUrl.resolve(answer.avatarTemplate!, size: 48),
           )
         : null;
     final hasExcerpt = (answer.excerpt?.isNotEmpty ?? false);

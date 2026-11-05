@@ -1,3 +1,4 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'dart:convert';
 
 import '../l10n/s.dart';
@@ -258,7 +259,7 @@ class DiscourseNotification {
       return '';
     }
     // 替换 {size} 占位符并解析 URL
-    final url = template.replaceAll('{size}', size.toString());
+    final url = AvatarUrl.resolve(template, size: size);
     return UrlHelper.resolveUrlWithCdn(url);
   }
 

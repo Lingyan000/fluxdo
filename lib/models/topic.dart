@@ -1,4 +1,5 @@
 // 帖子数据模型
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
@@ -238,7 +239,7 @@ class TopicUser {
 
   /// 静态模板端点 URL(恒为尺寸化静态小图);动图原件见 [animatedAvatarUrl]
   String getAvatarUrl({int size = 40}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -713,7 +714,7 @@ class ReactionUser {
   }
 
   String getAvatarUrl({int size = 96}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }
@@ -1150,7 +1151,7 @@ class Post {
     if (animatedAvatar != null && animatedAvatar!.isNotEmpty) {
       return UrlHelper.resolveUrlWithCdn(animatedAvatar!);
     }
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -1477,7 +1478,7 @@ class PolicyUser {
   }
 
   String getAvatarUrl({int size = 40}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -1576,7 +1577,7 @@ class BoostUser {
 
   /// 获取头像 URL
   String getAvatarUrl({int size = 48}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }

@@ -928,7 +928,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   static String? _mentionAvatarUrl(MentionUser user) {
     final template = user.avatarTemplate;
     if (template == null || template.isEmpty) return null;
-    return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
+    return UrlHelper.resolveUrlWithCdn(AvatarUrl.resolve(template, size: 96));
   }
 
   InputDecoration _fieldDecoration(
