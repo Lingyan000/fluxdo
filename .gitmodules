@@ -1,6 +1,3 @@
-[submodule "core/doh_proxy"]
-	path = core/doh_proxy
-	url = https://github.com/Lingyan000/fluxdo_doh.git
 [submodule "packages/fluxdo_render"]
 	path = packages/fluxdo_render
 	url = https://github.com/Lingyan000/fluxdo_render.git

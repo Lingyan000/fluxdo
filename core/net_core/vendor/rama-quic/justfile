@@ -1,0 +1,244 @@
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
+# Match the root warning policy and optional dial9 instrumentation.
+export RUSTFLAGS := \
+    (if env_var_or_default("ALLOW_WARNINGS", "false") == "true" { \
+        "" \
+    } else { \
+        "-D warnings" \
+    }) + (if env_var_or_default("TOKIO_UNSTABLE", "false") == "true" { \
+        " --cfg tokio_unstable" \
+    } else { \
+        "" \
+    })
+
+export RUSTDOCFLAGS := \
+    if env_var_or_default("ALLOW_WARNINGS", "false") == "true" { \
+        "" \
+    } else { \
+        "-D warnings" \
+    }
+export RUST_LOG := "debug"
+# Python steps run in the aioquic peer's locked uv environment, as CI does, never the
+# machine's own interpreter; PYTHON overrides it.
+export PYTHON := env_var_or_default("PYTHON", justfile_directory() / "e2e/aioquic-interop/.venv" / if os_family() == "windows" { "Scripts/python.exe" } else { "bin/python" })
+
+# Install a cargo tool only when it is missing, as the root justfile does: the
+# probe needs a shell of its own on each platform, since Windows PowerShell has
+# neither `command` nor `||`.
+[private]
+_python-env:
+    {{ if os_family() == "windows" { "$env:RUST_LOG=''; " } else { "RUST_LOG= " } }}uv sync --frozen --quiet --project {{quote(justfile_directory() / "e2e/aioquic-interop")}}
+
+[private]
+_ensure-installed TOOL PACKAGE:
+    @just _ensure-installed-{{os_family()}} {{TOOL}} {{PACKAGE}}
+
+[private]
+_ensure-installed-unix TOOL PACKAGE:
+    @command -v {{TOOL}} >/dev/null || cargo install {{PACKAGE}} --locked
+
+[private]
+_ensure-installed-windows TOOL PACKAGE:
+    @if (-not (Get-Command {{TOOL}} -ErrorAction SilentlyContinue)) { cargo install {{PACKAGE}} --locked }
+
+# QUIC requires an explicit TLS provider alongside dial9.
+qa-dial9: (qa-dial9-backend "boring") (qa-dial9-backend "rustls,ring") (qa-dial9-backend "rustls,aws-lc")
+
+qa-dial9-backend FEATURES:
+    @just _ensure-installed cargo-nextest cargo-nextest
+    cargo clippy -p rama-quic --no-default-features --features dial9,{{FEATURES}} --all-targets
+    cargo nextest run -p rama-quic --no-default-features --features dial9,{{FEATURES}}
+
+# Isolated library tests, lints, and external-provider integration tests.
+qa-backend FEATURES:
+    cargo test -p rama-quic --no-default-features --features {{FEATURES}} --locked
+    cargo clippy -p rama-quic --no-default-features --features {{FEATURES}} --all-targets --locked -- -D warnings
+
+# A custom implementation must compile without any built-in TLS/packet provider.
+qa-custom-provider:
+    cargo test -p rama-quic --no-default-features --locked
+    cargo clippy -p rama-quic --no-default-features --all-targets --locked -- -D warnings
+
+qa-boring-isolation: _python-env
+    {{if os_family() == "windows" { "& $env:PYTHON" } else { '"$PYTHON"' } }} check_backend_isolation.py
+
+# QUIC interop peers: standalone projects, outside the workspace, each with its own lockfile.
+# quiche builds BoringSSL (needs cmake and a C++ compiler); aioquic needs uv.
+interop-peer-dirs := "e2e/interop-common e2e/quinn-interop e2e/quiche-interop e2e/aioquic-interop"
+interop-dirs := interop-peer-dirs + " e2e/interop-runner e2e/gnutls-interop e2e/http-interop"
+
+clean: (_clean-interop "e2e/interop-common") (_clean-interop "e2e/quinn-interop") (_clean-interop "e2e/quiche-interop") (_clean-interop "e2e/aioquic-interop") (_clean-interop "e2e/interop-runner") (_clean-interop "e2e/gnutls-interop") (_clean-interop "e2e/http-interop") _clean-aioquic-env
+
+[private]
+_clean-interop DIR:
+    cargo clean --manifest-path {{DIR}}/Cargo.toml
+
+[private]
+_clean-aioquic-env:
+    @just _clean-aioquic-env-{{os_family()}}
+
+[private]
+_clean-aioquic-env-unix:
+    rm -rf -- e2e/aioquic-interop/.venv
+
+[private]
+_clean-aioquic-env-windows:
+    if (Test-Path e2e/aioquic-interop/.venv) { Remove-Item -Recurse -Force e2e/aioquic-interop/.venv }
+
+qq: _qq-features _qq-release (_qq-check "e2e/interop-common" "boring") (_qq-check "e2e/interop-common" "rustls-aws-lc") (_qq-check "e2e/quinn-interop" "boring") (_qq-check "e2e/quinn-interop" "rustls-aws-lc") (_qq-check "e2e/quiche-interop" "boring") (_qq-check "e2e/quiche-interop" "rustls-aws-lc") (_qq-check "e2e/aioquic-interop" "boring") (_qq-check "e2e/aioquic-interop" "rustls-aws-lc") (_qq-check "e2e/interop-runner" "boring") (_qq-check "e2e/interop-runner" "rustls-aws-lc") (_qq-check "e2e/http-interop" "boring") (_qq-check "e2e/http-interop" "rustls-aws-lc")
+
+# Each feature in isolation, tests included, warnings denied like CI. The workspace `check`/`clippy`
+# only build `--all-features`, so a feature-conditional unused import (e.g. a `cfg`-gated re-export)
+# slips through locally and only fails in CI; this reproduces that here.
+[private]
+_qq-features:
+    cargo hack check --each-feature --all-targets -p rama-quic-proto -p rama-quic
+
+# Release build of the crates' own targets. `cfg(not(debug_assertions))` code (release-only bench
+# modules) never compiles under the debug `check`/`qq`, so a stale path in one only fails the
+# release CI job; this reproduces that.
+[private]
+_qq-release:
+    cargo check --release --all-targets --no-default-features --features rustls,ring -p rama-quic-proto -p rama-quic
+
+# Check one interop project against one backend in both profiles. Release matters because the
+# interop-runner ships from a `--release` Docker build, where a `debug_assert!` over
+# `cfg(debug_assertions)` code fails to compile though `check` is clean.
+[private]
+_qq-check DIR FEATURES:
+    cargo check --manifest-path {{DIR}}/Cargo.toml --all-targets --locked --features {{FEATURES}}
+    cargo check --release --manifest-path {{DIR}}/Cargo.toml --all-targets --locked --features {{FEATURES}}
+
+# Check formatting and lints for the shared scenarios and all peer projects.
+qa-interop-lint BACKEND: (_lint-interop "e2e/interop-common" BACKEND) (_lint-interop "e2e/quinn-interop" BACKEND) (_lint-interop "e2e/quiche-interop" BACKEND) (_lint-interop "e2e/aioquic-interop" BACKEND)
+
+[private]
+_lint-interop DIR BACKEND:
+    cargo fmt --manifest-path {{DIR}}/Cargo.toml --all --check
+    cargo clippy --manifest-path {{DIR}}/Cargo.toml --all-targets --locked --features {{BACKEND}} -- -D warnings
+
+# The locked Python environment the aioquic peer runs from.
+[working-directory: 'e2e/aioquic-interop']
+interop-aioquic-env:
+    uv sync --frozen
+
+# the shared scenario library's own tests; the peers depend on it but do not run these
+[working-directory: 'e2e/interop-common']
+test-interop-common BACKEND:
+    cargo test --locked --features {{BACKEND}}
+
+[working-directory: 'e2e/quinn-interop']
+test-interop-quinn BACKEND:
+    cargo test --locked --features {{BACKEND}} --tests
+
+[working-directory: 'e2e/quiche-interop']
+test-interop-quiche BACKEND:
+    cargo test --locked --features {{BACKEND}} --tests
+
+[working-directory: 'e2e/aioquic-interop']
+test-interop-aioquic BACKEND: interop-aioquic-env
+    cargo test --locked --features {{BACKEND}} --tests
+
+# Formatting, Clippy, and tests for each standalone peer project.
+qa-interop-common BACKEND: (_lint-interop "e2e/interop-common" BACKEND) (test-interop-common BACKEND)
+
+qa-interop-quinn BACKEND: (_lint-interop "e2e/quinn-interop" BACKEND) (test-interop-quinn BACKEND)
+
+qa-interop-quiche BACKEND: (_lint-interop "e2e/quiche-interop" BACKEND) (test-interop-quiche BACKEND)
+
+qa-interop-aioquic BACKEND: (_lint-interop "e2e/aioquic-interop" BACKEND) (test-interop-aioquic BACKEND)
+
+# The complete peer CI checks.
+test-interop BACKEND: (qa-interop-common BACKEND) (qa-interop-quinn BACKEND) (qa-interop-quiche BACKEND) (qa-interop-aioquic BACKEND)
+
+# All standalone projects with each supported Rama TLS backend, without Docker.
+qa-interop: qa-interop-boring qa-interop-rustls-ring qa-interop-rustls-aws-lc qa-interop-gnutls
+
+qa-interop-boring: (_qa-interop "boring")
+
+qa-interop-rustls-ring: (_qa-interop "rustls-ring")
+
+qa-interop-rustls-aws-lc: (_qa-interop "rustls-aws-lc")
+
+[private]
+_qa-interop BACKEND: (test-interop BACKEND) (qa-interop-runner BACKEND)
+
+# the standalone QUIC interop projects, each with its own lockfile, plus the aioquic python env
+update-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo install cargo-edit --locked
+    for dir in {{interop-dirs}}; do
+        echo "== $dir"
+        (cd "$dir" && cargo upgrade --incompatible && cargo update && cargo generate-lockfile)
+    done
+    just update-aioquic-pin
+
+# `uv add` moves the exact aioquic pin; `uv lock --upgrade` the transitive dependencies.
+[working-directory: 'e2e/aioquic-interop']
+update-aioquic-pin:
+    uv add --no-sync --bounds exact --preview-features add-bounds --upgrade-package aioquic aioquic
+    uv lock --upgrade
+
+# Check endpoint binaries and Python gates; POSIX signal tests select supported hosts.
+[working-directory: 'e2e/interop-runner']
+qa-interop-runner BACKEND: _python-env
+    cargo fmt -- --check
+    cargo clippy --locked --all-targets --features {{BACKEND}} -- -D warnings
+    cargo test --locked --features {{BACKEND}}
+    {{if os_family() == "windows" { "& $env:PYTHON" } else { '"$PYTHON"' } }} -m unittest discover -s . -p 'test_*.py'
+
+# Run the pinned independent QUIC interop matrix (Rama client and server).
+test-interop-runner *ARGS: _python-env
+    bash {{justfile_directory()}}/e2e/interop-runner/run.sh {{ARGS}}
+
+# The client x server benchmark matrix over the interop endpoint images. Docker is the only
+# prerequisite: Rama images are built when missing, peers are pulled, certificates and served
+# files are made in containers. `just bench-matrix --help` lists the knobs; a quick look is
+# `just bench-matrix --implementations rama-boring,quinn --set bulk.size=256M --repeat 1`.
+bench-matrix *ARGS: _python-env
+    {{if os_family() == "windows" { "& $env:PYTHON" } else { '"$PYTHON"' } }} e2e/bench/bench_matrix.py {{ARGS}}
+
+# Re-render the tables and SVGs from a saved JSON report.
+bench-matrix-report REPORT *ARGS: _python-env
+    {{if os_family() == "windows" { "& $env:PYTHON" } else { '"$PYTHON"' } }} e2e/bench/bench_matrix.py --report {{REPORT}} {{ARGS}}
+
+# GNUTLS_DIR selects a native installation prefix when pkg-config is unavailable.
+# The C bridge needs GnuTLS headers and the fixtures need `certtool`, neither of which the
+# Windows toolchain provides, so this is a no-op there and `qa-full` stays runnable.
+# External TLS implementation (POSIX only): GnuTLS headers/library and certtool, plus the locked aioquic peer.
+qa-interop-gnutls:
+    @just _qa-interop-gnutls-{{os_family()}}
+
+[private]
+_qa-interop-gnutls-windows:
+    @echo "Skipping GnuTLS interop: it needs GnuTLS headers and certtool (POSIX only)."
+
+[private]
+_qa-interop-gnutls-unix: interop-aioquic-env qa-gnutls-isolation
+    cargo fmt --manifest-path e2e/gnutls-interop/Cargo.toml --all --check
+    cargo clippy --manifest-path e2e/gnutls-interop/Cargo.toml --all-targets --locked -- -D warnings
+    cargo test --manifest-path e2e/gnutls-interop/Cargo.toml --locked
+    cargo doc --manifest-path e2e/gnutls-interop/Cargo.toml --no-deps --locked
+
+qa-gnutls-isolation: _python-env
+    {{if os_family() == "windows" { "& $env:PYTHON" } else { '"$PYTHON"' } }} check_backend_isolation.py --external-only
+
+# Standalone projects are not included in cargo fmt --workspace.
+fmt-interop *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The root formatter covers the workspace. These standalone packages must
+    # not traverse their path dependencies and format that workspace six more times.
+    for dir in {{interop-dirs}}; do
+        cargo fmt --manifest-path "$dir/Cargo.toml" {{ARGS}}
+    done
+
+fmt-check-interop: (fmt-interop "--check")
+
+# Receive-window stress cases are ignored by ordinary library test runs.
+qa-stress-backend FEATURES:
+    cargo test -p rama-quic --no-default-features --features {{FEATURES}} --lib stress_ --locked -- --ignored --test-threads=1
+
+qa-stress: (qa-stress-backend "boring") (qa-stress-backend "rustls,ring") (qa-stress-backend "rustls,aws-lc")

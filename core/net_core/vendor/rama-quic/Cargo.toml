@@ -1,0 +1,61 @@
+[package]
+"name" = "rama-quic"
+"description" = "QUIC v1 and v2 (RFC 9000, RFC 9369) transport for rama"
+"version" = "0.5.0"
+"license" = "MIT OR Apache-2.0"
+"edition" = "2024"
+"repository" = "https://github.com/plabayo/rama"
+"keywords" = ["io", "async", "quic", "network", "rama"]
+"categories" = ["asynchronous", "network-programming", "web-programming"]
+"authors" = ["Glen De Cauwsemaecker <glen@plabayo.tech>"]
+"rust-version" = "1.96.0"
+[features]
+"default" = []
+"opentelemetry" = ["rama-core/opentelemetry", "rama-net/opentelemetry"]
+"ua" = ["dep:rama-ua", "rama-ua/tls", "rama-tls-boring?/ua", "compression"]
+"rustls" = ["dep:rama-tls-rustls"]
+"boring" = ["rama-crypto/boring", "dep:rama-tls-boring", "dep:zeroize"]
+"compression" = ["rama-tls-boring?/compression"]
+"aws-lc" = ["rama-crypto/aws-lc", "rama-tls-rustls?/aws-lc"]
+"ring" = ["rama-crypto/ring", "rama-tls-rustls?/ring"]
+"test-utils" = ["rama-udp/test-utils"]
+"fuzz-utils" = ["dep:arbitrary", "rama-quic-proto/fuzz-utils"]
+"dial9" = ["dep:dial9-trace-format", "rama-core/dial9", "rama-net/dial9", "rama-tls-rustls?/dial9", "rama-tls-boring?/dial9"]
+[dependencies]
+"ahash" = { "version" = "0.8" }
+"arbitrary" = { "version" = "1", "features" = ["derive"], "optional" = true }
+"dial9-trace-format" = { "version" = "0.5.3", "optional" = true }
+"fastbloom" = { "version" = "0.17", "default-features" = false }
+"jiff" = { "version" = "0.2.38", "features" = ["serde"] }
+"lru-slab" = { "version" = "0.1.3" }
+"parking_lot" = { "version" = "0.13" }
+"pin-project-lite" = { "version" = "0.2" }
+"rama-core" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rama-crypto" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-net" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rama-quic-proto" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rama-tls" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-tls-boring" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "optional" = true }
+"rama-tls-rustls" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "optional" = true }
+"rama-ua" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "optional" = true }
+"rama-udp" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-utils" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rand" = { "version" = "0.10" }
+"rand_pcg" = { "version" = "0.10" }
+"rustc-hash" = { "version" = "2" }
+"serde" = { "version" = "1.0", "default-features" = false, "features" = ["alloc", "derive"] }
+"serde_json" = { "version" = "1.0" }
+"slab" = { "version" = "0.4" }
+"tokio" = { "version" = "1.54.1", "features" = ["macros", "net", "rt", "sync", "time"] }
+"zeroize" = { "version" = "1", "default-features" = false, "features" = ["alloc"], "optional" = true }
+[dev-dependencies]
+"dial9" = { "version" = "0.5.6", "default-features" = false, "features" = ["tokio", "analysis"] }
+"quickcheck" = { "version" = "1.1" }
+"rama-udp" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["test-utils"] }
+"rand" = { "version" = "0.10" }
+"sha2" = { "version" = "0.11" }
+"tokio" = { "version" = "1.54.1", "features" = ["macros", "net", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+"tracing-subscriber" = { "version" = "0.3", "features" = ["env-filter", "fmt"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

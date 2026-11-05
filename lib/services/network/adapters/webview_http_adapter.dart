@@ -13,6 +13,7 @@ import '../../auth_session.dart';
 import '../cookie/app_cookie_manager.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
+import '../cookie/csrf_session_trace.dart';
 import '../cookie/session_cookie_sentinel.dart';
 import '../cookie/webview_cookie_priming.dart';
 import '../../webview_settings.dart';
@@ -305,6 +306,21 @@ document.close();
       }
 
       // 构建 headers（移除 Cookie，由 WebView 自动处理）
+      final csrfTrace = options.extra[CsrfSessionTrace.extraKey];
+      if (csrfTrace is Map) {
+        try {
+          final cookies = await _resolveCookieManager()
+              .getCookies(url: WebUri(url))
+              .timeout(const Duration(seconds: 1));
+          CsrfSessionTrace.captureBrowserCookies(
+            options,
+            cookies.map((cookie) => MapEntry(cookie.name, cookie.value)),
+          );
+        } catch (_) {
+          // 诊断读取失败不影响业务请求，不把插件异常或凭据写入日志。
+          csrfTrace['browserCookieSnapshotAvailable'] = false;
+        }
+      }
       final headersMap = _buildBrowserSafeHeaders(options.headers);
       final fetchCacheMode = resolveFetchCacheMode(options);
       if (fetchCacheMode != null) {

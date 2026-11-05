@@ -18,9 +18,13 @@ class AppLogger {
     _enabled = enabled;
   }
 
+  /// 详细日志开关的当前值，原生层（网络核心）据此调整交上来的日志级别
+  static final ValueNotifier<bool> verboseNotifier = ValueNotifier(false);
+
   /// 设置详细日志（debug 级落盘），跟随开发者模式
   static void setVerbose(bool verbose) {
     LogWriter.verboseEnabled = verbose;
+    verboseNotifier.value = verbose;
   }
 
   /// 调试级别日志：高频追踪信息，仅开发者模式落盘

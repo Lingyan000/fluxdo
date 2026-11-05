@@ -11,7 +11,12 @@ import '../health/network_health_controller.dart';
 /// 负责设置 User-Agent 和 CSRF Token
 /// CSRF 策略对齐 Discourse 官方前端：POST 前 token 为空则先从 /session/csrf 获取
 class RequestHeaderInterceptor extends Interceptor {
-  RequestHeaderInterceptor(this._cookieSync);
+  RequestHeaderInterceptor(
+    this._cookieSync, {
+    Future<void> Function(RequestOptions)? reloadCookies,
+  }) : _reloadCookies = reloadCookies;
+
+  final Future<void> Function(RequestOptions)? _reloadCookies;
 
   final CsrfTokenService _cookieSync;
 
@@ -23,7 +28,7 @@ class RequestHeaderInterceptor extends Interceptor {
     // 1. 设置 User-Agent
     options.headers['User-Agent'] = await AppConstants.getUserAgent();
 
-    // 2. 注入 Client Hints 请求头（Sec-CH-UA 系列，仅移动端可用）
+    // 2. 注入 Client Hints 请求头（由 UA 推导的低熵三件套，仅安卓有值）
     final hints = AppConstants.clientHints;
     if (hints != null) {
       options.headers.addAll(hints);
@@ -38,6 +43,21 @@ class RequestHeaderInterceptor extends Interceptor {
       if (method != 'GET' &&
           (_cookieSync.csrfToken == null || _cookieSync.csrfToken!.isEmpty)) {
         await _cookieSync.updateCsrfToken();
+        // Cookie 拦截器已执行过；刷新完成后不能沿用刷新前的会话快照。
+        try {
+          await _reloadCookies?.call(options);
+        } catch (error, stack) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              error: error,
+              stackTrace: stack,
+              message: 'Failed to reload cookies after CSRF refresh.',
+            ),
+            true,
+          );
+          return;
+        }
       }
 
       final csrf = _cookieSync.csrfToken;

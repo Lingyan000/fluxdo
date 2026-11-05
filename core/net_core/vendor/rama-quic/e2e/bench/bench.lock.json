@@ -1,0 +1,66 @@
+{
+  "implementations": {
+    "rama-boring": {
+      "rama_backend": "boring"
+    },
+    "rama-rustls-ring": {
+      "rama_backend": "rustls-ring"
+    },
+    "rama-rustls-aws-lc": {
+      "rama_backend": "rustls-aws-lc"
+    },
+    "quinn": {
+      "image": "stammw/quinn-interop:latest",
+      "note": "the image sleeps three seconds before starting its client; the client is started directly",
+      "client_entrypoint": [
+        "bash",
+        "-c",
+        "/setup.sh >/dev/null 2>&1; /wait-for-it.sh sim:57832 -s -t 30 >/dev/null 2>&1; exec ./client"
+      ]
+    },
+    "quiche": {
+      "image": "cloudflare/quiche-qns:latest"
+    },
+    "aioquic": {
+      "image": "aiortc/aioquic-qns:latest"
+    },
+    "quic-go": {
+      "image": "martenseemann/quic-go-interop:latest"
+    },
+    "ngtcp2": {
+      "image": "ghcr.io/ngtcp2/ngtcp2-interop:latest",
+      "note": "its scripts pass --qlog-dir $QLOGDIR unquoted and refuse to run without a writable directory; QLOGDIR is set and qlog then disabled through the parameter hooks so it pays no qlog cost the others skip",
+      "env": {
+        "QLOGDIR": "/tmp/qlog",
+        "CLIENT_PARAMS": "--qlog-dir=",
+        "SERVER_PARAMS": "--qlog-dir="
+      }
+    }
+  },
+  "cases": {
+    "bulk": {
+      "testcase": "transfer",
+      "files": 1,
+      "size": "4G",
+      "unit": "MiB/s"
+    },
+    "parallel": {
+      "testcase": "transfer",
+      "files": 256,
+      "size": "8M",
+      "unit": "MiB/s"
+    },
+    "small": {
+      "testcase": "transfer",
+      "files": 3000,
+      "size": "64K",
+      "unit": "req/s"
+    },
+    "handshake": {
+      "testcase": "handshake",
+      "files": 1,
+      "size": "1",
+      "unit": "ms"
+    }
+  }
+}

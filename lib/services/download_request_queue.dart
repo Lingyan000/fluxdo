@@ -13,9 +13,7 @@ enum DownloadPriority {
 ///
 /// 配合下载客户端的 bumpPending / sinkPending：
 /// 排队中的请求可随视野变化在两级间迁移(滚入视野 → high 插队,
-/// 滚出视野 → 沉回 normal 队尾),在途请求不动 —— 已下载字节写盘
-/// 即缓存,取消只会白扔投资(我们没有 TG 的 .temp 断点续传,几 MB
-/// 以下文件也不值得建)。
+/// 视图释放 → 沉回 normal 队尾)。这里只管理排队准入，不取消在途 HTTP。
 class DownloadRequestQueue {
   DownloadRequestQueue(this.maxCount, {this.reservedHighSlots = 0})
     : assert(maxCount > 0),
@@ -27,11 +25,56 @@ class DownloadRequestQueue {
   int _current = 0;
   final _high = <_Waiter>[];
   final _normal = <_Waiter>[];
+  final _foregroundUsers = <String, int>{};
 
-  Future<void> acquire(String key, DownloadPriority priority) {
-    final w = _Waiter(key);
-    (priority == DownloadPriority.high ? _high : _normal).add(w);
+  /// 保留提权意图直到视图释放，即使首绘发生在 acquire 之前也不会丢失。
+  /// 多个视图共享 URL 时，最后一个释放者才降低隐式前台优先级。
+  void Function() retainForeground(String key) {
+    _foregroundUsers.update(key, (n) => n + 1, ifAbsent: () => 1);
+    bump(key);
+    var released = false;
+    return () {
+      if (released) return;
+      released = true;
+      final count = _foregroundUsers[key]! - 1;
+      if (count > 0) {
+        _foregroundUsers[key] = count;
+        return;
+      }
+      _foregroundUsers.remove(key);
+      final demoted = <_Waiter>[];
+      _high.removeWhere((w) {
+        final match = w.key == key && w.priority == DownloadPriority.normal;
+        if (match) demoted.add(w);
+        return match;
+      });
+      _normal.addAll(demoted);
+      _drain();
+    };
+  }
+
+  Future<void> acquire(
+    String key,
+    DownloadPriority priority, {
+    Future<void>? cancelled,
+  }) {
+    final w = _Waiter(key, priority);
+    final foreground =
+        priority == DownloadPriority.high || _foregroundUsers.containsKey(key);
+    (foreground ? _high : _normal).add(w);
     _drain();
+    if (cancelled != null) {
+      unawaited(
+        Future.any([
+          cancelled.then((_) {
+            if (_high.remove(w) || _normal.remove(w)) {
+              w.completer.completeError(const DownloadQueueCancelled());
+            }
+          }),
+          w.completer.future.then((_) {}, onError: (_) {}),
+        ]),
+      );
+    }
     return w.completer.future;
   }
 
@@ -54,14 +97,17 @@ class DownloadRequestQueue {
 
   /// 把排队中的 [key] 提到 high 队尾(已在 high / 未在队列则无操作)。
   void bump(String key) {
-    final i = _normal.indexWhere((w) => w.key == key);
-    if (i < 0) return;
-    _high.add(_normal.removeAt(i));
+    _normal.removeWhere((w) {
+      if (w.key != key) return false;
+      _high.add(w);
+      return true;
+    });
     _drain();
   }
 
   /// 把排队中的 [key] 沉到 normal 队尾(滚出视野的预建请求让路)。
   void sink(String key) {
+    if (_foregroundUsers.containsKey(key)) return;
     final i = _high.indexWhere((w) => w.key == key);
     if (i >= 0) {
       _normal.add(_high.removeAt(i));
@@ -76,7 +122,12 @@ class DownloadRequestQueue {
 }
 
 class _Waiter {
-  _Waiter(this.key);
+  _Waiter(this.key, this.priority);
   final String key;
+  final DownloadPriority priority;
   final completer = Completer<void>();
+}
+
+class DownloadQueueCancelled implements Exception {
+  const DownloadQueueCancelled();
 }

@@ -1,0 +1,65 @@
+[package]
+name = "fluxdo_net"
+version = "0.1.0"
+edition = "2024"
+description = "FluxDO 网络核心：dio 的进程内网络栈（FFI）、WebView 本地代理与指纹采样"
+
+[lib]
+# cdylib 供 Android / macOS / Windows / Linux 动态加载，staticlib 供 iOS 静态链接
+crate-type = ["rlib", "cdylib", "staticlib"]
+name = "fluxdo_net"
+
+[[bin]]
+name = "gen_ca"
+path = "src/bin/gen_ca.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+bytes = "1"
+parking_lot = "0.12"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# DNS 报文编解码；DoH 查询经本库的出口发出
+hickory-proto = { version = "0.24", default-features = false }
+
+# 上游代理里的 Shadowsocks 协议
+shadowsocks = { version = "1.24", default-features = false, features = ["aead-cipher", "aead-cipher-2022"] }
+
+# 浏览器指纹出口、WebView 镜像与 HTTP 客户端（BoringSSL）。固定到实测验证过的提交，正式发布后切到 crates.io。
+rama = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["boring", "compression", "http-backend", "tcp", "quic"] }
+rama-http-backend = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["quic", "boring"] }
+rama-http-core = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["quic"] }
+rama-crypto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["boring"] }
+
+# 苹果端系统代理与 PAC（与 URLSession / WKWebView 读取同一份设置）
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+core-foundation = "0.10"
+
+[target.'cfg(target_os = "android")'.dependencies]
+tracing-android = "0.2"
+# 平台证书校验器经它拿 JavaVM 与 Context，调用 Java 侧的 TrustManager
+ndk-context = "0.1"
+jni-sys = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 2
+strip = true
+# FFI 边界用 catch_unwind 隔离 panic，release 不能用 abort
+panic = "unwind"
+
+# 过程宏与 build.rs 在宿主上编译、只在编译期使用，不进产物。
+# 继承上面的 strip 会把过程宏 dylib 剥坏（报 can't find crate for `xxx_macros`）。
+[profile.release.build-override]
+strip = false
+
+[patch."https://github.com/plabayo/rama"]
+rama-quic = { path = "vendor/rama-quic" }

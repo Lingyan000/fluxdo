@@ -121,14 +121,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  build_cli_annotations:
-    dependency: transitive
-    description:
-      name: build_cli_annotations
-      sha256: e563c2e01de8974566a1998410d3f6f03521788160a02503b0b1f1a46c7b3d95
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.1"
   catcher_2:
     dependency: "direct main"
     description:
@@ -273,14 +265,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.15.1"
-  cronet_http:
-    dependency: "direct main"
-    description:
-      name: cronet_http
-      sha256: "9da9860b409d71e4b8259e3dee631176d499dee23e7cd45a3024ebd5181997d8"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.9.0"
   cross_file:
     dependency: "direct main"
     description:
@@ -305,14 +289,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
-  cupertino_http:
-    dependency: transitive
-    description:
-      name: cupertino_http
-      sha256: d57188b07349a373bec9a78997a80c00e1de08dab0fe454b3f86c84661ac457c
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.1.0"
   dart_console:
     dependency: "direct dev"
     description:
@@ -348,19 +324,10 @@ packages:
   dio:
     dependency: "direct main"
     description:
-      name: dio
-      sha256: "852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/dio"
+      relative: true
+    source: path
     version: "5.11.1"
-  dio_compatibility_layer:
-    dependency: "direct main"
-    description:
-      name: dio_compatibility_layer
-      sha256: "73ffce50133cc30a51a3b1ea20acf13b2df28e1671673188a04f671102e6fba1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.1"
   dio_cookie_manager:
     dependency: "direct main"
     description:
@@ -825,14 +792,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.3"
-  flutter_rust_bridge:
-    dependency: "direct overridden"
-    description:
-      name: flutter_rust_bridge
-      sha256: e87d6b9ee934dcd24a128ccb2bd91905d2d5fe5c06245d6a8f5477d4907a437a
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.12.0"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -1075,14 +1034,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
-  http_profile:
-    dependency: transitive
-    description:
-      name: http_profile
-      sha256: "7e679e355b09aaee2ab5010915c932cce3f2d1c11c3b2dc177891687014ffa78"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0"
   image:
     dependency: "direct main"
     description:
@@ -1196,13 +1147,13 @@ packages:
     source: hosted
     version: "0.6.1"
   jni:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: jni
-      sha256: f038e58b4dc2c9037f50e233175086337e0b305e356d28211bf55f21c504cbd3
+      sha256: d8df6dab6847855512fe44dd9032b0bbe34dda7bf7597e41d30750879779813f
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.3"
+    version: "1.1.1"
   jni_flutter:
     dependency: transitive
     description:
@@ -1507,22 +1458,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.2"
-  native_dio_adapter:
-    dependency: "direct main"
-    description:
-      name: native_dio_adapter
-      sha256: "7ca3d04c76095a02c3b0d2e6f3c90e7781373671f7aacad34b81f31074a7369b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.8.0"
-  native_toolchain_c:
-    dependency: transitive
-    description:
-      name: native_toolchain_c
-      sha256: a1c26117c48cebe5677b0cf0e33a980a79a7c5577effc86f52e5a0d309cdcb60
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.19.3"
   nested:
     dependency: transitive
     description:
@@ -1907,15 +1842,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  rhttp:
-    dependency: "direct main"
-    description:
-      path: rhttp
-      ref: HEAD
-      resolved-ref: "02eb4114b57c108e76a9ed526b6118bc048b5604"
-      url: "https://github.com/Lingyan000/rhttp_plus.git"
-    source: git
-    version: "0.18.0"
   riverpod:
     dependency: transitive
     description:
@@ -2377,14 +2303,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-  ua_client_hints:
-    dependency: "direct main"
-    description:
-      name: ua_client_hints
-      sha256: e6e302bb7c21d6a90023db61e0ec413f0810ce341bb7e2ab447ff5d61ec3d87e
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.7.0"
   universal_io:
     dependency: transitive
     description:

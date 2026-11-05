@@ -307,7 +307,7 @@ class MessageBusService {
   ///
   /// 策略:
   /// - 前台优先 chunked,服务端 flush 即到,延迟 <500ms
-  /// - iOS 后台改用 Dont-Chunk,让 URLSession 系统级 suspend 接管,省电
+  /// - iOS 后台改用 Dont-Chunk:服务端攒到消息或超时才整包返回,唤醒次数少,省电
   ///   (后台用户看不到 UI,差几秒到达不影响体验,exitBackgroundMode 时会立刻 poll
   ///   一次取回积压消息)
   /// - chunked 首 chunk 超时(代理缓冲、stream 不可靠)时临时降级,30 次后自愈
@@ -373,7 +373,6 @@ class MessageBusService {
               'isSilent': true,
               'skipCsrf': true,
               'skipNetworkLog': true,
-              'skipRhttpAdapter': true,
             },
           ),
         );

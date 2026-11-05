@@ -1,0 +1,10 @@
+# Runner dependencies, including transitives; Python >=3.10.
+appdirs==1.4.4
+lxml==6.1.3
+packaging==26.3
+prettytable==3.16.0
+pycryptodome==3.23.0
+pyshark==0.6
+random-slugs==1.0.4
+termcolor==3.1.0
+wcwidth==0.8.3

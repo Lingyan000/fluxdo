@@ -33,7 +33,7 @@ void main() {
       expect(adapter.requestedPaths, ['/session/otp/deadbeef']);
     });
 
-    test('不带 skipRedirect 会跟随 302 并用原 method 重发，命中事故形态', () async {
+    test('不带 skipRedirect 会跟随 302，POST 转为 GET', () async {
       final adapter = _RecordingAdapter();
       final dio = _buildDio(adapter);
 
@@ -42,10 +42,10 @@ void main() {
         options: _redeemOptions(skipRedirect: false),
       );
 
-      // 回归护栏:证明豁免确有必要 —— 第二跳是 POST /
+      // 即使 POST 已按标准转 GET，OTP 仍需豁免以拿到第一跳 Set-Cookie。
       expect(adapter.requestedPaths, hasLength(2));
       expect(adapter.requestedPaths.last, '/');
-      expect(adapter.requestedMethods.last, 'POST');
+      expect(adapter.requestedMethods.last, 'GET');
     });
   });
 
@@ -121,7 +121,8 @@ Dio _buildDio(_RecordingAdapter adapter, {bool withRequestHeader = false}) {
     BaseOptions(
       baseUrl: 'https://linux.do',
       followRedirects: false,
-      validateStatus: (status) => status != null && status >= 200 && status < 400,
+      validateStatus: (status) =>
+          status != null && status >= 200 && status < 400,
     ),
   )..httpClientAdapter = adapter;
   if (withRequestHeader) {

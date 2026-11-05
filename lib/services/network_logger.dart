@@ -12,12 +12,42 @@ class NetworkLogger {
 
   /// 写入一条网络诊断日志
   static void log(String message, {String level = 'info'}) {
-    debugPrint('[Network] $message');
+    if (kDebugMode) debugPrint('[Network] $message');
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
       'type': 'network',
       'message': message,
+    });
+  }
+
+  /// 网络核心（Rust）交上来的日志。级别取值见核心的日志回调约定：
+  /// 1 error、2 warn、3 info、4 debug。
+  static void logCore({
+    required int level,
+    required String target,
+    required String message,
+    Map<String, dynamic>? fields,
+  }) {
+    final levelName = switch (level) {
+      1 => 'error',
+      2 => 'warning',
+      3 => 'info',
+      _ => 'debug',
+    };
+    // 模块名去掉 crate 前缀：fluxdo_net::client → client
+    final module = target.startsWith('fluxdo_net::')
+        ? target.substring('fluxdo_net::'.length)
+        : target;
+    if (kDebugMode) debugPrint('[Core/$module] $message');
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': levelName,
+      'type': 'network',
+      ...?fields,
+      'tag': 'core',
+      'module': module,
+      'message': '[Core/$module] $message',
     });
   }
 

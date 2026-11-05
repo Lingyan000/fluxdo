@@ -25,6 +25,7 @@ class DiscourseDio {
     Duration receiveTimeout = const Duration(seconds: 30),
     Map<String, dynamic>? defaultHeaders,
     String? baseUrl,
+
     /// null 表示不限制（用于下载、MessageBus 等），非 null 启用调度器。
     /// 实际并发数和速率从 [RequestSchedulerConfig] 动态读取。
     int? maxConcurrent = 3,
@@ -52,10 +53,7 @@ class DiscourseDio {
     // 滚动/返回列表时直接掉帧。小响应仍同步解码(isolate 往返不划算)。
     dio.transformer = BackgroundTransformer();
 
-    // 1. 配置平台适配器
-    //
-    // 需要绕开 rhttp 走系统栈的场景(如 MessageBus 长轮询依赖系统级省电)
-    // 由请求侧的 FluxRequestKeys.skipRhttpAdapter 逐请求声明,不在这里分档。
+    // 1. 配置平台适配器(网络核心为常规栈,核心不可用时自动退到应急路径)
     configurePlatformAdapter(dio);
 
     // 2. 会话代守卫（最先执行，确保过期请求不进入后续拦截器）
@@ -77,7 +75,7 @@ class DiscourseDio {
     // 删除指令**落库前**的 jar 快照——顺序颠倒会让它误判"真登出"跳过自愈。
     // 契约测试: test/services/network/recovery/session_heal_test.dart
     //
-    // 取代 dio_smart_retry + SelfHealingInterceptor + CronetFallbackInterceptor。
+    // 取代 dio_smart_retry + SelfHealingInterceptor + 旧的引擎降级拦截器。
     // 与 dio_smart_retry 的行为差异是刻意的:
     // - 5xx 只对幂等方法重放,POST 重放会造成重复发帖;
     // - 429 区分挑战型(交 CF 盾)与真限流,并尊重 Retry-After;
@@ -101,12 +99,18 @@ class DiscourseDio {
     }
 
     // 5. Cookie 管理
-    if (cookiesEnabled) {
-      dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
-    }
+    final cookieManager = cookiesEnabled
+        ? AppCookieManager(cookieJarService.cookieJar)
+        : null;
+    if (cookieManager != null) dio.interceptors.add(cookieManager);
 
     // 6. 请求头拦截器
-    dio.interceptors.add(RequestHeaderInterceptor(CsrfTokenService()));
+    dio.interceptors.add(
+      RequestHeaderInterceptor(
+        CsrfTokenService(),
+        reloadCookies: cookieManager?.refreshRequestCookies,
+      ),
+    );
 
     // 7. 重定向拦截器
     dio.interceptors.add(RedirectInterceptor(dio));

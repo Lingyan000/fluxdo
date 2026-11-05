@@ -50,12 +50,6 @@
   "dohDetail_editServer": "Edit Server",
   "dohDetail_exampleDns": "e.g. My DNS",
   "dohDetail_forceRefresh": "Force Refresh",
-  "dohDetail_gatewayDisabledDesc": "Disabled, using MITM dual TLS",
-  "dohDetail_gatewayEnabledDesc": "Single TLS, forwarded via reverse proxy",
-  "dohDetail_gatewayMode": "Gateway Mode",
-  "dohDetail_h2Mitm": "WebView HTTP/2 (Experimental)",
-  "dohDetail_h2MitmDisabledDesc": "Disabled, WebView locked to HTTP/1.1 via proxy",
-  "dohDetail_h2MitmEnabledDesc": "Enabled, WebView uses h2 multiplexing via proxy (test CF first)",
   "dohDetail_ipAddress": "IP Address",
   "dohDetail_ipv6Prefer": "Prefer IPv6",
   "dohDetail_ipv6PreferDesc": "Try IPv6 first, fallback to IPv4 on failure",
@@ -130,26 +124,11 @@
   "dohSettings_certTrustHint": "Go to Settings → General → About → Certificate Trust Settings, enable the trust switch for DOH Proxy CA.",
   "dohSettings_disabledDesc": "Using system default DNS",
   "dohSettings_enabledDesc": "Encrypted DNS resolution enabled",
-  "dohSettings_errorCopied": "Error message copied",
   "dohSettings_moreSettings": "More Settings",
   "dohSettings_moreSettingsDesc": "Servers, IPv6, ECH, etc.",
   "dohSettings_perDeviceCert": "Per-Device Certificate",
   "dohSettings_perDeviceCertDisabledDesc": "Enable to generate a unique CA certificate per device for better security",
   "dohSettings_perDeviceCertEnabledDesc": "Enabled, each device uses its own CA certificate",
-  "dohSettings_port": "Port {port}",
-  "@dohSettings_port": {
-    "placeholders": {
-      "port": {
-        "type": "int"
-      }
-    }
-  },
-  "dohSettings_proxyNotStarted": "Proxy Not Started",
-  "dohSettings_proxyRunning": "Proxy Running",
-  "dohSettings_proxyStartFailed": "Proxy start failed, DoH/ECH cannot take effect",
-  "dohSettings_restartProxy": "Restart Proxy",
-  "dohSettings_restarting": "Restarting...",
-  "dohSettings_starting": "Starting...",
   "dohSettings_suppressedByVpn": "Auto-disabled by VPN, will restore when VPN disconnects",
   "dohSettings_webViewRestartRequired": "The WebView proxy change will take effect after restarting the app. This session will keep using the previous WebView network route.",
   "doh_cannotConnect": "Cannot connect to DOH service",

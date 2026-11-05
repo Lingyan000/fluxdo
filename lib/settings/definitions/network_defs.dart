@@ -17,16 +17,16 @@ import '../../providers/preferences_provider.dart';
 List<SettingsGroup> buildNetworkGroups(BuildContext context) {
   final l10n = context.l10n;
   return [
-    // 网络引擎
+    // 网络状态：当前网络栈、出站路径与兼容模式
     SettingsGroup(
-      title: l10n.networkSettings_engine,
-      icon: Symbols.speed_rounded,
+      title: l10n.networkSettings_status,
+      icon: Symbols.network_check_rounded,
       wrapInCard: false,
       items: [
         CustomModel(
           id: 'engine',
-          title: l10n.networkSettings_engine,
-          subtitle: 'rhttp · WebView',
+          title: l10n.networkSettings_status,
+          subtitle: '${l10n.network_adapterCore} · ${l10n.webviewAdapter_title}',
           builder: (context, ref) => const EngineCard(),
         ),
       ],

@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:common_ui/common_ui.dart';
 
+import '../services/image_stream_lifecycle.dart';
+import '../services/app_logger.dart';
 import 'frame_jank_monitor.dart';
 import 'frame_scheduler_probe.dart';
 import 'perf_pipeline_probe.dart';
@@ -79,63 +81,66 @@ class ImageDecodeGate {
   static const int _maxInFlight = 2;
 
   static int _inFlight = 0;
-  static final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+  static int _inFlightBytes = 0;
+  static const int maxDecodedBytes = 32 << 20;
+  static final Queue<_DecodeWaiter> _waiters = Queue<_DecodeWaiter>();
 
-  static Future<void> _acquire() {
-    if (_inFlight < _maxInFlight) {
+  static _DecodeWaiter _acquireOrEnqueue([int bytes = 0]) {
+    final waiter = _DecodeWaiter(bytes < 0 ? 0 : bytes);
+    _waiters.add(waiter);
+    _drain();
+    return waiter;
+  }
+
+  static void _drain() {
+    while (_waiters.isNotEmpty && _inFlight < _maxInFlight) {
+      final waiter = _waiters.first;
+      // 超预算单图允许独占，避免永远无法解码；这不是总进程内存上限。
+      if (_inFlight > 0 && _inFlightBytes + waiter.bytes > maxDecodedBytes) {
+        break;
+      }
+      _waiters.removeFirst();
       _inFlight++;
-      return Future.value();
-    }
-    final completer = Completer<void>();
-    _waiters.add(completer);
-    return completer.future;
-  }
-
-  /// 申请名额:未满直接获准(返回 null);满员入队,返回排队句柄供
-  /// [GatedImageCodec] 在 dispose 时主动退队。
-  static Completer<void>? _acquireOrEnqueue() {
-    if (_inFlight < _maxInFlight) {
-      _inFlight++;
-      return null;
-    }
-    final completer = Completer<void>();
-    _waiters.add(completer);
-    return completer;
-  }
-
-  /// 把仍在排队的申请摘除(codec 排队期间被 dispose 时调用)。
-  ///
-  /// 摘除成功 = 名额从未持有,以 error 完成其 future 让等待方立刻退出
-  /// 且**不归还名额**(归还会超发,并发 2 会越放越松);已被授予名额的
-  /// (完成竞态,牌已不在队里)摘不到,走 getNextFrame 里的 _disposed
-  /// 惰性检查 + finally 归还的老路兜底。
-  static void _cancelWaiter(Completer<void> completer) {
-    if (_waiters.remove(completer)) {
-      completer.completeError(const _CancelledWhileQueued());
+      _inFlightBytes += waiter.bytes;
+      waiter.completer.complete();
     }
   }
 
-  static void _release() {
-    if (_waiters.isNotEmpty) {
-      // 名额直接移交队首,_inFlight 不变
-      _waiters.removeFirst().complete();
-    } else {
-      _inFlight--;
+  static void _cancelWaiter(_DecodeWaiter waiter) {
+    if (_waiters.remove(waiter)) {
+      waiter.completer.completeError(const _CancelledWhileQueued());
+      _drain();
     }
   }
 
-  /// 在闸门内执行一个解码任务(异常也保证归还名额)。
-  static Future<T> run<T>(Future<T> Function() task) async {
-    await _acquire();
+  static void _release(int bytes) {
+    _inFlight--;
+    _inFlightBytes -= bytes;
+    _drain();
+  }
+
+  /// 限制首帧解码数量与估算 RGBA 字节；未知尺寸任务仍受数量限制。
+  static Future<T> run<T>(
+    Future<T> Function() task, {
+    int estimatedBytes = 0,
+  }) async {
+    final waiter = _acquireOrEnqueue(estimatedBytes);
+    await waiter.completer.future;
     try {
       return await task();
     } finally {
-      _release();
+      _release(waiter.bytes);
     }
   }
 }
 
 /// 排队期间被 dispose 主动退队的标记异常,仅在闸门内部流转。
+class _DecodeWaiter {
+  _DecodeWaiter(this.bytes);
+  final int bytes;
+  final completer = Completer<void>();
+}
+
 class _CancelledWhileQueued implements Exception {
   const _CancelledWhileQueued();
 }
@@ -146,17 +151,18 @@ class _CancelledWhileQueued implements Exception {
 /// 仍上报 dec 事件 —— 监控的判定口径是"零 dec 的 raster 大帧 = 排除
 /// 图片",旁路不能让小图从帧账单里消失,否则归因盲区重现。
 class GatedImageCodec implements ui.Codec {
-  GatedImageCodec(this._inner) : _gated = true;
+  GatedImageCodec(this._inner, {this.estimatedBytes = 0}) : _gated = true;
 
-  GatedImageCodec.ungated(this._inner) : _gated = false;
+  GatedImageCodec.ungated(this._inner) : _gated = false, estimatedBytes = 0;
 
   final ui.Codec _inner;
   final bool _gated;
+  final int estimatedBytes;
   bool _firstFrameGated = false;
   bool _disposed = false;
 
   /// 排队中的号码牌;拿到名额或退队后归 null。
-  Completer<void>? _queuedWaiter;
+  _DecodeWaiter? _queuedWaiter;
 
   @override
   int get frameCount => _inner.frameCount;
@@ -184,11 +190,14 @@ class GatedImageCodec implements ui.Codec {
   }
 
   Future<ui.FrameInfo> _gatedFirstFrame() async {
-    final waiter = _gated ? ImageDecodeGate._acquireOrEnqueue() : null;
+    final elapsed = Stopwatch()..start();
+    final waiter = _gated
+        ? ImageDecodeGate._acquireOrEnqueue(estimatedBytes)
+        : null;
     if (waiter != null) {
       _queuedWaiter = waiter;
       try {
-        await waiter.future;
+        await waiter.completer.future;
       } on _CancelledWhileQueued {
         // dispose 主动退队:名额从未持有,不走 _release。
         throw StateError('GatedImageCodec: codec disposed while queued');
@@ -206,7 +215,24 @@ class GatedImageCodec implements ui.Codec {
       if (_disposed) {
         throw StateError('GatedImageCodec: codec disposed while queued');
       }
+      final queueMs = elapsed.elapsedMilliseconds;
       final info = await _inner.getNextFrame();
+      final decodeMs = elapsed.elapsedMilliseconds - queueMs;
+      if (queueMs >= 100 || decodeMs >= 80 || AppLogger.verboseNotifier.value) {
+        AppLogger.info(
+          '图片首帧解码耗时',
+          tag: 'ImageDecode',
+          fields: {
+            'type': 'performance',
+            'event': 'image_decode_timing',
+            'queueMs': queueMs,
+            'decodeMs': decodeMs,
+            'width': info.image.width,
+            'height': info.image.height,
+            'estimatedBytes': estimatedBytes,
+          },
+        );
+      }
       // 解码完成点 = Impeller 纹理上传点(worker 解完立即建纹理提交
       // GPU 队列)。在场名单记 dec 事件补上归因盲区:img+ 记的是**首绘**,
       // 上传发生在**此刻**,两者可以差很多帧(快滚划走的图甚至永远没有
@@ -217,7 +243,7 @@ class GatedImageCodec implements ui.Codec {
       );
       return info;
     } finally {
-      if (_gated) ImageDecodeGate._release();
+      if (_gated) ImageDecodeGate._release(waiter!.bytes);
     }
   }
 }
@@ -229,11 +255,17 @@ class GatedImageCodec implements ui.Codec {
 /// 必须在 main() 里以 `FluxdoWidgetsBinding.ensureInitialized()` 替代
 /// `WidgetsFlutterBinding.ensureInitialized()`。
 class FluxdoWidgetsBinding extends WidgetsFlutterBinding
-    with PerfPipelineProbe, FrameSchedulerProbe, DesktopScrollInteractionBinding {
+    with
+        PerfPipelineProbe,
+        FrameSchedulerProbe,
+        DesktopScrollInteractionBinding {
   static FluxdoWidgetsBinding? _instance;
 
   static FluxdoWidgetsBinding ensureInitialized() =>
       _instance ??= FluxdoWidgetsBinding();
+
+  @override
+  ImageCache createImageCache() => ManagedImageCache();
 
   @override
   Future<ui.Codec> instantiateImageCodecWithSize(
@@ -257,7 +289,7 @@ class FluxdoWidgetsBinding extends WidgetsFlutterBinding
     if (sizeCapture.effectiveMaxEdge <= ImageDecodeGate.smallImageMaxEdge) {
       return GatedImageCodec.ungated(codec);
     }
-    return GatedImageCodec(codec);
+    return GatedImageCodec(codec, estimatedBytes: sizeCapture.effectiveBytes);
   }
 }
 
@@ -276,6 +308,7 @@ class _SizeCapture {
   /// 有效解码长边。回调未被调用时保持保守默认(视为大图,过闸)——
   /// 理论上不会发生,防御引擎行为变化。
   int effectiveMaxEdge = 1 << 30;
+  int effectiveBytes = ImageDecodeGate.maxDecodedBytes;
 
   ui.TargetImageSize capture(int intrinsicWidth, int intrinsicHeight) {
     final target = _inner == null
@@ -300,6 +333,21 @@ class _SizeCapture {
           : (intrinsicWidth * targetH / intrinsicHeight).round();
       effectiveMaxEdge = _max(targetH, scaled);
     }
+    final effectiveWidth =
+        w ??
+        (h == null
+            ? intrinsicWidth
+            : intrinsicHeight == 0
+            ? 0
+            : (intrinsicWidth * h / intrinsicHeight).round());
+    final effectiveHeight =
+        h ??
+        (w == null
+            ? intrinsicHeight
+            : intrinsicWidth == 0
+            ? 0
+            : (intrinsicHeight * w / intrinsicWidth).round());
+    effectiveBytes = effectiveWidth * effectiveHeight * 4;
     return target;
   }
 

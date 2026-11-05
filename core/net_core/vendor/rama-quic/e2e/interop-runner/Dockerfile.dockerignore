@@ -1,0 +1,7 @@
+.git
+**/target
+**/.venv
+**/__pycache__
+**/node_modules
+**/mutants.out*
+**/book/book

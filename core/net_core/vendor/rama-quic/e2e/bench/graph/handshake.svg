@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1544" height="712" viewBox="0 0 1544 712" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">
+<rect width="1544" height="712" fill="#ffffff"/>
+<defs><pattern id="na" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#c8c8c8" stroke-width="2"/></pattern></defs>
+<text x="16" y="30" font-size="20" font-weight="bold">QUIC handshake: process start plus one connection, 1-byte fetch [ms]</text>
+<text x="16" y="56" fill="#333">Linux 6.14.0-33-generic · amd64 · 16 cpus · docker 29.2.1</text>
+<text x="16" y="74" fill="#333">2026-09-19 17:15 UTC · rama 0b0ef9642-dirty · workload 1 × 1 · 5 runs, median shown</text>
+<text x="16" y="110" fill="#555">rows: client · columns: server</text>
+<text x="260" y="140" text-anchor="middle">rama-boring</text>
+<text x="428" y="140" text-anchor="middle">rama-rustls-ring</text>
+<text x="596" y="140" text-anchor="middle">rama-rustls-aws-lc</text>
+<text x="764" y="140" text-anchor="middle">quinn</text>
+<text x="932" y="140" text-anchor="middle">quiche</text>
+<text x="1100" y="140" text-anchor="middle">aioquic</text>
+<text x="1268" y="140" text-anchor="middle">quic-go</text>
+<text x="1436" y="140" text-anchor="middle">ngtcp2</text>
+<text x="168" y="182" text-anchor="end">rama-boring</text>
+<rect x="176" y="150" width="168" height="54" fill="#2250f8" stroke="#fff"/>
+<text x="260" y="175" text-anchor="middle" font-weight="bold" fill="#111">122.7</text>
+<text x="260" y="193" text-anchor="middle" font-size="10" fill="#111">115.5 – 127.9</text>
+<rect x="344" y="150" width="168" height="54" fill="#2251f8" stroke="#fff"/>
+<text x="428" y="175" text-anchor="middle" font-weight="bold" fill="#111">123.3</text>
+<text x="428" y="193" text-anchor="middle" font-size="10" fill="#111">116.4 – 130.1</text>
+<rect x="512" y="150" width="168" height="54" fill="#2553f8" stroke="#fff"/>
+<text x="596" y="175" text-anchor="middle" font-weight="bold" fill="#111">126.1</text>
+<text x="596" y="193" text-anchor="middle" font-size="10" fill="#111">118.5 – 131.6</text>
+<rect x="680" y="150" width="168" height="54" fill="#2d59f8" stroke="#fff"/>
+<text x="764" y="175" text-anchor="middle" font-weight="bold" fill="#111">136.2</text>
+<text x="764" y="193" text-anchor="middle" font-size="10" fill="#111">126.7 – 145.1</text>
+<rect x="848" y="150" width="168" height="54" fill="#2c59f8" stroke="#fff"/>
+<text x="932" y="175" text-anchor="middle" font-weight="bold" fill="#111">135.6</text>
+<text x="932" y="193" text-anchor="middle" font-size="10" fill="#111">130.8 – 148.6</text>
+<rect x="1016" y="150" width="168" height="54" fill="#2e5af8" stroke="#fff"/>
+<text x="1100" y="175" text-anchor="middle" font-weight="bold" fill="#111">137.3</text>
+<text x="1100" y="193" text-anchor="middle" font-size="10" fill="#111">129.3 – 145.1</text>
+<rect x="1184" y="150" width="168" height="54" fill="#305cf8" stroke="#fff"/>
+<text x="1268" y="175" text-anchor="middle" font-weight="bold" fill="#111">140.1</text>
+<text x="1268" y="193" text-anchor="middle" font-size="10" fill="#111">131.0 – 142.6</text>
+<rect x="1352" y="150" width="168" height="54" fill="#2c58f8" stroke="#fff"/>
+<text x="1436" y="175" text-anchor="middle" font-weight="bold" fill="#111">134.9</text>
+<text x="1436" y="193" text-anchor="middle" font-size="10" fill="#111">132.4 – 140.6</text>
+<text x="168" y="236" text-anchor="end">rama-rustls-ring</text>
+<rect x="176" y="204" width="168" height="54" fill="#204ff8" stroke="#fff"/>
+<text x="260" y="229" text-anchor="middle" font-weight="bold" fill="#111">120.6</text>
+<text x="260" y="247" text-anchor="middle" font-size="10" fill="#111">113.0 – 132.3</text>
+<rect x="344" y="204" width="168" height="54" fill="#2150f8" stroke="#fff"/>
+<text x="428" y="229" text-anchor="middle" font-weight="bold" fill="#111">121.9</text>
+<text x="428" y="247" text-anchor="middle" font-size="10" fill="#111">114.9 – 127.1</text>
+<rect x="512" y="204" width="168" height="54" fill="#2c58f8" stroke="#fff"/>
+<text x="596" y="229" text-anchor="middle" font-weight="bold" fill="#111">134.6</text>
+<text x="596" y="247" text-anchor="middle" font-size="10" fill="#111">126.1 – 143.9</text>
+<rect x="680" y="204" width="168" height="54" fill="#2150f8" stroke="#fff"/>
+<text x="764" y="229" text-anchor="middle" font-weight="bold" fill="#111">121.5</text>
+<text x="764" y="247" text-anchor="middle" font-size="10" fill="#111">118.4 – 127.7</text>
+<rect x="848" y="204" width="168" height="54" fill="#2a57f8" stroke="#fff"/>
+<text x="932" y="229" text-anchor="middle" font-weight="bold" fill="#111">132.3</text>
+<text x="932" y="247" text-anchor="middle" font-size="10" fill="#111">128.7 – 140.4</text>
+<rect x="1016" y="204" width="168" height="54" fill="#2e5af8" stroke="#fff"/>
+<text x="1100" y="229" text-anchor="middle" font-weight="bold" fill="#111">137.8</text>
+<text x="1100" y="247" text-anchor="middle" font-size="10" fill="#111">130.0 – 157.7</text>
+<rect x="1184" y="204" width="168" height="54" fill="#1f4ef8" stroke="#fff"/>
+<text x="1268" y="229" text-anchor="middle" font-weight="bold" fill="#fff">120.0</text>
+<text x="1268" y="247" text-anchor="middle" font-size="10" fill="#fff">114.4 – 135.8</text>
+<rect x="1352" y="204" width="168" height="54" fill="#2b58f8" stroke="#fff"/>
+<text x="1436" y="229" text-anchor="middle" font-weight="bold" fill="#111">134.3</text>
+<text x="1436" y="247" text-anchor="middle" font-size="10" fill="#111">126.9 – 139.7</text>
+<text x="168" y="290" text-anchor="end">rama-rustls-aws-lc</text>
+<rect x="176" y="258" width="168" height="54" fill="#335ef8" stroke="#fff"/>
+<text x="260" y="283" text-anchor="middle" font-weight="bold" fill="#111">143.6</text>
+<text x="260" y="301" text-anchor="middle" font-size="10" fill="#111">134.8 – 151.0</text>
+<rect x="344" y="258" width="168" height="54" fill="#3e67f8" stroke="#fff"/>
+<text x="428" y="283" text-anchor="middle" font-weight="bold" fill="#111">156.8</text>
+<text x="428" y="301" text-anchor="middle" font-size="10" fill="#111">153.6 – 164.4</text>
+<rect x="512" y="258" width="168" height="54" fill="#3762f8" stroke="#fff"/>
+<text x="596" y="283" text-anchor="middle" font-weight="bold" fill="#111">148.8</text>
+<text x="596" y="301" text-anchor="middle" font-size="10" fill="#111">138.4 – 153.8</text>
+<rect x="680" y="258" width="168" height="54" fill="#3e67f8" stroke="#fff"/>
+<text x="764" y="283" text-anchor="middle" font-weight="bold" fill="#111">157.1</text>
+<text x="764" y="301" text-anchor="middle" font-size="10" fill="#111">153.4 – 160.9</text>
+<rect x="848" y="258" width="168" height="54" fill="#3560f8" stroke="#fff"/>
+<text x="932" y="283" text-anchor="middle" font-weight="bold" fill="#111">146.2</text>
+<text x="932" y="301" text-anchor="middle" font-size="10" fill="#111">136.0 – 154.9</text>
+<rect x="1016" y="258" width="168" height="54" fill="#3762f8" stroke="#fff"/>
+<text x="1100" y="283" text-anchor="middle" font-weight="bold" fill="#111">148.9</text>
+<text x="1100" y="301" text-anchor="middle" font-size="10" fill="#111">143.8 – 153.6</text>
+<rect x="1184" y="258" width="168" height="54" fill="#426af8" stroke="#fff"/>
+<text x="1268" y="283" text-anchor="middle" font-weight="bold" fill="#111">161.4</text>
+<text x="1268" y="301" text-anchor="middle" font-size="10" fill="#111">147.5 – 199.7</text>
+<rect x="1352" y="258" width="168" height="54" fill="#3e67f8" stroke="#fff"/>
+<text x="1436" y="283" text-anchor="middle" font-weight="bold" fill="#111">157.1</text>
+<text x="1436" y="301" text-anchor="middle" font-size="10" fill="#111">152.8 – 166.3</text>
+<text x="168" y="344" text-anchor="end">quinn</text>
+<rect x="176" y="312" width="168" height="54" fill="#6a8bf8" stroke="#fff"/>
+<text x="260" y="337" text-anchor="middle" font-weight="bold" fill="#111">209.9</text>
+<text x="260" y="355" text-anchor="middle" font-size="10" fill="#111">202.2 – 216.1</text>
+<rect x="344" y="312" width="168" height="54" fill="#6a8bf8" stroke="#fff"/>
+<text x="428" y="337" text-anchor="middle" font-weight="bold" fill="#111">210.2</text>
+<text x="428" y="355" text-anchor="middle" font-size="10" fill="#111">204.5 – 217.8</text>
+<rect x="512" y="312" width="168" height="54" fill="#7090f8" stroke="#fff"/>
+<text x="596" y="337" text-anchor="middle" font-weight="bold" fill="#111">217.4</text>
+<text x="596" y="355" text-anchor="middle" font-size="10" fill="#111">214.8 – 223.6</text>
+<rect x="680" y="312" width="168" height="54" fill="#7392f8" stroke="#fff"/>
+<text x="764" y="337" text-anchor="middle" font-weight="bold" fill="#111">220.4</text>
+<text x="764" y="355" text-anchor="middle" font-size="10" fill="#111">217.7 – 225.5</text>
+<rect x="848" y="312" width="168" height="54" fill="#698af8" stroke="#fff"/>
+<text x="932" y="337" text-anchor="middle" font-weight="bold" fill="#111">208.3</text>
+<text x="932" y="355" text-anchor="middle" font-size="10" fill="#111">202.6 – 216.1</text>
+<rect x="1016" y="312" width="168" height="54" fill="#7997f8" stroke="#fff"/>
+<text x="1100" y="337" text-anchor="middle" font-weight="bold" fill="#111">228.2</text>
+<text x="1100" y="355" text-anchor="middle" font-size="10" fill="#111">222.4 – 234.3</text>
+<rect x="1184" y="312" width="168" height="54" fill="#7c99f8" stroke="#fff"/>
+<text x="1268" y="337" text-anchor="middle" font-weight="bold" fill="#111">231.1</text>
+<text x="1268" y="355" text-anchor="middle" font-size="10" fill="#111">215.1 – 255.0</text>
+<rect x="1352" y="312" width="168" height="54" fill="#7694f8" stroke="#fff"/>
+<text x="1436" y="337" text-anchor="middle" font-weight="bold" fill="#111">223.9</text>
+<text x="1436" y="355" text-anchor="middle" font-size="10" fill="#111">216.3 – 231.7</text>
+<text x="168" y="398" text-anchor="end">quiche</text>
+<rect x="176" y="366" width="168" height="54" fill="#2956f8" stroke="#fff"/>
+<text x="260" y="391" text-anchor="middle" font-weight="bold" fill="#111">131.1</text>
+<text x="260" y="409" text-anchor="middle" font-size="10" fill="#111">124.1 – 135.2</text>
+<rect x="344" y="366" width="168" height="54" fill="#315cf8" stroke="#fff"/>
+<text x="428" y="391" text-anchor="middle" font-weight="bold" fill="#111">140.6</text>
+<text x="428" y="409" text-anchor="middle" font-size="10" fill="#111">133.1 – 151.1</text>
+<rect x="512" y="366" width="168" height="54" fill="#2755f8" stroke="#fff"/>
+<text x="596" y="391" text-anchor="middle" font-weight="bold" fill="#111">129.5</text>
+<text x="596" y="409" text-anchor="middle" font-size="10" fill="#111">125.9 – 134.8</text>
+<rect x="680" y="366" width="168" height="54" fill="#325ef8" stroke="#fff"/>
+<text x="764" y="391" text-anchor="middle" font-weight="bold" fill="#111">142.7</text>
+<text x="764" y="409" text-anchor="middle" font-size="10" fill="#111">132.2 – 152.6</text>
+<rect x="848" y="366" width="168" height="54" fill="#325df8" stroke="#fff"/>
+<text x="932" y="391" text-anchor="middle" font-weight="bold" fill="#111">141.8</text>
+<text x="932" y="409" text-anchor="middle" font-size="10" fill="#111">139.3 – 148.0</text>
+<rect x="1016" y="366" width="168" height="54" fill="#2e5af8" stroke="#fff"/>
+<text x="1100" y="391" text-anchor="middle" font-weight="bold" fill="#111">137.4</text>
+<text x="1100" y="409" text-anchor="middle" font-size="10" fill="#111">129.6 – 142.5</text>
+<rect x="1184" y="366" width="168" height="54" fill="#3661f8" stroke="#fff"/>
+<text x="1268" y="391" text-anchor="middle" font-weight="bold" fill="#111">147.4</text>
+<text x="1268" y="409" text-anchor="middle" font-size="10" fill="#111">142.0 – 151.0</text>
+<rect x="1352" y="366" width="168" height="54" fill="#3560f8" stroke="#fff"/>
+<text x="1436" y="391" text-anchor="middle" font-weight="bold" fill="#111">145.7</text>
+<text x="1436" y="409" text-anchor="middle" font-size="10" fill="#111">141.0 – 152.8</text>
+<text x="168" y="452" text-anchor="end">aioquic</text>
+<rect x="176" y="420" width="168" height="54" fill="#e0eaf8" stroke="#fff"/>
+<text x="260" y="445" text-anchor="middle" font-weight="bold" fill="#111">352.4</text>
+<text x="260" y="463" text-anchor="middle" font-size="10" fill="#111">347.2 – 355.0</text>
+<rect x="344" y="420" width="168" height="54" fill="#e1eaf8" stroke="#fff"/>
+<text x="428" y="445" text-anchor="middle" font-weight="bold" fill="#111">352.9</text>
+<text x="428" y="463" text-anchor="middle" font-size="10" fill="#111">346.1 – 380.9</text>
+<rect x="512" y="420" width="168" height="54" fill="#dde8f8" stroke="#fff"/>
+<text x="596" y="445" text-anchor="middle" font-weight="bold" fill="#111">348.9</text>
+<text x="596" y="463" text-anchor="middle" font-size="10" fill="#111">341.6 – 357.9</text>
+<rect x="680" y="420" width="168" height="54" fill="#e2ebf8" stroke="#fff"/>
+<text x="764" y="445" text-anchor="middle" font-weight="bold" fill="#111">354.5</text>
+<text x="764" y="463" text-anchor="middle" font-size="10" fill="#111">347.8 – 361.3</text>
+<rect x="848" y="420" width="168" height="54" fill="#d6e2f8" stroke="#fff"/>
+<text x="932" y="445" text-anchor="middle" font-weight="bold" fill="#111">340.4</text>
+<text x="932" y="463" text-anchor="middle" font-size="10" fill="#111">330.7 – 349.3</text>
+<rect x="1016" y="420" width="168" height="54" fill="#dae5f8" stroke="#fff"/>
+<text x="1100" y="445" text-anchor="middle" font-weight="bold" fill="#111">345.4</text>
+<text x="1100" y="463" text-anchor="middle" font-size="10" fill="#111">334.5 – 353.9</text>
+<rect x="1184" y="420" width="168" height="54" fill="#e6eff8" stroke="#fff"/>
+<text x="1268" y="445" text-anchor="middle" font-weight="bold" fill="#111">359.6</text>
+<text x="1268" y="463" text-anchor="middle" font-size="10" fill="#111">351.8 – 365.8</text>
+<rect x="1352" y="420" width="168" height="54" fill="#e8f0f8" stroke="#fff"/>
+<text x="1436" y="445" text-anchor="middle" font-weight="bold" fill="#111">362.4</text>
+<text x="1436" y="463" text-anchor="middle" font-size="10" fill="#111">347.1 – 367.4</text>
+<text x="168" y="506" text-anchor="end">quic-go</text>
+<rect x="176" y="474" width="168" height="54" fill="#2856f8" stroke="#fff"/>
+<text x="260" y="499" text-anchor="middle" font-weight="bold" fill="#111">130.5</text>
+<text x="260" y="517" text-anchor="middle" font-size="10" fill="#111">127.4 – 138.0</text>
+<rect x="344" y="474" width="168" height="54" fill="#2a57f8" stroke="#fff"/>
+<text x="428" y="499" text-anchor="middle" font-weight="bold" fill="#111">133.0</text>
+<text x="428" y="517" text-anchor="middle" font-size="10" fill="#111">126.6 – 145.0</text>
+<rect x="512" y="474" width="168" height="54" fill="#2956f8" stroke="#fff"/>
+<text x="596" y="499" text-anchor="middle" font-weight="bold" fill="#111">131.8</text>
+<text x="596" y="517" text-anchor="middle" font-size="10" fill="#111">127.0 – 136.9</text>
+<rect x="680" y="474" width="168" height="54" fill="#2150f8" stroke="#fff"/>
+<text x="764" y="499" text-anchor="middle" font-weight="bold" fill="#111">122.0</text>
+<text x="764" y="517" text-anchor="middle" font-size="10" fill="#111">112.3 – 126.4</text>
+<rect x="848" y="474" width="168" height="54" fill="#2d59f8" stroke="#fff"/>
+<text x="932" y="499" text-anchor="middle" font-weight="bold" fill="#111">135.9</text>
+<text x="932" y="517" text-anchor="middle" font-size="10" fill="#111">127.5 – 140.8</text>
+<rect x="1016" y="474" width="168" height="54" fill="#2a57f8" stroke="#fff"/>
+<text x="1100" y="499" text-anchor="middle" font-weight="bold" fill="#111">132.2</text>
+<text x="1100" y="517" text-anchor="middle" font-size="10" fill="#111">127.8 – 137.2</text>
+<rect x="1184" y="474" width="168" height="54" fill="#2c59f8" stroke="#fff"/>
+<text x="1268" y="499" text-anchor="middle" font-weight="bold" fill="#111">135.4</text>
+<text x="1268" y="517" text-anchor="middle" font-size="10" fill="#111">129.8 – 139.4</text>
+<rect x="1352" y="474" width="168" height="54" fill="#2c59f8" stroke="#fff"/>
+<text x="1436" y="499" text-anchor="middle" font-weight="bold" fill="#111">135.1</text>
+<text x="1436" y="517" text-anchor="middle" font-size="10" fill="#111">126.1 – 140.2</text>
+<text x="168" y="560" text-anchor="end">ngtcp2</text>
+<rect x="176" y="528" width="168" height="54" fill="#5076f8" stroke="#fff"/>
+<text x="260" y="553" text-anchor="middle" font-weight="bold" fill="#111">178.9</text>
+<text x="260" y="571" text-anchor="middle" font-size="10" fill="#111">174.1 – 187.1</text>
+<rect x="344" y="528" width="168" height="54" fill="#5176f8" stroke="#fff"/>
+<text x="428" y="553" text-anchor="middle" font-weight="bold" fill="#111">179.8</text>
+<text x="428" y="571" text-anchor="middle" font-size="10" fill="#111">172.2 – 186.2</text>
+<rect x="512" y="528" width="168" height="54" fill="#5a7df8" stroke="#fff"/>
+<text x="596" y="553" text-anchor="middle" font-weight="bold" fill="#111">190.2</text>
+<text x="596" y="571" text-anchor="middle" font-size="10" fill="#111">187.3 – 198.7</text>
+<rect x="680" y="528" width="168" height="54" fill="#5b7ef8" stroke="#fff"/>
+<text x="764" y="553" text-anchor="middle" font-weight="bold" fill="#111">191.2</text>
+<text x="764" y="571" text-anchor="middle" font-size="10" fill="#111">182.8 – 198.8</text>
+<rect x="848" y="528" width="168" height="54" fill="#597df8" stroke="#fff"/>
+<text x="932" y="553" text-anchor="middle" font-weight="bold" fill="#111">189.8</text>
+<text x="932" y="571" text-anchor="middle" font-size="10" fill="#111">184.7 – 203.2</text>
+<rect x="1016" y="528" width="168" height="54" fill="#5c7ff8" stroke="#fff"/>
+<text x="1100" y="553" text-anchor="middle" font-weight="bold" fill="#111">193.3</text>
+<text x="1100" y="571" text-anchor="middle" font-size="10" fill="#111">189.5 – 199.1</text>
+<rect x="1184" y="528" width="168" height="54" fill="#5d80f8" stroke="#fff"/>
+<text x="1268" y="553" text-anchor="middle" font-weight="bold" fill="#111">194.4</text>
+<text x="1268" y="571" text-anchor="middle" font-size="10" fill="#111">187.5 – 198.8</text>
+<rect x="1352" y="528" width="168" height="54" fill="#5c7ff8" stroke="#fff"/>
+<text x="1436" y="553" text-anchor="middle" font-weight="bold" fill="#111">193.1</text>
+<text x="1436" y="571" text-anchor="middle" font-size="10" fill="#111">187.3 – 198.6</text>
+<text x="16" y="612" fill="#555" font-size="12">loopback bridge on one host through one forwarding container; lower is better</text>
+<text x="16" y="630" fill="#555" font-size="12">compares pairs on this host only</text>
+</svg>

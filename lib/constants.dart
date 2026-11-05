@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:ua_client_hints/ua_client_hints.dart';
 import 'config/site_customization.dart';
 import 'config/sites/linuxdo.dart';
+import 'services/network/client_hints.dart';
 import 'services/windows_webview_environment_service.dart';
 
 /// 应用常量
@@ -29,7 +29,7 @@ class AppConstants {
   /// 与原生层通信的系统信息 channel（目前只有 macOS 用到）
   static const MethodChannel _systemInfoChannel = MethodChannel('com.fluxdo/system_info');
 
-  /// 缓存的 Client Hints 请求头（仅移动端可用）
+  /// 缓存的 Client Hints 请求头（仅安卓；iOS 的 Safari 内核不支持 Client Hints）
   static Map<String, String>? _cachedClientHints;
 
   /// 初始化 User-Agent（应用启动时调用一次）
@@ -58,7 +58,7 @@ class AppConstants {
         _cachedUserAgent = _buildDefaultUserAgent();
       }
       _uaCompleter.complete(_cachedUserAgent!);
-      await _initClientHints();
+      _initClientHints();
       return;
     }
 
@@ -80,8 +80,8 @@ class AppConstants {
     }
     _uaCompleter.complete(_cachedUserAgent!);
 
-    // 初始化 Client Hints（仅 Android/iOS）
-    await _initClientHints();
+    // 初始化 Client Hints（仅移动端）
+    _initClientHints();
   }
 
   static Future<String?> _getDesktopWebViewUserAgent() async {
@@ -143,18 +143,14 @@ class AppConstants {
   }
 
   /// 初始化 User-Agent Client Hints 请求头
-  /// ua_client_hints 仅支持 Android/iOS，桌面端跳过
-  static Future<void> _initClientHints() async {
+  ///
+  /// 由实际发送的 UA 推导，与真实浏览器一致：只发三个低熵头，品牌与 UA 对应。
+  /// iOS 的 UA 不含 Chrome 内核标识，推导结果为 null（Safari 不发 Client Hints）。
+  /// 桌面端暂不发送，WebView2 的品牌列表未实测，留给网络核心按采样模板处理。
+  static void _initClientHints() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    try {
-      final hints = await userAgentClientHintsHeader();
-      // 移除包自带的 User-Agent（我们用自己清理过的）
-      hints.remove('User-Agent');
-      _cachedClientHints = hints;
-      debugPrint('[AppConstants] Client Hints: $_cachedClientHints');
-    } catch (e) {
-      debugPrint('[AppConstants] 获取 Client Hints 失败: $e');
-    }
+    _cachedClientHints = ClientHints.fromUserAgent(_cachedUserAgent!);
+    debugPrint('[AppConstants] Client Hints: $_cachedClientHints');
   }
 
   /// 获取缓存的 Client Hints 请求头（可能为 null）

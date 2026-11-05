@@ -1,3 +1,5 @@
+import 'request_cancellation.dart';
+
 import 'dart:async';
 import 'dart:convert' show utf8;
 import 'dart:io';
@@ -10,7 +12,10 @@ import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'image_stream_lifecycle.dart';
 import 'dio_http_client.dart';
+import 'image_cache_write_queue.dart';
+import 'app_logger.dart';
 
 /// 图片的内容寻址文件缓存(Telegram ImageLoader 形态)。
 ///
@@ -84,20 +89,49 @@ class BlobImageCache {
   static Future<Directory>? _rootFuture;
 
   /// 同 key 在途下载去重。
-  static final Map<String, Future<Uint8List>> _inflight = {};
+  static final Map<String, _ImageFlight> _inflight = {};
+  static final _writes = ImageCacheWriteQueue();
+  static int _generation = 0;
+  static final _bucketGenerations = <String, int>{};
+  static final _clearing = <String, int>{};
+  static int _clearingAll = 0;
+  static DioHttpClient? _testClient;
+  static Future<void> Function()? _beforeWriteForTesting;
+
+  static String _requestKey(String bucket, String url) =>
+      '$bucket|$_generation|${_bucketGenerations[bucket] ?? 0}|$url';
+
+  @visibleForTesting
+  static Future<void> configureForTesting({
+    Directory? root,
+    DioHttpClient? client,
+    Future<void> Function()? beforeWrite,
+  }) async {
+    await Future.wait(
+      _inflight.values.map(
+        (flight) => flight.future.catchError((_) => Uint8List(0)),
+      ),
+    );
+    await _writes.finishWhere((_) => true);
+    _root = root;
+    _rootFuture = root == null ? null : Future.value(root);
+    _testClient = client;
+    _beforeWriteForTesting = beforeWrite;
+    _touched.clear();
+    _generation++;
+  }
 
   /// 本会话已 touch 过的文件,每 key 只 touch 一次(给淘汰扫描供
   /// 时间戳;mtime 精度要求是"天"级,会话内重复 touch 纯浪费 IO)。
   static final Set<String> _touched = {};
 
-  static Future<Directory> _ensureRoot() =>
-      _rootFuture ??= (() async {
-        final tmp = await getTemporaryDirectory();
-        final dir = Directory('${tmp.path}/$dirName');
-        await dir.create(recursive: true);
-        _root = dir;
-        return dir;
-      })();
+  static Future<Directory> _ensureRoot() => _rootFuture ??= (() async {
+    final tmp = await getTemporaryDirectory();
+    final dir = Directory('${tmp.path}/$dirName');
+    await dir.create(recursive: true);
+    _root = dir;
+    return dir;
+  })();
 
   /// 确定性寻址:bucket 目录 + `md5(key).ext`(Telegram ImageLoader
   /// `getHttpFilePath` 同款,ext 见 [httpUrlExtension])。显示层不依赖
@@ -132,6 +166,9 @@ class BlobImageCache {
   /// 只读缓存:命中返回字节,miss 返回 null。不做 exists 预检 ——
   /// 直接读,读失败即 miss(省一次 stat)。
   static Future<Uint8List?> read(String bucket, String key) async {
+    if (_clearingAll > 0 || _clearing.containsKey(bucket)) return null;
+    final pending = _writes[_requestKey(bucket, key)];
+    if (pending != null) return pending.bytes;
     final file = await _fileFor(bucket, key);
     try {
       final bytes = await file.readAsBytes();
@@ -146,21 +183,43 @@ class BlobImageCache {
   /// 写入缓存:临时文件 + 原子 rename(Telegram `_temp` 同款),
   /// 半截文件永远不会出现在正式路径上。
   static Future<void> write(String bucket, String key, Uint8List bytes) async {
+    final elapsed = Stopwatch()..start();
+    var completed = false;
     final file = await _fileFor(bucket, key);
     try {
+      await _beforeWriteForTesting?.call();
       await file.parent.create(recursive: true);
       final tmp = File('${file.path}.tmp');
       await tmp.writeAsBytes(bytes, flush: true);
       await tmp.rename(file.path);
+      completed = true;
     } catch (e) {
       debugPrint('[BlobImageCache] write 失败 $bucket/$key: $e');
+    } finally {
+      elapsed.stop();
+      if (elapsed.elapsedMilliseconds >= 250 ||
+          AppLogger.verboseNotifier.value) {
+        AppLogger.info(
+          '图片缓存写入耗时',
+          tag: 'ImageCache',
+          fields: {
+            'type': 'performance',
+            'event': 'image_cache_write_timing',
+            'bucket': bucket,
+            'bytes': bytes.lengthInBytes,
+            'writeMs': elapsed.elapsedMilliseconds,
+            'completed': completed,
+          },
+        );
+      }
     }
   }
 
-  /// 读缓存,miss 则下载并落盘。同 key 并发调用共享同一个下载 future。
+  /// 读缓存，miss 则下载。预算充足时先返回字节供解码，再后台原子落盘。
+  /// 同 key 的下载和待落盘字节共享；需要文件的调用方使用 [getFile]。
   ///
   /// 下载走 [DioHttpClient](主域带 cookie / CDN 不带的双 dio 语义 +
-  /// 全局 8 并发信号量,与 cache_manager 时代同一条网络路径)。
+  /// 分通道并发限制)。写入预算不足时在下载槽内背压。
   ///
   /// [onProgress] 下载字节进度(received, total;total 可能为 null ——
   /// 无 content-length)。缓存命中不回调;同 key 并发时**只有首个调用
@@ -170,67 +229,119 @@ class BlobImageCache {
     String url, {
     DownloadPriority priority = DownloadPriority.normal,
     void Function(int received, int? total)? onProgress,
+    CancelToken? cancellation,
   }) async {
+    cancellation?.throwIfCancellationRequested();
     final cached = await read(bucket, url);
+    cancellation?.throwIfCancellationRequested();
     if (cached != null) return cached;
 
-    final inflightKey = '$bucket|$url';
+    final inflightKey = _requestKey(bucket, url);
+    // read 的异步文件读取期间，另一请求可能刚完成下载并开始落盘。
+    final pending = _writes[inflightKey];
+    if (pending != null) return pending.bytes;
     // 高优请求复用后台下载时仍需提升队列位置，而不是只复用 Future。
     if (priority == DownloadPriority.high) bump(bucket, url);
-    return _inflight[inflightKey] ??=
-        _download(bucket, url, priority, onProgress).whenComplete(() {
-      _inflight.remove(inflightKey);
-    });
+    var flight = _inflight[inflightKey];
+    if (flight == null || flight.cancellation.isCancelled) {
+      flight = _ImageFlight();
+      final created = flight;
+      _inflight[inflightKey] = created;
+      created.future =
+          _download(bucket, url, inflightKey, priority, (received, total) {
+            created.received = received;
+            created.total = total;
+            for (final callback in List.of(created.progress)) {
+              callback(received, total);
+            }
+          }, created.cancellation).whenComplete(() {
+            created.completed = true;
+            if (identical(_inflight[inflightKey], created)) {
+              _inflight.remove(inflightKey);
+            }
+          });
+    }
+    return flight.join(cancellation, onProgress);
   }
 
   /// 按 bucket 选下载通道:emoji(KB 级,RTT 主导)走 12 槽 small
   /// 高并发;贴纸原文件(面板预取型大动图)独立 3 槽防饿死内容;
   /// 其余(正文/头像/原图/外部)走 6 槽 content。
   static DownloadChannel _channelOf(String bucket) => switch (bucket) {
-        emojiBucket => DownloadChannel.small,
-        stickerOriginalBucket => DownloadChannel.sticker,
-        _ => DownloadChannel.content,
-      };
+    emojiBucket => DownloadChannel.small,
+    stickerOriginalBucket => DownloadChannel.sticker,
+    _ => DownloadChannel.content,
+  };
 
   /// 视野优先级信号(Telegram bumpPriority 同款语义):
   /// [bump] = 图片首帧 paint(真进视口)→ 排队中的请求插到高优队列;
   /// [sink] = widget dispose(滚出视口)→ 沉回低优队尾给新视野让路。
-  /// 在途 HTTP 不动 —— 下完写盘即缓存,取消是白扔投资。两者幂等。
+  /// 这里只调整排队优先级，在途 HTTP 不动。两者幂等。
   static void bump(String bucket, String url) =>
       DioHttpClient.bumpPending(_channelOf(bucket), url);
 
   static void sink(String bucket, String url) =>
       DioHttpClient.sinkPending(_channelOf(bucket), url);
 
+  static void Function() retainForeground(String bucket, String url) =>
+      DioHttpClient.retainForeground(_channelOf(bucket), url);
+
   static Future<Uint8List> _download(
     String bucket,
     String url,
+    String requestKey,
     DownloadPriority priority,
     void Function(int received, int? total)? onProgress,
+    CancelToken cancellation,
   ) async {
-    final bytes = await DioHttpClient().fetchBytes(
+    final bytes = await (_testClient ?? DioHttpClient()).fetchBytes(
       Uri.parse(url),
       channel: _channelOf(bucket),
       priority: priority,
       onProgress: onProgress,
+      cancellation: cancellation,
+      onBytesReady: (bytes) async {
+        if (bytes.isEmpty) {
+          throw HttpException(
+            'BlobImageCache: empty body',
+            uri: Uri.parse(url),
+          );
+        }
+        await _writes.schedule(
+          requestKey,
+          bytes,
+          () => write(bucket, url, bytes),
+          isCurrent: () =>
+              _clearingAll == 0 &&
+              !_clearing.containsKey(bucket) &&
+              requestKey == _requestKey(bucket, url),
+        );
+      },
     );
     if (bytes.isEmpty) {
-      throw HttpException('BlobImageCache: empty body for $url',
-          uri: Uri.parse(url));
+      throw HttpException(
+        'BlobImageCache: empty body for $url',
+        uri: Uri.parse(url),
+      );
     }
-    await write(bucket, url, bytes);
     return bytes;
   }
 
   /// 读缓存,miss 则下载,返回**缓存文件**(需要 File 语义的调用方:
-  /// 贴纸 Rust 管线、保存/分享)。文件由 fetch 落盘,路径确定性。
+  /// 贴纸 Rust 管线、保存/分享)。必须等原子落盘完成，不能返回不存在的文件。
   static Future<File> getFile(
     String bucket,
     String url, {
     void Function(int received, int? total)? onProgress,
   }) async {
     await fetch(bucket, url, onProgress: onProgress);
-    return _fileFor(bucket, url);
+    final pending = _writes[_requestKey(bucket, url)];
+    if (pending != null) await pending.completed;
+    final file = await _fileFor(bucket, url);
+    if (!await file.exists()) {
+      throw FileSystemException('图片缓存文件未写入或已被清理', file.path);
+    }
+    return file;
   }
 
   /// 仅查缓存是否已存在(不下载)。预取跳过判断用。
@@ -242,7 +353,8 @@ class BlobImageCache {
   /// 预取:已缓存/在途则跳过,否则下载落盘。错误静默(预取尽力而为)。
   static Future<void> precache(String bucket, String url) async {
     try {
-      if (_inflight.containsKey('$bucket|$url')) return;
+      final key = _requestKey(bucket, url);
+      if (_inflight.containsKey(key) || _writes[key] != null) return;
       if (await contains(bucket, url)) return;
       await fetch(bucket, url);
     } catch (e) {
@@ -254,9 +366,7 @@ class BlobImageCache {
   /// (最坏情况 = 常用文件被当旧文件删掉,下次重新下载)。
   static void _touch(File file) {
     if (!_touched.add(file.path)) return;
-    unawaited(
-      file.setLastModified(DateTime.now()).catchError((Object _) {}),
-    );
+    unawaited(file.setLastModified(DateTime.now()).catchError((Object _) {}));
   }
 
   /// 淘汰扫描:按 bucket 保留期删 mtime 过期文件 + 大图 bucket 超出
@@ -296,8 +406,11 @@ class BlobImageCache {
                 f.deleteSync();
                 count++;
               } else if (!isTmp) {
-                alive.add(
-                    (path: f.path, mtime: stat.modified, size: stat.size));
+                alive.add((
+                  path: f.path,
+                  mtime: stat.modified,
+                  size: stat.size,
+                ));
               }
             } catch (_) {}
           }
@@ -329,26 +442,45 @@ class BlobImageCache {
 
   /// 清空单个 bucket(数据管理页分类清理)。
   static Future<void> clearBucket(String bucket) async {
-    final root = await _ensureRoot();
-    final dir = Directory('${root.path}/$bucket');
+    _bucketGenerations.update(bucket, (n) => n + 1, ifAbsent: () => 1);
+    _clearing.update(bucket, (n) => n + 1, ifAbsent: () => 1);
     try {
-      if (await dir.exists()) await dir.delete(recursive: true);
-    } catch (e) {
-      debugPrint('[BlobImageCache] clearBucket $bucket 失败: $e');
+      await _writes.finishWhere((key) => key.startsWith('$bucket|'));
+      final root = await _ensureRoot();
+      final dir = Directory('${root.path}/$bucket');
+      try {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      } catch (e) {
+        debugPrint('[BlobImageCache] clearBucket $bucket 失败: $e');
+      }
+      _touched.removeWhere((p) => p.startsWith(dir.path));
+    } finally {
+      final remaining = _clearing[bucket]! - 1;
+      if (remaining == 0) {
+        _clearing.remove(bucket);
+      } else {
+        _clearing[bucket] = remaining;
+      }
     }
-    _touched.removeWhere((p) => p.startsWith(dir.path));
   }
 
   /// 清空全部 blob 缓存(清缓存入口)。
   static Future<void> clearAll() async {
-    final root = await _ensureRoot();
+    _generation++;
+    _clearingAll++;
     try {
-      if (await root.exists()) await root.delete(recursive: true);
-      await root.create(recursive: true);
-    } catch (e) {
-      debugPrint('[BlobImageCache] clearAll 失败: $e');
+      await _writes.finishWhere((_) => true);
+      final root = await _ensureRoot();
+      try {
+        if (await root.exists()) await root.delete(recursive: true);
+        await root.create(recursive: true);
+      } catch (e) {
+        debugPrint('[BlobImageCache] clearAll 失败: $e');
+      }
+      _touched.clear();
+    } finally {
+      _clearingAll--;
     }
-    _touched.clear();
   }
 }
 
@@ -388,8 +520,11 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
     // chunkEvents 驱动 Image.loadingBuilder / LazyImage 的确定值进度环
     // (与 CachedNetworkImageProvider 的 DownloadProgress 流同语义)。
     final chunkEvents = StreamController<ImageChunkEvent>();
-    return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key, decode, chunkEvents),
+    final cancellation = CancelToken();
+    late final CancelableImageStreamCompleter completer;
+    completer = CancelableImageStreamCompleter(
+      cancellation: cancellation,
+      codec: _loadAsync(key, decode, chunkEvents, cancellation),
       chunkEvents: chunkEvents.stream,
       scale: key.scale,
       debugLabel: 'BlobImageProvider(${key.url})',
@@ -398,27 +533,37 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
         DiagnosticsProperty<String>('Bucket', key.bucket),
       ],
     );
+    return completer;
   }
 
   Future<ui.Codec> _loadAsync(
     BlobImageProvider key,
     ImageDecoderCallback decode,
     StreamController<ImageChunkEvent> chunkEvents,
+    CancelToken cancellation,
   ) async {
     try {
       final bytes = await BlobImageCache.fetch(
         key.bucket,
         key.url,
         priority: key.priority,
+        cancellation: cancellation,
         onProgress: (received, total) {
           if (chunkEvents.isClosed) return;
-          chunkEvents.add(ImageChunkEvent(
-            cumulativeBytesLoaded: received,
-            expectedTotalBytes: total,
-          ));
+          chunkEvents.add(
+            ImageChunkEvent(
+              cumulativeBytesLoaded: received,
+              expectedTotalBytes: total,
+            ),
+          );
         },
       );
+      cancellation.throwIfCancellationRequested();
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      if (cancellation.isCancelled) {
+        buffer.dispose();
+        cancellation.throwIfCancellationRequested();
+      }
       return await decode(buffer);
     } catch (e) {
       // 失败结果不能留在 ImageCache,否则同 key 后续 Image 永久裂图
@@ -446,4 +591,44 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
 
   @override
   String toString() => 'BlobImageProvider("$url", bucket: $bucket)';
+}
+
+/// 每个调用者持有一个租约，取消一个调用者不影响其他视图/保存任务。
+class _ImageFlight {
+  final cancellation = CancelToken();
+  late Future<Uint8List> future;
+  final progress = <void Function(int, int?)>[];
+  int users = 0;
+  int received = 0;
+  int? total;
+  bool completed = false;
+
+  Future<Uint8List> join(
+    CancelToken? token,
+    void Function(int, int?)? callback,
+  ) async {
+    users++;
+    if (callback != null) progress.add(callback);
+    try {
+      if (token == null) return await future;
+      token.throwIfCancellationRequested();
+      return await Future.any([
+        future,
+        token.whenCancel.then<Uint8List>((error) => throw error),
+      ]);
+    } finally {
+      users--;
+      if (callback != null) progress.remove(callback);
+      final remaining = total == null ? null : total! - received;
+      // 接近 EOF 的小尾巴允许写入缓存，减少滚回重新下载；解码仍由消费者取消。
+      final nearlyDone =
+          remaining != null &&
+          remaining >= 0 &&
+          remaining <= 64 * 1024 &&
+          received > 0;
+      if (users == 0 && !completed && !nearlyDone) {
+        cancellation.cancel('No download consumers');
+      }
+    }
+  }
 }

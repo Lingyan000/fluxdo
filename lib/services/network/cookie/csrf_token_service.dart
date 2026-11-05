@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../app_logger.dart';
+import 'csrf_session_trace.dart';
 import '../../storage/resilient_secure_storage.dart';
 
 /// Cookie 同步服务
@@ -119,6 +120,7 @@ class CsrfTokenService {
         path,
         options: Options(
           extra: {
+            CsrfSessionTrace.refreshKey: CsrfSessionTrace.nextRefreshId(),
             'skipCsrf': true,
             'skipAuthCheck': true,
             'isSilent': true,
@@ -141,6 +143,7 @@ class CsrfTokenService {
             'event': 'csrf_token_refreshed',
             'url': response.requestOptions.uri.toString(),
             'csrfLen': csrf.length,
+            ...CsrfSessionTrace.bindRefresh(response, csrf),
           },
         );
       }
@@ -208,6 +211,7 @@ class CsrfTokenService {
 
   /// 重置（登出时调用）
   Future<void> reset() async {
+    CsrfSessionTrace.clear();
     _csrfToken = null;
     _lastFailureAt = null;
     // 内存态已清,落盘失败不影响登出正确性

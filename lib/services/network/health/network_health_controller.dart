@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../cf_challenge_service.dart';
 import '../../local_notification_service.dart' show navigatorKey;
 import '../../log/log_writer.dart';
-import '../adapters/cronet_fallback_service.dart';
+import '../adapters/core_fallback_service.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/csrf_token_service.dart';
 import '../request_scheduler_config.dart';
@@ -15,7 +15,7 @@ import '../webview/webview_adapter_settings_service.dart';
 ///
 /// 描述"当前网络通道处于什么状态"的事实此前散落在五处单例里:CF 盾态在
 /// [CfChallengeService]、会话级兼容通道在 [WebViewAdapterSettingsService]、
-/// 引擎降级在 [CronetFallbackService]、凭证新鲜度在 [CsrfTokenService]、
+/// 引擎降级在 [CoreFallbackService]、凭证新鲜度在 [CsrfTokenService]、
 /// 引擎选择在 platform_adapter。排查一次"为什么请求过不去"要跨五个文件
 /// 拼时序,而用户日志里只有结果没有状态。
 ///
@@ -34,16 +34,15 @@ class NetworkHealthController {
   NetworkHealthSnapshot snapshot() {
     final cf = CfChallengeService();
     final webView = WebViewAdapterSettingsService.instance;
-    final cronet = CronetFallbackService.instance;
+    final core = CoreFallbackService.instance;
     final csrf = CsrfTokenService();
     final engine = resolveEffectiveAdapter();
 
     return NetworkHealthSnapshot(
       engine: engine.type,
       engineReason: engine.reason,
-      cronetFallenBack: cronet.hasFallenBack,
-      cronetForceFallback: cronet.forceFallback,
-      cronetFallbackReason: cronet.fallbackReason,
+      coreFallenBack: core.hasFallenBack,
+      coreFallbackReason: core.fallbackReason,
       webViewCompatPersistent: webView.persistentEnabled,
       webViewCompatSession: webView.sessionFallbackEnabled,
       shield: _resolveShieldState(cf),
@@ -124,9 +123,8 @@ class NetworkHealthSnapshot {
   const NetworkHealthSnapshot({
     required this.engine,
     required this.engineReason,
-    required this.cronetFallenBack,
-    required this.cronetForceFallback,
-    required this.cronetFallbackReason,
+    required this.coreFallenBack,
+    required this.coreFallbackReason,
     required this.webViewCompatPersistent,
     required this.webViewCompatSession,
     required this.shield,
@@ -147,9 +145,8 @@ class NetworkHealthSnapshot {
   // --- 引擎 ---
   final AdapterType engine;
   final AdapterReason engineReason;
-  final bool cronetFallenBack;
-  final bool cronetForceFallback;
-  final String? cronetFallbackReason;
+  final bool coreFallenBack;
+  final String? coreFallbackReason;
 
   // --- 兼容通道(WebView 网络栈)---
   final bool webViewCompatPersistent;
@@ -177,7 +174,7 @@ class NetworkHealthSnapshot {
   /// 是否有任何降级/异常在生效(供 UI 或日志快速判断)。
   bool get isDegraded =>
       shield != ShieldState.ok ||
-      cronetFallenBack ||
+      coreFallenBack ||
       webViewCompatSession ||
       csrfInFailureCooldown;
 
@@ -187,8 +184,8 @@ class NetworkHealthSnapshot {
       'engine=${engine.name}(${engineReason.name})',
       'shield=${shield.name}',
     ];
-    if (cronetFallenBack) {
-      parts.add(cronetForceFallback ? 'cronet=forced' : 'cronet=fallen');
+    if (coreFallenBack) {
+      parts.add('core=fallen');
     }
     if (webViewCompatSession || webViewCompatPersistent) {
       parts.add(
@@ -210,10 +207,9 @@ class NetworkHealthSnapshot {
   Map<String, dynamic> toJson() => {
     'engine': engine.name,
     'engineReason': engineReason.name,
-    'cronetFallenBack': cronetFallenBack,
-    'cronetForceFallback': cronetForceFallback,
-    if (cronetFallbackReason != null)
-      'cronetFallbackReason': _truncate(cronetFallbackReason!),
+    'coreFallenBack': coreFallenBack,
+    if (coreFallbackReason != null)
+      'coreFallbackReason': _truncate(coreFallbackReason!),
     'webViewCompatPersistent': webViewCompatPersistent,
     'webViewCompatSession': webViewCompatSession,
     'shield': shield.name,

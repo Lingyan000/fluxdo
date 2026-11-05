@@ -1,0 +1,13 @@
+# C 依赖（aws-lc、BoringSSL 等）与 Rust 链接必须使用同一最低系统版本：
+# 否则 C 代码按本机 SDK 的新版本编译、Rust 按目标默认的旧版本链接，
+# 会出现 ___chkstk_darwin 等仅新系统提供的符号找不到。取值与 App 工程一致。
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "15.0"
+MACOSX_DEPLOYMENT_TARGET = "12.0"
+
+# BoringSSL 含 C++ 代码，安卓默认链接动态 libc++_shared.so，而 App 不附带它会导致核心加载失败。
+# 安卓改为静态链接 C++ 运行库（核心只暴露 C 接口，不跨库传递 C++ 对象，静态链接是安全的）。
+BORING_BSSL_RUST_CPPLIB_aarch64_linux_android = "c++_static"
+BORING_BSSL_RUST_CPPLIB_armv7_linux_androideabi = "c++_static"
+BORING_BSSL_RUST_CPPLIB_x86_64_linux_android = "c++_static"
+BORING_BSSL_RUST_CPPLIB_i686_linux_android = "c++_static"

@@ -1,0 +1,60 @@
+{
+  "datagram_sizes": [
+    1200
+  ],
+  "trailing_bytes": [
+    0
+  ],
+  "version": 1,
+  "dcid_len": 20,
+  "scid_len": 8,
+  "token_len": 0,
+  "first_packet_number": 0,
+  "packet_number_len": 1,
+  "packet_number_lengths": [
+    1
+  ],
+  "frames": [
+    [
+      {
+        "Crypto": {
+          "offset": 0,
+          "len": 291
+        }
+      },
+      {
+        "Padding": {
+          "len": 850
+        }
+      }
+    ]
+  ],
+  "padding": "Frames",
+  "coalesced": false,
+  "parameters": [
+    10930,
+    1,
+    4,
+    32,
+    6,
+    15,
+    14,
+    5,
+    3,
+    7,
+    2914696150678147991,
+    4278509083,
+    8,
+    17,
+    9
+  ],
+  "chosen_version": 1,
+  "available_versions": [
+    1,
+    169486906
+  ],
+  "packet_numbers": [
+    0
+  ],
+  "complete": true
+}

@@ -338,19 +338,17 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"${PROJECT_DIR}/Runner/native/libdoh_proxy.dylib",
-				"${PROJECT_DIR}/Runner/native/doh_proxy_bin",
+				"${PROJECT_DIR}/Runner/native/libfluxdo_net.dylib",
 			);
 			name = "Stage Native Runtime";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/libdoh_proxy.dylib",
-				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native/doh_proxy_bin",
+				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/libfluxdo_net.dylib",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nSTAGED_DIR=\"${PROJECT_DIR}/Runner/native\"\nLIB_SRC=\"${STAGED_DIR}/libdoh_proxy.dylib\"\nBIN_SRC=\"${STAGED_DIR}/doh_proxy_bin\"\nFRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks\"\nRESOURCES_NATIVE_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native\"\n\nif [ ! -f \"$LIB_SRC\" ]; then\n  echo \"error: Missing staged native library: $LIB_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nif [ ! -f \"$BIN_SRC\" ]; then\n  echo \"error: Missing staged native executable: $BIN_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nmkdir -p \"$FRAMEWORKS_DIR\" \"$RESOURCES_NATIVE_DIR\"\nrm -f \"$RESOURCES_NATIVE_DIR/libdoh_proxy.dylib\"\ncp \"$LIB_SRC\" \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\ncp \"$BIN_SRC\" \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\nchmod 755 \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\" \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\ninstall_name_tool -id @rpath/libdoh_proxy.dylib \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\" || true\n\nSIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\n";
+			shellScript = "set -e\nSTAGED_DIR=\"${PROJECT_DIR}/Runner/native\"\nLIB_SRC=\"${STAGED_DIR}/libfluxdo_net.dylib\"\nFRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks\"\n\nif [ ! -f \"$LIB_SRC\" ]; then\n  echo \"error: Missing staged native library: $LIB_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nmkdir -p \"$FRAMEWORKS_DIR\"\n# 旧核心的产物不再随包分发\nrm -f \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\nrm -rf \"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native\"\ncp \"$LIB_SRC\" \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\nchmod 755 \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\ninstall_name_tool -id @rpath/libfluxdo_net.dylib \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\" || true\n\nSIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\n";
 			showEnvVarsInLog = 0;
 		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {

@@ -5,10 +5,10 @@
   "httpProxy_cipher": "加密算法",
   "httpProxy_cipherNotSet": "未设置算法",
   "httpProxy_configTitle": "配置上游代理",
-  "httpProxy_disabledDesc": "为本地网关配置远端 HTTP / SOCKS5 / Shadowsocks 代理",
-  "httpProxy_disabledHint": "开启后会保留代理模式开关，由本地网关统一接管 Dio、WebView 和 Shadowsocks 出口",
+  "httpProxy_disabledDesc": "为网络核心配置上游 HTTP / SOCKS5 / Shadowsocks 代理",
+  "httpProxy_disabledHint": "开启后 Dio 与 WebView 都经网络核心走这个代理，出口保持一致",
   "httpProxy_dohProxyHint": "当前会通过本地 DoH 网关转发到上游代理；关闭 DoH 时会切换为纯代理转发",
-  "httpProxy_enabledDesc": "已启用 {protocol} 上游代理，由本地网关统一转发",
+  "httpProxy_enabledDesc": "已启用 {protocol} 上游代理，由网络核心统一转发",
   "@httpProxy_enabledDesc": {
     "placeholders": {
       "protocol": {
@@ -44,7 +44,7 @@
   "httpProxy_suppressedByVpn": "已被 VPN 自动关闭，VPN 断开后将自动恢复",
   "httpProxy_testAvailability": "测试代理可用性",
   "httpProxy_testingProxy": "正在验证是否能通过当前代理访问 linux.do",
-  "httpProxy_testingSsConfig": "正在校验 Shadowsocks 配置是否可由本地网关接管",
+  "httpProxy_testingSsConfig": "正在校验 Shadowsocks 配置是否可由网络核心接管",
   "httpProxy_title": "上游代理",
   "httpProxy_username": "用户名: {username}",
   "@httpProxy_username": {
@@ -137,7 +137,7 @@
   "proxy_ssOnlySsProtocol": "仅支持 ss:// 链接",
   "proxy_ssPasswordHint": "请填写 Shadowsocks 密码",
   "proxy_ssSaved": "Shadowsocks 配置已保存",
-  "proxy_ssSavedDetail": "当前版本会通过本地网关接管 Shadowsocks 出站；请启用代理后返回首页进行实际访问验证",
+  "proxy_ssSavedDetail": "Shadowsocks 出站由网络核心接管；请启用代理后返回首页进行实际访问验证",
   "proxy_ssSelectCipher": "请选择受支持的 Shadowsocks 加密算法",
   "proxy_ssUnsupportedCipher": "当前版本仅支持 {ciphers}",
   "@proxy_ssUnsupportedCipher": {

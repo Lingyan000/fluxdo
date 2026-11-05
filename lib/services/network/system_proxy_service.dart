@@ -7,7 +7,7 @@ import 'system_proxy_detector.dart';
 
 /// Windows 系统代理跟随服务。
 ///
-/// 背景:WebView2 默认跟随系统代理(如 Clash「系统代理」模式),而 Dio/rhttp
+/// 背景:WebView2 默认跟随系统代理(如 Clash「系统代理」模式),而网络核心
 /// 走直连。两者出口 IP 不一致时,验证 WebView 铸出的 cf_clearance 绑定的是
 /// 代理节点 IP,对 Dio 的直连请求永远无效 → CF 验证无限循环。
 ///
@@ -27,7 +27,7 @@ class SystemProxyService {
 
   static const _refreshInterval = Duration(seconds: 10);
 
-  /// 状态版本号。effectiveProxyUrl 变化时自增,RhttpAdapter 据此重建 client。
+  /// 状态版本号。effectiveProxyUrl 变化时自增,网络设置据此重启核心。
   final ValueNotifier<int> version = ValueNotifier<int>(0);
 
   String? _effectiveProxyUrl;

@@ -48,7 +48,7 @@ class DataBackupService {
     'bg_shared_session_key',
     'one_time_password',
     // ── 设备绑定 / 运行态 ──
-    'cronet_', // 降级状态
+    'net_core_', // 网络核心降级状态
     'vpn_suppressed_',
     'per_device_cert_installed',
     'cert_use_per_device',

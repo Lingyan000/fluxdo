@@ -5,8 +5,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'network/core/net_core_service.dart';
 import 'network/discourse_dio.dart';
 import 'network/vpn_auto_toggle_service.dart';
+import 'network_logger.dart';
 
 /// 网络连通性检测服务
 ///
@@ -70,7 +72,9 @@ class ConnectivityService {
     try {
       return await Connectivity().checkConnectivity();
     } catch (e) {
-      debugPrint('[Connectivity] checkConnectivity 失败，fallback to connected state: $e');
+      debugPrint(
+        '[Connectivity] checkConnectivity 失败，fallback to connected state: $e',
+      );
       return const [ConnectivityResult.other];
     }
   }
@@ -92,7 +96,9 @@ class ConnectivityService {
     _connectivitySub = _connectivity.onConnectivityChanged.listen(
       _onConnectivityChanged,
       onError: (Object error, StackTrace stackTrace) {
-        debugPrint('[Connectivity] 监听网络状态失败，fallback to connected state: $error');
+        debugPrint(
+          '[Connectivity] 监听网络状态失败，fallback to connected state: $error',
+        );
         _setConnected(true);
       },
     );
@@ -113,8 +119,10 @@ class ConnectivityService {
   Future<void> _onConnectivityChanged(List<ConnectivityResult> results) async {
     debugPrint('[Connectivity] onConnectivityChanged: $results');
     VpnAutoToggleService.instance.handleConnectivityChanged(results);
-    final hasNetwork = results.isNotEmpty &&
+    final hasNetwork =
+        results.isNotEmpty &&
         !results.every((r) => r == ConnectivityResult.none);
+    _resetConnectionsOnNetworkChange(results, hasNetwork);
 
     if (!hasNetwork) {
       // connectivity_plus 在启动/恢复时可能先发一个瞬态 [none]，
@@ -135,6 +143,37 @@ class ConnectivityService {
     } else {
       _setConnected(true);
     }
+  }
+
+  /// 上一次有网时的网络类型组合；为 null 表示还没收到过有网事件
+  String? _lastNetworkSignature;
+
+  /// 上次有网之后是否断过网
+  bool _lostSinceLastNetwork = false;
+
+  /// 网络切换（Wi-Fi ↔ 蜂窝、断网后重连）时清空网络核心的连接池。
+  ///
+  /// 旧连接绑在旧网络的源地址上，不主动丢弃的话，复用它们的请求要一直等到
+  /// 超时才失败。首个事件只记录不清池：那是启动时的初始状态，不是切换。
+  void _resetConnectionsOnNetworkChange(
+    List<ConnectivityResult> results,
+    bool hasNetwork,
+  ) {
+    if (!hasNetwork) {
+      if (_lastNetworkSignature != null) _lostSinceLastNetwork = true;
+      return;
+    }
+    final signature = (results.map((r) => r.name).toList()..sort()).join('+');
+    final previous = _lastNetworkSignature;
+    final lost = _lostSinceLastNetwork;
+    _lastNetworkSignature = signature;
+    _lostSinceLastNetwork = false;
+    if (previous == null || (previous == signature && !lost)) return;
+    final reason = lost
+        ? '网络重连 $previous → $signature'
+        : '网络切换 $previous → $signature';
+    NetworkLogger.log('[Connectivity] $reason');
+    NetCoreService.instance.resetConnections(reason: reason);
   }
 
   /// ping 服务器验证可达性
@@ -191,12 +230,14 @@ class ConnectivityService {
       _retryInFlight = true;
       try {
         final result = await safeCheckConnectivity();
-        final hasNetwork = result.isNotEmpty &&
+        final hasNetwork =
+            result.isNotEmpty &&
             !result.every((r) => r == ConnectivityResult.none);
         if (hasNetwork) {
           if (enableServerPing) {
             final reachable = await pingServer();
-            if (reachable) _setConnected(true); // _setConnected(true) 内部会调用 _stopRetry
+            if (reachable)
+              _setConnected(true); // _setConnected(true) 内部会调用 _stopRetry
           } else {
             _setConnected(true);
           }
@@ -208,7 +249,10 @@ class ConnectivityService {
       }
       // 仍未恢复，增大退避间隔并继续重试
       if (!_isConnected) {
-        _retryBackoffSeconds = (_retryBackoffSeconds * 2).clamp(1, _maxRetryBackoffSeconds);
+        _retryBackoffSeconds = (_retryBackoffSeconds * 2).clamp(
+          1,
+          _maxRetryBackoffSeconds,
+        );
         _scheduleNextRetry();
       }
     });
@@ -228,7 +272,8 @@ class ConnectivityService {
       _setConnected(reachable);
     } else {
       final result = await safeCheckConnectivity();
-      final hasNetwork = result.isNotEmpty &&
+      final hasNetwork =
+          result.isNotEmpty &&
           !result.every((r) => r == ConnectivityResult.none);
       _setConnected(hasNetwork);
     }

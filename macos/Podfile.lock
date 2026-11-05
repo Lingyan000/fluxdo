@@ -54,8 +54,6 @@ PODS:
     - FlutterMacOS
   - record_macos (2.0.0):
     - FlutterMacOS
-  - rhttp (0.0.1):
-    - FlutterMacOS
   - screen_brightness_macos (0.1.0):
     - FlutterMacOS
   - screen_retriever_macos (0.0.1):
@@ -69,8 +67,6 @@ PODS:
     - Flutter
     - FlutterMacOS
   - super_native_extensions (0.0.1):
-    - FlutterMacOS
-  - ua_client_hints (1.7.0):
     - FlutterMacOS
   - url_launcher_macos (0.0.1):
     - FlutterMacOS
@@ -112,14 +108,12 @@ DEPENDENCIES:
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
   - quickjs_engine (from `Flutter/ephemeral/.symlinks/plugins/quickjs_engine/macos`)
   - record_macos (from `Flutter/ephemeral/.symlinks/plugins/record_macos/macos`)
-  - rhttp (from `Flutter/ephemeral/.symlinks/plugins/rhttp/macos`)
   - screen_brightness_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos`)
   - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
   - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite_darwin (from `Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin`)
   - super_native_extensions (from `Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos`)
-  - ua_client_hints (from `Flutter/ephemeral/.symlinks/plugins/ua_client_hints/macos`)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
   - video_player_avfoundation (from `Flutter/ephemeral/.symlinks/plugins/video_player_avfoundation/darwin`)
   - volume_controller (from `Flutter/ephemeral/.symlinks/plugins/volume_controller/macos`)
@@ -182,8 +176,6 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/quickjs_engine/macos
   record_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/record_macos/macos
-  rhttp:
-    :path: Flutter/ephemeral/.symlinks/plugins/rhttp/macos
   screen_brightness_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos
   screen_retriever_macos:
@@ -196,8 +188,6 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin
   super_native_extensions:
     :path: Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos
-  ua_client_hints:
-    :path: Flutter/ephemeral/.symlinks/plugins/ua_client_hints/macos
   url_launcher_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos
   video_player_avfoundation:
@@ -238,14 +228,12 @@ SPEC CHECKSUMS:
   package_info_plus: f0052d280d17aa382b932f399edf32507174e870
   quickjs_engine: f985c2ebce29b932af6f64239b329efeb91c1e6a
   record_macos: 2e43c16b84ce188b8137754ee648322a2dcdf7fa
-  rhttp: 08d791d6373089de796318f4cfb172cbcf34e78b
   screen_brightness_macos: 09aa40f72b71c5dc51d72eba86938da580f6dab8
   screen_retriever_macos: c5508cc3c66ff0d4db650480cf0ab691e220d933
   share_plus: 510bf0af1a42cd602274b4629920c9649c52f4cc
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
   super_native_extensions: c2795d6d9aedf4a79fae25cb6160b71b50549189
-  ua_client_hints: bb84da85d9d5d605d40598b3c1ae3bfd2598e201
   url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
   video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
   volume_controller: 96b8e381b9f7d227636335110bc82ee96386434b

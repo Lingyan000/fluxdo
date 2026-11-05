@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../network_logger.dart';
 import 'doh/network_settings_service.dart';
 import 'proxy/proxy_settings_service.dart';
 import 'system_proxy_service.dart';
@@ -284,14 +285,14 @@ class VpnAutoToggleService {
       if (dohService.notifier.value.dohEnabled) {
         await _prefs.setBool(_keySuppressedDoh, true);
         await dohService.setDohEnabled(false);
-        debugPrint('[VpnAutoToggle] 压制 DOH');
+        NetworkLogger.log('[VpnAutoToggle] 压制 DOH');
       }
 
       // 检查代理是否开启，开启则压制
       if (proxyService.notifier.value.enabled) {
         await _prefs.setBool(_keySuppressedProxy, true);
         await proxyService.setEnabled(false);
-        debugPrint('[VpnAutoToggle] 压制上游代理');
+        NetworkLogger.log('[VpnAutoToggle] 压制上游代理');
       }
     } finally {
       _isSuppressing = false;
@@ -309,14 +310,14 @@ class VpnAutoToggleService {
       if (isDohSuppressed) {
         await _prefs.remove(_keySuppressedDoh);
         await NetworkSettingsService.instance.setDohEnabled(true);
-        debugPrint('[VpnAutoToggle] 恢复 DOH');
+        NetworkLogger.log('[VpnAutoToggle] 恢复 DOH');
       }
 
       // 恢复代理
       if (isProxySuppressed) {
         await _prefs.remove(_keySuppressedProxy);
         await ProxySettingsService.instance.setEnabled(true);
-        debugPrint('[VpnAutoToggle] 恢复上游代理');
+        NetworkLogger.log('[VpnAutoToggle] 恢复上游代理');
       }
     } finally {
       _isSuppressing = false;
@@ -329,12 +330,12 @@ class VpnAutoToggleService {
   /// 由 UI 层在检测到手动开启时调用
   void clearDohSuppression() {
     _prefs.remove(_keySuppressedDoh);
-    debugPrint('[VpnAutoToggle] 清除 DOH 压制标记（用户手动开启）');
+    NetworkLogger.log('[VpnAutoToggle] 清除 DOH 压制标记（用户手动开启）');
   }
 
   void clearProxySuppression() {
     _prefs.remove(_keySuppressedProxy);
-    debugPrint('[VpnAutoToggle] 清除代理压制标记（用户手动开启）');
+    NetworkLogger.log('[VpnAutoToggle] 清除代理压制标记（用户手动开启）');
   }
 
   /// VPN 活跃期间用户拨动开关：仅记录"VPN 断开后是否启用"的意图，

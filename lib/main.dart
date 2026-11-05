@@ -37,7 +37,7 @@ import 'services/network/system_proxy_service.dart';
 import 'services/network/cookie/cookie_devtools_extension.dart';
 import 'services/network/cookie/cookie_jar_service.dart';
 import 'services/network/cookie/cookie_store_observer.dart';
-import 'services/network/adapters/cronet_fallback_service.dart';
+import 'services/network/adapters/core_fallback_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/data_management/cache_size_service.dart';
 import 'services/discourse_cache_manager.dart';
@@ -48,10 +48,8 @@ import 'l10n/s.dart';
 
 import 'services/network/doh/network_settings_service.dart';
 import 'services/network/proxy/proxy_settings_service.dart';
-import 'services/network/rhttp/rhttp_settings_service.dart';
 import 'services/network/webview/webview_adapter_settings_service.dart';
 import 'services/eruda_settings_service.dart';
-import 'package:rhttp/rhttp.dart' as rhttp;
 import 'services/network/vpn_auto_toggle_service.dart';
 import 'services/network/doh_proxy/proxy_certificate.dart';
 import 'services/cf_challenge_logger.dart';
@@ -121,12 +119,6 @@ import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
 import 'utils/platform_utils.dart';
 import 'utils/discourse_url_parser.dart';
-
-/// 初始化 rhttp Rust runtime
-Future<bool> _initRhttp() async {
-  await rhttp.Rhttp.init();
-  return true;
-}
 
 /// 应用 Android 屏幕刷新率偏好。
 /// 偏好值 0 表示跟随系统（auto），非 0 则按目标刷新率从 supported 中选最匹配的 mode。
@@ -332,7 +324,7 @@ Future<void> main() async {
       }
     } else {
       // 冷启动：窗口保持隐藏，推迟到 Flutter 首帧光栅化后再恢复位置并显示，
-      // 避免 main() 后续初始化（迁移/网络栈/rhttp 等）期间露出空白窗口。
+      // 避免 main() 后续初始化（迁移/网络栈等）期间露出空白窗口。
       // Future.any 兜底：极端情况下首帧迟迟未到时也要把窗口显示出来。
       unawaited(() async {
         await Future.any([
@@ -359,7 +351,7 @@ Future<void> main() async {
   // 开发者模式下 debug 级日志落盘（高频追踪信息）
   AppLogger.setVerbose(developerMode);
   await Future.wait([
-    CronetFallbackService.instance.initialize(prefs),
+    CoreFallbackService.instance.initialize(prefs),
     ProxySettingsService.instance.initialize(prefs),
     if (Platform.isAndroid)
       MethodChannel(
@@ -368,27 +360,11 @@ Future<void> main() async {
   ]);
   // 跟随同一开关:关闭时导航上下文也不再上报
   CrashContextReporter.setEnabled(Platform.isAndroid && crashlyticsEnabled);
-  // rhttp (Rust reqwest) 初始化：在 ProxySettingsService 之后、NetworkSettingsService 之前
-  await RhttpSettingsService.instance.initialize(prefs);
   // WebView 适配器设置
   await WebViewAdapterSettingsService.instance.initialize(prefs);
   // Eruda 调试控制台开关 (默认关)
   await ErudaSettingsService.instance.initialize(prefs);
-  try {
-    final rhttp = await Future.any([
-      _initRhttp(),
-      Future.delayed(const Duration(seconds: 5), () => false),
-    ]);
-    if (rhttp != true) {
-      debugPrint('[rhttp] 初始化超时或失败');
-      await RhttpSettingsService.instance.forceDisable();
-    }
-  } catch (e) {
-    debugPrint('[rhttp] 初始化异常: $e');
-    await RhttpSettingsService.instance.forceDisable();
-  }
-
-  // Windows 固定系统代理必须先于本地 DoH/WebView 网关读取，网关才能按
+  // Windows 的系统代理必须先于网络核心读取，核心才能按
   // 「应用代理 > 系统代理 > 直连」选择首次启动的上游出口。
   if (Platform.isWindows) {
     SystemProxyService.instance.start();
@@ -397,8 +373,7 @@ Future<void> main() async {
   // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
   // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
   // 并行初始化里,等的是"猜的"8s 超时——NetworkSettingsService 前面还排
-  // 着 rhttp(自己就留了最多 5s 预算)等好几个服务,8s 经常等不到真实端口
-  // 就用旧端口摆烂,导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
+  // 着好几个服务,8s 经常等不到真实端口就用旧端口摆烂,导致 WebView2 全程连着一个不存在的代理、CF 验证怎么
   // 也过不去。现在严格排在 NetworkSettingsService 完全初始化(本地代理
   // 已经启动、setProxy() 已经真正调用过)之后再建,proxyDecision 这时
   // 早就 complete 了,创建时直接读到确定值,不用再赌超时。

@@ -1,519 +1,306 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
-import '../../../services/network/adapters/cronet_fallback_service.dart';
+import '../../../services/network/adapters/core_fallback_service.dart';
 import '../../../services/network/adapters/platform_adapter.dart';
+import '../../../services/network/core/net_core_service.dart';
 import '../../../services/network/doh/network_settings_service.dart';
-import '../../../services/network/doh/webview_mitm_policy.dart';
 import '../../../services/network/proxy/proxy_settings_service.dart';
-import '../../../services/network/rhttp/rhttp_settings_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
 import 'doh_settings_card.dart' show ensureWindowsCertTrusted;
 
-/// 网络引擎卡片（预设单选 + 自定义展开）
+/// 网络状态卡片
 ///
-/// 顶部用预设 chips（标准 / 高性能 / 兼容 / 自定义）单选，常用场景一键切换；
-/// 复杂开关（rhttp 模式、WebView、Android 降级）收进「自定义」展开区。
-/// 「当前生效引擎」压成一行，降级等异常即时可见。
-class EngineCard extends StatefulWidget {
+/// 首块是当前生效的网络栈与出站路径（指纹、DNS、代理、WebView 是否经核心），
+/// 启动失败、自动降级等异常就地给出原因与恢复入口；末块是兼容模式开关。
+class EngineCard extends StatelessWidget {
   const EngineCard({super.key});
 
   @override
-  State<EngineCard> createState() => _EngineCardState();
-}
-
-enum _EnginePreset { standard, performance, compat, custom }
-
-class _EngineCardState extends State<EngineCard> {
-  bool _customExpanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final rhttp = RhttpSettingsService.instance;
+    final settings = NetworkSettingsService.instance;
     final webview = WebViewAdapterSettingsService.instance;
-    final fallbackService = CronetFallbackService.instance;
+    final fallback = CoreFallbackService.instance;
 
     return AnimatedBuilder(
       animation: Listenable.merge([
-        rhttp.notifier,
-        NetworkSettingsService.instance.notifier,
-        NetworkSettingsService.instance.isApplying,
+        settings.notifier,
+        settings.isApplying,
+        NetCoreService.instance.statusNotifier,
         ProxySettingsService.instance.notifier,
         webview.notifier,
         webview.effectiveNotifier,
-        fallbackService,
+        fallback,
       ]),
       builder: (context, _) {
-        final rhttpSettings = rhttp.current;
-        final rhttpEnabled = rhttpSettings.enabled;
-        final webviewEnabled = webview.enabled;
-
-        final autoPreset = _presetOf(
-          rhttpEnabled,
-          rhttpSettings.mode,
-          webviewEnabled,
-        );
-        final isCustom = _customExpanded || autoPreset == _EnginePreset.custom;
-        final shownPreset = isCustom ? _EnginePreset.custom : autoPreset;
-
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 预设单选
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                child: _buildPresetSelector(theme, shownPreset, rhttp, webview),
-              ),
-              _divider(theme),
-              // 当前生效引擎（压一行）
-              _buildCurrentEngineRow(theme, fallbackService),
-              // 自定义展开区
-              AnimatedCrossFade(
-                duration: const Duration(milliseconds: 200),
-                crossFadeState: isCustom
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-                firstChild: const SizedBox(width: double.infinity),
-                secondChild: _buildCustomSection(
-                  theme,
-                  rhttp,
-                  rhttpSettings,
-                  webview,
-                  webviewEnabled,
-                  fallbackService,
-                ),
-              ),
-            ],
-          ),
+        final startFailed =
+            settings.lastStartFailed && !settings.isApplying.value;
+        final autoFellBack = fallback.hasFallenBack;
+        return SegmentedCardGroup(
+          children: [
+            const _StatusHeader(),
+            if (startFailed) const _StartFailedRow(),
+            if (autoFellBack && !startFailed) const _FallbackRow(),
+            if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
+            _WebViewSwitch(webview: webview),
+          ],
         );
       },
     );
   }
+}
 
-  // ---- 预设 ----
+/// 状态头：当前网络栈 + 出站路径摘要 + 重启入口。
+class _StatusHeader extends StatelessWidget {
+  const _StatusHeader();
 
-  Widget _buildPresetSelector(
-    ThemeData theme,
-    _EnginePreset shown,
-    RhttpSettingsService rhttp,
-    WebViewAdapterSettingsService webview,
-  ) {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final l10n = context.l10n;
-    final items = <(_EnginePreset, String)>[
-      (_EnginePreset.standard, l10n.enginePreset_standard),
-      (_EnginePreset.performance, l10n.enginePreset_performance),
-      (_EnginePreset.compat, l10n.enginePreset_compat),
-      (_EnginePreset.custom, l10n.enginePreset_custom),
-    ];
+    final settings = NetworkSettingsService.instance;
+    final core = NetCoreService.instance;
+    final applying = settings.isApplying.value || settings.pendingStart;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in items)
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: item.$1 == shown,
-                onSelected: (s) async {
-                  if (s) await _applyPreset(item.$1, rhttp, webview);
-                },
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _presetDesc(shown),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _applyPreset(
-    _EnginePreset preset,
-    RhttpSettingsService rhttp,
-    WebViewAdapterSettingsService webview,
-  ) async {
-    switch (preset) {
-      case _EnginePreset.standard:
-        setState(() => _customExpanded = false);
-        webview.disableSessionFallback();
-        await rhttp.setEnabled(false);
-        await webview.setEnabled(false);
-      case _EnginePreset.performance:
-        setState(() => _customExpanded = false);
-        webview.disableSessionFallback();
-        await rhttp.setMode(RhttpMode.always);
-        await rhttp.setEnabled(true);
-        await webview.setEnabled(false);
-      case _EnginePreset.compat:
-        if (!await _ensureWebViewCanBeEnabled()) return;
-        if (!mounted) return;
-        setState(() => _customExpanded = false);
-        webview.disableSessionFallback();
-        await rhttp.setEnabled(false);
-        await webview.setEnabled(true);
-      case _EnginePreset.custom:
-        setState(() => _customExpanded = true);
-    }
-  }
-
-  Future<bool> _ensureWebViewCanBeEnabled() async {
-    final requiresCa = WebViewMitmPolicy.requiresTrustedCa(
-      isWindows: Platform.isWindows,
-      dohEnabled: NetworkSettingsService.instance.current.dohEnabled,
-      webViewAdapterEnabled: true,
-    );
-    if (!requiresCa) return true;
-    return ensureWindowsCertTrusted(context);
-  }
-
-  Future<void> _setWebViewEnabled(
-    bool value,
-    WebViewAdapterSettingsService webview,
-  ) async {
-    if (value && !await _ensureWebViewCanBeEnabled()) return;
-    await webview.setEnabled(value);
-  }
-
-  _EnginePreset _presetOf(bool rhttpOn, RhttpMode mode, bool webviewOn) {
-    if (!rhttpOn && !webviewOn) return _EnginePreset.standard;
-    if (rhttpOn && mode == RhttpMode.always && !webviewOn) {
-      return _EnginePreset.performance;
-    }
-    if (!rhttpOn && webviewOn) return _EnginePreset.compat;
-    return _EnginePreset.custom;
-  }
-
-  String _presetDesc(_EnginePreset preset) {
-    final l10n = context.l10n;
-    return switch (preset) {
-      _EnginePreset.standard => l10n.enginePreset_standardDesc,
-      _EnginePreset.performance => l10n.enginePreset_performanceDesc,
-      _EnginePreset.compat => l10n.enginePreset_compatDesc,
-      _EnginePreset.custom => l10n.enginePreset_customDesc,
-    };
-  }
-
-  // ---- 当前生效引擎（一行）----
-
-  Widget _buildCurrentEngineRow(
-    ThemeData theme,
-    CronetFallbackService fallbackService,
-  ) {
     final effective = resolveEffectiveAdapter();
     final engineName = getAdapterDisplayName(effective.type);
     final isFallback = effective.reason == AdapterReason.fallback;
-    final webviewSettings = WebViewAdapterSettingsService.instance;
-    final webviewEnabled = webviewSettings.effectiveEnabled;
-    final sessionFallback = webviewSettings.sessionFallbackEnabled;
-    final showReset = isFallback && Platform.isAndroid && !sessionFallback;
+    final webviewEnabled =
+        WebViewAdapterSettingsService.instance.effectiveEnabled;
 
-    // WebView 在最外层分流：主站 API 走 WebView，其余走推算出的引擎。
-    // 它不参与 resolveEffectiveAdapter()，所以开启时要单独显示分流，
-    // 否则「兼容」预设会错误地只显示 native/Cronet。
     final IconData icon;
     final Color iconColor;
-    final InlineSpan span;
-    if (webviewEnabled) {
+    final Color iconBackground;
+    final String subtitle;
+    if (applying) {
+      icon = Symbols.sync_rounded;
+      iconColor = colors.onSecondaryContainer;
+      iconBackground = colors.secondaryContainer;
+      subtitle = l10n.networkStatus_applying;
+    } else if (isFallback) {
+      icon = Symbols.warning_rounded;
+      iconColor = colors.onErrorContainer;
+      iconBackground = colors.errorContainer;
+      subtitle = l10n.engineStatus_reasonFallback;
+    } else if (webviewEnabled) {
+      // WebView 在最外层分流：主站 API 走 WebView，其余仍走网络核心
       icon = Symbols.call_split_rounded;
-      iconColor = theme.colorScheme.tertiary;
-      span = TextSpan(
-        text: context.l10n.engineStatus_webviewSplit(engineName),
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
+      iconColor = colors.onTertiaryContainer;
+      iconBackground = colors.tertiaryContainer;
+      subtitle = l10n.engineStatus_webviewSplit(engineName);
     } else {
-      icon = _engineIcon(effective.type);
-      iconColor = isFallback
-          ? theme.colorScheme.error
-          : theme.colorScheme.primary;
-      span = TextSpan(
-        children: [
-          TextSpan(
-            text: '${context.l10n.engineStatus_currentEngine}: ',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          TextSpan(
-            text: engineName,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isFallback
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          TextSpan(
-            text: '  ·  ${_reasonText(effective.reason)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      );
+      icon = Symbols.bolt_rounded;
+      iconColor = colors.onPrimaryContainer;
+      iconBackground = colors.primaryContainer;
+      subtitle = effective.reason == AdapterReason.coreWarmingUp
+          ? l10n.engineStatus_reasonCoreWarmingUp
+          : l10n.engineStatus_reasonCore;
     }
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 10, showReset ? 4 : 16, 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: iconColor),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text.rich(
-              span,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (showReset)
-            IconButton(
-              tooltip: context.l10n.networkAdapter_resetFallback,
-              icon: const Icon(Symbols.refresh_rounded, size: 20),
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _resetFallbackState(fallbackService),
-            ),
-          if (sessionFallback)
-            IconButton(
-              tooltip: S.current.cf_sessionCompatDisable,
-              icon: const Icon(Symbols.close_rounded, size: 20),
-              visualDensity: VisualDensity.compact,
-              onPressed: webviewSettings.disableSessionFallback,
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ---- 自定义展开区 ----
-
-  Widget _buildCustomSection(
-    ThemeData theme,
-    RhttpSettingsService rhttp,
-    RhttpSettings rhttpSettings,
-    WebViewAdapterSettingsService webview,
-    bool webviewEnabled,
-    CronetFallbackService fallbackService,
-  ) {
-    final l10n = context.l10n;
-    final rhttpEnabled = rhttpSettings.enabled;
-    final ns = NetworkSettingsService.instance.current;
-    final echFallback =
-        rhttpEnabled && ns.dohEnabled && ns.echServerUrl != null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _divider(theme),
-        // rhttp 引擎
-        SwitchListTile(
-          dense: true,
-          secondary: Icon(
-            Symbols.rocket_launch_rounded,
-            fill: rhttpEnabled ? 1 : 0,
-            color: rhttpEnabled ? theme.colorScheme.primary : null,
-          ),
-          title: Text(l10n.rhttpEngine_title),
-          subtitle: Text(l10n.rhttpEngine_enabledDesc),
-          value: rhttpEnabled,
-          onChanged: (value) => rhttp.setEnabled(value),
-        ),
-        if (rhttpEnabled)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(56, 0, 16, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: M3eButtonGroup<RhttpMode>(
-                    items: [
-                      M3eButtonGroupItem(
-                        value: RhttpMode.always,
-                        label: Text(l10n.rhttpEngine_alwaysUse),
-                      ),
-                      M3eButtonGroupItem(
-                        value: RhttpMode.proxyOnly,
-                        label: Text(l10n.rhttpEngine_proxyDohOnly),
-                      ),
-                    ],
-                    selected: rhttpSettings.mode,
-                    onSelected: (mode) => rhttp.setMode(mode),
-                  ),
-                ),
-                if (echFallback)
-                  _miniHint(theme, l10n.rhttpEngine_echFallbackHint),
-                if (rhttpSettings.forceDisabled)
-                  _miniHint(
-                    theme,
-                    l10n.rhttpEngine_initFailedHint,
-                    color: theme.colorScheme.error,
-                  ),
-              ],
-            ),
-          ),
-        _divider(theme),
-        // WebView 适配器
-        SwitchListTile(
-          dense: true,
-          secondary: Icon(
-            Symbols.language_rounded,
-            fill: webviewEnabled ? 1 : 0,
-            color: webviewEnabled ? theme.colorScheme.primary : null,
-          ),
-          title: Text(l10n.webviewAdapter_title),
-          subtitle: Text(l10n.webviewAdapter_enabledDesc),
-          value: webviewEnabled,
-          onChanged: (value) => _setWebViewEnabled(value, webview),
-        ),
-        // Android：Cronet 降级控制
-        if (Platform.isAndroid)
-          ..._buildFallbackControls(theme, fallbackService),
-      ],
-    );
-  }
-
-  /// Android Cronet 降级控制
-  List<Widget> _buildFallbackControls(
-    ThemeData theme,
-    CronetFallbackService fallbackService,
-  ) {
-    final l10n = context.l10n;
-    final hasFallenBack = fallbackService.hasFallenBack;
-    final forceFallback = fallbackService.forceFallback;
-    final failureReason = fallbackService.fallbackReason;
-    final autoFellBack = hasFallenBack && !forceFallback;
-
-    return [
-      _divider(theme),
-      SwitchListTile(
-        secondary: const Icon(Symbols.swap_horiz_rounded),
-        title: Text(l10n.networkAdapter_forceFallback),
-        subtitle: Text(l10n.networkAdapter_forceFallbackDesc),
-        value: forceFallback,
-        onChanged: (value) async {
-          await fallbackService.setForceFallback(value);
-          ToastService.showSuccess(S.current.networkAdapter_settingSaved);
-        },
-      ),
-      if (autoFellBack) ...[
-        ListTile(
-          leading: Icon(Symbols.info_rounded, color: theme.colorScheme.error),
-          title: Text(l10n.networkAdapter_autoFallback),
-          subtitle: Text(l10n.networkAdapter_autoFallbackDesc),
-          dense: true,
-        ),
-        if (failureReason != null)
-          ListTile(
-            leading: const Icon(Symbols.bug_report_rounded),
-            title: Text(l10n.networkAdapter_viewReason),
-            trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
-            dense: true,
-            onTap: () => _showFailureReasonDialog(failureReason),
-          ),
-        ListTile(
-          leading: const Icon(Symbols.refresh_rounded),
-          title: Text(l10n.networkAdapter_resetFallback),
-          subtitle: Text(l10n.networkAdapter_resetFallbackDesc),
-          trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
-          dense: true,
-          onTap: () => _resetFallbackState(fallbackService),
-        ),
-      ],
-      if (kDebugMode && !hasFallenBack)
-        ListTile(
-          leading: Icon(
-            Symbols.science_rounded,
-            color: theme.colorScheme.tertiary,
-          ),
-          title: Text(l10n.networkAdapter_simulateError),
-          subtitle: Text(l10n.networkAdapter_simulateErrorDesc),
-          trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
-          dense: true,
-          onTap: () => _simulateCronetError(fallbackService),
-        ),
-    ];
-  }
-
-  // ---- 小组件 / 映射 ----
-
-  Widget _miniHint(ThemeData theme, String text, {Color? color}) {
-    final c = color ?? theme.colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            color != null
-                ? Symbols.warning_amber_rounded
-                : Symbols.info_rounded,
-            size: 13,
-            color: c,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: iconBackground,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 22, fill: 1, color: iconColor),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 16),
           Expanded(
-            child: Text(
-              text,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: c,
-                fontSize: 11,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(engineName, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                if (!isFallback && core.isRunning) ...[
+                  const SizedBox(height: 10),
+                  _RouteChips(status: core.status),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 48,
+            height: 40,
+            child: Center(
+              child: applying
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.primary,
+                      ),
+                    )
+                  : IconButton(
+                      tooltip: l10n.networkStatus_restart,
+                      icon: const Icon(Symbols.refresh_rounded, size: 20),
+                      onPressed: settings.restartProxy,
+                    ),
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _divider(ThemeData theme) => Divider(
-    height: 1,
-    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
-  );
+/// 出站路径摘要：DNS、代理、WebView 是否经核心，一眼看清请求怎么出去。
+class _RouteChips extends StatelessWidget {
+  const _RouteChips({required this.status});
 
-  IconData _engineIcon(AdapterType type) => switch (type) {
-    AdapterType.rhttp => Symbols.rocket_launch_rounded,
-    AdapterType.network => Symbols.hub_rounded,
-    AdapterType.webview => Symbols.language_rounded,
-    AdapterType.native => Symbols.bolt_rounded,
-  };
+  final NetCoreStatus status;
 
-  String _reasonText(AdapterReason reason) {
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return switch (reason) {
-      AdapterReason.rhttp => l10n.engineStatus_reasonRhttp,
-      AdapterReason.gateway => l10n.engineStatus_reasonGateway,
-      AdapterReason.proxy => l10n.engineStatus_reasonProxy,
-      AdapterReason.fallback => l10n.engineStatus_reasonFallback,
-      AdapterReason.native => l10n.engineStatus_reasonNative,
-    };
+    final settings = NetworkSettingsService.instance.current;
+    final appProxy = ProxySettingsService.instance.current.isValid;
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        settings.dohEnabled
+            ? const _RouteChip(icon: Symbols.shield_rounded, label: 'DoH')
+            : _RouteChip(
+                icon: Symbols.dns_rounded,
+                label: l10n.networkStatus_dnsSystem,
+              ),
+        if (appProxy)
+          _RouteChip(
+            icon: Symbols.vpn_key_rounded,
+            label: l10n.networkStatus_proxyApp,
+          )
+        else if (status.systemProxy)
+          _RouteChip(
+            icon: Symbols.settings_ethernet_rounded,
+            label: l10n.networkStatus_proxySystem,
+          )
+        else
+          _RouteChip(
+            icon: Symbols.arrow_forward_rounded,
+            label: l10n.networkStatus_direct,
+          ),
+        if (status.webViewMitm)
+          _RouteChip(
+            icon: Symbols.language_rounded,
+            label: l10n.networkStatus_webViewViaCore,
+          ),
+      ],
+    );
+  }
+}
+
+class _RouteChip extends StatelessWidget {
+  const _RouteChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colors.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 核心启动失败：原因 + 重试。请求此时已改走应急路径。
+class _StartFailedRow extends StatelessWidget {
+  const _StartFailedRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final error = NetCoreService.instance.lastError;
+    return _NoticeRow(
+      icon: Symbols.error_rounded,
+      isError: true,
+      message: l10n.networkStatus_startFailed,
+      detail: error,
+      actions: [
+        if (error != null)
+          TextButton(
+            onPressed: () => _copy(error),
+            child: Text(l10n.common_copy),
+          ),
+        TextButton(
+          onPressed: NetworkSettingsService.instance.restartProxy,
+          child: Text(l10n.common_retry),
+        ),
+      ],
+    );
+  }
+}
+
+/// 运行中自动降级到应急路径：查看原因、重置。
+class _FallbackRow extends StatelessWidget {
+  const _FallbackRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final service = CoreFallbackService.instance;
+    final reason = service.fallbackReason;
+    return _NoticeRow(
+      icon: Symbols.info_rounded,
+      isError: true,
+      message: l10n.networkAdapter_autoFallbackDesc,
+      actions: [
+        if (reason != null)
+          TextButton(
+            onPressed: () => _showReason(context, reason),
+            child: Text(l10n.networkAdapter_viewReason),
+          ),
+        TextButton(
+          onPressed: () => _confirmReset(context, service),
+          child: Text(l10n.networkAdapter_resetFallback),
+        ),
+      ],
+    );
   }
 
-  // ---- 降级对话框 ----
-
-  Future<void> _showFailureReasonDialog(String reason) async {
+  Future<void> _showReason(BuildContext context, String reason) async {
     await showAppDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -530,10 +317,7 @@ class _EngineCardState extends State<EngineCard> {
             child: Text(dialogContext.l10n.common_close),
           ),
           FilledButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: reason));
-              ToastService.showSuccess(S.current.common_copiedToClipboard);
-            },
+            onPressed: () => _copy(reason),
             child: Text(dialogContext.l10n.common_copy),
           ),
         ],
@@ -541,8 +325,9 @@ class _EngineCardState extends State<EngineCard> {
     );
   }
 
-  Future<void> _resetFallbackState(
-    CronetFallbackService fallbackService,
+  Future<void> _confirmReset(
+    BuildContext context,
+    CoreFallbackService service,
   ) async {
     final confirm = await showAppDialog<bool>(
       context: context,
@@ -561,40 +346,143 @@ class _EngineCardState extends State<EngineCard> {
         ],
       ),
     );
-
     if (confirm == true) {
-      await fallbackService.reset();
+      await service.reset();
       ToastService.showSuccess(S.current.networkAdapter_resetSuccess);
     }
   }
+}
 
-  Future<void> _simulateCronetError(
-    CronetFallbackService fallbackService,
-  ) async {
-    final confirm = await showAppDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(dialogContext.l10n.networkAdapter_simulateError),
-        content: Text(dialogContext.l10n.networkAdapter_simulateErrorDesc),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(dialogContext.l10n.common_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.tertiary,
+/// CF 恢复期间临时开启的兼容模式（本次会话有效）。
+class _SessionCompatRow extends StatelessWidget {
+  const _SessionCompatRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _NoticeRow(
+      icon: Symbols.call_split_rounded,
+      message: l10n.cf_sessionCompatEnabled,
+      actions: [
+        TextButton(
+          onPressed:
+              WebViewAdapterSettingsService.instance.disableSessionFallback,
+          child: Text(l10n.cf_sessionCompatDisable),
+        ),
+      ],
+    );
+  }
+}
+
+/// 卡片内的提示行：图标 + 说明（可带详情）+ 操作按钮。
+class _NoticeRow extends StatelessWidget {
+  const _NoticeRow({
+    required this.icon,
+    required this.message,
+    this.detail,
+    this.isError = false,
+    this.actions = const [],
+  });
+
+  final IconData icon;
+  final String message;
+  final String? detail;
+  final bool isError;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final accent = isError ? colors.error : colors.tertiary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 18, color: accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: accent,
+                        ),
+                      ),
+                      if (detail != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          detail!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(dialogContext.l10n.common_confirm),
           ),
+          if (actions.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(spacing: 4, children: actions),
+            ),
         ],
       ),
     );
-
-    if (confirm == true) {
-      await fallbackService.simulateCronetError();
-      ToastService.showInfo(S.current.networkAdapter_simulateSuccess);
-    }
   }
+}
+
+/// 兼容模式开关：主站 API 改由 WebView 代发。
+class _WebViewSwitch extends StatelessWidget {
+  const _WebViewSwitch({required this.webview});
+
+  final WebViewAdapterSettingsService webview;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final enabled = webview.enabled;
+    return SwitchListTile(
+      secondary: Icon(
+        Symbols.language_rounded,
+        fill: enabled ? 1 : 0,
+        color: enabled ? Theme.of(context).colorScheme.primary : null,
+      ),
+      title: Text(l10n.webviewAdapter_title),
+      subtitle: Text(
+        enabled
+            ? l10n.webviewAdapter_enabledDesc
+            : l10n.webviewAdapter_disabledDesc,
+      ),
+      value: enabled,
+      onChanged: (value) async {
+        // Windows 下 DoH 开着时 WebView 经核心 MITM，需要先装好受信任 CA
+        if (value &&
+            Platform.isWindows &&
+            NetworkSettingsService.instance.current.dohEnabled &&
+            !await ensureWindowsCertTrusted(context)) {
+          return;
+        }
+        await webview.setEnabled(value);
+      },
+    );
+  }
+}
+
+void _copy(String text) {
+  Clipboard.setData(ClipboardData(text: text));
+  ToastService.showSuccess(S.current.common_copiedToClipboard);
 }

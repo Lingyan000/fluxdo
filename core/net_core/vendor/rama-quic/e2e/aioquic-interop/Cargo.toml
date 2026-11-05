@@ -1,0 +1,24 @@
+# Standalone: not a member of the rama workspace, with its own lockfile, so the upstream QUIC
+# peer never reaches the workspace resolution.
+[workspace]
+
+[package]
+name = "rama-quic-aioquic-interop"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+boring = ["rama/boring", "interop-common/boring"]
+rustls-ring = ["rama/rustls", "rama/ring", "interop-common/rustls-ring"]
+rustls-aws-lc = ["rama/rustls", "rama/aws-lc", "interop-common/rustls-aws-lc"]
+
+[dependencies]
+
+[dev-dependencies]
+parking_lot = "0.13"
+rama = { path = "../../..", default-features = false, features = ["std", "quic"] }
+interop-common = { package = "rama-quic-interop-common", path = "../interop-common", default-features = false }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "time"] }
+serde_json = "1"
+sha2 = "0.11"

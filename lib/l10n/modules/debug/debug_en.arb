@@ -71,7 +71,7 @@
   "debugTools_exportCfLogs": "Export CF logs",
   "debugTools_logsCleared": "Logs cleared",
   "debugTools_networkLogs": "Network logs",
-  "debugTools_networkLogsDesc": "View DOH & proxy diagnostics",
+  "debugTools_networkLogsDesc": "Network core, DoH & proxy diagnostics",
   "debugTools_noCfLogs": "No CF verification logs",
   "debugTools_noCfLogsHint": "Logs appear after CF verification is triggered",
   "debugTools_noCfLogsToShare": "No CF logs to share",

@@ -785,7 +785,7 @@ class FrameJankMonitor {
         name.startsWith('VizCompositor')) {
       return 'webview';
     }
-    if (name.startsWith('Cronet') || name.contains('OkHttp')) return '网络';
+    if (name.startsWith('fluxdo-net') || name.contains('OkHttp')) return '网络';
     if (name.startsWith('mali') ||
         name.startsWith('Adreno') ||
         name.contains('GPU')) {

@@ -116,8 +116,6 @@ PODS:
     - Flutter
   - record_ios (2.0.0):
     - Flutter
-  - rhttp (0.0.1):
-    - Flutter
   - screen_brightness_ios (2.1.3):
     - Flutter
   - SDWebImage (5.21.7):
@@ -154,8 +152,6 @@ PODS:
     - InternalCollectionsUtilities (= 1.1.1)
   - SwiftTryCatch (1.0.0)
   - SwiftyGif (5.4.5)
-  - ua_client_hints (1.7.0):
-    - Flutter
   - url_launcher_ios (0.0.1):
     - Flutter
   - video_player_avfoundation (0.0.1):
@@ -198,14 +194,12 @@ DEPENDENCIES:
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - quickjs_engine (from `.symlinks/plugins/quickjs_engine/ios`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
-  - rhttp (from `.symlinks/plugins/rhttp/ios`)
   - screen_brightness_ios (from `.symlinks/plugins/screen_brightness_ios/ios`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
   - super_native_extensions (from `.symlinks/plugins/super_native_extensions/ios`)
   - SwiftTryCatch (from `https://github.com/williamFalcon/SwiftTryCatch.git`, commit `6effaa3`)
-  - ua_client_hints (from `.symlinks/plugins/ua_client_hints/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
   - volume_controller (from `.symlinks/plugins/volume_controller/ios`)
@@ -283,8 +277,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/quickjs_engine/ios"
   record_ios:
     :path: ".symlinks/plugins/record_ios/ios"
-  rhttp:
-    :path: ".symlinks/plugins/rhttp/ios"
   screen_brightness_ios:
     :path: ".symlinks/plugins/screen_brightness_ios/ios"
   share_plus:
@@ -298,8 +290,6 @@ EXTERNAL SOURCES:
   SwiftTryCatch:
     :commit: 6effaa3
     :git: https://github.com/williamFalcon/SwiftTryCatch.git
-  ua_client_hints:
-    :path: ".symlinks/plugins/ua_client_hints/ios"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
   video_player_avfoundation:
@@ -351,7 +341,6 @@ SPEC CHECKSUMS:
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   quickjs_engine: 5549178d16b51c5ec5188363f9c3adaaccea8f50
   record_ios: 390a30c7caaf8b5d0fb1cb1d2fd5064b48b4520c
-  rhttp: 359daed992674fc912552df3106bfbc746bcc929
   screen_brightness_ios: 212d950bb99c915eee971c884f4a6c87c92cd13d
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
@@ -362,7 +351,6 @@ SPEC CHECKSUMS:
   swift-collections: ba248ecaf44ef500b27d5cf94d304218c89892ff
   SwiftTryCatch: 2f4ef36cf5396bdb450006b70633dbce5260d3b3
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
-  ua_client_hints: 6f8942ec0651883e0959cf255cdeaf8f93cf69e3
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
   volume_controller: 3657a1f65bedb98fa41ff7dc5793537919f31b12

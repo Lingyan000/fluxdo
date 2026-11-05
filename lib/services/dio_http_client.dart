@@ -1,3 +1,5 @@
+import 'log/log_policy.dart';
+import 'request_cancellation.dart';
 import 'download_request_queue.dart';
 export 'download_request_queue.dart' show DownloadPriority;
 
@@ -5,9 +7,13 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart' as dio;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../constants.dart';
+import 'app_logger.dart';
+import 'network/core/net_core_http_adapter.dart';
+import 'network/interceptors/redirect_interceptor.dart';
 import 'network/discourse_dio.dart';
 import 'network/adapters/webview_http_adapter.dart';
 
@@ -33,6 +39,9 @@ class DioHttpClient extends http.BaseClient {
     _instance ??= DioHttpClient._internal();
     return _instance!;
   }
+
+  @visibleForTesting
+  DioHttpClient.withClients(this._mainDomainDio, this._cdnDio);
 
   DioHttpClient._internal()
     : _mainDomainDio = DiscourseDio.create(
@@ -69,11 +78,14 @@ class DioHttpClient extends http.BaseClient {
   ///   高并发是纯赚(连接复用后无 TLS 风暴,浏览器 H2 加载 emoji 同为
   ///   几十路);6 槽跑 200 张 ≈ 200/6×RTT≈5s,12 槽砍半。
   /// - **content 6 槽**:正文/头像/原图/外部图(几十 KB~几 MB 混合,
-  ///   带宽敏感,并发过高互相挤占)。
+  ///   带宽敏感,并发过高互相挤占)；其中 1 槽保留给已首绘/主动请求。
   /// - **sticker 3 槽**:贴纸原文件(面板预取型、单文件大),独立通道
   ///   防挤占内容；其中1槽仅供high前台请求，后台最多使用2槽。
   static final DownloadRequestQueue _smallSemaphore = DownloadRequestQueue(12);
-  static final DownloadRequestQueue _contentSemaphore = DownloadRequestQueue(6);
+  static final DownloadRequestQueue _contentSemaphore = DownloadRequestQueue(
+    6,
+    reservedHighSlots: 1,
+  );
   static final DownloadRequestQueue _stickerSemaphore = DownloadRequestQueue(
     3,
     reservedHighSlots: 1,
@@ -97,6 +109,11 @@ class DioHttpClient extends http.BaseClient {
   /// 把仍在 [channel] 等待队列中的 [url] 沉到低优先级队尾(滚出视野)。
   static void sinkPending(DownloadChannel channel, String url) =>
       _semaphoreOf(channel).sink(url);
+
+  static void Function() retainForeground(
+    DownloadChannel channel,
+    String url,
+  ) => _semaphoreOf(channel).retainForeground(url);
 
   /// 提取 [AppConstants.baseUrl] 的 host(例如 `linux.do`),用于判断主域。
   /// 注意是 host 比对而不是 URL prefix 比对 —— 子域(`auth.linux.do` 等)
@@ -213,12 +230,33 @@ class DioHttpClient extends http.BaseClient {
     DownloadChannel channel = DownloadChannel.content,
     DownloadPriority priority = DownloadPriority.normal,
     void Function(int received, int? total)? onProgress,
+    Future<void> Function(Uint8List bytes)? onBytesReady,
+    dio.CancelToken? cancellation,
   }) async {
+    final elapsed = Stopwatch()..start();
     final semaphore = _semaphoreOf(channel);
-    await semaphore.acquire(url.toString(), priority);
+    final cancelToken = cancellation ?? dio.CancelToken();
+    cancelToken.throwIfCancellationRequested();
+    await semaphore.acquire(
+      url.toString(),
+      priority,
+      cancelled: cancelToken.whenCancel.then((_) {}),
+    );
+    final queueMs = elapsed.elapsedMilliseconds;
+    var completed = false;
+    int? headMs;
+    int? bodyMs;
+    int? status;
+    String? protocol;
+    Map<String, dynamic>? connection;
+    var receivedBytes = 0;
+    final diagnosticExtra = <String, dynamic>{
+      'traceId': LogPolicy.newTraceId(),
+    };
     try {
+      cancelToken.throwIfCancellationRequested();
       final isMainDomain = _isMainDomain(url);
-      final extra = <String, dynamic>{};
+      final extra = diagnosticExtra;
       if (isMainDomain) {
         extra[WebViewHttpAdapter.resourceKindExtraKey] =
             WebViewHttpAdapter.resourceKindImage;
@@ -227,12 +265,33 @@ class DioHttpClient extends http.BaseClient {
       }
       final response = await _selectDio(url).get<dio.ResponseBody>(
         url.toString(),
+        cancelToken: cancelToken,
         options: dio.Options(
           responseType: dio.ResponseType.stream,
           extra: extra,
           validateStatus: (status) => true,
         ),
       );
+      diagnosticExtra.addAll(response.requestOptions.extra);
+      headMs = elapsed.elapsedMilliseconds - queueMs;
+      status = response.statusCode;
+      protocol =
+          response.extra[dio.HttpClientAdapter.extraKeyHttpVersion] as String?;
+      final coreConnection = response.extra[netCoreConnectionExtraKey];
+      if (coreConnection is Map) {
+        connection = {
+          for (final key in [
+            'connectionId',
+            'reused',
+            'tlsResumed',
+            'echApplied',
+            'echAccepted',
+            'connectMs',
+            'ttfbMs',
+          ])
+            if (coreConnection.containsKey(key)) key: coreConnection[key],
+        };
+      }
       if (response.statusCode != 200) {
         throw http.ClientException('HTTP ${response.statusCode} for $url', url);
       }
@@ -248,14 +307,57 @@ class DioHttpClient extends http.BaseClient {
       if (body != null) {
         await for (final chunk in body.stream) {
           builder.add(chunk);
+          receivedBytes += chunk.length;
           onProgress?.call(builder.length, total);
         }
       }
-      return builder.takeBytes();
+      final bytes = builder.takeBytes();
+      bodyMs = elapsed.elapsedMilliseconds - queueMs - headMs;
+      completed = true;
+      // 落盘预算不足时保留下载槽进行背压；预算充足时回调只提交后台任务。
+      await onBytesReady?.call(bytes);
+      return bytes;
     } on dio.DioException catch (e) {
+      diagnosticExtra.addAll(e.requestOptions.extra);
       throw http.ClientException('Dio error: ${e.message}', url);
     } finally {
+      // 非 200、进度回调抛错等都可能早于响应 EOF；取消整个请求，
+      // 不依赖 Dio 包装流的订阅取消能否继续传递到适配器。
+      if (!completed) cancelToken.cancel('Image download abandoned');
       semaphore.release();
+      elapsed.stop();
+      final totalMs = elapsed.elapsedMilliseconds;
+      // 快速成功不逐图落盘；慢请求/失败才记录阶段耗时，详细日志模式可看全量。
+      // 只记域名和数值，不记录图片路径、查询参数、Cookie 或令牌。
+      if (!completed || totalMs >= 1500 || AppLogger.verboseNotifier.value) {
+        AppLogger.info(
+          '图片下载阶段耗时',
+          tag: 'ImageDownload',
+          fields: {
+            'type': 'network',
+            'event': 'image_download_timing',
+            'traceId': diagnosticExtra['traceId'],
+            'attemptId': diagnosticExtra['attemptId'],
+            'coreRequestId': diagnosticExtra['coreRequestId'],
+            'host': url.host,
+            'channel': channel.name,
+            'queueMs': queueMs,
+            'headMs': headMs,
+            'redirectHops': diagnosticExtra[RedirectInterceptor.hopsKey],
+            'bodyMs':
+                bodyMs ?? (headMs == null ? null : totalMs - queueMs - headMs),
+            'consumerMs': bodyMs == null
+                ? null
+                : totalMs - queueMs - headMs! - bodyMs,
+            'totalMs': totalMs,
+            'bytes': receivedBytes,
+            'status': status,
+            'completed': completed,
+            'httpVersion': protocol,
+            'connection': connection,
+          },
+        );
+      }
     }
   }
 }

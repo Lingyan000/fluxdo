@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1544" height="712" viewBox="0 0 1544 712" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">
+<rect width="1544" height="712" fill="#ffffff"/>
+<defs><pattern id="na" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#c8c8c8" stroke-width="2"/></pattern></defs>
+<text x="16" y="30" font-size="20" font-weight="bold">QUIC small: many small streams at once [req/s]</text>
+<text x="16" y="56" fill="#333">Linux 6.14.0-33-generic · amd64 · 16 cpus · docker 29.2.1</text>
+<text x="16" y="74" fill="#333">2026-09-19 17:15 UTC · rama 0b0ef9642-dirty · workload 3000 × 64K · 5 runs, median shown</text>
+<text x="16" y="110" fill="#555">rows: client · columns: server</text>
+<text x="260" y="140" text-anchor="middle">rama-boring</text>
+<text x="428" y="140" text-anchor="middle">rama-rustls-ring</text>
+<text x="596" y="140" text-anchor="middle">rama-rustls-aws-lc</text>
+<text x="764" y="140" text-anchor="middle">quinn</text>
+<text x="932" y="140" text-anchor="middle">quiche</text>
+<text x="1100" y="140" text-anchor="middle">aioquic</text>
+<text x="1268" y="140" text-anchor="middle">quic-go</text>
+<text x="1436" y="140" text-anchor="middle">ngtcp2</text>
+<text x="168" y="182" text-anchor="end">rama-boring</text>
+<rect x="176" y="150" width="168" height="54" fill="#3963f8" stroke="#fff"/>
+<text x="260" y="175" text-anchor="middle" font-weight="bold" fill="#111">2091</text>
+<text x="260" y="193" text-anchor="middle" font-size="10" fill="#111">2038 – 2099</text>
+<rect x="344" y="150" width="168" height="54" fill="#3762f8" stroke="#fff"/>
+<text x="428" y="175" text-anchor="middle" font-weight="bold" fill="#111">2105</text>
+<text x="428" y="193" text-anchor="middle" font-size="10" fill="#111">2074 – 2118</text>
+<rect x="512" y="150" width="168" height="54" fill="#3a64f8" stroke="#fff"/>
+<text x="596" y="175" text-anchor="middle" font-weight="bold" fill="#111">2075</text>
+<text x="596" y="193" text-anchor="middle" font-size="10" fill="#111">2034 – 2083</text>
+<rect x="680" y="150" width="168" height="54" fill="#5d80f8" stroke="#fff"/>
+<text x="764" y="175" text-anchor="middle" font-weight="bold" fill="#111">1674</text>
+<text x="764" y="193" text-anchor="middle" font-size="10" fill="#111">1635 – 1694</text>
+<rect x="848" y="150" width="168" height="54" fill="#b1c4f8" stroke="#fff"/>
+<text x="932" y="175" text-anchor="middle" font-weight="bold" fill="#111">695</text>
+<text x="932" y="193" text-anchor="middle" font-size="10" fill="#111">688 – 700</text>
+<rect x="1016" y="150" width="168" height="54" fill="#e0e9f8" stroke="#fff"/>
+<text x="1100" y="175" text-anchor="middle" font-weight="bold" fill="#111">155</text>
+<text x="1100" y="193" text-anchor="middle" font-size="10" fill="#111">154 – 155</text>
+<rect x="1184" y="150" width="168" height="54" fill="#335ef8" stroke="#fff"/>
+<text x="1268" y="175" text-anchor="middle" font-weight="bold" fill="#111">2153</text>
+<text x="1268" y="193" text-anchor="middle" font-size="10" fill="#111">2128 – 2161</text>
+<rect x="1352" y="150" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="182" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="236" text-anchor="end">rama-rustls-ring</text>
+<rect x="176" y="204" width="168" height="54" fill="#3a64f8" stroke="#fff"/>
+<text x="260" y="229" text-anchor="middle" font-weight="bold" fill="#111">2079</text>
+<text x="260" y="247" text-anchor="middle" font-size="10" fill="#111">2014 – 2089</text>
+<rect x="344" y="204" width="168" height="54" fill="#3c65f8" stroke="#fff"/>
+<text x="428" y="229" text-anchor="middle" font-weight="bold" fill="#111">2057</text>
+<text x="428" y="247" text-anchor="middle" font-size="10" fill="#111">1977 – 2069</text>
+<rect x="512" y="204" width="168" height="54" fill="#3863f8" stroke="#fff"/>
+<text x="596" y="229" text-anchor="middle" font-weight="bold" fill="#111">2093</text>
+<text x="596" y="247" text-anchor="middle" font-size="10" fill="#111">2018 – 2107</text>
+<rect x="680" y="204" width="168" height="54" fill="#5e81f8" stroke="#fff"/>
+<text x="764" y="229" text-anchor="middle" font-weight="bold" fill="#111">1658</text>
+<text x="764" y="247" text-anchor="middle" font-size="10" fill="#111">1641 – 1678</text>
+<rect x="848" y="204" width="168" height="54" fill="#b1c4f8" stroke="#fff"/>
+<text x="932" y="229" text-anchor="middle" font-weight="bold" fill="#111">694</text>
+<text x="932" y="247" text-anchor="middle" font-size="10" fill="#111">689 – 712</text>
+<rect x="1016" y="204" width="168" height="54" fill="#e0eaf8" stroke="#fff"/>
+<text x="1100" y="229" text-anchor="middle" font-weight="bold" fill="#111">153</text>
+<text x="1100" y="247" text-anchor="middle" font-size="10" fill="#111">148 – 153</text>
+<rect x="1184" y="204" width="168" height="54" fill="#3660f8" stroke="#fff"/>
+<text x="1268" y="229" text-anchor="middle" font-weight="bold" fill="#111">2124</text>
+<text x="1268" y="247" text-anchor="middle" font-size="10" fill="#111">2100 – 2144</text>
+<rect x="1352" y="204" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="236" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="290" text-anchor="end">rama-rustls-aws-lc</text>
+<rect x="176" y="258" width="168" height="54" fill="#3b64f8" stroke="#fff"/>
+<text x="260" y="283" text-anchor="middle" font-weight="bold" fill="#111">2068</text>
+<text x="260" y="301" text-anchor="middle" font-size="10" fill="#111">2032 – 2092</text>
+<rect x="344" y="258" width="168" height="54" fill="#3862f8" stroke="#fff"/>
+<text x="428" y="283" text-anchor="middle" font-weight="bold" fill="#111">2096</text>
+<text x="428" y="301" text-anchor="middle" font-size="10" fill="#111">2084 – 2112</text>
+<rect x="512" y="258" width="168" height="54" fill="#3b65f8" stroke="#fff"/>
+<text x="596" y="283" text-anchor="middle" font-weight="bold" fill="#111">2060</text>
+<text x="596" y="301" text-anchor="middle" font-size="10" fill="#111">1977 – 2074</text>
+<rect x="680" y="258" width="168" height="54" fill="#5c7ff8" stroke="#fff"/>
+<text x="764" y="283" text-anchor="middle" font-weight="bold" fill="#111">1681</text>
+<text x="764" y="301" text-anchor="middle" font-size="10" fill="#111">1636 – 1693</text>
+<rect x="848" y="258" width="168" height="54" fill="#b2c4f8" stroke="#fff"/>
+<text x="932" y="283" text-anchor="middle" font-weight="bold" fill="#111">686</text>
+<text x="932" y="301" text-anchor="middle" font-size="10" fill="#111">677 – 720</text>
+<rect x="1016" y="258" width="168" height="54" fill="#e0e9f8" stroke="#fff"/>
+<text x="1100" y="283" text-anchor="middle" font-weight="bold" fill="#111">153</text>
+<text x="1100" y="301" text-anchor="middle" font-size="10" fill="#111">152 – 154</text>
+<rect x="1184" y="258" width="168" height="54" fill="#335ef8" stroke="#fff"/>
+<text x="1268" y="283" text-anchor="middle" font-weight="bold" fill="#111">2157</text>
+<text x="1268" y="301" text-anchor="middle" font-size="10" fill="#111">2145 – 2186</text>
+<rect x="1352" y="258" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="290" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="344" text-anchor="end">quinn</text>
+<rect x="176" y="312" width="168" height="54" fill="#3660f8" stroke="#fff"/>
+<text x="260" y="337" text-anchor="middle" font-weight="bold" fill="#111">2126</text>
+<text x="260" y="355" text-anchor="middle" font-size="10" fill="#111">2069 – 2137</text>
+<rect x="344" y="312" width="168" height="54" fill="#3a64f8" stroke="#fff"/>
+<text x="428" y="337" text-anchor="middle" font-weight="bold" fill="#111">2072</text>
+<text x="428" y="355" text-anchor="middle" font-size="10" fill="#111">2052 – 2097</text>
+<rect x="512" y="312" width="168" height="54" fill="#3661f8" stroke="#fff"/>
+<text x="596" y="337" text-anchor="middle" font-weight="bold" fill="#111">2116</text>
+<text x="596" y="355" text-anchor="middle" font-size="10" fill="#111">2109 – 2128</text>
+<rect x="680" y="312" width="168" height="54" fill="#5f82f8" stroke="#fff"/>
+<text x="764" y="337" text-anchor="middle" font-weight="bold" fill="#111">1643</text>
+<text x="764" y="355" text-anchor="middle" font-size="10" fill="#111">1634 – 1651</text>
+<rect x="848" y="312" width="168" height="54" fill="#b3c5f8" stroke="#fff"/>
+<text x="932" y="337" text-anchor="middle" font-weight="bold" fill="#111">671</text>
+<text x="932" y="355" text-anchor="middle" font-size="10" fill="#111">666 – 673</text>
+<rect x="1016" y="312" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1100" y="344" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1184" y="312" width="168" height="54" fill="#335ef8" stroke="#fff"/>
+<text x="1268" y="337" text-anchor="middle" font-weight="bold" fill="#111">2158</text>
+<text x="1268" y="355" text-anchor="middle" font-size="10" fill="#111">2126 – 2174</text>
+<rect x="1352" y="312" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="344" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="398" text-anchor="end">quiche</text>
+<rect x="176" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="260" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="344" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="428" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="512" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="596" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="680" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="764" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="848" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="932" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1016" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1100" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1184" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1268" y="398" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1352" y="366" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="398" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="452" text-anchor="end">aioquic</text>
+<rect x="176" y="420" width="168" height="54" fill="#e7eff8" stroke="#fff"/>
+<text x="260" y="445" text-anchor="middle" font-weight="bold" fill="#111">68.5</text>
+<text x="260" y="463" text-anchor="middle" font-size="10" fill="#111">66.1 – 68.9</text>
+<rect x="344" y="420" width="168" height="54" fill="#e7eff8" stroke="#fff"/>
+<text x="428" y="445" text-anchor="middle" font-weight="bold" fill="#111">68.6</text>
+<text x="428" y="463" text-anchor="middle" font-size="10" fill="#111">64.9 – 71.2</text>
+<rect x="512" y="420" width="168" height="54" fill="#e7eff8" stroke="#fff"/>
+<text x="596" y="445" text-anchor="middle" font-weight="bold" fill="#111">67.5</text>
+<text x="596" y="463" text-anchor="middle" font-size="10" fill="#111">63.7 – 69.3</text>
+<rect x="680" y="420" width="168" height="54" fill="#e7eff8" stroke="#fff"/>
+<text x="764" y="445" text-anchor="middle" font-weight="bold" fill="#111">67.3</text>
+<text x="764" y="463" text-anchor="middle" font-size="10" fill="#111">64.5 – 68.3</text>
+<rect x="848" y="420" width="168" height="54" fill="#e8f0f8" stroke="#fff"/>
+<text x="932" y="445" text-anchor="middle" font-weight="bold" fill="#111">52.4</text>
+<text x="932" y="463" text-anchor="middle" font-size="10" fill="#111">50.5 – 53.3</text>
+<rect x="1016" y="420" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1100" y="452" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1184" y="420" width="168" height="54" fill="#e7eff8" stroke="#fff"/>
+<text x="1268" y="445" text-anchor="middle" font-weight="bold" fill="#111">68.0</text>
+<text x="1268" y="463" text-anchor="middle" font-size="10" fill="#111">63.9 – 69.2</text>
+<rect x="1352" y="420" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="452" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="506" text-anchor="end">quic-go</text>
+<rect x="176" y="474" width="168" height="54" fill="#325df8" stroke="#fff"/>
+<text x="260" y="499" text-anchor="middle" font-weight="bold" fill="#111">2167</text>
+<text x="260" y="517" text-anchor="middle" font-size="10" fill="#111">2110 – 2199</text>
+<rect x="344" y="474" width="168" height="54" fill="#335ef8" stroke="#fff"/>
+<text x="428" y="499" text-anchor="middle" font-weight="bold" fill="#111">2159</text>
+<text x="428" y="517" text-anchor="middle" font-size="10" fill="#111">2139 – 2170</text>
+<rect x="512" y="474" width="168" height="54" fill="#3560f8" stroke="#fff"/>
+<text x="596" y="499" text-anchor="middle" font-weight="bold" fill="#111">2129</text>
+<text x="596" y="517" text-anchor="middle" font-size="10" fill="#111">2104 – 2143</text>
+<rect x="680" y="474" width="168" height="54" fill="#557af8" stroke="#fff"/>
+<text x="764" y="499" text-anchor="middle" font-weight="bold" fill="#111">1762</text>
+<text x="764" y="517" text-anchor="middle" font-size="10" fill="#111">1734 – 1777</text>
+<rect x="848" y="474" width="168" height="54" fill="#b1c4f8" stroke="#fff"/>
+<text x="932" y="499" text-anchor="middle" font-weight="bold" fill="#111">698</text>
+<text x="932" y="517" text-anchor="middle" font-size="10" fill="#111">672 – 707</text>
+<rect x="1016" y="474" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1100" y="506" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1184" y="474" width="168" height="54" fill="#1f4ef8" stroke="#fff"/>
+<text x="1268" y="499" text-anchor="middle" font-weight="bold" fill="#fff">2382</text>
+<text x="1268" y="517" text-anchor="middle" font-size="10" fill="#fff">2361 – 2387</text>
+<rect x="1352" y="474" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="506" text-anchor="middle" fill="#666">n/a</text>
+<text x="168" y="560" text-anchor="end">ngtcp2</text>
+<rect x="176" y="528" width="168" height="54" fill="#8ea8f8" stroke="#fff"/>
+<text x="260" y="553" text-anchor="middle" font-weight="bold" fill="#111">1096</text>
+<text x="260" y="571" text-anchor="middle" font-size="10" fill="#111">1090 – 1111</text>
+<rect x="344" y="528" width="168" height="54" fill="#8da7f8" stroke="#fff"/>
+<text x="428" y="553" text-anchor="middle" font-weight="bold" fill="#111">1107</text>
+<text x="428" y="571" text-anchor="middle" font-size="10" fill="#111">1086 – 1112</text>
+<rect x="512" y="528" width="168" height="54" fill="#8ea7f8" stroke="#fff"/>
+<text x="596" y="553" text-anchor="middle" font-weight="bold" fill="#111">1103</text>
+<text x="596" y="571" text-anchor="middle" font-size="10" fill="#111">1087 – 1108</text>
+<rect x="680" y="528" width="168" height="54" fill="#8da7f8" stroke="#fff"/>
+<text x="764" y="553" text-anchor="middle" font-weight="bold" fill="#111">1111</text>
+<text x="764" y="571" text-anchor="middle" font-size="10" fill="#111">1100 – 1121</text>
+<rect x="848" y="528" width="168" height="54" fill="#a6bbf8" stroke="#fff"/>
+<text x="932" y="553" text-anchor="middle" font-weight="bold" fill="#111">819</text>
+<text x="932" y="571" text-anchor="middle" font-size="10" fill="#111">816 – 826</text>
+<rect x="1016" y="528" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1100" y="560" text-anchor="middle" fill="#666">n/a</text>
+<rect x="1184" y="528" width="168" height="54" fill="#90a9f8" stroke="#fff"/>
+<text x="1268" y="553" text-anchor="middle" font-weight="bold" fill="#111">1081</text>
+<text x="1268" y="571" text-anchor="middle" font-size="10" fill="#111">1072 – 1089</text>
+<rect x="1352" y="528" width="168" height="54" fill="url(#na)" stroke="#fff"/>
+<text x="1436" y="560" text-anchor="middle" fill="#666">n/a</text>
+<text x="16" y="612" fill="#555" font-size="12">loopback bridge on one host through one forwarding container; higher is better</text>
+<text x="16" y="630" fill="#555" font-size="12">compares pairs on this host only</text>
+</svg>
