@@ -16,12 +16,14 @@ import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../services/network/fingerprint/fingerprint_presets.dart';
 import 'fingerprint_preset_dialog.dart';
-import 'doh_settings_card.dart' show ensureWindowsCertTrusted;
+import 'doh_settings_card.dart';
+import 'http_proxy_card.dart';
+import 'network_connection_overview.dart';
 
 /// 网络状态卡片
 ///
 /// 首块是当前生效的网络栈与出站路径（指纹、DNS、代理、WebView 是否经核心），
-/// 启动失败、自动降级等异常就地给出原因与恢复入口；末块是兼容模式开关。
+/// 启动失败、自动降级等异常就地给出原因与恢复入口，配置集中在图中节点。
 class EngineCard extends StatelessWidget {
   const EngineCard({super.key});
 
@@ -45,22 +47,25 @@ class EngineCard extends StatelessWidget {
         final startFailed =
             settings.lastStartFailed && !settings.isApplying.value;
         final autoFellBack = fallback.hasFallenBack;
-        return SegmentedCardGroup(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 显式传入当前快照，避免 const 子组件保留旧的服务状态。
-            _StatusHeader(
+            _ConnectionOverview(
               status: NetCoreService.instance.status,
               applying: settings.isApplying.value || settings.pendingStart,
             ),
-            _FingerprintPresetRow(
-              selected: settings.current.fingerprintPreset,
-              status: NetCoreService.instance.status,
-              applying: settings.isApplying.value,
-            ),
-            if (startFailed) const _StartFailedRow(),
-            if (autoFellBack && !startFailed) const _FallbackRow(),
-            if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
-            _WebViewSwitch(webview: webview),
+            if (startFailed ||
+                autoFellBack ||
+                webview.sessionFallbackEnabled) ...[
+              const SizedBox(height: 3),
+              SegmentedCardGroup(
+                children: [
+                  if (startFailed) const _StartFailedRow(),
+                  if (autoFellBack && !startFailed) const _FallbackRow(),
+                  if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
+                ],
+              ),
+            ],
           ],
         );
       },
@@ -68,236 +73,95 @@ class EngineCard extends StatelessWidget {
   }
 }
 
-class _FingerprintPresetRow extends StatelessWidget {
-  const _FingerprintPresetRow({
-    required this.selected,
-    required this.status,
-    required this.applying,
-  });
-  final String selected;
+/// 每次服务通知都传入完整快照，避免状态卡保留旧的生效信息。
+class _ConnectionOverview extends StatelessWidget {
+  const _ConnectionOverview({required this.status, required this.applying});
+
   final NetCoreStatus status;
   final bool applying;
 
   @override
   Widget build(BuildContext context) {
-    final settings = NetworkSettingsService.instance;
     final l10n = context.l10n;
-    final selectedName =
-        FingerprintPreset.labelFor(selected) ?? l10n.fingerprintPreset_auto;
-    final activeName =
-        FingerprintPreset.labelFor(status.templatePreset) ??
-        switch (status.templateSource) {
-          'sampled' => l10n.fingerprintPreset_sampled,
-          'cached' => l10n.fingerprintPreset_cached,
-          _ => l10n.fingerprintPreset_standard,
-        };
-    return ListTile(
-      leading: const Icon(Symbols.fingerprint_rounded),
-      title: Text(l10n.fingerprintPreset_title),
-      subtitle: Text(
-        '$selectedName${status.running ? '\n${l10n.fingerprintPreset_active(activeName)}' : ''}',
-      ),
-      trailing: const Icon(Symbols.chevron_right_rounded),
-      enabled: !applying,
-      onTap: () async {
+    final service = NetworkSettingsService.instance;
+    final settings = service.current;
+    final effective = resolveEffectiveAdapter();
+    final fallback = effective.reason == AdapterReason.fallback;
+    final webview = WebViewAdapterSettingsService.instance;
+    final useDoh =
+        (!fallback || (webview.effectiveEnabled && status.webViewMitm)) &&
+        settings.dohEnabled;
+    final server = service.servers
+        .where((server) => server.url == settings.selectedServerUrl)
+        .firstOrNull;
+    final dns = useDoh
+        ? '${server?.name ?? Uri.tryParse(settings.selectedServerUrl)?.host ?? "DoH"} · DoH'
+        : l10n.networkStatus_dnsSystem;
+    // 应急适配器不使用应用代理；其出口由系统决定，不能沿用核心的标签。
+    final coreOutbound = ProxySettingsService.instance.current.isValid
+        ? l10n.networkStatus_proxyApp
+        : status.systemProxy
+        ? l10n.networkStatus_systemRules
+        : l10n.networkStatus_direct;
+
+    return NetworkConnectionOverview(
+      phase: applying
+          ? ConnectionPhase.applying
+          : fallback
+          ? ConnectionPhase.fallback
+          : effective.reason == AdapterReason.coreWarmingUp
+          ? ConnectionPhase.warming
+          : ConnectionPhase.running,
+      engine: getAdapterDisplayName(effective.type),
+      dns: dns,
+      outbound: fallback ? l10n.networkStatus_systemNetwork : coreOutbound,
+      webViewOutbound: coreOutbound,
+      compatibility: webview.effectiveEnabled,
+      webViewViaCore: status.running && status.webViewMitm,
+      onRestart: service.restartProxy,
+      templateName:
+          FingerprintPreset.labelFor(settings.fingerprintPreset) ??
+          l10n.fingerprintPreset_auto,
+      templateDetail: status.running
+          ? l10n.fingerprintPreset_active(
+              FingerprintPreset.labelFor(status.templatePreset) ??
+                  switch (status.templateSource) {
+                    'sampled' => l10n.fingerprintPreset_sampled,
+                    'cached' => l10n.fingerprintPreset_cached,
+                    _ => l10n.fingerprintPreset_standard,
+                  },
+            )
+          : l10n.networkStatus_fallbackScope,
+      onTemplate: () async {
         final result = await showAppDialog<String>(
           context: context,
-          builder: (_) => FingerprintPresetDialog(selected: selected),
+          builder: (_) =>
+              FingerprintPresetDialog(selected: settings.fingerprintPreset),
         );
         if (result == null) return;
         try {
-          await settings.setFingerprintPreset(result);
+          await service.setFingerprintPreset(result);
         } catch (_) {
           ToastService.showError(l10n.fingerprintPreset_saveFailed);
         }
       },
-    );
-  }
-}
-
-/// 状态头：当前网络栈 + 出站路径摘要 + 重启入口。
-class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({required this.status, required this.applying});
-  final NetCoreStatus status;
-  final bool applying;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final l10n = context.l10n;
-    final settings = NetworkSettingsService.instance;
-
-    final effective = resolveEffectiveAdapter();
-    final engineName = getAdapterDisplayName(effective.type);
-    final isFallback = effective.reason == AdapterReason.fallback;
-    final webviewEnabled =
-        WebViewAdapterSettingsService.instance.effectiveEnabled;
-
-    final IconData icon;
-    final Color iconColor;
-    final Color iconBackground;
-    final String subtitle;
-    if (applying) {
-      icon = Symbols.sync_rounded;
-      iconColor = colors.onSecondaryContainer;
-      iconBackground = colors.secondaryContainer;
-      subtitle = l10n.networkStatus_applying;
-    } else if (isFallback) {
-      icon = Symbols.warning_rounded;
-      iconColor = colors.onErrorContainer;
-      iconBackground = colors.errorContainer;
-      subtitle = l10n.engineStatus_reasonFallback;
-    } else if (webviewEnabled) {
-      // WebView 在最外层分流：主站 API 走 WebView，其余仍走网络核心
-      icon = Symbols.call_split_rounded;
-      iconColor = colors.onTertiaryContainer;
-      iconBackground = colors.tertiaryContainer;
-      subtitle = l10n.engineStatus_webviewSplit(engineName);
-    } else {
-      icon = Symbols.bolt_rounded;
-      iconColor = colors.onPrimaryContainer;
-      iconBackground = colors.primaryContainer;
-      subtitle = effective.reason == AdapterReason.coreWarmingUp
-          ? l10n.engineStatus_reasonCoreWarmingUp
-          : l10n.engineStatus_reasonCore;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBackground,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 22, fill: 1, color: iconColor),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(engineName, style: theme.textTheme.titleMedium),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-                if (!isFallback && status.running) ...[
-                  const SizedBox(height: 10),
-                  _RouteChips(status: status),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(
-            width: 48,
-            height: 40,
-            child: Center(
-              child: applying
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colors.primary,
-                      ),
-                    )
-                  : IconButton(
-                      tooltip: l10n.networkStatus_restart,
-                      icon: const Icon(Symbols.refresh_rounded, size: 20),
-                      onPressed: settings.restartProxy,
-                    ),
-            ),
-          ),
-        ],
+      onDns: () =>
+          _showNodeSettings(context, 'DNS / ECH', const DohSettingsCard()),
+      onProxy: () => _showNodeSettings(
+        context,
+        l10n.networkMap_outbound,
+        const HttpProxyCard(),
       ),
-    );
-  }
-}
-
-/// 出站路径摘要：DNS、代理、WebView 是否经核心，一眼看清请求怎么出去。
-class _RouteChips extends StatelessWidget {
-  const _RouteChips({required this.status});
-
-  final NetCoreStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final settings = NetworkSettingsService.instance.current;
-    final appProxy = ProxySettingsService.instance.current.isValid;
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        settings.dohEnabled
-            ? const _RouteChip(icon: Symbols.shield_rounded, label: 'DoH')
-            : _RouteChip(
-                icon: Symbols.dns_rounded,
-                label: l10n.networkStatus_dnsSystem,
-              ),
-        if (appProxy)
-          _RouteChip(
-            icon: Symbols.vpn_key_rounded,
-            label: l10n.networkStatus_proxyApp,
-          )
-        else if (status.systemProxy)
-          _RouteChip(
-            icon: Symbols.settings_ethernet_rounded,
-            label: l10n.networkStatus_proxySystem,
-          )
-        else
-          _RouteChip(
-            icon: Symbols.arrow_forward_rounded,
-            label: l10n.networkStatus_direct,
-          ),
-        if (status.webViewMitm)
-          _RouteChip(
-            icon: Symbols.language_rounded,
-            label: l10n.networkStatus_webViewViaCore,
-          ),
-      ],
-    );
-  }
-}
-
-class _RouteChip extends StatelessWidget {
-  const _RouteChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: colors.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
+      onCompatibility: () => _showNodeSettings(
+        context,
+        l10n.webviewAdapter_title,
+        AnimatedBuilder(
+          animation: Listenable.merge([
+            webview.notifier,
+            webview.effectiveNotifier,
+          ]),
+          builder: (context, _) => _WebViewSwitch(webview: webview),
+        ),
       ),
     );
   }
@@ -315,12 +179,27 @@ class _StartFailedRow extends StatelessWidget {
       icon: Symbols.error_rounded,
       isError: true,
       message: l10n.networkStatus_startFailed,
-      detail: error,
       actions: [
         if (error != null)
           TextButton(
-            onPressed: () => _copy(error),
-            child: Text(l10n.common_copy),
+            onPressed: () => showAppDialog<void>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text(l10n.networkStatus_startFailed),
+                content: SingleChildScrollView(child: SelectableText(error)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text(l10n.common_close),
+                  ),
+                  TextButton(
+                    onPressed: () => _copy(error),
+                    child: Text(l10n.common_copy),
+                  ),
+                ],
+              ),
+            ),
+            child: Text(l10n.common_details),
           ),
         TextButton(
           onPressed: NetworkSettingsService.instance.restartProxy,
@@ -437,14 +316,12 @@ class _NoticeRow extends StatelessWidget {
   const _NoticeRow({
     required this.icon,
     required this.message,
-    this.detail,
     this.isError = false,
     this.actions = const [],
   });
 
   final IconData icon;
   final String message;
-  final String? detail;
   final bool isError;
   final List<Widget> actions;
 
@@ -475,17 +352,6 @@ class _NoticeRow extends StatelessWidget {
                           color: accent,
                         ),
                       ),
-                      if (detail != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          detail!,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -543,4 +409,66 @@ class _WebViewSwitch extends StatelessWidget {
 void _copy(String text) {
   Clipboard.setData(ClipboardData(text: text));
   ToastService.showSuccess(S.current.common_copiedToClipboard);
+}
+
+/// 配置复用原有控件与保存流程；小屏底部面板，大屏居中面板。
+Future<void> _showNodeSettings(
+  BuildContext context,
+  String title,
+  Widget child,
+) async {
+  Widget content(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: context.l10n.common_close,
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Symbols.close_rounded),
+              ),
+            ],
+          ),
+          Flexible(child: SingleChildScrollView(child: child)),
+        ],
+      ),
+    ),
+  );
+  if (MediaQuery.sizeOf(context).width < 600) {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      builder: content,
+    );
+  } else {
+    await showAppDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            maxHeight: MediaQuery.sizeOf(context).height * .85,
+          ),
+          child: content(context),
+        ),
+      ),
+    );
+  }
 }

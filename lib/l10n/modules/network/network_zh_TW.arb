@@ -120,5 +120,24 @@
         "type": "String"
       }
     }
-  }
+  },
+  "networkStatus_running": "網路核心執行中",
+  "networkStatus_warming": "網路核心準備中",
+  "networkStatus_backup": "正在使用備用連線",
+  "networkStatus_template": "連線範本",
+  "networkStatus_systemNetwork": "系統網路",
+  "networkStatus_systemRules": "系統代理規則",
+  "networkStatus_routeNote": "這是目前的請求分流規則，不代表即時連通性。系統 VPN 仍可能影響出口。",
+  "networkStatus_splitNote": "相容模式接管支援的論壇請求與同源圖片；長輪詢、下載及驗證端點仍由一般介面卡處理。",
+  "networkStatus_dnsScope": "解析方式顯示網路核心的設定；WebView 僅在經核心時使用此設定。",
+  "networkStatus_fallbackScope": "備用連線跟隨系統網路，應用程式內 DoH、代理和連線範本暫不用於這條路徑。",
+  "networkStatus_updatingRoutes": "設定套用完成後更新路徑",
+  "fingerprintPreset_manual": "手動選擇",
+  "fingerprintPreset_scopeTitle": "範本會影響什麼？",
+  "networkMap_bypassed": "已關閉",
+  "networkMap_outbound": "出口",
+  "networkMap_tapToConfigure": "點擊節點設定 · 連線表示設定關聯",
+  "networkMap_showList": "切換一般顯示",
+  "networkMap_showGraph": "切換圖形顯示",
+  "networkMap_restarting": "正在重新啟動網路核心…"
 }

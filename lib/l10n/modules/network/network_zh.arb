@@ -124,5 +124,24 @@
         "type": "String"
       }
     }
-  }
+  },
+  "networkStatus_running": "网络核心运行中",
+  "networkStatus_warming": "网络核心准备中",
+  "networkStatus_backup": "正在使用备用连接",
+  "networkStatus_template": "连接模板",
+  "networkStatus_systemNetwork": "系统网络",
+  "networkStatus_systemRules": "系统代理规则",
+  "networkStatus_routeNote": "这是当前请求分流规则，不代表实时连通性。系统 VPN 仍可能影响出口。",
+  "networkStatus_splitNote": "兼容模式接管支持的论坛请求和同源图片；长轮询、下载及验证端点仍由常规适配器处理。",
+  "networkStatus_dnsScope": "解析方式显示网络核心的配置；WebView 仅在经核心时使用此配置。",
+  "networkStatus_fallbackScope": "备用连接跟随系统网络，应用内 DoH、代理和连接模板暂不用于这条路径。",
+  "networkStatus_updatingRoutes": "设置应用完成后更新路径",
+  "fingerprintPreset_manual": "手动选择",
+  "fingerprintPreset_scopeTitle": "模板会影响什么？",
+  "networkMap_bypassed": "已关闭",
+  "networkMap_outbound": "出口",
+  "networkMap_tapToConfigure": "点击节点配置 · 连线表示配置关联",
+  "networkMap_showList": "切换普通展示",
+  "networkMap_showGraph": "切换图形展示",
+  "networkMap_restarting": "正在重启网络核心…"
 }

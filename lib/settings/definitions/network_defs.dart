@@ -4,10 +4,8 @@ import 'package:app_icons/app_icons.dart';
 import '../../l10n/s.dart';
 import '../../pages/network_settings_page/widgets/cf_verify_card.dart';
 import '../../pages/network_settings_page/widgets/debug_tools_card.dart';
-import '../../pages/network_settings_page/widgets/doh_settings_card.dart';
 import '../../pages/network_settings_page/widgets/engine_card.dart';
 import '../../pages/network_settings_page/widgets/eruda_card.dart';
-import '../../pages/network_settings_page/widgets/http_proxy_card.dart';
 import '../../pages/network_settings_page/widgets/rate_limit_card.dart';
 import '../../pages/network_settings_page/widgets/vpn_auto_toggle_card.dart';
 import '../settings_model.dart';
@@ -26,29 +24,9 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
         CustomModel(
           id: 'engine',
           title: l10n.networkSettings_status,
-          subtitle: '${l10n.network_adapterCore} · ${l10n.webviewAdapter_title}',
+          subtitle:
+              'DNS · DoH · ECH · ${l10n.httpProxy_title} · ${l10n.webviewAdapter_title}',
           builder: (context, ref) => const EngineCard(),
-        ),
-      ],
-    ),
-
-    // 网络代理
-    SettingsGroup(
-      title: l10n.networkSettings_proxy,
-      icon: Symbols.dns_rounded,
-      wrapInCard: false,
-      items: [
-        CustomModel(
-          id: 'dohSettings',
-          title: 'DNS over HTTPS',
-          subtitle: l10n.networkSettings_proxy,
-          builder: (context, ref) => const DohSettingsCard(),
-        ),
-        CustomModel(
-          id: 'httpProxy',
-          title: l10n.httpProxy_title,
-          subtitle: l10n.networkSettings_proxy,
-          builder: (context, ref) => const HttpProxyCard(),
         ),
       ],
     ),

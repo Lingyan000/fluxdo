@@ -98,6 +98,9 @@ void main() {
         await tester.tap(find.text('open'));
         await tester.pumpAndSettle();
         expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+        await tester.ensureVisible(find.text('Windows'));
+        await tester.tap(find.text('Windows'));
+        await tester.pumpAndSettle();
         final last = find.text('Windows · Edge 154');
         await tester.ensureVisible(last);
         await tester.pumpAndSettle();
