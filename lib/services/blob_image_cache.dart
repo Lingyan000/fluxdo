@@ -119,6 +119,7 @@ class BlobImageCache {
     _testClient = client;
     _beforeWriteForTesting = beforeWrite;
     _touched.clear();
+    _missingPrimaries.clear();
     _generation++;
   }
 
@@ -225,13 +226,43 @@ class BlobImageCache {
   /// [onProgress] 下载字节进度(received, total;total 可能为 null ——
   /// 无 content-length)。缓存命中不回调;同 key 并发时**只有首个调用
   /// 方的回调生效**(共享同一下载,进度语义按首发方)。
+  ///
+  /// [fallbackUrl]:[url] 返回 404 时改取的地址(emoji 展示表情集缺图回退
+  /// 站点表情集)。**只认 404** —— 网络错误也回退会把临时故障固化成另一
+  /// 套画风落盘。确认缺图的地址本次运行内记住,后续直接取回退地址。
   static Future<Uint8List> fetch(
     String bucket,
     String url, {
     DownloadPriority priority = DownloadPriority.normal,
     void Function(int received, int? total)? onProgress,
     CancelToken? cancellation,
+    String? fallbackUrl,
   }) async {
+    if (fallbackUrl == null || fallbackUrl == url) {
+      return _fetchOne(bucket, url, priority, onProgress, cancellation);
+    }
+    final missingKey = _requestKey(bucket, url);
+    if (!_missingPrimaries.contains(missingKey)) {
+      try {
+        return await _fetchOne(bucket, url, priority, onProgress, cancellation);
+      } on HttpStatusException catch (e) {
+        if (e.statusCode != 404) rethrow;
+        _missingPrimaries.add(missingKey);
+      }
+    }
+    return _fetchOne(bucket, fallbackUrl, priority, onProgress, cancellation);
+  }
+
+  /// [fetch] 回退语义下已确认 404 的主地址(bucket + url)。
+  static final Set<String> _missingPrimaries = {};
+
+  static Future<Uint8List> _fetchOne(
+    String bucket,
+    String url,
+    DownloadPriority priority,
+    void Function(int received, int? total)? onProgress,
+    CancelToken? cancellation,
+  ) async {
     cancellation?.throwIfCancellationRequested();
     final cached = await read(bucket, url);
     cancellation?.throwIfCancellationRequested();
@@ -502,11 +533,16 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
     required this.bucket,
     this.scale = 1.0,
     this.priority = DownloadPriority.normal,
+    this.fallbackUrl,
   });
 
   final String url;
   final String bucket;
   final double scale;
+
+  /// [url] 404 时改取的地址(见 [BlobImageCache.fetch])。决定取到哪份
+  /// 字节,参与 == / hashCode。
+  final String? fallbackUrl;
 
   /// 初始下载优先级(用户主动打开的查看器传 high;正文/面板图默认
   /// normal,靠首帧 paint 的 [BlobImageCache.bump] 动态提级)。
@@ -555,6 +591,7 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
         key.url,
         priority: key.priority,
         cancellation: cancellation,
+        fallbackUrl: key.fallbackUrl,
         onProgress: (received, total) {
           if (chunkEvents.isClosed) return;
           chunkEvents.add(
@@ -590,11 +627,12 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
     return other is BlobImageProvider &&
         other.url == url &&
         other.bucket == bucket &&
-        other.scale == scale;
+        other.scale == scale &&
+        other.fallbackUrl == fallbackUrl;
   }
 
   @override
-  int get hashCode => Object.hash(url, bucket, scale);
+  int get hashCode => Object.hash(url, bucket, scale, fallbackUrl);
 
   @override
   String toString() => 'BlobImageProvider("$url", bucket: $bucket)';

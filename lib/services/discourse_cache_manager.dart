@@ -10,6 +10,7 @@ export '../utils/image_format.dart' show isNativeAnimatedUrl;
 export 'blob_image_cache.dart' show BlobImageCache, BlobImageProvider;
 import 'dio_http_client.dart' show DownloadPriority;
 export 'dio_http_client.dart' show DownloadPriority;
+import 'emoji_handler.dart';
 
 /// 旧 flutter_cache_manager 时代的缓存 cacheKey(2026-07 全量退役,
 /// 仅供迁移 v7/v8/v9 清理旧目录与 db 引用)。
@@ -72,14 +73,19 @@ ImageProvider discourseImageProvider(
 
 /// 创建 Emoji 图片 Provider
 ///
-/// 走 [BlobImageCache](Telegram 式 MD5 确定性寻址,零 sqlite 索引)。
+/// 走 [BlobImageCache](MD5 确定性寻址,零 sqlite 索引)。
 /// emoji 全集实测 100% 静态 PNG,单一路径即可;64px 目标尺寸走解码
 /// 闸门的小图旁路,由引擎 worker 池并行解码。
+///
+/// 标准 emoji 地址(含 cooked 里的站点表情集地址)统一改写到展示表情集
+/// [EmojiHandler.displaySet],缺图 404 回退站点表情集。
 ImageProvider emojiImageProvider(String url, {double scale = 1.0}) {
+  final displayUrl = EmojiHandler.displayUrl(url);
   return BlobImageProvider(
-    url,
+    displayUrl,
     bucket: BlobImageCache.emojiBucket,
     scale: scale,
+    fallbackUrl: EmojiHandler.fallbackUrl(displayUrl),
   );
 }
 

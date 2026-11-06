@@ -17,6 +17,18 @@ import 'network/interceptors/redirect_interceptor.dart';
 import 'network/discourse_dio.dart';
 import 'network/adapters/webview_http_adapter.dart';
 
+/// [DioHttpClient.fetchBytes] 的非 200 响应。
+///
+/// 继承 [http.ClientException] 保持既有 catch 语义不变;需要按状态码
+/// 分流的调用方(如 emoji 表情集缺图 404 回退)据 [statusCode] 判定,
+/// 不必解析消息文本。
+class HttpStatusException extends http.ClientException {
+  HttpStatusException(this.statusCode, Uri url)
+    : super('HTTP $statusCode for $url', url);
+
+  final int? statusCode;
+}
+
 /// 包装 Dio 的 http.BaseClient 实现,给 flutter_cache_manager / image 下载用。
 ///
 /// **双 dio 策略**(按 request URL host 选)
@@ -299,7 +311,7 @@ class DioHttpClient extends http.BaseClient {
         };
       }
       if (response.statusCode != 200) {
-        throw http.ClientException('HTTP ${response.statusCode} for $url', url);
+        throw HttpStatusException(response.statusCode, url);
       }
       final contentLength = int.tryParse(
         response.headers.value('content-length') ?? '',

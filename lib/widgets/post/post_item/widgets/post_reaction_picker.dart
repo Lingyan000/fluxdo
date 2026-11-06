@@ -8,10 +8,27 @@ import 'package:flutter/services.dart';
 
 import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
+import '../../../../services/dio_http_client.dart' show HttpStatusException;
 import '../../../../services/emoji_handler.dart';
 
 String _getEmojiUrl(String emojiName) {
   return EmojiHandler().getEmojiUrl(emojiName);
+}
+
+/// 本次运行内确认没有动态版(动态表情集 404)的表情,不再请求。
+final Set<String> _staticOnlyReactions = {};
+
+/// 动态表情地址;无动态版或已确认缺图返回 null。
+String? _animatedEmojiUrl(String reactionId) {
+  if (_staticOnlyReactions.contains(reactionId)) return null;
+  return EmojiHandler().animatedUrl(reactionId);
+}
+
+/// 动态表情取图失败:只有 404 才登记为无动态版(网络错误下次再试)。
+void _onAnimatedEmojiError(String reactionId, Object error) {
+  if (error is HttpStatusException && error.statusCode == 404) {
+    _staticOnlyReactions.add(reactionId);
+  }
 }
 
 // ============================== 布局常量 ==============================
@@ -233,8 +250,22 @@ class ReactionPickerController {
 
     _attachScrollListeners(context);
     _attachLifecycleObserver();
+    if (!MediaQuery.disableAnimationsOf(context)) _prefetchAnimations();
 
     enter.forward(from: 0);
+  }
+
+  /// 预取整组动态表情字节:高亮到哪个时动图已在本地,不用现场下载。
+  /// 只落缓存不解码,解码等真正高亮时再做。
+  void _prefetchAnimations() {
+    for (final id in _reactions) {
+      final url = _animatedEmojiUrl(id);
+      if (url == null) continue;
+      BlobImageCache.fetch(
+        BlobImageCache.emojiBucket,
+        url,
+      ).then<void>((_) {}, onError: (Object e) => _onAnimatedEmojiError(id, e));
+    }
   }
 
   /// 沿 context 向上找所有 Scrollable，订阅其 position 变化
@@ -706,6 +737,7 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
           isCurrent: ctrl.currentUserReaction?.id == ctrl.reactions[i],
           isHighlighted: isHighlighted,
           isNeighbor: isNeighbor,
+          animate: isHighlighted && !closing,
           pop: pop,
           lift: lift,
           onTap: _interactive
@@ -958,6 +990,7 @@ class _ReactionItem extends StatelessWidget {
     required this.isCurrent,
     required this.isHighlighted,
     required this.isNeighbor,
+    required this.animate,
     required this.pop,
     required this.lift,
     required this.onTap,
@@ -971,6 +1004,9 @@ class _ReactionItem extends StatelessWidget {
 
   /// 高亮项同行相邻:略缩小让位
   final bool isNeighbor;
+
+  /// 播放动态表情(高亮且面板未在收回)
+  final bool animate;
 
   /// 弹出进度(easeOutBack 会略超过 1)
   final double pop;
@@ -1005,7 +1041,11 @@ class _ReactionItem extends StatelessWidget {
         shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
       ),
       child: Center(
-        child: _EmojiImage(reactionId: reactionId, size: _kIconSize),
+        child: _ReactionEmoji(
+          reactionId: reactionId,
+          size: _kIconSize,
+          animate: animate,
+        ),
       ),
     );
 
@@ -1040,6 +1080,121 @@ class _ReactionItem extends StatelessWidget {
             child: content,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 面板槽位里的表情:静态图打底,[animate] 时叠动态表情。
+///
+/// 静止态是官方静态图而不是动图的某一帧 —— Noto 动画多从中性姿势起落
+/// (😀/😄 首尾帧是 🙂、🎉 首尾帧是空礼花筒),定格首/尾帧会变成另一个
+/// 表情。动图首帧到达后与静态图交叉淡化;停止时淡回静态图再卸载动图,
+/// 解码器随监听者释放。动图有透明像素,显示期间静态图必须隐去,否则
+/// 两层叠出重影。
+class _ReactionEmoji extends StatefulWidget {
+  const _ReactionEmoji({
+    required this.reactionId,
+    required this.size,
+    required this.animate,
+  });
+
+  final String reactionId;
+  final double size;
+  final bool animate;
+
+  @override
+  State<_ReactionEmoji> createState() => _ReactionEmojiState();
+}
+
+class _ReactionEmojiState extends State<_ReactionEmoji> {
+  /// 动图层是否挂载:开始播放即挂,停止后等淡出结束再卸
+  bool _mounted = false;
+
+  /// 动图首帧已到(此前保持静态图,避免空白闪烁)
+  bool _ready = false;
+
+  @override
+  void didUpdateWidget(_ReactionEmoji oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 换表情,或首帧未到就停止(透明度没动过,不会有淡出 onEnd):直接卸载
+    if (oldWidget.reactionId != widget.reactionId ||
+        (!widget.animate && !_ready)) {
+      _mounted = false;
+      _ready = false;
+    }
+  }
+
+  void _onFirstFrame() {
+    if (_ready || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.animate && !_ready) setState(() => _ready = true);
+    });
+  }
+
+  void _onFadeEnd() {
+    if (!widget.animate && _mounted) {
+      setState(() {
+        _mounted = false;
+        _ready = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animatedUrl = MediaQuery.disableAnimationsOf(context)
+        ? null
+        : _animatedEmojiUrl(widget.reactionId);
+    if (widget.animate && animatedUrl != null) _mounted = true;
+    final showAnimated = widget.animate && _ready;
+    final staticImage = _EmojiImage(
+      reactionId: widget.reactionId,
+      size: widget.size,
+    );
+    if (!_mounted || animatedUrl == null) return staticImage;
+
+    // 解码上限按高亮放大后的物理尺寸(源图 128px,不会放大)
+    final maxDimension =
+        (widget.size *
+                _kHighlightScale *
+                MediaQuery.devicePixelRatioOf(context))
+            .ceil();
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedOpacity(
+            opacity: showAnimated ? 0 : 1,
+            duration: _kHighlightDuration,
+            child: staticImage,
+          ),
+          AnimatedOpacity(
+            opacity: showAnimated ? 1 : 0,
+            duration: _kHighlightDuration,
+            onEnd: _onFadeEnd,
+            child: Image(
+              image: AvifImageProvider(
+                animatedUrl,
+                bucket: BlobImageCache.emojiBucket,
+                maxDimension: maxDimension,
+              ),
+              width: widget.size,
+              height: widget.size,
+              gaplessPlayback: true,
+              frameBuilder: (context, child, frame, _) {
+                if (frame != null) _onFirstFrame();
+                return child;
+              },
+              errorBuilder: (_, error, _) {
+                _onAnimatedEmojiError(widget.reactionId, error);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

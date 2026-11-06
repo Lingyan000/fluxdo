@@ -444,7 +444,14 @@ class TopicCardImages {
 
   static Future<void> _load(String url, String bucket) async {
     try {
-      final bytes = await BlobImageCache.fetch(bucket, url);
+      final bytes = await BlobImageCache.fetch(
+        bucket,
+        url,
+        // 与 emojiImageProvider 同一回退:展示表情集缺图取站点表情集
+        fallbackUrl: bucket == BlobImageCache.emojiBucket
+            ? EmojiHandler.fallbackUrl(url)
+            : null,
+      );
       if (bytes.isEmpty) return;
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       // 头像显示 32dp、emoji ~19dp;96px 解码对两者都双倍富余
