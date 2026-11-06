@@ -1,9 +1,12 @@
 import 'package:flutter/painting.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
+
 import 'avif_image_provider.dart';
 export 'avif_image_provider.dart' show AvifImageProvider;
 import 'blob_image_cache.dart';
+import '../utils/image_format.dart';
+export '../utils/image_format.dart' show isNativeAnimatedUrl;
 export 'blob_image_cache.dart' show BlobImageCache, BlobImageProvider;
 import 'dio_http_client.dart' show DownloadPriority;
 export 'dio_http_client.dart' show DownloadPriority;
@@ -34,25 +37,6 @@ bool _isAvifUrl(String url) {
   }
 }
 
-/// 检查 URL 是否指向需要走 native 解码器的动图(GIF / APNG / 动画 WebP)
-///
-/// 走 native_animated_image 的 Rust pipeline,绕开 Flutter Skia
-/// multi_frame_codec 的 #85831 bug。
-bool isNativeAnimatedUrl(String url) => _isNativeAnimatedUrl(url);
-
-bool _isNativeAnimatedUrl(String url) {
-  try {
-    final path = Uri.parse(url).path.toLowerCase();
-    // .gif 一定走 native(Skia 在某些 disposal 组合下会失败)
-    // .apng / .webp 也走 native(后续 Rust 端补全解码器)
-    return path.endsWith('.gif') ||
-        path.endsWith('.apng') ||
-        path.endsWith('.webp');
-  } catch (_) {
-    return false;
-  }
-}
-
 /// 创建 Discourse 图片 Provider
 ///
 /// 用于需要 ImageProvider 的场景（CircleAvatar、DecorationImage 等）
@@ -71,7 +55,7 @@ ImageProvider discourseImageProvider(
   if (_isAvifUrl(url)) {
     return AvifImageProvider(url, scale: scale, bucket: bucket);
   }
-  if (_isNativeAnimatedUrl(url)) {
+  if (isNativeAnimatedUrl(url)) {
     return NativeAnimatedImageProvider.fromBytesProvider(
       loader: () => BlobImageCache.fetch(bucket, url, priority: priority),
       tag: url,

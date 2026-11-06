@@ -1,4 +1,5 @@
 import 'request_cancellation.dart';
+import '../utils/image_format.dart';
 
 import 'dart:async';
 import 'dart:convert' show utf8;
@@ -264,27 +265,33 @@ class BlobImageCache {
     return flight.join(cancellation, onProgress);
   }
 
-  /// 按 bucket 选下载通道:emoji(KB 级,RTT 主导)走 12 槽 small
-  /// 高并发;贴纸原文件(面板预取型大动图)独立 3 槽防饿死内容;
-  /// 其余(正文/头像/原图/外部)走 6 槽 content。
-  static DownloadChannel _channelOf(String bucket) => switch (bucket) {
-    emojiBucket => DownloadChannel.small,
-    stickerOriginalBucket => DownloadChannel.sticker,
-    _ => DownloadChannel.content,
-  };
+  /// 按业务 bucket 分流，头像中走原生动图管线的类型另设组内上限。
+  /// 所有头像仍用同一缓存 bucket；静态头像最多 6，可能的动图最多 2，
+  /// 与 emoji 公平共享 12 槽。正文等 6 槽，贴纸原文件 3 槽。
+  /// 优先级与取消使用同一映射，避免请求与视野信号分配到不同队列。
+  static DownloadChannel _channelOf(String bucket, String url) =>
+      switch (bucket) {
+        emojiBucket => DownloadChannel.small,
+        avatarBucket =>
+          isNativeAnimatedUrl(url)
+              ? DownloadChannel.avatarAnimation
+              : DownloadChannel.avatar,
+        stickerOriginalBucket => DownloadChannel.sticker,
+        _ => DownloadChannel.content,
+      };
 
   /// 视野优先级信号(Telegram bumpPriority 同款语义):
   /// [bump] = 图片首帧 paint(真进视口)→ 排队中的请求插到高优队列;
   /// [sink] = widget dispose(滚出视口)→ 沉回低优队尾给新视野让路。
   /// 这里只调整排队优先级，在途 HTTP 不动。两者幂等。
   static void bump(String bucket, String url) =>
-      DioHttpClient.bumpPending(_channelOf(bucket), url);
+      DioHttpClient.bumpPending(_channelOf(bucket, url), url);
 
   static void sink(String bucket, String url) =>
-      DioHttpClient.sinkPending(_channelOf(bucket), url);
+      DioHttpClient.sinkPending(_channelOf(bucket, url), url);
 
   static void Function() retainForeground(String bucket, String url) =>
-      DioHttpClient.retainForeground(_channelOf(bucket), url);
+      DioHttpClient.retainForeground(_channelOf(bucket, url), url);
 
   static Future<Uint8List> _download(
     String bucket,
@@ -296,7 +303,7 @@ class BlobImageCache {
   ) async {
     final bytes = await (_testClient ?? DioHttpClient()).fetchBytes(
       Uri.parse(url),
-      channel: _channelOf(bucket),
+      channel: _channelOf(bucket, url),
       priority: priority,
       onProgress: onProgress,
       cancellation: cancellation,

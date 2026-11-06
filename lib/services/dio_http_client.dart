@@ -66,22 +66,16 @@ class DioHttpClient extends http.BaseClient {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
   };
 
-  /// 图片下载并发通道(下载侧按内容域分队,与缓存 bucket 分池同思路)。
-  ///
-  /// 曾是单一全局 8 槽 FIFO —— cache_manager 时代每个 manager 自带 10
-  /// 并发互相稀释,问题不显;全量走 blob 单一入口后,贴纸面板一开
-  /// (30+ 张几百 KB~几 MB 动图 + 批量预取)就把 8 槽全占满,正文图
-  /// 排在几十个大文件后面,表现为"贴纸一多正文图加载不出来"。
-  ///
-  /// 修法 = 按内容域分通道,物理隔离:
-  /// - **small 12 槽**:emoji 等 KB 级小文件。耗时被 RTT 主导而非带宽,
-  ///   高并发是纯赚(连接复用后无 TLS 风暴,浏览器 H2 加载 emoji 同为
-  ///   几十路);6 槽跑 200 张 ≈ 200/6×RTT≈5s,12 槽砍半。
-  /// - **content 6 槽**:正文/头像/原图/外部图(几十 KB~几 MB 混合,
-  ///   带宽敏感,并发过高互相挤占)；其中 1 槽保留给已首绘/主动请求。
-  /// - **sticker 3 槽**:贴纸原文件(面板预取型、单文件大),独立通道
-  ///   防挤占内容；其中1槽仅供high前台请求，后台最多使用2槽。
-  static final DownloadRequestQueue _smallSemaphore = DownloadRequestQueue(12);
+  /// 头像与 emoji 共享 12 槽小图池；静态头像最多 6 个、可能的动图
+  /// 头像最多 2 个，组间公平轮转，避免大动图阻塞静态头像。
+  /// 没有头像时 emoji 仍可使用原有 12 槽，不因固定分配而降低吞吐。
+  /// 正文/原图等 6 槽、贴纸原文件 3 槽各自独立，总上限仍为 21。
+  /// 槽位覆盖响应体消费及写盘背压，不随域名数量扩容；任务数约束
+  /// 不等同于字节预算或进程总内存上限，动图头像也受头像组上限约束。
+  static final DownloadRequestQueue _smallSemaphore = DownloadRequestQueue(
+    12,
+    groupLimits: {'small': 12, 'avatar': 6, 'avatarAnimation': 2},
+  );
   static final DownloadRequestQueue _contentSemaphore = DownloadRequestQueue(
     6,
     reservedHighSlots: 1,
@@ -97,6 +91,8 @@ class DioHttpClient extends http.BaseClient {
   static DownloadRequestQueue _semaphoreOf(DownloadChannel channel) =>
       switch (channel) {
         DownloadChannel.small => _smallSemaphore,
+        DownloadChannel.avatar => _smallSemaphore,
+        DownloadChannel.avatarAnimation => _smallSemaphore,
         DownloadChannel.content => _contentSemaphore,
         DownloadChannel.sticker => _stickerSemaphore,
       };
@@ -235,14 +231,24 @@ class DioHttpClient extends http.BaseClient {
   }) async {
     final elapsed = Stopwatch()..start();
     final semaphore = _semaphoreOf(channel);
+    final group = switch (channel) {
+      DownloadChannel.small ||
+      DownloadChannel.avatar ||
+      DownloadChannel.avatarAnimation => channel.name,
+      _ => null,
+    };
     final cancelToken = cancellation ?? dio.CancelToken();
     cancelToken.throwIfCancellationRequested();
     await semaphore.acquire(
       url.toString(),
       priority,
       cancelled: cancelToken.whenCancel.then((_) {}),
+      group: group,
     );
     final queueMs = elapsed.elapsedMilliseconds;
+    final foregroundAtStart =
+        priority == DownloadPriority.high ||
+        semaphore.isForeground(url.toString());
     var completed = false;
     int? headMs;
     int? bodyMs;
@@ -324,7 +330,7 @@ class DioHttpClient extends http.BaseClient {
       // 非 200、进度回调抛错等都可能早于响应 EOF；取消整个请求，
       // 不依赖 Dio 包装流的订阅取消能否继续传递到适配器。
       if (!completed) cancelToken.cancel('Image download abandoned');
-      semaphore.release();
+      semaphore.release(group: group);
       elapsed.stop();
       final totalMs = elapsed.elapsedMilliseconds;
       // 快速成功不逐图落盘；慢请求/失败才记录阶段耗时，详细日志模式可看全量。
@@ -341,6 +347,7 @@ class DioHttpClient extends http.BaseClient {
             'coreRequestId': diagnosticExtra['coreRequestId'],
             'host': url.host,
             'channel': channel.name,
+            'foregroundAtStart': foregroundAtStart,
             'queueMs': queueMs,
             'headMs': headMs,
             'redirectHops': diagnosticExtra[RedirectInterceptor.hopsKey],
@@ -364,10 +371,16 @@ class DioHttpClient extends http.BaseClient {
 
 /// 图片下载并发通道(见 [DioHttpClient._smallSemaphore] 注释)。
 enum DownloadChannel {
-  /// KB 级小文件(emoji)—— RTT 主导,高并发纯赚。
+  /// emoji 小文件。
   small,
 
-  /// 正文/头像/原图/外部图 —— 带宽敏感的混合内容。
+  /// 静态头像；与 emoji 共享小图池，单独限制组内并发。
+  avatar,
+
+  /// 可能的动图头像（含待嗅探的 WebP）；限制大文件同时下载数量。
+  avatarAnimation,
+
+  /// 正文/原图/外部图/贴纸缩略 —— 带宽敏感的混合内容。
   content,
 
   /// 贴纸原文件 —— 面板预取型、单文件大,独立通道防挤占内容。

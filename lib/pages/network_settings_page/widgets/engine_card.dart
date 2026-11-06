@@ -47,9 +47,16 @@ class EngineCard extends StatelessWidget {
         final autoFellBack = fallback.hasFallenBack;
         return SegmentedCardGroup(
           children: [
-            // 子组件读取服务状态，必须随通知重建。
-            _StatusHeader(),
-            _FingerprintPresetRow(),
+            // 显式传入当前快照，避免 const 子组件保留旧的服务状态。
+            _StatusHeader(
+              status: NetCoreService.instance.status,
+              applying: settings.isApplying.value || settings.pendingStart,
+            ),
+            _FingerprintPresetRow(
+              selected: settings.current.fingerprintPreset,
+              status: NetCoreService.instance.status,
+              applying: settings.isApplying.value,
+            ),
             if (startFailed) const _StartFailedRow(),
             if (autoFellBack && !startFailed) const _FallbackRow(),
             if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
@@ -62,14 +69,19 @@ class EngineCard extends StatelessWidget {
 }
 
 class _FingerprintPresetRow extends StatelessWidget {
-  _FingerprintPresetRow();
+  const _FingerprintPresetRow({
+    required this.selected,
+    required this.status,
+    required this.applying,
+  });
+  final String selected;
+  final NetCoreStatus status;
+  final bool applying;
 
   @override
   Widget build(BuildContext context) {
     final settings = NetworkSettingsService.instance;
-    final status = NetCoreService.instance.status;
     final l10n = context.l10n;
-    final selected = settings.current.fingerprintPreset;
     final selectedName =
         FingerprintPreset.labelFor(selected) ?? l10n.fingerprintPreset_auto;
     final activeName =
@@ -86,7 +98,7 @@ class _FingerprintPresetRow extends StatelessWidget {
         '$selectedName${status.running ? '\n${l10n.fingerprintPreset_active(activeName)}' : ''}',
       ),
       trailing: const Icon(Symbols.chevron_right_rounded),
-      enabled: !settings.isApplying.value,
+      enabled: !applying,
       onTap: () async {
         final result = await showAppDialog<String>(
           context: context,
@@ -105,7 +117,9 @@ class _FingerprintPresetRow extends StatelessWidget {
 
 /// 状态头：当前网络栈 + 出站路径摘要 + 重启入口。
 class _StatusHeader extends StatelessWidget {
-  _StatusHeader();
+  const _StatusHeader({required this.status, required this.applying});
+  final NetCoreStatus status;
+  final bool applying;
 
   @override
   Widget build(BuildContext context) {
@@ -113,8 +127,6 @@ class _StatusHeader extends StatelessWidget {
     final colors = theme.colorScheme;
     final l10n = context.l10n;
     final settings = NetworkSettingsService.instance;
-    final core = NetCoreService.instance;
-    final applying = settings.isApplying.value || settings.pendingStart;
 
     final effective = resolveEffectiveAdapter();
     final engineName = getAdapterDisplayName(effective.type);
@@ -178,9 +190,9 @@ class _StatusHeader extends StatelessWidget {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
-                if (!isFallback && core.isRunning) ...[
+                if (!isFallback && status.running) ...[
                   const SizedBox(height: 10),
-                  _RouteChips(status: core.status),
+                  _RouteChips(status: status),
                 ],
               ],
             ),
