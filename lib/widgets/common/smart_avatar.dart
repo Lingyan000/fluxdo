@@ -278,9 +278,11 @@ class _SmartAvatarState extends State<SmartAvatar> {
 
     final isSquare = isSquareAvatarUrl(widget.imageUrl);
     final innerDecoration = isSquare
-        ? BoxDecoration(
+        ? ShapeDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(innerRadius * 0.2),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(innerRadius * 0.2),
+            ),
           )
         : BoxDecoration(color: bgColor, shape: BoxShape.circle);
 
@@ -297,9 +299,11 @@ class _SmartAvatarState extends State<SmartAvatar> {
     // 如果有边框，在外层添加，总尺寸保持 radius * 2
     if (widget.border != null) {
       final outerDecoration = isSquare
-          ? BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.radius * 0.2),
-              border: widget.border,
+          ? ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(widget.radius * 0.2),
+                side: widget.border!.top,
+              ),
             )
           : BoxDecoration(shape: BoxShape.circle, border: widget.border);
       avatar = Container(

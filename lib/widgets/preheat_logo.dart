@@ -119,8 +119,12 @@ class _PreheatLogoState extends State<PreheatLogo>
 }
 
 /// 将整体进度 [t] 映射到 [start, end] 区间内的局部进度并应用曲线
-double _segment(double t, double start, double end,
-    [Curve curve = Curves.easeInOutCubic]) {
+double _segment(
+  double t,
+  double start,
+  double end, [
+  Curve curve = Curves.easeInOutCubic,
+]) {
   return curve.transform(((t - start) / (end - start)).clamp(0.0, 1.0));
 }
 
@@ -177,7 +181,12 @@ class _LogoPainter extends CustomPainter {
     canvas.scale(scale);
 
     for (final shape in shapes) {
-      final fillT = _segment(t, shape.fillStart, shape.fillEnd, Curves.easeInOut);
+      final fillT = _segment(
+        t,
+        shape.fillStart,
+        shape.fillEnd,
+        Curves.easeInOut,
+      );
       if (fillT <= 0) continue;
       canvas.save();
       if (shape.clip != null) {
@@ -190,7 +199,8 @@ class _LogoPainter extends CustomPainter {
       canvas.restore();
     }
 
-    final strokeAlpha = 1.0 - _segment(t, _strokeFadeStart, 1.0, Curves.easeOut);
+    final strokeAlpha =
+        1.0 - _segment(t, _strokeFadeStart, 1.0, Curves.easeOut);
     if (strokeAlpha > 0) {
       final strokePaint = Paint()
         ..style = PaintingStyle.stroke
@@ -201,8 +211,12 @@ class _LogoPainter extends CustomPainter {
       for (final shape in shapes) {
         final strokePath = shape.strokePath;
         if (strokePath == null) continue;
-        final strokeT =
-            _segment(t, shape.strokeStart, shape.strokeEnd, Curves.easeInOutCubic);
+        final strokeT = _segment(
+          t,
+          shape.strokeStart,
+          shape.strokeEnd,
+          Curves.easeInOutCubic,
+        );
         if (strokeT <= 0) continue;
         for (final metric in strokePath.computeMetrics()) {
           canvas.drawPath(
@@ -311,10 +325,12 @@ List<_LogoShape> _buildModernShapes(Brightness brightness) {
     ..close();
 
   final bar = Path()
-    ..addRRect(RRect.fromRectAndRadius(
-      const Rect.fromLTRB(342, 1022, 1232, 1232),
-      const Radius.circular(50),
-    ));
+    ..addRSuperellipse(
+      RSuperellipse.fromRectAndRadius(
+        const Rect.fromLTRB(342, 1022, 1232, 1232),
+        const Radius.circular(50),
+      ),
+    );
 
   final accent = Path()
     ..moveTo(1013.34, 658.68)
@@ -350,13 +366,37 @@ List<_LogoShape> _buildModernShapes(Brightness brightness) {
   }
 
   return [
-    shape(circle, circleColor,
-        strokeStart: 0.0, strokeEnd: 0.45, fillStart: 0.48, fillEnd: 0.68),
-    shape(flag, flagColor,
-        strokeStart: 0.20, strokeEnd: 0.50, fillStart: 0.56, fillEnd: 0.76),
-    shape(bar, flagColor,
-        strokeStart: 0.32, strokeEnd: 0.54, fillStart: 0.62, fillEnd: 0.82),
-    shape(accent, const Color(0xFFFFB003),
-        strokeStart: 0.42, strokeEnd: 0.58, fillStart: 0.66, fillEnd: 0.86),
+    shape(
+      circle,
+      circleColor,
+      strokeStart: 0.0,
+      strokeEnd: 0.45,
+      fillStart: 0.48,
+      fillEnd: 0.68,
+    ),
+    shape(
+      flag,
+      flagColor,
+      strokeStart: 0.20,
+      strokeEnd: 0.50,
+      fillStart: 0.56,
+      fillEnd: 0.76,
+    ),
+    shape(
+      bar,
+      flagColor,
+      strokeStart: 0.32,
+      strokeEnd: 0.54,
+      fillStart: 0.62,
+      fillEnd: 0.82,
+    ),
+    shape(
+      accent,
+      const Color(0xFFFFB003),
+      strokeStart: 0.42,
+      strokeEnd: 0.58,
+      fillStart: 0.66,
+      fillEnd: 0.86,
+    ),
   ];
 }

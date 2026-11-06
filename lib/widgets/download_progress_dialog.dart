@@ -25,7 +25,7 @@ class DownloadProgressDialog extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(32),
         child: SizedBox(
           width: dialogWidth,
@@ -34,7 +34,10 @@ class DownloadProgressDialog extends ConsumerWidget {
             children: [
               Positioned.fill(child: _buildMeshBackground(context)),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 32,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -72,12 +75,7 @@ class DownloadProgressDialog extends ConsumerWidget {
             Color.lerp(colorScheme.inversePrimary, Colors.white, 0.5)!,
           ];
 
-    return MeshGradient(
-      colors: colors,
-      distortion: 0.8,
-      swirl: 0.1,
-      speed: 1,
-    );
+    return MeshGradient(colors: colors, distortion: 0.8, swirl: 0.1, speed: 1);
   }
 
   Color _contentColor(BuildContext context) {
@@ -174,7 +172,10 @@ class DownloadProgressDialog extends ConsumerWidget {
   }
 
   Widget _buildBottomAction(
-      BuildContext context, WidgetRef ref, ApkUpdateState state) {
+    BuildContext context,
+    WidgetRef ref,
+    ApkUpdateState state,
+  ) {
     final color = _contentColor(context);
     final subColor = _subContentColor(context);
     final l10n = S.current;

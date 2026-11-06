@@ -2,6 +2,7 @@ import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../constants.dart';
 import '../../../../models/topic.dart';
@@ -140,7 +141,10 @@ class _PostAvatarState extends State<PostAvatar> {
           imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
           radius: rect.shortestSide / 2,
           fallbackText: widget.post.username,
-          border: Border.all(color: Theme.of(ctx).colorScheme.primary, width: 2),
+          border: Border.all(
+            color: Theme.of(ctx).colorScheme.primary,
+            width: 2,
+          ),
         ),
       ),
       child: CompositedTransformTarget(link: _link, child: avatar),
@@ -418,11 +422,13 @@ class PostHeader extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: theme.colorScheme.primary.withValues(alpha: 0.1),
+          ),
         ),
       ),
       child: Row(
@@ -435,7 +441,11 @@ class PostHeader extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           else
-            Icon(Symbols.reply_rounded, size: 14, color: theme.colorScheme.primary),
+            Icon(
+              Symbols.reply_rounded,
+              size: 14,
+              color: theme.colorScheme.primary,
+            ),
           const SizedBox(width: 6),
           SmartAvatar(
             imageUrl: replyToUser.avatarTemplate.isNotEmpty

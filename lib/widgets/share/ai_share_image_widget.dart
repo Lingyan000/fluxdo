@@ -4,6 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:markdown/markdown.dart' as md;
+
 import '../../constants.dart';
 import '../../l10n/s.dart';
 import '../../services/emoji_handler.dart';
@@ -216,9 +217,11 @@ class AiShareImageWidget extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
       child:
           FluxdoRenderCallbacks.generic(

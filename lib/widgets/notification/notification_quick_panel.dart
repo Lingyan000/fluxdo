@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../models/shortcut_binding.dart';
 import '../../l10n/s.dart';
 import '../../providers/discourse_providers.dart';
@@ -54,7 +55,7 @@ class NotificationQuickPanel {
         useRootNavigator: true,
         isScrollControlled: true,
         showDragHandle: true,
-        shape: const RoundedRectangleBorder(
+        shape: const RoundedSuperellipseBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         shortcutSurface: const ShortcutSurfaceConfig(
@@ -65,15 +66,13 @@ class NotificationQuickPanel {
         builder: (_) => const _MobileNotificationPanel(),
       ).then<void>((_) {});
       _mobileFuture = future;
-      future
-          .whenComplete(() {
-            if (identical(_mobileFuture, future)) {
-              _mobileFuture = null;
-              _mobileRoute = null;
-              _mobileDismissPending = false;
-            }
-          })
-          .ignore();
+      future.whenComplete(() {
+        if (identical(_mobileFuture, future)) {
+          _mobileFuture = null;
+          _mobileRoute = null;
+          _mobileDismissPending = false;
+        }
+      }).ignore();
       return future;
     }
 
@@ -303,9 +302,11 @@ class _SidebarNotificationPanelState
           color: Theme.of(context).colorScheme.overlaySurface,
           clipBehavior: Clip.antiAlias,
           elevation: 8,
-          borderRadius: showRail
-              ? const BorderRadius.only(topRight: Radius.circular(20))
-              : const BorderRadius.vertical(top: Radius.circular(20)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: showRail
+                ? const BorderRadius.only(topRight: Radius.circular(20))
+                : const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
           child: Column(
             children: [
               if (!showRail)
@@ -343,7 +344,7 @@ class _SidebarNotificationPanelState
 
     // 面板可见区域的圆角矩形（排除此区域避免模糊影响面板内容）
     final visiblePanelWidth = actualPanelWidth * _animation.value;
-    final panelRRect = RRect.fromRectAndCorners(
+    final panelRRect = RSuperellipse.fromRectAndCorners(
       Rect.fromLTWH(
         0,
         screenSize.height - panelHeight,
@@ -407,7 +408,7 @@ class _SidebarNotificationPanelState
       0.0,
       panelHeight,
     );
-    final panelRRect = RRect.fromRectAndCorners(
+    final panelRRect = RSuperellipse.fromRectAndCorners(
       Rect.fromLTWH(
         0,
         screenSize.height - visibleHeight,
@@ -467,14 +468,14 @@ class _SidebarNotificationPanelState
 /// 面板圆角外侧（弧线与包围盒之间的三角区）仍在模糊范围内，
 /// 因此圆角处可自然透出模糊背景。
 class _ExcludeRRectClipper extends CustomClipper<Path> {
-  final RRect excludeRRect;
+  final RSuperellipse excludeRRect;
   const _ExcludeRRectClipper(this.excludeRRect);
 
   @override
   Path getClip(Size size) {
     return Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
-      ..addRRect(excludeRRect)
+      ..addRSuperellipse(excludeRRect)
       ..fillType = PathFillType.evenOdd;
   }
 
@@ -496,9 +497,11 @@ class _DragHandle extends StatelessWidget {
         margin: const EdgeInsets.only(top: 12),
         width: 32,
         height: 4,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(2),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
       ),
     );

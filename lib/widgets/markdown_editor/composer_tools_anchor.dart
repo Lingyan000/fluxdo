@@ -299,7 +299,9 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
       },
       child: InkWell(
         onTap: widget.onActivate,
-        borderRadius: BorderRadius.circular(12),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: SizedBox(
           height: ComposerToolsHandle.height,
           width: double.infinity,
@@ -307,10 +309,12 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
             child: Container(
               width: 28,
               height: 3,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: Theme.of(context).colorScheme.onSurfaceVariant
                     .withValues(alpha: .35),
-                borderRadius: BorderRadius.circular(2),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
           ),

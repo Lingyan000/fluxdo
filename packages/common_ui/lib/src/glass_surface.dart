@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'glass_edge_painter.dart';
 import 'glass_optical_border.dart';
 import 'glass_settings.dart';
+import 'glass_superellipse.dart';
 
 /// 柔光玻璃材质配方。
 ///
@@ -272,8 +273,8 @@ class GlassSurface extends StatefulWidget {
   /// [GlassRecipe.dialog]
   final GlassRecipe recipe;
 
-  /// 玻璃形状。shader 支持四角相同的圆形圆角 [RoundedRectangleBorder]
-  /// 与 [StadiumBorder]；非对称或椭圆圆角等形状使用降级路径。
+  /// shader 支持四角等大的 [RoundedSuperellipseBorder]，并兼容圆弧形状。
+  /// 非对称或椭圆半径使用降级路径。
   final ShapeBorder shape;
 
   /// 色罩颜色覆盖。默认为 null,用配方里的**固定灰阶**
@@ -361,6 +362,9 @@ class _GlassSurfaceState extends State<GlassSurface> {
   double? _cornerRadiusOf(ShapeBorder shape) {
     if (shape is StadiumBorder) return null;
     if (shape is RoundedRectangleBorder) {
+      return shape.borderRadius.resolve(Directionality.of(context)).topLeft.x;
+    }
+    if (shape is RoundedSuperellipseBorder) {
       final radius = shape.borderRadius
           .resolve(Directionality.of(context))
           .topLeft
@@ -372,8 +376,15 @@ class _GlassSurfaceState extends State<GlassSurface> {
 
   bool _shapeSupported(ShapeBorder shape) {
     if (shape is StadiumBorder) return true;
-    if (shape is! RoundedRectangleBorder) return false;
-    final radii = shape.borderRadius.resolve(Directionality.of(context));
+    final BorderRadiusGeometry borderRadius;
+    if (shape is RoundedSuperellipseBorder) {
+      borderRadius = shape.borderRadius;
+    } else if (shape is RoundedRectangleBorder) {
+      borderRadius = shape.borderRadius;
+    } else {
+      return false;
+    }
+    final radii = borderRadius.resolve(Directionality.of(context));
     final radius = radii.topLeft;
     return radius.x == radius.y &&
         radii.topRight == radius &&
@@ -386,6 +397,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
   ShapeBorder _shapeWithSide(ShapeBorder shape, BorderSide side) {
     if (shape is StadiumBorder) return shape.copyWith(side: side);
     if (shape is RoundedRectangleBorder) return shape.copyWith(side: side);
+    if (shape is RoundedSuperellipseBorder) return shape.copyWith(side: side);
     return shape;
   }
 
@@ -514,6 +526,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
     // 7 u_refract_h / 8 u_refract_amt / 9 u_depth / 10 u_chroma
     // 11 u_hl_alpha / 12 u_hl_gray / 13 u_noise
     // 14 u_saturation / 15 u_brightness / 16 u_contrast
+    // 17 u_superellipse / 18–22 top octant / 23–27 right octant
     // 每 build 新建实例,避免渲染途中改 uniform
     final shader = program.fragmentShader()
       ..setFloat(2, 0)
@@ -530,7 +543,16 @@ class _GlassSurfaceState extends State<GlassSurface> {
       ..setFloat(13, recipe.noise)
       ..setFloat(14, recipe.saturation)
       ..setFloat(15, recipe.brightness)
-      ..setFloat(16, recipe.contrast);
+      ..setFloat(16, recipe.contrast)
+      ..setFloat(17, widget.shape is RoundedSuperellipseBorder ? 1 : 0);
+    final radius = radiusLogical.clamp(0.0, size.shortestSide / 2) * dpr;
+    final octants = [
+      ...glassSuperellipseOctant(size.width * dpr / 2, radius),
+      ...glassSuperellipseOctant(size.height * dpr / 2, radius),
+    ];
+    for (var i = 0; i < octants.length; i++) {
+      shader.setFloat(18 + i, octants[i]);
+    }
 
     // 主模糊放在独立的外层 BackdropFilter，不放进同一条 compose。
     // 它先把背景画进受 ClipRect 约束的局部 pass，内层折射读取的才是

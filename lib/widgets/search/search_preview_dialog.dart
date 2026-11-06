@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../l10n/s.dart';
 import '../../models/category.dart';
 import '../../models/search_result.dart';
@@ -116,7 +117,9 @@ class SearchPreviewDialog extends ConsumerWidget {
               ? Material(type: MaterialType.transparency, child: sheetBody)
               : Material(
                   color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   clipBehavior: Clip.antiAlias,
                   elevation: 8,
                   child: sheetBody,
@@ -268,9 +271,11 @@ class SearchPreviewDialog extends ConsumerWidget {
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Text(
               '#${post.postNumber}',
@@ -441,12 +446,14 @@ class SearchPreviewDialog extends ConsumerWidget {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: ColorUtils.readableOn(
           _parseColor(category.color),
           theme.brightness,
         ),
-        borderRadius: BorderRadius.circular(2),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(2),
+        ),
       ),
     );
   }

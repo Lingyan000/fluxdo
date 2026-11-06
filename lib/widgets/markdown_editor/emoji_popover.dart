@@ -249,12 +249,9 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
               width: width,
               height: height,
               clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.overlaySurface,
-                borderRadius: BorderRadius.circular(_kPopoverRadius),
-                // 双层阴影:大范围柔和主影 + 近距离细影,
-                // 比 Material elevation 的默认投影轻盈(桌面弹层观感)
-                boxShadow: [
+                shadows: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.14),
                     blurRadius: 32,
@@ -267,14 +264,19 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
                     offset: const Offset(0, 2),
                   ),
                 ],
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(_kPopoverRadius),
+                ),
               ),
               // 边框走前景:decoration 的 border 画在子内容之下,
               // 面板背景同被裁进圆角矩形会盖住描边(四角尤其明显)
-              foregroundDecoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(_kPopoverRadius),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(
-                    alpha: isDark ? 0.6 : 0.5,
+              foregroundDecoration: ShapeDecoration(
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(_kPopoverRadius),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: isDark ? 0.6 : 0.5,
+                    ),
                   ),
                 ),
               ),

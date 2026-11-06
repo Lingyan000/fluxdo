@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../constants.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
@@ -326,9 +327,9 @@ class CfChallengeService {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
-                  onPressed: () => Navigator.of(
-                    dialogContext,
-                  ).pop(_CompatPromptChoice.disableAutoVerify),
+                  onPressed: () =>
+                      Navigator.of(dialogContext)
+                          .pop(_CompatPromptChoice.disableAutoVerify),
                   child: Text(
                     S.current.cf_sessionCompatDisableAuto,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -350,9 +351,9 @@ class CfChallengeService {
               ),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(_CompatPromptChoice.enableCompat),
+              onPressed: () =>
+                  Navigator.of(dialogContext)
+                      .pop(_CompatPromptChoice.enableCompat),
               child: Text(S.current.cf_sessionCompatEnable),
             ),
           ],
@@ -1792,8 +1793,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
         try {
           final html = await controller.evaluateJavascript(
-            source:
-                'document.documentElement ? document.documentElement.innerHTML : ""',
+            source: 'document.documentElement ? document.documentElement.innerHTML : ""',
           );
           if (_hasPopped || !mounted || _finishingFromVerifyResponse) return;
           if (watcherGeneration != _revealStateWatchGeneration) return;
@@ -1888,7 +1888,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
     return Material(
       color: backgroundColor,
-      borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2003,8 +2003,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     if (generation != _loadGeneration) return;
     try {
       final html = await controller.evaluateJavascript(
-        source:
-            'document.documentElement ? document.documentElement.innerHTML : ""',
+        source: 'document.documentElement ? document.documentElement.innerHTML : ""',
       );
       if (_hasPopped ||
           !mounted ||
@@ -2285,7 +2284,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     return Material(
       color: colorScheme.surface,
       elevation: 0,
-      borderRadius: BorderRadius.circular(20),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -2443,9 +2442,8 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                             width: double.infinity,
                             height: panelHeight,
                             child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
+                              decoration: ShapeDecoration(
+                                shadows: [
                                   BoxShadow(
                                     color: Colors.black.withValues(
                                       alpha: theme.brightness == Brightness.dark
@@ -2456,9 +2454,11 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                                     offset: const Offset(0, 12),
                                   ),
                                 ],
-                                border: Border.all(
-                                  color: colorScheme.outlineVariant.withValues(
-                                    alpha: 0.35,
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  side: BorderSide(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.35),
                                   ),
                                 ),
                               ),

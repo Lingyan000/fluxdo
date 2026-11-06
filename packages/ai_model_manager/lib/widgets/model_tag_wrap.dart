@@ -77,14 +77,16 @@ class ModelTagWrap extends StatelessWidget {
         child: ExcludeSemantics(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: isDark
                   ? color.withValues(alpha: 0.25)
                   : color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: color.withValues(alpha: 0.2),
-                width: 0.5,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(999),
+                side: BorderSide(
+                  color: color.withValues(alpha: 0.2),
+                  width: 0.5,
+                ),
               ),
             ),
             child: Row(
@@ -98,9 +100,7 @@ class ModelTagWrap extends StatelessWidget {
                           ? Symbols.text_fields_rounded
                           : Symbols.image_rounded,
                       size: 12,
-                      color: isDark
-                          ? color
-                          : color.withValues(alpha: 0.9),
+                      color: isDark ? color : color.withValues(alpha: 0.9),
                     ),
                   ),
                 Icon(
@@ -116,9 +116,7 @@ class ModelTagWrap extends StatelessWidget {
                           ? Symbols.text_fields_rounded
                           : Symbols.image_rounded,
                       size: 12,
-                      color: isDark
-                          ? color
-                          : color.withValues(alpha: 0.9),
+                      color: isDark ? color : color.withValues(alpha: 0.9),
                     ),
                   ),
               ],
@@ -143,14 +141,16 @@ class ModelTagWrap extends StatelessWidget {
         child: ExcludeSemantics(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: isDark
                   ? color.withValues(alpha: 0.25)
                   : color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: color.withValues(alpha: 0.2),
-                width: 0.5,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(999),
+                side: BorderSide(
+                  color: color.withValues(alpha: 0.2),
+                  width: 0.5,
+                ),
               ),
             ),
             child: Icon(

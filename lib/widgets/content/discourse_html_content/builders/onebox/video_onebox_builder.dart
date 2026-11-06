@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../../utils/link_launcher.dart';
 import '../../../../../services/discourse_cache_manager.dart';
 import 'onebox_base.dart';
@@ -14,12 +15,16 @@ class VideoOneboxBuilder {
     List<LinkCount>? linkCounts,
   }) {
     final url = extractUrl(element);
-    final clickCount = extractClickCountFromOnebox(element, linkCounts: linkCounts);
+    final clickCount = extractClickCountFromOnebox(
+      element,
+      linkCounts: linkCounts,
+    );
 
     // 提取标题
     final h4Element = element.querySelector('h4');
     final h3Element = element.querySelector('h3');
-    final titleLink = h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
+    final titleLink =
+        h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
     final title = titleLink?.text ?? '';
 
     // 提取视频 ID 和缩略图
@@ -29,8 +34,8 @@ class VideoOneboxBuilder {
         : (element.querySelector('img')?.attributes['src'] ?? '');
 
     // 提取频道信息
-    final channelElement = element.querySelector('.channel') ??
-        element.querySelector('.author');
+    final channelElement =
+        element.querySelector('.channel') ?? element.querySelector('.author');
     final channel = channelElement?.text?.trim() ?? '';
 
     // 提取描述
@@ -38,12 +43,14 @@ class VideoOneboxBuilder {
     final description = descElement?.text ?? '';
 
     // 提取时长
-    final durationElement = element.querySelector('.duration') ??
+    final durationElement =
+        element.querySelector('.duration') ??
         element.querySelector('.video-duration');
     final duration = durationElement?.text?.trim() ?? '';
 
     // 提取观看数
-    final viewsElement = element.querySelector('.views') ??
+    final viewsElement =
+        element.querySelector('.views') ??
         element.querySelector('.video-views');
     final views = viewsElement?.text?.trim() ?? '';
 
@@ -60,9 +67,10 @@ class VideoOneboxBuilder {
               // 缩略图
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(7)),
+                child: ClipRSuperellipse(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(7),
+                  ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
                           image: discourseImageProvider(thumbnailUrl),
@@ -96,9 +104,11 @@ class VideoOneboxBuilder {
               Container(
                 width: 60,
                 height: 42,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: const Color(0xFFFF0000),
-                  borderRadius: BorderRadius.circular(8),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 child: const Icon(
                   Symbols.play_arrow_rounded,
@@ -112,11 +122,15 @@ class VideoOneboxBuilder {
                   right: 8,
                   bottom: 8,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: ShapeDecoration(
                       color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(4),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                     child: Text(
                       duration,
@@ -208,12 +222,16 @@ class VideoOneboxBuilder {
     List<LinkCount>? linkCounts,
   }) {
     final url = extractUrl(element);
-    final clickCount = extractClickCountFromOnebox(element, linkCounts: linkCounts);
+    final clickCount = extractClickCountFromOnebox(
+      element,
+      linkCounts: linkCounts,
+    );
 
     // 提取标题
     final h4Element = element.querySelector('h4');
     final h3Element = element.querySelector('h3');
-    final titleLink = h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
+    final titleLink =
+        h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
     final title = titleLink?.text ?? '';
 
     // 提取缩略图
@@ -241,9 +259,10 @@ class VideoOneboxBuilder {
               // 缩略图
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(7)),
+                child: ClipRSuperellipse(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(7),
+                  ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
                           image: discourseImageProvider(thumbnailUrl),
@@ -366,12 +385,16 @@ class VideoOneboxBuilder {
     List<LinkCount>? linkCounts,
   }) {
     final url = extractUrl(element);
-    final clickCount = extractClickCountFromOnebox(element, linkCounts: linkCounts);
+    final clickCount = extractClickCountFromOnebox(
+      element,
+      linkCounts: linkCounts,
+    );
 
     // 提取标题
     final h4Element = element.querySelector('h4');
     final h3Element = element.querySelector('h3');
-    final titleLink = h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
+    final titleLink =
+        h4Element?.querySelector('a') ?? h3Element?.querySelector('a');
     final title = titleLink?.text ?? '';
 
     // 提取缩略图
@@ -395,9 +418,10 @@ class VideoOneboxBuilder {
               // 缩略图
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(7)),
+                child: ClipRSuperellipse(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(7),
+                  ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
                           image: discourseImageProvider(thumbnailUrl),
@@ -454,10 +478,14 @@ class VideoOneboxBuilder {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: ShapeDecoration(
                         color: const Color(0xFF625DF5),
-                        borderRadius: BorderRadius.circular(4),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       child: const Text(
                         'Loom',
@@ -529,4 +557,3 @@ Future<void> _launchUrl(BuildContext context, String url) async {
   if (url.isEmpty) return;
   await launchContentLink(context, url);
 }
-

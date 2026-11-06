@@ -16,18 +16,16 @@ abstract final class MediaOverlayStyle {
   static const Color foregroundDim = Colors.white54;
 
   /// 浮层胶囊统一装饰。
-  static BoxDecoration pill({double radius = 10}) => BoxDecoration(
-        color: const Color(0xD91A1A1A),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: const Color(0x1FFFFFFF)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x59000000),
-            blurRadius: 12,
-            offset: Offset(0, 2),
-          ),
-        ],
-      );
+  static ShapeDecoration pill({double radius = 10}) => ShapeDecoration(
+    color: const Color(0xD91A1A1A),
+    shadows: const [
+      BoxShadow(color: Color(0x59000000), blurRadius: 12, offset: Offset(0, 2)),
+    ],
+    shape: RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(radius),
+      side: BorderSide(color: const Color(0x1FFFFFFF)),
+    ),
+  );
 
   /// 顶/底控制条 scrim:三段渐变,比两段的落差柔和。
   static const LinearGradient bottomScrim = LinearGradient(

@@ -66,9 +66,8 @@ class SmartListHandler {
     final prevLine = currentText.substring(prevLineStart, selection.start - 1);
 
     // 检测无序列表
-    final unorderedMatch = RegExp(
-      r'^(\s*)([-*+])\s+(.*)$',
-    ).firstMatch(prevLine);
+    final unorderedMatch = RegExp(r'^(\s*)([-*+])\s+(.*)$')
+        .firstMatch(prevLine);
     if (unorderedMatch != null) {
       final indent = unorderedMatch.group(1)!;
       final marker = unorderedMatch.group(2)!;
@@ -296,10 +295,14 @@ class CategoryTrigger extends StatelessWidget {
     if (category == null) {
       return Material(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: InkWell(
           onTap: () => _showPicker(context),
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
@@ -343,15 +346,19 @@ class CategoryTrigger extends StatelessWidget {
 
     return Material(
       color: color.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
       child: InkWell(
         onTap: () => _showPicker(context),
-        borderRadius: BorderRadius.circular(8),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+          decoration: ShapeDecoration(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: color.withValues(alpha: 0.3), width: 1),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -474,13 +481,15 @@ class TagsArea extends StatelessWidget {
         ...selectedTags.map(
           (tag) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest.withValues(
                 alpha: 0.3,
               ),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: theme.colorScheme.outline.withValues(alpha: 0.1),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(6),
+                side: BorderSide(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.1),
+                ),
               ),
             ),
             child: Row(
@@ -519,20 +528,24 @@ class TagsArea extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: () => _showPicker(context, availableTags),
-            borderRadius: BorderRadius.circular(6),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: isSatisfied
-                      ? theme.colorScheme.outline.withValues(alpha: 0.2)
-                      : theme.colorScheme.error.withValues(alpha: 0.5),
-                  style: BorderStyle.solid,
-                ),
+              decoration: ShapeDecoration(
                 color: isSatisfied
                     ? null
                     : theme.colorScheme.errorContainer.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  side: BorderSide(
+                    color: isSatisfied
+                        ? theme.colorScheme.outline.withValues(alpha: 0.2)
+                        : theme.colorScheme.error.withValues(alpha: 0.5),
+                    style: BorderStyle.solid,
+                  ),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -681,7 +694,9 @@ class ComposerMetaBar extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(20),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
             child: Center(
@@ -692,7 +707,8 @@ class ComposerMetaBar extends StatelessWidget {
                   color: theme.colorScheme.surfaceContainerHighest.withValues(
                     alpha: .42,
                   ),
-                  shape: StadiumBorder(
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(9999)),
                     side: BorderSide(
                       color:
                           borderColor ??
@@ -737,7 +753,7 @@ class ComposerMetaBar extends StatelessWidget {
         color: desktop
             ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .22)
             : Colors.transparent,
-        shape: RoundedRectangleBorder(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(desktop ? 8 : 10),
           side: desktop
               ? BorderSide(
@@ -750,7 +766,9 @@ class ComposerMetaBar extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: desktop ? 36 : 48),
             child: Padding(

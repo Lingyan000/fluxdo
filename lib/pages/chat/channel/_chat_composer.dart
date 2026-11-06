@@ -537,9 +537,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                         horizontal: 10,
                         vertical: 6,
                       ),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: Row(
                         children: [

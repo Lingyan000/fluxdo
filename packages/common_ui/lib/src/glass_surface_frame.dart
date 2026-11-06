@@ -21,7 +21,7 @@ class GlassSurfaceFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final shape = RoundedRectangleBorder(
+    final shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(radius),
     );
     return DecoratedBox(
@@ -40,7 +40,7 @@ class GlassSurfaceFrame extends StatelessWidget {
           ),
         ],
       ),
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(radius),
         child: GlassSurface(
           recipe: recipe,

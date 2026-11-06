@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../utils/dialog_utils.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 显示 Loading 对话框
@@ -71,16 +73,18 @@ class _LoadingDialogContent extends StatelessWidget {
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
+          shadows: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
           ],
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -307,7 +307,7 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
                                   ? context.l10n.common_close
                                   : context.l10n.topicsScreen_createTopic,
                               elevation: _expanded ? 0 : 3,
-                              shape: RoundedRectangleBorder(
+                              shape: RoundedSuperellipseBorder(
                                 borderRadius: BorderRadius.circular(16 + 8 * t),
                               ),
                               backgroundColor: Color.lerp(
@@ -491,7 +491,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
               foregroundColor: theme.colorScheme.onPrimaryContainer,
               minimumSize: const Size(0, 56),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: const StadiumBorder(),
+              shape: const RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.all(Radius.circular(9999)),
+              ),
               textStyle: theme.textTheme.labelLarge,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),

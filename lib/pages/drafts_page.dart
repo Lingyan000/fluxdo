@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/draft.dart';
 import '../navigation/nav_action_bus.dart';
 import '../providers/discourse_providers.dart';
@@ -461,9 +462,11 @@ class _DraftCard extends StatelessWidget {
                       horizontal: 8,
                       vertical: 4,
                     ),
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(6),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

@@ -39,19 +39,17 @@ class VolumeBrightnessIndicator extends StatelessWidget {
             duration: const Duration(milliseconds: 150),
             curve: Curves.easeOutCubic,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: MediaOverlayStyle.pill(radius: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(_icon,
-                      color: MediaOverlayStyle.foreground, size: 22),
+                  Icon(_icon, color: MediaOverlayStyle.foreground, size: 22),
                   const SizedBox(width: 10),
                   SizedBox(
                     width: 110,
                     height: 3.5,
-                    child: ClipRRect(
+                    child: ClipRSuperellipse(
                       borderRadius: BorderRadius.circular(2),
                       child: Stack(
                         children: [
@@ -60,8 +58,7 @@ class VolumeBrightnessIndicator extends StatelessWidget {
                           // 无 Material 内建动画插值,跟手零滞后
                           FractionallySizedBox(
                             widthFactor: clamped,
-                            child:
-                                const ColoredBox(color: Colors.white),
+                            child: const ColoredBox(color: Colors.white),
                           ),
                         ],
                       ),

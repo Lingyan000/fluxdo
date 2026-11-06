@@ -463,7 +463,9 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           opacity: opacity,
           child: Material(
             color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(24),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             elevation: 6,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
             child: Padding(
@@ -517,7 +519,9 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           opacity: opacity,
           child: Material(
             color: theme.colorScheme.primary,
-            shape: const StadiumBorder(),
+            shape: const RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.all(Radius.circular(9999)),
+            ),
             elevation: 6,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
             child: Center(

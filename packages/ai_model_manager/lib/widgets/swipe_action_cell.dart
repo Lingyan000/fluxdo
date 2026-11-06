@@ -298,7 +298,7 @@ class _SwipeActionCellState extends State<SwipeActionCell>
       onHorizontalDragEnd: _onDragEnd,
       onLongPress: widget.enableLongPressMenu ? _onLongPress : null,
       behavior: HitTestBehavior.opaque,
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(widget.borderRadius),
         child: SizedBox(
           child: Stack(
@@ -321,7 +321,9 @@ class _SwipeActionCellState extends State<SwipeActionCell>
                     color: theme.cardTheme.color ??
                         theme.colorScheme.surfaceContainerLow,
                     elevation: theme.cardTheme.elevation ?? 1,
-                    borderRadius: BorderRadius.circular(widget.borderRadius),
+                    shape: RoundedSuperellipseBorder(
+                        borderRadius:
+                            BorderRadius.circular(widget.borderRadius)),
                     clipBehavior: hasReveal ? Clip.antiAlias : Clip.none,
                     child: widget.child,
                   ),

@@ -52,18 +52,20 @@ class _PostSolutionBannerState extends State<PostSolutionBanner> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: isDark
                 ? Colors.green.withValues(alpha: 0.05)
                 : Colors.green.withValues(alpha: 0.04),
-            border: Border.all(
-              color: Colors.green.withValues(alpha: 0.3),
-              width: 1,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: Colors.green.withValues(alpha: 0.3),
+                width: 1,
+              ),
             ),
-            borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -101,9 +103,7 @@ class _BannerHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF2E7D32)
-            : const Color(0xFF43A047),
+        color: isDark ? const Color(0xFF2E7D32) : const Color(0xFF43A047),
       ),
       child: Row(
         children: [
@@ -176,7 +176,9 @@ class _AnswerRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: hasExcerpt ? onToggle : () => onJumpToPost?.call(answer.postNumber),
+            onTap: hasExcerpt
+                ? onToggle
+                : () => onJumpToPost?.call(answer.postNumber),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
@@ -222,7 +224,9 @@ class _AnswerRow extends StatelessWidget {
                   ),
                   if (hasExcerpt)
                     Icon(
-                      expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded,
+                      expanded
+                          ? Symbols.expand_less_rounded
+                          : Symbols.expand_more_rounded,
                       size: 20,
                       color: theme.colorScheme.onSurfaceVariant,
                     )
@@ -285,7 +289,9 @@ class _ExpandedExcerpt extends StatelessWidget {
           const SizedBox(height: 6),
           InkWell(
             onTap: () => onJumpToPost?.call(postNumber),
-            borderRadius: BorderRadius.circular(4),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
               child: Text(
@@ -302,4 +308,3 @@ class _ExpandedExcerpt extends StatelessWidget {
     );
   }
 }
-

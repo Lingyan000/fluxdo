@@ -150,8 +150,7 @@ class _BoostPopoverLayoutDelegate extends SingleChildLayoutDelegate {
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final maxWidth = math.min(_maxWidth, constraints.maxWidth - _margin * 2);
-    final maxHeight =
-        constraints.maxHeight - safeInsets.vertical - _margin * 2;
+    final maxHeight = constraints.maxHeight - safeInsets.vertical - _margin * 2;
     return BoxConstraints(
       maxWidth: math.max(0, maxWidth),
       maxHeight: math.max(0, maxHeight),
@@ -239,7 +238,9 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
           color: theme.colorScheme.surfaceContainer,
           elevation: 4,
           shadowColor: Colors.black.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(16),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -247,7 +248,8 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
             children: [
               InkWell(
                 onTap: canViewAuthor
-                    ? () => _select(context, BoostAuthorPopoverAction.authorCard)
+                    ? () =>
+                          _select(context, BoostAuthorPopoverAction.authorCard)
                     : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -333,7 +335,9 @@ class _PopoverActionButton extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         child: Row(

@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -12,7 +13,7 @@ import '../../../../../l10n/s.dart';
 typedef MentionDataSource = Future<MentionSearchResult> Function(String term);
 
 /// 用户提及自动补全组件
-/// 
+///
 /// 监听文本输入中的 @ 符号触发自动补全搜索
 /// 通过 [dataSource] 回调获取数据，实现与 API 层解耦
 class MentionAutocomplete extends StatefulWidget {
@@ -61,7 +62,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
 
   // @ 触发的起始位置
   int? _mentionStartIndex;
-  
+
   // 记录上次的文本，用于判断是否真的有变化
   String _lastText = '';
 
@@ -204,7 +205,11 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
 
     // 替换 @xxx 为 @username + 空格
     final mentionText = '@${item.mentionName} ';
-    final newText = text.replaceRange(_mentionStartIndex!, cursorPos, mentionText);
+    final newText = text.replaceRange(
+      _mentionStartIndex!,
+      cursorPos,
+      mentionText,
+    );
     final newCursorPos = _mentionStartIndex! + mentionText.length;
 
     widget.controller.value = TextEditingValue(
@@ -227,7 +232,8 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         _updateOverlay();
       } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
         setState(() {
-          _selectedIndex = (_selectedIndex - 1 + _results.length) % _results.length;
+          _selectedIndex =
+              (_selectedIndex - 1 + _results.length) % _results.length;
         });
         _updateOverlay();
       } else if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -246,7 +252,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     var showAbove = false; // 默认向下
     double anchorY = 0; // 锚点 Y 坐标（相对于组件顶部）
     double effectiveMaxHeight = 250.0; // 默认最大高度
-    
+
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox != null) {
       final pos = renderBox.localToGlobal(Offset.zero);
@@ -259,44 +265,53 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
       // 1. 估算光标位置
       double cursorY = 0;
       double lineHeight = 20; // 默认行高
-      
+
       final text = widget.controller.text;
       final selection = widget.controller.selection;
-      
+
       if (selection.isValid) {
         // 使用 bodyLarge 估算 (Material 3 TextField 默认样式)
         // 减去水平 padding (假设左右各 12)
-        final maxWidth = size.width - 24; 
-        final style = theme.textTheme.bodyLarge?.copyWith(fontSize: 16) ?? const TextStyle(fontSize: 16);
-        
+        final maxWidth = size.width - 24;
+        final style =
+            theme.textTheme.bodyLarge?.copyWith(fontSize: 16) ??
+            const TextStyle(fontSize: 16);
+
         final painter = TextPainter(
           text: TextSpan(text: text, style: style),
           textDirection: TextDirection.ltr,
           maxLines: null,
         );
-        
+
         painter.layout(maxWidth: maxWidth > 0 ? maxWidth : size.width);
-        
+
         // 获取光标位置
-        final caretOffset = painter.getOffsetForCaret(selection.base, Rect.zero);
+        final caretOffset = painter.getOffsetForCaret(
+          selection.base,
+          Rect.zero,
+        );
         cursorY = caretOffset.dy;
         lineHeight = painter.preferredLineHeight;
       }
-      
+
       // 添加垂直 padding 偏移
       const verticalPadding = 12.0;
       cursorY += verticalPadding;
 
       // 2. 限制在组件可视范围内
       final clampedCursorTop = cursorY.clamp(0.0, size.height);
-      final clampedCursorBottom = (cursorY + lineHeight).clamp(0.0, size.height);
+      final clampedCursorBottom = (cursorY + lineHeight).clamp(
+        0.0,
+        size.height,
+      );
 
       // 3. 计算可用空间
       const menuHeight = 220.0; // 稍微调小阈值 (因列表项变小了)
-      
+
       final globalBottomY = pos.dy + clampedCursorBottom;
-      final spaceBelow = screenHeight - keyboardHeight - padding.bottom - globalBottomY;
-      
+      final spaceBelow =
+          screenHeight - keyboardHeight - padding.bottom - globalBottomY;
+
       final globalTopY = pos.dy + clampedCursorTop;
       final spaceAbove = globalTopY - padding.top - kToolbarHeight;
 
@@ -312,11 +327,11 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         showAbove = false;
         anchorY = clampedCursorBottom;
       } else if (spaceAbove >= menuHeight) {
-         // 下半部分空间不够，但上半部分不在优先也不够？不对，如果 enters here, means !isBottomHalf or spaceAbove < menuHeight
-         // Wait, logic:
-         // If isBottomHalf && spaceAbove OK -> Up.
-         // Else if spaceBelow OK -> Down.
-         // Else if spaceAbove OK -> Up. (This catches TopHalf where Below is bad but Above is OK).
+        // 下半部分空间不够，但上半部分不在优先也不够？不对，如果 enters here, means !isBottomHalf or spaceAbove < menuHeight
+        // Wait, logic:
+        // If isBottomHalf && spaceAbove OK -> Up.
+        // Else if spaceBelow OK -> Down.
+        // Else if spaceAbove OK -> Up. (This catches TopHalf where Below is bad but Above is OK).
         showAbove = true;
         anchorY = clampedCursorTop;
       } else {
@@ -324,7 +339,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         showAbove = spaceAbove > spaceBelow;
         anchorY = showAbove ? clampedCursorTop : clampedCursorBottom;
       }
-      
+
       // 计算实际可用高度
       final availableHeight = showAbove ? spaceAbove : spaceBelow;
       effectiveMaxHeight = availableHeight < 250.0 ? availableHeight : 250.0;
@@ -343,16 +358,18 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
           child: TapRegion(
             groupId: EditableText,
             child: Container(
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
+                shadows: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: Material(
                 color: Colors.transparent,
@@ -366,7 +383,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         ),
       );
     }
-    
+
     return const SizedBox.shrink(); // Fallback if renderBox is null
   }
 
@@ -381,18 +398,20 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
             trackColor: Colors.transparent,
             color: theme.colorScheme.primary,
           ),
-          
+
         if (_results.isEmpty && !_isLoading)
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              _currentSearchTerm.isEmpty ? S.current.mention_searchHint : S.current.mention_noUserFound,
+              _currentSearchTerm.isEmpty
+                  ? S.current.mention_searchHint
+                  : S.current.mention_noUserFound,
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             ),
           )
         else if (_results.isNotEmpty)
           Flexible(
-            child: ClipRRect(
+            child: ClipRSuperellipse(
               borderRadius: BorderRadius.circular(8),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
@@ -420,10 +439,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     return KeyboardListener(
       focusNode: FocusNode(skipTraversal: true),
       onKeyEvent: _handleKeyEvent,
-      child: CompositedTransformTarget(
-        link: _layerLink,
-        child: widget.child,
-      ),
+      child: CompositedTransformTarget(link: _layerLink, child: widget.child),
     );
   }
 }
@@ -446,19 +462,24 @@ class _MentionItemTile extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 调小 Padding (16/12 -> 12/8)
-          color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.1) : null,
-          child: Row(
-            children: [
-              _buildAvatar(theme),
-              const SizedBox(width: 8), // 调小间距 (12 -> 8)
-              Expanded(child: _buildInfo(theme)),
-              if (item.isGroup) _buildGroupBadge(theme),
-            ],
-          ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 8,
+        ), // 调小 Padding (16/12 -> 12/8)
+        color: isSelected
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.1)
+            : null,
+        child: Row(
+          children: [
+            _buildAvatar(theme),
+            const SizedBox(width: 8), // 调小间距 (12 -> 8)
+            Expanded(child: _buildInfo(theme)),
+            if (item.isGroup) _buildGroupBadge(theme),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildAvatar(ThemeData theme) {
@@ -474,7 +495,9 @@ class _MentionItemTile extends StatelessWidget {
     }
 
     // 群组或无头像时显示首字母
-    final initial = item.mentionName.isNotEmpty ? item.mentionName[0].toUpperCase() : '?';
+    final initial = item.mentionName.isNotEmpty
+        ? item.mentionName[0].toUpperCase()
+        : '?';
     return CircleAvatar(
       radius: 12,
       backgroundColor: item.isGroup
@@ -526,9 +549,11 @@ class _MentionItemTile extends StatelessWidget {
   Widget _buildGroupBadge(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       child: Text(
         S.current.mention_group,

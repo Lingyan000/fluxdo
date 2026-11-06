@@ -10,7 +10,9 @@ import '../settings/search/settings_search_index.dart';
 import '../utils/appearance_warmup.dart';
 import '../utils/platform_utils.dart';
 import '../utils/responsive.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../widgets/esc_fallback_observer.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import 'about_page.dart';
@@ -298,9 +300,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           child: ListTile(
             leading: Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: result.categoryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: Icon(
                 result.categoryIcon,
@@ -426,9 +430,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: finalIconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: Icon(icon, color: finalIconColor, size: 20),
             ),

@@ -80,10 +80,12 @@ class SegmentedCardItem extends StatelessWidget {
     return Material(
       color: background,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(index == 0 ? outerRadius : innerRadius),
-          bottom: Radius.circular(index == count - 1 ? outerRadius : innerRadius),
+          bottom: Radius.circular(
+            index == count - 1 ? outerRadius : innerRadius,
+          ),
         ),
       ),
       child: child,

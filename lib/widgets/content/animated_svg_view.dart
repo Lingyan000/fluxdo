@@ -89,8 +89,8 @@ class AnimatedSvgView extends StatefulWidget {
   /// 根 `<svg>` 标签几何:供管线记入尺寸备忘,
   /// 让占位在加载前就能预留精确高度。
   static ({double aspect, double? naturalW, double? naturalH, bool stretch})
-      rootGeometryOf(String svgSource) =>
-          _AnimatedSvgViewState._rootGeometryOf(svgSource);
+  rootGeometryOf(String svgSource) =>
+      _AnimatedSvgViewState._rootGeometryOf(svgSource);
 
   @override
   State<AnimatedSvgView> createState() => _AnimatedSvgViewState();
@@ -153,11 +153,11 @@ class _SvgFirstFrameCache {
   // ---- 磁盘持久化(PNG 解码在引擎 IO 线程,UI isolate 零阻塞) ----
 
   static Future<Directory> _dir() => _dirFuture ??= () async {
-        final base = await getApplicationSupportDirectory();
-        final dir = Directory('${base.path}/animated_svg_frames');
-        await dir.create(recursive: true);
-        return dir;
-      }();
+    final base = await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}/animated_svg_frames');
+    await dir.create(recursive: true);
+    return dir;
+  }();
 
   static Future<File> _fileFor(String digest) async =>
       File('${(await _dir()).path}/$digest.png');
@@ -293,9 +293,11 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     // <img> 置换元素尺寸规则:缺失的一维由另一维 × 固有比例补出
     // (width="100%"+height="84"+viewBox → 固有宽 = 84×ratio = 680,
     // 浏览器就按 680×84 摆,左对齐;不是"撑满列宽")。
-    _naturalWidth = geo.naturalW ??
+    _naturalWidth =
+        geo.naturalW ??
         (geo.naturalH != null ? geo.naturalH! * geo.aspect : null);
-    _naturalHeight = geo.naturalH ??
+    _naturalHeight =
+        geo.naturalH ??
         (geo.naturalW != null ? geo.naturalW! / geo.aspect : null);
     _stretchContent = geo.stretch;
     if (widget.autoPlay) {
@@ -337,8 +339,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   /// 角标(空白区悬浮的控件脱离画面语境,易被误解)。接管 [img] 所有权。
   Future<void> _probeSnapshotVisible(int key, ui.Image img) async {
     try {
-      final data =
-          await img.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+      final data = await img.toByteData(
+        format: ui.ImageByteFormat.rawStraightRgba,
+      );
       if (data == null) return;
       final bytes = data.buffer.asUint8List();
       var visible = false;
@@ -531,8 +534,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
 
   Future<void> _capture() async {
     if (!mounted || _snapshot != null) return;
-    final boundary = _boundaryKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     // debugNeedsPaint 只能在 assert 里读(release 下 getter 会炸)
     var needsPaint = false;
     assert(() {
@@ -546,8 +550,9 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
     try {
       // 限制快照长边 ≤2048px,防超大签名图撑爆纹理内存
       final dpr = MediaQuery.of(context).devicePixelRatio;
-      final longest =
-          boundary.size.longestSide <= 0 ? 1.0 : boundary.size.longestSide;
+      final longest = boundary.size.longestSide <= 0
+          ? 1.0
+          : boundary.size.longestSide;
       final ratio = dpr.clamp(1.0, 2048 / longest);
       final master = await boundary.toImage(pixelRatio: ratio.toDouble());
       if (!mounted) {
@@ -831,11 +836,13 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
       // 离屏管线进行中 / 等待他人快照 / 未到驻留窗口:轻占位
       showBadge = false;
       body = DecoratedBox(
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(
             alpha: 0.3,
           ),
-          borderRadius: BorderRadius.circular(4),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(4),
+          ),
         ),
       );
     }
@@ -924,12 +931,15 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   static final RegExp _attrViewBoxRe = RegExp(
     r'viewBox\s*=\s*"[\d.eE+-]+[\s,]+[\d.eE+-]+[\s,]+([\d.eE+-]+)[\s,]+([\d.eE+-]+)"',
   );
-  static final RegExp _attrWidthRe =
-      RegExp(r'\swidth\s*=\s*"([\d.]+)(?:px)?\s*"');
-  static final RegExp _attrHeightRe =
-      RegExp(r'\sheight\s*=\s*"([\d.]+)(?:px)?\s*"');
-  static final RegExp _parNoneRe =
-      RegExp(r'preserveAspectRatio\s*=\s*"\s*none\s*"');
+  static final RegExp _attrWidthRe = RegExp(
+    r'\swidth\s*=\s*"([\d.]+)(?:px)?\s*"',
+  );
+  static final RegExp _attrHeightRe = RegExp(
+    r'\sheight\s*=\s*"([\d.]+)(?:px)?\s*"',
+  );
+  static final RegExp _parNoneRe = RegExp(
+    r'preserveAspectRatio\s*=\s*"\s*none\s*"',
+  );
 
   /// 浏览器语义的自然尺寸:width/height 只认**纯数字**属性
   /// (`width="100%"` 等相对值不算自然尺寸,匹配不中即 null)。
@@ -940,7 +950,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
   /// "宽度撑满、高度锁 84" 定**视口**;视口内的内容仍按
   /// preserveAspectRatio 等比映射(不拉伸),两层语义要分开。
   static ({double aspect, double? naturalW, double? naturalH, bool stretch})
-      _rootGeometryOf(String src) {
+  _rootGeometryOf(String src) {
     final tag = _rootSvgTagRe.firstMatch(src)?.group(0);
     if (tag == null) {
       return (aspect: 16 / 9, naturalW: null, naturalH: null, stretch: false);
@@ -996,8 +1006,10 @@ String _contentDigestTask(String s) {
   if (anims.isNotEmpty) {
     // seek 到能代表画面的时刻(手写体 path 动画 t=0 是空白起笔,
     // 取周期中点让首帧有内容;非周期/未知时长回退 0)
-    SvgTimeline(animations: anims, rootNode: doc.root)
-        .seek(_representativeTime(anims));
+    SvgTimeline(
+      animations: anims,
+      rootNode: doc.root,
+    ).seek(_representativeTime(anims));
     _pruneInvisible(doc.root);
     _unwrapCssPathValues(doc.root);
   }
@@ -1010,7 +1022,8 @@ String _contentDigestTask(String s) {
 Duration _representativeTime(List<SmilAnimation> anims) {
   Duration shortest = Duration.zero;
   for (final a in anims) {
-    if (a.dur > Duration.zero && (shortest == Duration.zero || a.dur < shortest)) {
+    if (a.dur > Duration.zero &&
+        (shortest == Duration.zero || a.dur < shortest)) {
       shortest = a.dur;
     }
   }
@@ -1019,8 +1032,7 @@ Duration _representativeTime(List<SmilAnimation> anims) {
       : Duration(microseconds: shortest.inMicroseconds ~/ 2);
 }
 
-final RegExp _cssPathFnRe =
-    RegExp(r'''^path\(\s*["']([\s\S]*)["']\s*\)$''');
+final RegExp _cssPathFnRe = RegExp(r'''^path\(\s*["']([\s\S]*)["']\s*\)$''');
 
 /// 解包 CSS `d: path("...")` 动画值(上游缺陷):
 /// CSS @keyframes 对 d 属性的动画帧值是 `path("M ...")` 函数包装,
@@ -1077,16 +1089,17 @@ Future<(SvgDocument, bool)> _parseFirstFrameInBg(String source) =>
 }
 
 Future<(SvgDocument, List<SmilAnimation>)> _parseFirstFrameInBgForPlayback(
-        String source) =>
-    Isolate.run<(SvgDocument, List<SmilAnimation>)>(
-        () => _parsePlaybackTask(source));
+  String source,
+) => Isolate.run<(SvgDocument, List<SmilAnimation>)>(
+  () => _parsePlaybackTask(source),
+);
 
 /// 自持播放器的 painter:包装包的 AnimatedSvgPainter,重绘由外部
 /// repaint listenable(每 tick bump)驱动 —— 播放帧不经过 setState/
 /// build/element 更新,只走 paint。
 class _SelfDrivenSvgPainter extends CustomPainter {
   _SelfDrivenSvgPainter({required this.document, required Listenable repaint})
-      : super(repaint: repaint);
+    : super(repaint: repaint);
 
   final SvgDocument document;
 

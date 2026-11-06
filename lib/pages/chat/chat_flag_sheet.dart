@@ -237,18 +237,22 @@ class _ChatFlagSheetState extends State<_ChatFlagSheet> {
         color: isSelected
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => setState(() => _selectedType = type),
           child: Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isSelected
-                    ? theme.colorScheme.primary
-                    : Colors.transparent,
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                ),
               ),
             ),
             child: Row(

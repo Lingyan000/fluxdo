@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../l10n/s.dart';
 import '../../../pages/webview_page.dart';
 import '../../../utils/dialog_utils.dart';
@@ -22,7 +23,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHigh,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
@@ -30,7 +31,9 @@ class LdcRewardConfigTile extends ConsumerWidget {
       ),
       child: InkWell(
         onTap: () => _showConfigDialog(context, ref, isConfigured),
-        borderRadius: BorderRadius.circular(24),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -38,9 +41,11 @@ class LdcRewardConfigTile extends ConsumerWidget {
               Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: Icon(
                   Symbols.volunteer_activism_rounded,

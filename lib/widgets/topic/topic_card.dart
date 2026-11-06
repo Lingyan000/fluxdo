@@ -36,7 +36,7 @@ Widget _clipCardIfNeeded({
   required bool shouldClip,
 }) {
   if (!shouldClip) return child;
-  return ClipRRect(borderRadius: borderRadius, child: child);
+  return ClipRSuperellipse(borderRadius: borderRadius, child: child);
 }
 
 /// 话题卡交互面(公共):桌面 = Material + InkWell(hover/水波纹/右键/
@@ -79,7 +79,7 @@ class TopicCardInteractiveSurface extends StatelessWidget {
       type: MaterialType.transparency,
       child: _withDesktopTertiaryTap(
         InkWell(
-          borderRadius: borderRadius,
+          customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
           splashFactory: InkSplash.splashFactory,
           onTap: onTap,
           onLongPress: onLongPress,
@@ -201,9 +201,11 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
               ? null
               : (_) => _setPressed(false),
           child: DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: _pressed ? overlayColor : Colors.transparent,
-              borderRadius: widget.borderRadius,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: widget.borderRadius,
+              ),
             ),
             child: widget.child,
           ),
@@ -310,7 +312,7 @@ class TopicCard extends ConsumerWidget {
     // Card 壳换轻装(视觉逐项等价):cardTheme elevation=0 无阴影无 tint,
     // 而 Card→Material 每卡挂一套 AnimatedPhysicalModel 隐式动画基建
     // (AnimationController/Ticker/PhysicalShape),对列表滚动物化是纯税
-    // (生产 PROF 点名)。DecoratedBox 复刻色/圆角/选中描边,ClipRRect
+    // (生产 PROF 点名)。DecoratedBox 复刻色/圆角/选中描边,ClipRSuperellipse
     // 复刻 antiAlias 裁剪,Material(transparency) 只做 InkWell 的 ink 载体。
     final cardRadius = BorderRadius.circular(10);
     // PerfSpanBox:整卡子树的 layout/paint 账单(lay:card#N / pnt:card#N),
@@ -323,16 +325,18 @@ class TopicCard extends ConsumerWidget {
           borderRadius: cardRadius,
           shouldClip: topWidget != null,
           child: DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: isSelected
                   ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
                   : (highlightColor ?? theme.cardTheme.color),
-              borderRadius: cardRadius,
-              border: isSelected
-                  ? Border.all(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                    )
-                  : null,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: cardRadius,
+                side: isSelected
+                    ? BorderSide(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                      )
+                    : BorderSide.none,
+              ),
             ),
             child: TopicCardInteractiveSurface(
               borderRadius: cardRadius,
@@ -845,9 +849,11 @@ class TopicCard extends ConsumerWidget {
       // 未读数：主题色圆角徽章
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.primary,
-          borderRadius: BorderRadius.circular(10),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
         child: Text(
           '${topic.unread}',
@@ -1051,19 +1057,21 @@ class CompactTopicCard extends ConsumerWidget {
         borderRadius: cardRadius,
         shouldClip: false,
         child: DecoratedBox(
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: isSelected
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
                 : highlightColor ??
                       theme.colorScheme.surfaceContainerLow.withValues(
                         alpha: 0.5,
                       ),
-            borderRadius: cardRadius,
-            border: isSelected
-                ? Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                  )
-                : null,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: cardRadius,
+              side: isSelected
+                  ? BorderSide(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                    )
+                  : BorderSide.none,
+            ),
           ),
           child: TopicCardInteractiveSurface(
             borderRadius: cardRadius,
@@ -1168,11 +1176,13 @@ class CompactTopicCard extends ConsumerWidget {
                         horizontal: 6,
                         vertical: 2,
                       ),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.primaryContainer.withValues(
                           alpha: 0.7,
                         ),
-                        borderRadius: BorderRadius.circular(10),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       child: Text(
                         '${topic.unread}',

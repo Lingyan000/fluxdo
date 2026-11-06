@@ -37,9 +37,13 @@ class KeywordFilterHintBar extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(8),
+        ),
+        child: InkWell(
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
           onTap: () => onlyBlocked
               ? showBlockedUsernamesDialog(context, ref)
               : showTopicFilterKeywordsDialog(context, ref),

@@ -25,17 +25,6 @@ class GlassOpticalBorder extends CustomPainter {
         .clamp(0.0, 1.0);
   }
 
-  static Offset _normalAt(Offset point, Size size, double radius) {
-    final p = point - size.center(Offset.zero);
-    final x = p.dx.abs() - (size.width / 2 - radius);
-    final y = p.dy.abs() - (size.height / 2 - radius);
-    if (x > 0 || y > 0) {
-      final v = Offset(math.max(x, 0) * p.dx.sign, math.max(y, 0) * p.dy.sign);
-      return v.distance > 0 ? v / v.distance : Offset.zero;
-    }
-    return x > y ? Offset(p.dx.sign, 0) : Offset(0, p.dy.sign);
-  }
-
   void _drawBand(
     Canvas canvas,
     Size size,
@@ -47,18 +36,17 @@ class GlassOpticalBorder extends CustomPainter {
   }) {
     final rect = (Offset.zero & size).deflate(inset);
     if (rect.isEmpty) return;
-    final rr = RRect.fromRectAndRadius(
+    final rr = RSuperellipse.fromRectAndRadius(
       rect,
       Radius.circular(math.max(0, r - inset)),
     );
-    final metric = (Path()..addRRect(rr)).computeMetrics().first;
+    final metric = (Path()..addRSuperellipse(rr)).computeMetrics().first;
     // 每段约3dp，顶点颜色连续插值，避免圆角高光出现分段色块。
     final segments = (metric.length / 3).ceil().clamp(32, 800);
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = width;
-    double alphaAt(Offset point) {
-      final normal = _normalAt(point, size, r);
+    double alphaAt(Offset normal) {
       final light = illumination(normal);
       final value = shadow ? (1 - light) * opacity : light * opacity;
       return (value * strength).clamp(0.0, 1.0);
@@ -77,7 +65,7 @@ class GlassOpticalBorder extends CustomPainter {
       final n = Offset(-tangent.vector.dy, tangent.vector.dx);
       positions.add(p + n * width / 2);
       positions.add(p - n * width / 2);
-      final c = color.withValues(alpha: alphaAt(p));
+      final c = color.withValues(alpha: alphaAt(-n));
       colors.addAll([c, c]);
       if (i < segments) {
         final v = i * 2;

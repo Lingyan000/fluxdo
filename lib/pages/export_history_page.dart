@@ -14,7 +14,9 @@ import '../l10n/s.dart';
 import '../providers/export_history_provider.dart';
 import '../services/public_file_channel.dart';
 import '../services/toast_service.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../storage/export_history_dao.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
@@ -119,11 +121,7 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
       // content uri 走原生 ACTION_SEND，本地路径走 share_plus
       if (fileExists && (isUri || ShareUtils.canShareFiles))
         ('share', Symbols.share_rounded, S.current.exportHistory_shareAgain),
-      (
-        'delete',
-        Symbols.delete_rounded,
-        S.current.exportHistory_deleteRecord,
-      ),
+      ('delete', Symbols.delete_rounded, S.current.exportHistory_deleteRecord),
     ];
 
     await AppBottomSheet.show<void>(
@@ -139,9 +137,7 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
             ListTile(
               leading: Icon(
                 icon,
-                color: id == 'delete'
-                    ? Theme.of(ctx).colorScheme.error
-                    : null,
+                color: id == 'delete' ? Theme.of(ctx).colorScheme.error : null,
               ),
               title: Text(
                 label,
@@ -398,7 +394,7 @@ class _ExportEntryCard extends StatelessWidget {
 
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(14),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -412,9 +408,11 @@ class _ExportEntryCard extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: Icon(_icon, color: accent, size: 20),
               ),
@@ -458,8 +456,9 @@ class _ExportEntryCard extends StatelessWidget {
                           Text(TimeUtils.formatRelativeTime(entry.createdAt)),
                           if (entry.postCount != null)
                             Text(
-                              context.l10n
-                                  .exportHistory_postCount(entry.postCount!),
+                              context.l10n.exportHistory_postCount(
+                                entry.postCount!,
+                              ),
                             ),
                           if (entry.size != null && entry.size! > 0)
                             Text(_formatSize(entry.size!)),
@@ -511,9 +510,10 @@ class _ExportEntryCard extends StatelessWidget {
   IconData get _trailingIcon => switch (entry.targetType) {
     ExportHistoryTarget.notion => Symbols.north_east_rounded,
     ExportHistoryTarget.shared => Symbols.share_rounded,
-    ExportHistoryTarget.localFile => PlatformUtils.isDesktop
-        ? Symbols.folder_open_rounded
-        : Symbols.file_open_rounded,
+    ExportHistoryTarget.localFile =>
+      PlatformUtils.isDesktop
+          ? Symbols.folder_open_rounded
+          : Symbols.file_open_rounded,
   };
 
   String _formatSize(int bytes) {
@@ -533,9 +533,11 @@ class _FormatPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(5),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(5),
+        ),
       ),
       child: Text(
         label,

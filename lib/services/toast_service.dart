@@ -138,8 +138,7 @@ class DownloadToastHandle {
   final _ToastSession? _session;
   bool _finished = false;
 
-  bool get isActive =>
-      !_finished && _session != null && !_session.isClosed;
+  bool get isActive => !_finished && _session != null && !_session.isClosed;
 
   /// 更新下载进度（0.0~1.0，-1 为不确定进度）
   void updateProgress(double value) {
@@ -416,21 +415,33 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
   );
   static final _settleScale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: 0.86, end: 1.1).chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: 0.86,
+        end: 1.1,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 60,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)),
+      tween: Tween(
+        begin: 1.1,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
       weight: 40,
     ),
   ]);
   static final _settleTilt = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: -0.14, end: 0.07).chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: -0.14,
+        end: 0.07,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 60,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 0.07, end: 0.0).chain(CurveTween(curve: Curves.easeInOut)),
+      tween: Tween(
+        begin: 0.07,
+        end: 0.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
       weight: 40,
     ),
   ]);
@@ -438,11 +449,17 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
   // 同一件事重复触发：徽章弹一下，不做整条胶囊的形变
   static final _pulseScale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: 1.0, end: 1.12).chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: 1.0,
+        end: 1.12,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 45,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.12, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)),
+      tween: Tween(
+        begin: 1.12,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
       weight: 55,
     ),
   ]);
@@ -594,7 +611,7 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
             child: DecoratedBox(
               // 浮在正文之上需要比导航更明显的落影
               decoration: ShapeDecoration(
-                shape: RoundedRectangleBorder(
+                shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(_radius),
                 ),
                 shadows: [
@@ -738,7 +755,9 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
                   minimumSize: const Size(0, 40),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: const StadiumBorder(),
+                  shape: const RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(9999)),
+                  ),
                   textStyle: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -991,10 +1010,7 @@ class _CheckmarkPainter extends CustomPainter {
   final double progress;
   final Color color;
 
-  _CheckmarkPainter({
-    required this.progress,
-    required this.color,
-  });
+  _CheckmarkPainter({required this.progress, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1030,8 +1046,7 @@ class _CheckmarkPainter extends CustomPainter {
       path.lineTo(mid.dx, mid.dy);
       // Draw second segment (the long tail upwards)
       final remainingLength = currentLength - pathLength1;
-      final currentEnd =
-          Offset.lerp(mid, end, remainingLength / pathLength2)!;
+      final currentEnd = Offset.lerp(mid, end, remainingLength / pathLength2)!;
       path.lineTo(currentEnd.dx, currentEnd.dy);
     }
 

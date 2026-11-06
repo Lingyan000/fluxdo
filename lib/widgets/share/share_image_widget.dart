@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+
 import '../../constants.dart';
 import '../../l10n/s.dart';
 import '../../models/topic.dart';
@@ -240,9 +241,11 @@ class ShareImageWidget extends ConsumerWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
       // 整帖非分块渲染:FluxdoRender 内部就是一个 Column(无虚拟化),适合离屏
       // RepaintBoundary 全量截图;超高图由 screenshot_utils 分块拼接处理。

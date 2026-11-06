@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'package:flutter/material.dart';
@@ -114,8 +115,7 @@ class ImageLiftMenu {
         !renderObject.hasSize) {
       return false;
     }
-    final rawRect =
-        renderObject.localToGlobal(Offset.zero) & renderObject.size;
+    final rawRect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
     if (rawRect.isEmpty || rawRect.hasNaN) return false;
     // 源盒子可能比窗口还大/部分出屏(unbounded 容器:横滚内容、按原图
     // 尺寸排的盒子等),此时从完整源矩形起飞会让飞行前段全部在屏幕外
@@ -131,11 +131,10 @@ class ImageLiftMenu {
     ShortcutSurfaceRegistryNotifier? shortcutRegistry;
     Object? shortcutOwner;
     try {
-      enableBlur =
-          ProviderScope.containerOf(
-            context,
-            listen: false,
-          ).read(preferencesProvider).dialogBlur;
+      enableBlur = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(preferencesProvider).dialogBlur;
     } catch (_) {
       // 无 ProviderScope 环境(测试等)回退默认开。
     }
@@ -287,6 +286,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
 
   /// 图片完整宽高比(随重测更新)。
   late double _contentAspect = widget.contentAspect;
+
   /// 面板实测高度(首帧后测量面板再起动画)。
   double _panelHeight = 0;
 
@@ -312,6 +312,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
 
   /// 淡出后待执行的动作回调。
   VoidCallback? _pendingCallback;
+
   /// 返回键消费项:挂源页面路由的 local history,系统返回(按钮/
   /// 手势 commit/页面返回入口)优先关菜单而非 pop 页面。
   LocalHistoryEntry? _historyEntry;
@@ -346,10 +347,9 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     );
     route.addLocalHistoryEntry(_historyEntry!);
     _backHandler = PredictiveBackOverlayHandler(
-      isEnabled:
-          () =>
-              route.isCurrent &&
-              (_phase == _LiftPhase.open || _phase == _LiftPhase.opening),
+      isEnabled: () =>
+          route.isCurrent &&
+          (_phase == _LiftPhase.open || _phase == _LiftPhase.opening),
       onStart: _onBackStart,
       onUpdate: _onBackUpdate,
       onCancel: _onBackCancel,
@@ -390,9 +390,10 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     }
     // 跟手进度回弹到 0(复用 _dragReset 通道)。
     _backResetAnimating = true;
-    _dragResetAnim = Tween<double>(begin: start, end: 0).animate(
-      CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic),
-    );
+    _dragResetAnim = Tween<double>(
+      begin: start,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic));
     _dragReset
       ..duration = const Duration(milliseconds: 220)
       ..forward(from: 0).whenCompleteOrCancel(() {
@@ -453,7 +454,8 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
       _settleFrames--;
       final changed = _remeasureGeometry();
       // 还有剩余帧且期间仍有变化 → 继续观察;无变化时提前停止。
-      if (_settleFrames > 0 && (changed || _settleFrames == _kSettleFrames - 1)) {
+      if (_settleFrames > 0 &&
+          (changed || _settleFrames == _kSettleFrames - 1)) {
         _scheduleSettleMeasure();
       }
     });
@@ -485,8 +487,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     if (renderObject is RenderBox &&
         renderObject.attached &&
         renderObject.hasSize) {
-      final rect =
-          renderObject.localToGlobal(Offset.zero) & renderObject.size;
+      final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
       if (!rect.hasNaN && !rect.isEmpty) {
         final visible = rect.intersect(Offset.zero & screen);
         if (visible.isEmpty) {
@@ -545,6 +546,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     _master.duration = _kOpenDuration;
     _master.forward(from: 0);
   }
+
   /// 预览目标矩形:按源图宽高比放大到多限约束内,水平居中,
   /// 垂直居中于「顶部安全区 ~ 面板上缘」的可用区间
   /// (iOS 上下文菜单:预览悬于中上部,菜单贴底)。
@@ -670,17 +672,13 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
 
   void _onPanelDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldClose =
-        _dragOffset > _panelHeight * 0.32 || velocity > 700;
+    final shouldClose = _dragOffset > _panelHeight * 0.32 || velocity > 700;
     if (shouldClose) {
       _close(fromDrag: _dragOffset);
       return;
     }
     if (_dragOffset > 0) {
-      _dragResetAnim = Tween<double>(
-        begin: _dragOffset,
-        end: 0,
-      ).animate(
+      _dragResetAnim = Tween<double>(begin: _dragOffset, end: 0).animate(
         CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic),
       );
       _dragReset.duration = const Duration(milliseconds: 260);
@@ -752,11 +750,8 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
         final previewRect = target == null
             ? _sourceRect
             : Rect.lerp(_sourceRect, target, liftT)!;
-        final radius = lerpDouble(
-              widget.sourceRadius,
-              _kPreviewTargetRadius,
-              liftT,
-            ) ??
+        final radius =
+            lerpDouble(widget.sourceRadius, _kPreviewTargetRadius, liftT) ??
             _kPreviewTargetRadius;
 
         Widget stack = Stack(
@@ -798,9 +793,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     final base = widget.enableBlur
         ? blurBarrierColor(Theme.of(context).brightness)
         : Colors.black54;
-    final dim = ColoredBox(
-      color: base.withValues(alpha: base.a * scrimT),
-    );
+    final dim = ColoredBox(color: base.withValues(alpha: base.a * scrimT));
     final tapArea = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _close,
@@ -811,10 +804,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     return Semantics(
       label: S.current.common_close,
       button: true,
-      child: BackdropFilter(
-        filter: createBlurFilter(sigma),
-        child: tapArea,
-      ),
+      child: BackdropFilter(filter: createBlurFilter(sigma), child: tapArea),
     );
   }
 
@@ -825,21 +815,23 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     double shadowT,
     double fadeT,
   ) {
-    Widget preview = ClipRRect(
+    Widget preview = ClipRSuperellipse(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox.expand(child: Builder(builder: widget.previewBuilder)),
     );
     if (shadowT > 0) {
       preview = DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          boxShadow: [
+        decoration: ShapeDecoration(
+          shadows: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.32 * shadowT),
               blurRadius: 44 * shadowT,
               offset: Offset(0, 14 * shadowT),
             ),
           ],
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(radius),
+          ),
         ),
         child: preview,
       );
@@ -866,8 +858,10 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
         child: Material(
           key: _panelKey,
           color: colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(_kPanelCornerRadius),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(_kPanelCornerRadius),
+            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: SafeArea(
@@ -922,7 +916,9 @@ class _LiftActionButton extends StatelessWidget {
     return SizedBox(
       width: 76,
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -932,11 +928,17 @@ class _LiftActionButton extends StatelessWidget {
               Container(
                 width: 60,
                 height: 60,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(18),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                 ),
-                child: Icon(action.icon, size: 26, color: colorScheme.onSurface),
+                child: Icon(
+                  action.icon,
+                  size: 26,
+                  color: colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 8),
               Text(

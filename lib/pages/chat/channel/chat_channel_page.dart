@@ -1,4 +1,5 @@
 import 'package:fluxdo/utils/avatar_url.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -62,7 +63,9 @@ import '../chat_channel_info_page.dart';
 import '../chat_flag_sheet.dart';
 import 'chat_composer_controller.dart';
 import '../chat_search_page.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import 'chat_message_menu.dart';
 
 part '_chat_composer.dart';
@@ -1483,7 +1486,9 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
           builder: (_) => ChatChannelInfoPage(channelId: widget.channelId),
         ),
       ),
-      borderRadius: BorderRadius.circular(10),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(

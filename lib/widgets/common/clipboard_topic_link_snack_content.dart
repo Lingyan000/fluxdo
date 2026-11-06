@@ -37,13 +37,15 @@ class ClipboardTopicLinkSnackContent extends StatelessWidget {
             alpha: isDark ? 0.38 : 0.18,
           ),
           surfaceTintColor: colorScheme.surfaceTint,
-          borderRadius: borderRadius,
+          shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: borderRadius,
-              border: Border.all(
-                color: colorScheme.outlineVariant.withValues(
-                  alpha: isDark ? 0.32 : 0.6,
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: borderRadius,
+                side: BorderSide(
+                  color: colorScheme.outlineVariant.withValues(
+                    alpha: isDark ? 0.32 : 0.6,
+                  ),
                 ),
               ),
             ),
@@ -54,11 +56,13 @@ class ClipboardTopicLinkSnackContent extends StatelessWidget {
                   Container(
                     width: 32,
                     height: 32,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: colorScheme.primaryContainer.withValues(
                         alpha: isDark ? 0.62 : 0.78,
                       ),
-                      borderRadius: BorderRadius.circular(8),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     alignment: Alignment.center,
                     child: Icon(
@@ -90,9 +94,8 @@ class ClipboardTopicLinkSnackContent extends StatelessWidget {
                   ),
                   IconButton(
                     onPressed: onDismiss,
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).closeButtonTooltip,
+                    tooltip: MaterialLocalizations.of(context)
+                        .closeButtonTooltip,
                     icon: const Icon(Symbols.close_rounded),
                     iconSize: 20,
                     style: IconButton.styleFrom(

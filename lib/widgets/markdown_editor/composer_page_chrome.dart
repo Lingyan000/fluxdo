@@ -1,6 +1,7 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+
 import '../../l10n/s.dart';
 
 /// 文档操作的统一图标规格。
@@ -76,7 +77,7 @@ class ComposerTopicKindPicker extends StatelessWidget {
       elevation: 3,
       shadowColor: colors.shadow.withValues(alpha: .24),
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: colors.outlineVariant.withValues(alpha: .45),

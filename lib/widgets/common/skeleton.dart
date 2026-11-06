@@ -16,10 +16,7 @@ import 'package:flutter/material.dart';
 class Skeleton extends StatefulWidget {
   final Widget child;
 
-  const Skeleton({
-    required this.child,
-    super.key,
-  });
+  const Skeleton({required this.child, super.key});
 
   @override
   State<Skeleton> createState() => _SkeletonState();
@@ -50,10 +47,7 @@ class _SkeletonState extends State<Skeleton> {
     return RepaintBoundary(
       child: _Shimmer(
         linearGradient: shimmerGradient,
-        child: _ShimmerLoading(
-          isLoading: true,
-          child: widget.child,
-        ),
+        child: _ShimmerLoading(isLoading: true, child: widget.child),
       ),
     );
   }
@@ -65,10 +59,7 @@ class _Shimmer extends StatefulWidget {
     return context.findAncestorStateOfType<_ShimmerState>();
   }
 
-  const _Shimmer({
-    required this.linearGradient,
-    this.child,
-  });
+  const _Shimmer({required this.linearGradient, this.child});
 
   final LinearGradient linearGradient;
   final Widget? child;
@@ -77,7 +68,8 @@ class _Shimmer extends StatefulWidget {
   _ShimmerState createState() => _ShimmerState();
 }
 
-class _ShimmerState extends State<_Shimmer> with SingleTickerProviderStateMixin {
+class _ShimmerState extends State<_Shimmer>
+    with SingleTickerProviderStateMixin {
   late AnimationController _shimmerController;
 
   @override
@@ -138,10 +130,7 @@ class _SlidingGradientTransform extends GradientTransform {
 
 /// ShimmerLoading 包装器
 class _ShimmerLoading extends StatefulWidget {
-  const _ShimmerLoading({
-    required this.isLoading,
-    required this.child,
-  });
+  const _ShimmerLoading({required this.isLoading, required this.child});
 
   final bool isLoading;
   final Widget child;
@@ -240,9 +229,11 @@ class SkeletonBox extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withAlpha(100),
-        borderRadius: BorderRadius.circular(borderRadius),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
       ),
     );
   }
@@ -252,10 +243,7 @@ class SkeletonBox extends StatelessWidget {
 class SkeletonCircle extends StatelessWidget {
   final double size;
 
-  const SkeletonCircle({
-    super.key,
-    required this.size,
-  });
+  const SkeletonCircle({super.key, required this.size});
 
   @override
   Widget build(BuildContext context) {

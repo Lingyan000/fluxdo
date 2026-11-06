@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../providers/discourse_providers.dart';
@@ -203,18 +204,23 @@ class TopicDetailHeader extends ConsumerWidget {
           // 看不出来,指定完等于白指定。
           if (detail.isAssigned) ...[
             InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () => unawaited(
-                showAssignSheet(context, ref, topicId: detail.id),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
+              onTap: () =>
+                  unawaited(showAssignSheet(context, ref, topicId: detail.id)),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.primaryContainer.withValues(
                     alpha: 0.5,
                   ),
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

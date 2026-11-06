@@ -166,7 +166,9 @@ class _FingerprintPresetDialogState extends State<FingerprintPresetDialog> {
             : automatic
             ? colors.surfaceContainerHighest
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         clipBehavior: Clip.antiAlias,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(

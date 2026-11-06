@@ -12,6 +12,7 @@ import '../../services/qr_login_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// OTP 一次性登录令牌的服务端 TTL(Redis setex 10 分钟,兑换即焚)。
@@ -62,7 +63,9 @@ Future<void> showQrLoginSheet(BuildContext context, {String? username}) async {
       context: context,
       builder: (_) => Dialog(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         child: SizedBox(
           width: 440,
           child: _QrLoginPanel(username: username, inSheet: false),
@@ -332,9 +335,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
           onPressed: _confirmAndGenerate,
           icon: const Icon(Symbols.qr_code_rounded),
           label: Text(context.l10n.login_qrGenerateAction),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-          ),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
         ),
       ],
     );
@@ -343,9 +344,11 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   Widget _buildSecurityNote(ThemeData theme, ColorScheme scheme) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: scheme.errorContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(14),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -462,7 +465,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
 
   /// 扫码成功覆盖层:对方设备已用此码完成登录。
   Widget _buildConsumedOverlay(ThemeData theme, ColorScheme scheme) {
-    return ClipRRect(
+    return ClipRSuperellipse(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
@@ -498,7 +501,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   }
 
   Widget _buildExpiredOverlay(ThemeData theme, ColorScheme scheme) {
-    return ClipRRect(
+    return ClipRSuperellipse(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
@@ -553,22 +556,20 @@ class _QrCard extends StatelessWidget {
     // QrImageView.embeddedImage)
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(28),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
       ),
       child: AnimatedOpacity(
         opacity: dimmed ? 0.4 : 1,
         duration: const Duration(milliseconds: 200),
         child: Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-            boxShadow: [
+            shadows: [
               BoxShadow(
                 color: Colors.black.withValues(
                   alpha: theme.brightness == Brightness.dark ? 0.35 : 0.08,
@@ -577,6 +578,12 @@ class _QrCard extends StatelessWidget {
                 offset: const Offset(0, 8),
               ),
             ],
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: scheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            ),
           ),
           child: QrImageView(
             data: data,
@@ -621,11 +628,13 @@ class _InfoChip extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
           alpha: 0.45,
         ),
-        borderRadius: BorderRadius.circular(999),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

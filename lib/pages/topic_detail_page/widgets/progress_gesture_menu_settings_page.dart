@@ -244,9 +244,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
   }
 
   void _resetDragState() {
-    if (_draggingIndex == null &&
-        _hoverSlot == null &&
-        !_hoverDelete) {
+    if (_draggingIndex == null && _hoverSlot == null && !_hoverDelete) {
       return;
     }
     setState(() {
@@ -457,7 +455,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
   Widget _buildIdlePill(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
-      shape: const StadiumBorder(),
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(9999)),
+      ),
       elevation: 2,
       shadowColor: Colors.black26,
       child: Center(
@@ -512,7 +512,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
         color: active
             ? theme.colorScheme.error
             : theme.colorScheme.errorContainer,
-        shape: const StadiumBorder(),
+        shape: const RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(Radius.circular(9999)),
+        ),
         elevation: active ? 8 : 2,
         shadowColor: theme.colorScheme.error.withValues(alpha: 0.45),
         child: Row(
@@ -545,9 +547,11 @@ class _EmptyPreview extends StatelessWidget {
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(28),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

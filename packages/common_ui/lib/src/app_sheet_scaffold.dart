@@ -106,8 +106,10 @@ class AppSheetScaffold extends StatelessWidget {
     // ink 层会导致点击反馈被不透明背景遮挡。
     final shell = Material(
       color: cs.surface,
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(_kSheetCornerRadius),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(_kSheetCornerRadius),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
@@ -151,9 +153,11 @@ class AppSheetScaffold extends StatelessWidget {
         child: Container(
           width: _kHandleWidth,
           height: _kHandleHeight,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(_kHandleHeight / 2),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(_kHandleHeight / 2),
+            ),
           ),
         ),
       ),

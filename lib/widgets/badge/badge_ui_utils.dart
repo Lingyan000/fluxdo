@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../models/badge.dart';
 import '../../../../../l10n/s.dart';
 
@@ -47,15 +48,18 @@ class BadgeUIUtils {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        baseColor.withValues(alpha:isDark ? 0.25 : 0.15),
-        baseColor.withValues(alpha:isDark ? 0.10 : 0.05),
-        baseColor.withValues(alpha:isDark ? 0.02 : 0.01),
+        baseColor.withValues(alpha: isDark ? 0.25 : 0.15),
+        baseColor.withValues(alpha: isDark ? 0.10 : 0.05),
+        baseColor.withValues(alpha: isDark ? 0.02 : 0.01),
       ],
       stops: const [0.0, 0.6, 1.0],
     );
   }
 
-  static LinearGradient getHeaderGradient(BuildContext context, BadgeType type) {
+  static LinearGradient getHeaderGradient(
+    BuildContext context,
+    BadgeType type,
+  ) {
     final baseColor = getBadgeColor(context, type);
     final isDark = _isDark(context);
 
@@ -63,8 +67,8 @@ class BadgeUIUtils {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        baseColor.withValues(alpha:isDark ? 0.3 : 0.2),
-        baseColor.withValues(alpha:isDark ? 0.05 : 0.02),
+        baseColor.withValues(alpha: isDark ? 0.3 : 0.2),
+        baseColor.withValues(alpha: isDark ? 0.05 : 0.02),
       ],
     );
   }
@@ -73,28 +77,33 @@ class BadgeUIUtils {
   // Card Decoration - Unified "Soft UI" Style
   // ---------------------------------------------------------------------------
 
-  static BoxDecoration getCardDecoration(BuildContext context, BadgeType type) {
+  static ShapeDecoration getCardDecoration(
+    BuildContext context,
+    BadgeType type,
+  ) {
     final theme = Theme.of(context);
     final isDark = _isDark(context);
     final gradient = getBadgeGradient(context, type);
     final borderColor = getBadgeColor(context, type);
 
-    return BoxDecoration(
+    return ShapeDecoration(
       color: theme.cardColor,
       gradient: gradient,
-      borderRadius: BorderRadius.circular(20), // Moderner, larger radius
-      border: Border.all(
-        color: borderColor.withValues(alpha:isDark ? 0.3 : 0.2),
-        width: 1.5,
-      ),
-      boxShadow: [
+      shadows: [
         BoxShadow(
-          color: borderColor.withValues(alpha:isDark ? 0.1 : 0.08),
+          color: borderColor.withValues(alpha: isDark ? 0.1 : 0.08),
           blurRadius: 16,
           offset: const Offset(0, 8), // Soft spread shadow
           spreadRadius: -4,
         ),
       ],
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: borderColor.withValues(alpha: isDark ? 0.3 : 0.2),
+          width: 1.5,
+        ),
+      ),
     );
   }
 

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../l10n/s.dart';
 import '../../services/local_notification_service.dart';
 
@@ -224,9 +226,10 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
       begin: const Offset(0, -1),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     widget.onControllerCreated(_controller);
   }
 
@@ -272,7 +275,9 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                 onVerticalDragEnd: _onVerticalDragEnd,
                 child: Material(
                   elevation: 6,
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   color: colorScheme.surface,
                   surfaceTintColor: colorScheme.surfaceTint,
                   child: Padding(
@@ -289,7 +294,9 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                context.l10n.appLink_continueVisitConfirm(widget.displayName),
+                                context.l10n.appLink_continueVisitConfirm(
+                                  widget.displayName,
+                                ),
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -298,7 +305,9 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                context.l10n.appLink_openAppConfirm(widget.displayName),
+                                context.l10n.appLink_openAppConfirm(
+                                  widget.displayName,
+                                ),
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -319,7 +328,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                             ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
+                            shape: RoundedSuperellipseBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
                           ),
@@ -339,7 +348,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
 
   Widget _buildIcon(ColorScheme colorScheme) {
     if (widget.appIcon != null && widget.appIcon!.isNotEmpty) {
-      return ClipRRect(
+      return ClipRSuperellipse(
         borderRadius: BorderRadius.circular(10),
         child: Image.memory(
           widget.appIcon!,
@@ -353,9 +362,11 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(10),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
       ),
       child: Icon(
         Symbols.open_in_new_rounded,

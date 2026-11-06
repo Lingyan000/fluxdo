@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../utils/responsive.dart';
 import '../common/grain_gradient_background.dart';
 import '../common/skeleton.dart';
@@ -177,10 +178,12 @@ class UserProfileSkeleton extends StatelessWidget {
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(36),
                 child: Container(
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: Theme.of(context).scaffoldBackgroundColor,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
                     ),
                   ),
                   clipBehavior: Clip.antiAlias,
@@ -301,9 +304,11 @@ class UserProfileSkeleton extends StatelessWidget {
                 const SizedBox(height: 12),
                 Container(
                   height: 54,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ],
@@ -341,7 +346,7 @@ class UserActionItemSkeleton extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -354,9 +359,11 @@ class UserActionItemSkeleton extends StatelessWidget {
                 Container(
                   width: 16,
                   height: 16,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -419,9 +426,11 @@ class _SkeletonBoxWhite extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(borderRadius),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
       ),
     );
   }

@@ -19,8 +19,7 @@ import '../../services/preloaded_data_service.dart';
 /// 随预加载 siteSettings 下发(官方 Web 端就是读
 /// siteSettings.assign_statuses.split("|")),这里同源读取,不硬编码。
 /// enable_assign_status 关闭时官方不显示状态下拉,同样照做。
-List<String> get _assignStatusOptions =>
-    PreloadedDataService().assignStatuses;
+List<String> get _assignStatusOptions => PreloadedDataService().assignStatuses;
 
 bool get _assignStatusEnabled =>
     PreloadedDataService().assignStatusEnabled &&
@@ -412,7 +411,9 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
+                        customBorder: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         onTap: _busy ? null : () => _assignToUser(user),
                         child: Padding(
                           padding: const EdgeInsets.all(4),
@@ -569,7 +570,9 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                     alignment: Alignment.topLeft,
                     child: Material(
                       elevation: 4,
-                      borderRadius: BorderRadius.circular(8),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
                           maxHeight: 240,
@@ -632,7 +635,9 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             ],
             InkWell(
               onTap: _editNote,
-              borderRadius: BorderRadius.circular(4),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: InputDecorator(
                 decoration: const InputDecoration(
                   labelText: '备注(可选)',

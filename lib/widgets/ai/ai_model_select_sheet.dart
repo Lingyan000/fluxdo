@@ -268,9 +268,11 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                     horizontal: 8,
                     vertical: 3,
                   ),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(999),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
                   child: Text(
                     context.l10n.ai_modelFavoriteSortHint,
@@ -397,18 +399,24 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                 : Colors.transparent;
             return Material(
               color: background,
-              borderRadius: BorderRadius.circular(14),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: InkWell(
                 onTap: () => _scrollController.scrollToIndex(
                   index,
                   preferPosition: AutoScrollPosition.begin,
                   duration: const Duration(milliseconds: 280),
                 ),
-                borderRadius: BorderRadius.circular(14),
+                customBorder: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: borderColor),
+                  decoration: ShapeDecoration(
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: borderColor),
+                    ),
                   ),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -504,7 +512,7 @@ class _ModelRow extends StatelessWidget {
       color: isCurrent
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
@@ -512,7 +520,9 @@ class _ModelRow extends StatelessWidget {
             Expanded(
               child: InkWell(
                 onTap: () => Navigator.of(context).pop(item),
-                borderRadius: BorderRadius.circular(10),
+                customBorder: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Row(
@@ -600,7 +610,9 @@ class _ModelRow extends StatelessWidget {
                   ? context.l10n.ai_modelFavoriteRemove
                   : context.l10n.ai_modelFavoriteAdd,
               onPressed: onToggleFavorite,
-              icon: Icon(Symbols.favorite_rounded, fill: isFavorite ? 1 : 0,
+              icon: Icon(
+                Symbols.favorite_rounded,
+                fill: isFavorite ? 1 : 0,
                 size: 20,
                 color: isFavorite
                     ? theme.colorScheme.error
@@ -636,9 +648,11 @@ class _CapabilityBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

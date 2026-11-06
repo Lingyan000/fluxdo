@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../../../constants.dart';
 import '../../../../utils/layout_lock.dart';
 import '../../../../utils/url_helper.dart';
@@ -217,9 +218,8 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
       onRevoked: _deactivateWindowsWebView,
     );
     if (lease == null) {
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text(S.current.common_pleaseWait)));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(S.current.common_pleaseWait)));
       return;
     }
     _browserLease = lease;
@@ -259,9 +259,13 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
         child: Center(
           child: Material(
             color: Colors.black87,
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
+            shape: RoundedSuperellipseBorder(
               borderRadius: BorderRadius.circular(20),
+            ),
+            child: InkWell(
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               onTap: _exitInteractMode,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -306,7 +310,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
     final showWebView = !deferWindowsWebView || _webViewActivated;
 
     // 构建内容 Widget
-    Widget content = ClipRRect(
+    Widget content = ClipRSuperellipse(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         children: [

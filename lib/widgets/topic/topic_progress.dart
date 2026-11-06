@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+
 import '../../utils/dialog_utils.dart';
 import '../../../../../l10n/s.dart';
 
@@ -34,7 +35,9 @@ class TopicProgress extends StatelessWidget {
     return Card(
       elevation: 4,
       shadowColor: Colors.black26,
-      shape: const StadiumBorder(),
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(9999)),
+      ),
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
@@ -50,7 +53,7 @@ class TopicProgress extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   widthFactor: progressPercent.clamp(0.0, 1.0),
                   child: Container(
-                    color: theme.colorScheme.primary.withValues(alpha:0.12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
                   ),
                 ),
               ),
@@ -73,7 +76,9 @@ class TopicProgress extends StatelessWidget {
                       child: Text(
                         '/',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.5),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
                           fontSize: 13,
                         ),
                       ),
@@ -189,7 +194,10 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
   }
 
   void _updateIndex(double percent) {
-    final newIndex = (percent * (_totalCount - 1) + 1).round().clamp(1, _totalCount);
+    final newIndex = (percent * (_totalCount - 1) + 1).round().clamp(
+      1,
+      _totalCount,
+    );
     if (newIndex != _selectedIndex) {
       HapticFeedback.selectionClick();
       setState(() => _selectedIndex = newIndex);
@@ -202,7 +210,10 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
     _updateIndexFromOffset(details.localPosition.dy, constraints.maxHeight);
   }
 
-  void _handleDragUpdate(DragUpdateDetails details, BoxConstraints constraints) {
+  void _handleDragUpdate(
+    DragUpdateDetails details,
+    BoxConstraints constraints,
+  ) {
     _updateIndexFromOffset(details.localPosition.dy, constraints.maxHeight);
   }
 
@@ -243,293 +254,349 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
     final screenHeight = mediaQuery.size.height;
     // 内容区高度：键盘弹出时收缩，确保不超过屏幕顶部状态栏
     // topPadding 从父 context 传入，因为 showModalBottomSheet 内部会清零 padding.top
-    final contentHeight = (screenHeight * 0.6)
-        .clamp(0.0, screenHeight - widget.topPadding - bottomInset);
+    final contentHeight = (screenHeight * 0.6).clamp(
+      0.0,
+      screenHeight - widget.topPadding - bottomInset,
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         height: contentHeight,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
         ),
         child: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            if (widget.title != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                child: Text(
-                  widget.title!,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: ShapeDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.2,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(32, 24, 32, 16),
-                child: Row(
-                  children: [
-                    // 左侧楼层信息展示
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            S.current.topic_currentFloor,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              letterSpacing: 1.2,
+              if (widget.title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                  child: Text(
+                    widget.title!,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(32, 24, 32, 16),
+                  child: Row(
+                    children: [
+                      // 左侧楼层信息展示
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              S.current.topic_currentFloor,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                letterSpacing: 1.2,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (_isEditing)
-                            // 输入模式
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                SizedBox(
-                                  width: 90,
-                                  child: TextField(
-                                    controller: _textController,
-                                    focusNode: _focusNode,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    style: theme.textTheme.displayMedium?.copyWith(
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                                      border: UnderlineInputBorder(
-                                        borderSide: BorderSide(
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                      ),
-                                      focusedBorder: UnderlineInputBorder(
-                                        borderSide: BorderSide(
-                                          color: theme.colorScheme.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    onSubmitted: (_) => _commitEdit(),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '/ $_totalCount',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.4),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            )
-                          else
-                            // 显示模式：点击进入输入
-                            GestureDetector(
-                              onTap: _enterEditMode,
-                              child: Row(
+                            const SizedBox(height: 8),
+                            if (_isEditing)
+                              // 输入模式
+                              Row(
                                 crossAxisAlignment: CrossAxisAlignment.baseline,
                                 textBaseline: TextBaseline.alphabetic,
                                 children: [
-                                  Text(
-                                    '$_selectedIndex',
-                                    style: theme.textTheme.displayMedium?.copyWith(
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w900,
+                                  SizedBox(
+                                    width: 90,
+                                    child: TextField(
+                                      controller: _textController,
+                                      focusNode: _focusNode,
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
+                                      style: theme.textTheme.displayMedium
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              vertical: 4,
+                                            ),
+                                        border: UnderlineInputBorder(
+                                          borderSide: BorderSide(
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                        ),
+                                        focusedBorder: UnderlineInputBorder(
+                                          borderSide: BorderSide(
+                                            color: theme.colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                      onSubmitted: (_) => _commitEdit(),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     '/ $_totalCount',
                                     style: theme.textTheme.titleLarge?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.4),
+                                      color: theme.colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.4),
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Icon(
-                                    Symbols.edit_rounded,
-                                    size: 16,
-                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.4),
+                                ],
+                              )
+                            else
+                              // 显示模式：点击进入输入
+                              GestureDetector(
+                                onTap: _enterEditMode,
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Text(
+                                      '$_selectedIndex',
+                                      style: theme.textTheme.displayMedium
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '/ $_totalCount',
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.4),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Icon(
+                                      Symbols.edit_rounded,
+                                      size: 16,
+                                      color: theme.colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.4),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            const SizedBox(height: 16),
+                            if (_isEditing)
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    height: 32,
+                                    child: TextButton(
+                                      onPressed: _cancelEdit,
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      child: Text(S.current.common_cancel),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    height: 32,
+                                    child: FilledButton.tonal(
+                                      onPressed: _commitEdit,
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      child: Text(S.current.common_confirm),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: ShapeDecoration(
+                                  color: theme.colorScheme.primaryContainer
+                                      .withValues(alpha: 0.4),
+                                  shape: RoundedSuperellipseBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                child: Text(
+                                  _selectedIndex == widget.currentIndex
+                                      ? S.current.topic_atCurrentPosition
+                                      : S.current.topic_readyToJump,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onPrimaryContainer,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      // 右侧垂直轨道
+                      Container(
+                        width: 80,
+                        alignment: Alignment.centerRight,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            const padding = 32.0;
+                            final trackHeight =
+                                constraints.maxHeight - padding * 2;
+                            final handleSize = _isDragging ? 56.0 : 48.0;
+                            final scrollerTop =
+                                padding +
+                                (percent * trackHeight) -
+                                (handleSize / 2);
+
+                            return GestureDetector(
+                              onVerticalDragStart: (d) =>
+                                  _handleDragStart(d, constraints),
+                              onVerticalDragUpdate: (d) =>
+                                  _handleDragUpdate(d, constraints),
+                              onVerticalDragEnd: _handleDragEnd,
+                              onTapUp: (d) => _handleTap(d, constraints),
+                              behavior: HitTestBehavior.opaque,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // 轨道背景
+                                  Positioned(
+                                    right: 20,
+                                    top: padding,
+                                    bottom: padding,
+                                    child: Container(
+                                      width: 6,
+                                      decoration: ShapeDecoration(
+                                        color: theme
+                                            .colorScheme
+                                            .surfaceContainerHighest,
+                                        shape: RoundedSuperellipseBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            3,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // 激活进度
+                                  Positioned(
+                                    right: 20,
+                                    top: padding,
+                                    height: percent * trackHeight,
+                                    child: Container(
+                                      width: 6,
+                                      decoration: ShapeDecoration(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.5),
+                                        shape: RoundedSuperellipseBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            3,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // 起点标记 (直接放在轨道顶端)
+                                  Positioned(
+                                    right: 18,
+                                    top: padding - 5,
+                                    child: _buildMark(theme, true),
+                                  ),
+                                  // 终点标记 (直接放在轨道底端)
+                                  Positioned(
+                                    right: 18,
+                                    bottom: padding - 5,
+                                    child: _buildMark(theme, false),
+                                  ),
+                                  // 拖动手柄
+                                  AnimatedPositioned(
+                                    duration: _isDragging
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 200),
+                                    curve: Curves.easeOutCubic,
+                                    right: 0,
+                                    top: scrollerTop,
+                                    child: _buildHandle(theme),
                                   ),
                                 ],
                               ),
-                            ),
-                          const SizedBox(height: 16),
-                          if (_isEditing)
-                            Row(
-                              children: [
-                                SizedBox(
-                                  height: 32,
-                                  child: TextButton(
-                                    onPressed: _cancelEdit,
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    child: Text(S.current.common_cancel),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  height: 32,
-                                  child: FilledButton.tonal(
-                                    onPressed: _commitEdit,
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    child: Text(S.current.common_confirm),
-                                  ),
-                                ),
-                              ],
-                            )
-                          else
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primaryContainer.withValues(alpha:0.4),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                _selectedIndex == widget.currentIndex ? S.current.topic_atCurrentPosition : S.current.topic_readyToJump,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                        ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 底部操作按钮
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: Text(S.current.common_cancel),
                       ),
                     ),
-                    // 右侧垂直轨道
-                    Container(
-                      width: 80,
-                      alignment: Alignment.centerRight,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          const padding = 32.0;
-                          final trackHeight = constraints.maxHeight - padding * 2;
-                          final handleSize = _isDragging ? 56.0 : 48.0;
-                          final scrollerTop = padding + (percent * trackHeight) - (handleSize / 2);
-
-                          return GestureDetector(
-                            onVerticalDragStart: (d) => _handleDragStart(d, constraints),
-                            onVerticalDragUpdate: (d) => _handleDragUpdate(d, constraints),
-                            onVerticalDragEnd: _handleDragEnd,
-                            onTapUp: (d) => _handleTap(d, constraints),
-                            behavior: HitTestBehavior.opaque,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                // 轨道背景
-                                Positioned(
-                                  right: 20,
-                                  top: padding,
-                                  bottom: padding,
-                                  child: Container(
-                                    width: 6,
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                  ),
-                                ),
-                                // 激活进度
-                                Positioned(
-                                  right: 20,
-                                  top: padding,
-                                  height: percent * trackHeight,
-                                  child: Container(
-                                    width: 6,
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary.withValues(alpha:0.5),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                  ),
-                                ),
-                                // 起点标记 (直接放在轨道顶端)
-                                Positioned(
-                                  right: 18,
-                                  top: padding - 5,
-                                  child: _buildMark(theme, true),
-                                ),
-                                // 终点标记 (直接放在轨道底端)
-                                Positioned(
-                                  right: 18,
-                                  bottom: padding - 5,
-                                  child: _buildMark(theme, false),
-                                ),
-                                // 拖动手柄
-                                AnimatedPositioned(
-                                  duration: _isDragging ? Duration.zero : const Duration(milliseconds: 200),
-                                  curve: Curves.easeOutCubic,
-                                  right: 0,
-                                  top: scrollerTop,
-                                  child: _buildHandle(theme),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _commitJump,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          S.current.topic_jump,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            // 底部操作按钮
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: Text(S.current.common_cancel),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _commitJump,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      child: Text(S.current.topic_jump, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -540,14 +607,11 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
       height: 10,
       decoration: BoxDecoration(
         color: isStart ? theme.colorScheme.primary : theme.colorScheme.surface,
-        border: Border.all(
-          color: theme.colorScheme.primary,
-          width: 2,
-        ),
+        border: Border.all(color: theme.colorScheme.primary, width: 2),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 2,
             spreadRadius: 1,
           ),
@@ -567,7 +631,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: theme.colorScheme.primary.withValues(alpha:0.3),
+            color: theme.colorScheme.primary.withValues(alpha: 0.3),
             blurRadius: _isDragging ? 12 : 8,
             offset: const Offset(0, 4),
           ),

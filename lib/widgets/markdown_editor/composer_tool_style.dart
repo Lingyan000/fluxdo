@@ -34,11 +34,12 @@ class ComposerEditingControls extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(right: 4),
     child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: .42),
-        borderRadius: BorderRadius.circular(22),
+      decoration: ShapeDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest
+            .withValues(alpha: .42),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: children),
     ),

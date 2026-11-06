@@ -634,7 +634,7 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
     final PopupMenuThemeData popupMenuTheme = PopupMenuTheme.of(context);
     final ShapeBorder shape =
         popupMenuTheme.shape ??
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20));
+        RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20));
 
     final Widget panelContent = Column(
       mainAxisSize: MainAxisSize.min,
@@ -970,16 +970,18 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
                       duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
                       child: DecoratedBox(
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: Colors.black.withValues(alpha: 0.32),
-                          borderRadius:
-                              (widget.route.shape ?? popupMenuTheme.shape)
-                                  is RoundedRectangleBorder
-                              ? ((widget.route.shape ?? popupMenuTheme.shape!)
-                                        as RoundedRectangleBorder)
-                                    .borderRadius
-                                    .resolve(Directionality.of(context))
-                              : null,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius:
+                                (widget.route.shape ?? popupMenuTheme.shape)
+                                    is RoundedSuperellipseBorder
+                                ? ((widget.route.shape ?? popupMenuTheme.shape!)
+                                          as RoundedSuperellipseBorder)
+                                      .borderRadius
+                                      .resolve(Directionality.of(context))
+                                : null,
+                          ),
                         ),
                       ),
                     ),
@@ -1574,7 +1576,9 @@ class _SwipeDismissiblePopupMenuButtonState<T>
         message:
             widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip,
         child: InkWell(
-          borderRadius: widget.borderRadius,
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: widget.borderRadius,
+          ),
           onTap: widget.enabled ? showButtonMenu : null,
           canRequestFocus: widget.enabled,
           radius: widget.splashRadius,

@@ -31,10 +31,8 @@ Future<PostVotingComment?> showPostVotingCommentSheet(
   return showAppBottomSheet<PostVotingComment>(
     context: context,
     isScrollControlled: true,
-    builder: (ctx) => _CommentInputSheet(
-      postId: postId,
-      replyToUsername: replyToUsername,
-    ),
+    builder: (ctx) =>
+        _CommentInputSheet(postId: postId, replyToUsername: replyToUsername),
   );
 }
 
@@ -94,9 +92,10 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
   bool _normalizingSelection = false;
 
   /// 评论字数上限:站点 post_voting_comment_max_raw_length,缺省 600
-  late final int _maxLength = (PreloadedDataService()
-              .siteSettingsSync?['post_voting_comment_max_raw_length']
-          as num?)
+  late final int _maxLength =
+      (PreloadedDataService()
+                  .siteSettingsSync?['post_voting_comment_max_raw_length']
+              as num?)
           ?.toInt() ??
       600;
 
@@ -206,9 +205,11 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
           Container(
             width: 36,
             height: 4,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
           const SizedBox(height: 10),

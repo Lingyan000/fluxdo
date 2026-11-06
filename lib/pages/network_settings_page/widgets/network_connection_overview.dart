@@ -299,7 +299,7 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
                                         key: const ValueKey('network-map-core'),
                                         onTap: widget.onTemplate,
                                         customBorder:
-                                            const RoundedRectangleBorder(
+                                            const RoundedSuperellipseBorder(
                                               borderRadius: BorderRadius.all(
                                                 Radius.circular(32),
                                               ),
@@ -314,7 +314,7 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
                                               decoration: ShapeDecoration(
                                                 color: c.primaryContainer,
                                                 shape:
-                                                    const RoundedRectangleBorder(
+                                                    const RoundedSuperellipseBorder(
                                                       borderRadius:
                                                           BorderRadius.all(
                                                             Radius.circular(22),
@@ -475,7 +475,7 @@ class _Control extends StatelessWidget {
             color.withValues(alpha: .055),
             c.surfaceContainerLow,
           ),
-          shape: const RoundedRectangleBorder(
+          shape: const RoundedSuperellipseBorder(
             borderRadius: BorderRadius.all(Radius.circular(24)),
           ),
           clipBehavior: Clip.antiAlias,

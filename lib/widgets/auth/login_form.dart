@@ -19,7 +19,8 @@ class LoginForm extends StatefulWidget {
     required String identifier,
     required String password,
     required bool rememberCredentials,
-  }) onSubmit;
+  })
+  onSubmit;
 
   /// 忘记密码点击 (一般跳 webview)。
   final VoidCallback? onForgotPassword;
@@ -181,7 +182,7 @@ class _LoginFormState extends State<LoginForm> {
             onPressed: _submitting ? null : _submit,
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(
+              shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(28),
               ),
               elevation: 8,

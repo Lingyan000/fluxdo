@@ -443,7 +443,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
             ],
             child: Card(
               clipBehavior: Clip.antiAlias,
-              shape: RoundedRectangleBorder(
+              shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               child: InkWell(
@@ -466,9 +466,11 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
                         width: 36,
                         height: 36,
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: theme.colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(8),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                         child: PresetIcon(
                           iconRaw: preset.iconRaw,
@@ -555,11 +557,13 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
   Widget _badge(ThemeData theme, String text, {bool dim = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: dim
             ? theme.colorScheme.surfaceContainerHighest
             : theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       child: Text(
         text,

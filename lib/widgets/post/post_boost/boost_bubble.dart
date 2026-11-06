@@ -1,6 +1,7 @@
 import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../models/topic.dart';
 import '../../common/emoji_text.dart';
 import '../../common/smart_avatar.dart';
@@ -66,11 +67,13 @@ class BoostBubble extends StatelessWidget {
             : () => onLongPressWithContext!(bubbleContext),
         child: Container(
           padding: const EdgeInsets.only(left: 3, top: 3, bottom: 3, right: 6),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.4,
             ),
-            borderRadius: BorderRadius.circular(12),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -140,11 +143,13 @@ class _GroupedBoostBubble extends StatelessWidget {
             : () => onLongPressWithContext!(bubbleContext),
         child: Container(
           padding: const EdgeInsets.only(left: 3, top: 3, bottom: 3, right: 6),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.4,
             ),
-            borderRadius: BorderRadius.circular(12),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -166,9 +171,11 @@ class _GroupedBoostBubble extends StatelessWidget {
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(10),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: Text(
                   '${group.count}',
@@ -182,7 +189,9 @@ class _GroupedBoostBubble extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Icon(
-                expanded ? Symbols.keyboard_arrow_up_rounded : Symbols.keyboard_arrow_down_rounded,
+                expanded
+                    ? Symbols.keyboard_arrow_up_rounded
+                    : Symbols.keyboard_arrow_down_rounded,
                 size: 14,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -237,7 +246,10 @@ class _AvatarStack extends StatelessWidget {
                 child: SmartAvatar(
                   imageUrl: visibleUsers[i].avatarTemplate.isNotEmpty
                       ? UrlHelper.resolveUrlWithCdn(
-                          AvatarUrl.resolve(visibleUsers[i].avatarTemplate, size: 48),
+                          AvatarUrl.resolve(
+                            visibleUsers[i].avatarTemplate,
+                            size: 48,
+                          ),
                         )
                       : null,
                   radius: 10,

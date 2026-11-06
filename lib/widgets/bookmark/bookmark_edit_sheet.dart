@@ -497,11 +497,13 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                   vertical: 8,
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: _currentReminderAt!.isAfter(DateTime.now())
                       ? theme.colorScheme.primaryContainer
                       : theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,9 +574,11 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

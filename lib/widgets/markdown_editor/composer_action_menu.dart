@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+
 import 'composer_object_surface.dart';
 import 'composer_menu_placement.dart';
 
@@ -131,7 +133,7 @@ Future<T?> showComposerActionMenu<T>({
     ),
     menuPadding: const EdgeInsets.symmetric(vertical: 8),
     color: theme.colorScheme.surfaceContainerLow,
-    shape: RoundedRectangleBorder(
+    shape: RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(cornerRadius),
       side: BorderSide(
         color: theme.colorScheme.outlineVariant.withValues(alpha: .5),

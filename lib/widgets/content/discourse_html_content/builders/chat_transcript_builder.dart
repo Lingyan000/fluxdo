@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../utils/time_utils.dart';
 import '../../../common/smart_avatar.dart';
 import '../../../../l10n/s.dart';
@@ -35,16 +36,18 @@ Widget buildChatTranscript({
   final reactionsElement = element.querySelector('.chat-transcript-reactions');
   final List<_ChatReaction> reactions = [];
   if (reactionsElement != null) {
-    final reactionElements =
-        reactionsElement.querySelectorAll('.chat-transcript-reaction');
+    final reactionElements = reactionsElement.querySelectorAll(
+      '.chat-transcript-reaction',
+    );
     for (final reaction in reactionElements) {
       final emojiImg = reaction.querySelector('img.emoji');
       final emojiUrl = emojiImg?.attributes['src'];
       // 反应文本包含 emoji 和数量
       final text = reaction.text.trim();
       final countMatch = RegExp(r'(\d+)$').firstMatch(text);
-      final count =
-          countMatch != null ? int.tryParse(countMatch.group(1)!) ?? 1 : 1;
+      final count = countMatch != null
+          ? int.tryParse(countMatch.group(1)!) ?? 1
+          : 1;
       if (emojiUrl != null) {
         reactions.add(_ChatReaction(emojiUrl: emojiUrl, count: count));
       }
@@ -61,23 +64,24 @@ Widget buildChatTranscript({
   final bool isThread = detailsElement != null;
 
   return Container(
-    margin: isChained ? EdgeInsets.zero : const EdgeInsets.symmetric(vertical: 8),
-    decoration: BoxDecoration(
+    margin: isChained
+        ? EdgeInsets.zero
+        : const EdgeInsets.symmetric(vertical: 8),
+    decoration: ShapeDecoration(
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-      border: isChained
-          ? null
-          : Border(
-              left: BorderSide(
-                color: theme.colorScheme.outline,
-                width: 4,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: isChained
+            ? null
+            : const BorderRadius.only(
+                topRight: Radius.circular(4),
+                bottomRight: Radius.circular(4),
               ),
-            ),
-      borderRadius: isChained
-          ? null
-          : const BorderRadius.only(
-              topRight: Radius.circular(4),
-              bottomRight: Radius.circular(4),
-            ),
+        side: isChained
+            ? BorderSide.none
+            : (Border(
+                left: BorderSide(color: theme.colorScheme.outline, width: 4),
+              )).top,
+      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,15 +171,14 @@ Widget buildChatTranscript({
             child: Wrap(
               spacing: 6,
               runSpacing: 4,
-              children:
-                  reactions.map((r) => _buildReactionChip(theme, r)).toList(),
+              children: reactions
+                  .map((r) => _buildReactionChip(theme, r))
+                  .toList(),
             ),
           ),
 
         // 线程标识
-        if (isThread) ...[
-          _buildThreadHeader(theme, detailsElement),
-        ],
+        if (isThread) ...[_buildThreadHeader(theme, detailsElement)],
       ],
     ),
   );
@@ -185,12 +188,14 @@ Widget buildChatTranscript({
 Widget _buildReactionChip(ThemeData theme, _ChatReaction reaction) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-    decoration: BoxDecoration(
+    decoration: ShapeDecoration(
       color: theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(
-        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        width: 1,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
       ),
     ),
     child: Row(
@@ -219,9 +224,11 @@ Widget _buildReactionChip(ThemeData theme, _ChatReaction reaction) {
 /// 构建线程头部
 Widget _buildThreadHeader(ThemeData theme, dynamic detailsElement) {
   final summaryElement = detailsElement?.querySelector('summary');
-  final threadHeaderElement =
-      summaryElement?.querySelector('.chat-transcript-thread-header');
-  final threadTitle = threadHeaderElement
+  final threadHeaderElement = summaryElement?.querySelector(
+    '.chat-transcript-thread-header',
+  );
+  final threadTitle =
+      threadHeaderElement
           ?.querySelector('.chat-transcript-thread-header__title')
           ?.text ??
       S.current.chat_thread;

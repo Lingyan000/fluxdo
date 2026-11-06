@@ -59,8 +59,7 @@ class _PostVotingControlState extends ConsumerState<PostVotingControl> {
   void didUpdateWidget(PostVotingControl oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.post.id != widget.post.id ||
-        oldWidget.post.postVotingVoteCount !=
-            widget.post.postVotingVoteCount ||
+        oldWidget.post.postVotingVoteCount != widget.post.postVotingVoteCount ||
         oldWidget.post.postVotingUserVotedDirection !=
             widget.post.postVotingUserVotedDirection) {
       _count = widget.post.postVotingVoteCount;
@@ -243,15 +242,17 @@ class _PostVotingControlState extends ConsumerState<PostVotingControl> {
 
     return Container(
       height: 36,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: _direction != null
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: _direction != null
-              ? theme.colorScheme.primary.withValues(alpha: 0.2)
-              : Colors.transparent,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: _direction != null
+                ? theme.colorScheme.primary.withValues(alpha: 0.2)
+                : Colors.transparent,
+          ),
         ),
       ),
       child: Row(
@@ -286,8 +287,9 @@ class _PostVotingVotersSheetState extends State<PostVotingVotersSheet> {
 
   Future<void> _load() async {
     try {
-      final (voters, total) =
-          await DiscourseService().getPostVotingVoters(widget.postId);
+      final (voters, total) = await DiscourseService().getPostVotingVoters(
+        widget.postId,
+      );
       if (!mounted) return;
       setState(() {
         _voters = voters;
@@ -411,7 +413,10 @@ class _PostVotingVotersSheetState extends State<PostVotingVotersSheet> {
             ],
             if (downs.isNotEmpty) ...[
               _groupHeader(
-                  theme, S.current.postVoting_votersDown, downs.length),
+                theme,
+                S.current.postVoting_votersDown,
+                downs.length,
+              ),
               for (final v in downs) _voterRow(theme, v),
             ],
             if (_total > voters.length)
@@ -435,8 +440,10 @@ class _PostVotingVotersSheetState extends State<PostVotingVotersSheet> {
       contentPadding: EdgeInsets.zero,
       titleWidget: Row(
         children: [
-          Icon(Symbols.thumbs_up_down_rounded,
-              color: theme.colorScheme.primary),
+          Icon(
+            Symbols.thumbs_up_down_rounded,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Text(
             S.current.postVoting_votersTitle,
@@ -447,10 +454,7 @@ class _PostVotingVotersSheetState extends State<PostVotingVotersSheet> {
         ],
       ),
       child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: body,
-        ),
+        child: Padding(padding: const EdgeInsets.only(bottom: 16), child: body),
       ),
     );
   }

@@ -26,6 +26,7 @@ class BoostList extends StatefulWidget {
   final bool canBoost;
   final VoidCallback? onAddBoost;
   final BoostTapCallback? onBoostTap;
+
   /// 高亮指定用户的 boost（自动展开并滚动到位）
   final String? highlightUsername;
 
@@ -42,7 +43,8 @@ class BoostList extends StatefulWidget {
   State<BoostList> createState() => _BoostListState();
 }
 
-class _BoostListState extends State<BoostList> with SingleTickerProviderStateMixin {
+class _BoostListState extends State<BoostList>
+    with SingleTickerProviderStateMixin {
   static const int _collapsedMaxLines = 2;
   static const double _chipSpacing = 6;
   static const double _controlChipWidth = 28;
@@ -115,9 +117,16 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
       return;
     }
 
-    final oldGroup = _findGroupByKey(groupBoostsByContent(oldWidget.boosts), activeGroupKey);
-    final newGroup = _findGroupByKey(groupBoostsByContent(widget.boosts), activeGroupKey);
-    final shouldClosePopover = newGroup == null ||
+    final oldGroup = _findGroupByKey(
+      groupBoostsByContent(oldWidget.boosts),
+      activeGroupKey,
+    );
+    final newGroup = _findGroupByKey(
+      groupBoostsByContent(widget.boosts),
+      activeGroupKey,
+    );
+    final shouldClosePopover =
+        newGroup == null ||
         (oldGroup != null &&
             _groupSignature(oldGroup) != _groupSignature(newGroup));
 
@@ -256,9 +265,8 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
         final theme = Theme.of(context);
         return DecoratedBox(
           key: _highlightKey,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
+          decoration: ShapeDecoration(
+            shadows: [
               BoxShadow(
                 color: theme.colorScheme.primary.withValues(
                   alpha: 0.5 * _highlightOpacity.value,
@@ -267,6 +275,9 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
                 spreadRadius: 1,
               ),
             ],
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           child: child,
         );
@@ -293,11 +304,11 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
         onTapWithContext: widget.onBoostTap == null
             ? null
             : (bubbleContext) =>
-                widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
+                  widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
         onLongPressWithContext: widget.onBoostTap == null
             ? null
             : (bubbleContext) =>
-                widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
+                  widget.onBoostTap!(boost, _globalRectOf(bubbleContext)),
       );
       if (isHighlighted) {
         bubble = _wrapHighlight(bubble);
@@ -340,7 +351,9 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
           height: 28,
           width: 28,
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.3,
+            ),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -367,7 +380,9 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
   double _estimateGroupedBubbleWidth(BuildContext context, BoostGroup group) {
     final theme = Theme.of(context);
     final style = theme.textTheme.bodySmall?.copyWith(height: 1.2);
-    final labelStyle = theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600);
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
     final textWidth = _measureDisplayTextWidth(
       context,
       group.displayText,
@@ -379,13 +394,17 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
       labelStyle,
     );
     final avatarWidth = _estimateAvatarStackWidth(group);
-    // 3+6 (bubble padding) + avatarWidth + 4 (avatar-text spacing) + textWidth 
+    // 3+6 (bubble padding) + avatarWidth + 4 (avatar-text spacing) + textWidth
     // + 6 (spacing) + countWidth + 12 (pill padding) + 4 (spacing) + 14 (arrow)
     return 3 + 6 + avatarWidth + 4 + textWidth + 6 + countWidth + 12 + 4 + 14;
   }
 
   double _estimateAvatarStackWidth(BoostGroup group) {
-    final userCount = group.boosts.map((boost) => boost.user.id).toSet().length.clamp(1, 3);
+    final userCount = group.boosts
+        .map((boost) => boost.user.id)
+        .toSet()
+        .length
+        .clamp(1, 3);
     return userCount == 1 ? 20.0 : 20.0 + (userCount - 1) * 12.0;
   }
 
@@ -394,7 +413,10 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
     String text,
     TextStyle? style,
   ) {
-    final measurementText = text.replaceAllMapped(emojiShortcodeRegex, (_) => '◯');
+    final measurementText = text.replaceAllMapped(
+      emojiShortcodeRegex,
+      (_) => '◯',
+    );
     return _measureRawTextWidth(context, measurementText, style);
   }
 
@@ -473,10 +495,7 @@ class _BoostListState extends State<BoostList> with SingleTickerProviderStateMix
         } else {
           // 折叠:线性找最大 prefix,使 prefix + 尾部控件仍 ≤ 折叠行数;
           // 只为进入 prefix 的 chip 构建 widget。
-          final trailing = <double>[
-            _controlChipWidth,
-            ?addWidth,
-          ];
+          final trailing = <double>[_controlChipWidth, ?addWidth];
           var prefix = 0;
           var state = (1, 0.0);
           while (prefix < groups.length) {
@@ -516,10 +535,7 @@ class _InlineControlChip extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
 
-  const _InlineControlChip({
-    required this.icon,
-    this.onTap,
-  });
+  const _InlineControlChip({required this.icon, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -533,9 +549,13 @@ class _InlineControlChip extends StatelessWidget {
           width: _BoostListState._controlChipWidth,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(16),
+          decoration: ShapeDecoration(
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.4,
+            ),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: Icon(
             icon,
@@ -552,10 +572,7 @@ class _BoostPopoverContent extends StatelessWidget {
   final List<Boost> boosts;
   final BoostTapCallback? onBoostTap;
 
-  const _BoostPopoverContent({
-    required this.boosts,
-    this.onBoostTap,
-  });
+  const _BoostPopoverContent({required this.boosts, this.onBoostTap});
 
   @override
   Widget build(BuildContext context) {
@@ -581,11 +598,11 @@ class _BoostPopoverContent extends StatelessWidget {
                   onTapWithContext: onBoostTap == null
                       ? null
                       : (bubbleContext) =>
-                          onBoostTap!(boost, _globalRectOf(bubbleContext)),
+                            onBoostTap!(boost, _globalRectOf(bubbleContext)),
                   onLongPressWithContext: onBoostTap == null
                       ? null
                       : (bubbleContext) =>
-                          onBoostTap!(boost, _globalRectOf(bubbleContext)),
+                            onBoostTap!(boost, _globalRectOf(bubbleContext)),
                 ),
             ],
           ),

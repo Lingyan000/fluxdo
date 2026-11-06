@@ -17,6 +17,7 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/smart_avatar.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/markdown_editor/emoji_picker.dart';
+
 import 'package:common_ui/common_ui.dart';
 
 /// 菜单动作(对齐网页版 chat-message-interactor 的 secondaryActions)
@@ -356,9 +357,8 @@ class _MessageActionsOverlay extends StatelessWidget {
               width: width,
               child: IgnorePointer(
                 child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
+                  decoration: ShapeDecoration(
+                    shadows: [
                       if (t > 0)
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.25 * t),
@@ -366,8 +366,11 @@ class _MessageActionsOverlay extends StatelessWidget {
                           offset: Offset(0, 8 * t),
                         ),
                     ],
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                  child: ClipRRect(
+                  child: ClipRSuperellipse(
                     borderRadius: BorderRadius.circular(16),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -554,7 +557,7 @@ class _MessageActionsOverlay extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
@@ -648,7 +651,8 @@ class _ReactionBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: StadiumBorder(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(9999)),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
           width: 0.5,

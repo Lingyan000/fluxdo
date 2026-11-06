@@ -24,15 +24,13 @@ Future<double?> showPlaybackSpeedMenu(
   bool darkOverlay = false,
 }) {
   final box = context.findRenderObject() as RenderBox?;
-  final overlay =
-      Overlay.of(context).context.findRenderObject() as RenderBox?;
+  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
   RelativeRect position = const RelativeRect.fromLTRB(0, 0, 0, 0);
   if (box != null && overlay != null) {
     position = RelativeRect.fromRect(
       Rect.fromPoints(
         box.localToGlobal(Offset.zero, ancestor: overlay),
-        box.localToGlobal(box.size.bottomRight(Offset.zero),
-            ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
       ),
       Offset.zero & overlay.size,
     );
@@ -42,10 +40,12 @@ Future<double?> showPlaybackSpeedMenu(
   // 媒体覆盖层(视频控制条)上弹菜单用深色玻璃质感(与 HUD/胶囊同一
   // 令牌),选中项琥珀强调;普通页面内(音频条)跟随应用主题。
   final Color? menuColor = darkOverlay ? const Color(0xF21A1A1A) : null;
-  final Color itemColor =
-      darkOverlay ? MediaOverlayStyle.foreground : theme.colorScheme.onSurface;
-  final Color checkColor =
-      darkOverlay ? MediaOverlayStyle.accent : theme.colorScheme.primary;
+  final Color itemColor = darkOverlay
+      ? MediaOverlayStyle.foreground
+      : theme.colorScheme.onSurface;
+  final Color checkColor = darkOverlay
+      ? MediaOverlayStyle.accent
+      : theme.colorScheme.primary;
 
   return showMenu<double>(
     context: context,
@@ -53,7 +53,7 @@ Future<double?> showPlaybackSpeedMenu(
     color: menuColor,
     elevation: darkOverlay ? 12 : null,
     shape: darkOverlay
-        ? RoundedRectangleBorder(
+        ? RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(12),
             side: const BorderSide(color: Color(0x1FFFFFFF)),
           )
@@ -74,15 +74,16 @@ Future<double?> showPlaybackSpeedMenu(
               Text(
                 speed == 1.0
                     ? '${formatPlaybackSpeed(speed)} '
-                        '(${S.current.mediaPlayer_speedNormal})'
+                          '(${S.current.mediaPlayer_speedNormal})'
                     : formatPlaybackSpeed(speed),
                 style: TextStyle(
                   color: speed == current && darkOverlay
                       ? MediaOverlayStyle.accent
                       : itemColor,
                   fontSize: 14,
-                  fontWeight:
-                      speed == current ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: speed == current
+                      ? FontWeight.w600
+                      : FontWeight.w400,
                 ),
               ),
             ],

@@ -66,7 +66,7 @@ Widget _host({required VoidCallback onOpen}) {
 }
 
 final Finder _previewFinder = find.descendant(
-  of: find.byType(ClipRRect),
+  of: find.byType(ClipRSuperellipse),
   matching: find.byKey(const ValueKey('lift_preview')),
 );
 
@@ -261,7 +261,7 @@ void main() {
 
     final rectBefore = tester.getRect(
       find.descendant(
-        of: find.byType(ClipRRect),
+        of: find.byType(ClipRSuperellipse),
         matching: find.byKey(const ValueKey('lift_preview')),
       ),
     );
@@ -275,7 +275,7 @@ void main() {
 
     final rectAfter = tester.getRect(
       find.descendant(
-        of: find.byType(ClipRRect),
+        of: find.byType(ClipRSuperellipse),
         matching: find.byKey(const ValueKey('lift_preview')),
       ),
     );
@@ -352,7 +352,11 @@ void main() {
       if (!_previewFinder.evaluate().isNotEmpty) break;
       final r = tester.getRect(_previewFinder);
       expect(r.left, greaterThanOrEqualTo(-5), reason: '第 $i 帧 left=${r.left}');
-      expect(r.right, lessThanOrEqualTo(395), reason: '第 $i 帧 right=${r.right}');
+      expect(
+        r.right,
+        lessThanOrEqualTo(395),
+        reason: '第 $i 帧 right=${r.right}',
+      );
     }
     await tester.pumpAndSettle();
     expect(_previewFinder, findsNothing);
@@ -478,7 +482,11 @@ void main() {
       if (_previewFinder.evaluate().isEmpty) continue;
       final r = tester.getRect(_previewFinder);
       expect(r.left, greaterThanOrEqualTo(0), reason: '第 $i 帧 left=${r.left}');
-      expect(r.right, lessThanOrEqualTo(1084), reason: '第 $i 帧 right=${r.right}');
+      expect(
+        r.right,
+        lessThanOrEqualTo(1084),
+        reason: '第 $i 帧 right=${r.right}',
+      );
     }
     await tester.pumpAndSettle();
 
@@ -496,8 +504,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       if (_previewFinder.evaluate().isEmpty) break;
       final r = tester.getRect(_previewFinder);
-      expect(r.left, greaterThanOrEqualTo(-8), reason: '回落第 $i 帧 left=${r.left}');
-      expect(r.right, lessThanOrEqualTo(1092), reason: '回落第 $i 帧 right=${r.right}');
+      expect(
+        r.left,
+        greaterThanOrEqualTo(-8),
+        reason: '回落第 $i 帧 left=${r.left}',
+      );
+      expect(
+        r.right,
+        lessThanOrEqualTo(1092),
+        reason: '回落第 $i 帧 right=${r.right}',
+      );
     }
     await tester.pumpAndSettle();
     expect(_previewFinder, findsNothing);
@@ -518,9 +534,8 @@ void main() {
         ListView(
           children: [
             LayoutBuilder(
-              builder: (context, constraints) => SizedBox(
-                height: constraints.maxWidth < 800 ? 5000 : 100,
-              ),
+              builder: (context, constraints) =>
+                  SizedBox(height: constraints.maxWidth < 800 ? 5000 : 100),
             ),
             _host(onOpen: () {}),
           ],

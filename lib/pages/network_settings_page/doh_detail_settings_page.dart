@@ -12,8 +12,10 @@ import '../../services/network/doh/network_settings_service.dart';
 import '../../services/network/core/net_core_service.dart';
 import '../../services/toast_service.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'widgets/ech_settings_card.dart';
 
 /// DOH 详细设置页面（服务器列表、IPv6、服务端 IP、ECH）
@@ -69,8 +71,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
                     leading: const Icon(Symbols.dns_rounded),
                     title: Text(context.l10n.dohDetail_serverIp),
                     subtitle: Text(
-                      settings.serverIp != null &&
-                              settings.serverIp!.isNotEmpty
+                      settings.serverIp != null && settings.serverIp!.isNotEmpty
                           ? settings.serverIp!
                           : context.l10n.common_notSet,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -151,9 +152,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
                       ? const SizedBox(
                           width: 14,
                           height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Symbols.speed_rounded, size: 16),
                   label: Text(
@@ -162,9 +161,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
                         : context.l10n.dohDetail_testAllSpeed,
                   ),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -173,9 +170,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
                   icon: const Icon(Symbols.add_rounded, size: 16),
                   label: Text(context.l10n.common_add),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -213,9 +208,11 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
             Container(
               margin: const EdgeInsets.only(left: 8),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(4),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
               child: Text(
                 S.current.common_custom,
@@ -901,9 +898,7 @@ String _formatDnsRecordTtl(Duration ttl) {
   }
   if (ttl.inMinutes > 0) {
     final seconds = ttl.inSeconds.remainder(60);
-    return seconds == 0
-        ? '${ttl.inMinutes}m'
-        : '${ttl.inMinutes}m ${seconds}s';
+    return seconds == 0 ? '${ttl.inMinutes}m' : '${ttl.inMinutes}m ${seconds}s';
   }
   return '${ttl.inSeconds}s';
 }
@@ -962,7 +957,9 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
         final groups = _groupDnsRecords(records);
         final visibleGroups = _query.isEmpty
             ? groups
-            : groups.where((g) => g.host.toLowerCase().contains(_query)).toList();
+            : groups
+                  .where((g) => g.host.toLowerCase().contains(_query))
+                  .toList();
 
         if (records.isEmpty) {
           return Padding(
@@ -1115,7 +1112,7 @@ class _DnsRecordGroupCardState extends State<_DnsRecordGroupCard> {
 
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -1149,7 +1146,9 @@ class _DnsRecordGroupCardState extends State<_DnsRecordGroupCard> {
                         ),
                       ),
                       InkWell(
-                        borderRadius: BorderRadius.circular(8),
+                        customBorder: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: group.host));
                           ToastService.showInfo(l10n.dohDetail_recordCopied);
@@ -1285,19 +1284,18 @@ class _StatusChip extends StatelessWidget {
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(999),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: fg),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(color: fg),
-          ),
+          Text(label, style: theme.textTheme.labelSmall?.copyWith(color: fg)),
         ],
       ),
     );
@@ -1327,11 +1325,7 @@ class _RecordSection extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(
-              icon,
-              size: 14,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
             Text(
               label,
@@ -1343,12 +1337,12 @@ class _RecordSection extends StatelessWidget {
             ),
             const Spacer(),
             InkWell(
-              borderRadius: BorderRadius.circular(8),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
               onTap: () {
                 Clipboard.setData(ClipboardData(text: copyText));
-                ToastService.showInfo(
-                  context.l10n.dohDetail_recordCopied,
-                );
+                ToastService.showInfo(context.l10n.dohDetail_recordCopied);
               },
               child: Padding(
                 padding: const EdgeInsets.all(4),
@@ -1365,11 +1359,13 @@ class _RecordSection extends StatelessWidget {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
+              ),
             ),
           ),
           child: SelectableText(

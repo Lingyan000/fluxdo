@@ -130,9 +130,8 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
             animation: _breathingAnimation,
             builder: (context, child) {
               return Container(
-                decoration: BoxDecoration(
-                  borderRadius: borderRadius,
-                  boxShadow: [
+                decoration: ShapeDecoration(
+                  shadows: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 6,
@@ -147,6 +146,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                       spreadRadius: 2 + 4 * _breathingAnimation.value,
                     ),
                   ],
+                  shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
                 ),
                 child: child,
               );
@@ -154,23 +154,27 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
             child: Material(
               color: Colors.transparent,
               elevation: 0,
-              borderRadius: borderRadius,
+              shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: backgroundColor.withValues(alpha: 0.9),
-                  borderRadius: borderRadius,
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.1),
-                    width: 1.0,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: borderRadius,
+                    side: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.1),
+                      width: 1.0,
+                    ),
                   ),
                 ),
                 padding: targetPadding,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Symbols.gpp_maybe_rounded, fill: _isExpanded ? 1 : 0,
+                    Icon(
+                      Symbols.gpp_maybe_rounded,
+                      fill: _isExpanded ? 1 : 0,
                       size: 20,
                       color: contentColor,
                     ),

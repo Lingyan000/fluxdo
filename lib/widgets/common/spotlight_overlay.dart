@@ -163,10 +163,13 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
                       horizontal: 20,
                       vertical: 14,
                     ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.inverseSurface
-                          .withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(12),
+                    decoration: ShapeDecoration(
+                      color: theme.colorScheme.inverseSurface.withValues(
+                        alpha: 0.92,
+                      ),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: Text(
                       widget.message,
@@ -193,10 +196,7 @@ class _SpotlightPainter extends CustomPainter {
   final Rect targetRect;
   final double borderRadius;
 
-  _SpotlightPainter({
-    required this.targetRect,
-    required this.borderRadius,
-  });
+  _SpotlightPainter({required this.targetRect, required this.borderRadius});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -208,13 +208,19 @@ class _SpotlightPainter extends CustomPainter {
 
     // 镂空路径
     final holePath = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(targetRect, Radius.circular(borderRadius)),
+      ..addRSuperellipse(
+        RSuperellipse.fromRectAndRadius(
+          targetRect,
+          Radius.circular(borderRadius),
+        ),
       );
 
     // 差集
-    final combinedPath =
-        Path.combine(PathOperation.difference, fullPath, holePath);
+    final combinedPath = Path.combine(
+      PathOperation.difference,
+      fullPath,
+      holePath,
+    );
 
     canvas.drawPath(combinedPath, paint);
   }
@@ -229,10 +235,7 @@ class _PulsingBorder extends StatefulWidget {
   final double borderRadius;
   final Color color;
 
-  const _PulsingBorder({
-    required this.borderRadius,
-    required this.color,
-  });
+  const _PulsingBorder({required this.borderRadius, required this.color});
 
   @override
   State<_PulsingBorder> createState() => _PulsingBorderState();
@@ -264,11 +267,13 @@ class _PulsingBorderState extends State<_PulsingBorder>
       builder: (context, child) {
         final opacity = 0.3 + 0.5 * _controller.value;
         return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            border: Border.all(
-              color: widget.color.withValues(alpha: opacity),
-              width: 2,
+          decoration: ShapeDecoration(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+              side: BorderSide(
+                color: widget.color.withValues(alpha: opacity),
+                width: 2,
+              ),
             ),
           ),
         );

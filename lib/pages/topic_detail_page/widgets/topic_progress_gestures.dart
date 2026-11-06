@@ -269,9 +269,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
       direction: _swipeDirection,
       action: _swipeAction,
       triggerable: _swipeTriggerable,
-      delta: (_swipeStart == null)
-          ? Offset.zero
-          : _swipeCurrent - _swipeStart!,
+      delta: (_swipeStart == null) ? Offset.zero : _swipeCurrent - _swipeStart!,
       triggerDistance: _kSwipeTriggerDistance,
     );
   }
@@ -297,8 +295,8 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
               GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
                 () => LongPressGestureRecognizer(duration: _longPressTimeout),
                 (instance) {
-                  instance.onLongPressStart =
-                      (d) => _handleLongPressStart(d, prefs);
+                  instance.onLongPressStart = (d) =>
+                      _handleLongPressStart(d, prefs);
                   instance.onLongPressMoveUpdate = _handleLongPressMoveUpdate;
                   instance.onLongPressEnd = _handleLongPressEnd;
                   instance.onLongPressCancel = _handleLongPressCancel;
@@ -448,8 +446,11 @@ class _SwipePreviewOverlay extends StatelessWidget {
       return const IgnorePointer(child: SizedBox.shrink());
     }
     final meta = progressGestureActionMeta(context, action!);
-    final progress = (math.max(delta.dx.abs(), delta.dy.abs()) / triggerDistance)
-        .clamp(0.0, 1.0);
+    final progress =
+        (math.max(delta.dx.abs(), delta.dy.abs()) / triggerDistance).clamp(
+          0.0,
+          1.0,
+        );
 
     Offset pillOffset;
     switch (direction!) {
@@ -462,7 +463,7 @@ class _SwipePreviewOverlay extends StatelessWidget {
       case _SwipeDirection.up:
         final dy =
             (delta.dy * _pillFollowFactor).clamp(-_pillFollowMax, 0.0) -
-                _pillBaseOffset;
+            _pillBaseOffset;
         pillOffset = Offset(0, dy);
     }
 
@@ -499,7 +500,9 @@ class _SwipePreviewOverlay extends StatelessWidget {
                 scale: triggerable ? 1.04 : 1.0,
                 child: Material(
                   color: bgColor,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   elevation: triggerable ? 6 : 3,
                   shadowColor: shadow,
                   child: Padding(

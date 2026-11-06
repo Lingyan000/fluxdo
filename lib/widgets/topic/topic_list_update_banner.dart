@@ -1,5 +1,6 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
+
 import '../../l10n/s.dart';
 import '../../providers/topic_list/filter_provider.dart';
 
@@ -32,9 +33,13 @@ class TopicListUpdateBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: colors.primaryContainer.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(8),
+        ),
+        child: InkWell(
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
           onTap: loading ? null : onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),

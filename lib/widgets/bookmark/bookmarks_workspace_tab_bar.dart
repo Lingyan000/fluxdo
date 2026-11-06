@@ -114,9 +114,7 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-      ),
+      decoration: BoxDecoration(color: colorScheme.surface),
       child: SizedBox(
         height: 48,
         child: Row(
@@ -213,9 +211,13 @@ class _WorkspaceTabButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Material(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(12),
+        ),
+        child: InkWell(
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           onTap: onTap,
           child: Padding(
             padding: EdgeInsets.only(

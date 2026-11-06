@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../utils/platform_utils.dart';
 
 import 'composer_tool_style.dart';
@@ -51,7 +52,7 @@ Future<void> showComposerObjectMenu(
                 alignment: Alignment.centerLeft,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                shape: RoundedRectangleBorder(
+                shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(7),
                 ),
                 foregroundColor: item.destructive

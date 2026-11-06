@@ -283,13 +283,15 @@ class FluxdoRenderCallbacks {
     )) {
       return;
     }
-    Navigator.of(ctx).push(MaterialPageRoute(
-      builder: (_) => TopicDetailPage(
-        topicId: topicId,
-        initialTitle: topicSlug,
-        scrollToPostNumber: postNumber,
+    Navigator.of(ctx).push(
+      MaterialPageRoute(
+        builder: (_) => TopicDetailPage(
+          topicId: topicId,
+          initialTitle: topicSlug,
+          scrollToPostNumber: postNumber,
+        ),
       ),
-    ));
+    );
   }
 
   // ==========================================================================
@@ -387,9 +389,8 @@ class FluxdoRenderCallbacks {
               node.latex,
               style: TextStyle(
                 fontFamily: 'monospace',
-                color: Theme.of(
-                  ctx,
-                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                color: Theme.of(ctx).colorScheme.onSurface
+                    .withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -453,7 +454,7 @@ class FluxdoRenderCallbacks {
         node.height! > 0;
     Widget playerFor(String resolvedSrc) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(8),
         child: DiscourseVideoPlayer(
           resolvedSrc,
@@ -482,9 +483,7 @@ class FluxdoRenderCallbacks {
           errorBuilder: (c, failedUrl, error) =>
               _VideoErrorFallback(url: failedUrl, error: error),
           loadingBuilder: (c, _, child) => Center(
-            child: posterUrl != null
-                ? child
-                : const LoadingSpinner(size: 24),
+            child: posterUrl != null ? child : const LoadingSpinner(size: 24),
           ),
         ),
       ),
@@ -752,7 +751,8 @@ class FluxdoRenderCallbacks {
   /// 端渲染等价;解码纹理量不变(ResizeImage 仍按显示宽 × dpr cap)。
   static String? _pickSrcsetUrl(ImageRun image, double dpr) {
     if (image.srcset.isEmpty) return null;
-    final sorted = [...image.srcset]..sort((a, b) => a.scale.compareTo(b.scale));
+    final sorted = [...image.srcset]
+      ..sort((a, b) => a.scale.compareTo(b.scale));
     for (final c in sorted) {
       if (c.scale >= dpr - 0.01) return c.url;
     }
@@ -1282,8 +1282,7 @@ class FluxdoRenderCallbacks {
               // 档位影响。
               final srcsetUrl = DiscourseImageUtils.isUploadUrl(image.src)
                   ? null
-                  : _pickSrcsetUrl(
-                      image, MediaQuery.devicePixelRatioOf(ctx));
+                  : _pickSrcsetUrl(image, MediaQuery.devicePixelRatioOf(ctx));
               final displayUrl = srcsetUrl == null
                   ? resolvedUrl
                   : UrlHelper.resolveUrlWithCdn(srcsetUrl);
@@ -1298,7 +1297,7 @@ class FluxdoRenderCallbacks {
                       ),
                 width: dispW,
                 height: dispH,
-                // 瓦片内 cover 填满(裁切由瓦片 ClipRRect 完成);
+                // 瓦片内 cover 填满(裁切由瓦片 ClipRSuperellipse 完成);
                 // 文档流保持 contain
                 fit: inGridTile ? BoxFit.cover : BoxFit.contain,
                 coverFlight: inGridTile,
@@ -1328,14 +1327,14 @@ class FluxdoRenderCallbacks {
                   // 风险,能不用就不用)。
                   final hasLightbox = image.lightboxUrl != null;
                   final fullUrl = image.lightboxUrl ?? resolvedUrl;
-                  var resolvedFullUrl =
-                      DiscourseImageUtils.isUploadUrl(fullUrl)
+                  var resolvedFullUrl = DiscourseImageUtils.isUploadUrl(fullUrl)
                       ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
                             fullUrl)
                       : UrlHelper.resolveUrlWithCdn(fullUrl);
                   if (!hasLightbox) {
-                    resolvedFullUrl =
-                        DiscourseImageUtils.getOriginalUrl(resolvedFullUrl);
+                    resolvedFullUrl = DiscourseImageUtils.getOriginalUrl(
+                      resolvedFullUrl,
+                    );
                   }
                   // 画廊数据在点击时才解析(长帖懒解析场景首次点图会触发
                   // 全 chunk parse,离散动作可接受;之后命中缓存)。
@@ -1360,7 +1359,9 @@ class FluxdoRenderCallbacks {
                     galleryImages: hasGallery ? gallery.urls : null,
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
-                    filenames: hasGallery ? gallery.filenames : [image.filename],
+                    filenames: hasGallery
+                        ? gallery.filenames
+                        : [image.filename],
                     initialIndex: hasGallery ? galleryIndex : 0,
                     heroSourceFit: inGridTile ? BoxFit.cover : null,
                     heroSourceRadius: inGridTile ? 4 : 0,
@@ -1504,7 +1505,8 @@ class FluxdoRenderCallbacks {
     final base62Sha1 = image.base62Sha1;
     if (base62Sha1 != null && base62Sha1.isNotEmpty) {
       src = 'upload://$base62Sha1';
-      final ext = HtmlToMarkdown.extensionFromUrl(image.src) ??
+      final ext =
+          HtmlToMarkdown.extensionFromUrl(image.src) ??
           HtmlToMarkdown.extensionFromUrl(image.lightboxUrl) ??
           HtmlToMarkdown.extensionFromUrl(image.origSrc);
       if (ext != null) src = '$src.$ext';
@@ -1944,10 +1946,12 @@ class _MermaidBlockState extends State<_MermaidBlock> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+      decoration: ShapeDecoration(
         color: bgColor,
-        border: Border.all(color: borderColor),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: borderColor),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1962,7 +1966,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
               children: [
                 InkWell(
                   onTap: () => setState(() => _showCode = !_showCode),
-                  borderRadius: BorderRadius.circular(4),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -2014,7 +2020,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                             : _buildKrokiUrl(widget.code, isDark),
                       );
                     },
-                    borderRadius: BorderRadius.circular(4),
+                    customBorder: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(6),
                       child: Icon(
@@ -2031,7 +2039,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                     Clipboard.setData(ClipboardData(text: widget.code));
                     ToastService.showSuccess(S.current.common_codeCopied);
                   },
-                  borderRadius: BorderRadius.circular(4),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Icon(
@@ -2047,7 +2057,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
           // 内容区域:16:9 固定高度框(对齐官方 mermaid 主题组件
           // .mermaid-wrapper 的 aspect-ratio: 16/9)。shimmer / 出图 /
           // 错误 / 代码态共用同一个框 → 加载完成或切视图块高不变,页面不抖。
-          ClipRRect(
+          ClipRSuperellipse(
             borderRadius: const BorderRadius.only(
               bottomLeft: Radius.circular(8),
               bottomRight: Radius.circular(8),
@@ -2105,8 +2115,7 @@ class _MermaidShimmerState extends State<_MermaidShimmer>
         builder: (context, child) {
           return Container(
             margin: widget.withMargin ? const EdgeInsets.all(12) : null,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+            decoration: ShapeDecoration(
               gradient: LinearGradient(
                 begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
                 end: Alignment(-0.5 + 2.0 * _controller.value, 0),
@@ -2122,6 +2131,9 @@ class _MermaidShimmerState extends State<_MermaidShimmer>
                   ),
                 ],
                 stops: const [0.0, 0.5, 1.0],
+              ),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
           );

@@ -19,7 +19,9 @@ class _PaginationLoading extends StatelessWidget {
             child: Material(
               color: theme.colorScheme.surfaceContainerHigh,
               elevation: 2,
-              borderRadius: BorderRadius.circular(24),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -90,9 +92,11 @@ class _SelectionToolbar extends StatelessWidget {
     final enabled = count > 0;
     return Container(
       padding: EdgeInsets.only(top: 6, bottom: 6 + bottomPadding),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -147,7 +151,9 @@ class _SelectionAction extends StatelessWidget {
         : theme.colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         child: Column(
@@ -257,11 +263,13 @@ class _PinnedBanner extends StatelessWidget {
                       width: 2.5,
                       height: pins.length > 1 ? 10.0 : 26.0,
                       margin: EdgeInsets.only(top: i == 0 ? 0 : 2),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: i == cursor
                             ? theme.colorScheme.primary
                             : theme.colorScheme.primary.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(2),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
                 ],
@@ -327,7 +335,7 @@ class _MentionCandidateBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      borderRadius: BorderRadius.circular(14),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -344,7 +352,9 @@ class _MentionCandidateBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: InkWell(
                     onTap: () => onSelect(user),
-                    borderRadius: BorderRadius.circular(10),
+                    customBorder: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -420,7 +430,9 @@ class _MessageUploads extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Material(
               color: theme.colorScheme.surface.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(10),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: interactive && file.url != null
@@ -470,7 +482,7 @@ class _MessageUploads extends StatelessWidget {
         );
   }
 
-  /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRRect 同值)。
+  /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRSuperellipse 同值)。
   /// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)。
   static const _bubbleStyle = ViewerSourceStyle.cover(radius: 10);
 
@@ -488,7 +500,7 @@ class _MessageUploads extends StatelessWidget {
     final h = (w / ratio).clamp(72.0, 320.0);
     final heroTag = '${heroNamespace}_$i';
 
-    final image = ClipRRect(
+    final image = ClipRSuperellipse(
       borderRadius: BorderRadius.circular(10),
       child: Image(
         image: discourseImageProvider(url),

@@ -555,11 +555,13 @@ class _TrustLevelRequirementsPageState
                           horizontal: 10,
                           vertical: 4,
                         ),
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: badgeBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: badgeText.withValues(alpha: 0.2),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: badgeText.withValues(alpha: 0.2),
+                            ),
                           ),
                         ),
                         child: Text(
@@ -588,19 +590,21 @@ class _TrustLevelRequirementsPageState
     final colorScheme = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-        ),
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: colorScheme.shadow.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -740,7 +744,7 @@ class _TrustLevelRequirementsPageState
             ],
           ),
           const SizedBox(height: 8),
-          ClipRRect(
+          ClipRSuperellipse(
             borderRadius: BorderRadius.circular(4),
             child: Container(
               height: 8,
@@ -750,7 +754,7 @@ class _TrustLevelRequirementsPageState
                 alignment: Alignment.centerLeft,
                 widthFactor: bar.progress,
                 child: Container(
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     gradient: LinearGradient(
                       colors: bar.isMet
                           ? [const Color(0xFF22c55e), const Color(0xFF4ade80)]
@@ -758,8 +762,7 @@ class _TrustLevelRequirementsPageState
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ),
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: [
+                    shadows: [
                       BoxShadow(
                         color: bar.isMet
                             ? const Color(0xFF22c55e).withValues(alpha: 0.4)
@@ -769,6 +772,9 @@ class _TrustLevelRequirementsPageState
                         offset: const Offset(0, 0),
                       ),
                     ],
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
               ),
@@ -832,10 +838,12 @@ class _TrustLevelRequirementsPageState
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: borderColor),
+        ),
       ),
       child: Column(
         children: [
@@ -876,10 +884,9 @@ class _TrustLevelRequirementsPageState
                 child: Container(
                   height: 6,
                   margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: color.withValues(alpha: isUsed ? 0.9 : 0.2),
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: isUsed
+                    shadows: isUsed
                         ? [
                             BoxShadow(
                               color: color.withValues(alpha: 0.3),
@@ -887,6 +894,9 @@ class _TrustLevelRequirementsPageState
                             ),
                           ]
                         : null,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(3),
+                    ),
                   ),
                 ),
               );
@@ -923,10 +933,12 @@ class _TrustLevelRequirementsPageState
     return Container(
       height: 100,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: borderColor),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -998,10 +1010,12 @@ class _TrustLevelRequirementsPageState
         if (_data!.statusText.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: statusColor.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: statusColor.withValues(alpha: 0.2)),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: statusColor.withValues(alpha: 0.2)),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1055,12 +1069,14 @@ class _TrustLevelRequirementsPageState
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Container(
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: colorScheme.outlineVariant.withValues(
-                          alpha: 0.3,
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
                         ),
                       ),
                     ),
@@ -1184,11 +1200,13 @@ class _TrustLevelRequirementsPageState
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
           ),
         ),
         child: Column(
@@ -1225,9 +1243,7 @@ class _TrustLevelRequirementsPageState
             M3eLinearProgress(
               value: progress,
               color: color,
-              trackColor: colorScheme.secondaryContainer.withValues(
-                alpha: 0.5,
-              ),
+              trackColor: colorScheme.secondaryContainer.withValues(alpha: 0.5),
             ),
           ],
         ),

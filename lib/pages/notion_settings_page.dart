@@ -10,6 +10,7 @@ import '../services/notion/notion_client.dart';
 import '../services/notion/notion_config.dart';
 import '../services/notion/notion_sync_service.dart';
 import '../services/toast_service.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// Notion 同步设置页：分步引导 + 配置编辑。
@@ -17,8 +18,7 @@ class NotionSettingsPage extends ConsumerStatefulWidget {
   const NotionSettingsPage({super.key});
 
   @override
-  ConsumerState<NotionSettingsPage> createState() =>
-      _NotionSettingsPageState();
+  ConsumerState<NotionSettingsPage> createState() => _NotionSettingsPageState();
 }
 
 class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
@@ -103,10 +103,9 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
       await ref
           .read(notionConfigProvider.notifier)
           .update(
-            ref.read(notionConfigProvider).copyWith(
-              integrationToken: token,
-              databaseId: dbId,
-            ),
+            ref
+                .read(notionConfigProvider)
+                .copyWith(integrationToken: token, databaseId: dbId),
           );
       if (!mounted) return;
       ToastService.showSuccess(S.current.notion_testOk(title));
@@ -238,16 +237,15 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
           ],
 
           if (!showSteps) ...[
-            _ConfiguredBanner(
-              onEdit: () => setState(() => _editing = true),
-            ),
+            _ConfiguredBanner(onEdit: () => setState(() => _editing = true)),
           ] else ...[
             // Step 1: Token
             _StepCard(
               index: 1,
               title: context.l10n.notion_step1Title,
               body: context.l10n.notion_step1Body,
-              done: cfg.integrationToken != null &&
+              done:
+                  cfg.integrationToken != null &&
                   cfg.integrationToken!.isNotEmpty,
               children: [
                 const SizedBox(height: 8),
@@ -293,8 +291,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
               index: 2,
               title: context.l10n.notion_step2Title,
               body: context.l10n.notion_step2Body,
-              done:
-                  cfg.databaseId != null && cfg.databaseId!.isNotEmpty,
+              done: cfg.databaseId != null && cfg.databaseId!.isNotEmpty,
               children: [
                 const SizedBox(height: 12),
                 TextField(
@@ -417,9 +414,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                         items: [
                           M3eButtonGroupItem(
                             value: NotionSyncScope.firstPostOnly,
-                            label: Text(
-                              context.l10n.export_firstPostOnly,
-                            ),
+                            label: Text(context.l10n.export_firstPostOnly),
                           ),
                           M3eButtonGroupItem(
                             value: NotionSyncScope.allPosts,
@@ -443,9 +438,11 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
           const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(10),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Row(
               children: [
@@ -487,10 +484,12 @@ class _UpgradeBanner extends StatelessWidget {
     final accent = Colors.amber.shade700;
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withValues(alpha: 0.45)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: accent.withValues(alpha: 0.45)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,8 +535,10 @@ class _UpgradeBanner extends StatelessWidget {
               label: Text(context.l10n.notion_upgradeAction),
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
             ),
           ),
@@ -559,11 +560,13 @@ class _ConfiguredBanner extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.35),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: theme.colorScheme.primary.withValues(alpha: 0.35),
+          ),
         ),
       ),
       child: Row(
@@ -608,7 +611,7 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         gradient: LinearGradient(
           colors: [
             theme.colorScheme.primary.withValues(alpha: 0.12),
@@ -617,16 +620,20 @@ class _Header extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(14),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
       child: Row(
         children: [
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primary.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(10),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Icon(
               Symbols.cloud_sync_rounded,
@@ -681,14 +688,16 @@ class _StepCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: done
-              ? theme.colorScheme.primary.withValues(alpha: 0.4)
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-          width: done ? 1.2 : 1,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: done
+                ? theme.colorScheme.primary.withValues(alpha: 0.4)
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            width: done ? 1.2 : 1,
+          ),
         ),
       ),
       child: Column(

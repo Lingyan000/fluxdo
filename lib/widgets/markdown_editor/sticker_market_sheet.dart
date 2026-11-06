@@ -413,7 +413,7 @@ class _StickerGroupTile extends ConsumerWidget {
   Widget _buildIcon(ThemeData theme) {
     final icon = group.icon;
     if (icon.startsWith('http://') || icon.startsWith('https://')) {
-      return ClipRRect(
+      return ClipRSuperellipse(
         borderRadius: BorderRadius.circular(8),
         child: RepaintBoundary(
           child: CachedImage(
@@ -448,9 +448,11 @@ class _StickerGroupTile extends ConsumerWidget {
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
       child: Center(
         child: Text(

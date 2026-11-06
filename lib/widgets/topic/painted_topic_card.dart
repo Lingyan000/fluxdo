@@ -19,7 +19,7 @@ String topicCardEmojiUrlResolver(String name) =>
 
 /// 话题自绘卡:内容 = 单 RenderObject 绘制 [TopicCardLayout] 的排版
 /// 成品;**壳与交互与 widget 版逐层同构** —— Padding(卡间距) →
-/// ClipRRect(有色带时) → DecoratedBox(卡底色) →
+/// ClipRSuperellipse(有色带时) → DecoratedBox(卡底色) →
 /// [TopicCardInteractiveSurface](与 TopicCard 共用同一交互面:桌面
 /// hover/水波纹/右键/中键,移动按压灰底) → 内容 leaf。
 ///
@@ -92,14 +92,16 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
           )
         : null;
     Widget card = DecoratedBox(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: cardRadius,
-        border: widget.isSelected
-            ? Border.all(
-                color: theme.colorScheme.primary.withValues(alpha: 0.5),
-              )
-            : null,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: cardRadius,
+          side: widget.isSelected
+              ? BorderSide(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                )
+              : BorderSide.none,
+        ),
       ),
       child: TopicCardInteractiveSurface(
         borderRadius: cardRadius,
@@ -116,7 +118,7 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
       ),
     );
     if (layout.band != null) {
-      card = ClipRRect(borderRadius: cardRadius, child: card);
+      card = ClipRSuperellipse(borderRadius: cardRadius, child: card);
     }
     return Padding(padding: const EdgeInsets.only(bottom: 8), child: card);
   }
@@ -233,7 +235,7 @@ class _RenderTopicCard extends RenderBox
     final canvas = context.canvas;
     final l = _layout;
 
-    // 色带底色(裁剪由外层 ClipRRect 承担,与 widget 版同构)
+    // 色带底色(裁剪由外层 ClipRSuperellipse 承担,与 widget 版同构)
     if (l.band != null) {
       canvas.drawRect(
         Rect.fromLTWH(offset.dx, offset.dy, size.width, l.bandHeight),
@@ -287,8 +289,8 @@ class _RenderTopicCard extends RenderBox
         // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
         // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
         final clipPath = isSquareAvatarUrl(l.avatarUrl)
-            ? (Path()..addRRect(
-                RRect.fromRectAndRadius(
+            ? (Path()..addRSuperellipse(
+                RSuperellipse.fromRectAndRadius(
                   avatarRect,
                   Radius.circular(avatarRect.shortestSide * 0.1),
                 ),
@@ -320,8 +322,8 @@ class _RenderTopicCard extends RenderBox
       canvas.drawParagraph(l.time!, offset + l.timeOffset);
     }
     if (l.categoryDotColor != null) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromRectAndRadius(
           l.categoryDotRect.shift(offset),
           const Radius.circular(2),
         ),
@@ -340,8 +342,8 @@ class _RenderTopicCard extends RenderBox
 
     // 通用装饰通道:徽章/蓝点/楼层 chip 底 + 徽章数字/AI 图标
     for (final (rrect, color) in l.extraFills) {
-      canvas.drawRRect(
-        RRect.fromLTRBAndCorners(
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromLTRBAndCorners(
           rrect.left + offset.dx,
           rrect.top + offset.dy,
           rrect.right + offset.dx,

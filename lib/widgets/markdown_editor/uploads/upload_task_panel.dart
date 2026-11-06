@@ -56,7 +56,9 @@ class _UploadTaskPanelState extends State<UploadTaskPanel> {
           .length;
       return Material(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -142,7 +144,7 @@ class UploadTaskCard extends StatelessWidget {
             width: 44,
             height: 44,
             child: task.isImage
-                ? ClipRRect(
+                ? ClipRSuperellipse(
                     borderRadius: BorderRadius.circular(6),
                     child: Image.file(
                       File(task.path),
@@ -268,13 +270,15 @@ class _ChatUploadTile extends StatelessWidget {
           key: ValueKey('chat-upload-${task.id}'),
           width: task.isImage ? 80 : 164,
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: failed
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(
+                color: failed
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+              ),
             ),
           ),
           child: Stack(
@@ -493,10 +497,12 @@ class _SourceUploadPanelState extends State<SourceUploadPanel> {
                           Container(
                             width: 30,
                             height: 30,
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: (failed ? colors.error : colors.primary)
                                   .withValues(alpha: .12),
-                              borderRadius: BorderRadius.circular(10),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             child: Icon(
                               failed

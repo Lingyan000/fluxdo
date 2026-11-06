@@ -206,7 +206,8 @@ Widget _buildByType({
     }
   } catch (e, stackTrace) {
     debugPrint(
-        '=== Onebox Build Error [$type] ===\nError: $e\nStackTrace: $stackTrace');
+      '=== Onebox Build Error [$type] ===\nError: $e\nStackTrace: $stackTrace',
+    );
     // 专用 builder 失败时回退到默认样式
     return _buildSafeDefault(
       context: context,
@@ -236,10 +237,12 @@ Widget _buildSafeDefault({
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
       ),
       child: Row(
         children: [

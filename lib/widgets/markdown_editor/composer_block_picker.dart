@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
@@ -521,9 +522,8 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                         TargetPlatform.fuchsia => '输入名称查找，点选插入',
                         _ => '↑↓ 选择   Enter 确认   Esc 关闭',
                       },
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: colors.onSurfaceVariant),
                     ),
                   ),
               ],
@@ -555,7 +555,7 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                   ? colors.primary.withValues(alpha: .10)
                   : Colors.transparent,
               foregroundColor: colors.onSurface,
-              shape: RoundedRectangleBorder(
+              shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(7),
               ),
             ),

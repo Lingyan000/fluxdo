@@ -131,15 +131,17 @@ class M3eFabMenuState extends State<M3eFabMenu>
               height: _kFabInitialSize,
               child: Center(
                 child: SizedBox(
-                  width: _kFabInitialSize -
+                  width:
+                      _kFabInitialSize -
                       (_kFabInitialSize - _kFabFinalSize) * t,
-                  height: _kFabInitialSize -
+                  height:
+                      _kFabInitialSize -
                       (_kFabInitialSize - _kFabFinalSize) * t,
                   child: Material(
-                    shape: const StadiumBorder(),
-                    color: t < 0.5
-                        ? scheme.primaryContainer
-                        : scheme.primary,
+                    shape: const RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(9999)),
+                    ),
+                    color: t < 0.5 ? scheme.primaryContainer : scheme.primary,
                     elevation: 3,
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
@@ -147,10 +149,17 @@ class M3eFabMenuState extends State<M3eFabMenu>
                       child: Center(
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 180),
-                          transitionBuilder: (child, anim) => RotationTransition(
-                            turns: Tween(begin: 0.75, end: 1.0).animate(anim),
-                            child: FadeTransition(opacity: anim, child: child),
-                          ),
+                          transitionBuilder: (child, anim) =>
+                              RotationTransition(
+                                turns: Tween(
+                                  begin: 0.75,
+                                  end: 1.0,
+                                ).animate(anim),
+                                child: FadeTransition(
+                                  opacity: anim,
+                                  child: child,
+                                ),
+                              ),
                           child: _open
                               ? Icon(
                                   Icons.close,
@@ -194,7 +203,9 @@ class M3eFabMenuState extends State<M3eFabMenu>
         child: SizedBox(
           height: _kItemHeight,
           child: Material(
-            shape: const StadiumBorder(),
+            shape: const RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.all(Radius.circular(9999)),
+            ),
             color: scheme.primaryContainer,
             elevation: 2,
             clipBehavior: Clip.antiAlias,

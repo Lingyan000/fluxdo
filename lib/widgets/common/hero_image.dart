@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+
 import '../../utils/hero_visibility_controller.dart';
 
 /// Hero 飞行体:cover↔contain 单层裁切插值(网格瓦片/圆形头像来源)。
@@ -234,13 +235,13 @@ class _CoverContainPainter extends CustomPainter {
 
     // 圆形来源(头像):t=0 端圆角=短边一半(正圆),线性收到 0;
     // 常规来源用固定 radius 收到 0
-    final double r0 = circular
-        ? math.min(dst.width, dst.height) / 2
-        : radius;
+    final double r0 = circular ? math.min(dst.width, dst.height) / 2 : radius;
     final double r = r0 * (1 - t);
     if (r > 0) {
       canvas.save();
-      canvas.clipRRect(RRect.fromRectAndRadius(dst, Radius.circular(r)));
+      canvas.clipRSuperellipse(
+        RSuperellipse.fromRectAndRadius(dst, Radius.circular(r)),
+      );
     }
     canvas.drawImageRect(
       image,
@@ -281,21 +282,21 @@ class _CoverContainPainter extends CustomPainter {
 class ViewerSourceStyle {
   /// 源端以 `BoxFit.cover` 裁切展示(网格瓦片/聊天气泡/方形头像)
   const ViewerSourceStyle.cover({required double radius})
-      : _fit = BoxFit.cover,
-        _radius = radius,
-        _circular = false;
+    : _fit = BoxFit.cover,
+      _radius = radius,
+      _circular = false;
 
   /// 源端以 `BoxFit.contain` 完整展示(轮播/正文单图)
   const ViewerSourceStyle.contain({double radius = 0})
-      : _fit = BoxFit.contain,
-        _radius = radius,
-        _circular = false;
+    : _fit = BoxFit.contain,
+      _radius = radius,
+      _circular = false;
 
   /// 源端是圆形裁切(圆形头像):飞行中圆↔直角连续插值
   const ViewerSourceStyle.circular()
-      : _fit = BoxFit.cover,
-        _radius = 0,
-        _circular = true;
+    : _fit = BoxFit.cover,
+      _radius = 0,
+      _circular = true;
 
   final BoxFit _fit;
   final double _radius;
@@ -316,10 +317,10 @@ class ViewerSourceStyle {
   /// `coverSource` 为真、飞行体去做 cover→contain 的窗口插值,而 contain
   /// 来源两端本就都是完整图,那段插值是多余动画。
   ({BoxFit? fit, double radius, bool circular}) get openViewerArgs => (
-        fit: isCover ? BoxFit.cover : null,
-        radius: _radius,
-        circular: _circular,
-      );
+    fit: isCover ? BoxFit.cover : null,
+    radius: _radius,
+    circular: _circular,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -440,10 +441,7 @@ class _HeroImageState extends State<HeroImage> {
 
   @override
   void dispose() {
-    HeroVisibilityController.instance.unregisterSource(
-      widget.heroTag,
-      context,
-    );
+    HeroVisibilityController.instance.unregisterSource(widget.heroTag, context);
     super.dispose();
   }
 
@@ -464,79 +462,80 @@ class _HeroImageState extends State<HeroImage> {
         final shouldHide = !isPopping && hiddenTag == heroTag;
 
         final Widget hero = Hero(
-            tag: heroTag,
-            // Android 预测返回是 user gesture 转场,须显式开启才有飞行
-            transitionOnUserGestures: true,
-            // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
-            createRectTween: viewerHeroRectTween,
-            // 网格瓦片来源(coverFlight)换裁切插值飞行体,否则返回纯图片。
-            //
-            // 这里**不再**挂 startPopping 的动画监听:push 飞行未跑完就被
-            // pop 打断时,框架走 _HeroFlight.divert 且不重建 shuttle
-            // (heroes.dart:`shuttle ??= manifest.shuttleBuilder(...)`),
-            // 本 builder 全程只以 push 方向调用一次,pop 分支永不执行 ⇒
-            // 源端 Opacity 锁死在 0 ⇒ 空洞黑闪。宣告退场已改由查看器在
-            // 路由转 reverse / 手势置位时直接做,与 shuttle 无关。
-            flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {
-              // 自绘飞行体需要位图源;有它就用,以便 cover 窗口/圆角随飞行
-              // 插值。判据走 effective* —— style 给了就以它为准。
-              if (widget.flightImage != null &&
-                  (widget.effectiveCover || widget.effectiveCircular)) {
-                // 源端缩略图盒子的固定宽高比:push 时源在 from,pop 时源在 to。
-                // 飞行起止两端的盒子布局在 flight 启动时已测好,此处读到的是
-                // 稳定值。push 被 pop 打断(divert)不重建 shuttle,仍持 push
-                // 时算得的 from=源端,与 pop 的 to 是同一缩略图,口径一致。
-                final BuildContext srcContext =
-                    direction == HeroFlightDirection.pop
-                        ? toContext
-                        : fromContext;
-                double? sourceAspect;
-                final ro = srcContext.findRenderObject();
-                if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
-                  sourceAspect = ro.size.width / ro.size.height;
+          tag: heroTag,
+          // Android 预测返回是 user gesture 转场,须显式开启才有飞行
+          transitionOnUserGestures: true,
+          // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
+          createRectTween: viewerHeroRectTween,
+          // 网格瓦片来源(coverFlight)换裁切插值飞行体,否则返回纯图片。
+          //
+          // 这里**不再**挂 startPopping 的动画监听:push 飞行未跑完就被
+          // pop 打断时,框架走 _HeroFlight.divert 且不重建 shuttle
+          // (heroes.dart:`shuttle ??= manifest.shuttleBuilder(...)`),
+          // 本 builder 全程只以 push 方向调用一次,pop 分支永不执行 ⇒
+          // 源端 Opacity 锁死在 0 ⇒ 空洞黑闪。宣告退场已改由查看器在
+          // 路由转 reverse / 手势置位时直接做,与 shuttle 无关。
+          flightShuttleBuilder:
+              (flightContext, animation, direction, fromContext, toContext) {
+                // 自绘飞行体需要位图源;有它就用,以便 cover 窗口/圆角随飞行
+                // 插值。判据走 effective* —— style 给了就以它为准。
+                if (widget.flightImage != null &&
+                    (widget.effectiveCover || widget.effectiveCircular)) {
+                  // 源端缩略图盒子的固定宽高比:push 时源在 from,pop 时源在 to。
+                  // 飞行起止两端的盒子布局在 flight 启动时已测好,此处读到的是
+                  // 稳定值。push 被 pop 打断(divert)不重建 shuttle,仍持 push
+                  // 时算得的 from=源端,与 pop 的 to 是同一缩略图,口径一致。
+                  final BuildContext srcContext =
+                      direction == HeroFlightDirection.pop
+                      ? toContext
+                      : fromContext;
+                  double? sourceAspect;
+                  final ro = srcContext.findRenderObject();
+                  if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                    sourceAspect = ro.size.width / ro.size.height;
+                  }
+                  return CoverContainFlightImage(
+                    image: widget.flightImage!,
+                    animation: animation,
+                    radius: widget.effectiveRadius,
+                    circular: widget.effectiveCircular,
+                    // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
+                    // 否则落地瞬间「裁切一块」突变成完整图
+                    coverSource: true,
+                    sourceAspect: sourceAspect,
+                    fallback: child,
+                  );
                 }
-                return CoverContainFlightImage(
-                  image: widget.flightImage!,
-                  animation: animation,
-                  radius: widget.effectiveRadius,
-                  circular: widget.effectiveCircular,
-                  // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
-                  // 否则落地瞬间「裁切一块」突变成完整图
-                  coverSource: true,
-                  sourceAspect: sourceAspect,
-                  fallback: child,
-                );
-              }
-              return child;
-            },
-            // 飞行期间源端占位 - 直接读取最新状态
-            placeholderBuilder: (context, heroSize, _) {
-              final ctrl = HeroVisibilityController.instance;
-              final currentIsPopping = ctrl.isPopping;
-              final currentHiddenTag = ctrl.hiddenHeroTag;
+                return child;
+              },
+          // 飞行期间源端占位 - 直接读取最新状态
+          placeholderBuilder: (context, heroSize, _) {
+            final ctrl = HeroVisibilityController.instance;
+            final currentIsPopping = ctrl.isPopping;
+            final currentHiddenTag = ctrl.hiddenHeroTag;
 
-              // pop 飞行中 或 当前正在查看的图片：空占位
-              if (currentIsPopping || currentHiddenTag == heroTag) {
-                return SizedBox(width: heroSize.width, height: heroSize.height);
-              }
-              // 其他图片：显示图片
-              return GestureDetector(
-                onTap: widget.onTap,
-                onLongPress: widget.onLongPress,
-                onSecondaryTapUp: widget.onSecondaryTapUp,
-                child: SizedBox(
-                  width: heroSize.width,
-                  height: heroSize.height,
-                  child: child,
-                ),
-              );
-            },
-            child: GestureDetector(
+            // pop 飞行中 或 当前正在查看的图片：空占位
+            if (currentIsPopping || currentHiddenTag == heroTag) {
+              return SizedBox(width: heroSize.width, height: heroSize.height);
+            }
+            // 其他图片：显示图片
+            return GestureDetector(
               onTap: widget.onTap,
               onLongPress: widget.onLongPress,
               onSecondaryTapUp: widget.onSecondaryTapUp,
-              child: child,
-            ),
+              child: SizedBox(
+                width: heroSize.width,
+                height: heroSize.height,
+                child: child,
+              ),
+            );
+          },
+          child: GestureDetector(
+            onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
+            onSecondaryTapUp: widget.onSecondaryTapUp,
+            child: child,
+          ),
         );
 
         // aspectRatio 套在 Hero **外面**:它约束的是 Hero 的盒子,让盒子 ≡
@@ -547,7 +546,9 @@ class _HeroImageState extends State<HeroImage> {
           opacity: shouldHide ? 0.0 : 1.0,
           child: ratio == null
               ? hero
-              : Center(child: AspectRatio(aspectRatio: ratio, child: hero)),
+              : Center(
+                  child: AspectRatio(aspectRatio: ratio, child: hero),
+                ),
         );
       },
     );

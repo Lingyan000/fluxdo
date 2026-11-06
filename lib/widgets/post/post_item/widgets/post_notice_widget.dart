@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
@@ -25,8 +26,12 @@ class PostNoticeWidget extends StatelessWidget {
 
     // custom 类型用浅红色，其他用浅蓝色
     final bgColor = isCustom
-        ? (isDark ? Colors.red.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.06))
-        : (isDark ? Colors.blue.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.06));
+        ? (isDark
+              ? Colors.red.withValues(alpha: 0.1)
+              : Colors.red.withValues(alpha: 0.06))
+        : (isDark
+              ? Colors.blue.withValues(alpha: 0.1)
+              : Colors.blue.withValues(alpha: 0.06));
     final borderColor = isCustom
         ? Colors.red.withValues(alpha: 0.2)
         : Colors.blue.withValues(alpha: 0.2);
@@ -37,10 +42,12 @@ class PostNoticeWidget extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 0.5),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: borderColor, width: 0.5),
+        ),
       ),
       child: _buildContent(theme, iconColor),
     );
@@ -81,14 +88,16 @@ class PostNoticeWidget extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: FluxdoRenderCallbacks.generic(
-                  heroTagNamespace: 'post_notice',
-                ).render(
-                  cookedHtml: notice.cooked!,
-                  baseTextStyle:
-                      theme.textTheme.bodySmall?.copyWith(height: 1.5),
-                  selectionEnabled: false,
-                ),
+                child:
+                    FluxdoRenderCallbacks.generic(
+                      heroTagNamespace: 'post_notice',
+                    ).render(
+                      cookedHtml: notice.cooked!,
+                      baseTextStyle: theme.textTheme.bodySmall?.copyWith(
+                        height: 1.5,
+                      ),
+                      selectionEnabled: false,
+                    ),
               ),
             ],
           );

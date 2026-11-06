@@ -29,9 +29,8 @@ Future<String?> showCryptoAlgorithmPicker(
     title: context.l10n.crypto_algorithm,
     contentPadding: EdgeInsets.zero,
     maxHeightFactor: 0.85,
-    builder: (ctx) => CryptoAlgorithmPickerSheet(
-      currentAlgorithmId: currentAlgorithmId,
-    ),
+    builder: (ctx) =>
+        CryptoAlgorithmPickerSheet(currentAlgorithmId: currentAlgorithmId),
   );
 }
 
@@ -101,8 +100,9 @@ class _CryptoAlgorithmPickerSheetState
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return const [];
     return CryptoToolbox.all
-        .where((a) =>
-            a.id.contains(q) || a.displayName.toLowerCase().contains(q))
+        .where(
+          (a) => a.id.contains(q) || a.displayName.toLowerCase().contains(q),
+        )
         .toList();
   }
 
@@ -126,18 +126,14 @@ class _CryptoAlgorithmPickerSheetState
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Row(
             children: [
-              Expanded(
-                child: _buildSearchField(theme, s),
-              ),
+              Expanded(child: _buildSearchField(theme, s)),
               const SizedBox(width: 4),
               IconButton(
                 key: const ValueKey('crypto-picker-toggle-layout'),
                 tooltip: s.crypto_toggleLayout,
                 visualDensity: VisualDensity.compact,
                 icon: Icon(
-                  gridMode
-                      ? Icons.view_list_rounded
-                      : Icons.grid_view_rounded,
+                  gridMode ? Icons.view_list_rounded : Icons.grid_view_rounded,
                   size: 20,
                 ),
                 onPressed: () => setState(() => _gridMode = !_gridMode),
@@ -149,8 +145,8 @@ class _CryptoAlgorithmPickerSheetState
           child: searching
               ? _buildSearchResults(theme, s)
               : gridMode
-                  ? _buildGridList(theme, s, recent)
-                  : _buildGroupedList(theme, s, recent),
+              ? _buildGridList(theme, s, recent)
+              : _buildGroupedList(theme, s, recent),
         ),
       ],
     );
@@ -228,7 +224,10 @@ class _CryptoAlgorithmPickerSheetState
 
   /// 非搜索列表态：最近使用 chips + 分类分组
   Widget _buildGroupedList(
-      ThemeData theme, AppLocalizations s, List<String> recent) {
+    ThemeData theme,
+    AppLocalizations s,
+    List<String> recent,
+  ) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
       children: [
@@ -269,7 +268,10 @@ class _CryptoAlgorithmPickerSheetState
 
   /// 网格态：最近使用 + 分类网格（3 列紧凑卡片）
   Widget _buildGridList(
-      ThemeData theme, AppLocalizations s, List<String> recent) {
+    ThemeData theme,
+    AppLocalizations s,
+    List<String> recent,
+  ) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
       children: [
@@ -283,7 +285,9 @@ class _CryptoAlgorithmPickerSheetState
         for (final category in _categoryOrder) ...[
           _buildSectionLabel(theme, _categoryLabel(s, category)),
           _buildCategoryGrid(
-              theme, CryptoToolbox.algorithmsByCategory(category)),
+            theme,
+            CryptoToolbox.algorithmsByCategory(category),
+          ),
         ],
       ],
     );
@@ -309,9 +313,13 @@ class _CryptoAlgorithmPickerSheetState
           color: selected
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.7)
               : theme.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
+          shape: RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(12),
+          ),
+          child: InkWell(
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             onTap: () => _select(algo.id),
             child: Center(
               child: Text(
@@ -358,9 +366,13 @@ class _CryptoAlgorithmPickerSheetState
         color: selected
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(12),
+        ),
+        child: InkWell(
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           onTap: () => _select(algo.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -372,8 +384,7 @@ class _CryptoAlgorithmPickerSheetState
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                       color: selected
                           ? theme.colorScheme.onPrimaryContainer
                           : theme.colorScheme.onSurface,
@@ -422,9 +433,11 @@ class CryptoAlgorithmTile extends StatelessWidget {
     return Material(
       key: const ValueKey('crypto-algorithm-tile'),
       color: theme.colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         onTap: () async {
           final selected = await showCryptoAlgorithmPicker(
             context,
@@ -447,17 +460,22 @@ class CryptoAlgorithmTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   displayName,
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               if (autoDetected) ...[
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                   ),
                   child: Text(
                     s.crypto_autoDetected,

@@ -1,4 +1,5 @@
 import 'package:fluxdo/utils/avatar_url.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -258,7 +259,9 @@ class _UserResultTile extends StatelessWidget {
     final avatarUrl = _UserPickerBodyState._avatarUrl(user);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(

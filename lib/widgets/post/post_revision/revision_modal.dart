@@ -79,7 +79,9 @@ Future<void> _showAsDialog({
       final height = (size.height * 0.78).clamp(360.0, 720.0);
       return Dialog(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: SizedBox(
           width: width,
           height: height,

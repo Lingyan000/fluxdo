@@ -621,7 +621,9 @@ class _UnreadPill extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 20),
       decoration: ShapeDecoration(
         color: error ? theme.colorScheme.error : theme.colorScheme.primary,
-        shape: const StadiumBorder(),
+        shape: const RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(Radius.circular(9999)),
+        ),
       ),
       child: Text(
         text,
@@ -651,17 +653,23 @@ String stripHtmlForPreview(String html) {
 }
 
 const _imageExts = {
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic', 'heif', 'svg', 'bmp',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'avif',
+  'heic',
+  'heif',
+  'svg',
+  'bmp',
 };
 
 /// 消息预览文本(会话列表/回复引用/搜索等单行场景统一口径):
 /// 剥 HTML → 图片/附件 markdown 残渣替换为 [图片]/[文件] 标签
 /// (excerpt 对上传消息会留 `[文件名.webp]`/`![alt](url)` 残渣);
 /// :shortcode: 保留,由 EmojiText 渲染成 emoji 图。
-String chatPreviewText(
-  BuildContext context,
-  String raw,
-) {
+String chatPreviewText(BuildContext context, String raw) {
   final l10n = context.l10n;
   var text = stripHtmlForPreview(raw);
 

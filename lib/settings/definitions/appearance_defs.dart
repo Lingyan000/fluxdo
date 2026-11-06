@@ -770,8 +770,8 @@ class _IconKeylinePainter extends CustomPainter {
     // 外接圆
     canvas.drawCircle(center, 27, paint);
     // 圆角方形
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
+    canvas.drawRSuperellipse(
+      RSuperellipse.fromRectAndRadius(
         Rect.fromCenter(center: center, width: 54, height: 54),
         const Radius.circular(12),
       ),
@@ -825,16 +825,18 @@ class _AppIconCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: isSelected
               ? cs.secondaryContainer.withValues(alpha: 0.5)
               : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? cs.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isSelected
+                  ? cs.primary
+                  : cs.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 2 : 1,
+            ),
           ),
         ),
         child: Column(
@@ -842,7 +844,7 @@ class _AppIconCard extends StatelessWidget {
             // 迷你设计稿：keyline 网格背景 + 悬浮图标
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              child: ClipRRect(
+              child: ClipRSuperellipse(
                 borderRadius: BorderRadius.circular(10),
                 child: SizedBox(
                   height: 64,
@@ -866,9 +868,8 @@ class _AppIconCard extends StatelessWidget {
                             width: 44,
                             height: 44,
                             clipBehavior: Clip.antiAlias,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
+                            decoration: ShapeDecoration(
+                              shadows: [
                                 BoxShadow(
                                   color: Colors.black.withValues(
                                     alpha: isSelected ? 0.25 : 0.15,
@@ -877,6 +878,9 @@ class _AppIconCard extends StatelessWidget {
                                   offset: const Offset(0, 3),
                                 ),
                               ],
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             child: Image.asset(assetPath, fit: BoxFit.cover),
                           ),
@@ -886,7 +890,10 @@ class _AppIconCard extends StatelessWidget {
                         Container(
                           color: Colors.black26,
                           child: const Center(
-                            child: LoadingSpinner(size: 24, color: Colors.white),
+                            child: LoadingSpinner(
+                              size: 24,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                     ],
@@ -967,16 +974,18 @@ class _ThemeModeCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: isSelected
               ? cs.secondaryContainer.withValues(alpha: 0.5)
               : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? cs.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isSelected
+                  ? cs.primary
+                  : cs.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 2 : 1,
+            ),
           ),
         ),
         child: Column(
@@ -1021,7 +1030,7 @@ class _ThemeModeCard extends StatelessWidget {
   Widget _buildPreview() {
     if (mode == ThemeMode.system) {
       // 跟随系统：同一个屏幕，左半亮色右半暗色
-      return ClipRRect(
+      return ClipRSuperellipse(
         borderRadius: BorderRadius.circular(10),
         child: SizedBox(
           height: 64,
@@ -1036,7 +1045,7 @@ class _ThemeModeCard extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
+    return ClipRSuperellipse(
       borderRadius: BorderRadius.circular(10),
       child: SizedBox(height: 64, child: _buildMiniScreen(previewScheme!)),
     );
@@ -1053,9 +1062,11 @@ class _ThemeModeCard extends StatelessWidget {
           // 模拟 app bar
           Container(
             height: 10,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(3),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(3),
+              ),
             ),
             child: Row(
               children: [
@@ -1063,9 +1074,11 @@ class _ThemeModeCard extends StatelessWidget {
                 Container(
                   width: 16,
                   height: 5,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: scheme.onSurface.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(2),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
               ],
@@ -1083,9 +1096,11 @@ class _ThemeModeCard extends StatelessWidget {
             child: Container(
               width: 14,
               height: 6,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: scheme.primary,
-                borderRadius: BorderRadius.circular(3),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
             ),
           ),
@@ -1099,9 +1114,11 @@ class _ThemeModeCard extends StatelessWidget {
       widthFactor: widthFactor,
       child: Container(
         height: 4,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: scheme.onSurface.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(2),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
       ),
     );
@@ -1205,21 +1222,24 @@ class _SplitThemePreviewPainter extends CustomPainter {
     required Color darkColor,
   }) {
     final midX = size.width / 2;
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+    final rrect = RSuperellipse.fromRectAndRadius(
+      rect,
+      Radius.circular(radius),
+    );
     final paint = Paint();
 
     // 左半（亮色）
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(0, 0, midX, size.height));
     paint.color = lightColor;
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRSuperellipse(rrect, paint);
     canvas.restore();
 
     // 右半（暗色）
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(midX, 0, size.width, size.height));
     paint.color = darkColor;
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRSuperellipse(rrect, paint);
     canvas.restore();
   }
 
@@ -1267,7 +1287,7 @@ class _BackgroundSection extends ConsumerWidget {
     return Material(
       color: cs.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
           SwitchListTile(
@@ -1323,7 +1343,7 @@ class _BackgroundControls extends ConsumerWidget {
         // ── 背景图：缩略图 + 更换按钮；文件丢失时给重选入口 ──
         Row(
           children: [
-            ClipRRect(
+            ClipRSuperellipse(
               borderRadius: BorderRadius.circular(10),
               child: SizedBox(
                 width: 56,
@@ -1603,9 +1623,11 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                         ),
                         if (_removableColor?.toARGB32() == color.toARGB32())
                           Container(
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: Colors.black45,
-                              borderRadius: BorderRadius.circular(16),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                             ),
                             child: IconButton.filledTonal(
                               onPressed: () {
@@ -1615,7 +1637,10 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                                 setState(() => _removableColor = null);
                               },
                               iconSize: 28,
-                              icon: Icon(Symbols.delete_rounded, color: cs.primary),
+                              icon: Icon(
+                                Symbols.delete_rounded,
+                                color: cs.primary,
+                              ),
                             ),
                           ),
                       ],
@@ -1698,10 +1723,12 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                           width: 60,
                           height: 60,
                           clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
+                          decoration: ShapeDecoration(
                             color: scheme.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: scheme.primary, width: 2),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: scheme.primary, width: 2),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1743,9 +1770,9 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                                         .titleMedium
                                         ?.copyWith(
                                           fontWeight: FontWeight.w500,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
                                         ),
                                   ),
                                   const SizedBox(width: 4),
@@ -1790,9 +1817,9 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                                 'B:${(value * 100).round()}%',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                     ),
                               ),
                             ],
@@ -1962,17 +1989,21 @@ class _VariantChip extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         width: 96,
         clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? scheme.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 1.5 : 1,
+        foregroundDecoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isSelected
+                  ? scheme.primary
+                  : cs.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 1.5 : 1,
+            ),
           ),
         ),
         child: Column(
@@ -2070,17 +2101,21 @@ class _ColorSwatchCard extends StatelessWidget {
         width: size,
         height: size,
         clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: tileScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? tileScheme.primary
-                : tileScheme.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
+        foregroundDecoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isSelected
+                  ? tileScheme.primary
+                  : tileScheme.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 2 : 1,
+            ),
           ),
         ),
         child: Column(
@@ -2168,8 +2203,7 @@ class _HueBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 36,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+      decoration: ShapeDecoration(
         gradient: const LinearGradient(
           colors: [
             Color(0xFFFF0000),
@@ -2180,6 +2214,9 @@ class _HueBar extends StatelessWidget {
             Color(0xFFFF00FF),
             Color(0xFFFF0000),
           ],
+        ),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(18),
         ),
       ),
       child: SliderTheme(
@@ -2274,9 +2311,11 @@ class _GradientSlider extends StatelessWidget {
         Expanded(
           child: Container(
             height: 28,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+            decoration: ShapeDecoration(
               gradient: LinearGradient(colors: gradientColors),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(

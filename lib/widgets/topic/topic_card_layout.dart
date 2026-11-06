@@ -63,7 +63,7 @@ class TopicCardLayout {
 
   /// 通用装饰通道:圆角填充(徽章底/楼层 chip 底)与绝对定位小段落
   /// (徽章数字/AI 图标),渲染层顺序遍历直画
-  final List<(RRect, Color)> extraFills = [];
+  final List<(RSuperellipse, Color)> extraFills = [];
   final List<(Offset, ui.Paragraph)> extraTexts = [];
 
   // ── 几何 ────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ class TopicCardLayout {
         ? (topic.posters.first.user?.displayName ?? '')
         : (topic.lastPosterUsername ?? '');
 
-    final titleSegments = [( topic.title, false)];
+    final titleSegments = [(topic.title, false)];
     final titleIconSpecs = <(IconData, Color)>[
       if (topic.closed)
         (
@@ -292,9 +292,9 @@ class TopicCardLayout {
     final titleSegments = topic == null
         ? [('', false)]
         : (post.topicTitleHeadline != null &&
-                post.topicTitleHeadline!.isNotEmpty
-            ? _parseHighlight(post.topicTitleHeadline!)
-            : [(topic.title, false)]);
+                  post.topicTitleHeadline!.isNotEmpty
+              ? _parseHighlight(post.topicTitleHeadline!)
+              : [(topic.title, false)]);
 
     layout._doLayout = (w) => layout._layoutCore(
       width: w,
@@ -318,21 +318,22 @@ class TopicCardLayout {
       timeStr: TimeUtils.formatRelativeTime(post.createdAt),
       timeHighlight: false,
       excerptText: null,
-      excerptSegments:
-          post.blurb.isNotEmpty ? _parseHighlight(post.blurb) : null,
+      excerptSegments: post.blurb.isNotEmpty
+          ? _parseHighlight(post.blurb)
+          : null,
       category: category,
       tags: topic?.tags ?? const [],
       statsAvailableWidth: statsAvailableWidth,
       views: topic?.views ?? 0,
       likeCount: post.likeCount,
-      replies:
-          topic != null ? (topic.postsCount - 1).clamp(0, 999999) : 0,
+      replies: topic != null ? (topic.postsCount - 1).clamp(0, 999999) : 0,
       heatColor: null,
       bandName: null,
       bandReminder: null,
       bandExpired: false,
-      avatarUrlValue:
-          post.getAvatarUrl().isNotEmpty ? post.getAvatarUrl(size: 64) : null,
+      avatarUrlValue: post.getAvatarUrl().isNotEmpty
+          ? post.getAvatarUrl(size: 64)
+          : null,
       titleRightChips: [
         if (post.isAiGenerated) (_ChipKind.aiIcon, ''),
         if (post.postNumber > 1) (_ChipKind.badge, '#${post.postNumber}'),
@@ -390,16 +391,18 @@ class TopicCardLayout {
   /// 单字形图标小段落(排版期构建一次,绘制期直接画)
   static ui.Paragraph _iconParagraph(IconData icon, double size, Color color) {
     final b = ui.ParagraphBuilder(_pStyle(fontSize: size, maxLines: 1))
-      ..pushStyle(ui.TextStyle(
-        color: color,
-        fontFamily: _iconFontFamily(icon),
-        fontVariations: const [
-          ui.FontVariation('opsz', 24),
-          ui.FontVariation('wght', 400),
-        ],
-        fontSize: size,
-        height: 1.0,
-      ))
+      ..pushStyle(
+        ui.TextStyle(
+          color: color,
+          fontFamily: _iconFontFamily(icon),
+          fontVariations: const [
+            ui.FontVariation('opsz', 24),
+            ui.FontVariation('wght', 400),
+          ],
+          fontSize: size,
+          height: 1.0,
+        ),
+      )
       ..addText(String.fromCharCode(icon.codePoint));
     return b.build()..layout(ui.ParagraphConstraints(width: size + 2));
   }
@@ -413,7 +416,8 @@ class TopicCardLayout {
     final out = <(String, bool)>[];
     var last = 0;
     for (final m in matches) {
-      if (m.start > last) out.add((clean(html.substring(last, m.start)), false));
+      if (m.start > last)
+        out.add((clean(html.substring(last, m.start)), false));
       out.add((m.group(1) ?? '', true));
       last = m.end;
     }
@@ -480,8 +484,9 @@ class TopicCardLayout {
     bandIcons.clear();
     statsIcons.clear();
 
-    final metaColor =
-        scheme.onSurfaceVariant.withValues(alpha: isFullyRead ? 0.6 : 0.8);
+    final metaColor = scheme.onSurfaceVariant.withValues(
+      alpha: isFullyRead ? 0.6 : 0.8,
+    );
 
     // ── 色带 ────────────────────────────────────────────────
     band = null;
@@ -526,15 +531,18 @@ class TopicCardLayout {
     ui.Paragraph? unreadBadgeP;
     var unreadW = 0.0;
     if (unreadCount > 0) {
-      final b = ui.ParagraphBuilder(
-        _pStyle(fontSize: labelSmall.fontSize ?? 11, maxLines: 1),
-      )
-        ..pushStyle(_tStyle(
-          labelSmall,
-          color: scheme.onPrimary,
-          weight: FontWeight.w500,
-        ))
-        ..addText('$unreadCount');
+      final b =
+          ui.ParagraphBuilder(
+              _pStyle(fontSize: labelSmall.fontSize ?? 11, maxLines: 1),
+            )
+            ..pushStyle(
+              _tStyle(
+                labelSmall,
+                color: scheme.onPrimary,
+                weight: FontWeight.w500,
+              ),
+            )
+            ..addText('$unreadCount');
       unreadBadgeP = b.build()
         ..layout(const ui.ParagraphConstraints(width: 100));
       unreadW = unreadBadgeP.longestLine + 12 + 6; // 徽章体 + 间距 6
@@ -570,12 +578,14 @@ class TopicCardLayout {
         titleRightW += 14 + 6;
       } else {
         final b = ui.ParagraphBuilder(_pStyle(fontSize: 10, maxLines: 1))
-          ..pushStyle(_tStyle(
-            labelSmall,
-            color: scheme.onSurfaceVariant,
-            fontSize: 10,
-            weight: FontWeight.w500,
-          ))
+          ..pushStyle(
+            _tStyle(
+              labelSmall,
+              color: scheme.onSurfaceVariant,
+              fontSize: 10,
+              weight: FontWeight.w500,
+            ),
+          )
           ..addText(text);
         final p = b.build()..layout(const ui.ParagraphConstraints(width: 120));
         chipItems.add((kind, p));
@@ -592,27 +602,31 @@ class TopicCardLayout {
     final subjectColor = isFullyRead
         ? scheme.onSurfaceVariant.withValues(alpha: 0.75)
         : scheme.onSurface.withValues(alpha: 0.9);
-    final titleFontSize =
-        messageStyle ? (baseText.fontSize ?? 14) : style.titleFontSize;
+    final titleFontSize = messageStyle
+        ? (baseText.fontSize ?? 14)
+        : style.titleFontSize;
     final titleWeight = messageStyle
         ? (isFullyRead ? FontWeight.w400 : FontWeight.w500)
         : normalTitleWeight;
     final effTitleColor = messageStyle ? subjectColor : titleColor;
 
-    final tb = ui.ParagraphBuilder(
-      _pStyle(
-        fontSize: titleFontSize,
-        weight: titleWeight,
-        height: 1.3,
-        maxLines: 2,
-      ),
-    )..pushStyle(_tStyle(
-        baseText,
-        color: effTitleColor,
-        fontSize: titleFontSize,
-        weight: titleWeight,
-        height: 1.3,
-      ));
+    final tb =
+        ui.ParagraphBuilder(
+          _pStyle(
+            fontSize: titleFontSize,
+            weight: titleWeight,
+            height: 1.3,
+            maxLines: 2,
+          ),
+        )..pushStyle(
+          _tStyle(
+            baseText,
+            color: effTitleColor,
+            fontSize: titleFontSize,
+            weight: titleWeight,
+            height: 1.3,
+          ),
+        );
     final pendingTitleIcons = <ui.Paragraph>[];
     for (final (icon, color) in titleIconSpecs) {
       // 15px 图标 + 4px 右距(placeholder 宽 19 复刻 Padding(right:4))
@@ -622,14 +636,16 @@ class TopicCardLayout {
     final emojiNames = <String>[];
     for (final (text, highlighted) in titleSegments) {
       if (highlighted) {
-        tb.pushStyle(_tStyle(
-          baseText,
-          color: scheme.onPrimaryContainer,
-          fontSize: titleFontSize,
-          weight: FontWeight.w500,
-          height: 1.3,
-          background: scheme.primaryContainer,
-        ));
+        tb.pushStyle(
+          _tStyle(
+            baseText,
+            color: scheme.onPrimaryContainer,
+            fontSize: titleFontSize,
+            weight: FontWeight.w500,
+            height: 1.3,
+            background: scheme.primaryContainer,
+          ),
+        );
         tb.addText(text);
         tb.pop();
       } else if (parseTitleEmoji && text.contains(':')) {
@@ -640,7 +656,8 @@ class TopicCardLayout {
     }
     // 普通卡标题右侧要让出未读槽位宽;私信卡主题行满宽
     final titleAvailW = messageStyle
-        ? innerWidth - 50 // 头像 40 + 间距 10
+        ? innerWidth -
+              50 // 头像 40 + 间距 10
         : contentW - (unreadW > 0 ? unreadW : 0) - titleRightW;
     title = tb.build()
       ..layout(ui.ParagraphConstraints(width: titleAvailW.clamp(40, width)));
@@ -659,29 +676,34 @@ class TopicCardLayout {
 
     // ── 摘要 / blurb ─────────────────────────────────────────
     excerpt = null;
-    final exSegments = excerptSegments ??
+    final exSegments =
+        excerptSegments ??
         (excerptText != null && excerptText.isNotEmpty
             ? [(excerptText, false)]
             : null);
     if (exSegments != null) {
-      final ex = ui.ParagraphBuilder(
-        _pStyle(fontSize: 12, height: 1.4, maxLines: 2),
-      )..pushStyle(_tStyle(
-          baseText,
-          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-          fontSize: 12,
-          height: 1.4,
-        ));
+      final ex =
+          ui.ParagraphBuilder(_pStyle(fontSize: 12, height: 1.4, maxLines: 2))
+            ..pushStyle(
+              _tStyle(
+                baseText,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                fontSize: 12,
+                height: 1.4,
+              ),
+            );
       for (final (text, highlighted) in exSegments) {
         if (highlighted) {
-          ex.pushStyle(_tStyle(
-            baseText,
-            color: scheme.onPrimaryContainer,
-            fontSize: 12,
-            weight: FontWeight.w500,
-            height: 1.4,
-            background: scheme.primaryContainer,
-          ));
+          ex.pushStyle(
+            _tStyle(
+              baseText,
+              color: scheme.onPrimaryContainer,
+              fontSize: 12,
+              weight: FontWeight.w500,
+              height: 1.4,
+              background: scheme.primaryContainer,
+            ),
+          );
           ex.addText(text);
           ex.pop();
         } else {
@@ -693,43 +715,46 @@ class TopicCardLayout {
     }
 
     // ── 署名(普通)/ 发件人(私信)与时间 ─────────────────────
-    final authorFontSize =
-        messageStyle ? 15.0 : (labelSmall.fontSize ?? 11);
+    final authorFontSize = messageStyle ? 15.0 : (labelSmall.fontSize ?? 11);
     final authorWeight = messageStyle
         ? (isFullyRead ? FontWeight.w400 : FontWeight.w600)
         : (authorBold ? FontWeight.w600 : null);
     final authorColor = messageStyle
         ? (isFullyRead
-            ? scheme.onSurfaceVariant.withValues(alpha: 0.75)
-            : scheme.onSurface)
-        : (isFullyRead
-            ? metaColor
-            : scheme.onSurface.withValues(alpha: 0.85));
-    final tmb = ui.ParagraphBuilder(
-      _pStyle(fontSize: labelSmall.fontSize ?? 11, maxLines: 1),
-    )
-      ..pushStyle(_tStyle(
-        labelSmall,
-        color: timeHighlight ? scheme.primary : metaColor,
-      ))
-      ..addText(timeStr);
+              ? scheme.onSurfaceVariant.withValues(alpha: 0.75)
+              : scheme.onSurface)
+        : (isFullyRead ? metaColor : scheme.onSurface.withValues(alpha: 0.85));
+    final tmb =
+        ui.ParagraphBuilder(
+            _pStyle(fontSize: labelSmall.fontSize ?? 11, maxLines: 1),
+          )
+          ..pushStyle(
+            _tStyle(
+              labelSmall,
+              color: timeHighlight ? scheme.primary : metaColor,
+            ),
+          )
+          ..addText(timeStr);
     // 时间是卡片骨架字段,恒定显示
     time = tmb.build()..layout(const ui.ParagraphConstraints(width: 200));
 
-    final ab = ui.ParagraphBuilder(
-      _pStyle(
-        fontSize: authorFontSize,
-        weight: authorWeight,
-        maxLines: 1,
-      ),
-    )
-      ..pushStyle(_tStyle(
-        messageStyle ? baseText : labelSmall,
-        color: authorColor,
-        fontSize: authorFontSize,
-        weight: authorWeight,
-      ))
-      ..addText(authorName);
+    final ab =
+        ui.ParagraphBuilder(
+            _pStyle(
+              fontSize: authorFontSize,
+              weight: authorWeight,
+              maxLines: 1,
+            ),
+          )
+          ..pushStyle(
+            _tStyle(
+              messageStyle ? baseText : labelSmall,
+              color: authorColor,
+              fontSize: authorFontSize,
+              weight: authorWeight,
+            ),
+          )
+          ..addText(authorName);
 
     // ── 分类 + 标签行(私信卡无此行;字段开关各自过滤)──────────
     catTags = null;
@@ -778,9 +803,11 @@ class TopicCardLayout {
       final rightW = innerWidth - avatarD - 10;
       // 发件人行:发件人 … 时间 + 未读
       author = ab.build()
-        ..layout(ui.ParagraphConstraints(
-          width: (rightW - time!.longestLine - 8 - unreadW).clamp(20, rightW),
-        ));
+        ..layout(
+          ui.ParagraphConstraints(
+            width: (rightW - time!.longestLine - 8 - unreadW).clamp(20, rightW),
+          ),
+        );
       final row1H = author!.height;
       authorOffset = Offset(rightX, y);
       var rx = width - hPad;
@@ -790,7 +817,9 @@ class TopicCardLayout {
           unseen,
           scheme,
           rx,
-          y + (row1H - (unreadBadgeP != null ? unreadBadgeP.height + 4 : 8)) / 2,
+          y +
+              (row1H - (unreadBadgeP != null ? unreadBadgeP.height + 4 : 8)) /
+                  2,
         );
         rx -= 6;
       }
@@ -845,7 +874,7 @@ class TopicCardLayout {
           final h = p.height + 4;
           chipX -= w;
           extraFills.add((
-            RRect.fromRectAndRadius(
+            RSuperellipse.fromRectAndRadius(
               Rect.fromLTWH(chipX, y + 1, w, h),
               const Radius.circular(10),
             ),
@@ -877,12 +906,16 @@ class TopicCardLayout {
       final double firstH;
       final double secondH;
       if (twoRows) {
-        author!.layout(ui.ParagraphConstraints(
-          width: (metaWidth - timeW).clamp(20, metaWidth),
-        ));
-        catTags!.layout(ui.ParagraphConstraints(
-          width: (metaWidth - dotSpace - statsW).clamp(20, metaWidth),
-        ));
+        author!.layout(
+          ui.ParagraphConstraints(
+            width: (metaWidth - timeW).clamp(20, metaWidth),
+          ),
+        );
+        catTags!.layout(
+          ui.ParagraphConstraints(
+            width: (metaWidth - dotSpace - statsW).clamp(20, metaWidth),
+          ),
+        );
         firstH = author!.height;
         secondH = catTags!.height;
       } else {
@@ -892,9 +925,11 @@ class TopicCardLayout {
         if (stats != null && time != null) rightReserve += 10;
         if (rightReserve > 0) rightReserve += 8;
         final leftPara = author ?? catTags;
-        leftPara?.layout(ui.ParagraphConstraints(
-          width: (metaWidth - dotSpace - rightReserve).clamp(20, metaWidth),
-        ));
+        leftPara?.layout(
+          ui.ParagraphConstraints(
+            width: (metaWidth - dotSpace - rightReserve).clamp(20, metaWidth),
+          ),
+        );
         firstH = leftPara?.height ?? time?.height ?? stats?.height ?? 0.0;
         secondH = 0.0;
       }
@@ -905,14 +940,22 @@ class TopicCardLayout {
       final double rowTop;
       if (avatarCol) {
         // 头像独占左列:顶对齐标题首行(复刻私信卡观感)
-        avatarRect =
-            Rect.fromLTWH(hPad, bandHeight + vPad, colAvatarD, colAvatarD);
+        avatarRect = Rect.fromLTWH(
+          hPad,
+          bandHeight + vPad,
+          colAvatarD,
+          colAvatarD,
+        );
         rowTop = y;
         y += rightBlockH;
       } else {
         final rowH = rightBlockH > avatarD ? rightBlockH : avatarD;
-        avatarRect =
-            Rect.fromLTWH(hPad, y + (rowH - avatarD) / 2, avatarD, avatarD);
+        avatarRect = Rect.fromLTWH(
+          hPad,
+          y + (rowH - avatarD) / 2,
+          avatarD,
+          avatarD,
+        );
         rowTop = y + (rowH - rightBlockH) / 2;
         y += rowH;
       }
@@ -968,8 +1011,9 @@ class TopicCardLayout {
         }
       }
       // column 下卡底以头像底兜底(极端:标题单行 + 字段全关)
-      final contentBottom =
-          avatarCol && avatarRect.bottom > y ? avatarRect.bottom : y;
+      final contentBottom = avatarCol && avatarRect.bottom > y
+          ? avatarRect.bottom
+          : y;
       cardHeight = contentBottom + vPad + 8;
     }
 
@@ -995,7 +1039,7 @@ class TopicCardLayout {
       final h = badge.height + 4;
       final r = Rect.fromLTWH(rightX - w, top, w, h);
       extraFills.add((
-        RRect.fromRectAndRadius(r, const Radius.circular(10)),
+        RSuperellipse.fromRectAndRadius(r, const Radius.circular(10)),
         scheme.primary,
       ));
       extraTexts.add((
@@ -1007,7 +1051,7 @@ class TopicCardLayout {
     if (unseen) {
       final r = Rect.fromLTWH(rightX - 8, top, 8, 8);
       extraFills.add((
-        RRect.fromRectAndRadius(r, const Radius.circular(4)),
+        RSuperellipse.fromRectAndRadius(r, const Radius.circular(4)),
         scheme.primary,
       ));
       return r.left;
@@ -1052,8 +1096,7 @@ class TopicCardLayout {
     final scheme = theme.colorScheme;
     final labelSmall = theme.textTheme.labelSmall ?? const TextStyle();
     // 字段开关与响应式宽度条件取 AND
-    final showLikes =
-        style.showLikes && availableWidth >= 300 && likeCount > 0;
+    final showLikes = style.showLikes && availableWidth >= 300 && likeCount > 0;
     final showViews = style.showViews && availableWidth >= 460 && views > 0;
     final showReplies = style.showReplies && replies > 0;
     if (!showLikes && !showViews && !showReplies) return;
@@ -1077,10 +1120,9 @@ class TopicCardLayout {
       // widget 版 Icon(13)+letterSpacing:3
       b.addPlaceholder(16, 13, ui.PlaceholderAlignment.middle);
       pendingIcons.add(_iconParagraph(icon, 13, color));
-      b.pushStyle(ui.TextStyle(
-        color: color,
-        fontWeight: bold ? FontWeight.w600 : null,
-      ));
+      b.pushStyle(
+        ui.TextStyle(color: color, fontWeight: bold ? FontWeight.w600 : null),
+      );
       b.addText(NumberUtils.formatCount(count));
       b.pop();
     }
@@ -1088,8 +1130,7 @@ class TopicCardLayout {
     if (showViews) item(Symbols.visibility_rounded, views, base);
     if (showLikes) item(Symbols.favorite_border_rounded, likeCount, base);
     if (showReplies) {
-      item(Symbols.chat_bubble_rounded, replies, heat,
-          bold: heatColor != null);
+      item(Symbols.chat_bubble_rounded, replies, heat, bold: heatColor != null);
     }
     stats = b.build()..layout(const ui.ParagraphConstraints(width: 400));
     final iconBoxes = stats!.getBoxesForPlaceholders();

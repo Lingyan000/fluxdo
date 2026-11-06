@@ -27,15 +27,19 @@ class PostVotingAnswerHeader extends StatelessWidget {
   }) {
     return InkWell(
       onTap: selected ? null : onTap,
-      borderRadius: BorderRadius.circular(14),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Container(
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: selected
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
         alignment: Alignment.center,
         child: Text(

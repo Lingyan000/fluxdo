@@ -1,16 +1,21 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+
 import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
 import 'package:flutter/services.dart';
+
 import '../../utils/idle_task.dart';
+
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../l10n/s.dart';
 import '../../utils/frame_jank_monitor.dart';
 import '../../utils/html_text_mapper.dart';
@@ -19,11 +24,14 @@ import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
 import '../../utils/scroll_jump.dart';
+
 import 'package:fluxdo_render/fluxdo_render.dart'
     show SelectionCoordinator, TocEntry;
 import 'package:uuid/uuid.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
+
 import '../../models/draft.dart';
 import '../../models/nested_topic.dart';
 import '../../models/nested_reading_position.dart';
@@ -56,8 +64,10 @@ import '../../widgets/post/post_revision/revision_modal.dart';
 import '../../widgets/post/reply_sheet.dart';
 import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
@@ -323,7 +333,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
     _nestedReadingStore = ref.read(nestedReadingStoreProvider);
-    _hadNestedSession = _nestedReadingStore.existingSession(_instanceId) != null;
+    _hadNestedSession =
+        _nestedReadingStore.existingSession(_instanceId) != null;
     _nestedReadingSession = _nestedReadingStore.session(_instanceId);
     if (!_hadNestedSession) {
       _nestedReadingSession.sort = _nestedReadingStore.sort;
@@ -340,7 +351,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _nestedTargetPostNumber = _hadNestedSession
         ? _nestedReadingSession.contextTarget
         : (widget.scrollToPostNumber != null && widget.scrollToPostNumber! > 1
-            ? widget.scrollToPostNumber : null);
+              ? widget.scrollToPostNumber
+              : null);
     _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
 
     _expandController = AnimationController(
@@ -1129,7 +1141,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       if (mounted &&
           _nestedTargetPostNumber == saved.postNumber &&
           data.sort != saved.sort) {
-        await ref.read(nestedTopicProvider(params).notifier).changeSort(saved.sort);
+        await ref
+            .read(nestedTopicProvider(params).notifier)
+            .changeSort(saved.sort);
       }
     } catch (_) {
       // 定位接口失败由树形视图的错误/平铺回落入口处理。
@@ -1557,9 +1571,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final hasAiModel = ref.watch(hasAvailableAiModelProvider);
     final isAiGenerating = hasAiModel
         ? ref.watch(
-            topicAiChatProvider(
-              widget.topicId,
-            ).select((state) => state.isGenerating),
+            topicAiChatProvider(widget.topicId)
+                .select((state) => state.isGenerating),
           )
         : false;
 
@@ -2942,8 +2955,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                           child: Material(
                             color: Theme.of(context).colorScheme.surface,
                             elevation: 0,
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(16),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(16),
+                              ),
                             ),
                             clipBehavior: Clip.antiAlias,
                             child: SingleChildScrollView(
@@ -3130,18 +3145,22 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               : null,
           restorePosition: _nestedRestorePosition,
           fullTargetPostNumber: _nestedFullTarget,
-          active: _isRouteVisible &&
+          active:
+              _isRouteVisible &&
               _isParentActive &&
               !ref.read(topicSearchProvider(widget.topicId)).isSearchMode,
           onViewportPostChanged: (postNumber) {
             if (!_controller.isPositioned) _controller.markPositioned();
             _controller.updateViewportPostNumber(postNumber);
             ref
-                .read(detailScrollPositionProvider((
-                  topicId: widget.topicId,
-                  instanceId: _instanceId,
-                )).notifier)
-                .state = postNumber;
+                    .read(
+                      detailScrollPositionProvider((
+                        topicId: widget.topicId,
+                        instanceId: _instanceId,
+                      )).notifier,
+                    )
+                    .state =
+                postNumber;
           },
           onPositionChanged: (position) =>
               _nestedReadingStore.save(widget.topicId, position),

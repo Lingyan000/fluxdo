@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../models/topic.dart';
@@ -15,7 +16,9 @@ import '../../utils/html_text_mapper.dart';
 import '../../utils/html_to_markdown.dart';
 import '../../utils/quote_builder.dart';
 import '../common/app_bottom_sheet.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'post_item/quote_selection_helper.dart';
 import '../crypto/crypto_decrypt_sheet.dart';
@@ -406,9 +409,11 @@ class _PostRepliesSheetContentState
           Container(
             width: 3,
             height: 14,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.circular(1.5),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(1.5),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -431,11 +436,13 @@ class _PostRepliesSheetContentState
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: isHighlighted
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
       child: _buildPostContent(post),
     );
@@ -446,24 +453,26 @@ class _PostRepliesSheetContentState
     final isHighlighted = _highlightPostNumber == reply.postNumber;
     return Padding(
       padding: const EdgeInsets.only(left: 20),
-      child: AnimatedContainer(
-        key: _keyForPost(reply.postNumber),
-        duration: const Duration(milliseconds: 300),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: isHighlighted
-              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
-              : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border(
-            left: BorderSide(
-              color: theme.colorScheme.primary.withValues(alpha: 0.3),
-              width: 3,
+      child: ClipRSuperellipse(
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          key: _keyForPost(reply.postNumber),
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : theme.colorScheme.surface,
+            border: Border(
+              left: BorderSide(
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                width: 3,
+              ),
             ),
           ),
+          child: _buildPostContent(reply),
         ),
-        child: _buildPostContent(reply),
       ),
     );
   }
@@ -500,9 +509,8 @@ class _PostRepliesSheetContentState
                 topicId: widget.topicId,
               ).render(
                 cookedHtml: post.cooked,
-                baseTextStyle: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontSize: 14, height: 1.5),
+                baseTextStyle: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(fontSize: 14, height: 1.5),
                 compact: true,
                 selectionEnabled: _isLoggedIn,
                 onQuoteRequest: _isLoggedIn

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../../models/topic.dart';
 import '../../../../../services/discourse_cache_manager.dart';
 
@@ -27,21 +28,19 @@ class OneboxContainer extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       margin: margin,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant,
-          width: 1,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+          side: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
         ),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: Padding(
-          padding: padding,
-          child: child,
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
         ),
+        child: Padding(padding: padding, child: child),
       ),
     );
   }
@@ -71,14 +70,18 @@ class OneboxContainerWithHeader extends StatelessWidget {
 
     return Container(
       margin: margin,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: borderColor, width: 1),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+          side: BorderSide(color: borderColor, width: 1),
+        ),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(borderRadius),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -89,10 +92,7 @@ class OneboxContainerWithHeader extends StatelessWidget {
               ),
               child: header,
             ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: child,
-            ),
+            Padding(padding: const EdgeInsets.all(12), child: child),
           ],
         ),
       ),
@@ -131,7 +131,8 @@ class OneboxStatItem extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           value,
-          style: textStyle ??
+          style:
+              textStyle ??
               theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -159,9 +160,11 @@ class OneboxLabel extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: backgroundColor ?? theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       child: Text(
         text,
@@ -237,10 +240,12 @@ class OneboxStatusIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withValues(alpha: 0.3)),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -274,9 +279,11 @@ class OneboxClickCount extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -371,7 +378,7 @@ class OneboxAvatar extends StatelessWidget {
       return _buildFallback(theme);
     }
 
-    return ClipRRect(
+    return ClipRSuperellipse(
       borderRadius: BorderRadius.circular(borderRadius),
       child: Image(
         image: discourseImageProvider(imageUrl!),
@@ -387,9 +394,11 @@ class OneboxAvatar extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(borderRadius),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
       ),
       child: Icon(
         fallbackIcon,
@@ -402,7 +411,10 @@ class OneboxAvatar extends StatelessWidget {
 
 /// 从 onebox 元素中提取点击数
 /// 从 linkCounts 数据中通过 URL 匹配查找
-String? extractClickCountFromOnebox(dynamic element, {List<LinkCount>? linkCounts}) {
+String? extractClickCountFromOnebox(
+  dynamic element, {
+  List<LinkCount>? linkCounts,
+}) {
   if (element == null || linkCounts == null) return null;
 
   // 提取 onebox 的 URL
@@ -421,8 +433,12 @@ String? extractClickCountFromOnebox(dynamic element, {List<LinkCount>? linkCount
 
 /// URL 匹配（忽略末尾斜杠和协议差异）
 bool _urlMatches(String url1, String url2) {
-  final normalized1 = url1.replaceFirst(RegExp(r'^https?://'), '').replaceFirst(RegExp(r'/$'), '');
-  final normalized2 = url2.replaceFirst(RegExp(r'^https?://'), '').replaceFirst(RegExp(r'/$'), '');
+  final normalized1 = url1
+      .replaceFirst(RegExp(r'^https?://'), '')
+      .replaceFirst(RegExp(r'/$'), '');
+  final normalized2 = url2
+      .replaceFirst(RegExp(r'^https?://'), '')
+      .replaceFirst(RegExp(r'/$'), '');
   return normalized1 == normalized2;
 }
 

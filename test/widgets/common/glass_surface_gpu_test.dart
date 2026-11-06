@@ -32,7 +32,7 @@ void main() {
             recipe: recipe,
             child: const SizedBox(width: 200, height: 48),
           )
-        : ClipRRect(
+        : ClipRSuperellipse(
             key: surfaceKey,
             borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
@@ -42,9 +42,8 @@ void main() {
                 tileMode: ui.TileMode.clamp,
               ),
               child: ColoredBox(
-                color: const Color(
-                  0xFFFCFCFC,
-                ).withValues(alpha: GlassRecipe.navigation.tintAlpha),
+                color: const Color(0xFFFCFCFC)
+                    .withValues(alpha: GlassRecipe.navigation.tintAlpha),
                 child: const SizedBox(width: 200, height: 48),
               ),
             ),
@@ -211,40 +210,36 @@ void main() {
     expect(mounts, 1);
   }, skip: !ui.ImageFilter.isShaderFilterSupported);
 
-  testWidgets(
-    '折射开启时不同位置与 DPR 的像素结果一致，右半边不复制成条带',
-    (tester) async {
-      addTearDown(tester.view.reset);
-      for (final dpr in [1.0, 2.0, 3.0]) {
-        final original = await capture(
-          tester,
-          position: const Offset(30, 40),
-          dpr: dpr,
+  testWidgets('折射开启时不同位置与 DPR 的像素结果一致，右半边不复制成条带', (tester) async {
+    addTearDown(tester.view.reset);
+    for (final dpr in [1.0, 2.0, 3.0]) {
+      final original = await capture(
+        tester,
+        position: const Offset(30, 40),
+        dpr: dpr,
+      );
+      final moved = await capture(
+        tester,
+        position: const Offset(240, 300),
+        dpr: dpr,
+      );
+      expect(
+        difference(original, moved),
+        lessThan(1.5),
+        reason: '玻璃与背景一起平移不应改变材质',
+      );
+      final width = (size.width * dpr).round();
+      final y = (size.height / 2 * dpr).round();
+      final colors = <int>{};
+      for (var x = (110 * dpr).round(); x < (185 * dpr).round(); x++) {
+        final index = (y * width + x) * 4;
+        colors.add(
+          (moved[index] << 16) | (moved[index + 1] << 8) | moved[index + 2],
         );
-        final moved = await capture(
-          tester,
-          position: const Offset(240, 300),
-          dpr: dpr,
-        );
-        expect(
-          difference(original, moved),
-          lessThan(1.5),
-          reason: '玻璃与背景一起平移不应改变材质',
-        );
-        final width = (size.width * dpr).round();
-        final y = (size.height / 2 * dpr).round();
-        final colors = <int>{};
-        for (var x = (110 * dpr).round(); x < (185 * dpr).round(); x++) {
-          final index = (y * width + x) * 4;
-          colors.add(
-            (moved[index] << 16) | (moved[index + 1] << 8) | moved[index + 2],
-          );
-        }
-        expect(colors.length, greaterThan(10), reason: '右半边必须保留背景变化，不能反复读取同一列');
       }
-    },
-    skip: !ui.ImageFilter.isShaderFilterSupported,
-  );
+      expect(colors.length, greaterThan(10), reason: '右半边必须保留背景变化，不能反复读取同一列');
+    }
+  }, skip: !ui.ImageFilter.isShaderFilterSupported);
 
   GlassRecipe refractionOnly(double amount) {
     const base = GlassRecipe.navigation;

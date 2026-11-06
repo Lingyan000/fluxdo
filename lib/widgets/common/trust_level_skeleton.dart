@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../common/skeleton.dart';
 
 /// 信任级别要求页骨架屏
@@ -25,7 +26,9 @@ class TrustLevelSkeleton extends StatelessWidget {
                   gradient: LinearGradient(
                     colors: [
                       colorScheme.surface,
-                      colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      ),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -50,7 +53,7 @@ class TrustLevelSkeleton extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SkeletonBox(width: 120, height: 16),
-                          const SizedBox(height: 8), 
+                          const SizedBox(height: 8),
                           SkeletonBox(width: 180, height: 28),
                           const SizedBox(height: 12),
                           SkeletonBox(width: 60, height: 20, borderRadius: 20),
@@ -69,8 +72,8 @@ class TrustLevelSkeleton extends StatelessWidget {
               delegate: SliverChildListDelegate([
                 // 活跃程度卡片
                 _buildCardSkeleton(
-                  context, 
-                  height: 160, 
+                  context,
+                  height: 160,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
@@ -78,16 +81,19 @@ class TrustLevelSkeleton extends StatelessWidget {
                       _buildRingSkeleton(),
                       _buildRingSkeleton(),
                     ],
-                  )
+                  ),
                 ),
                 const SizedBox(height: 16),
                 // 互动参与卡片
                 _buildCardSkeleton(
-                  context, 
+                  context,
                   height: 300,
                   child: Column(
-                    children: List.generate(5, (index) => _buildBarSkeleton()).toList(),
-                  )
+                    children: List.generate(
+                      5,
+                      (index) => _buildBarSkeleton(),
+                    ).toList(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 // 合规记录卡片
@@ -98,21 +104,29 @@ class TrustLevelSkeleton extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Expanded(child: SkeletonBox(height: 80, borderRadius: 12)),
+                          Expanded(
+                            child: SkeletonBox(height: 80, borderRadius: 12),
+                          ),
                           const SizedBox(width: 12),
-                          Expanded(child: SkeletonBox(height: 80, borderRadius: 12)),
+                          Expanded(
+                            child: SkeletonBox(height: 80, borderRadius: 12),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Expanded(child: SkeletonBox(height: 100, borderRadius: 12)),
+                          Expanded(
+                            child: SkeletonBox(height: 100, borderRadius: 12),
+                          ),
                           const SizedBox(width: 12),
-                          Expanded(child: SkeletonBox(height: 100, borderRadius: 12)),
+                          Expanded(
+                            child: SkeletonBox(height: 100, borderRadius: 12),
+                          ),
                         ],
                       ),
                     ],
-                  )
+                  ),
                 ),
               ]),
             ),
@@ -122,15 +136,21 @@ class TrustLevelSkeleton extends StatelessWidget {
     );
   }
 
-  Widget _buildCardSkeleton(BuildContext context, {required double height, required Widget child}) {
+  Widget _buildCardSkeleton(
+    BuildContext context, {
+    required double height,
+    required Widget child,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -13,6 +13,7 @@ import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
+
 import 'pages/topics_page.dart';
 import 'pages/data_management_page.dart';
 import 'providers/discourse_providers.dart';
@@ -29,9 +30,11 @@ import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/app_glass_settings.dart';
 import 'widgets/common/anchor_guard_sliver.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+
 import 'services/network/cookie/csrf_token_service.dart';
 import 'services/network/system_proxy_service.dart';
 import 'services/network/cookie/cookie_devtools_extension.dart';
@@ -43,7 +46,9 @@ import 'services/data_management/cache_size_service.dart';
 import 'services/discourse_cache_manager.dart';
 import 'services/render_backend_service.dart';
 import 'services/toast_service.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'l10n/s.dart';
 
 import 'services/network/doh/network_settings_service.dart';
@@ -56,6 +61,7 @@ import 'services/cf_challenge_logger.dart';
 import 'services/browser_trust_coordinator.dart';
 import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
+
 import 'package:fluxdo_render/fluxdo_render.dart'
     show FlattenCache, FoldShiftHook, ParagraphLayoutCache;
 
@@ -93,13 +99,16 @@ import 'utils/time_utils.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
+
 import 'services/app_logger.dart';
 import 'services/network/adapters/platform_adapter.dart';
 import 'providers/preferences_provider.dart';
 import 'providers/theme_provider.dart';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
+
 import 'services/audio/just_audio_gst.dart';
 import 'widgets/preheat_gate.dart';
 import 'widgets/onboarding_gate.dart';
@@ -627,8 +636,10 @@ ButtonStyle _m3ePressedShapeStyle() => ButtonStyle(
   animationDuration: const Duration(milliseconds: 180),
   shape: WidgetStateProperty.resolveWith(
     (states) => states.contains(WidgetState.pressed)
-        ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
-        : const StadiumBorder(),
+        ? RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8))
+        : const RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(Radius.circular(9999)),
+          ),
   ),
 );
 
@@ -640,12 +651,14 @@ ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
   animationDuration: const Duration(milliseconds: 180),
   shape: WidgetStateProperty.resolveWith((states) {
     if (states.contains(WidgetState.pressed)) {
-      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
+      return RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8));
     }
     if (states.contains(WidgetState.selected)) {
-      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+      return RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12));
     }
-    return const StadiumBorder();
+    return const RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.all(Radius.circular(9999)),
+    );
   }),
 );
 
@@ -658,7 +671,13 @@ ThemeData _buildAppTheme(
   required bool transparent,
 }) {
   final m3e = themeState.m3eEnabled;
-  final buttonStyle = m3e ? _m3ePressedShapeStyle() : null;
+  const fullShape = RoundedSuperellipseBorder(
+    borderRadius: BorderRadius.all(Radius.circular(9999)),
+  );
+  const roundButtonStyle = ButtonStyle(
+    shape: WidgetStatePropertyAll(fullShape),
+  );
+  final buttonStyle = m3e ? _m3ePressedShapeStyle() : roundButtonStyle;
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
@@ -689,16 +708,63 @@ ThemeData _buildAppTheme(
     outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
     textButtonTheme: TextButtonThemeData(style: buttonStyle),
     iconButtonTheme: IconButtonThemeData(
-      style: m3e ? _m3eIconButtonShapeStyle() : null,
+      style: m3e ? _m3eIconButtonShapeStyle() : roundButtonStyle,
+    ),
+    navigationBarTheme: const NavigationBarThemeData(indicatorShape: fullShape),
+    navigationRailTheme: const NavigationRailThemeData(
+      indicatorShape: fullShape,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: ShapeDecoration(
+        color: scheme.inverseSurface,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+      textStyle: TextStyle(color: scheme.onInverseSurface),
+    ),
+    dialogTheme: const DialogThemeData(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(28)),
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+    ),
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+      ),
+    ),
+    segmentedButtonTheme: const SegmentedButtonThemeData(
+      style: roundButtonStyle,
+    ),
+    searchBarTheme: const SearchBarThemeData(
+      shape: WidgetStatePropertyAll(fullShape),
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(4)),
+    ),
+    menuTheme: MenuThemeData(
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(4)),
+        ),
+      ),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
       color: scheme.surfaceContainerLow,
       margin: EdgeInsets.zero,
     ),
     popupMenuTheme: PopupMenuThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 3,
       color: scheme.surfaceContainerLow,
       surfaceTintColor: Colors.transparent,
@@ -1169,8 +1235,7 @@ class _MainPageState extends ConsumerState<MainPage>
     // 已经开着了就不用建议了（原生侧也会做这个判断，这里是快速短路）
     if (ref.read(preferencesProvider).renderGlesBackend) return;
 
-    final shouldSuggest =
-        await RenderBackendService.shouldSuggestCompatMode();
+    final shouldSuggest = await RenderBackendService.shouldSuggestCompatMode();
     if (!shouldSuggest || !mounted) return;
 
     final enable = await showAppDialog<bool>(
@@ -1192,9 +1257,7 @@ class _MainPageState extends ConsumerState<MainPage>
     );
 
     if (enable == true) {
-      await ref
-          .read(preferencesProvider.notifier)
-          .setRenderGlesBackend(true);
+      await ref.read(preferencesProvider.notifier).setRenderGlesBackend(true);
       if (!mounted) return;
       await showAppDialog<void>(
         context: context,
@@ -1572,9 +1635,8 @@ class _MainPageState extends ConsumerState<MainPage>
       navigatorKey.currentState?.popUntil((route) => route.isFirst);
     }
     if (mounted && action == _AuthErrorDialogAction.clearData) {
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const DataManagementPage()));
+      await Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const DataManagementPage()));
     }
   }
 
@@ -1684,74 +1746,74 @@ class _MainPageState extends ConsumerState<MainPage>
       valueListenable: NotificationQuickPanel.visible,
       builder: (context, notificationPanelVisible, _) =>
           ValueListenableBuilder<bool>(
-        // 平行视界投影态(窄屏详情全宽盖在 tab 体内)开着时返回由
-        // PaneProjectionBackScope 消费,根层完全让位:不弹退出 toast。
-        valueListenable: PaneProjectionBackScope.hasActiveProjection,
-        builder: (context, paneProjectionOpen, _) => PopScope(
-          canPop:
-              routeCanPopInternally ||
-              (!notificationPanelVisible &&
-                  !paneProjectionOpen &&
-                  !requireDoubleBackToExit),
-          onPopInvokedWithResult: (bool didPop, dynamic result) {
-            if (didPop) return;
-            // 分类侧栏通过 LocalHistoryEntry 消费返回；这里保留兜底，覆盖
-            // 抽屉正在收尾动画等 LocalHistory 尚未同步的短暂状态。
-            if (CategoryDrawerHost.isOpen) {
-              CategoryDrawerHost.close();
-              return;
-            }
-            if (NotificationQuickPanel.isVisible) {
-              NotificationQuickPanel.dismiss();
-              return;
-            }
-            // 投影态:PaneProjectionBackScope 的 PopEntry 自己消费本次
-            // 返回(关投影层),根层不做双击退出。
-            if (PaneProjectionBackScope.hasActiveProjection.value) {
-              return;
-            }
-            if (requireDoubleBackToExit) {
-              if (_backExitGuard.shouldExit()) {
-                SystemNavigator.pop();
-              } else {
-                ToastService.showInfo(S.current.toast_pressAgainToExit);
-              }
-            }
-          },
-          child: AdaptiveScaffold(
-            selectedIndex: selectedBottomIndex,
-            onDestinationSelected: _onDestinationSelected,
-            destinations: destinations,
-            railBottomLeading: (user != null && !hasNotificationEntry)
-                ? const NotificationIconButton()
-                : null,
-            hideNavigationRail: hideNavigationRail,
-            // 投影态底栏隐藏:详情全宽盖在 tab 体内,底栏还留着会像
-            // "详情页悬在 tab 骨架上";合成路由时代盖住一切,投影态
-            // 用显式谓词达成同样观感。
-            hideBottomNavigation: paneProjectionOpen,
-            body: IndexedStack(
-              index: safePageIndex,
-              children: [
-                for (int i = 0; i < pageEntries.length; i++)
-                  KeyedSubtree(
-                    key: ValueKey('nav-entry-${pageEntries[i].id}'),
-                    child: TickerMode(
-                      enabled: safePageIndex == i,
-                      child: ExcludeFocus(
-                        excluding: safePageIndex != i,
-                        child: pageEntries[i].pageBuilder!(
-                          context,
-                          safePageIndex == i,
+            // 平行视界投影态(窄屏详情全宽盖在 tab 体内)开着时返回由
+            // PaneProjectionBackScope 消费,根层完全让位:不弹退出 toast。
+            valueListenable: PaneProjectionBackScope.hasActiveProjection,
+            builder: (context, paneProjectionOpen, _) => PopScope(
+              canPop:
+                  routeCanPopInternally ||
+                  (!notificationPanelVisible &&
+                      !paneProjectionOpen &&
+                      !requireDoubleBackToExit),
+              onPopInvokedWithResult: (bool didPop, dynamic result) {
+                if (didPop) return;
+                // 分类侧栏通过 LocalHistoryEntry 消费返回；这里保留兜底，覆盖
+                // 抽屉正在收尾动画等 LocalHistory 尚未同步的短暂状态。
+                if (CategoryDrawerHost.isOpen) {
+                  CategoryDrawerHost.close();
+                  return;
+                }
+                if (NotificationQuickPanel.isVisible) {
+                  NotificationQuickPanel.dismiss();
+                  return;
+                }
+                // 投影态:PaneProjectionBackScope 的 PopEntry 自己消费本次
+                // 返回(关投影层),根层不做双击退出。
+                if (PaneProjectionBackScope.hasActiveProjection.value) {
+                  return;
+                }
+                if (requireDoubleBackToExit) {
+                  if (_backExitGuard.shouldExit()) {
+                    SystemNavigator.pop();
+                  } else {
+                    ToastService.showInfo(S.current.toast_pressAgainToExit);
+                  }
+                }
+              },
+              child: AdaptiveScaffold(
+                selectedIndex: selectedBottomIndex,
+                onDestinationSelected: _onDestinationSelected,
+                destinations: destinations,
+                railBottomLeading: (user != null && !hasNotificationEntry)
+                    ? const NotificationIconButton()
+                    : null,
+                hideNavigationRail: hideNavigationRail,
+                // 投影态底栏隐藏:详情全宽盖在 tab 体内,底栏还留着会像
+                // "详情页悬在 tab 骨架上";合成路由时代盖住一切,投影态
+                // 用显式谓词达成同样观感。
+                hideBottomNavigation: paneProjectionOpen,
+                body: IndexedStack(
+                  index: safePageIndex,
+                  children: [
+                    for (int i = 0; i < pageEntries.length; i++)
+                      KeyedSubtree(
+                        key: ValueKey('nav-entry-${pageEntries[i].id}'),
+                        child: TickerMode(
+                          enabled: safePageIndex == i,
+                          child: ExcludeFocus(
+                            excluding: safePageIndex != i,
+                            child: pageEntries[i].pageBuilder!(
+                              context,
+                              safePageIndex == i,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
     );
 
     // 桌面端需要 Focus 以接收全局快捷键

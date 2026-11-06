@@ -192,9 +192,8 @@ class ErrorView extends StatelessWidget {
   }
 
   void _openNetworkSettings(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const NetworkSettingsPage()));
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const NetworkSettingsPage()));
   }
 
   void _showErrorDetails(BuildContext context) {
@@ -344,11 +343,13 @@ class InlineErrorView extends StatelessWidget {
 
     return Container(
       padding: padding,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: isDark
             ? theme.colorScheme.error.withValues(alpha: 0.08)
             : theme.colorScheme.errorContainer.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
       child: Row(
         children: [
@@ -417,9 +418,11 @@ class _ErrorIconBadge extends StatelessWidget {
     return Container(
       width: 72,
       height: 72,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(22),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
       ),
       child: Icon(icon, size: 36, color: fgColor),
     );
@@ -442,7 +445,9 @@ class _PrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          shape: const StadiumBorder(),
+          shape: const RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(Radius.circular(9999)),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 36),
           textStyle: theme.textTheme.bodyLarge?.copyWith(
             fontWeight: FontWeight.w600,
@@ -475,7 +480,9 @@ class _HelperAction extends StatelessWidget {
     final color = theme.colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Column(

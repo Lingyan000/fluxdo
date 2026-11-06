@@ -1166,10 +1166,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
             child: Stack(
               children: [
                 Container(
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
                     ),
                   ),
                   child: Column(
@@ -1183,9 +1185,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             width: 32,
                             height: 4,
                             margin: const EdgeInsets.only(top: 12, bottom: 8),
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: theme.colorScheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
                           ),
 
@@ -1356,10 +1360,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                 if (_isLoadingDraft)
                   Positioned.fill(
                     child: Container(
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.surface.withValues(alpha: 0.7),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(16),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
                         ),
                       ),
                       child: const Center(child: LoadingSpinner()),

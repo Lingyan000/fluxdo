@@ -120,10 +120,12 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                         Expanded(
                           child: Container(
                             height: 44,
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: theme.colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: TextField(
                               controller: _searchController,

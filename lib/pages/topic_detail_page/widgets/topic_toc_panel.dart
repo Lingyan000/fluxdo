@@ -44,7 +44,9 @@ class TopicTocSidePanel extends StatelessWidget {
         margin: EdgeInsets.zero,
         elevation: 1,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: visible
             ? OverflowBox(
                 // 展开内容恒按 expandedWidth 布局:宽度动画(44↔240)途中
@@ -187,7 +189,7 @@ Future<void> showTocBottomSheet({
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    shape: const RoundedRectangleBorder(
+    shape: const RoundedSuperellipseBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (sheetContext) {
@@ -339,8 +341,10 @@ class _TocTreeState extends State<_TocTree> {
     final viewBottom = viewTop + pos.viewportDimension;
     if (itemTop >= viewTop && itemBottom <= viewBottom) return; // 已完整可见
 
-    final target = (itemTop - pos.viewportDimension / 2 + extent / 2)
-        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    final target = (itemTop - pos.viewportDimension / 2 + extent / 2).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
     if (animate) {
       _scrollController.animateTo(
         target,
@@ -419,10 +423,14 @@ class _TocTile extends StatelessWidget {
         color: isActive
             ? scheme.primary.withValues(alpha: 0.10)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
           hoverColor: scheme.onSurface.withValues(alpha: 0.06),
           child: Padding(
             // 层级缩进:顶级 8,每深一级 +12
@@ -434,9 +442,11 @@ class _TocTile extends StatelessWidget {
                   duration: const Duration(milliseconds: 150),
                   width: 3,
                   height: 16,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: isActive ? scheme.primary : Colors.transparent,
-                    borderRadius: BorderRadius.circular(1.5),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),

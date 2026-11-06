@@ -54,6 +54,16 @@ uniform float u_saturation;
 uniform float u_brightness;
 uniform float u_contrast;
 
+uniform float u_superellipse;
+uniform float u_top_n;
+uniform float u_top_join;
+uniform vec2 u_top_center;
+uniform float u_top_radius;
+uniform float u_right_n;
+uniform float u_right_join;
+uniform vec2 u_right_center;
+uniform float u_right_radius;
+
 uniform sampler2D u_texture;
 
 out vec4 frag_color;
@@ -75,6 +85,45 @@ vec2 roundedRectGradient(vec2 coord, vec2 halfSize, float radius) {
   // 直边区:法线取轴向,哪条边更近就朝哪边
   float horizontal = step(corner.y, corner.x);
   return sign(coord) * vec2(horizontal, 1.0 - horizontal);
+}
+
+// Matches Flutter's two-octant rounded superellipse. The implicit gradient
+// estimates distance near the boundary, where refraction is visible.
+vec3 superellipseField(vec2 coord, vec2 halfSize, float radius) {
+  if (radius < 0.001) {
+    vec2 d = abs(coord) - halfSize;
+    return d.x > d.y ? vec3(d.x, sign(coord.x), 0.0)
+                     : vec3(d.y, 0.0, sign(coord.y));
+  }
+  vec2 p = abs(coord);
+  vec2 outside = p - halfSize;
+  if (max(outside.x, outside.y) > 0.0) {
+    return outside.x > outside.y ? vec3(outside.x, sign(coord.x), 0.0)
+                                 : vec3(outside.y, 0.0, sign(coord.y));
+  }
+  float c = halfSize.x - halfSize.y;
+  bool top = p.y > p.x - c;
+  vec2 q = top ? vec2(p.x, p.y + c) : vec2(p.y, p.x - c);
+  float a = top ? halfSize.x : halfSize.y;
+  float n = top ? u_top_n : u_right_n;
+  float join = top ? u_top_join : u_right_join;
+  vec2 center = top ? u_top_center : u_right_center;
+  float arcRadius = top ? u_top_radius : u_right_radius;
+  float distance;
+  vec2 normal;
+  if (q.x <= join) {
+    vec2 unit = clamp(q / a, vec2(0.0), vec2(1.1));
+    vec2 gradient = (n / a) * pow(unit, vec2(n - 1.0));
+    float magnitude = max(length(gradient), 0.00001);
+    distance = (pow(unit.x, n) + pow(unit.y, n) - 1.0) / magnitude;
+    normal = gradient / magnitude;
+  } else {
+    vec2 delta = q - center;
+    float lengthDelta = max(length(delta), 0.00001);
+    distance = lengthDelta - arcRadius;
+    normal = delta / lengthDelta;
+  }
+  return vec3(distance, (top ? normal : normal.yx) * sign(coord));
 }
 
 // 圆形透镜剖面:x=0(带内侧)无偏移,x=1(最边缘)偏移最大且导数陡增。
@@ -119,7 +168,11 @@ void main() {
   vec2 centered = localPos - halfSize;
 
   float radius = clamp(u_radius, 0.0, min(halfSize.x, halfSize.y));
-  float signedDistance = roundedRectSdf(centered, halfSize, radius);
+  vec3 field = u_superellipse > 0.5
+      ? superellipseField(centered, halfSize, radius)
+      : vec3(roundedRectSdf(centered, halfSize, radius),
+             roundedRectGradient(centered, halfSize, radius));
+  float signedDistance = field.x;
 
   // 滤镜组合可能请求裁切外的像素。它们必须原样透传，不能被当作
   // 最大折射带，更不能被夹到胶囊边缘后横向或纵向复制。
@@ -140,7 +193,7 @@ void main() {
   // 把径向分量淡出(中心处 lens 本来就为 0,不影响观感)。
   // 法线与距离场使用同一个圆角。放大半径会让非胶囊表面的光学转角
   // 提前进入直边区；厚度感由下面的径向分量提供，不改变轮廓半径。
-  vec2 normal = roundedRectGradient(centered, halfSize, radius);
+  vec2 normal = field.yz;
   float centerDist = length(centered);
   vec2 radial = centered / max(centerDist, 0.001);
   radial *= smoothstep(0.0, 1.0, centerDist);

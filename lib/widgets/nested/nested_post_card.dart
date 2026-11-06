@@ -670,11 +670,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           duration: const Duration(milliseconds: 2500),
           curve: Curves.easeOut,
           builder: (context, value, child) => DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primaryContainer.withValues(
                 alpha: 0.35 * value,
               ),
-              borderRadius: BorderRadius.circular(8),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: child,
           ),
@@ -874,9 +876,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           const SizedBox(width: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             child: Text(
               'OP',

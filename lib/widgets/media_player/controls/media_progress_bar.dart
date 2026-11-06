@@ -95,9 +95,8 @@ class _MediaProgressBarState extends State<MediaProgressBar>
     return (widget.value.position.inMilliseconds / total).clamp(0.0, 1.0);
   }
 
-  Duration _fractionToPosition(double fraction) => Duration(
-        milliseconds: (_duration.inMilliseconds * fraction).round(),
-      );
+  Duration _fractionToPosition(double fraction) =>
+      Duration(milliseconds: (_duration.inMilliseconds * fraction).round());
 
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -125,8 +124,7 @@ class _MediaProgressBarState extends State<MediaProgressBar>
     final pending = _pendingFraction;
     if (pending != null) {
       final target = _fractionToPosition(pending);
-      final diffMs =
-          (widget.value.position - target).inMilliseconds.abs();
+      final diffMs = (widget.value.position - target).inMilliseconds.abs();
       if (diffMs < 800) {
         _pendingTimeout?.cancel();
         _pendingTimeout = null;
@@ -205,18 +203,17 @@ class _MediaProgressBarState extends State<MediaProgressBar>
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final fraction =
-            _dragFraction ?? _pendingFraction ?? _playedFraction;
+        final fraction = _dragFraction ?? _pendingFraction ?? _playedFraction;
         // 气泡:拖动中显示拖动位置;否则(桌面)悬停显示落点预览
-        final bubbleFraction = _dragFraction ??
+        final bubbleFraction =
+            _dragFraction ??
             (widget.hoverPreviewEnabled ? _hoverFraction : null);
         return MouseRegion(
           cursor: SystemMouseCursors.click,
           onHover: (event) {
             if (!widget.hoverPreviewEnabled) return;
             setState(() {
-              _hoverFraction =
-                  (event.localPosition.dx / width).clamp(0.0, 1.0);
+              _hoverFraction = (event.localPosition.dx / width).clamp(0.0, 1.0);
             });
             _syncEmphasis();
           },
@@ -246,8 +243,7 @@ class _MediaProgressBarState extends State<MediaProgressBar>
               _syncEmphasis();
             },
             onTapUp: (details) {
-              _commitSeek(
-                  (details.localPosition.dx / width).clamp(0.0, 1.0));
+              _commitSeek((details.localPosition.dx / width).clamp(0.0, 1.0));
               widget.onDragActive?.call(false);
             },
             child: SizedBox(
@@ -257,8 +253,11 @@ class _MediaProgressBarState extends State<MediaProgressBar>
                 clipBehavior: Clip.none,
                 children: [
                   AnimatedBuilder(
-                    animation: Listenable.merge(
-                        [_emphasis, _wavePhase, _waveAmp]),
+                    animation: Listenable.merge([
+                      _emphasis,
+                      _wavePhase,
+                      _waveAmp,
+                    ]),
                     builder: (context, _) => CustomPaint(
                       size: Size(width, 28),
                       painter: _ProgressPainter(
@@ -268,18 +267,20 @@ class _MediaProgressBarState extends State<MediaProgressBar>
                         emphasis: Curves.easeOut.transform(_emphasis.value),
                         expressive: widget.expressive,
                         wavePhase: _wavePhase.value,
-                        waveAmp:
-                            Curves.easeOut.transform(_waveAmp.value),
+                        waveAmp: Curves.easeOut.transform(_waveAmp.value),
                       ),
                     ),
                   ),
                   if (bubbleFraction != null)
                     Positioned(
-                      left:
-                          (bubbleFraction * width - 28).clamp(0.0, width - 56),
+                      left: (bubbleFraction * width - 28).clamp(
+                        0.0,
+                        width - 56,
+                      ),
                       bottom: 26,
                       child: _timeBubble(
-                          _fmt(_fractionToPosition(bubbleFraction))),
+                        _fmt(_fractionToPosition(bubbleFraction)),
+                      ),
                     ),
                 ],
               ),
@@ -349,7 +350,10 @@ class _ProgressPainter extends CustomPainter {
     if (remStart < size.width - 1) {
       stroke.color = _trackColor;
       canvas.drawLine(
-          Offset(remStart, centerY), Offset(size.width - 4, centerY), stroke);
+        Offset(remStart, centerY),
+        Offset(size.width - 4, centerY),
+        stroke,
+      );
     }
 
     // 缓冲段叠在余轨上(直线,略亮)
@@ -358,13 +362,15 @@ class _ProgressPainter extends CustomPainter {
       stroke.color = _bufferColor;
       for (final range in buffered) {
         final start = math.max(
-            size.width * (range.start.inMilliseconds / totalMs), remStart);
+          size.width * (range.start.inMilliseconds / totalMs),
+          remStart,
+        );
         final end = math.min(
-            size.width * (range.end.inMilliseconds / totalMs),
-            size.width - 4);
+          size.width * (range.end.inMilliseconds / totalMs),
+          size.width - 4,
+        );
         if (end > start + 1) {
-          canvas.drawLine(
-              Offset(start, centerY), Offset(end, centerY), stroke);
+          canvas.drawLine(Offset(start, centerY), Offset(end, centerY), stroke);
         }
       }
     }
@@ -379,8 +385,7 @@ class _ProgressPainter extends CustomPainter {
       stroke.color = _playedColor;
       final amp = _maxAmplitude * waveAmp;
       if (amp < 0.15) {
-        canvas.drawLine(
-            Offset(0, centerY), Offset(playedEnd, centerY), stroke);
+        canvas.drawLine(Offset(0, centerY), Offset(playedEnd, centerY), stroke);
       } else {
         final path = Path();
         // 相位以 playedX 为锚(波形跟着播放头走,而不是原点),
@@ -389,7 +394,8 @@ class _ProgressPainter extends CustomPainter {
             centerY +
             amp *
                 math.sin(
-                    ((x - playedX) / _wavelength + wavePhase) * 2 * math.pi);
+                  ((x - playedX) / _wavelength + wavePhase) * 2 * math.pi,
+                );
         path.moveTo(0, yAt(0));
         for (double x = 2; x < playedEnd; x += 2) {
           path.lineTo(x, yAt(x));
@@ -403,12 +409,13 @@ class _ProgressPainter extends CustomPainter {
     final thumbW = 4.0 + 1.0 * emphasis;
     final thumbH = 16.0 + 6.0 * emphasis;
     final fill = Paint()..color = _playedColor;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
+    canvas.drawRSuperellipse(
+      RSuperellipse.fromRectAndRadius(
         Rect.fromCenter(
-            center: Offset(playedX, centerY),
-            width: thumbW,
-            height: thumbH),
+          center: Offset(playedX, centerY),
+          width: thumbW,
+          height: thumbH,
+        ),
         Radius.circular(thumbW / 2),
       ),
       fill,
@@ -422,8 +429,8 @@ class _ProgressPainter extends CustomPainter {
     final radius = Radius.circular(trackHeight / 2);
     final paint = Paint();
 
-    RRect trackRect(double startFraction, double endFraction) =>
-        RRect.fromLTRBR(
+    RSuperellipse trackRect(double startFraction, double endFraction) =>
+        RSuperellipse.fromLTRBR(
           size.width * startFraction,
           centerY - trackHeight / 2,
           size.width * endFraction,
@@ -433,7 +440,7 @@ class _ProgressPainter extends CustomPainter {
 
     // 轨道
     paint.color = _trackColor;
-    canvas.drawRRect(trackRect(0, 1), paint);
+    canvas.drawRSuperellipse(trackRect(0, 1), paint);
 
     // 缓冲段(可能多段)
     final totalMs = duration.inMilliseconds;
@@ -443,14 +450,14 @@ class _ProgressPainter extends CustomPainter {
         final start = (range.start.inMilliseconds / totalMs).clamp(0.0, 1.0);
         final end = (range.end.inMilliseconds / totalMs).clamp(0.0, 1.0);
         if (end > start) {
-          canvas.drawRRect(trackRect(start, end), paint);
+          canvas.drawRSuperellipse(trackRect(start, end), paint);
         }
       }
     }
 
     // 已播
     paint.color = _playedColor;
-    canvas.drawRRect(trackRect(0, played), paint);
+    canvas.drawRSuperellipse(trackRect(0, played), paint);
 
     // 把手:柔光晕(强调态渐显)+ 实心圆
     final thumbCenter = Offset(size.width * played, centerY);

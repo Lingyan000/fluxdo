@@ -23,7 +23,10 @@ import '../../../../../l10n/s.dart';
 /// Tab 把焦点移到「取消」等按钮上后回车仍会被截走触发上传 —— 这里只在
 /// 焦点还停留在弹框级节点(没 Tab 到任何按钮)时才吃回车,焦点在按钮上
 /// 时放行给按钮自己的激活动作。
-Widget _enterToSubmit({required VoidCallback? onSubmit, required Widget child}) {
+Widget _enterToSubmit({
+  required VoidCallback? onSubmit,
+  required Widget child,
+}) {
   return Focus(
     // autofocus:弹框刚出来焦点还没落到任何按钮上,不抢焦点就收不到按键
     autofocus: true,
@@ -62,11 +65,7 @@ class ImageUploadDialog extends StatefulWidget {
   final String imagePath;
   final String? imageName;
 
-  const ImageUploadDialog({
-    super.key,
-    required this.imagePath,
-    this.imageName,
-  });
+  const ImageUploadDialog({super.key, required this.imagePath, this.imageName});
 
   @override
   State<ImageUploadDialog> createState() => _ImageUploadDialogState();
@@ -86,7 +85,9 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
   void initState() {
     super.initState();
     _currentImagePath = widget.imagePath;
-    _compressionStrategy = ImageCompressionStrategyFactory.fromPath(widget.imagePath);
+    _compressionStrategy = ImageCompressionStrategyFactory.fromPath(
+      widget.imagePath,
+    );
     _restoreQualityPreference();
   }
 
@@ -111,7 +112,10 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
     final file = File(_currentImagePath);
     if (await file.exists()) {
       final size = await file.length();
-      final estimatedSize = _compressionStrategy.estimateCompressedSize(size, _quality);
+      final estimatedSize = _compressionStrategy.estimateCompressedSize(
+        size,
+        _quality,
+      );
       if (!mounted) return;
       setState(() {
         _originalSize = size;
@@ -128,7 +132,11 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
 
   Future<void> _editImage() async {
     if (!_compressionStrategy.canEdit) {
-      ToastService.showError(S.current.imageUpload_editNotSupported(_compressionStrategy.displayName));
+      ToastService.showError(
+        S.current.imageUpload_editNotSupported(
+          _compressionStrategy.displayName,
+        ),
+      );
       return;
     }
 
@@ -163,7 +171,9 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
 
       setState(() {
         _currentImagePath = editedPath;
-        _compressionStrategy = ImageCompressionStrategyFactory.fromPath(editedPath);
+        _compressionStrategy = ImageCompressionStrategyFactory.fromPath(
+          editedPath,
+        );
       });
       await _loadImageInfo();
     }
@@ -176,7 +186,8 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
     return OutputFormat.jpg;
   }
 
-  String get _editorExtension => _editorOutputFormat == OutputFormat.png ? 'png' : 'jpg';
+  String get _editorExtension =>
+      _editorOutputFormat == OutputFormat.png ? 'png' : 'jpg';
 
   Future<String> _compressImage() async {
     return _compressionStrategy.compress(_currentImagePath, _quality);
@@ -191,10 +202,12 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
 
       if (!mounted) return;
 
-      Navigator.of(context).pop(ImageUploadResult(
-        path: compressedPath,
-        originalName: widget.imageName ?? p.basename(widget.imagePath),
-      ));
+      Navigator.of(context).pop(
+        ImageUploadResult(
+          path: compressedPath,
+          originalName: widget.imageName ?? p.basename(widget.imagePath),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ToastService.showError(S.current.imageUpload_processFailed(e.toString()));
@@ -209,156 +222,178 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
     return _enterToSubmit(
       onSubmit: _isProcessing ? null : _submit,
       child: AlertDialog(
-      title: Text(S.current.imageUpload_confirmTitle),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 图片预览
-            Container(
-              height: 200,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Image.file(
-                File(_currentImagePath),
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Icon(
-                      Symbols.broken_image_rounded,
-                      size: 48,
-                      color: theme.colorScheme.outline,
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            if (!_compressionStrategy.supportsCompression)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  S.current.imageUpload_keepOriginal(_compressionStrategy.displayName),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+        title: Text(S.current.imageUpload_confirmTitle),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 图片预览
+              Container(
+                height: 200,
+                decoration: ShapeDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-              ),
-
-            // 压缩质量滑块
-            Row(
-              children: [
-                Text(S.current.imageUpload_compressionQuality, style: theme.textTheme.bodyMedium),
-                Expanded(
-                  child: Slider(
-                    value: _quality.toDouble(),
-                    min: 10,
-                    max: 100,
-                    divisions: 18,
-                    label: '$_quality%',
-                    onChangeEnd: _isProcessing || !_compressionStrategy.supportsCompression
-                        ? null
-                        : (value) => _saveQualityPreference(value.round()),
-                    onChanged: _isProcessing || !_compressionStrategy.supportsCompression
-                        ? null
-                        : (value) {
-                          final nextQuality = value.round();
-                          setState(() {
-                            _quality = nextQuality;
-                            if (_originalSize != null) {
-                              _estimatedSize = _compressionStrategy.estimateCompressedSize(
-                                _originalSize!,
-                                nextQuality,
-                              );
-                            }
-                          });
-                        },
-                  ),
-                ),
-                SizedBox(
-                  width: 48,
-                  child: Text(
-                    '$_quality%',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            // 文件大小信息
-            if (_originalSize != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      Symbols.photo_size_select_large_rounded,
-                      size: 16,
-                      color: theme.colorScheme.outline,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      S.current.imageUpload_originalSize(_formatFileSize(_originalSize!)),
-                      style: theme.textTheme.bodySmall?.copyWith(
+                clipBehavior: Clip.antiAlias,
+                child: Image.file(
+                  File(_currentImagePath),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Icon(
+                        Symbols.broken_image_rounded,
+                        size: 48,
                         color: theme.colorScheme.outline,
                       ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              if (!_compressionStrategy.supportsCompression)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    S.current.imageUpload_keepOriginal(
+                      _compressionStrategy.displayName,
                     ),
-                    if (_compressionStrategy.supportsCompression &&
-                        _quality < 100 &&
-                        _estimatedSize != null) ...[
-                      const SizedBox(width: 8),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ),
+
+              // 压缩质量滑块
+              Row(
+                children: [
+                  Text(
+                    S.current.imageUpload_compressionQuality,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _quality.toDouble(),
+                      min: 10,
+                      max: 100,
+                      divisions: 18,
+                      label: '$_quality%',
+                      onChangeEnd:
+                          _isProcessing ||
+                              !_compressionStrategy.supportsCompression
+                          ? null
+                          : (value) => _saveQualityPreference(value.round()),
+                      onChanged:
+                          _isProcessing ||
+                              !_compressionStrategy.supportsCompression
+                          ? null
+                          : (value) {
+                              final nextQuality = value.round();
+                              setState(() {
+                                _quality = nextQuality;
+                                if (_originalSize != null) {
+                                  _estimatedSize = _compressionStrategy
+                                      .estimateCompressedSize(
+                                        _originalSize!,
+                                        nextQuality,
+                                      );
+                                }
+                              });
+                            },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 48,
+                    child: Text(
+                      '$_quality%',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // 文件大小信息
+              if (_originalSize != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
                       Icon(
-                        Symbols.arrow_forward_rounded,
-                        size: 14,
+                        Symbols.photo_size_select_large_rounded,
+                        size: 16,
                         color: theme.colorScheme.outline,
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        S.current.imageUpload_estimatedSize(_formatFileSize(_estimatedSize!)),
+                        S.current.imageUpload_originalSize(
+                          _formatFileSize(_originalSize!),
+                        ),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.outline,
                         ),
                       ),
+                      if (_compressionStrategy.supportsCompression &&
+                          _quality < 100 &&
+                          _estimatedSize != null) ...[
+                        const SizedBox(width: 8),
+                        Icon(
+                          Symbols.arrow_forward_rounded,
+                          size: 14,
+                          color: theme.colorScheme.outline,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          S.current.imageUpload_estimatedSize(
+                            _formatFileSize(_estimatedSize!),
+                          ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
+                ),
+
+              const SizedBox(height: 8),
+
+              // 编辑图片按钮
+              OutlinedButton.icon(
+                onPressed: _isProcessing || !_compressionStrategy.canEdit
+                    ? null
+                    : _editImage,
+                icon: const Icon(Symbols.edit_rounded),
+                label: Text(
+                  _compressionStrategy.canEdit
+                      ? S.current.imageUpload_editImage
+                      : S.current.imageUpload_editNotSupportedLabel,
                 ),
               ),
-
-            const SizedBox(height: 8),
-
-            // 编辑图片按钮
-            OutlinedButton.icon(
-              onPressed: _isProcessing || !_compressionStrategy.canEdit ? null : _editImage,
-              icon: const Icon(Symbols.edit_rounded),
-              label: Text(_compressionStrategy.canEdit ? S.current.imageUpload_editImage : S.current.imageUpload_editNotSupportedLabel),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
-          child: Text(S.current.common_cancel),
-        ),
-        FilledButton(
-          onPressed: _isProcessing ? null : _submit,
-          child: _isProcessing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(S.current.common_upload),
-        ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
+            child: Text(S.current.common_cancel),
+          ),
+          FilledButton(
+            onPressed: _isProcessing ? null : _submit,
+            child: _isProcessing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(S.current.common_upload),
+          ),
+        ],
       ),
     );
   }
@@ -373,10 +408,8 @@ Future<ImageUploadResult?> showImageUploadDialog(
   return showAppDialog<ImageUploadResult>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => ImageUploadDialog(
-      imagePath: imagePath,
-      imageName: imageName,
-    ),
+    builder: (context) =>
+        ImageUploadDialog(imagePath: imagePath, imageName: imageName),
   );
 }
 
@@ -421,11 +454,13 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
     super.initState();
     for (int i = 0; i < widget.imagePaths.length; i++) {
       final path = widget.imagePaths[i];
-      _items.add(_MultiImageItem(
-        path: path,
-        name: widget.imageNames[i],
-        strategy: ImageCompressionStrategyFactory.fromPath(path),
-      ));
+      _items.add(
+        _MultiImageItem(
+          path: path,
+          name: widget.imageNames[i],
+          strategy: ImageCompressionStrategyFactory.fromPath(path),
+        ),
+      );
     }
     _restoreQualityPreference();
   }
@@ -497,11 +532,13 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
 
       final results = <ImageUploadResult>[];
       for (final item in _items) {
-        final compressedPath = await item.strategy.compress(item.path, _quality);
-        results.add(ImageUploadResult(
-          path: compressedPath,
-          originalName: item.name,
-        ));
+        final compressedPath = await item.strategy.compress(
+          item.path,
+          _quality,
+        );
+        results.add(
+          ImageUploadResult(path: compressedPath, originalName: item.name),
+        );
       }
 
       if (!mounted) return;
@@ -520,214 +557,229 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
     return _enterToSubmit(
       onSubmit: _isProcessing ? null : _submit,
       child: AlertDialog(
-      title: Text(S.current.imageUpload_multiTitle(_items.length)),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 缩略图网格
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: _items.length,
-                itemBuilder: (context, index) {
-                  final item = _items[index];
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Image.file(
-                          File(item.path),
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Center(
-                              child: Icon(
-                                Symbols.broken_image_rounded,
-                                size: 24,
-                                color: theme.colorScheme.outline,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      // 删除按钮
-                      Positioned(
-                        top: 2,
-                        right: 2,
-                        child: GestureDetector(
-                          onTap: _isProcessing ? null : () => _removeItem(index),
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Symbols.close_rounded,
-                              size: 16,
-                              color: Colors.white,
+        title: Text(S.current.imageUpload_multiTitle(_items.length)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 缩略图网格
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: _items.length,
+                  itemBuilder: (context, index) {
+                    final item = _items[index];
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Container(
+                          decoration: ShapeDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                        ),
-                      ),
-                      // 文件大小标签
-                      if (item.size != null)
-                        Positioned(
-                          bottom: 2,
-                          left: 2,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 1,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              _formatFileSize(item.size!),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // 压缩质量滑块
-              Row(
-                children: [
-                  Text(S.current.imageUpload_compressionQuality, style: theme.textTheme.bodyMedium),
-                  Expanded(
-                    child: Slider(
-                      value: _quality.toDouble(),
-                      min: 10,
-                      max: 100,
-                      divisions: 18,
-                      label: '$_quality%',
-                      onChangeEnd: _isProcessing
-                          ? null
-                          : (value) => _saveQualityPreference(value.round()),
-                      onChanged: _isProcessing
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _quality = value.round();
-                              });
+                          clipBehavior: Clip.antiAlias,
+                          child: Image.file(
+                            File(item.path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Icon(
+                                  Symbols.broken_image_rounded,
+                                  size: 24,
+                                  color: theme.colorScheme.outline,
+                                ),
+                              );
                             },
-                    ),
-                  ),
-                  SizedBox(
-                    width: 48,
-                    child: Text(
-                      '$_quality%',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                          ),
+                        ),
+                        // 删除按钮
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: GestureDetector(
+                            onTap: _isProcessing
+                                ? null
+                                : () => _removeItem(index),
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: ShapeDecoration(
+                                color: Colors.black54,
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Icon(
+                                Symbols.close_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 文件大小标签
+                        if (item.size != null)
+                          Positioned(
+                            bottom: 2,
+                            left: 2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: ShapeDecoration(
+                                color: Colors.black54,
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              child: Text(
+                                _formatFileSize(item.size!),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
 
-              // 总大小信息
-              if (_totalOriginalSize > 0)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Symbols.photo_size_select_large_rounded,
-                        size: 16,
-                        color: theme.colorScheme.outline,
+                // 压缩质量滑块
+                Row(
+                  children: [
+                    Text(
+                      S.current.imageUpload_compressionQuality,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: _quality.toDouble(),
+                        min: 10,
+                        max: 100,
+                        divisions: 18,
+                        label: '$_quality%',
+                        onChangeEnd: _isProcessing
+                            ? null
+                            : (value) => _saveQualityPreference(value.round()),
+                        onChanged: _isProcessing
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  _quality = value.round();
+                                });
+                              },
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        S.current.imageUpload_totalOriginalSize(_formatFileSize(_totalOriginalSize)),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline,
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(
+                        '$_quality%',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (_quality < 100) ...[
-                        const SizedBox(width: 8),
+                    ),
+                  ],
+                ),
+
+                // 总大小信息
+                if (_totalOriginalSize > 0)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
                         Icon(
-                          Symbols.arrow_forward_rounded,
-                          size: 14,
+                          Symbols.photo_size_select_large_rounded,
+                          size: 16,
                           color: theme.colorScheme.outline,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          S.current.imageUpload_totalEstimatedSize(_formatFileSize(_totalEstimatedSize)),
+                          S.current.imageUpload_totalOriginalSize(
+                            _formatFileSize(_totalOriginalSize),
+                          ),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w500,
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                        if (_quality < 100) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Symbols.arrow_forward_rounded,
+                            size: 14,
+                            color: theme.colorScheme.outline,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            S.current.imageUpload_totalEstimatedSize(
+                              _formatFileSize(_totalEstimatedSize),
+                            ),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                // ≥3 张自动 grid 提示
+                if (_items.length >= 3)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Symbols.grid_view_rounded,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            S.current.imageUpload_gridLayoutHint,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-
-              // ≥3 张自动 grid 提示
-              if (_items.length >= 3)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Symbols.grid_view_rounded,
-                        size: 16,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          S.current.imageUpload_gridLayoutHint,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
-          child: Text(S.current.common_cancel),
-        ),
-        FilledButton(
-          onPressed: _isProcessing ? null : _submit,
-          child: _isProcessing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(S.current.imageUpload_uploadCount(_items.length)),
-        ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
+            child: Text(S.current.common_cancel),
+          ),
+          FilledButton(
+            onPressed: _isProcessing ? null : _submit,
+            child: _isProcessing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(S.current.imageUpload_uploadCount(_items.length)),
+          ),
+        ],
       ),
     );
   }
@@ -742,9 +794,7 @@ Future<List<ImageUploadResult>?> showMultiImageUploadDialog(
   return showAppDialog<List<ImageUploadResult>>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => MultiImageUploadDialog(
-      imagePaths: imagePaths,
-      imageNames: imageNames,
-    ),
+    builder: (context) =>
+        MultiImageUploadDialog(imagePaths: imagePaths, imageNames: imageNames),
   );
 }

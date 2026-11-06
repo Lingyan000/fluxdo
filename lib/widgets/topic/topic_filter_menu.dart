@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:common_ui/common_ui.dart';
+
 import '../../providers/topic_list/filter_provider.dart';
 import '../../providers/topic_list/sort_provider.dart';
 import '../../providers/topic_list/tab_state_provider.dart';
@@ -140,7 +141,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
         }
       },
       offset: const Offset(0, 36),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
       tooltip: S.current.topic_filterTooltip(filterLabel(widget.currentFilter)),
       itemBuilder: (context) {
         final items = <PopupMenuEntry<Object>>[];
@@ -346,11 +347,13 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
             )
           : Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: colorScheme.surfaceContainerHighest.withValues(
                   alpha: 0.5,
                 ),
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

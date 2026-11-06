@@ -1,7 +1,9 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../l10n/s.dart';
 import '../services/deep_link_service.dart';
 import '../widgets/common/ambient_background.dart';
@@ -18,7 +20,8 @@ class OnboardingPage extends StatefulWidget {
   State<OnboardingPage> createState() => _OnboardingPageState();
 }
 
-class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStateMixin {
+class _OnboardingPageState extends State<OnboardingPage>
+    with TickerProviderStateMixin {
   late AnimationController _entryAnimationController;
   final List<Animation<double>> _fadeAnimations = [];
   final List<Animation<Offset>> _slideAnimations = [];
@@ -39,19 +42,25 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
   void _setupEntryAnimations() {
     _entryAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500), // Slightly slower for elegance
+      duration: const Duration(
+        milliseconds: 1500,
+      ), // Slightly slower for elegance
     );
 
     // Staggered animations
     for (int i = 0; i < 5; i++) {
       final start = i * 0.12;
       final end = start + 0.6;
-      
+
       _fadeAnimations.add(
         Tween<double>(begin: 0.0, end: 1.0).animate(
           CurvedAnimation(
             parent: _entryAnimationController,
-            curve: Interval(start, end > 1.0 ? 1.0 : end, curve: Curves.easeOut),
+            curve: Interval(
+              start,
+              end > 1.0 ? 1.0 : end,
+              curve: Curves.easeOut,
+            ),
           ),
         ),
       );
@@ -60,7 +69,11 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
         Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _entryAnimationController,
-            curve: Interval(start, end > 1.0 ? 1.0 : end, curve: Curves.easeOutCubic),
+            curve: Interval(
+              start,
+              end > 1.0 ? 1.0 : end,
+              curve: Curves.easeOutCubic,
+            ),
           ),
         ),
       );
@@ -83,7 +96,7 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
         children: [
           // 1. Ambient Background (Aurora Effect)
           const AmbientBackground(),
-          
+
           // 2. Content
           SafeArea(
             child: Stack(
@@ -118,7 +131,7 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
 
   Widget _buildMainContent(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -126,16 +139,16 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Spacer(flex: 3),
-            
+
             // Logo - Floating without background
             _AnimatedEntry(
               fadeAnimation: _fadeAnimations[0],
               slideAnimation: _slideAnimations[0],
               child: const FloatingLogo(),
             ),
-            
+
             const SizedBox(height: 48),
-            
+
             // Title - Clean and Premium
             _AnimatedEntry(
               fadeAnimation: _fadeAnimations[1],
@@ -150,9 +163,9 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Slogan - Elegant Typography
             _AnimatedEntry(
               fadeAnimation: _fadeAnimations[2],
@@ -161,39 +174,42 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                 context.l10n.onboarding_slogan,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha:0.8),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.8,
+                  ),
                   letterSpacing: 2.0,
                   fontWeight: FontWeight.w400,
                   height: 1.5,
                 ),
               ),
             ),
-            
+
             const Spacer(flex: 4),
-            
+
             // Login Button - Modern Pill Shape
             _AnimatedEntry(
               fadeAnimation: _fadeAnimations[3],
               slideAnimation: _slideAnimations[3],
               child: FilledButton(
                 onPressed: () => _navigateToLogin(context),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                  elevation: 0,
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                ).copyWith(
-                  shadowColor: MaterialStateProperty.all(
-                    theme.colorScheme.primary.withValues(alpha:0.4),
-                  ),
-                  elevation: MaterialStateProperty.resolveWith((states) {
-                    if (states.contains(MaterialState.pressed)) return 2;
-                    return 8; // Soft glow shadow
-                  }),
-                ),
+                style:
+                    FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 56),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      elevation: 0,
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                    ).copyWith(
+                      shadowColor: MaterialStateProperty.all(
+                        theme.colorScheme.primary.withValues(alpha: 0.4),
+                      ),
+                      elevation: MaterialStateProperty.resolveWith((states) {
+                        if (states.contains(MaterialState.pressed)) return 2;
+                        return 8; // Soft glow shadow
+                      }),
+                    ),
                 child: Text(
                   context.l10n.common_login,
                   style: const TextStyle(
@@ -204,9 +220,9 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Guest Button - Subtle
             _AnimatedEntry(
               fadeAnimation: _fadeAnimations[4],
@@ -215,7 +231,7 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                 onPressed: () => _continueAsGuest(context),
                 style: TextButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(
+                  shape: RoundedSuperellipseBorder(
                     borderRadius: BorderRadius.circular(28),
                   ),
                   foregroundColor: theme.colorScheme.onSurfaceVariant,
@@ -230,7 +246,7 @@ class _OnboardingPageState extends State<OnboardingPage> with TickerProviderStat
                 ),
               ),
             ),
-            
+
             const Spacer(),
           ],
         ),
@@ -269,10 +285,7 @@ class _AnimatedEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: fadeAnimation,
-      child: SlideTransition(
-        position: slideAnimation,
-        child: child,
-      ),
+      child: SlideTransition(position: slideAnimation, child: child),
     );
   }
 }

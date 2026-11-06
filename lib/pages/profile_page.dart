@@ -1,8 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/user.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
@@ -20,14 +22,18 @@ import 'my_topics_page.dart';
 import 'my_badges_page.dart';
 import 'user_profile_page.dart';
 import 'trust_level_requirements_page.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../widgets/common/loading_dialog.dart';
 import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../providers/app_state_refresher.dart';
 import 'metaverse_page.dart';
+
 import 'package:ai_model_manager/ai_model_manager.dart';
+
 import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
 import 'pending_posts_page.dart';
@@ -148,7 +154,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     if (_guideShown) return;
     if (!widget.isActive) return;
 
-    final renderObj = _statsCardKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderObj =
+        _statsCardKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderObj == null || !renderObj.hasSize) return;
 
     _guideShown = true;
@@ -192,7 +199,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final progress = raw < 0 ? 0.0 : raw;
     final current = ref.read(navScrollProgressProvider(NavEntryIds.profile));
     final atZero = progress == 0 && current != 0;
-    final crossed = (progress >= navScrollIconThreshold) !=
+    final crossed =
+        (progress >= navScrollIconThreshold) !=
         (current >= navScrollIconThreshold);
     if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
     ref.read(navScrollProgressProvider(NavEntryIds.profile).notifier).state =
@@ -205,9 +213,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // Navigator.of、containerOf)都会抛错;曾因此把 refreshAll 整段掐死,
     // 表现为扫码登录成功后 UI 无登录态、要重启才恢复。
     final container = ProviderScope.containerOf(context, listen: false);
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-    );
+    final result = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const LoginPage()));
     if (result != true) return;
 
     // 等一帧让路由弹出与重挂载稳定;deactivate 未复活的元素此刻已 unmount,
@@ -232,7 +239,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       loading.hide();
     }
   }
-  
+
   Future<void> _logout() async {
     final confirmed = await showAppDialog<bool>(
       context: context,
@@ -240,8 +247,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         title: Text(context.l10n.profile_confirmLogout),
         content: Text(context.l10n.profile_logoutContent),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.l10n.common_cancel)),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(context.l10n.common_exit)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.l10n.common_exit),
+          ),
         ],
       ),
     );
@@ -337,7 +350,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final username = ref.read(currentUserProvider).value?.username;
     if (username != null && username.isNotEmpty) {
       await WebViewPage.open(
-        context, 
+        context,
         'https://linux.do/u/$username/preferences/account',
         title: context.l10n.profile_editProfile,
         injectCss: '''
@@ -358,7 +371,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           }
         ''',
       );
-      
+
       // 返回后静默刷新数据
       if (mounted) {
         ref.read(currentUserProvider.notifier).refreshSilently().ignore();
@@ -366,17 +379,17 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
-
     final theme = Theme.of(context);
     final userState = ref.watch(currentUserProvider);
     final isLoggedIn = userState.value != null;
     final user = userState.value;
     final displayName = user?.name ?? user?.username ?? '';
 
-    final isOffline = userState.hasError && userState.hasValue && userState.value != null;
+    final isOffline =
+        userState.hasError && userState.hasValue && userState.value != null;
     final showWideLayout = MasterDetailLayout.canShowBothPanesFor(context);
 
     // 监听底栏派发的快捷动作（仅活跃 tab 响应）
@@ -428,46 +441,55 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       fallbackText: displayName,
                     ),
                     const SizedBox(width: 8),
-                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
                   ],
                 ),
               )
             : null,
         centerTitle: false,
-        actions: isLoggedIn ? [
-          // 状态指示（固定占位，避免后方图标闪烁）
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: _isRefreshing
-                ? const SizedBox(
-                    key: ValueKey('refreshing'),
-                    width: 48,
-                    height: 48,
-                    child: Center(
-                      child: LoadingSpinner(size: 18),
-                    ),
-                  )
-                : isOffline
-                    ? SizedBox(
-                        key: const ValueKey('offline'),
-                        width: 48,
-                        height: 48,
-                        child: Icon(Symbols.cloud_off_rounded, color: theme.colorScheme.outline),
-                      )
-                    : const SizedBox(key: ValueKey('idle'), width: 0),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.manage_accounts_rounded),
-            tooltip: context.l10n.profile_editProfile,
-            onPressed: _openProfileEdit,
-          ),
-          // 侧栏模式下通知角标已在侧栏头像上显示
-          if (!Responsive.showNavigationRail(context))
-            const Padding(
-              padding: EdgeInsets.only(right: 8.0),
-              child: NotificationIconButton(),
-            ),
-        ] : null,
+        actions: isLoggedIn
+            ? [
+                // 状态指示（固定占位，避免后方图标闪烁）
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _isRefreshing
+                      ? const SizedBox(
+                          key: ValueKey('refreshing'),
+                          width: 48,
+                          height: 48,
+                          child: Center(child: LoadingSpinner(size: 18)),
+                        )
+                      : isOffline
+                      ? SizedBox(
+                          key: const ValueKey('offline'),
+                          width: 48,
+                          height: 48,
+                          child: Icon(
+                            Symbols.cloud_off_rounded,
+                            color: theme.colorScheme.outline,
+                          ),
+                        )
+                      : const SizedBox(key: ValueKey('idle'), width: 0),
+                ),
+                IconButton(
+                  icon: const Icon(Symbols.manage_accounts_rounded),
+                  tooltip: context.l10n.profile_editProfile,
+                  onPressed: _openProfileEdit,
+                ),
+                // 侧栏模式下通知角标已在侧栏头像上显示
+                if (!Responsive.showNavigationRail(context))
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8.0),
+                    child: NotificationIconButton(),
+                  ),
+              ]
+            : null,
       ),
       // 「我的」页是**导航枢纽**:所有入口(话题/设置/资料…)一律开
       // 新页面,不做右栏平行视界(曾接过 panes 宿主,用户拍板退役:
@@ -514,10 +536,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           const SizedBox(height: 24),
 
           if (isLoadingInitial)
-            const Center(child: Padding(
-              padding: EdgeInsets.all(64),
-              child: LoadingSpinner(),
-            ))
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(64),
+                child: LoadingSpinner(),
+              ),
+            )
           else if (hasError)
             _buildError(theme, errorMessage)
           else if (isLoggedIn)
@@ -563,10 +587,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 const SizedBox(height: 24),
 
                 if (isLoadingInitial)
-                  const Center(child: Padding(
-                    padding: EdgeInsets.all(64),
-                    child: LoadingSpinner(),
-                  ))
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(64),
+                      child: LoadingSpinner(),
+                    ),
+                  )
                 else if (hasError)
                   _buildError(theme, errorMessage)
                 else if (isLoggedIn)
@@ -655,30 +681,33 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       },
     );
   }
-  
+
   Widget _buildError(ThemeData theme, String error) {
     return Card(
-      color: theme.colorScheme.errorContainer.withValues(alpha:0.3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             Icon(Symbols.error_rounded, color: theme.colorScheme.error),
             const SizedBox(width: 12),
-            Expanded(child: Text('${context.l10n.common_loadFailed}: $error', style: theme.textTheme.bodySmall)),
+            Expanded(
+              child: Text(
+                '${context.l10n.common_loadFailed}: $error',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
             TextButton(
               onPressed: () => ref.invalidate(currentUserProvider),
-              child: Text(context.l10n.common_retry)
+              child: Text(context.l10n.common_retry),
             ),
           ],
         ),
       ),
     );
   }
-  
+
   /// 统计卡片 + 引导触发
   Widget _buildStatsCardWithGuide() {
     return Column(
@@ -742,9 +771,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     ];
 
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -754,8 +781,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             final columns = constraints.maxWidth < 220
                 ? 1
                 : constraints.maxWidth < 300
-                    ? 2
-                    : 4;
+                ? 2
+                : 4;
             final itemWidth =
                 (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
@@ -782,10 +809,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  Widget _buildCompactActionItem(ThemeData theme, IconData icon, Color iconColor, String title, VoidCallback onTap) {
+  Widget _buildCompactActionItem(
+    ThemeData theme,
+    IconData icon,
+    Color iconColor,
+    String title,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: SizedBox(
@@ -795,9 +830,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: iconColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
               ),
@@ -819,38 +856,58 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  Widget _buildCommunityCard(ThemeData theme, {required bool canAccessInviteLinks}) {
+  Widget _buildCommunityCard(
+    ThemeData theme, {
+    required bool canAccessInviteLinks,
+  }) {
     return SegmentedCardGroup(
       children: [
         _buildOptionTile(
           icon: Symbols.mail_rounded,
           iconColor: Colors.indigo,
           title: context.l10n.profile_privateMessages,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivateMessagesPage())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PrivateMessagesPage()),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.forum_rounded,
           iconColor: Colors.teal,
           title: context.l10n.chat_title,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListPage())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatListPage()),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.pending_actions_rounded,
           iconColor: Colors.amber,
           title: context.l10n.review_myPending,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PendingPostsPage())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.military_tech_rounded,
           iconColor: Colors.amber[700]!,
           title: context.l10n.profile_myBadges,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBadgesPage()))
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MyBadgesPage()),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.verified_user_rounded,
           iconColor: Colors.green,
           title: context.l10n.profile_trustRequirements,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrustLevelRequirementsPage()))
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const TrustLevelRequirementsPage(),
+            ),
+          ),
         ),
         if (canAccessInviteLinks)
           _buildOptionTile(
@@ -875,7 +932,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.explore_rounded,
           iconColor: Colors.deepOrange,
           title: context.l10n.profile_metaverse,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MetaversePage()))
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MetaversePage()),
+          ),
         ),
       ],
     );
@@ -888,23 +948,34 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           icon: Symbols.language_rounded,
           iconColor: Colors.blue,
           title: context.l10n.profile_myBrowser,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBrowserPage()))
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MyBrowserPage()),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.smart_toy_rounded,
           iconColor: Colors.cyan,
           title: context.l10n.profile_aiModelService,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AiProvidersPage(
-            onOpenSession: (ctx, topicId, sessionId) {
-              Navigator.push(ctx, MaterialPageRoute(
-                builder: (_) => TopicDetailPage(
-                  topicId: topicId,
-                  autoOpenAiChat: true,
-                  initialSessionId: sessionId,
-                ),
-              ));
-            },
-          ))),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AiProvidersPage(
+                onOpenSession: (ctx, topicId, sessionId) {
+                  Navigator.push(
+                    ctx,
+                    MaterialPageRoute(
+                      builder: (_) => TopicDetailPage(
+                        topicId: topicId,
+                        autoOpenAiChat: true,
+                        initialSessionId: sessionId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
         ),
         _buildOptionTile(
           icon: Symbols.settings_rounded,
@@ -936,9 +1007,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             // iOS 风格的图标容器保留，因为这不违和且好看
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: finalIconColor.withValues(alpha:0.1),
-                borderRadius: BorderRadius.circular(10),
+              decoration: ShapeDecoration(
+                color: finalIconColor.withValues(alpha: 0.1),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: Icon(icon, color: finalIconColor, size: 20),
             ),
@@ -948,32 +1021,46 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 title,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 15,
-                  fontWeight: FontWeight.w500
-                )
-              )
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
             Icon(
               Symbols.chevron_right_rounded,
-              color: theme.colorScheme.outline.withValues(alpha:0.4),
-              size: 20
+              color: theme.colorScheme.outline.withValues(alpha: 0.4),
+              size: 20,
             ),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildAuthButton(ThemeData theme, bool isLoggedIn) {
     if (isLoggedIn) {
       return Center(
         child: TextButton.icon(
           onPressed: _logout,
-          icon: Icon(Symbols.logout_rounded, size: 18, color: theme.colorScheme.error.withValues(alpha:0.8)),
-          label: Text(context.l10n.profile_logoutCurrentAccount, style: TextStyle(color: theme.colorScheme.error.withValues(alpha:0.8), fontWeight: FontWeight.w500)),
+          icon: Icon(
+            Symbols.logout_rounded,
+            size: 18,
+            color: theme.colorScheme.error.withValues(alpha: 0.8),
+          ),
+          label: Text(
+            context.l10n.profile_logoutCurrentAccount,
+            style: TextStyle(
+              color: theme.colorScheme.error.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            backgroundColor: theme.colorScheme.errorContainer.withValues(alpha:0.1),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: theme.colorScheme.errorContainer.withValues(
+              alpha: 0.1,
+            ),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
           ),
         ),
       );
@@ -983,11 +1070,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         child: FilledButton.icon(
           onPressed: _goToLogin,
           icon: const Icon(Symbols.login_rounded, size: 20),
-          label: Text(context.l10n.profile_loginLinuxDo, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          label: Text(
+            context.l10n.profile_loginLinuxDo,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          ),
           style: FilledButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
         ),
       );
@@ -1000,9 +1092,15 @@ class _ProfileHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userId = ref.watch(currentUserProvider.select((value) => value.value?.id));
-    final username = ref.watch(currentUserProvider.select((value) => value.value?.username));
-    final isLoggedIn = ref.watch(currentUserProvider.select((value) => value.value != null));
+    final userId = ref.watch(
+      currentUserProvider.select((value) => value.value?.id),
+    );
+    final username = ref.watch(
+      currentUserProvider.select((value) => value.value?.username),
+    );
+    final isLoggedIn = ref.watch(
+      currentUserProvider.select((value) => value.value != null),
+    );
     final canNavigate = username != null && username.isNotEmpty;
 
     return GestureDetector(
@@ -1010,7 +1108,9 @@ class _ProfileHeader extends ConsumerWidget {
           ? () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
+                MaterialPageRoute(
+                  builder: (_) => UserProfilePage(username: username),
+                ),
               );
             }
           : null,
@@ -1029,8 +1129,9 @@ class _ProfileHeader extends ConsumerWidget {
                   onTap: () => showQrLoginSheet(context, username: username),
                   child: CircleAvatar(
                     radius: 16,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
                     child: Icon(
                       Symbols.qr_code_rounded,
                       size: 16,
@@ -1042,7 +1143,9 @@ class _ProfileHeader extends ConsumerWidget {
               const SizedBox(width: 8),
               CircleAvatar(
                 radius: 16,
-                backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                backgroundColor: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest,
                 child: Icon(
                   Symbols.arrow_forward_ios_rounded,
                   size: 14,
@@ -1061,20 +1164,25 @@ class _ProfileAvatarSection extends ConsumerWidget {
   final int? userId;
   final bool isLoggedIn;
 
-  const _ProfileAvatarSection({
-    required this.userId,
-    required this.isLoggedIn,
-  });
+  const _ProfileAvatarSection({required this.userId, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final avatarUrl = ref.watch(
       currentUserProvider.select((value) => value.value?.getAvatarUrl() ?? ''),
     );
-    final flairUrl = ref.watch(currentUserProvider.select((value) => value.value?.flairUrl));
-    final flairName = ref.watch(currentUserProvider.select((value) => value.value?.flairName));
-    final flairBgColor = ref.watch(currentUserProvider.select((value) => value.value?.flairBgColor));
-    final flairColor = ref.watch(currentUserProvider.select((value) => value.value?.flairColor));
+    final flairUrl = ref.watch(
+      currentUserProvider.select((value) => value.value?.flairUrl),
+    );
+    final flairName = ref.watch(
+      currentUserProvider.select((value) => value.value?.flairName),
+    );
+    final flairBgColor = ref.watch(
+      currentUserProvider.select((value) => value.value?.flairBgColor),
+    );
+    final flairColor = ref.watch(
+      currentUserProvider.select((value) => value.value?.flairColor),
+    );
 
     return _ProfileAvatar(
       key: ValueKey('profile-avatar-$userId'),
@@ -1095,17 +1203,31 @@ class _ProfileInfoSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final name = ref.watch(currentUserProvider.select((value) => value.value?.name));
-    final username = ref.watch(currentUserProvider.select((value) => value.value?.username));
-    final trustLevel = ref.watch(currentUserProvider.select((value) => value.value?.trustLevel));
-    final status = ref.watch(currentUserProvider.select((value) => value.value?.status));
-    final isLoggedIn = ref.watch(currentUserProvider.select((value) => value.value != null));
+    final name = ref.watch(
+      currentUserProvider.select((value) => value.value?.name),
+    );
+    final username = ref.watch(
+      currentUserProvider.select((value) => value.value?.username),
+    );
+    final trustLevel = ref.watch(
+      currentUserProvider.select((value) => value.value?.trustLevel),
+    );
+    final status = ref.watch(
+      currentUserProvider.select((value) => value.value?.status),
+    );
+    final isLoggedIn = ref.watch(
+      currentUserProvider.select((value) => value.value != null),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          name ?? username ?? (isLoggedIn ? context.l10n.common_loading : context.l10n.profile_notLoggedIn),
+          name ??
+              username ??
+              (isLoggedIn
+                  ? context.l10n.common_loading
+                  : context.l10n.profile_notLoggedIn),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w600,
             fontSize: 22,
@@ -1129,9 +1251,11 @@ class _ProfileInfoSection extends ConsumerWidget {
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(6),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
                 child: Text(
                   _getTrustLevelLabel(trustLevel ?? 0),
@@ -1183,7 +1307,8 @@ class _ProfileAvatar extends StatefulWidget {
   State<_ProfileAvatar> createState() => _ProfileAvatarState();
 }
 
-class _ProfileAvatarState extends State<_ProfileAvatar> with AutomaticKeepAliveClientMixin {
+class _ProfileAvatarState extends State<_ProfileAvatar>
+    with AutomaticKeepAliveClientMixin {
   Widget? _cachedAvatarWithFlair;
   String _cachedSignature = '';
 
@@ -1262,7 +1387,8 @@ Widget _buildStatusEmoji(UserStatus status) {
   if (emoji == null || emoji.isEmpty) return const SizedBox.shrink();
 
   final isEmojiName =
-      emoji.contains(RegExp(r'[a-zA-Z0-9_]')) && !emoji.contains(RegExp(r'[^\x00-\x7F]'));
+      emoji.contains(RegExp(r'[a-zA-Z0-9_]')) &&
+      !emoji.contains(RegExp(r'[^\x00-\x7F]'));
 
   if (isEmojiName) {
     final cleanName = emoji.replaceAll(':', '');
@@ -1277,33 +1403,36 @@ Widget _buildStatusEmoji(UserStatus status) {
     );
   }
 
-  return Text(
-    emoji,
-    style: const TextStyle(fontSize: 12, height: 1.2),
-  );
+  return Text(emoji, style: const TextStyle(fontSize: 12, height: 1.2));
 }
 
 Widget _buildStatusChip(UserStatus status, ThemeData theme) {
   final emoji = status.emoji;
   final description = status.description;
 
-  if ((emoji == null || emoji.isEmpty) && (description == null || description.isEmpty)) {
+  if ((emoji == null || emoji.isEmpty) &&
+      (description == null || description.isEmpty)) {
     return const SizedBox.shrink();
   }
 
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha:0.5),
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha:0.5)),
+    decoration: ShapeDecoration(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (emoji != null && emoji.isNotEmpty) ...[
           _buildStatusEmoji(status),
-          if (description != null && description.isNotEmpty) const SizedBox(width: 4),
+          if (description != null && description.isNotEmpty)
+            const SizedBox(width: 4),
         ],
         if (description != null && description.isNotEmpty)
           Flexible(

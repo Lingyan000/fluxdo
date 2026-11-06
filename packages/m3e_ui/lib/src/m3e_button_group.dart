@@ -11,7 +11,11 @@ class M3eButtonGroupItem<T> {
   final Widget label;
   final Widget? icon;
 
-  const M3eButtonGroupItem({required this.value, required this.label, this.icon});
+  const M3eButtonGroupItem({
+    required this.value,
+    required this.label,
+    this.icon,
+  });
 }
 
 /// Material 3 Expressive 联排按钮组(connected button group)。
@@ -135,8 +139,7 @@ class _M3eButtonGroupState<T> extends State<M3eButtonGroup<T>>
     final item = widget.items[index];
     final selected = item.value == widget.selected;
     final isPressed = index == _pressedIndex;
-    final isNeighbor =
-        _pressedIndex >= 0 && (index - _pressedIndex).abs() == 1;
+    final isNeighbor = _pressedIndex >= 0 && (index - _pressedIndex).abs() == 1;
 
     // 按压项展宽 15%,相邻项挤压同量(Compose animateWidth 语义);
     // 用 flex 权重近似:基准 1000,变化量 150×press。
@@ -149,7 +152,7 @@ class _M3eButtonGroupState<T> extends State<M3eButtonGroup<T>>
     // 首尾外侧全圆、内侧小圆角。
     final outer = const Radius.circular(999);
     final inner = Radius.circular(selected ? 999 : _kInnerRadius);
-    final shape = RoundedRectangleBorder(
+    final shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.horizontal(
         left: isFirst ? outer : inner,
         right: isLast ? outer : inner,
@@ -160,8 +163,9 @@ class _M3eButtonGroupState<T> extends State<M3eButtonGroup<T>>
       // flex 由弹簧逐帧驱动(AnimatedBuilder 重建),布局插值即动画本体。
       flex: flex.clamp(700, 1300),
       child: Material(
-        color:
-            selected ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+        color: selected
+            ? scheme.secondaryContainer
+            : scheme.surfaceContainerHigh,
         shape: shape,
         clipBehavior: Clip.antiAlias,
         child: InkWell(

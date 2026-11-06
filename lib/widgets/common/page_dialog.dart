@@ -129,7 +129,9 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
                   color: theme.colorScheme.surface,
                   clipBehavior: Clip.antiAlias,
                   elevation: 6,
-                  borderRadius: BorderRadius.circular(28),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(28),
+                  ),
                   child: _buildPanelBody(theme),
                 ),
               ),

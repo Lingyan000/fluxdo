@@ -7,6 +7,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
@@ -16,8 +17,10 @@ import '../utils/image_save_utils.dart';
 import '../utils/screenshot_utils.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../services/toast_service.dart';
@@ -26,7 +29,9 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../l10n/s.dart';
 
 class ImageViewerPage extends ConsumerStatefulWidget {
@@ -840,9 +845,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (widget.imageBytes == null) return;
 
     if (PlatformUtils.isDesktop && position != null) {
-      final overlayRenderObject = Overlay.of(
-        context,
-      ).context.findRenderObject();
+      final overlayRenderObject = Overlay.of(context).context
+          .findRenderObject();
       if (overlayRenderObject is RenderBox && overlayRenderObject.hasSize) {
         final relativeRect = RelativeRect.fromRect(
           position & Size.zero,
@@ -1335,9 +1339,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                   horizontal: 12,
                                   vertical: 6,
                                 ),
-                                decoration: BoxDecoration(
+                                decoration: ShapeDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(20),
+                                  shape: RoundedSuperellipseBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
                                 ),
                                 child: Text(
                                   "${currentIndex + 1} / ${images.length}",

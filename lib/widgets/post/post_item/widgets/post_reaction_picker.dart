@@ -5,6 +5,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+
 import '../../../../models/topic.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/emoji_handler.dart';
@@ -52,8 +53,7 @@ const Duration _kDesktopHoverLeaveDelay = Duration(milliseconds: 120);
 ///
 /// 低于框架默认的 kLongPressTimeout(500ms)保持跟手,但也不宜太短:
 /// 阈值内位移未超过 touch slop 的慢速滚动起手会被判成长按。
-const Duration kReactionPickerLongPressDuration =
-    Duration(milliseconds: 350);
+const Duration kReactionPickerLongPressDuration = Duration(milliseconds: 350);
 
 // ============================== 控制器 ==============================
 
@@ -107,25 +107,25 @@ class ReactionPickerController {
 
   /// 展开/收回主进度:面板形变与表情错峰弹出都由它驱动
   AnimationController get enter => _enter ??= AnimationController(
-        vsync: vsync,
-        duration: _kEnterDuration,
-        reverseDuration: _kExitDuration,
-      );
+    vsync: vsync,
+    duration: _kEnterDuration,
+    reverseDuration: _kExitDuration,
+  );
 
   CurvedAnimation? _morph;
 
   /// 面板形变进度:展开 easeOutCubic 干脆落定,收回 easeInCubic 被吸回去
   Animation<double> get morph => _morph ??= CurvedAnimation(
-        parent: enter,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
+    parent: enter,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
 
   AnimationController? _flightAnim;
   AnimationController get flightAnim => _flightAnim ??= AnimationController(
-        vsync: vsync,
-        duration: _kFlightDuration,
-      );
+    vsync: vsync,
+    duration: _kFlightDuration,
+  );
 
   OverlayEntry? _entry;
   Timer? _desktopLeaveTimer;
@@ -403,12 +403,19 @@ class ReactionPickerController {
     double dismiss = 0;
     if (_mode == ReactionPickerMode.touch && newIndex == null) {
       final r = _pickerRect.expandToInclude(_buttonRect);
-      final dx = math.max(math.max(r.left - globalPos.dx, globalPos.dx - r.right), 0.0);
-      final dy = math.max(math.max(r.top - globalPos.dy, globalPos.dy - r.bottom), 0.0);
+      final dx = math.max(
+        math.max(r.left - globalPos.dx, globalPos.dx - r.right),
+        0.0,
+      );
+      final dy = math.max(
+        math.max(r.top - globalPos.dy, globalPos.dy - r.bottom),
+        0.0,
+      );
       final distance = math.sqrt(dx * dx + dy * dy);
-      dismiss = ((distance - _kDismissStartDistance) /
-              (_kDismissFullDistance - _kDismissStartDistance))
-          .clamp(0.0, 1.0);
+      dismiss =
+          ((distance - _kDismissStartDistance) /
+                  (_kDismissFullDistance - _kDismissStartDistance))
+              .clamp(0.0, 1.0);
     }
 
     var changed = false;
@@ -532,7 +539,8 @@ class ReactionPickerController {
   /// 鼠标位置变化：判断是否在安全区内，并相应地启动/取消延迟关闭
   void onDesktopPointerHover(Offset globalPos) {
     if (!isOpen || _mode != ReactionPickerMode.desktop) return;
-    final inSafe = _pickerRect.inflate(8).contains(globalPos) ||
+    final inSafe =
+        _pickerRect.inflate(8).contains(globalPos) ||
         _buttonRect.inflate(12).contains(globalPos);
     if (inSafe) {
       onDesktopHoverEnterSafeZone();
@@ -594,8 +602,10 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
 
   ReactionPickerController get ctrl => widget.controller;
 
-  late final Listenable _animations =
-      Listenable.merge([ctrl.enter, ctrl.flightAnim]);
+  late final Listenable _animations = Listenable.merge([
+    ctrl.enter,
+    ctrl.flightAnim,
+  ]);
 
   bool get _interactive =>
       !ctrl.isClosing &&
@@ -658,7 +668,8 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
       // 飞行层接过原表情，避免槽位与飞回动画同时画出两份。
       if (ctrl._flight?.id == ctrl.reactions[i]) continue;
       final isHighlighted = highlight == i;
-      final isNeighbor = highlight != null &&
+      final isNeighbor =
+          highlight != null &&
           !isHighlighted &&
           (i - highlight).abs() == 1 &&
           i ~/ ctrl.columns == highlight ~/ ctrl.columns;
@@ -669,8 +680,11 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
       } else {
         final rank = ctrl.popRank[i];
         final start = 0.08 + 0.22 * (count > 1 ? rank / (count - 1) : 0);
-        pop = Interval(start, start + 0.7, curve: Curves.easeOutBack)
-            .transform(t);
+        pop = Interval(
+          start,
+          start + 0.7,
+          curve: Curves.easeOutBack,
+        ).transform(t);
       }
       if (pop <= 0) continue;
       // 槽位跟着面板形变走:从按钮中心衍生到最终位置,收回时原路吸回
@@ -797,9 +811,11 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
               duration: _kHighlightDuration,
               curve: Curves.easeOutBack,
               child: DecoratedBox(
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.inverseSurface,
-                  borderRadius: BorderRadius.circular(12),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -858,10 +874,9 @@ class _PanelSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = theme.brightness == Brightness.dark;
     return DecoratedBox(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: Colors.black.withValues(alpha: dark ? 0.28 : 0.09),
             blurRadius: 24,
@@ -873,11 +888,14 @@ class _PanelSurface extends StatelessWidget {
             offset: const Offset(0, 2),
           ),
         ],
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(
-            alpha: dark ? 0.4 : 0.2,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(
+              alpha: dark ? 0.4 : 0.2,
+            ),
+            width: 0.5,
           ),
-          width: 0.5,
         ),
       ),
       child: const SizedBox.expand(),
@@ -969,22 +987,22 @@ class _ReactionItem extends StatelessWidget {
     final highlightScale = isHighlighted
         ? _kHighlightScale
         : isNeighbor
-            ? _kNeighborScale
-            : 1.0;
+        ? _kNeighborScale
+        : 1.0;
 
     final background = isCurrent
         ? theme.colorScheme.primaryContainer
         : isHighlighted
-            ? primary.withValues(alpha: 0.1)
-            : primary.withValues(alpha: 0);
+        ? primary.withValues(alpha: 0.1)
+        : primary.withValues(alpha: 0);
 
     Widget content = AnimatedContainer(
       duration: _kHighlightDuration,
       curve: Curves.easeOutCubic,
       margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: background,
-        borderRadius: borderRadius,
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
       ),
       child: Center(
         child: _EmojiImage(reactionId: reactionId, size: _kIconSize),
@@ -997,7 +1015,7 @@ class _ReactionItem extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          borderRadius: borderRadius,
+          customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
           splashFactory: NoSplash.splashFactory,
           highlightColor: primary.withValues(alpha: 0.08),
           child: content,

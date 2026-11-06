@@ -209,7 +209,9 @@ class _BookmarkNameAutocompleteFieldState
           child: Material(
             elevation: 6,
             color: theme.colorScheme.overlaySurface,
-            borderRadius: BorderRadius.circular(12),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420, maxHeight: 240),
               child: ListView.separated(

@@ -156,10 +156,12 @@ class _MoreTopicsTab extends StatelessWidget {
       color: selected
           ? theme.colorScheme.secondaryContainer
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: selected ? null : onTap,
-        borderRadius: BorderRadius.circular(16),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(
@@ -328,29 +330,35 @@ class _MoreTopicTile extends StatelessWidget {
 
     final rightSpans = <InlineSpan>[];
     if (density.replyCount > 0) {
-      rightSpans.add(iconGlyphSpan(
-        context,
-        Symbols.chat_bubble_rounded,
-        size: 12,
-        color: metaColor,
-        gap: 3,
-        textStyle: rightStyle,
-      ));
-      rightSpans.add(TextSpan(
-        text: NumberUtils.formatCount(density.replyCount),
-        style: rightStyle,
-      ));
+      rightSpans.add(
+        iconGlyphSpan(
+          context,
+          Symbols.chat_bubble_rounded,
+          size: 12,
+          color: metaColor,
+          gap: 3,
+          textStyle: rightStyle,
+        ),
+      );
+      rightSpans.add(
+        TextSpan(
+          text: NumberUtils.formatCount(density.replyCount),
+          style: rightStyle,
+        ),
+      );
     }
     if (density.showTime) {
       if (rightSpans.isNotEmpty) {
         rightSpans.add(TextSpan(text: ' · ', style: rightStyle));
       }
-      rightSpans.add(TextSpan(
-        text: TimeUtils.formatRelativeTime(
-          topic.lastPostedAt ?? topic.createdAt,
+      rightSpans.add(
+        TextSpan(
+          text: TimeUtils.formatRelativeTime(
+            topic.lastPostedAt ?? topic.createdAt,
+          ),
+          style: rightStyle,
         ),
-        style: rightStyle,
-      ));
+      );
     }
 
     return Row(
@@ -397,7 +405,9 @@ class _BrowseMoreLine extends StatelessWidget {
               builder: (_) => CategoryTopicsPage(category: category),
             ),
           ),
-          borderRadius: BorderRadius.circular(6),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(6),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Text(

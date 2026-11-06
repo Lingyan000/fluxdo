@@ -139,9 +139,7 @@ class _PerfPanelState extends State<_PerfPanel> {
   }
 
   Future<void> _copyExport() async {
-    await Clipboard.setData(
-      ClipboardData(text: FrameJankMonitor.exportText()),
-    );
+    await Clipboard.setData(ClipboardData(text: FrameJankMonitor.exportText()));
   }
 
   @override
@@ -157,7 +155,9 @@ class _PerfPanelState extends State<_PerfPanel> {
         child: Material(
           key: _panelKey,
           color: Colors.black.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(10),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 4,
           child: ValueListenableBuilder<int>(
             valueListenable: FrameJankMonitor.revision,
@@ -176,7 +176,9 @@ class _PerfPanelState extends State<_PerfPanel> {
         setState(() => _expanded = true);
         _reclampAfterLayout();
       },
-      borderRadius: BorderRadius.circular(10),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Row(
@@ -261,10 +263,7 @@ class _PerfPanelState extends State<_PerfPanel> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _btn(
-                FrameJankMonitor.isRunning ? '暂停' : '开始',
-                _toggleMonitor,
-              ),
+              _btn(FrameJankMonitor.isRunning ? '暂停' : '开始', _toggleMonitor),
               _btn('清零', FrameJankMonitor.clear),
               if (FrameJankMonitor.cpuSampleSupported)
                 _btn(_sampling ? '采样中…' : 'CPU', _sampleCpu),
@@ -282,12 +281,16 @@ class _PerfPanelState extends State<_PerfPanel> {
       padding: const EdgeInsets.only(right: 6),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(6),
+        ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: Colors.white.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
           ),
           child: Text(
             label,

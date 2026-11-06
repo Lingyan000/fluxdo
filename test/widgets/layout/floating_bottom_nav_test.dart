@@ -65,9 +65,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 胶囊本体（ClipRRect 是最外层裁切，等于胶囊可见范围）
+  /// 胶囊本体（ClipRSuperellipse 是最外层裁切，等于胶囊可见范围）
   RenderBox capsuleOf(WidgetTester tester) =>
-      tester.renderObject<RenderBox>(find.byType(ClipRRect).first);
+      tester.renderObject<RenderBox>(find.byType(ClipRSuperellipse).first);
 
   /// 只重建、不 settle：用于需要观察动画中间帧的用例。
   Future<void> rebuildWithIndex(
@@ -191,7 +191,7 @@ void main() {
     await pumpBar(tester, labelless: false, count: count);
 
     final capsule = capsuleOf(tester);
-    // pill 是 StadiumBorder 的 DecoratedBox；条目的墨水层也用 StadiumBorder，
+    // pill 是 RoundedSuperellipseBorder 的 DecoratedBox；条目的墨水层也用 RoundedSuperellipseBorder，
     // 这里按尺寸筛出 pill（宽 = 槽宽、高 = item 高）
     final itemHeight = capsule.size.height - 4 * 2;
     final slot = (capsule.size.width - 4 * 2) / count;
@@ -199,7 +199,10 @@ void main() {
     final pill = find.byWidgetPredicate((w) {
       if (w is! DecoratedBox) return false;
       final d = w.decoration;
-      return d is ShapeDecoration && d.shape is StadiumBorder;
+      return d is ShapeDecoration &&
+          d.shape is RoundedSuperellipseBorder &&
+          (d.shape as RoundedSuperellipseBorder).borderRadius ==
+              const BorderRadius.all(Radius.circular(9999));
     });
     expect(pill, findsWidgets);
 
@@ -216,7 +219,10 @@ void main() {
     final pill = find.byWidgetPredicate((w) {
       if (w is! DecoratedBox) return false;
       final d = w.decoration;
-      return d is ShapeDecoration && d.shape is StadiumBorder;
+      return d is ShapeDecoration &&
+          d.shape is RoundedSuperellipseBorder &&
+          (d.shape as RoundedSuperellipseBorder).borderRadius ==
+              const BorderRadius.all(Radius.circular(9999));
     });
 
     // 入口数少到不触发宽度压缩（5 项在 390 宽下会被 maxWidth 压窄）
@@ -243,7 +249,10 @@ void main() {
     final pill = find.byWidgetPredicate((w) {
       if (w is! DecoratedBox) return false;
       final d = w.decoration;
-      return d is ShapeDecoration && d.shape is StadiumBorder;
+      return d is ShapeDecoration &&
+          d.shape is RoundedSuperellipseBorder &&
+          (d.shape as RoundedSuperellipseBorder).borderRadius ==
+              const BorderRadius.all(Radius.circular(9999));
     });
     final startX = tester
         .renderObject<RenderBox>(pill.first)
@@ -265,7 +274,10 @@ void main() {
     final pill = find.byWidgetPredicate((w) {
       if (w is! DecoratedBox) return false;
       final d = w.decoration;
-      return d is ShapeDecoration && d.shape is StadiumBorder;
+      return d is ShapeDecoration &&
+          d.shape is RoundedSuperellipseBorder &&
+          (d.shape as RoundedSuperellipseBorder).borderRadius ==
+              const BorderRadius.all(Radius.circular(9999));
     });
     double paintedWidth() {
       final box = tester.renderObject<RenderBox>(pill.first);

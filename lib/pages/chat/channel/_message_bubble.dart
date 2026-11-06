@@ -373,7 +373,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
           alignment: Alignment.centerLeft,
           child: InkWell(
             onTap: widget.onExpandDeleted,
-            borderRadius: BorderRadius.circular(6),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               child: Text(
@@ -527,7 +529,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
             padding: const EdgeInsets.only(bottom: 3),
             child: InkWell(
               onTap: widget.onReplyRefTap,
-              borderRadius: BorderRadius.circular(8),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -826,7 +830,7 @@ class _HoverActionBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLowest,
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: RoundedRectangleBorder(
+      shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
@@ -846,7 +850,9 @@ class _HoverActionBar extends StatelessWidget {
                   waitDuration: const Duration(milliseconds: 400),
                   child: InkWell(
                     onTap: () => onQuickEmoji(emoji),
-                    borderRadius: BorderRadius.circular(8),
+                    customBorder: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     hoverColor: theme.colorScheme.onSurface.withValues(
                       alpha: 0.08,
                     ),
@@ -934,10 +940,11 @@ class _HoverBarButton extends StatelessWidget {
       waitDuration: const Duration(milliseconds: 400),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        hoverColor: Theme.of(
-          context,
-        ).colorScheme.onSurface.withValues(alpha: 0.08),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        hoverColor: Theme.of(context).colorScheme.onSurface
+            .withValues(alpha: 0.08),
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Icon(
@@ -950,4 +957,3 @@ class _HoverBarButton extends StatelessWidget {
     );
   }
 }
-

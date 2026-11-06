@@ -46,7 +46,7 @@ void main() {
                         enabled: enabled,
                         child: const SizedBox.expand(),
                       )
-                    : ClipRRect(
+                    : ClipRSuperellipse(
                         borderRadius: BorderRadius.circular(24),
                         child: GlassSurface(
                           recipe: GlassRecipe.navigation,
@@ -110,7 +110,7 @@ void main() {
         // 确认滤镜仍被胶囊的局部裁切包住，而不是作用于整页。
         final clip = find.ancestor(
           of: find.byType(BackdropFilter),
-          matching: find.byType(ClipRRect),
+          matching: find.byType(ClipRSuperellipse),
         );
         expect(clip, findsOneWidget);
         expect(tester.getRect(clip), position & const Size(200, 48));

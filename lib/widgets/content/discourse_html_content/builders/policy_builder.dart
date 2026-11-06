@@ -54,10 +54,12 @@ Widget buildPolicy({
     initialPost: post,
     topicId: topicId,
     bodyHtml: bodyHtml,
-    acceptLabel:
-        (acceptLabel == null || acceptLabel.isEmpty) ? '接受' : acceptLabel,
-    revokeLabel:
-        (revokeLabel == null || revokeLabel.isEmpty) ? '撤销' : revokeLabel,
+    acceptLabel: (acceptLabel == null || acceptLabel.isEmpty)
+        ? '接受'
+        : acceptLabel,
+    revokeLabel: (revokeLabel == null || revokeLabel.isEmpty)
+        ? '撤销'
+        : revokeLabel,
     htmlBuilder: htmlBuilder,
   );
 }
@@ -141,7 +143,8 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     _revoked = post.policyRevoked;
     _canAccept = post.policyCanAccept;
     _canRevoke = post.policyCanRevoke;
-    _hasStats = post.policyAcceptedByCount != null ||
+    _hasStats =
+        post.policyAcceptedByCount != null ||
         post.policyNotAcceptedByCount != null;
     _acceptedCount = post.policyAcceptedByCount ?? 0;
     _notAcceptedCount = post.policyNotAcceptedByCount ?? 0;
@@ -152,8 +155,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
   bool get _hasAnyUsers =>
       _hasStats && (_acceptedCount > 0 || _notAcceptedCount > 0);
 
-  bool get _hasFooter =>
-      _canAccept || _canRevoke || _hasAnyUsers;
+  bool get _hasFooter => _canAccept || _canRevoke || _hasAnyUsers;
 
   /// accept/revoke 成功后回写 provider(post-voting 控件同款):copyWith 产出
   /// 新 post → CurrentPostScope 广播 → 滚出滚回/嵌套视图等所有同帖视图同步。
@@ -165,15 +167,17 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     final params = TopicDetailNotifier.activeParamsFor(topicId);
     if (params == null) return;
     try {
-      ref.read(topicDetailProvider(params).notifier).updatePostPolicy(
-        _postId,
-        accepted: _accepted,
-        revoked: _revoked,
-        canAccept: _canAccept,
-        canRevoke: _canRevoke,
-        acceptedByCount: _hasStats ? _acceptedCount : null,
-        notAcceptedByCount: _hasStats ? _notAcceptedCount : null,
-      );
+      ref
+          .read(topicDetailProvider(params).notifier)
+          .updatePostPolicy(
+            _postId,
+            accepted: _accepted,
+            revoked: _revoked,
+            canAccept: _canAccept,
+            canRevoke: _canRevoke,
+            acceptedByCount: _hasStats ? _acceptedCount : null,
+            notAcceptedByCount: _hasStats ? _notAcceptedCount : null,
+          );
     } catch (e, s) {
       AppErrorHandler.handleUnexpected(e, s);
     }
@@ -272,19 +276,18 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          ),
         ),
-        borderRadius: BorderRadius.circular(6),
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildBody(theme),
-          if (_hasFooter) _buildFooter(theme),
-        ],
+        children: [_buildBody(theme), if (_hasFooter) _buildFooter(theme)],
       ),
     );
   }
@@ -336,8 +339,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
               ?actions,
               if (actions != null && userLists != null) const Spacer(),
               if (actions == null && userLists != null) const Spacer(),
-              if (userLists != null)
-                Flexible(child: userLists),
+              if (userLists != null) Flexible(child: userLists),
             ],
           );
         },
@@ -376,8 +378,9 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
                 label: Text(widget.revokeLabel),
                 style: FilledButton.styleFrom(
                   foregroundColor: theme.colorScheme.error,
-                  backgroundColor:
-                      theme.colorScheme.errorContainer.withValues(alpha: 0.6),
+                  backgroundColor: theme.colorScheme.errorContainer.withValues(
+                    alpha: 0.6,
+                  ),
                 ),
               )
             : OutlinedButton.icon(
@@ -389,11 +392,13 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     }
     if (_isLoading) {
       children.add(const SizedBox(width: 12));
-      children.add(const SizedBox(
-        width: 14,
-        height: 14,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ));
+      children.add(
+        const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
     }
 
     return Wrap(
@@ -464,7 +469,9 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Row(
@@ -538,13 +545,17 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     final theme = Theme.of(context);
     return InkWell(
       onTap: isLoading ? null : onTap,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Container(
         constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(12),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         alignment: Alignment.center,
         child: isLoading
@@ -553,10 +564,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
                 height: 12,
                 child: CircularProgressIndicator(strokeWidth: 1.5),
               )
-            : Text(
-                '+$remaining',
-                style: theme.textTheme.labelSmall,
-              ),
+            : Text('+$remaining', style: theme.textTheme.labelSmall),
       ),
     );
   }

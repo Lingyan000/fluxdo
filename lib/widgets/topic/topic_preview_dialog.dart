@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../models/topic.dart';
 import '../../services/topic_preview_preloader.dart';
 import '../../models/category.dart';
@@ -207,7 +208,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               ? Material(type: MaterialType.transparency, child: sheetBody)
               : Material(
                   color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   clipBehavior: Clip.antiAlias,
                   elevation: 8,
                   child: sheetBody,
@@ -633,7 +636,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   Widget _buildCustomActions(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(14),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       elevation: 8,
       child: Column(
@@ -691,12 +694,14 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: ColorUtils.readableOn(
           _parseColor(category.color),
           theme.brightness,
         ),
-        borderRadius: BorderRadius.circular(2),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(2),
+        ),
       ),
     );
   }

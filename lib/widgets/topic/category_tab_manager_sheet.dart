@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
@@ -10,7 +11,9 @@ import '../../utils/font_awesome_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/url_helper.dart';
 import '../../pages/category_topics_page.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../../../../../l10n/s.dart';
 
 // ============================================================
@@ -98,7 +101,7 @@ Future<void> _showSubcategoryMenu({
       Rect.fromCenter(center: tapPosition, width: 0, height: 0),
       Offset.zero & overlay.size,
     ),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
     elevation: 6,
     items: [
       // "全部"
@@ -341,10 +344,12 @@ class _BrowseContent extends ConsumerWidget {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: BorderSide(color: color.withValues(alpha: 0.2)),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -555,7 +560,9 @@ class _EditContent extends ConsumerWidget {
             proxyDecorator: (child, index, animation) {
               return Material(
                 elevation: 2,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: child,
               );
             },
@@ -658,7 +665,7 @@ class _EditContent extends ConsumerWidget {
         Rect.fromCenter(center: tapPosition, width: 0, height: 0),
         Offset.zero & overlay.size,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 6,
       items: allItems.map((cat) {
         final color = _parseColor(cat.color);
@@ -719,9 +726,11 @@ class _PinnedCategoryTile extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

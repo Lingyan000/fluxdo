@@ -1,4 +1,5 @@
 import 'package:fluxdo/utils/avatar_url.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -490,9 +491,11 @@ class _DanmakuItemState extends State<_DanmakuItem> {
             behavior: HitTestBehavior.opaque,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: Colors.black.withValues(alpha: 0.42),
-                borderRadius: BorderRadius.circular(999),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -586,7 +589,10 @@ class _AvatarStrip extends StatelessWidget {
                 child: SmartAvatar(
                   imageUrl: visible[i].avatarTemplate.isNotEmpty
                       ? UrlHelper.resolveUrlWithCdn(
-                          AvatarUrl.resolve(visible[i].avatarTemplate, size: 48),
+                          AvatarUrl.resolve(
+                            visible[i].avatarTemplate,
+                            size: 48,
+                          ),
                         )
                       : null,
                   radius: size / 2,
@@ -650,11 +656,11 @@ class _DanmakuIconPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     // 弹幕屏外框
-    final rrect = RRect.fromRectAndRadius(
+    final rrect = RSuperellipse.fromRectAndRadius(
       const Rect.fromLTWH(1.2, 3.6, iconSize - 2.4, iconSize - 7.2),
       const Radius.circular(3.2),
     );
-    canvas.drawRRect(rrect, stroke);
+    canvas.drawRSuperellipse(rrect, stroke);
 
     // 两条弹幕线
     canvas.drawLine(const Offset(3.6, 7.6), const Offset(11.2, 7.6), stroke);

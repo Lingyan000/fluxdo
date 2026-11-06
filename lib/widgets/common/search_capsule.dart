@@ -46,11 +46,15 @@ class SearchCapsule extends StatelessWidget {
         color: colorScheme.surfaceContainerHighest.withValues(
           alpha: 0.5 * backgroundOpacity,
         ),
-        borderRadius: BorderRadius.circular(20),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Row(
             children: [
               SizedBox(width: iconLeftPadding),
@@ -181,7 +185,9 @@ class _SearchCapsuleFlight extends StatelessWidget {
             color: colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.5 * bgOpacity,
             ),
-            borderRadius: BorderRadius.circular(20),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
               children: [

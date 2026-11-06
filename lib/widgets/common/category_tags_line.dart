@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../models/category.dart';
 import '../../models/topic.dart';
 import '../../utils/color_utils.dart';
@@ -79,9 +80,11 @@ class CategoryTagsLine extends StatelessWidget {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: chipColor,
-            borderRadius: BorderRadius.circular(2),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
         ),
         const SizedBox(width: 4),

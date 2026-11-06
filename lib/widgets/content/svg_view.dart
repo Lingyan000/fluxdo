@@ -42,18 +42,15 @@ class _SvgEntry {
   final int cost;
 
   const _SvgEntry.animated(String source)
-      : animatedSource = source,
-        si = null,
-        cost = source.length * 2;
+    : animatedSource = source,
+      si = null,
+      cost = source.length * 2;
 
   _SvgEntry.static_(ScalableImage this.si)
-      : animatedSource = null,
-        cost = 64 << 10; // 粗估,静态图通常很小
+    : animatedSource = null,
+      cost = 64 << 10; // 粗估,静态图通常很小
 
-  const _SvgEntry.error()
-      : animatedSource = null,
-        si = null,
-        cost = 0;
+  const _SvgEntry.error() : animatedSource = null, si = null, cost = 0;
 
   bool get isError => animatedSource == null && si == null;
 }
@@ -106,7 +103,6 @@ class DiscourseSvgView extends StatefulWidget {
 }
 
 class _DiscourseSvgViewState extends State<DiscourseSvgView> {
-
   /// 大文件门槛:utf8 解码+动画嗅探全量扫描挪 isolate。
   static const int _bigFileBytes = 256 << 10;
 
@@ -163,8 +159,10 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
     final url = widget.url;
     final cacheKey = _cacheKey;
     try {
-      final bytes =
-          await BlobImageCache.fetch(BlobImageCache.contentBucket, url);
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.contentBucket,
+        url,
+      );
       if (!mounted || _cacheKey != cacheKey) return;
 
       // 大文件的解码+嗅探是全量字符串扫描,挪 isolate
@@ -183,8 +181,8 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
         // 动画 SVG 路由 full_svg_flutter(防注入剥离在 AnimatedSvgView 内做)
         final geo = AnimatedSvgView.rootGeometryOf(content);
         final memoW = geo.naturalW;
-        final memoH = geo.naturalH ??
-            (memoW != null ? memoW / geo.aspect : null);
+        final memoH =
+            geo.naturalH ?? (memoW != null ? memoW / geo.aspect : null);
         if (memoW != null && memoH != null) {
           MediaGeometryMemo.remember(url, memoW, memoH);
         }
@@ -272,9 +270,7 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
     return SizedBox(
       width: widget.width,
       height: widget.height ?? 100,
-      child: const Center(
-        child: LoadingSpinner(size: 20),
-      ),
+      child: const Center(child: LoadingSpinner(size: 20)),
     );
   }
 }
@@ -312,7 +308,6 @@ class SvgSniffFallback extends StatefulWidget {
 }
 
 class _SvgSniffFallbackState extends State<SvgSniffFallback> {
-
   /// url → 嗅探结论(会话级,同图反复失败不重复读盘)。
   static final Map<String, bool> _verdicts = <String, bool>{};
 
@@ -337,8 +332,10 @@ class _SvgSniffFallbackState extends State<SvgSniffFallback> {
   Future<void> _sniff() async {
     final url = widget.url;
     try {
-      final bytes =
-          await BlobImageCache.fetch(BlobImageCache.contentBucket, url);
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.contentBucket,
+        url,
+      );
       final verdict = SvgUtils.isSvgBytes(bytes);
       _verdicts[url] = verdict;
       if (mounted && widget.url == url) setState(() => _isSvg = verdict);
@@ -370,12 +367,12 @@ class _SvgSniffFallbackState extends State<SvgSniffFallback> {
         return Container(
           width: widget.width,
           height: widget.height,
-          decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
+          decoration: ShapeDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest
                 .withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(8),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
     }

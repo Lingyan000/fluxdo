@@ -474,10 +474,7 @@ void _showGestureActionPicker(
       final dialogWidth = math.min(screen.width - 48, 560.0);
       final dialogMaxHeight = math.min(screen.height * 0.85, 640.0);
       return Dialog(
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 24,
-        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -500,13 +497,12 @@ void _showGestureActionPicker(
                 child: GridView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
                   shrinkWrap: true,
-                  gridDelegate:
-                      const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 240,
-                        mainAxisExtent: 52,
-                        crossAxisSpacing: 4,
-                        mainAxisSpacing: 4,
-                      ),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 240,
+                    mainAxisExtent: 52,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
                   itemCount: ProgressGestureAction.values.length,
                   itemBuilder: (context, index) {
                     final action = ProgressGestureAction.values[index];
@@ -515,7 +511,9 @@ void _showGestureActionPicker(
                     final theme = Theme.of(context);
                     return InkWell(
                       onTap: () => Navigator.pop(dialogContext, action),
-                      borderRadius: BorderRadius.circular(8),
+                      customBorder: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,

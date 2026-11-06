@@ -135,7 +135,7 @@ class CdkBalanceCard extends ConsumerWidget {
         child: Card(
           elevation: 0,
           color: theme.colorScheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
+          shape: RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(
               color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
@@ -194,7 +194,9 @@ class CdkBalanceCard extends ConsumerWidget {
       child: Card(
         elevation: 8,
         shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         child: Container(
@@ -226,9 +228,11 @@ class CdkBalanceCard extends ConsumerWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
+                          decoration: ShapeDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           child: const Icon(
                             Symbols.token_rounded,
@@ -396,7 +400,7 @@ class CdkBalanceCard extends ConsumerWidget {
         color: isExpired
             ? theme.colorScheme.errorContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
             color: isExpired
@@ -465,7 +469,7 @@ class CdkBalanceCard extends ConsumerWidget {
       shadowColor: isExpired
           ? theme.colorScheme.error.withValues(alpha: 0.3)
           : theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -505,9 +509,11 @@ class CdkBalanceCard extends ConsumerWidget {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: Icon(
                           isCfChallenge
@@ -635,7 +641,7 @@ class CdkBalanceCard extends ConsumerWidget {
       return Card(
         elevation: 0,
         color: theme.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
+        shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
@@ -677,7 +683,7 @@ class CdkBalanceCard extends ConsumerWidget {
     return Card(
       elevation: 8,
       shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -693,9 +699,11 @@ class CdkBalanceCard extends ConsumerWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Icon(
                 Symbols.token_rounded,

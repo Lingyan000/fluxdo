@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
@@ -49,9 +50,11 @@ class PostRepliesList extends StatelessWidget {
                 Container(
                   width: 3,
                   height: 14,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primary,
-                    borderRadius: BorderRadius.circular(1.5),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -70,14 +73,16 @@ class PostRepliesList extends StatelessWidget {
             final avatarUrl = reply.getAvatarUrl(size: 60);
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainer.withValues(
                   alpha: 0.4,
                 ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(
-                    alpha: 0.2,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.2,
+                    ),
                   ),
                 ),
               ),
@@ -85,7 +90,9 @@ class PostRepliesList extends StatelessWidget {
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: () => onJumpToPost?.call(reply.postNumber),
-                  borderRadius: BorderRadius.circular(12),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -128,19 +135,20 @@ class PostRepliesList extends StatelessWidget {
                               const SizedBox(height: 4),
                               IgnorePointer(
                                 // 回复预览:改用自研 FluxdoRender 只读渲染(关闭选区)
-                                child: FluxdoRenderCallbacks.generic(
-                                  heroTagNamespace:
-                                      'reply_preview_${reply.postNumber}',
-                                ).render(
-                                  cookedHtml: reply.cooked,
-                                  baseTextStyle: theme.textTheme.bodySmall
-                                      ?.copyWith(
-                                        fontSize: 13 * contentFontScale,
-                                        height: 1.4,
-                                      ),
-                                  compact: true,
-                                  selectionEnabled: false,
-                                ),
+                                child:
+                                    FluxdoRenderCallbacks.generic(
+                                      heroTagNamespace:
+                                          'reply_preview_${reply.postNumber}',
+                                    ).render(
+                                      cookedHtml: reply.cooked,
+                                      baseTextStyle: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            fontSize: 13 * contentFontScale,
+                                            height: 1.4,
+                                          ),
+                                      compact: true,
+                                      selectionEnabled: false,
+                                    ),
                               ),
                             ],
                           ),

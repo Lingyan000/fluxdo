@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../../l10n/s.dart';
 
 /// 输入框 onSend 回调，携带文本和可选附件
@@ -101,7 +102,9 @@ class _AiChatInputState extends State<AiChatInput> {
   void _handleSend() {
     final text = _controller.text.trim();
     if (text.isEmpty && _pendingAttachments.isEmpty) return;
-    final attachments = List<AiChatAttachment>.unmodifiable(_pendingAttachments);
+    final attachments = List<AiChatAttachment>.unmodifiable(
+      _pendingAttachments,
+    );
     widget.onSend(text, attachments);
     _controller.clear();
     setState(_pendingAttachments.clear);
@@ -118,10 +121,12 @@ class _AiChatInputState extends State<AiChatInput> {
       if (picked == null || !mounted) return;
       final bytes = await File(picked.path).readAsBytes();
       setState(() {
-        _pendingAttachments.add(AiChatAttachment(
-          mimeType: _inferMimeType(picked.path),
-          base64Data: base64Encode(bytes),
-        ));
+        _pendingAttachments.add(
+          AiChatAttachment(
+            mimeType: _inferMimeType(picked.path),
+            base64Data: base64Encode(bytes),
+          ),
+        );
       });
     } catch (_) {
       // 用户取消或权限被拒，静默处理
@@ -154,9 +159,11 @@ class _AiChatInputState extends State<AiChatInput> {
         top: 8,
         bottom: 4 + bottomPadding,
       ),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -191,8 +198,9 @@ class _AiChatInputState extends State<AiChatInput> {
             decoration: InputDecoration(
               hintText: context.l10n.ai_inputHint,
               hintStyle: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant
-                    .withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -266,12 +274,14 @@ class _AiChatInputState extends State<AiChatInput> {
                       style: IconButton.styleFrom(
                         backgroundColor: _canSend
                             ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurface
-                                .withValues(alpha: 0.1),
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.1,
+                              ),
                         foregroundColor: _canSend
                             ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.4),
+                            : theme.colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.4,
+                              ),
                         minimumSize: const Size(36, 36),
                         padding: EdgeInsets.zero,
                       ),
@@ -322,8 +332,8 @@ class _AiChatInputState extends State<AiChatInput> {
                               ? context.l10n.ai_modeBackToChat
                               : context.l10n.ai_modeSwitchToImage,
                           active: widget.isImageMode,
-                          dimmed: !widget.canEnterImageMode &&
-                              !widget.isImageMode,
+                          dimmed:
+                              !widget.canEnterImageMode && !widget.isImageMode,
                           onTap: widget.onToggleImageMode == null
                               ? null
                               : () {
@@ -368,17 +378,21 @@ class _ToolCard extends StatelessWidget {
     final fg = active
         ? theme.colorScheme.onPrimaryContainer
         : (dimmed
-            ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-            : theme.colorScheme.onSurface);
+              ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+              : theme.colorScheme.onSurface);
     return Expanded(
       child: SizedBox(
         height: 72,
         child: Material(
           color: baseColor,
-          borderRadius: BorderRadius.circular(14),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -417,7 +431,7 @@ class _PendingAttachmentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        ClipRRect(
+        ClipRSuperellipse(
           borderRadius: BorderRadius.circular(6),
           child: _buildPreview(64),
         ),
@@ -432,7 +446,11 @@ class _PendingAttachmentTile extends StatelessWidget {
               customBorder: const CircleBorder(),
               child: const Padding(
                 padding: EdgeInsets.all(2),
-                child: Icon(Symbols.close_rounded, size: 12, color: Colors.white),
+                child: Icon(
+                  Symbols.close_rounded,
+                  size: 12,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -451,7 +469,9 @@ class _PendingAttachmentTile extends StatelessWidget {
           height: size,
           fit: BoxFit.cover,
         );
-      } catch (_) {/* fall through */}
+      } catch (_) {
+        /* fall through */
+      }
     }
     final localPath = attachment.localPath;
     if (localPath != null && localPath.isNotEmpty) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'dart:async';
+
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/tag_search_result.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
@@ -224,14 +226,16 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                           vertical: 8,
                         ),
                         margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: theme.colorScheme.primaryContainer.withValues(
                             alpha: 0.3,
                           ),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.3,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.3,
+                              ),
                             ),
                           ),
                         ),
@@ -263,10 +267,12 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                         Expanded(
                           child: Container(
                             height: 44,
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: theme.colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: TextField(
                               controller: _searchController,

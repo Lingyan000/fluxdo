@@ -134,10 +134,14 @@ class _ToolCard extends StatelessWidget {
         height: 80,
         child: Material(
           color: baseColor,
-          borderRadius: BorderRadius.circular(14),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

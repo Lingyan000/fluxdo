@@ -49,7 +49,9 @@ void main() {
       BlendMode.src,
       reason: '局部纹理内仍替换主模糊结果，避免重复混合',
     );
-    final clip = tester.widget<ClipRRect>(find.byType(ClipRRect).first);
+    final clip = tester.widget<ClipRSuperellipse>(
+      find.byType(ClipRSuperellipse).first,
+    );
     expect(clip.borderRadius, BorderRadius.circular(20));
     expect(
       clip.clipBehavior,
@@ -62,9 +64,9 @@ void main() {
           boundaryKey.currentContext!.findRenderObject()!
               as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: 2);
-      final data = (await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
-      ))!.buffer.asUint8List();
+      final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!
+          .buffer
+          .asUint8List();
       final rect = tester.getRect(find.byType(GlassSurfaceFrame));
       final x = (rect.left * 2).round();
       final y = (rect.top * 2).round();

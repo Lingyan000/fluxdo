@@ -354,9 +354,11 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
   }) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

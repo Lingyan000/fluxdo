@@ -111,7 +111,11 @@ class _M3eNavigationBarState extends State<M3eNavigationBar>
                             height: _kIndicatorHeight,
                             decoration: ShapeDecoration(
                               color: scheme.secondaryContainer,
-                              shape: const StadiumBorder(),
+                              shape: const RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(9999),
+                                ),
+                              ),
                             ),
                           ),
                         ),

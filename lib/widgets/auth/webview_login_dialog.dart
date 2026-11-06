@@ -639,9 +639,8 @@ document.close();
     if (_finished) return;
     _finished = true;
     if (mounted) {
-      Navigator.of(
-        context,
-      ).pop(WebViewLoginDialogResult.failure(kind, message));
+      Navigator.of(context)
+          .pop(WebViewLoginDialogResult.failure(kind, message));
     }
   }
 
@@ -687,18 +686,20 @@ document.close();
                     width: double.infinity,
                     height: panelHeight,
                     child: DecoratedBox(
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: scheme.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
+                        shadows: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 24,
                             offset: const Offset(0, 8),
                           ),
                         ],
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                       ),
-                      child: ClipRRect(
+                      child: ClipRSuperellipse(
                         borderRadius: BorderRadius.circular(20),
                         child: Column(
                           children: [
@@ -856,9 +857,8 @@ class _Header extends StatelessWidget {
           Expanded(
             child: Text(
               '完成人机验证',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           IconButton(

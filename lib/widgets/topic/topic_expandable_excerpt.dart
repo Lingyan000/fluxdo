@@ -221,7 +221,9 @@ class _TopicExpandableExcerptState
             height: height,
             child: Material(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => ImageViewerPage.open(

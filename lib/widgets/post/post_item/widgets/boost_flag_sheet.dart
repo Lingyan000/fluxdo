@@ -10,8 +10,10 @@ import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../common/app_bottom_sheet.dart';
 
 typedef BoostFlagTypesLoader = Future<List<FlagType>> Function();
-typedef BoostFlagSubmitter =
-    Future<void> Function(int flagTypeId, String? message);
+typedef BoostFlagSubmitter = Future<void> Function(
+  int flagTypeId,
+  String? message,
+);
 
 bool boostAlreadyReportedByCurrentUser({
   required Boost boost,
@@ -353,19 +355,25 @@ class _BoostFlagSheetState extends State<BoostFlagSheet> {
     return InkWell(
       key: ValueKey('boost-flag-option-${type.nameKey}'),
       onTap: () => setState(() => _selectedType = type),
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Container(
         padding: const EdgeInsets.all(12),
         margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: isSelected
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
               : theme.colorScheme.surfaceContainerHighest.withValues(
                   alpha: 0.3,
                 ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : Colors.transparent,
+            ),
           ),
         ),
         child: Row(

@@ -306,9 +306,11 @@ class _LazyImageState extends State<LazyImage> {
         width: width,
         height: height ?? 200,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: baseColor,
-          borderRadius: BorderRadius.circular(8),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
         ),
         child: RepaintBoundary(
           // 首字节前无进度 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
@@ -368,11 +370,13 @@ class _LazyImageState extends State<LazyImage> {
           width: width,
           height: height ?? 200,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.2,
             ),
-            borderRadius: BorderRadius.circular(8),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: Icon(
             Symbols.broken_image_rounded,

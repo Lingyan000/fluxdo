@@ -264,10 +264,12 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     // 未开启状态：展示连接卡片
     return Card(
       color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
       child: InkWell(
         onTap: _ldcProcessing ? null : () => _toggleLdc(true),
-        borderRadius: BorderRadius.circular(24),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -275,9 +277,11 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
               Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: Icon(
                   Symbols.storefront_rounded,
@@ -337,10 +341,12 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     // 未开启状态：展示连接卡片
     return Card(
       color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
       child: InkWell(
         onTap: _cdkProcessing ? null : () => _toggleCdk(true),
-        borderRadius: BorderRadius.circular(24),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -348,9 +354,11 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
               Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: Icon(
                   Symbols.token_rounded,
@@ -401,7 +409,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
   Widget _buildComingSoonItem(ThemeData theme) {
     return Card(
       color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Center(

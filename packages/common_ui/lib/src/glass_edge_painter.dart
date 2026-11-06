@@ -47,7 +47,7 @@ class GlassEdgePainter extends CustomPainter {
     // 描边以路径为中心线各占一半，内缩半个宽度才能整条落在胶囊内
     final rect = Offset.zero & size;
     final inner = rect.deflate(_width / 2);
-    final rrect = RRect.fromRectAndRadius(
+    final rrect = RSuperellipse.fromRectAndRadius(
       inner,
       Radius.circular(radius - _width / 2),
     );
@@ -58,7 +58,7 @@ class GlassEdgePainter extends CustomPainter {
       ..shader = ui.Gradient.sweep(inner.center, colors, [
         for (var i = 0; i < colors.length; i++) i / (colors.length - 1),
       ]);
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRSuperellipse(rrect, paint);
   }
 
   @override

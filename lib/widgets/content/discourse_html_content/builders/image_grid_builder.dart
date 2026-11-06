@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
 import '../../../../utils/url_helper.dart';
@@ -24,7 +25,8 @@ Widget? buildImageGrid({
 
   // 检测 carousel 模式：data-mode="carousel" 或 class 包含 d-image-grid--carousel
   final dataMode = element.attributes['data-mode'] as String?;
-  final isCarousel = dataMode == 'carousel' ||
+  final isCarousel =
+      dataMode == 'carousel' ||
       (element.classes as Iterable<String>).contains('d-image-grid--carousel');
 
   if (isCarousel) {
@@ -53,7 +55,8 @@ Widget? buildImageGrid({
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
         // 计算每列宽度
-        final columnWidth = (availableWidth - (columns - 1) * spacing) / columns;
+        final columnWidth =
+            (availableWidth - (columns - 1) * spacing) / columns;
 
         // 使用 Wrap 布局实现网格
         return Wrap(
@@ -61,10 +64,11 @@ Widget? buildImageGrid({
           runSpacing: spacing,
           children: images.map((imageData) {
             // 使用 GalleryInfo.findIndex 查找全局索引
-            final globalIndex = galleryInfo.findIndex(imageData.src) 
-                ?? galleryInfo.findIndex(imageData.fullSrc)
-                ?? -1;
-            
+            final globalIndex =
+                galleryInfo.findIndex(imageData.src) ??
+                galleryInfo.findIndex(imageData.fullSrc) ??
+                -1;
+
             // 生成 heroTag
             final heroTag = globalIndex >= 0 && globalIndex < heroTags.length
                 ? heroTags[globalIndex]
@@ -76,7 +80,7 @@ Widget? buildImageGrid({
               columnWidth: columnWidth,
               heroTag: heroTag,
               gridOriginalImages: galleryImages,
-              gridThumbnailImages: galleryImages,  // 原图列表
+              gridThumbnailImages: galleryImages, // 原图列表
               heroTags: heroTags,
               index: globalIndex >= 0 ? globalIndex : 0,
               filenames: galleryInfo.filenames,
@@ -123,12 +127,18 @@ List<GridImageData> extractGridImages(dynamic element) {
     final width = double.tryParse(widthStr ?? '');
     final height = double.tryParse(heightStr ?? '');
 
-    images.add(GridImageData(
-      src: src,
-      fullSrc: fullSrc ?? (DiscourseImageUtils.isUploadUrl(src) ? src : DiscourseImageUtils.getOriginalUrl(src)),
-      width: width,
-      height: height,
-    ));
+    images.add(
+      GridImageData(
+        src: src,
+        fullSrc:
+            fullSrc ??
+            (DiscourseImageUtils.isUploadUrl(src)
+                ? src
+                : DiscourseImageUtils.getOriginalUrl(src)),
+        width: width,
+        height: height,
+      ),
+    );
   }
 
   return images;
@@ -195,7 +205,9 @@ class _GridImageTileState extends State<_GridImageTile> {
   Widget build(BuildContext context) {
     // 计算显示高度，保持宽高比，限制最大高度
     double displayHeight;
-    if (widget.imageData.width != null && widget.imageData.height != null && widget.imageData.width! > 0) {
+    if (widget.imageData.width != null &&
+        widget.imageData.height != null &&
+        widget.imageData.width! > 0) {
       final aspectRatio = widget.imageData.height! / widget.imageData.width!;
       displayHeight = widget.columnWidth * aspectRatio;
       displayHeight = displayHeight.clamp(80.0, 300.0);
@@ -215,7 +227,7 @@ class _GridImageTileState extends State<_GridImageTile> {
         child: SizedBox(
           width: widget.columnWidth,
           height: displayHeight,
-          child: ClipRRect(
+          child: ClipRSuperellipse(
             borderRadius: BorderRadius.circular(4),
             child: Container(
               color: widget.theme.colorScheme.surfaceContainerHighest,
@@ -229,11 +241,18 @@ class _GridImageTileState extends State<_GridImageTile> {
     // 检查是否是 upload:// 短链接
     if (!DiscourseImageUtils.isUploadUrl(widget.imageData.src)) {
       // 普通 URL，直接渲染
-      return _buildImageWidget(context, widget.imageData.src, widget.imageData.fullSrc, displayHeight);
+      return _buildImageWidget(
+        context,
+        widget.imageData.src,
+        widget.imageData.fullSrc,
+        displayHeight,
+      );
     }
 
     // upload:// 短链接：命中缓存直接渲染（缓存仅含成功结果）
-    final cachedUrl = DiscourseImageUtils.getCachedUploadUrl(widget.imageData.src);
+    final cachedUrl = DiscourseImageUtils.getCachedUploadUrl(
+      widget.imageData.src,
+    );
     if (cachedUrl != null) {
       return _buildImageWidget(context, cachedUrl, cachedUrl, displayHeight);
     }
@@ -254,25 +273,36 @@ class _GridImageTileState extends State<_GridImageTile> {
 
         // 解析成功
         final resolvedUrl = snapshot.data!;
-        return _buildImageWidget(context, resolvedUrl, resolvedUrl, displayHeight);
+        return _buildImageWidget(
+          context,
+          resolvedUrl,
+          resolvedUrl,
+          displayHeight,
+        );
       },
     );
   }
 
-  Widget _buildImageWidget(BuildContext context, String displayUrl, String fullUrl, double displayHeight) {
+  Widget _buildImageWidget(
+    BuildContext context,
+    String displayUrl,
+    String fullUrl,
+    double displayHeight,
+  ) {
     // cover 布局按短边撑满,解码按格子长边 × dpr 双向 cap(fit 策略保持
     // 宽高比):只 cap 宽的话 1:10 长图会解出上万像素高的超限纹理,
     // 上传瞬间 raster 冻结(与 LazyImage 同款问题)
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final maxSide =
-        widget.columnWidth > displayHeight ? widget.columnWidth : displayHeight;
+    final maxSide = widget.columnWidth > displayHeight
+        ? widget.columnWidth
+        : displayHeight;
     final cachePx = (maxSide * dpr).round();
     // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
     ImageDecodeSpecMemo.remember(displayUrl, cachePx, cachePx);
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(4),
         // HeroImage 统一件:源端隐藏/占位/飞行起点/裁切插值都由它保证;
         // _gridStyle 同时约束 openViewer 侧参数(见 ViewerSourceStyle)
@@ -284,50 +314,49 @@ class _GridImageTileState extends State<_GridImageTile> {
           // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
           // 不连带整个帖子 segment 每帧重绘
           child: RepaintBoundary(
-              child: Image(
-                image: ResizeImage(
-                  discourseImageProvider(displayUrl),
-                  width: cachePx,
-                  height: cachePx,
-                  policy: ResizeImagePolicy.fit,
-                ),
-                fit: BoxFit.cover,
-                width: widget.columnWidth,
-                height: displayHeight,
-                gaplessPlayback: true,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  final total = loadingProgress.expectedTotalBytes;
-                  // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
-                  return Container(
-                    color: widget.theme.colorScheme.surfaceContainerHighest,
-                    child: Center(
-                      child: RepaintBoundary(
-                        child: total != null
-                            ? M3eCircularProgress(
-                                value:
-                                    loadingProgress.cumulativeBytesLoaded /
-                                        total,
-                                size: 24,
-                                strokeWidth: 2,
-                              )
-                            : const LoadingSpinner(size: 24),
-                      ),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: widget.theme.colorScheme.surfaceContainerHighest,
-                    child: Icon(
-                      Symbols.broken_image_rounded,
-                      color: widget.theme.colorScheme.outline,
-                    ),
-                  );
-                },
+            child: Image(
+              image: ResizeImage(
+                discourseImageProvider(displayUrl),
+                width: cachePx,
+                height: cachePx,
+                policy: ResizeImagePolicy.fit,
               ),
+              fit: BoxFit.cover,
+              width: widget.columnWidth,
+              height: displayHeight,
+              gaplessPlayback: true,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                final total = loadingProgress.expectedTotalBytes;
+                // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
+                return Container(
+                  color: widget.theme.colorScheme.surfaceContainerHighest,
+                  child: Center(
+                    child: RepaintBoundary(
+                      child: total != null
+                          ? M3eCircularProgress(
+                              value:
+                                  loadingProgress.cumulativeBytesLoaded / total,
+                              size: 24,
+                              strokeWidth: 2,
+                            )
+                          : const LoadingSpinner(size: 24),
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: widget.theme.colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Symbols.broken_image_rounded,
+                    color: widget.theme.colorScheme.outline,
+                  ),
+                );
+              },
             ),
           ),
+        ),
       ),
     );
   }
@@ -339,7 +368,9 @@ class _GridImageTileState extends State<_GridImageTile> {
         .toList();
     // 当前点击的图片使用解析后的 URL
     if (widget.index >= 0 && widget.index < resolvedGalleryImages.length) {
-      resolvedGalleryImages[widget.index] = DiscourseImageUtils.getOriginalUrl(resolvedFullUrl);
+      resolvedGalleryImages[widget.index] = DiscourseImageUtils.getOriginalUrl(
+        resolvedFullUrl,
+      );
     }
 
     DiscourseImageUtils.openViewer(
@@ -363,13 +394,11 @@ class _GridImageTileState extends State<_GridImageTile> {
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(4),
         child: Container(
           color: widget.theme.colorScheme.surfaceContainerHighest,
-          child: const Center(
-            child: LoadingSpinner(size: 24),
-          ),
+          child: const Center(child: LoadingSpinner(size: 24)),
         ),
       ),
     );
@@ -379,7 +408,7 @@ class _GridImageTileState extends State<_GridImageTile> {
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,
-      child: ClipRRect(
+      child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(4),
         child: Container(
           color: widget.theme.colorScheme.surfaceContainerHighest,
@@ -407,5 +436,3 @@ class GridImageData {
     this.height,
   });
 }
-
-
