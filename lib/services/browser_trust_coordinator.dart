@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:collection' show UnmodifiableListView;
-import 'dart:convert';
-import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../constants.dart';
-import '../utils/frame_jank_monitor.dart';
+import 'auth_session.dart';
+import 'network/webview/site_webview_runtime.dart';
+import 'network/webview/shared_browser_resource.dart';
 import 'app_logger.dart';
 import 'cf_challenge_logger.dart';
 import 'cf_challenge_service.dart';
@@ -18,12 +17,10 @@ import 'network/cookie/cookie_jar_service.dart';
 import 'network/cookie/webview_cookie_priming.dart';
 import 'preloaded_data_service.dart';
 import 'webview_session_cookie_refresh_service.dart';
-import 'webview_settings.dart';
-import 'windows_webview_environment_service.dart';
 
 enum BrowserTrustPreloadPath { native, webView }
 
-/// 启动期临时 WebView 的协作式取消令牌。
+/// 启动期共享 WebView 任务的协作式取消令牌。
 @visibleForTesting
 class BrowserTrustRunCancellation {
   bool _cancelled = false;
@@ -79,11 +76,9 @@ class BrowserTrustCoordinator {
   static const Duration _requestClearanceMinTtl = Duration(seconds: 30);
   static const Duration _webViewPreloadTimeout = Duration(seconds: 25);
   static const Duration _domSnapshotTimeout = Duration(seconds: 12);
-  static const Duration _originLoadTimeout = Duration(seconds: 8);
   static const Duration _backgroundPauseDelay = Duration(seconds: 8);
   static const Duration _requestGateTimeout = Duration(seconds: 6);
   static const Duration _diagnosticBackgroundPauseDelay = Duration(seconds: 60);
-  static const Duration _webViewTeardownCooldown = Duration(milliseconds: 1200);
 
   final CookieJarService _jar = CookieJarService();
   final PreloadedDataService _preload = PreloadedDataService();
@@ -162,7 +157,7 @@ class BrowserTrustCoordinator {
     );
   }
 
-  /// 确保预加载完成。可信时走 native Dio；不可信时只在启动期临时 WebView 中
+  /// 确保预加载完成。可信时走 native Dio；不可信时独占共享 WebView
   /// 加载一次首页并复用 HTML hydrate。
   Future<void> ensurePreloaded({String reason = 'unknown'}) {
     if (_preload.isLoaded) return Future.value();
@@ -448,7 +443,7 @@ class BrowserTrustCoordinator {
 
     _lastClearanceRejectedAt = null;
     // 验证结果会早于 Windows WebView2 Controller 的真实析构完成。
-    // 等 CF teardown gate（内部含 1.2 秒冷却）后才能创建 Session WebView。
+    // 等 CF teardown gate（内部含 1.2 秒冷却）后才能申请后台会话租约。
     await cf.waitForManualTeardown();
     _log('CF clearance obtained, force re-run bootstrap reason=$reason');
     final retry = await WebViewSessionCookieRefreshService.instance
@@ -513,90 +508,45 @@ class BrowserTrustCoordinator {
     required String reason,
     required BrowserTrustRunCancellation cancellation,
   }) async {
-    await _primeWebViewCookies(reason: '$reason:webview_preload');
-    if (cancellation.isCancelled) return false;
-    _log('startup WebView create reason=$reason');
-
-    var loadCompleter = Completer<void>();
-    HeadlessInAppWebView? webView;
-
-    webView = HeadlessInAppWebView(
-      webViewEnvironment: io.Platform.isWindows
-          ? WindowsWebViewEnvironmentService.instance.environment
-          : null,
-      initialSettings: WebViewSettings.headless,
-      initialUserScripts: _startupPreloadScripts(),
-      onReceivedServerTrustAuthRequest: (_, challenge) =>
-          WebViewSettings.handleServerTrustAuthRequest(challenge),
-      onWebViewCreated: (createdController) {
-        WebViewSettings.applyWindowsHeadlessMemoryTarget(createdController);
-        WebViewSettings.registerJsErrorReporter(createdController);
-      },
-      onLoadStop: (_, _) {
-        if (!loadCompleter.isCompleted) {
-          loadCompleter.complete();
-        }
-      },
-      onReceivedError: (_, request, error) {
-        _log(
-          'startup WebView error: url=${request.url}, ${error.description}',
-          level: 'warning',
-        );
-      },
-    );
-
-    var platformViewStarted = false;
+    final generation = AuthSession().generation;
+    final cancelled = Future.any<void>([
+      cancellation.whenCancelled,
+      SiteWebViewRuntime.instance.interrupted,
+      AuthSession().cancelToken.whenCancel.then<void>((_) {}),
+    ]);
+    BrowserResourceLease<SiteWebView>? lease;
+    const scriptGroup = 'fluxdo_startup_snapshot';
     try {
-      // WebView 创建/销毁占用平台主线程,与掉帧时间轴对齐归因
-      FrameJankMonitor.logEvent('WEBVIEW', 'BrowserTrust run(): $reason');
-      platformViewStarted = true;
-      await webView.run();
-      if (cancellation.isCancelled) return false;
-      final c = webView.webViewController;
-      if (c == null) return false;
-
-      if (io.Platform.isWindows) {
-        await c.loadUrl(
-          urlRequest: URLRequest(url: WebUri(_windowsBootstrapUrl)),
-        );
-        if (cancellation.isCancelled) return false;
-        try {
-          await Future.any<void>([
-            loadCompleter.future.timeout(_originLoadTimeout),
-            cancellation.whenCancelled,
-          ]);
-        } on TimeoutException {
-          debugPrint('[BrowserTrust] Windows origin bootstrap timeout');
-        }
-        if (cancellation.isCancelled) return false;
-        await _writeStartupShell(c);
-        if (cancellation.isCancelled) return false;
-      } else {
-        await c.loadData(
-          data: _startupShellHtml,
-          baseUrl: WebUri(AppConstants.baseUrl),
-          mimeType: 'text/html',
-          encoding: 'utf-8',
-        );
-        if (cancellation.isCancelled) return false;
-      }
-
-      loadCompleter = Completer<void>();
-      await _navigateToHome(c);
-      if (cancellation.isCancelled) return false;
-      await _waitForLoad(loadCompleter, cancellation: cancellation);
-      if (cancellation.isCancelled) return false;
+      lease = await SiteWebViewRuntime.instance.acquire(
+        exclusive: true,
+        cancelled: cancelled,
+      );
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
+      await _primeWebViewCookies(reason: '$reason:webview_preload');
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
+      final view = lease.value;
+      final c = view.controller;
+      await c.addUserScript(
+        userScript: UserScript(
+          groupName: scriptGroup,
+          source: _preloadedSnapshotScript,
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          forMainFrameOnly: true,
+        ),
+      );
+      await view.load(() => _navigateToHome(c));
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
       _log('startup WebView home loaded, syncing cookies reason=$reason');
-      await _syncCookiesFromController(c);
-      if (cancellation.isCancelled) return false;
+      await _syncCookiesFromController(c, generation);
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
 
       final html = await _readPreloadedSnapshot(c, cancellation: cancellation);
-      if (cancellation.isCancelled) return false;
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
       final hydrated =
           html != null &&
           html.isNotEmpty &&
           await _preload.hydrateFromHtml(html);
-      if (cancellation.isCancelled) return false;
+      if (cancellation.isCancelled || !lease.isCurrent) return false;
       _log(
         'startup WebView snapshot html=${html != null && html.isNotEmpty} hydrated=$hydrated reason=$reason',
         level: hydrated ? 'info' : 'warning',
@@ -604,7 +554,7 @@ class BrowserTrustCoordinator {
 
       final tToken = await _jar.getTToken();
       if (tToken != null && tToken.isNotEmpty) {
-        if (cancellation.isCancelled) return false;
+        if (cancellation.isCancelled || !lease.isCurrent) return false;
         _log('startup WebView session bootstrap begin reason=$reason');
         final bootstrapResult = await WebViewSessionCookieRefreshService
             .instance
@@ -612,13 +562,13 @@ class BrowserTrustCoordinator {
               c,
               reason: '$reason:startup_webview',
               pluginCandidates: _preload.pluginCandidatesSync,
-              isCancelled: () => cancellation.isCancelled,
-              cancellationSignal: cancellation.whenCancelled,
+              isCancelled: () => cancellation.isCancelled || !lease!.isCurrent,
+              cancellationSignal: cancelled,
             );
-        if (cancellation.isCancelled) return false;
+        if (cancellation.isCancelled || !lease.isCurrent) return false;
         final bootstrapped = bootstrapResult.ok;
-        await _syncCookiesFromController(c);
-        if (cancellation.isCancelled) return false;
+        await _syncCookiesFromController(c, generation);
+        if (cancellation.isCancelled || !lease.isCurrent) return false;
         final runtimeDetails = await _jar.getCookieDiagnosticsForRequest(
           Uri.parse(AppConstants.baseUrl),
           names: const {'_rt'},
@@ -643,15 +593,18 @@ class BrowserTrustCoordinator {
       _log('startup WebView preload failed: $e', level: 'warning');
       return false;
     } finally {
-      try {
-        await webView.dispose();
-      } catch (e) {
-        _log('dispose startup WebView failed: $e', level: 'warning');
+      if (lease != null) {
+        try {
+          await lease.value.controller.removeUserScriptsByGroupName(
+            groupName: scriptGroup,
+          );
+          if (lease.isCurrent) await lease.value.resetDocument();
+        } catch (_) {
+          lease.invalidate();
+        } finally {
+          lease.release();
+        }
       }
-      if (platformViewStarted) {
-        await Future<void>.delayed(_webViewTeardownCooldown);
-      }
-      FrameJankMonitor.logEvent('WEBVIEW', 'BrowserTrust dispose');
     }
   }
 
@@ -665,20 +618,6 @@ class BrowserTrustCoordinator {
         },
       ),
     );
-  }
-
-  Future<void> _waitForLoad(
-    Completer<void> loadCompleter, {
-    required BrowserTrustRunCancellation cancellation,
-  }) async {
-    try {
-      await Future.any<void>([
-        loadCompleter.future.timeout(_originLoadTimeout),
-        cancellation.whenCancelled,
-      ]);
-    } on TimeoutException {
-      _log('startup WebView load timeout, continue', level: 'warning');
-    }
   }
 
   Future<String?> _readPreloadedSnapshot(
@@ -707,6 +646,7 @@ class BrowserTrustCoordinator {
 
   Future<void> _syncCookiesFromController(
     InAppWebViewController controller,
+    int generation,
   ) async {
     await BoundarySyncService.instance.syncFromWebView(
       currentUrl: AppConstants.baseUrl,
@@ -714,6 +654,7 @@ class BrowserTrustCoordinator {
       cookieNames: null,
       allowLowConfidenceSessionCookies: true,
       trusted: true,
+      requestGeneration: generation,
     );
   }
 
@@ -806,35 +747,6 @@ class BrowserTrustCoordinator {
   void _log(String message, {String level = 'info'}) {
     CfChallengeLogger.log('[BrowserTrust] $message', level: level);
   }
-
-  UnmodifiableListView<UserScript> _startupPreloadScripts() {
-    return UnmodifiableListView([
-      ...WebViewSettings.compatPolyfillScripts,
-      UserScript(
-        source: _preloadedSnapshotScript,
-        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        forMainFrameOnly: true,
-      ),
-    ]);
-  }
-
-  Future<void> _writeStartupShell(InAppWebViewController controller) async {
-    final html = jsonEncode(_startupShellHtml);
-    await controller.evaluateJavascript(
-      source:
-          '''
-document.open();
-document.write($html);
-document.close();
-''',
-    );
-  }
-
-  String get _windowsBootstrapUrl => '${AppConstants.baseUrl}/robots.txt';
-
-  String get _startupShellHtml =>
-      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
-      '<body></body></html>';
 
   String get _preloadedSnapshotScript => '''
 (function() {

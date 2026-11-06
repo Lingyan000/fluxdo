@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'network/webview/site_webview_runtime.dart';
+
 enum EmbeddedBrowserPriority { video, iframe }
 
 /// 帖子内嵌入式浏览器 Controller 的全局槽位。
@@ -86,9 +88,11 @@ class EmbeddedBrowserControllerPool {
         lease._revoke();
       }
       revision.value++;
-      _drainFuture = revoked.isEmpty
-          ? Future<void>.value()
-          : Future<void>.delayed(const Duration(milliseconds: 750));
+      _drainFuture = Future.wait<void>([
+        SiteWebViewRuntime.instance.suspendAndDrain(),
+        if (revoked.isNotEmpty)
+          Future<void>.delayed(const Duration(milliseconds: 750)),
+      ]).then((_) {});
     }
     return _drainFuture ?? Future<void>.value();
   }
@@ -96,6 +100,7 @@ class EmbeddedBrowserControllerPool {
   void resume() {
     if (!_suspended) return;
     _suspended = false;
+    SiteWebViewRuntime.instance.resume();
     _drainFuture = null;
     revision.value++;
   }

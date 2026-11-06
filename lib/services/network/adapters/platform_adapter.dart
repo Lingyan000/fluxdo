@@ -204,7 +204,9 @@ class _WebViewAware implements HttpClientAdapter {
     if (WebViewAdapterSettingsService.instance.effectiveEnabled) {
       return;
     }
-    _webViewAdapter?.disposeWhenIdle();
+    // 关闭当前调用者，已发出的请求继续持有运行时租约直到结束。
+    _webViewAdapter?.close(force: false);
+    _webViewAdapter = null;
   }
 
   bool _shouldUseWebView(RequestOptions options) {

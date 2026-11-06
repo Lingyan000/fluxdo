@@ -9,6 +9,9 @@ class AuthSession {
   AuthSession._internal();
 
   int _generation = 0;
+
+  /// 浏览器运行时据此弃用旧页面，避免跨账号保留 JS 状态。
+  final ValueNotifier<int> generationChanges = ValueNotifier<int>(0);
   CancelToken _cancelToken = CancelToken();
 
   /// 当前会话代
@@ -26,6 +29,7 @@ class AuthSession {
       _cancelToken.cancel('[AuthSession] 会话代变更: $_generation');
     }
     _cancelToken = CancelToken();
+    generationChanges.value = _generation;
     debugPrint('[AuthSession] 推进到 generation=$_generation');
     return _generation;
   }

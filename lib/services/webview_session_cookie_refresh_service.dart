@@ -1,19 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../constants.dart';
-import '../utils/frame_jank_monitor.dart';
+import 'auth_session.dart';
+import 'network/webview/site_webview_runtime.dart';
+import 'network/webview/shared_browser_resource.dart';
 import 'log/log_writer.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
 import 'network/cookie/webview_cookie_priming.dart';
 import 'preloaded_data_service.dart';
-import 'webview_settings.dart';
-import 'windows_webview_environment_service.dart';
 
 /// WebView session bootstrap 的执行结果。
 ///
@@ -71,8 +70,8 @@ class WebViewSessionCookieRefreshService {
   static const Duration _successTtl = Duration(minutes: 15);
   static const Duration _bootstrapTimeout = Duration(seconds: 18);
 
-  /// 非 force 触发源的最小尝试间隔,防止两个独立触发源背靠背各起一个
-  /// headless WebView(见 ensureSynced 里的用法注释)。故意很短:被这道
+  /// 非 force 触发源的最小尝试间隔，防止独立触发源背靠背占用
+  /// 共享 WebView 执行 bootstrap。故意很短:被这道
   /// 闸门拦下的那次不会重试,只是这个窗口错过同步,下一次自然触发
   /// (dio 请求失败/resume 等)几秒后照常能跑。
   ///
@@ -97,8 +96,8 @@ class WebViewSessionCookieRefreshService {
   DateTime? _lastSuccessAt;
   String? _lastSuccessToken;
 
-  /// 连续失败次数(成功清零)。每次 bootstrap = 一整个 headless WebView
-  /// 生命周期 + FingerprintJS 全套采集,失败按 45s 固定冷却重试曾造成
+  /// 连续失败次数(成功清零)。复用实例后仍需 FingerprintJS 全套采集
+  /// 并重置文档，不能省略退避。此前按 45s 固定冷却重试曾造成
   /// 生产事故:站点轮换 fingerprint 端点后旧端点永远 404,用户挂在帖子页
   /// 的周期 POST(drafts/presence/timings)每分钟拉起一次完整 bootstrap,
   /// 数小时不停 → CPU 常驻 100%+、打字/滚动被平台主线程 WebView
@@ -243,10 +242,8 @@ class WebViewSessionCookieRefreshService {
     }
     // 非 force 的最小间隔闸门:两条独立触发源(比如同时失败的多个 dio
     // 请求各自的 ensureInBackground)有概率在几乎同一时刻都通过了各自
-    // 的判断,背靠背各起一个 headless WebView——每个 WebView 创建/销毁
-    // 都占平台主线程(见上面 FrameJankMonitor 标注的掉帧点),GPU 贴图
-    // 资源短时间内高频创建销毁还牵出过一次原生层崩溃(Skia
-    // GrResourceCache 内部断言,dump 定位到的)。跟失败退避冷却分开算,
+    // 的判断，背靠背重复 bootstrap。现在复用原生实例，但独占任务仍会
+    // 阻塞后续 HTTP 请求，因此继续保留该闸门。跟失败退避冷却分开算，
     // 这里只是"几秒内最多真正跑一次"的闸门;force 穿透的理由见
     // _minAttemptSpacing 注释(cf_recover 被吞会复活 CF 后持续 403)。
     if (!force &&
@@ -313,93 +310,52 @@ class WebViewSessionCookieRefreshService {
   }) async {
     debugPrint('[WebViewSessionSync] 开始运行轻量会话 bootstrap: reason=$reason');
 
+    final generation = AuthSession().generation;
+    final cancelled = Future.any<void>([
+      AuthSession().cancelToken.whenCancel.then<void>((_) {}),
+      SiteWebViewRuntime.instance.interrupted,
+    ]);
+    BrowserResourceLease<SiteWebView>? lease;
     try {
-      WebViewCookiePriming.instance.invalidate();
-      await WebViewCookiePriming.instance.prime(AppConstants.baseUrl);
-    } catch (e) {
-      debugPrint('[WebViewSessionSync] WebView cookie priming 失败，继续尝试: $e');
-    }
-
-    final loadCompleter = Completer<void>();
-    HeadlessInAppWebView? webView;
-    InAppWebViewController? controller;
-
-    Future<void> syncCookies() async {
-      final c = controller;
-      if (c == null) return;
-
-      await BoundarySyncService.instance.syncFromWebView(
-        currentUrl: AppConstants.baseUrl,
-        controller: c,
-        cookieNames: null,
-        allowLowConfidenceSessionCookies: true,
-        trusted: true,
+      lease = await SiteWebViewRuntime.instance.acquire(
+        exclusive: true,
+        cancelled: cancelled,
       );
-    }
-
-    webView = HeadlessInAppWebView(
-      webViewEnvironment: io.Platform.isWindows
-          ? WindowsWebViewEnvironmentService.instance.environment
-          : null,
-      initialSettings: WebViewSettings.headless,
-      initialUserScripts: WebViewSettings.compatPolyfillScripts,
-      onReceivedServerTrustAuthRequest: (_, challenge) =>
-          WebViewSettings.handleServerTrustAuthRequest(challenge),
-      onWebViewCreated: (createdController) {
-        controller = createdController;
-        WebViewSettings.applyWindowsHeadlessMemoryTarget(createdController);
-        WebViewSettings.registerJsErrorReporter(createdController);
-      },
-      onLoadStop: (_, _) {
-        if (!loadCompleter.isCompleted) {
-          loadCompleter.complete();
-        }
-      },
-      onReceivedError: (_, request, error) {
-        debugPrint(
-          '[WebViewSessionSync] WebView 错误: url=${request.url}, ${error.description}',
-        );
-      },
-    );
-
-    try {
-      // WebView 创建/销毁占用平台主线程,与掉帧时间轴对齐归因
-      FrameJankMonitor.logEvent('WEBVIEW', 'SessionSync run(): $reason');
-      await webView.run();
-      final c = webView.webViewController;
-      if (c == null) {
-        debugPrint('[WebViewSessionSync] Headless WebView controller 为空');
-        return const SessionBootstrapResult.failure(phase: 'controller');
+      final c = lease.value.controller;
+      if (!lease.isCurrent) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
       }
-
-      if (io.Platform.isWindows) {
-        await c.loadUrl(
-          urlRequest: URLRequest(url: WebUri(_windowsBootstrapUrl)),
-        );
-      } else {
-        await c.loadData(
-          data: _bootstrapHtml,
-          baseUrl: WebUri(AppConstants.baseUrl),
-          mimeType: 'text/html',
-          encoding: 'utf-8',
-        );
-      }
-
+      WebViewCookiePriming.instance.invalidate();
       try {
-        await loadCompleter.future.timeout(const Duration(seconds: 8));
-      } on TimeoutException {
-        debugPrint('[WebViewSessionSync] 轻量 bootstrap 文档加载等待超时，继续尝试');
+        await WebViewCookiePriming.instance.prime(AppConstants.baseUrl);
+      } catch (error) {
+        debugPrint(
+          '[WebViewSessionSync] Cookie priming 失败，继续 bootstrap: $error',
+        );
       }
-
-      if (io.Platform.isWindows) {
-        await _writeBootstrapHtml(c);
+      if (!lease.isCurrent) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
       }
+      Future<void> syncCookies() =>
+          BoundarySyncService.instance.syncFromWebView(
+            currentUrl: AppConstants.baseUrl,
+            controller: c,
+            cookieNames: null,
+            allowLowConfidenceSessionCookies: true,
+            trusted: true,
+            requestGeneration: generation,
+          );
 
       final bootstrap = await runOnController(
         c,
         reason: reason,
         pluginCandidates: PreloadedDataService().pluginCandidatesSync,
+        isCancelled: () => !lease!.isCurrent,
+        cancellationSignal: cancelled,
       );
+      if (!lease.isCurrent) {
+        return const SessionBootstrapResult.failure(phase: 'cancelled');
+      }
       if (!bootstrap.ok) {
         await syncCookies();
         await logCookieSummary(reason: reason, bootstrapOk: false);
@@ -414,7 +370,7 @@ class WebViewSessionCookieRefreshService {
       await syncCookies();
       await logCookieSummary(reason: reason, bootstrapOk: true);
       final tToken = await _jar.getTToken();
-      if (tToken != null && tToken.isNotEmpty) {
+      if (lease.isCurrent && tToken != null && tToken.isNotEmpty) {
         _lastSuccessAt = DateTime.now();
         _lastSuccessToken = tToken;
         debugPrint('[WebViewSessionSync] 浏览器会话 cookie 已同步');
@@ -427,12 +383,16 @@ class WebViewSessionCookieRefreshService {
       debugPrint('[WebViewSessionSync] 刷新浏览器会话 cookie 失败: $e');
       return const SessionBootstrapResult.failure(phase: 'exception');
     } finally {
-      try {
-        await webView.dispose();
-      } catch (e) {
-        debugPrint('[WebViewSessionSync] dispose WebView 失败: $e');
+      if (lease != null) {
+        try {
+          // 超时的 JS 也可能仍在运行，必须更换文档后才交还实例。
+          if (lease.isCurrent) await lease.value.resetDocument();
+        } catch (_) {
+          lease.invalidate();
+        } finally {
+          lease.release();
+        }
       }
-      FrameJankMonitor.logEvent('WEBVIEW', 'SessionSync dispose');
     }
   }
 
@@ -631,18 +591,6 @@ class WebViewSessionCookieRefreshService {
     }
   }
 
-  Future<void> _writeBootstrapHtml(InAppWebViewController controller) async {
-    final html = jsonEncode(_bootstrapHtml);
-    await controller.evaluateJavascript(
-      source:
-          '''
-document.open();
-document.write($html);
-document.close();
-''',
-    );
-  }
-
   /// 把 caller 提供的 plugin url 列表注入到 WebView 全局，bootstrap 脚本会
   /// 优先用它跳过自己的首页 fetch。
   Future<void> _injectPluginCandidates(
@@ -662,12 +610,6 @@ document.close();
       source: 'window.__fluxdoPluginCandidates = $encoded;',
     );
   }
-
-  String get _windowsBootstrapUrl => '${AppConstants.baseUrl}/robots.txt';
-
-  String get _bootstrapHtml =>
-      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
-      '<body></body></html>';
 
   String _bootstrapScript(String handlerName) {
     final handler = jsonEncode(handlerName);

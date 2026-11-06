@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +32,53 @@ class _Channel implements WebMessageChannel {
 }
 
 void main() {
+  test('流取消等待浏览器 abort 完成后才结束租约所依赖的 done', () async {
+    final abort = Completer<void>();
+    final bridge = WebViewBinaryResponseBridge(
+      requestOptions: RequestOptions(path: '/image'),
+      channel: _Channel(),
+      onCancel: () => abort.future,
+    );
+    var done = false;
+    bridge.done.then((_) => done = true);
+    final subscription = bridge.stream.listen((_) {});
+    final cancellation = subscription.cancel();
+    await Future<void>.delayed(Duration.zero);
+    expect(done, isFalse);
+    abort.complete();
+    await cancellation;
+    await bridge.done;
+    expect(done, isTrue);
+  });
+
+  test('响应流停止发送数据后超时结束，不能永久占用共享实例', () async {
+    final bridge = WebViewBinaryResponseBridge(
+      requestOptions: RequestOptions(
+        path: '/image',
+        receiveTimeout: const Duration(milliseconds: 10),
+      ),
+      channel: _Channel(),
+      onCancel: () async {},
+    );
+    final headersError = expectLater(
+      bridge.headersCompleter.future,
+      throwsA(
+        isA<DioException>().having(
+          (e) => e.type,
+          'type',
+          DioExceptionType.receiveTimeout,
+        ),
+      ),
+    );
+    final streamError = expectLater(
+      bridge.stream.drain<void>(),
+      throwsA(isA<DioException>()),
+    );
+    await bridge.done;
+    await headersError;
+    await streamError;
+  });
+
   test('响应头监听前发生错误不会产生未处理异常，原 await 仍能收到错误', () async {
     final channel = _Channel();
     final bridge = WebViewBinaryResponseBridge(
