@@ -60,9 +60,6 @@ export PATH="${HOME}/.cargo/bin:${FLUTTER_ROOT}/bin:${FLUTTER_ROOT}/bin/cache/da
 echo "==> Configuring git safe directories"
 git config --global --add safe.directory "${FLUTTER_ROOT}"
 git config --global --add safe.directory "${PROJECT_ROOT}"
-if [[ -d "${PROJECT_ROOT}/core/doh_proxy/.git" ]]; then
-  git config --global --add safe.directory "${PROJECT_ROOT}/core/doh_proxy"
-fi
 
 echo "==> Toolchain versions"
 flutter --version

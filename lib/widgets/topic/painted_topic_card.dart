@@ -166,6 +166,7 @@ class _RenderTopicCard extends RenderBox
   int _seenRevision = 0;
   set layoutData(TopicCardLayout v) {
     if (identical(_layout, v) && _seenRevision == v.revision) return;
+    TopicCardImages.releaseRequester(this);
     _layout = v;
     _seenRevision = v.revision;
     markNeedsLayout();
@@ -196,6 +197,7 @@ class _RenderTopicCard extends RenderBox
 
   @override
   void detach() {
+    TopicCardImages.releaseRequester(this);
     RelativeTimeClock.instance.removeListener(_onClockTick);
     super.detach();
   }
@@ -386,6 +388,28 @@ class TopicCardImages {
   static final Map<String, Set<RenderObject>> _waiters = {};
   static const int _cap = 400;
 
+  // 只有真正 paint 的卡片保留前台优先权。预热不提权；卡片离开、
+  // 复用或下载结束时释放，多视图共享同一头像时分别计数。
+  static final _foreground = <RenderObject, Map<String, VoidCallback>>{};
+
+  static void _retainForeground(
+    String url,
+    String bucket,
+    RenderObject requester,
+  ) {
+    final leases = _foreground.putIfAbsent(requester, () => {});
+    leases.putIfAbsent(url, () => BlobImageCache.retainForeground(bucket, url));
+  }
+
+  static void releaseRequester(RenderObject requester) {
+    final leases = _foreground.remove(requester);
+    if (leases == null) return;
+    for (final entry in leases.entries) {
+      _waiters[entry.key]?.remove(requester);
+      entry.value();
+    }
+  }
+
   static ui.Image? lookup(
     String url,
     RenderObject requester, {
@@ -393,6 +417,7 @@ class TopicCardImages {
   }) {
     final hit = _images[url];
     if (hit != null) return hit;
+    _retainForeground(url, bucket, requester);
     final waiters = _waiters[url];
     if (waiters != null) {
       waiters.add(requester);
@@ -418,10 +443,7 @@ class TopicCardImages {
   static Future<void> _load(String url, String bucket) async {
     try {
       final bytes = await BlobImageCache.fetch(bucket, url);
-      if (bytes.isEmpty) {
-        _waiters.remove(url);
-        return;
-      }
+      if (bytes.isEmpty) return;
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       // 头像显示 32dp、emoji ~19dp;96px 解码对两者都双倍富余
       final codec = await PaintingBinding.instance
@@ -451,9 +473,12 @@ class TopicCardImages {
       // 已清除而重新尝试
     } finally {
       final waiters = _waiters.remove(url);
-      if (waiters != null && _images.containsKey(url)) {
+      if (waiters != null) {
         for (final r in waiters) {
-          if (r.attached) r.markNeedsPaint();
+          final leases = _foreground[r];
+          leases?.remove(url)?.call();
+          if (leases != null && leases.isEmpty) _foreground.remove(r);
+          if (_images.containsKey(url) && r.attached) r.markNeedsPaint();
         }
       }
     }

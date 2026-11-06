@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "rama-http3-independent-interop"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+boring = ["rama/boring", "interop-common/boring"]
+rustls-ring = ["rama/rustls", "rama/ring", "interop-common/rustls-ring"]
+rustls-aws-lc = ["rama/rustls", "rama/aws-lc", "interop-common/rustls-aws-lc"]
+
+[dependencies]
+rama-masque = { path = "../../../rama-masque" }
+rama = { path = "../../..", default-features = false, features = ["std", "quic", "http-full"] }
+interop-common = { package = "rama-quic-interop-common", path = "../interop-common" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+sha2 = "0.11"

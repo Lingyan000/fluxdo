@@ -146,7 +146,6 @@ class _HttpProxyCardInner extends StatelessWidget {
                   leading: const Icon(Symbols.person_rounded),
                   title: Text(context.l10n.httpProxy_auth),
                   subtitle: Text(context.l10n.httpProxy_username(proxySettings.username!)),
-                  dense: true,
                 ),
               Column(
                 children: [

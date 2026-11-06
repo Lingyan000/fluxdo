@@ -5,10 +5,10 @@
   "httpProxy_cipher": "Cipher",
   "httpProxy_cipherNotSet": "Cipher not set",
   "httpProxy_configTitle": "Configure Upstream Proxy",
-  "httpProxy_disabledDesc": "Configure remote HTTP / SOCKS5 / Shadowsocks proxy for local gateway",
-  "httpProxy_disabledHint": "When enabled, keeps proxy mode switch, local gateway takes over Dio, WebView and Shadowsocks egress",
+  "httpProxy_disabledDesc": "Configure an upstream HTTP / SOCKS5 / Shadowsocks proxy for the network core",
+  "httpProxy_disabledHint": "When enabled, both Dio and WebView go through this proxy via the network core, keeping one egress",
   "httpProxy_dohProxyHint": "Currently forwarded to upstream proxy via local DoH gateway; switches to pure proxy forwarding when DoH is off",
-  "httpProxy_enabledDesc": "Enabled {protocol} upstream proxy, forwarded by local gateway",
+  "httpProxy_enabledDesc": "Enabled {protocol} upstream proxy, forwarded by the network core",
   "@httpProxy_enabledDesc": {
     "placeholders": {
       "protocol": {
@@ -44,7 +44,7 @@
   "httpProxy_suppressedByVpn": "Auto-disabled by VPN, will restore when VPN disconnects",
   "httpProxy_testAvailability": "Test Proxy Availability",
   "httpProxy_testingProxy": "Verifying access to linux.do via current proxy",
-  "httpProxy_testingSsConfig": "Verifying Shadowsocks config can be managed by local gateway",
+  "httpProxy_testingSsConfig": "Verifying the Shadowsocks config can be handled by the network core",
   "httpProxy_title": "Upstream Proxy",
   "httpProxy_username": "Username: {username}",
   "@httpProxy_username": {
@@ -95,7 +95,7 @@
   "proxy_ssOnlySsProtocol": "Only ss:// links supported",
   "proxy_ssPasswordHint": "Enter Shadowsocks password",
   "proxy_ssSaved": "Shadowsocks config saved",
-  "proxy_ssSavedDetail": "Current version routes Shadowsocks through local gateway; enable proxy and verify on homepage",
+  "proxy_ssSavedDetail": "The network core handles Shadowsocks egress; enable the proxy and verify on the homepage",
   "proxy_ssSelectCipher": "Select a supported Shadowsocks cipher",
   "proxy_ssUnsupportedCipher": "Only {ciphers} supported",
   "proxy_targetResponseError": "Target site response error: {statusLine}",

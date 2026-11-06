@@ -26,7 +26,7 @@ void main() {
         'topic_new_subset',
         'auto_check_update',
         'notion_config_alice',
-        'rhttp_enabled',
+        'doh_enabled',
         'cdk_enabled',
         'ldc_enabled',
         // 被排除前缀误伤的真配置,精确回捞
@@ -63,7 +63,7 @@ void main() {
         'bg_shared_session_key',
         'one_time_password',
         // 设备/运行态
-        'cronet_has_fallen_back',
+        'net_core_has_fallen_back',
         'vpn_suppressed_doh',
         'per_device_cert_installed',
         'cert_use_per_device',

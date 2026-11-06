@@ -5,25 +5,23 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as inappwebview;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../constants.dart';
-import '../../preloaded_data_service.dart';
+import '../../network_logger.dart';
+import '../core/net_core_service.dart';
 import '../doh_proxy/cert_preference_service.dart';
-import '../doh_proxy/doh_proxy_ffi.dart';
-import '../doh_proxy/doh_proxy_service.dart';
 import '../doh_proxy/per_device_cert_service.dart';
 import '../doh_proxy/proxy_certificate.dart';
 import '../doh_proxy/windows_cert_trust_service.dart';
-import '../proxy/gateway_upstream.dart';
+import '../fingerprint/fingerprint_template_service.dart';
+import '../fingerprint/fingerprint_presets.dart';
 import '../proxy/proxy_settings_service.dart';
-import '../rhttp/rhttp_settings_service.dart';
 import '../system_proxy_service.dart';
-import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
 import 'ech_dns_policy.dart';
-import 'webview_mitm_policy.dart';
 
 class NetworkSettings {
   const NetworkSettings({
@@ -33,13 +31,13 @@ class NetworkSettings {
     required this.customServers,
     required this.proxyPort,
     this.preferIPv6 = false,
+    this.fingerprintPreset = FingerprintPreset.automatic,
     this.serverIp,
-    this.gatewayEnabled = true,
-    this.h2Mitm = false,
     this.echDnsPolicy = const EchDnsPolicy(),
   });
 
   final bool dohEnabled;
+  final String fingerprintPreset;
 
   /// DNS 解析服务器（A/AAAA 查询）
   final String selectedServerUrl;
@@ -57,36 +55,28 @@ class NetworkSettings {
   /// 全局 server IP（指定后跳过 DNS 解析直接连接）
   final String? serverIp;
 
-  /// Gateway（反向代理）模式开关，关闭时回退为 MITM
-  final bool gatewayEnabled;
-
-  /// WebView MITM 是否启用 HTTP/2 多路复用（实验性，默认关闭；需实测 CF 指纹）
-  final bool h2Mitm;
-
   final EchDnsPolicy echDnsPolicy;
 
   NetworkSettings copyWith({
     bool? dohEnabled,
+    String? fingerprintPreset,
     String? selectedServerUrl,
     String? Function()? echServerUrl,
     List<DohServer>? customServers,
     int? proxyPort,
     bool? preferIPv6,
     String? Function()? serverIp,
-    bool? gatewayEnabled,
-    bool? h2Mitm,
     EchDnsPolicy? echDnsPolicy,
   }) {
     return NetworkSettings(
       dohEnabled: dohEnabled ?? this.dohEnabled,
+      fingerprintPreset: fingerprintPreset ?? this.fingerprintPreset,
       selectedServerUrl: selectedServerUrl ?? this.selectedServerUrl,
       echServerUrl: echServerUrl != null ? echServerUrl() : this.echServerUrl,
       customServers: customServers ?? this.customServers,
       proxyPort: proxyPort ?? this.proxyPort,
       preferIPv6: preferIPv6 ?? this.preferIPv6,
-      gatewayEnabled: gatewayEnabled ?? this.gatewayEnabled,
       serverIp: serverIp != null ? serverIp() : this.serverIp,
-      h2Mitm: h2Mitm ?? this.h2Mitm,
       echDnsPolicy: echDnsPolicy ?? this.echDnsPolicy,
     );
   }
@@ -125,77 +115,14 @@ class DohServer {
   }
 }
 
-class ResolvedHostConfig {
-  const ResolvedHostConfig({
-    required this.dnsOverrides,
-    this.preferredIp,
-    this.echConfig,
-  });
-
-  const ResolvedHostConfig.empty()
-    : dnsOverrides = const [],
-      preferredIp = null,
-      echConfig = null;
-
-  final List<String> dnsOverrides;
-  final String? preferredIp;
-  final Uint8List? echConfig;
-}
-
-class _ResolvedHostEntry {
-  _ResolvedHostEntry({
-    required this.ips,
-    required this.preferredIp,
-    required this.echConfig,
-    required this.ttl,
-    required this.resolvedAt,
-  }) : expiresAt = resolvedAt.add(ttl);
-
-  final List<String> ips;
-  final String? preferredIp;
-  final Uint8List? echConfig;
-  final Duration ttl;
-  final DateTime resolvedAt;
-  final DateTime expiresAt;
-
-  bool get hasData => ips.isNotEmpty || (echConfig?.isNotEmpty ?? false);
-  bool get isExpired => !expiresAt.isAfter(DateTime.now());
-
-  Duration get remaining {
-    final value = expiresAt.difference(DateTime.now());
-    return value.isNegative ? Duration.zero : value;
-  }
-
-  Duration get refreshLeadTime {
-    final byRatio = Duration(milliseconds: (ttl.inMilliseconds / 5).round());
-    if (byRatio < _minDnsRefreshLeadTime) {
-      return _minDnsRefreshLeadTime;
-    }
-    if (byRatio > _maxDnsRefreshLeadTime) {
-      return _maxDnsRefreshLeadTime;
-    }
-    return byRatio;
-  }
-
-  bool get shouldRefreshSoon => remaining <= refreshLeadTime;
-}
-
-const Duration _defaultDnsCacheTtl = Duration(minutes: 5);
-const Duration _missDnsCacheTtl = Duration(minutes: 1);
-const Duration _minDnsRefreshLeadTime = Duration(seconds: 30);
-const Duration _maxDnsRefreshLeadTime = Duration(minutes: 2);
-const Duration _failedHostIpPenaltyTtl = Duration(minutes: 2);
-
 class NetworkSettingsService {
   NetworkSettingsService._internal() {
     _proxyService.notifier.addListener(_handleProxySettingsChanged);
-    RhttpSettingsService.instance.notifier.addListener(
-      _handleRhttpSettingsChanged,
-    );
-    WebViewAdapterSettingsService.instance.notifier.addListener(
-      _handleWebViewAdapterSettingsChanged,
-    );
     SystemProxyService.instance.version.addListener(_handleSystemProxyChanged);
+    FingerprintTemplateService.instance.templateReady.addListener(() {
+      _coreService.refreshStatus();
+      _touch();
+    });
   }
 
   static final NetworkSettingsService instance =
@@ -208,8 +135,6 @@ class NetworkSettingsService {
   static const _preferIPv6Key = 'doh_prefer_ipv6';
   static const _serverIpKey = 'doh_server_ip';
   static const _echServerKey = 'doh_ech_server';
-  static const _gatewayEnabledKey = 'doh_gateway_enabled';
-  static const _h2MitmKey = 'doh_h2_mitm';
   static const _echDnsPolicyKey = 'doh_ech_dns_policy';
 
   final ValueNotifier<NetworkSettings> notifier = ValueNotifier(
@@ -221,12 +146,12 @@ class NetworkSettingsService {
     ),
   );
 
-  /// Rust 代理服务（处理 DOH + ECH）
-  final DohProxyService _rustProxyService = DohProxyService.instance;
+  /// 网络核心：dio 的网络栈，同时为 WebView 提供本地监听与指纹采样
+  final NetCoreService _coreService = NetCoreService.instance;
   final ProxySettingsService _proxyService = ProxySettingsService.instance;
-  final ValueNotifier<DohDnsCacheStats> dnsCacheStatsNotifier = ValueNotifier(
-    const DohDnsCacheStats.empty(),
-  );
+
+  /// DNS 缓存条目数（设置页展示）
+  final ValueNotifier<int> dnsCacheStatsNotifier = ValueNotifier(0);
 
   late DohResolver _resolver;
   SharedPreferences? _prefs;
@@ -236,11 +161,6 @@ class NetworkSettingsService {
   bool _lastStartFailed = false;
   bool _wasRunningBeforeApply = false;
   bool _pendingStart = false;
-  final Map<String, _ResolvedHostEntry> _resolvedHostCache = {};
-  final Map<String, Future<_ResolvedHostEntry?>> _hostLookupInflight = {};
-  final Set<String> _backgroundRefreshingHosts = <String>{};
-  final Map<String, Map<String, DateTime>> _hostIpPenaltyCache = {};
-  String? _resolvedHostCacheSignature;
 
   final ValueNotifier<bool> isApplying = ValueNotifier(false);
 
@@ -249,33 +169,31 @@ class NetworkSettingsService {
   bool get lastStartFailed => _lastStartFailed;
   bool get wasRunningBeforeApply => _wasRunningBeforeApply;
   bool get pendingStart => _pendingStart;
-  int get dnsCacheEntryCount => dnsCacheStatsNotifier.value.visibleHostEntries;
+  int get dnsCacheEntryCount => dnsCacheStatsNotifier.value;
 
-  /// 获取代理服务（优先使用 Rust 代理）
-  DohProxyService get proxyService => _rustProxyService;
+  /// 网络核心服务（设置页展示状态用）
+  NetCoreService get coreService => _coreService;
 
   NetworkSettings get current => notifier.value;
 
-  /// 当前是否使用 gateway（反向代理）模式
-  /// Gateway 模式：DOH 开启 + 用户开关开启 + 代理运行中
-  bool get isGatewayMode =>
-      current.dohEnabled &&
-      current.gatewayEnabled &&
-      _rustProxyService.isRunning;
+  /// WebView 是否经核心做 MITM（DoH 或应用内代理开启时）。
+  ///
+  /// 只在这种模式下 WebView 才会遇到核心签发的证书，
+  /// 证书放行判断依赖它；dio 始终经核心，与此无关。
+  bool get webViewUsesCoreMitm =>
+      _coreService.isRunning && _coreService.status.webViewMitm;
 
-  String? get _effectiveEchServerUrl => current.dohEnabled
-      ? (current.echServerUrl ?? current.selectedServerUrl)
-      : null;
-
-  // Rust 代理始终为 WebView 提供 DOH/代理支持，不受 rhttp 影响
-  // rhttp 只改变 Dio 用哪个适配器，不改变代理生命周期
-  bool get shouldRunLocalProxy =>
+  /// 配置上是否需要让 WebView 走核心：开了 DoH（要加密 DNS 与 ECH），
+  /// 或配了应用内代理（WebView 自己不会走我们的代理）。
+  bool get _needsWebViewMitm =>
       current.dohEnabled || _proxyService.current.isValid;
 
   List<DohServer> get servers => [
     ..._defaultServers,
     ...notifier.value.customServers,
   ];
+
+  static const fingerprintPresetKey = 'network_fingerprint_preset';
 
   Future<void> initialize(SharedPreferences prefs) async {
     if (_prefs != null) return;
@@ -290,8 +208,6 @@ class NetworkSettingsService {
     final preferIPv6 = prefs.getBool(_preferIPv6Key) ?? false;
     final serverIp = prefs.getString(_serverIpKey);
     final echServer = prefs.getString(_echServerKey);
-    final gatewayEnabled = prefs.getBool(_gatewayEnabledKey) ?? true;
-    final h2Mitm = prefs.getBool(_h2MitmKey) ?? false;
     var echDnsPolicy = const EchDnsPolicy();
     try {
       final raw = prefs.getString(_echDnsPolicyKey);
@@ -306,14 +222,15 @@ class NetworkSettingsService {
     final resolvedSelected = _resolveSelected(selected, custom);
     notifier.value = NetworkSettings(
       dohEnabled: dohEnabled,
+      fingerprintPreset: FingerprintPreset.normalize(
+        prefs.getString(fingerprintPresetKey),
+      ),
       selectedServerUrl: resolvedSelected,
       echServerUrl: echServer,
       customServers: custom,
       proxyPort: proxyPort,
       preferIPv6: preferIPv6,
       serverIp: serverIp,
-      gatewayEnabled: gatewayEnabled,
-      h2Mitm: h2Mitm,
       echDnsPolicy: echDnsPolicy,
     );
     _resolver = DohResolver(
@@ -322,20 +239,30 @@ class NetworkSettingsService {
       preferIPv6: preferIPv6,
       echDnsPolicy: echDnsPolicy,
     );
-    _rustProxyService.configureEchDnsPolicy(echDnsPolicy);
+    _coreService.configureEchDnsPolicy(echDnsPolicy);
     await _applyProxyState();
     await refreshDnsCacheStats();
+    _touch();
+  }
+
+  Future<void> setFingerprintPreset(String value) async {
+    final selected = FingerprintPreset.normalize(value);
+    final prefs = _prefs;
+    if (prefs == null || selected == current.fingerprintPreset) return;
+    if (!await prefs.setString(fingerprintPresetKey, selected)) {
+      throw StateError('保存网络模板失败');
+    }
+    FingerprintTemplateService.instance.reset();
+    notifier.value = current.copyWith(fingerprintPreset: selected);
+    await _applyProxyState();
     _touch();
   }
 
   Future<void> setDohEnabled(bool enabled) async {
     final prefs = _prefs;
     if (prefs == null) return;
-    _beginApply(enabled: enabled || _proxyService.current.isValid);
+    _beginApply();
     notifier.value = notifier.value.copyWith(dohEnabled: enabled);
-    if (!enabled) {
-      _clearResolvedHostCache();
-    }
     if (!enabled && _lastStartFailed) {
       _setStartFailed(false);
     }
@@ -349,9 +276,7 @@ class NetworkSettingsService {
     if (prefs == null) return;
     notifier.value = notifier.value.copyWith(selectedServerUrl: url);
     _resolver.updateServer(url, bootstrapIps: _getBootstrapIps(url));
-    if (current.dohEnabled) {
-      _clearResolvedHostCache();
-    }
+    if (current.dohEnabled) {}
     await prefs.setString(_dohSelectedKey, url);
     _scheduleApplyProxyState();
     _touch(); // 在代理状态更新完成后触发
@@ -391,7 +316,6 @@ class NetworkSettingsService {
         newSelected,
         bootstrapIps: _getBootstrapIps(newSelected),
       );
-      _clearResolvedHostCache();
       _scheduleApplyProxyState();
     }
     await prefs.setString(
@@ -422,7 +346,6 @@ class NetworkSettingsService {
       resolvedSelected,
       bootstrapIps: _getBootstrapIps(resolvedSelected),
     );
-    _clearResolvedHostCache();
     await prefs.setString(
       _dohCustomKey,
       jsonEncode(updated.map((e) => e.toJson()).toList()),
@@ -445,7 +368,6 @@ class NetworkSettingsService {
       resolvedSelected,
       bootstrapIps: _getBootstrapIps(resolvedSelected),
     );
-    _clearResolvedHostCache();
     await prefs.setString(_dohCustomKey, jsonEncode([]));
     _touch();
   }
@@ -455,7 +377,6 @@ class NetworkSettingsService {
     if (prefs == null) return;
     notifier.value = notifier.value.copyWith(preferIPv6: enabled);
     _resolver.preferIPv6 = enabled;
-    _clearResolvedHostCache();
     await prefs.setBool(_preferIPv6Key, enabled);
     _scheduleApplyProxyState();
     _touch();
@@ -467,7 +388,6 @@ class NetworkSettingsService {
     final trimmed = ip?.trim();
     final value = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
     notifier.value = notifier.value.copyWith(serverIp: () => value);
-    _clearResolvedHostCache();
     if (value != null) {
       await prefs.setString(_serverIpKey, value);
     } else {
@@ -481,7 +401,6 @@ class NetworkSettingsService {
     final prefs = _prefs;
     if (prefs == null) return;
     notifier.value = notifier.value.copyWith(echServerUrl: () => url);
-    _clearResolvedHostCache();
     if (url != null) {
       await prefs.setString(_echServerKey, url);
     } else {
@@ -498,137 +417,40 @@ class NetworkSettingsService {
     final normalized = EchDnsPolicy.fromJson(policy.toJson());
     notifier.value = current.copyWith(echDnsPolicy: normalized);
     _resolver.echDnsPolicy = normalized;
-    _rustProxyService.configureEchDnsPolicy(normalized);
-    _clearResolvedHostCache();
+    _coreService.configureEchDnsPolicy(normalized);
     await prefs.setString(_echDnsPolicyKey, jsonEncode(normalized.toJson()));
     _scheduleApplyProxyState();
     _touch();
   }
 
-  Future<void> setGatewayEnabled(bool enabled) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    notifier.value = notifier.value.copyWith(gatewayEnabled: enabled);
-    await prefs.setBool(_gatewayEnabledKey, enabled);
-    _scheduleApplyProxyState();
-    _touch();
-  }
-
-  /// 切换 WebView h2 MITM（实验性）。切换后重启代理生效，需实测 CF 指纹。
-  Future<void> setH2Mitm(bool enabled) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    notifier.value = notifier.value.copyWith(h2Mitm: enabled);
-    await prefs.setBool(_h2MitmKey, enabled);
-    _scheduleApplyProxyState();
-    _touch();
-  }
-
+  /// 按当前设置启动（或重启）网络核心。
+  ///
+  /// 核心在所有模式下都运行：它是 dio 的网络栈，同时为 WebView 提供
+  /// 本地监听与指纹采样。DoH / 应用内代理开启时，WebView 额外经核心做 MITM。
   Future<void> _applyProxyState() async {
     final startedAt = DateTime.now();
     _applyDepth++;
     if (_applyDepth == 1) {
       if (!isApplying.value) {
-        _wasRunningBeforeApply = _rustProxyService.isRunning;
+        _wasRunningBeforeApply = _coreService.isRunning;
         isApplying.value = true;
       }
       // 给 UI 一帧时间渲染 Loading
       await Future<void>.delayed(const Duration(milliseconds: 16));
     }
-    if (!shouldRunLocalProxy) {
-      try {
-        await _stopLocalProxyUnlessRequiredByWebView();
-        if (_pendingStart) {
-          _setPendingStart(false);
-        }
-        final prefs = _prefs;
-        if (current.proxyPort != null) {
-          notifier.value = notifier.value.copyWith(proxyPort: null);
-          if (prefs != null) {
-            await prefs.remove(_proxyPortKey);
-          }
-          _touch();
-        }
-        if (_lastStartFailed) {
-          _setStartFailed(false);
-        }
-      } finally {
-        _applyDepth--;
-        if (_applyDepth == 0) {
-          final elapsed = DateTime.now().difference(startedAt);
-          const minDuration = Duration(milliseconds: 400);
-          if (elapsed < minDuration) {
-            await Future<void>.delayed(minDuration - elapsed);
-          }
-          isApplying.value = false;
-          await refreshDnsCacheStats();
-        }
-      }
-      return;
-    }
 
     try {
-      final webViewAdapterEnabled =
-          WebViewAdapterSettingsService.instance.enabled;
-      final requiresWindowsCa = WebViewMitmPolicy.requiresTrustedCa(
-        isWindows: Platform.isWindows,
-        dohEnabled: current.dohEnabled,
-        webViewAdapterEnabled: webViewAdapterEnabled,
-      );
-      // 历史配置可能绕过 UI 留下「WebView + DoH 但 CA 未安装」状态。
-      // 不再静默篡改 DoH 偏好；只阻止 MITM 启动，避免证书失败重试风暴。
-      if (requiresWindowsCa &&
-          !await WindowsCertTrustService.instance.isInstalled()) {
-        debugPrint('[DOH] Windows WebView MITM 缺少受信任 CA，跳过代理启动');
-        _setStartFailed(true);
-        _setPendingStart(false);
-        await _clearWebViewProxy();
-        return;
+      var webViewMitm = _needsWebViewMitm;
+      if (webViewMitm && !await _webViewMitmCaReady()) {
+        // CA 没装好就做 MITM 只会换来证书失败重试风暴：WebView 不拦，
+        // 核心照常启动——它是 dio 的网络栈，不能跟着 WebView 的条件一起停
+        webViewMitm = false;
       }
 
-      final upstream = GatewayUpstream.resolve(
-        applicationProxy: _proxyService.current,
-        systemProxyUrl: Platform.isWindows
-            ? SystemProxyService.instance.effectiveProxyUrl
-            : null,
-      );
-      final effectiveEchServer = _effectiveEchServerUrl;
-      final mitmConnect = WebViewMitmPolicy.useMitmConnect(
-        isWindows: Platform.isWindows,
-        webViewAdapterEnabled: webViewAdapterEnabled,
-      );
-
-      // ECH 场景：rhttp 按请求 host 查询 ECH；gateway 模式仅作为 WebView 后备。
-      // Windows 高性能模式不使用 CA，公开 doh_proxy 的非 gateway CONNECT
-      // 路径无法表达 mitm_connect=false；此时复用 gateway 的纯隧道分支，
-      // 保持端到端 TLS，同时不改变 WebView MITM 模式的既有开关语义。
-      final shouldTryEch = effectiveEchServer != null;
-      final useGateway = WebViewMitmPolicy.useGatewayMode(
-        isWindows: Platform.isWindows,
-        dohEnabled: current.dohEnabled,
-        gatewayEnabled: current.gatewayEnabled,
-        webViewAdapterEnabled: webViewAdapterEnabled,
-      );
-
-      if (!shouldTryEch) {
-        _clearResolvedHostCache();
-      }
-
-      // macOS: 启动前确保 CA 在钥匙串中被信任
-      if (Platform.isMacOS && current.dohEnabled) {
-        final trusted = await ProxyCertificate.ensureKeychainTrust();
-        if (!trusted) {
-          debugPrint('[DOH] macOS: CA 未被钥匙串信任，无法启动代理');
-          _setStartFailed(true);
-          _setPendingStart(false);
-          return;
-        }
-      }
-
-      // per-device CA: 读取证书传给代理（iOS/macOS 强制，其他平台可选）
+      // per-device CA：iOS/macOS 用设备各自的 CA，其他平台可选
       String? caCertPem;
       String? caKeyPem;
-      if (mitmConnect && await CertPreferenceService.usePerDevice()) {
+      if (webViewMitm && await CertPreferenceService.usePerDevice()) {
         final certService = PerDeviceCertService.instance;
         if (certService.isLoaded || await certService.ensureCaCert()) {
           caCertPem = certService.certPem;
@@ -636,68 +458,61 @@ class NetworkSettingsService {
         }
       }
 
-      // Rust 代理始终为 WebView 提供 DOH/代理支持，enableDoh 不受 rhttp 影响
-      final success = await _rustProxyService.start(
-        preferredPort:
-            WindowsWebViewEnvironmentService.instance.activeLocalProxyPort ??
-            _activeProxyPort ??
-            current.proxyPort ??
-            0,
-        enableDoh: current.dohEnabled,
-        gatewayMode: useGateway,
-        preferIPv6: current.preferIPv6,
-        dohServer: current.dohEnabled ? current.selectedServerUrl : null,
-        dohServerEch: current.dohEnabled ? current.echServerUrl : null,
-        serverIp: current.serverIp,
-        upstreamProtocol: upstream?.protocol,
-        upstreamHost: upstream?.host,
-        upstreamPort: upstream?.port,
-        upstreamUsername: upstream?.username,
-        upstreamPassword: upstream?.password,
-        upstreamCipher: upstream?.cipher,
-        caCertPem: caCertPem,
-        caKeyPem: caKeyPem,
-        mitmConnect: mitmConnect,
-        h2Mitm: current.h2Mitm,
+      final started = await _coreService.start(
+        NetCoreConfig(
+          bindPort:
+              WindowsWebViewEnvironmentService.instance.activeLocalProxyPort ??
+              _coreService.port ??
+              current.proxyPort ??
+              0,
+          enableDoh: current.dohEnabled,
+          dohServer: current.dohEnabled ? current.selectedServerUrl : null,
+          dohServerEch: current.dohEnabled ? current.echServerUrl : null,
+          echDnsPolicy: current.echDnsPolicy,
+          preferIpv6: current.preferIPv6,
+          upstreamProxy: _proxyService.current,
+          // Windows 的系统代理由宿主读注册表；苹果与 Linux 由核心自行读取
+          systemProxy: Platform.isWindows ? _windowsSystemProxy() : null,
+          serverIp: current.serverIp,
+          webViewMitm: webViewMitm,
+          fingerprintCachePath: await _fingerprintCachePath(),
+          fingerprintUserAgent: await AppConstants.getUserAgent(),
+          fingerprintPreset:
+              current.fingerprintPreset == FingerprintPreset.automatic
+              ? null
+              : current.fingerprintPreset,
+          caCertPem: caCertPem,
+          caKeyPem: caKeyPem,
+        ),
       );
 
-      if (!success) {
-        debugPrint('[DOH] Failed to start Rust proxy');
+      if (!started) {
         _setStartFailed(true);
         _setPendingStart(false);
         await _clearWebViewProxy();
         return;
       }
+      _setStartFailed(false);
+      _setPendingStart(false);
 
-      // start 耗时较长(读证书/绑端口),期间设置可能已被改为无需本地代理
-      // (如 VPN 自动压制关闭了 DoH 与上游代理)。此时并发的 stop 分支先于
-      // start 完成,会留下"开关已关、代理仍在跑"的孤儿网关,这里必须复查。
-      if (!shouldRunLocalProxy) {
-        debugPrint('[DOH] 启动期间设置已变更为无需本地代理,重新核对 WebView 路由');
-        await _stopLocalProxyUnlessRequiredByWebView();
-        _setPendingStart(false);
-        return;
+      final port = _coreService.port;
+      if (port != null && current.proxyPort != port) {
+        await _prefs?.setInt(_proxyPortKey, port);
+        notifier.value = notifier.value.copyWith(proxyPort: port);
+        _touch();
       }
 
-      if (_lastStartFailed) {
-        _setStartFailed(false);
+      // WebView：需要 MITM 时指向核心，否则清掉代理让它直连
+      if (webViewMitm) {
+        await _applyWebViewProxy();
+      } else {
+        await _clearWebViewProxy();
       }
-      if (_pendingStart) {
-        _setPendingStart(false);
+      // 直连模式下 WebView 不经过核心，指纹只能靠探针采样
+      if (port != null &&
+          current.fingerprintPreset == FingerprintPreset.automatic) {
+        unawaited(FingerprintTemplateService.instance.ensure(port));
       }
-
-      // 获取实际使用的端口（Rust 代理）
-      final activePort = _rustProxyService.port;
-      if (current.proxyPort != activePort) {
-        final prefs = _prefs;
-        if (prefs != null && activePort != null) {
-          await prefs.setInt(_proxyPortKey, activePort);
-          notifier.value = notifier.value.copyWith(proxyPort: activePort);
-          _touch(); // 触发 HttpClient 重建
-        }
-      }
-
-      await _applyWebViewProxy();
     } finally {
       _applyDepth--;
       if (_applyDepth == 0) {
@@ -710,6 +525,54 @@ class NetworkSettingsService {
         await refreshDnsCacheStats();
         _touch();
       }
+    }
+  }
+
+  /// WebView MITM 的前置条件：Windows 要装好受信任 CA，macOS 要钥匙串信任。
+  Future<bool> _webViewMitmCaReady() async {
+    if (Platform.isWindows &&
+        !await WindowsCertTrustService.instance.isInstalled()) {
+      NetworkLogger.log(
+        '[NetCore] Windows 缺少受信任 CA，WebView 不走 MITM',
+        level: 'warning',
+      );
+      return false;
+    }
+    if (Platform.isMacOS && !await ProxyCertificate.ensureKeychainTrust()) {
+      NetworkLogger.log(
+        '[NetCore] macOS CA 未被钥匙串信任，WebView 不走 MITM',
+        level: 'warning',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /// Windows 的系统代理：注册表里读到的地址直接作为核心的上游。
+  NetCoreProxy? _windowsSystemProxy() {
+    final url = SystemProxyService.instance.effectiveProxyUrl;
+    if (url == null) return null;
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || parsed.host.isEmpty || parsed.port == 0) return null;
+    return NetCoreProxy(
+      host: parsed.host,
+      port: parsed.port,
+      protocol: parsed.scheme.startsWith('socks') ? 'socks5' : 'http',
+    );
+  }
+
+  /// 指纹模板缓存文件：冷启动即可按模板出站，不必等 WebView 再经过一次。
+  Future<String?> _fingerprintCachePath() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final core = Directory('${dir.path}/net_core');
+      if (!core.existsSync()) {
+        await core.create(recursive: true);
+      }
+      return '${core.path}/fingerprint_template.json';
+    } catch (e) {
+      NetworkLogger.log('[NetCore] 指纹缓存目录不可用: $e', level: 'warning');
+      return null;
     }
   }
 
@@ -726,27 +589,27 @@ class NetworkSettingsService {
   }
 
   Future<void> restartProxy() async {
-    _beginApply(enabled: shouldRunLocalProxy);
+    _beginApply();
     await _applyProxyState();
     _touch();
   }
 
-  /// 检查代理是否仍然存活，若已意外停止则自动重启
+  /// 检查核心是否仍然存活，若已意外停止则自动重启。
   ///
-  /// 用于 App 从后台恢复时调用：iOS 挂起进程后 Rust 代理的 TCP listener
-  /// 可能失效，需要检测并重启。
+  /// 用于 App 从后台恢复时调用：iOS 挂起进程后 TCP listener 可能失效。
+  /// 同时清空连接池——挂起期间网络可能已切换，旧连接绑在旧源地址上。
   Future<void> ensureProxyAlive() async {
-    if (!shouldRunLocalProxy) return;
-    if (!_rustProxyService.isRunning) return;
-    final alive = await _rustProxyService.checkAlive();
-    if (!alive) {
-      debugPrint('[DOH] 代理已失效，自动重启');
+    if (!_coreService.isRunning) {
       await restartProxy();
+      return;
     }
+    _coreService.resetConnections(reason: '从后台恢复');
+    // 挂起期间系统代理可能变了（安卓的变化不会通知过来），有变化会触发重启
+    await _coreService.refreshSystemProxy();
   }
 
   void _scheduleApplyProxyState() {
-    _beginApply(enabled: shouldRunLocalProxy);
+    _beginApply();
     _applyDebounce?.cancel();
     _applyDebounce = Timer(const Duration(milliseconds: 350), () async {
       await _applyProxyState();
@@ -754,47 +617,18 @@ class NetworkSettingsService {
     });
   }
 
-  void _beginApply({required bool enabled}) {
-    _wasRunningBeforeApply = _rustProxyService.isRunning;
-    if (enabled) {
-      _setPendingStart(true);
-    }
+  void _beginApply() {
+    _wasRunningBeforeApply = _coreService.isRunning;
+    _setPendingStart(true);
     if (!isApplying.value) {
       isApplying.value = true;
     }
   }
 
-  /// 获取当前活动的代理端口
-  int? get _activeProxyPort => _rustProxyService.port;
-
   bool _webViewProxySet = false;
 
-  Future<void> _stopLocalProxyUnlessRequiredByWebView() async {
-    var retainForWindowsWebView = false;
-    if (Platform.isWindows) {
-      final runningPort = _rustProxyService.port;
-      final clearApplied = await _clearWebViewProxy();
-      retainForWindowsWebView =
-          WindowsWebViewEnvironmentService.shouldRetainLocalProxy(
-            clearApplied: clearApplied,
-            activeEnvironmentPort:
-                WindowsWebViewEnvironmentService.instance.activeLocalProxyPort,
-            runningProxyPort: runningPort,
-          );
-    } else {
-      await _clearWebViewProxy();
-    }
-
-    if (retainForWindowsWebView) {
-      debugPrint('[DOH] WebView2 当前仍使用本地代理，保留端口直到应用重启');
-      return;
-    }
-    await _rustProxyService.stop();
-  }
-
   Future<void> _applyWebViewProxy() async {
-    if (!shouldRunLocalProxy) return;
-    final port = _activeProxyPort;
+    final port = _coreService.port;
     if (port == null) return;
 
     if (Platform.isWindows) {
@@ -802,14 +636,14 @@ class NetworkSettingsService {
         final applied = await WindowsWebViewEnvironmentService.instance
             .setProxy('http://127.0.0.1:$port');
         _webViewProxySet = true;
-        debugPrint(
+        NetworkLogger.log(
           applied
-              ? '[DOH] WebView2 代理已设置 -> 127.0.0.1:$port'
-              : '[DOH] WebView2 代理已登记，重启应用后生效 -> '
+              ? '[WebView] WebView2 代理已设置 -> 127.0.0.1:$port'
+              : '[WebView] WebView2 代理已登记，重启应用后生效 -> '
                     '127.0.0.1:$port',
         );
       } catch (e) {
-        debugPrint('[DOH] WebView2 代理设置失败: $e');
+        NetworkLogger.log('[WebView] WebView2 代理设置失败: $e', level: 'error');
       }
       return;
     }
@@ -818,6 +652,10 @@ class NetworkSettingsService {
     if (!Platform.isAndroid &&
         !await _isMacOS14OrAbove() &&
         !await _isiOS17OrAbove()) {
+      NetworkLogger.log(
+        '[WebView] 系统版本不支持代理设置（需 macOS 14 / iOS 17），WebView 不经核心',
+        level: 'warning',
+      );
       return;
     }
 
@@ -828,9 +666,9 @@ class NetworkSettingsService {
         ),
       );
       _webViewProxySet = true;
-      debugPrint('[DOH] WebView 代理已设置 -> 127.0.0.1:$port');
+      NetworkLogger.log('[WebView] 代理已设置 -> 127.0.0.1:$port');
     } catch (e) {
-      debugPrint('[DOH] WebView 代理设置失败: $e');
+      NetworkLogger.log('[WebView] 代理设置失败: $e', level: 'error');
     }
   }
 
@@ -840,12 +678,14 @@ class NetworkSettingsService {
         final applied = await WindowsWebViewEnvironmentService.instance
             .setProxy(null);
         _webViewProxySet = false;
-        debugPrint(
-          applied ? '[DOH] WebView2 代理已清除' : '[DOH] WebView2 代理清除已登记，重启应用后生效',
+        NetworkLogger.log(
+          applied
+              ? '[WebView] WebView2 代理已清除'
+              : '[WebView] WebView2 代理清除已登记，重启应用后生效',
         );
         return applied;
       } catch (e) {
-        debugPrint('[DOH] WebView2 代理清除失败: $e');
+        NetworkLogger.log('[WebView] WebView2 代理清除失败: $e', level: 'error');
         return false;
       }
     }
@@ -860,10 +700,10 @@ class NetworkSettingsService {
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
       _webViewProxySet = false;
-      debugPrint('[DOH] WebView 代理已清除');
+      NetworkLogger.log('[WebView] 代理已清除');
       return true;
     } catch (e) {
-      debugPrint('[DOH] WebView 代理清除失败: $e');
+      NetworkLogger.log('[WebView] 代理清除失败: $e', level: 'error');
       return false;
     }
   }
@@ -898,422 +738,61 @@ class NetworkSettingsService {
 
   void _handleProxySettingsChanged() {
     if (_prefs == null) return;
-    _clearResolvedHostCache();
-    _scheduleApplyProxyState();
-    _touch();
-  }
-
-  void _handleWebViewAdapterSettingsChanged() {
-    if (_prefs == null || !shouldRunLocalProxy) return;
     _scheduleApplyProxyState();
     _touch();
   }
 
   void _handleSystemProxyChanged() {
     if (_prefs == null || !Platform.isWindows) return;
-    // 应用内代理拥有更高优先级；只有走系统代理回退时才需要重启网关。
-    if (_proxyService.current.isValid || !shouldRunLocalProxy) return;
+    // Windows 的系统代理随配置下发给核心；应用内代理优先级更高，配了就不受影响
+    if (_proxyService.current.isValid) return;
     _scheduleApplyProxyState();
   }
 
-  Future<ResolvedHostConfig> resolveHostForRequest(
-    String host, {
-    bool forceRefresh = false,
-  }) async {
-    final normalizedHost = _normalizeHost(host);
-    if (normalizedHost == null) {
-      return const ResolvedHostConfig.empty();
-    }
-
-    final serverIpOverride = _parseServerIpOverride();
-    if (!current.dohEnabled) {
-      _clearResolvedHostCache();
-      return ResolvedHostConfig(
-        dnsOverrides: serverIpOverride != null
-            ? <String>[serverIpOverride]
-            : const [],
-        preferredIp: serverIpOverride,
-      );
-    }
-
-    final entry = await _resolveHostEntry(
-      normalizedHost,
-      forceRefresh: forceRefresh,
-    );
-    final orderedIps = _applyHostIpPenalties(
-      normalizedHost,
-      entry?.ips ?? const [],
-      preferredIp: entry?.preferredIp,
-    );
-    final stickyIp = _selectUsablePreferredIp(
-      normalizedHost,
-      entry?.preferredIp,
-      orderedIps,
-    );
-    return ResolvedHostConfig(
-      dnsOverrides: serverIpOverride != null
-          ? <String>[serverIpOverride]
-          : stickyIp != null
-          ? <String>[stickyIp]
-          : orderedIps,
-      preferredIp: serverIpOverride ?? stickyIp,
-      echConfig: entry?.echConfig,
-    );
-  }
-
-  void reportHostConnectionFailure(String host, String? ip) {
-    final normalizedHost = _normalizeHost(host);
-    final normalizedIp = _normalizeSingleIp(ip);
-    if (normalizedHost == null || normalizedIp == null) {
-      return;
-    }
-
-    _evictExpiredHostIpPenalties();
-    final penalties = _hostIpPenaltyCache.putIfAbsent(
-      normalizedHost,
-      () => <String, DateTime>{},
-    );
-    penalties[normalizedIp] = DateTime.now().add(_failedHostIpPenaltyTtl);
-    if (current.dohEnabled) {
-      final dohServer = current.selectedServerUrl;
-      final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
-      unawaited(
-        _rustProxyService.clearPreferredHostIp(
-          normalizedHost,
-          dohServer,
-          dohServerEch: dohServerEch,
-          preferIpv6: current.preferIPv6,
-        ),
-      );
-    }
-  }
-
-  void reportHostConnectionSuccess(String host, String? ip) {
-    final normalizedHost = _normalizeHost(host);
-    final normalizedIp = _normalizeSingleIp(ip);
-    if (normalizedHost == null || normalizedIp == null) {
-      return;
-    }
-
-    final penalties = _hostIpPenaltyCache[normalizedHost];
-    if (penalties == null) {
-      return;
-    }
-    penalties.remove(normalizedIp);
-    if (penalties.isEmpty) {
-      _hostIpPenaltyCache.remove(normalizedHost);
-    }
-
-    if (current.dohEnabled) {
-      final dohServer = current.selectedServerUrl;
-      final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
-      unawaited(
-        _rustProxyService.recordHostSuccess(
-          normalizedHost,
-          dohServer,
-          dohServerEch: dohServerEch,
-          preferIpv6: current.preferIPv6,
-          ip: normalizedIp,
-        ),
-      );
-    }
-  }
-
-  Future<List<String>> getDnsOverridesForHost(String host) async {
-    return (await resolveHostForRequest(host)).dnsOverrides;
-  }
-
-  Future<Uint8List?> getEchConfigForHost(String host) async {
-    return (await resolveHostForRequest(host)).echConfig;
-  }
-
+  /// 刷新 DNS 缓存条目数（设置页展示）。
   Future<void> refreshDnsCacheStats() async {
-    var stats = const DohDnsCacheStats.empty();
-    try {
-      stats = await _rustProxyService.dnsCacheStats() ?? stats;
-    } catch (e) {
-      debugPrint('[DOH] DNS cache stats refresh failed: $e');
-    }
-    _setDnsCacheStats(stats);
+    final cache = await _coreService.dnsCache();
+    dnsCacheStatsNotifier.value = cache.entryCount;
   }
 
-  Future<List<DohDnsCacheRecord>> dnsCacheRecords() async {
-    final records = <DohDnsCacheRecord>[];
-    try {
-      records.addAll(await _rustProxyService.dnsCacheRecords() ?? const []);
-    } catch (e) {
-      debugPrint('[DOH] DNS cache records load failed: $e');
-    }
-
-    final seen = records.map(_dnsCacheRecordKey).toSet();
-    for (final item in _resolvedHostCache.entries) {
-      final host = item.key;
-      final entry = item.value;
-      if (entry.isExpired) {
-        continue;
-      }
-
-      void addLocalRecord(DohDnsCacheRecord record) {
-        if (seen.add(_dnsCacheRecordKey(record))) {
-          records.add(record);
-        }
-      }
-
-      if (entry.ips.isNotEmpty) {
-        addLocalRecord(
-          DohDnsCacheRecord(
-            host: host,
-            kind: 'ip',
-            values: entry.ips,
-            ttl: entry.remaining,
-          ),
-        );
-      }
-      if (entry.echConfig?.isNotEmpty ?? false) {
-        addLocalRecord(
-          DohDnsCacheRecord(
-            host: host,
-            kind: 'ech',
-            values: [base64Encode(entry.echConfig!)],
-            ttl: entry.remaining,
-          ),
-        );
-      }
-      if (entry.preferredIp != null) {
-        addLocalRecord(
-          DohDnsCacheRecord(
-            host: host,
-            kind: 'preferred_ip',
-            values: [entry.preferredIp!],
-            ttl: entry.remaining,
-          ),
-        );
-      }
-    }
-
+  /// DNS 缓存明细，按域名、类型排序。
+  Future<List<NetCoreDnsRecord>> dnsCacheRecords() async {
+    final records = [...(await _coreService.dnsCache()).records];
     records.sort((a, b) {
       final hostOrder = a.host.compareTo(b.host);
-      if (hostOrder != 0) {
-        return hostOrder;
-      }
-      return _dnsCacheRecordKindOrder(
-        a.kind,
-      ).compareTo(_dnsCacheRecordKindOrder(b.kind));
+      if (hostOrder != 0) return hostOrder;
+      return _dnsCacheRecordKindOrder(a.kind)
+          .compareTo(_dnsCacheRecordKindOrder(b.kind));
     });
     return records;
   }
 
   Future<void> clearDnsCache() async {
-    _clearResolvedHostCache();
-    await _rustProxyService.clearDnsCache();
+    _coreService.clearDnsCache();
     await refreshDnsCacheStats();
   }
 
+  /// 清空缓存并丢弃连接池，下次请求重新解析。返回预热的域名数（核心按需解析，不预热）。
   Future<int> forceRefreshDnsCache() async {
-    final hosts = _collectCommonHosts();
-    await clearDnsCache();
-    if (!current.dohEnabled || hosts.isEmpty) {
-      return 0;
-    }
-
-    await Future.wait(
-      hosts.map((host) => _resolveHostEntry(host, forceRefresh: true)),
-    );
+    _coreService.clearDnsCache();
+    _coreService.resetConnections(reason: '手动刷新 DNS 缓存');
     await refreshDnsCacheStats();
-    return hosts.length;
+    return 0;
   }
-
-  Future<_ResolvedHostEntry?> _resolveHostEntry(
-    String host, {
-    bool forceRefresh = false,
-  }) {
-    _ensureResolvedHostCacheSignature();
-
-    if (!forceRefresh) {
-      final cached = _resolvedHostCache[host];
-      if (cached != null) {
-        if (!cached.isExpired) {
-          if (cached.shouldRefreshSoon) {
-            _refreshHostInBackground(host);
-          }
-          return Future.value(cached);
-        }
-        _resolvedHostCache.remove(host);
-        _updateLocalDnsCacheStats();
-        unawaited(refreshDnsCacheStats());
-      }
-    } else {
-      if (_resolvedHostCache.remove(host) != null) {
-        _updateLocalDnsCacheStats();
-        unawaited(refreshDnsCacheStats());
-      }
-    }
-
-    final inflight = _hostLookupInflight[host];
-    if (inflight != null) {
-      return inflight;
-    }
-
-    final future = _loadHostEntry(host, forceRefresh: forceRefresh);
-    _hostLookupInflight[host] = future;
-    return future.whenComplete(() {
-      if (identical(_hostLookupInflight[host], future)) {
-        _hostLookupInflight.remove(host);
-      }
-    });
-  }
-
-  Future<_ResolvedHostEntry?> _loadHostEntry(
-    String host, {
-    required bool forceRefresh,
-  }) async {
-    final dohServer = current.selectedServerUrl;
-    final dohServerEch = _effectiveEchServerUrl ?? current.selectedServerUrl;
-    final signature = _currentResolvedHostCacheSignature;
-    final resolvedAt = DateTime.now();
-
-    final rustResult = await _rustProxyService.lookupHost(
-      host,
-      dohServer,
-      dohServerEch: dohServerEch,
-      preferIpv6: current.preferIPv6,
-      forceRefresh: forceRefresh,
-    );
-    if (signature != _currentResolvedHostCacheSignature) {
-      return current.dohEnabled ? _resolveHostEntry(host) : null;
-    }
-    if (rustResult != null && rustResult.hasData) {
-      final entry = _ResolvedHostEntry(
-        ips: _normalizeIpList(rustResult.ips),
-        preferredIp: _normalizeSingleIp(rustResult.preferredIp),
-        echConfig: rustResult.echConfig,
-        ttl: _clampDnsTtl(rustResult.ttl),
-        resolvedAt: resolvedAt,
-      );
-      _resolvedHostCache[host] = entry;
-      _updateLocalDnsCacheStats();
-      unawaited(refreshDnsCacheStats());
-      debugPrint(
-        '[DOH] Host 已解析 $host '
-        '(DNS: ${entry.preferredIp ?? (entry.ips.isEmpty ? "none" : entry.ips.join(", "))}, '
-        'ECH config: ${entry.echConfig == null ? "absent" : "present"}, '
-        'TTL: ${entry.ttl.inSeconds}s)',
-      );
-      return entry;
-    }
-
-    final fallbackResults = await Future.wait<dynamic>([
-      _lookupIpViaRust(host, dohServer, current.preferIPv6),
-      _rustProxyService.lookupEchConfig(host, dohServerEch),
-    ]);
-
-    var ips = fallbackResults[0] as List<String>;
-    final echConfig = fallbackResults[1] as Uint8List?;
-
-    if (ips.isEmpty) {
-      final fallback = await resolver.resolveAll(host);
-      ips = _normalizeIpList(fallback.map((address) => address.address));
-      if (ips.isNotEmpty) {
-        debugPrint('[DOH] Dart IP 已解析 $host -> ${ips.join(', ')}');
-      }
-    }
-
-    if (signature != _currentResolvedHostCacheSignature) {
-      return current.dohEnabled ? _resolveHostEntry(host) : null;
-    }
-    final hasData = ips.isNotEmpty || (echConfig?.isNotEmpty ?? false);
-    // fallback 路径同样不要在真正连通前提前 pin 单 IP。
-    // 让 rhttp 先拿完整候选集，避免把错误/不稳定边缘节点缓存成 sticky。
-    final preferredIp = null;
-    final entry = _ResolvedHostEntry(
-      ips: ips,
-      preferredIp: preferredIp,
-      echConfig: echConfig != null && echConfig.isEmpty ? null : echConfig,
-      ttl: hasData ? _defaultDnsCacheTtl : _missDnsCacheTtl,
-      resolvedAt: resolvedAt,
-    );
-    _resolvedHostCache[host] = entry;
-    _updateLocalDnsCacheStats();
-    unawaited(refreshDnsCacheStats());
-
-    if (!hasData) {
-      debugPrint('[DOH] Host 解析失败或为空: $host');
-    }
-    return entry;
-  }
-
-  void _ensureResolvedHostCacheSignature() {
-    final signature = _currentResolvedHostCacheSignature;
-    if (_resolvedHostCacheSignature == signature) {
-      return;
-    }
-    _clearResolvedHostCache();
-    _resolvedHostCacheSignature = signature;
-  }
-
-  void _refreshHostInBackground(String host) {
-    if (!_backgroundRefreshingHosts.add(host)) {
-      return;
-    }
-    unawaited(
-      _resolveHostEntry(host, forceRefresh: true).whenComplete(() {
-        _backgroundRefreshingHosts.remove(host);
-      }),
-    );
-  }
-
-  void _setDnsCacheStats(DohDnsCacheStats stats) {
-    dnsCacheStatsNotifier.value = stats.copyWith(
-      dartEntryCount: _resolvedHostCache.length,
-    );
-  }
-
-  void _updateLocalDnsCacheStats() {
-    _setDnsCacheStats(dnsCacheStatsNotifier.value);
-  }
-
-  String _dnsCacheRecordKey(DohDnsCacheRecord record) =>
-      '${record.host}|${record.kind}';
 
   int _dnsCacheRecordKindOrder(String kind) {
     switch (kind) {
-      case 'ip':
-        return 0;
-      case 'ech':
-        return 1;
-      case 'ech_negative':
-        return 2;
       case 'preferred_ip':
+        return 0;
+      case 'ip':
+        return 1;
+      case 'ech':
+        return 2;
+      case 'ech_negative':
         return 3;
       default:
         return 4;
     }
-  }
-
-  void _clearResolvedHostCache({bool touch = false}) {
-    final changed =
-        _resolvedHostCache.isNotEmpty ||
-        _hostLookupInflight.isNotEmpty ||
-        _backgroundRefreshingHosts.isNotEmpty ||
-        _hostIpPenaltyCache.isNotEmpty ||
-        _resolvedHostCacheSignature != null;
-    _resolvedHostCache.clear();
-    _hostLookupInflight.clear();
-    _backgroundRefreshingHosts.clear();
-    _hostIpPenaltyCache.clear();
-    _resolvedHostCacheSignature = null;
-    if (changed) {
-      _updateLocalDnsCacheStats();
-    }
-    if (touch && changed) {
-      _touch();
-    }
-  }
-
-  void _handleRhttpSettingsChanged() {
-    if (_prefs == null) return;
-    _scheduleApplyProxyState();
-    _touch();
   }
 
   String _resolveSelected(String selected, List<DohServer> customServers) {
@@ -1334,201 +813,6 @@ class NetworkSettingsService {
   /// 获取选中服务器的 Bootstrap IP
   List<String> _getBootstrapIps(String url) {
     return _findServer(url)?.bootstrapIps ?? [];
-  }
-
-  String? _normalizeHost(String host) {
-    final normalizedHost = host.trim().toLowerCase();
-    if (normalizedHost.isEmpty ||
-        InternetAddress.tryParse(normalizedHost) != null) {
-      return null;
-    }
-    return normalizedHost;
-  }
-
-  String? _parseServerIpOverride() {
-    final serverIp = current.serverIp?.trim();
-    if (serverIp == null || serverIp.isEmpty) {
-      return null;
-    }
-    return InternetAddress.tryParse(serverIp)?.address;
-  }
-
-  Duration _clampDnsTtl(Duration ttl) {
-    if (ttl <= Duration.zero) {
-      return _defaultDnsCacheTtl;
-    }
-    if (ttl < _missDnsCacheTtl) {
-      return _missDnsCacheTtl;
-    }
-    if (ttl > const Duration(minutes: 30)) {
-      return const Duration(minutes: 30);
-    }
-    return ttl;
-  }
-
-  String? get _currentResolvedHostCacheSignature => current.dohEnabled
-      ? '${current.selectedServerUrl}|${_effectiveEchServerUrl ?? ""}|${current.preferIPv6 ? "v6" : "v4"}|${jsonEncode(current.echDnsPolicy.toJson())}'
-      : null;
-
-  List<String> _collectCommonHosts() {
-    final preloaded = PreloadedDataService();
-    final hosts = <String>{
-      'connect.linux.do',
-      'ping.linux.do',
-      'cdn.linux.do',
-      'credit.linux.do',
-      'cdk.linux.do',
-    };
-
-    for (final value in [
-      AppConstants.baseUrl,
-      preloaded.longPollingBaseUrl,
-      preloaded.cdnUrl,
-      preloaded.s3CdnUrl,
-      preloaded.s3BaseUrl,
-    ]) {
-      final host = _extractHost(value);
-      if (host != null) {
-        hosts.add(host);
-      }
-    }
-
-    final result = hosts.toList()..sort();
-    return result;
-  }
-
-  String? _extractHost(String? raw) {
-    if (raw == null || raw.trim().isEmpty) {
-      return null;
-    }
-    final normalized = raw.startsWith('//') ? 'https:$raw' : raw;
-    final host = Uri.tryParse(normalized)?.host.trim().toLowerCase();
-    if (host == null || host.isEmpty) {
-      return null;
-    }
-    return host;
-  }
-
-  Future<List<String>> _lookupIpViaRust(
-    String host,
-    String dohServer,
-    bool preferIpv6,
-  ) async {
-    final result = await _rustProxyService.lookupIp(
-      host,
-      dohServer,
-      preferIpv6: preferIpv6,
-    );
-    return _normalizeIpList(result);
-  }
-
-  List<String> _normalizeIpList(Iterable<String> raw) {
-    final normalized = <String>[];
-    final seen = <String>{};
-    for (final value in raw) {
-      final ip = InternetAddress.tryParse(value.trim())?.address;
-      if (ip == null || !seen.add(ip)) {
-        continue;
-      }
-      normalized.add(ip);
-    }
-    return normalized;
-  }
-
-  String? _normalizeSingleIp(String? raw) {
-    if (raw == null) {
-      return null;
-    }
-    return InternetAddress.tryParse(raw.trim())?.address;
-  }
-
-  List<String> _applyHostIpPenalties(
-    String host,
-    List<String> ips, {
-    String? preferredIp,
-  }) {
-    if (ips.isEmpty) {
-      return const [];
-    }
-
-    _evictExpiredHostIpPenalties();
-    final penalties = _hostIpPenaltyCache[host];
-    if (penalties == null || penalties.isEmpty) {
-      return ips;
-    }
-
-    final preferred = _normalizeSingleIp(preferredIp);
-    final available = <String>[];
-    final penalized = <String>[];
-
-    for (final ip in ips) {
-      if (_isHostIpPenalized(host, ip)) {
-        penalized.add(ip);
-      } else {
-        available.add(ip);
-      }
-    }
-
-    if (preferred != null && available.remove(preferred)) {
-      available.insert(0, preferred);
-    }
-
-    if (available.isNotEmpty) {
-      return <String>[...available, ...penalized];
-    }
-    return penalized;
-  }
-
-  String? _selectUsablePreferredIp(
-    String host,
-    String? preferredIp,
-    List<String> orderedIps,
-  ) {
-    final normalizedPreferred = _normalizeSingleIp(preferredIp);
-    if (normalizedPreferred == null || orderedIps.isEmpty) {
-      return null;
-    }
-    if (_isHostIpPenalized(host, normalizedPreferred)) {
-      return null;
-    }
-    return orderedIps.first == normalizedPreferred ? normalizedPreferred : null;
-  }
-
-  bool _isHostIpPenalized(String host, String ip) {
-    final penalties = _hostIpPenaltyCache[host];
-    if (penalties == null) {
-      return false;
-    }
-    final expiresAt = penalties[ip];
-    if (expiresAt == null) {
-      return false;
-    }
-    if (expiresAt.isAfter(DateTime.now())) {
-      return true;
-    }
-    penalties.remove(ip);
-    if (penalties.isEmpty) {
-      _hostIpPenaltyCache.remove(host);
-    }
-    return false;
-  }
-
-  void _evictExpiredHostIpPenalties() {
-    if (_hostIpPenaltyCache.isEmpty) {
-      return;
-    }
-
-    final now = DateTime.now();
-    final emptyHosts = <String>[];
-    for (final entry in _hostIpPenaltyCache.entries) {
-      entry.value.removeWhere((_, expiresAt) => !expiresAt.isAfter(now));
-      if (entry.value.isEmpty) {
-        emptyHosts.add(entry.key);
-      }
-    }
-    for (final host in emptyHosts) {
-      _hostIpPenaltyCache.remove(host);
-    }
   }
 
   List<DohServer> _decodeServers(String? raw) {

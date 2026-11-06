@@ -89,7 +89,8 @@ void main() {
       for (var i = 0; i < 20 && platform.webView == null; i++) {
         await tester.pump(const Duration(milliseconds: 10));
       }
-      expect(platform.webView, isNotNull);
+      expect(platform.webView, isNotNull,
+        reason: 'requests=${adapter.requests}, completed=$completed, failure=$failure');
       platform.webView!.params.onWebViewCreated!(platform.controller.wrapped);
       Completer<Cookie?>? pendingValue;
       if (delayedSnapshot) {

@@ -1,0 +1,26 @@
+# Standalone: not a member of the rama workspace, with its own lockfile, so the upstream QUIC
+# peer never reaches the workspace resolution.
+[workspace]
+
+[package]
+name = "rama-quic-quiche-interop"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+boring = ["rama/boring", "interop-common/boring"]
+rustls-ring = ["rama/rustls", "rama/ring", "interop-common/rustls-ring"]
+rustls-aws-lc = ["rama/rustls", "rama/aws-lc", "interop-common/rustls-aws-lc"]
+
+[dependencies]
+
+[dev-dependencies]
+rama = { path = "../../..", default-features = false, features = ["std", "quic", "udp"] }
+interop-common = { package = "rama-quic-interop-common", path = "../interop-common", default-features = false }
+# Default features vendor and build BoringSSL, so quiche's TLS provider is its own. `qlog` is
+# quiche's own record of what it did with each packet, which the close cases read.
+quiche = { version = "0.30", features = ["qlog"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+# The lock the other peer projects use for the same purpose.
+parking_lot = "0.13"

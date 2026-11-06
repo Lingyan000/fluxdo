@@ -1,0 +1,31 @@
+
+[package]
+name = "rama-quic-interop-runner"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+# Standalone: the runner endpoint has its own dependency resolution and image builds.
+[workspace]
+
+[[bin]]
+name = "rama-quic-interop-client"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "rama-quic-interop-server"
+path = "src/bin/server.rs"
+
+[features]
+boring = ["rama/boring", "interop-common/boring"]
+rustls-ring = ["rama/rustls", "rama/ring", "interop-common/rustls-ring"]
+rustls-aws-lc = ["rama/rustls", "rama/aws-lc", "interop-common/rustls-aws-lc"]
+
+[dependencies]
+clap = { version = "4.6", features = ["derive", "env"] }
+rama = { path = "../../..", default-features = false, features = ["std", "quic", "http-backend"] }
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+interop-common = { package = "rama-quic-interop-common", path = "../interop-common" }
+serde_json = "1"

@@ -1,5 +1,8 @@
 import 'dart:typed_data';
 
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:fluxdo/services/network/cookie/app_cookie_manager.dart';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/network/cookie/csrf_token_service.dart';
@@ -26,7 +29,15 @@ void main() {
   final adapter = _CsrfAdapter();
   final dio = Dio(BaseOptions(baseUrl: 'https://linux.do'))
     ..httpClientAdapter = adapter;
-  dio.interceptors.add(RequestHeaderInterceptor(service));
+  final jar = CookieJar();
+  final manager = AppCookieManager(jar);
+  dio.interceptors.add(manager);
+  dio.interceptors.add(
+    RequestHeaderInterceptor(
+      service,
+      reloadCookies: manager.refreshRequestCookies,
+    ),
+  );
   service.attachDio(dio);
 
   setUp(() {
@@ -68,6 +79,29 @@ void main() {
     expect(adapter.csrfCallCount, 1, reason: '三个并发调用应共享同一次刷新');
   });
 
+  test('刷新期间会话轮换后，原 POST 重新取 Cookie；显式旁路仍保留手工 Cookie', () async {
+    await jar.saveFromResponse(Uri.parse('https://linux.do/'), [
+      Cookie('_forum_session', 'old-session')..path = '/',
+    ]);
+    adapter.onCsrf = () => jar.saveFromResponse(
+      Uri.parse('https://linux.do/'),
+      [Cookie('_forum_session', 'new-session')..path = '/'],
+    );
+    await dio.post('/topics/timings', data: 'topic_id=0');
+    expect(adapter.lastPostCookie, contains('new-session'));
+    expect(adapter.lastPostCookie, isNot(contains('old-session')));
+    expect(adapter.lastPostCsrf, 'token-from-main-chain');
+    service.clearCsrfToken();
+    await dio.post(
+      '/topics/timings',
+      options: Options(
+        headers: {'Cookie': 'manual=value'},
+        extra: {AppCookieManager.skipCookieManagerExtraKey: true},
+      ),
+    );
+    expect(adapter.lastPostCookie, 'manual=value');
+  });
+
   test('attachDio 幂等:重复注册不会替换已有的主 dio', () async {
     final intruder = _CsrfAdapter();
     service.attachDio(
@@ -85,11 +119,17 @@ void main() {
 
 class _CsrfAdapter implements HttpClientAdapter {
   int csrfCallCount = 0;
+  Future<void> Function()? onCsrf;
+  String? lastPostCookie;
+  String? lastPostCsrf;
   Map<String, dynamic>? lastExtra;
 
   void reset() {
     csrfCallCount = 0;
     lastExtra = null;
+    onCsrf = null;
+    lastPostCookie = null;
+    lastPostCsrf = null;
   }
 
   @override
@@ -100,7 +140,12 @@ class _CsrfAdapter implements HttpClientAdapter {
   ) async {
     if (options.uri.path == '/session/csrf') {
       csrfCallCount++;
+      await onCsrf?.call();
       lastExtra = Map<String, dynamic>.from(options.extra);
+    }
+    if (options.method == 'POST') {
+      lastPostCookie = options.headers['cookie']?.toString();
+      lastPostCsrf = options.headers['X-CSRF-Token']?.toString();
     }
     return ResponseBody.fromString(
       '{"csrf":"token-from-main-chain"}',

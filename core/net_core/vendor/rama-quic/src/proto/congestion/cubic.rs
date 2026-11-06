@@ -1,0 +1,389 @@
+use std::cmp;
+use std::sync::Arc;
+
+use super::{BASE_DATAGRAM_SIZE, Controller, ControllerFactory};
+use crate::proto::connection::RttEstimator;
+use crate::proto::{Duration, Instant};
+
+/// CUBIC Constants.
+///
+/// These are recommended value in RFC8312.
+const BETA_CUBIC: f64 = 0.7;
+
+const C: f64 = 0.4;
+
+/// CUBIC State Variables.
+///
+/// We need to keep those variables across the connection.
+/// k, w_max are described in the RFC.
+#[derive(Debug, Default, Clone)]
+pub(super) struct State {
+    k: f64,
+
+    w_max: f64,
+
+    // Store cwnd increment during congestion avoidance.
+    cwnd_inc: u64,
+}
+
+/// CUBIC Functions.
+///
+/// Note that these calculations are based on a count of cwnd as bytes,
+/// not packets.
+/// Unit of t (duration) and RTT are based on seconds (f64).
+impl State {
+    // K = cbrt(w_max * (1 - beta_cubic) / C) (Eq. 2)
+    fn cubic_k(&self, max_datagram_size: u64) -> f64 {
+        let w_max = self.w_max / max_datagram_size as f64;
+        (w_max * (1.0 - BETA_CUBIC) / C).cbrt()
+    }
+
+    // W_cubic(t) = C * (t - K)^3 - w_max (Eq. 1)
+    #[expect(
+        clippy::suboptimal_flops,
+        reason = "written as RFC 8312 states the equation; fusing the multiply and add rounds differently from the reference"
+    )]
+    fn w_cubic(&self, t: Duration, max_datagram_size: u64) -> f64 {
+        let w_max = self.w_max / max_datagram_size as f64;
+
+        (C * (t.as_secs_f64() - self.k).powi(3) + w_max) * max_datagram_size as f64
+    }
+
+    // W_est(t) = w_max * beta_cubic + 3 * (1 - beta_cubic) / (1 + beta_cubic) *
+    // (t / RTT) (Eq. 4)
+    #[expect(
+        clippy::suboptimal_flops,
+        reason = "written as RFC 8312 states the equation; fusing the multiply and add rounds differently from the reference"
+    )]
+    fn w_est(&self, t: Duration, rtt: Duration, max_datagram_size: u64) -> f64 {
+        let w_max = self.w_max / max_datagram_size as f64;
+        (w_max * BETA_CUBIC
+            + 3.0 * (1.0 - BETA_CUBIC) / (1.0 + BETA_CUBIC) * t.as_secs_f64() / rtt.as_secs_f64())
+            * max_datagram_size as f64
+    }
+}
+
+/// The RFC8312 congestion controller, as widely used for TCP
+#[derive(Debug, Clone)]
+pub(crate) struct Cubic {
+    config: Arc<CubicConfig>,
+    /// Maximum number of bytes in flight that may be sent.
+    window: u64,
+    /// Slow start threshold in bytes. When the congestion window is below ssthresh, the mode is
+    /// slow start and the window grows by the number of bytes acknowledged.
+    ssthresh: u64,
+    /// The time when QUIC first detects a loss, causing it to enter recovery. When a packet sent
+    /// after this time is acknowledged, QUIC exits recovery.
+    recovery_start_time: Option<Instant>,
+    cubic_state: State,
+    current_mtu: u64,
+}
+
+impl Cubic {
+    /// Construct a state using the given `config` and current time `now`
+    pub(crate) fn new(config: Arc<CubicConfig>, _now: Instant, current_mtu: u16) -> Self {
+        Self {
+            window: config.initial_window,
+            ssthresh: u64::MAX,
+            recovery_start_time: None,
+            config,
+            cubic_state: Default::default(),
+            current_mtu: current_mtu as u64,
+        }
+    }
+
+    fn minimum_window(&self) -> u64 {
+        2 * self.current_mtu
+    }
+}
+
+impl Controller for Cubic {
+    fn on_ack(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        bytes: u64,
+        app_limited: bool,
+        rtt: &RttEstimator,
+    ) {
+        if app_limited
+            || self
+                .recovery_start_time
+                .map(|recovery_start_time| sent <= recovery_start_time)
+                .unwrap_or(false)
+        {
+            return;
+        }
+
+        if self.window < self.ssthresh {
+            // Slow start
+            self.window = self.window.saturating_add(bytes);
+        } else {
+            // Congestion avoidance.
+            let ca_start_time;
+
+            if let Some(t) = self.recovery_start_time {
+                ca_start_time = t
+            } else {
+                // When we come here without congestion_event() triggered,
+                // initialize congestion_recovery_start_time, w_max and k.
+                ca_start_time = now;
+                self.recovery_start_time = Some(now);
+
+                self.cubic_state.w_max = self.window as f64;
+                self.cubic_state.k = 0.0;
+            }
+
+            let t = now - ca_start_time;
+
+            // w_cubic(t + rtt)
+            let w_cubic = self.cubic_state.w_cubic(t + rtt.get(), self.current_mtu);
+
+            // w_est(t)
+            let w_est = self.cubic_state.w_est(t, rtt.get(), self.current_mtu);
+
+            let mut cubic_cwnd = self.window;
+
+            if w_cubic < w_est {
+                // TCP friendly region.
+                cubic_cwnd = cmp::max(cubic_cwnd, w_est as u64);
+            } else if cubic_cwnd < w_cubic as u64 {
+                // Concave region or convex region use same increment.
+                let cubic_inc =
+                    (w_cubic - cubic_cwnd as f64) / cubic_cwnd as f64 * self.current_mtu as f64;
+
+                // w_cubic grows cubically with the time since the last congestion
+                // event and can exceed `u64::MAX` after a long lossless period.
+                cubic_cwnd = cubic_cwnd.saturating_add(cubic_inc as u64);
+            }
+
+            // Update the increment and increase cwnd by MSS.
+            // Keep release builds from wrapping the retained credit.
+            self.cubic_state.cwnd_inc = self
+                .cubic_state
+                .cwnd_inc
+                .saturating_add(cubic_cwnd - self.window);
+
+            // cwnd_inc can be more than 1 MSS in the late stage of max probing.
+            // however RFC9002 §7.3.3 (Congestion Avoidance) limits
+            // the increase of cwnd to 1 max_datagram_size per cwnd acknowledged.
+            // Keep the excess credit for later ACKs instead of discarding it.
+            // https://www.rfc-editor.org/rfc/rfc9002.html#section-7.3.3
+            if self.cubic_state.cwnd_inc >= self.current_mtu {
+                self.window = self.window.saturating_add(self.current_mtu);
+                self.cubic_state.cwnd_inc -= self.current_mtu;
+            }
+        }
+    }
+
+    fn on_congestion_event(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        is_persistent_congestion: bool,
+        _lost_bytes: u64,
+    ) {
+        if self
+            .recovery_start_time
+            .map(|recovery_start_time| sent <= recovery_start_time)
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        self.recovery_start_time = Some(now);
+        let window = self.window as f64;
+
+        // Fast convergence lowers W_max first; the 0.7 loss reduction still
+        // applies to the old window, not to that already-reduced W_max.
+        // https://www.rfc-editor.org/rfc/rfc9438.html#section-4.7
+        // https://www.rfc-editor.org/rfc/rfc9438.html#section-4.6
+        if window < self.cubic_state.w_max {
+            self.cubic_state.w_max = window * (1.0 + BETA_CUBIC) / 2.0;
+        } else {
+            self.cubic_state.w_max = window;
+        }
+
+        self.ssthresh = cmp::max((window * BETA_CUBIC) as u64, self.minimum_window());
+        self.window = self.ssthresh;
+        self.cubic_state.k = self.cubic_state.cubic_k(self.current_mtu);
+
+        self.cubic_state.cwnd_inc = (self.cubic_state.cwnd_inc as f64 * BETA_CUBIC) as u64;
+
+        if is_persistent_congestion {
+            // ssthresh already holds the single β_cubic reduction above; a timeout lowers only
+            // cwnd (RFC 9438 §4.8).
+            self.recovery_start_time = None;
+            self.cubic_state.w_max = self.window as f64;
+
+            self.cubic_state.cwnd_inc = 0;
+
+            self.window = self.minimum_window();
+        }
+    }
+
+    fn on_mtu_update(&mut self, new_mtu: u16) {
+        self.current_mtu = new_mtu as u64;
+        self.window = self.window.max(self.minimum_window());
+    }
+
+    fn window(&self) -> u64 {
+        self.window
+    }
+
+    fn metrics(&self) -> super::ControllerMetrics {
+        super::ControllerMetrics {
+            congestion_window: self.window(),
+            ssthresh: Some(self.ssthresh),
+            pacing_rate: None,
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(self.clone())
+    }
+
+    fn initial_window(&self) -> u64 {
+        self.config.initial_window
+    }
+}
+
+/// Configuration for the `Cubic` congestion controller
+#[derive(Debug, Clone)]
+pub(crate) struct CubicConfig {
+    initial_window: u64,
+}
+
+impl CubicConfig {
+    /// Default limit on the amount of outstanding data in bytes.
+    ///
+    /// Recommended value: `min(10 * max_datagram_size, max(2 * max_datagram_size, 14720))`
+    pub(crate) fn initial_window(&mut self, value: u64) -> &mut Self {
+        self.initial_window = value;
+        self
+    }
+}
+
+impl Default for CubicConfig {
+    fn default() -> Self {
+        Self {
+            initial_window: 14720.clamp(2 * BASE_DATAGRAM_SIZE, 10 * BASE_DATAGRAM_SIZE),
+        }
+    }
+}
+
+impl ControllerFactory for CubicConfig {
+    fn build(self: Arc<Self>, now: Instant, current_mtu: u16) -> Box<dyn Controller> {
+        Box::new(Cubic::new(self, now, current_mtu))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistent_congestion_reduces_threshold_once() {
+        let start = Instant::now();
+        for mtu in [1200_u16, 1500] {
+            // Explicit expected packet fractions distinguish one beta reduction
+            // from two, and also cover clamping at the two-packet minimum.
+            for (packets, threshold_tenths) in [(2, 20), (8, 56), (20, 140)] {
+                for fast_convergence in [false, true] {
+                    let mut cubic = Cubic::new(Arc::new(CubicConfig::default()), start, mtu);
+                    cubic.window = packets * u64::from(mtu);
+                    cubic.ssthresh = cubic.window;
+                    cubic.cubic_state.w_max =
+                        (cubic.window * if fast_convergence { 2 } else { 1 }) as f64;
+                    cubic.cubic_state.cwnd_inc = 5 * u64::from(mtu);
+
+                    cubic.on_congestion_event(
+                        start + Duration::from_secs(1),
+                        start + Duration::from_millis(1),
+                        true,
+                        u64::from(mtu),
+                    );
+
+                    assert_eq!(cubic.ssthresh, threshold_tenths * u64::from(mtu) / 10);
+                    assert_eq!(cubic.window, 2 * u64::from(mtu));
+                    assert_eq!(cubic.cubic_state.cwnd_inc, 0);
+                    assert!(cubic.recovery_start_time.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fast_convergence_reduces_w_max_without_double_reducing_window() {
+        let now = Instant::now();
+        let config = Arc::new(CubicConfig::default());
+        let mut cubic = Cubic::new(config, now, BASE_DATAGRAM_SIZE as u16);
+        let window = 8 * BASE_DATAGRAM_SIZE;
+
+        cubic.window = window;
+        cubic.ssthresh = window;
+        cubic.cubic_state.w_max = 12.0 * BASE_DATAGRAM_SIZE as f64;
+
+        cubic.on_congestion_event(now, now + Duration::from_millis(1), false, 0);
+
+        // The controller computes w_max with this very expression, so the two agree bit for
+        // bit; the comparison is of one calculation against itself, not of two estimates.
+        assert_eq!(
+            cubic.cubic_state.w_max.to_bits(),
+            (window as f64 * (1.0 + BETA_CUBIC) / 2.0).to_bits()
+        );
+        assert_eq!(cubic.ssthresh, (window as f64 * BETA_CUBIC) as u64);
+        assert_eq!(cubic.window, cubic.ssthresh);
+    }
+
+    #[test]
+    fn congestion_avoidance_does_not_overflow_after_long_lossless_period() {
+        let now = Instant::now();
+        let rtt = RttEstimator::new(Duration::from_millis(100));
+        let config = Arc::new(CubicConfig::default());
+        let mut cubic = Cubic::new(config, now, BASE_DATAGRAM_SIZE as u16);
+
+        // Put CUBIC directly into congestion avoidance.
+        cubic.ssthresh = cubic.window;
+        cubic.recovery_start_time = Some(now);
+        let window = cubic.window;
+
+        // After ten days without a congestion event, w_cubic exceeds u64::MAX.
+        // Before this fix, computing the window increment overflowed.
+        let later = now + Duration::from_secs(10 * 24 * 60 * 60);
+        cubic.on_ack(later, later, BASE_DATAGRAM_SIZE, false, &rtt);
+
+        assert_eq!(cubic.window, window + BASE_DATAGRAM_SIZE);
+    }
+
+    #[test]
+    fn congestion_avoidance_preserves_excess_cwnd_increment() {
+        let now = Instant::now();
+        let rtt = RttEstimator::new(Duration::from_millis(100));
+        let config = Arc::new(CubicConfig::default());
+        let mut cubic = Cubic::new(config, now, BASE_DATAGRAM_SIZE as u16);
+
+        // Put CUBIC directly into congestion avoidance.
+        cubic.ssthresh = cubic.window;
+        cubic.recovery_start_time = Some(now);
+        cubic.cubic_state.w_max = cubic.window as f64;
+
+        // Simulate accumulated credit from earlier ACKs. One ACK may only grow
+        // the window by one MTU, but the extra credit must remain for later ACKs.
+        cubic.cubic_state.cwnd_inc = 2 * BASE_DATAGRAM_SIZE + 1;
+        let window = cubic.window;
+
+        cubic.on_ack(
+            now,
+            now + Duration::from_millis(1),
+            BASE_DATAGRAM_SIZE,
+            false,
+            &rtt,
+        );
+
+        // Before this fix, the window grew by one MTU and the remainder was
+        // reset to zero.
+        assert_eq!(cubic.window, window + BASE_DATAGRAM_SIZE);
+        assert_eq!(cubic.cubic_state.cwnd_inc, BASE_DATAGRAM_SIZE + 1);
+    }
+}

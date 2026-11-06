@@ -65,9 +65,6 @@ class FluxRequestKeys {
   /// 不允许被 WebView 适配器接管(带手工 Cookie 头的请求会被 WebView 覆写)。
   static const String skipWebViewAdapter = 'skipWebViewAdapter';
 
-  /// 不走 rhttp 适配器(长轮询需要系统级省电的稳定连接)。
-  static const String skipRhttpAdapter = 'skipRhttpAdapter';
-
   /// 绕过并发/速率调度器(框架内部请求,避免与调用方争抢槽位造成死锁)。
   static const String skipScheduler = 'skipScheduler';
 
@@ -136,9 +133,6 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
 
   bool get skipWebViewAdapter =>
       _extra[FluxRequestKeys.skipWebViewAdapter] == true;
-
-  bool get skipRhttpAdapter =>
-      _extra[FluxRequestKeys.skipRhttpAdapter] == true;
 
   bool get skipScheduler => _extra[FluxRequestKeys.skipScheduler] == true;
 

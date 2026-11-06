@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import '../../log/log_writer.dart';
+import '../../log/log_policy.dart';
 import '../adapters/adapter_log_metadata.dart';
+import '../core/net_core_http_adapter.dart';
 import '../flux_request_spec.dart';
+import '../cookie/csrf_session_trace.dart';
 
 /// 网络请求日志拦截器，记录每个请求的 method/url/statusCode/duration
 class NetworkLogInterceptor extends Interceptor {
@@ -12,7 +15,9 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    options.extra[_startTimeKey] = DateTime.now().millisecondsSinceEpoch;
+    options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
+    options.extra['attemptId'] = LogPolicy.newTraceId();
+    options.extra[_startTimeKey] = Stopwatch()..start();
     handler.next(options);
   }
 
@@ -26,6 +31,8 @@ class NetworkLogInterceptor extends Interceptor {
         options: response.requestOptions,
         statusCode: response.statusCode,
         level: isSilent ? 'debug' : 'info',
+        responseExtra: response.extra,
+        responseHeaders: response.headers,
       );
     }
     handler.next(response);
@@ -56,6 +63,9 @@ class NetworkLogInterceptor extends Interceptor {
       options: err.requestOptions,
       statusCode: err.response?.statusCode,
       level: level,
+      responseExtra: err.response?.extra,
+      responseHeaders: err.response?.headers,
+      error: err,
     );
     handler.next(err);
   }
@@ -64,11 +74,12 @@ class NetworkLogInterceptor extends Interceptor {
     required RequestOptions options,
     required int? statusCode,
     required String level,
+    Map<String, dynamic>? responseExtra,
+    Headers? responseHeaders,
+    DioException? error,
   }) {
-    final startTime = options.extra[_startTimeKey] as int?;
-    final duration = startTime != null
-        ? DateTime.now().millisecondsSinceEpoch - startTime
-        : null;
+    final timer = options.extra[_startTimeKey] as Stopwatch?;
+    final duration = timer?.elapsedMilliseconds;
 
     // URL 脱敏：不记录查询参数
     final uri = options.uri;
@@ -78,6 +89,10 @@ class NetworkLogInterceptor extends Interceptor {
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
       'type': 'request',
+      'event': 'request_complete',
+      'traceId': options.extra['traceId'],
+      'attemptId': options.extra['attemptId'],
+      'coreRequestId': options.extra['coreRequestId'],
       'message': '${options.method} ${uri.path}',
       'method': options.method,
       'url': sanitizedUrl,
@@ -86,6 +101,11 @@ class NetworkLogInterceptor extends Interceptor {
     };
     if (uri.path == '/topics/timings') {
       entry.addAll(_timingsDiagnostics(options));
+    }
+    // 写请求被拒（403）：记下发出的 cookie 名与响应侧的会话变化，
+    // 区分 CSRF/会话失配、运行时 cookie（_rt）被拒与 CF 拦截
+    if (statusCode == 403 && options.method.toUpperCase() != 'GET') {
+      entry.addAll(_rejectedWriteDiagnostics(options, responseHeaders));
     }
     // 调用方标注的链路标签(csrf-refresh / otp-redeem / preload-home 等),
     // 让日志里能按链路而非仅按 URL 归因。
@@ -97,11 +117,63 @@ class NetworkLogInterceptor extends Interceptor {
     if (extraFields is Map) {
       entry.addAll(extraFields.cast<String, dynamic>());
     }
+    final csrfTrace = options.extra[CsrfSessionTrace.extraKey];
+    if (csrfTrace is Map) entry.addAll(csrfTrace.cast<String, dynamic>());
     final adapterName = getRequestAdapterLogName(options);
     if (adapterName != null) {
       entry['networkAdapter'] = adapterName;
     }
+    final httpVersion = responseExtra?[HttpClientAdapter.extraKeyHttpVersion]
+        ?.toString();
+    if (httpVersion != null) {
+      entry['httpVersion'] = httpVersion;
+    }
+    // 网络核心附带的连接信息：区分慢在建连还是慢在服务端
+    final connection = responseExtra?[netCoreConnectionExtraKey];
+    if (connection is Map) {
+      entry['connectionId'] = connection['connectionId'];
+      entry['echApplied'] = connection['echApplied'];
+      entry['echAccepted'] = connection['echAccepted'];
+      entry['connReused'] = connection['reused'];
+      entry['tlsResumed'] = connection['tlsResumed'];
+      entry['connectMs'] = connection['connectMs'];
+      entry['ttfbMs'] = connection['ttfbMs'];
+    }
+    if (error != null && error.type != DioExceptionType.badResponse) {
+      entry['errorType'] = error.type.name;
+      final reason = error.error?.toString() ?? error.message;
+      if (reason != null && reason.isNotEmpty) {
+        entry['error'] = reason;
+      }
+    }
     LogWriter.instance.write(entry);
+  }
+
+  Map<String, dynamic> _rejectedWriteDiagnostics(
+    RequestOptions options,
+    Headers? responseHeaders,
+  ) {
+    final cookieHeader =
+        options.headers[HttpHeaders.cookieHeader]?.toString() ??
+        options.headers['Cookie']?.toString() ??
+        '';
+    // 只记名字与长度，不落值
+    final sentCookies = [
+      for (final part in cookieHeader.split(';'))
+        if (part.contains('='))
+          '${part.split('=').first.trim()}(${part.substring(part.indexOf('=') + 1).length})',
+    ];
+    final setCookies = responseHeaders?['set-cookie'] ?? const <String>[];
+    return {
+      'sentCookies': sentCookies.join(','),
+      'respSetCookies': [
+        for (final cookie in setCookies)
+          '${cookie.split('=').first}${RegExp(r'max-age=0|expires=Thu, 01 Jan 1970', caseSensitive: false).hasMatch(cookie) ? '(deleted)' : ''}',
+      ].join(','),
+      'respCfMitigated': responseHeaders?.value('cf-mitigated'),
+      'respLoggedOut': responseHeaders?.value('discourse-logged-out'),
+      'respCfRay': responseHeaders?.value('cf-ray'),
+    };
   }
 
   Map<String, dynamic> _timingsDiagnostics(RequestOptions options) {
@@ -110,9 +182,9 @@ class NetworkLogInterceptor extends Interceptor {
         options.headers[HttpHeaders.cookieHeader]?.toString() ??
         options.headers['Cookie']?.toString() ??
         '';
-    final sentT = RegExp(
-      r'(?:^|;\s*)_t=([^;]*)',
-    ).firstMatch(cookieHeader)?.group(1);
+    final sentT = RegExp(r'(?:^|;\s*)_t=([^;]*)')
+        .firstMatch(cookieHeader)
+        ?.group(1);
 
     final csrfState = csrfHeader == null
         ? 'missing'
@@ -135,9 +207,8 @@ class NetworkLogInterceptor extends Interceptor {
       'sentCookieLen': cookieHeader.length,
       'sentHasT': sentT != null && sentT.isNotEmpty,
       'sentTLen': sentT?.isNotEmpty == true ? sentT!.length : null,
-      'sentHasForumSession': RegExp(
-        r'(?:^|;\s*)_forum_session=',
-      ).hasMatch(cookieHeader),
+      'sentHasForumSession': RegExp(r'(?:^|;\s*)_forum_session=')
+          .hasMatch(cookieHeader),
     };
   }
 }

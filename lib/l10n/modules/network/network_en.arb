@@ -1,21 +1,8 @@
 {
   "@@locale": "en",
-  "advancedSettings_networkAdapter": "Network Adapter",
-  "advancedSettings_networkAdapterDesc": "Manage Cronet and fallback adapter settings",
-  "enginePreset_compat": "Compatible",
-  "enginePreset_compatDesc": "Send via browser engine, improves login stability",
-  "enginePreset_custom": "Custom",
-  "enginePreset_customDesc": "Combine the switches below manually",
-  "enginePreset_performance": "Performance",
-  "enginePreset_performanceDesc": "Use rhttp engine (HTTP/2 · Rust)",
-  "enginePreset_standard": "Standard",
-  "enginePreset_standardDesc": "Let the app pick the best engine",
-  "engineStatus_currentEngine": "Current engine",
-  "engineStatus_reasonFallback": "Cronet fell back to the backup adapter",
-  "engineStatus_reasonGateway": "DoH direct mode (saves a TLS layer)",
-  "engineStatus_reasonNative": "System default direct connection",
-  "engineStatus_reasonProxy": "Forwarded via local proxy",
-  "engineStatus_reasonRhttp": "rhttp engine enabled",
+  "engineStatus_reasonCore": "Sending with the browser fingerprint",
+  "engineStatus_reasonCoreWarmingUp": "Sampling the browser fingerprint",
+  "engineStatus_reasonFallback": "Network core unavailable, using the emergency path",
   "engineStatus_webviewSplit": "Main-site API requests use WebView, others use {engine}",
   "@engineStatus_webviewSplit": {
     "placeholders": {
@@ -25,35 +12,21 @@
     }
   },
   "networkAdapter_adapterType": "Adapter type",
-  "networkAdapter_autoFallback": "Auto fallback",
-  "networkAdapter_autoFallbackDesc": "Cronet unavailable, switched to fallback adapter",
-  "networkAdapter_controlOptions": "Control options",
-  "networkAdapter_currentStatus": "Current status",
-  "networkAdapter_degradeReason": "Cronet fallback reason",
-  "networkAdapter_devTest": "Developer testing",
-  "networkAdapter_fallback": "Fallback",
-  "networkAdapter_fallbackStatus": "Fallback status",
-  "networkAdapter_forceFallback": "Force fallback adapter",
-  "networkAdapter_forceFallbackDesc": "Disable Cronet, use NetworkHttpAdapter",
-  "networkAdapter_native": "Native",
+  "networkAdapter_autoFallbackDesc": "The network core is unavailable; temporarily using the Dart IO emergency path",
+  "networkAdapter_degradeReason": "Fallback reason",
   "networkAdapter_resetFallback": "Reset fallback",
-  "networkAdapter_resetFallbackDesc": "Clear fallback record, retry Cronet on next launch",
-  "networkAdapter_resetSuccess": "Reset done, restart to apply",
-  "networkAdapter_settingSaved": "Setting saved, restart to apply",
-  "networkAdapter_simulateError": "Simulate Cronet error",
-  "networkAdapter_simulateErrorDesc": "Trigger fallback process for testing",
-  "networkAdapter_simulateSuccess": "Simulated fallback triggered, check status",
-  "networkAdapter_title": "Network Adapter",
+  "networkAdapter_resetFallbackDesc": "Clear the fallback record and use the network core again",
+  "networkAdapter_resetSuccess": "Reset",
   "networkAdapter_viewReason": "View reason",
   "networkSettings_advanced": "Advanced",
   "networkSettings_auxiliary": "Auxiliary",
   "networkSettings_debug": "Debug",
-  "networkSettings_engine": "Network Engine",
   "networkSettings_maxConcurrent": "Concurrent requests",
   "networkSettings_maxConcurrentDesc": "How many requests can run at the same time",
   "networkSettings_maxPerWindow": "Rate limit",
   "networkSettings_maxPerWindowDesc": "Max requests within each time window",
-  "networkSettings_proxy": "Network Proxy",
+  "networkSettings_proxy": "DNS & Proxy",
+  "networkSettings_status": "Network status",
   "networkSettings_title": "Network Settings",
   "networkSettings_windowSeconds": "Time window",
   "networkSettings_windowSecondsDesc": "Length of the rate-limit window",
@@ -74,16 +47,28 @@
   "networkSettings_rateLimitSummary": "Up to {maxPerWindow} requests every {windowSeconds}s, {maxConcurrent} in parallel",
   "@networkSettings_rateLimitSummary": {
     "placeholders": {
-      "windowSeconds": { "type": "int" },
-      "maxPerWindow": { "type": "int" },
-      "maxConcurrent": { "type": "int" }
+      "windowSeconds": {
+        "type": "int"
+      },
+      "maxPerWindow": {
+        "type": "int"
+      },
+      "maxConcurrent": {
+        "type": "int"
+      }
     }
   },
-  "network_adapterNativeAndroid": "Cronet adapter",
-  "network_adapterNativeIos": "Cupertino adapter",
-  "network_adapterNetwork": "Network adapter",
-  "network_adapterRhttp": "rhttp engine",
+  "network_adapterCore": "Network core",
+  "network_adapterEmergency": "Emergency path (Dart IO)",
   "network_adapterWebView": "WebView adapter",
+  "networkStatus_applying": "Applying network settings…",
+  "networkStatus_restart": "Restart network core",
+  "networkStatus_startFailed": "The network core failed to start; requests use the emergency path",
+  "networkStatus_dnsSystem": "System DNS",
+  "networkStatus_proxyApp": "App proxy",
+  "networkStatus_proxySystem": "System proxy",
+  "networkStatus_direct": "Direct",
+  "networkStatus_webViewViaCore": "WebView via core",
   "network_badRequest": "Invalid request parameters",
   "network_forbidden": "No permission for this action",
   "network_internalError": "Internal server error",
@@ -96,27 +81,46 @@
   "network_serverUnavailableRetry": "Server temporarily unavailable, please retry",
   "network_unauthorized": "Not logged in or session expired",
   "network_unprocessable": "Request cannot be processed",
-  "rhttpEngine_alwaysUse": "Always",
-  "rhttpEngine_currentAdapter": "Current: {adapter}",
-  "@rhttpEngine_currentAdapter": {
-    "placeholders": {
-      "adapter": {
-        "type": "String"
-      }
-    }
-  },
-  "rhttpEngine_disabledDesc": "Enable to use Rust network engine",
-  "rhttpEngine_echFallbackHint": "When ECH is on, WebView still falls back to local proxy; rhttp direct connection tries its own ECH first",
-  "rhttpEngine_enabledDesc": "HTTP/2 Multiplexing · Rust reqwest",
-  "rhttpEngine_proxyDohOnly": "Proxy/DOH Only",
-  "rhttpEngine_title": "rhttp Engine",
-  "rhttpEngine_useMode": "Usage Mode",
-  "rhttpEngine_initFailedHint": "rhttp engine initialization failed, fallback adapter in use, will retry on next launch",
   "webviewAdapter_disabledDesc": "Use browser engine for requests, may improve login stability",
   "webviewAdapter_enabledDesc": "Main site API requests sent via browser engine",
   "webviewAdapter_hint": "Only main site API requests go through WebView; images and push notifications are not affected",
   "webviewAdapter_title": "WebView Network Engine",
   "networkSettings_upload": "File uploads",
   "networkSettings_forceDisableMultipart": "Force disable multipart uploads",
-  "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload."
+  "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload.",
+  "fingerprintPreset_title": "Fingerprint template",
+  "fingerprintPreset_auto": "Automatic",
+  "fingerprintPreset_autoDescription": "Use the device’s browser sample; use a matching preset until sampling completes.",
+  "fingerprintPreset_scope": "Applies to app requests using the network core (TLS/HTTP/2). Does not change the device User-Agent or WebView’s own fingerprint.",
+  "fingerprintPreset_active": "Using: {name}",
+  "fingerprintPreset_sampled": "Live browser sample",
+  "fingerprintPreset_cached": "Cached browser sample",
+  "fingerprintPreset_standard": "Standard TLS",
+  "fingerprintPreset_saveFailed": "Could not save the template selection",
+  "@fingerprintPreset_active": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "networkStatus_running": "Network core running",
+  "networkStatus_warming": "Preparing network core",
+  "networkStatus_backup": "Using a backup connection",
+  "networkStatus_template": "Connection template",
+  "networkStatus_systemNetwork": "System network",
+  "networkStatus_systemRules": "System proxy rules",
+  "networkStatus_routeNote": "These are routing rules, not a live connectivity check. A system VPN may still affect the connection.",
+  "networkStatus_splitNote": "Compatibility mode handles supported forum requests and same-origin images. Long polling, downloads, and verification endpoints still use the regular adapter.",
+  "networkStatus_dnsScope": "DNS shows the network core configuration. WebView uses it only when routed through the core.",
+  "networkStatus_fallbackScope": "The backup connection follows system networking. In-app DoH, proxy and connection templates are not used for this path.",
+  "networkStatus_updatingRoutes": "Paths update after settings are applied",
+  "fingerprintPreset_manual": "Choose manually",
+  "fingerprintPreset_scopeTitle": "What does a template change?",
+  "networkMap_bypassed": "Off",
+  "networkMap_outbound": "Outbound",
+  "networkMap_tapToConfigure": "Tap to configure · Lines show setting relationships",
+  "networkMap_showList": "Switch to list",
+  "networkMap_showGraph": "Switch to diagram",
+  "networkMap_restarting": "Restarting network core…"
 }

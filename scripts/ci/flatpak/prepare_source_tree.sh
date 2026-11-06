@@ -81,7 +81,7 @@ done < <(find "${PUB_CACHE_DIR}" -path '*/cargokit/build_tool/pubspec.yaml' 2>/d
 rm -rf "${CARGOKIT_WARM_ROOT}"
 
 echo "==> Generating CA certificates"
-(cd "${PROJECT_ROOT}/core/doh_proxy" && cargo run --bin gen_ca)
+(cd "${PROJECT_ROOT}/core/net_core" && cargo run --bin gen_ca)
 
 echo "==> Staging repository source tree"
 rm -rf "${SOURCE_TREE_ROOT}"
@@ -96,10 +96,14 @@ rsync -a --delete \
   --exclude '.vscode/' \
   --exclude '.idea/' \
   --exclude 'build/' \
+  --exclude 'target/' \
   --exclude 'flatpak/stage/' \
   --exclude 'logs/' \
   "${PROJECT_ROOT}/" \
   "${SOURCE_TREE_ROOT}/"
+
+echo "==> Staging Rust toolchain for offline sandbox builds"
+bash "${SCRIPT_DIR}/stage_rust_toolchain.sh" "${SOURCE_TREE_ROOT}"
 
 echo "==> Copying offline pub cache"
 rsync -a --delete "${PUB_CACHE_DIR}/" "${SOURCE_TREE_ROOT}/.pub-cache/"
@@ -143,7 +147,7 @@ echo "==> Vendoring Cargo dependencies for offline Linux builds"
     --versioned-dirs
     cargo-vendor
     --manifest-path
-    core/doh_proxy/Cargo.toml
+    core/net_core/Cargo.toml
   )
 
   for manifest in "${RUST_MANIFESTS[@]}"; do

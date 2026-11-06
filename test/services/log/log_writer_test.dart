@@ -28,6 +28,36 @@ void main() {
         .toList();
   }
 
+  test('重复无关联事件汇总，请求身份不同则保留', () async {
+    await LogWriter.initForTesting(tempDir);
+    for (var i = 0; i < 100; i++) {
+      LogWriter.instance.write({'level': 'warning', 'message': 'same'});
+    }
+    LogWriter.instance.write({
+      'level': 'info',
+      'message': 'request',
+      'coreRequestId': 1,
+    });
+    LogWriter.instance.write({
+      'level': 'info',
+      'message': 'request',
+      'coreRequestId': 2,
+    });
+    await LogWriter.instance.flushNow();
+    final rows = await readEntries(await LogWriter.getLogFile());
+    expect(
+      rows.where(
+        (e) => e['message'] == 'same' && e['event'] != 'repeat_summary',
+      ),
+      hasLength(1),
+    );
+    expect(
+      rows.singleWhere((e) => e['event'] == 'repeat_summary')['suppressed'],
+      99,
+    );
+    expect(rows.where((e) => e['coreRequestId'] != null), hasLength(2));
+  });
+
   test('write 进缓冲，flushNow 后落盘并注入 appVersion', () async {
     await LogWriter.initForTesting(tempDir, appVersion: '1.0.0+1');
 
@@ -113,7 +143,10 @@ void main() {
     LogWriter.maxFileSizeForTesting = 512;
 
     for (var i = 0; i < 10; i++) {
-      LogWriter.instance.write({'level': 'info', 'message': 'old-$i-${'y' * 80}'});
+      LogWriter.instance.write({
+        'level': 'info',
+        'message': 'old-$i-${'y' * 80}',
+      });
       await LogWriter.instance.flushNow();
     }
     await LogWriter.instance.clearAll();

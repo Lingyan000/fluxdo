@@ -1,0 +1,65 @@
+{
+  "repository": "https://github.com/quic-interop/quic-interop-runner.git",
+  "revision": "1d6f6554ac8e3b7c4cca0e3d40fd69f661420673",
+  "platform": "linux/amd64",
+  "cases": [
+    "handshake",
+    "transfer",
+    "longrtt",
+    "chacha20",
+    "multiplexing",
+    "retry",
+    "resumption",
+    "zerortt",
+    "http3",
+    "blackhole",
+    "keyupdate",
+    "ecn",
+    "amplificationlimit",
+    "handshakeloss",
+    "transferloss",
+    "handshakecorruption",
+    "transfercorruption",
+    "ipv6",
+    "v2",
+    "rebind-port",
+    "rebind-addr",
+    "connectionmigration"
+  ],
+  "simulator": "martenseemann/quic-network-simulator@sha256:c23d82a55caffe681b1bdae65d4d30d23e1283141a414a7f02ee56cf15f9c6b9",
+  "cleanup": "alpine:3.18@sha256:de0eb0b3f2a47ba1eb89389859a9bd88b28e82f5826b6969ad604979713c2d4f",
+  "peers": {
+    "quic-go": "martenseemann/quic-go-interop@sha256:da5f6d1073d1d21c67c91ea8b052024bf75e735b89c01d7fafbe58f2dbb4fc2a",
+    "ngtcp2": "ghcr.io/ngtcp2/ngtcp2-interop@sha256:f50753c009aa7de1b641d713cf8d6a482e084af767f6c14c6f7f9f0ab372637b"
+  },
+  "case_groups": {
+    "core": [
+      "handshake",
+      "transfer",
+      "longrtt",
+      "chacha20",
+      "multiplexing",
+      "retry",
+      "resumption",
+      "zerortt",
+      "http3",
+      "keyupdate",
+      "ecn",
+      "amplificationlimit",
+      "ipv6",
+      "v2"
+    ],
+    "paths": [
+      "blackhole",
+      "rebind-port",
+      "rebind-addr",
+      "connectionmigration"
+    ],
+    "loss": [
+      "handshakeloss",
+      "transferloss",
+      "handshakecorruption",
+      "transfercorruption"
+    ]
+  }
+}

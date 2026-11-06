@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'log_policy.dart';
+
 import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -67,6 +69,44 @@ class LogWriter {
   int _currentSize = 0;
 
   final List<String> _buffer = [];
+  int _bufferBytes = 0;
+  int _dropped = 0;
+  Future<void>? _flushPending;
+  static const _maxBufferBytes = 512 * 1024;
+  final Map<String, Map<String, dynamic>> _repeats = {};
+
+  void _append(Map<String, dynamic> entry) {
+    final line = '${jsonEncode(entry)}\n';
+    final bytes = utf8.encode(line).length;
+    while (_buffer.isNotEmpty &&
+        (_bufferBytes + bytes > _maxBufferBytes ||
+            _buffer.length >= _maxPendingLines)) {
+      _bufferBytes -= utf8.encode(_buffer.removeAt(0)).length;
+      _dropped++;
+    }
+    _buffer.add(line);
+    _bufferBytes += bytes;
+  }
+
+  void _flushRepeats() {
+    for (final item in _repeats.values) {
+      if ((item['suppressed'] as int) > 0) _append(LogPolicy.normalize(item));
+    }
+    _repeats.clear();
+    if (_dropped > 0) {
+      final count = _dropped;
+      _dropped = 0;
+      _append(
+        LogPolicy.normalize({
+          'level': 'warning',
+          'event': 'log_overflow',
+          'message': '日志缓冲超限，丢弃最旧记录',
+          'dropped': count,
+        }),
+      );
+    }
+  }
+
   Timer? _flushTimer;
 
   /// 串行化所有文件操作（flush / 轮换 / 清空），避免交错
@@ -112,6 +152,9 @@ class LogWriter {
     instance._flushTimer?.cancel();
     instance._flushTimer = null;
     instance._buffer.clear();
+    instance._bufferBytes = 0;
+    instance._dropped = 0;
+    instance._repeats.clear();
     await instance._io.catchError((_) {});
     await instance._closeSink();
     _file = null;
@@ -220,10 +263,38 @@ class LogWriter {
     // debug 级日志仅在开发者模式下落盘
     if (level == 'debug' && !verboseEnabled) return;
 
-    if (_appVersion != null) {
-      entry['appVersion'] = _appVersion;
+    entry = LogPolicy.normalize({
+      ...entry,
+      if (_appVersion != null) 'appVersion': _appVersion,
+    });
+    // 仅合并没有请求身份的完全相同事件；请求/重试记录始终保留。
+    if (entry['traceId'] == null &&
+        entry['coreRequestId'] == null &&
+        level != 'error') {
+      final key = jsonEncode(
+        {...entry}
+          ..remove('timestamp')
+          ..remove('seq'),
+      );
+      final previous = _repeats[key];
+      if (previous != null) {
+        previous['suppressed'] = (previous['suppressed'] as int) + 1;
+        previous['lastTimestamp'] = entry['timestamp'];
+        return;
+      }
+      if (_repeats.length >= 128) _flushRepeats();
+      _repeats[key] = {
+        'event': 'repeat_summary',
+        'type': entry['type'],
+        'level': entry['level'],
+        'message': entry['message'],
+        'firstSeq': entry['seq'],
+        'firstTimestamp': entry['timestamp'],
+        'lastTimestamp': entry['timestamp'],
+        'suppressed': 0,
+      };
     }
-    _buffer.add('${jsonEncode(entry)}\n');
+    _append(entry);
 
     // 未初始化（应用启动早期 / 测试环境）：只缓冲，init 完成后统一落盘
     if (!_initialized) {
@@ -244,19 +315,30 @@ class LogWriter {
   }
 
   /// 立即落盘缓冲中的日志，返回完成 Future（崩溃处理 / 读取前调用）
-  Future<void> flushNow() {
-    if (!_initialized) return Future.value();
+  Future<void> flushNow() async {
+    if (!_initialized) return;
     _flushTimer?.cancel();
     _flushTimer = null;
-    return _enqueueFlush();
+    await _enqueueFlush();
+    if (_buffer.isNotEmpty) await _enqueueFlush();
   }
 
   Future<void> _enqueueFlush() {
+    if (_flushPending != null) return _flushPending!;
     _io = _io.then((_) => _flush()).catchError((_) {});
-    return _io;
+    return _flushPending = _io.whenComplete(() {
+      _flushPending = null;
+      if (_buffer.isNotEmpty && _initialized) {
+        _flushTimer ??= Timer(_flushInterval, () {
+          _flushTimer = null;
+          unawaited(_enqueueFlush());
+        });
+      }
+    });
   }
 
   Future<void> _flush() async {
+    _flushRepeats();
     if (_buffer.isEmpty) return;
 
     if (_sink == null) _openSink();
@@ -265,6 +347,7 @@ class LogWriter {
 
     final lines = _buffer.join();
     _buffer.clear();
+    _bufferBytes = 0;
     try {
       final bytes = utf8.encode(lines);
       sink.add(bytes);
@@ -297,6 +380,7 @@ class LogWriter {
       }
     } catch (_) {}
     _currentSize = 0;
+    await file.create();
     _openSink();
   }
 
@@ -312,22 +396,27 @@ class LogWriter {
 
   /// 清空全部日志（当前代 + 轮换代）
   Future<void> clearAll() {
+    _repeats.clear();
+    _dropped = 0;
     _buffer.clear();
-    _io = _io.then((_) async {
-      await _closeSink();
-      try {
-        final file = _file;
-        if (file != null && file.existsSync()) {
-          await file.writeAsString('');
-        }
-        final rotatedFile = _rotatedFile;
-        if (rotatedFile != null && rotatedFile.existsSync()) {
-          await rotatedFile.delete();
-        }
-      } catch (_) {}
-      _currentSize = 0;
-      _openSink();
-    }).catchError((_) {});
+    _bufferBytes = 0;
+    _io = _io
+        .then((_) async {
+          await _closeSink();
+          try {
+            final file = _file;
+            if (file != null && file.existsSync()) {
+              await file.writeAsString('');
+            }
+            final rotatedFile = _rotatedFile;
+            if (rotatedFile != null && rotatedFile.existsSync()) {
+              await rotatedFile.delete();
+            }
+          } catch (_) {}
+          _currentSize = 0;
+          _openSink();
+        })
+        .catchError((_) {});
     return _io;
   }
 

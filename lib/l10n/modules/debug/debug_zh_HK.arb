@@ -71,7 +71,7 @@
   "debugTools_exportCfLogs": "導出 CF 日誌",
   "debugTools_logsCleared": "日誌已清除",
   "debugTools_networkLogs": "網絡日誌",
-  "debugTools_networkLogsDesc": "查看 DOH/代理診斷日誌",
+  "debugTools_networkLogsDesc": "網絡核心、DoH 與代理的診斷日誌",
   "debugTools_noCfLogs": "暫無 CF 驗證日誌",
   "debugTools_noCfLogsHint": "觸發 CF 驗證後會產生日誌",
   "debugTools_noCfLogsToShare": "暫無 CF 日誌可分享",

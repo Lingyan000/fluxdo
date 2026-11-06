@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/discourse_cache_manager.dart';
+import 'first_paint_probe.dart';
 
 /// 动图头像播放 overlay:压在静态首帧之上的圆形动图层。
 ///
@@ -34,6 +35,22 @@ class AnimatedAvatarOverlay extends StatefulWidget {
 
 class _AnimatedAvatarOverlayState extends State<AnimatedAvatarOverlay> {
   bool _reported = false;
+  VoidCallback? _releaseForeground;
+
+  @override
+  void didUpdateWidget(AnimatedAvatarOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _releaseForeground?.call();
+      _releaseForeground = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _releaseForeground?.call();
+    super.dispose();
+  }
 
   void _report(bool ready) {
     if (ready == _reported) return;
@@ -46,21 +63,33 @@ class _AnimatedAvatarOverlayState extends State<AnimatedAvatarOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: ClipOval(
-        child: Image(
-          image: discourseImageProvider(widget.url),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          frameBuilder: (context, child, frame, wasSync) {
-            final ready = wasSync || frame != null;
-            _report(ready);
-            return ready ? child : const SizedBox.expand();
-          },
-          errorBuilder: (_, _, _) {
-            _report(false);
-            return const SizedBox.expand();
-          },
+    return FirstPaintProbe(
+      key: ValueKey(widget.url),
+      onFirstPaint: () {
+        _releaseForeground ??= BlobImageCache.retainForeground(
+          BlobImageCache.avatarBucket,
+          widget.url,
+        );
+      },
+      child: RepaintBoundary(
+        child: ClipOval(
+          child: Image(
+            image: discourseImageProvider(
+              widget.url,
+              bucket: BlobImageCache.avatarBucket,
+            ),
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            frameBuilder: (context, child, frame, wasSync) {
+              final ready = wasSync || frame != null;
+              _report(ready);
+              return ready ? child : const SizedBox.expand();
+            },
+            errorBuilder: (_, _, _) {
+              _report(false);
+              return const SizedBox.expand();
+            },
+          ),
         ),
       ),
     );

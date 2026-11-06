@@ -502,7 +502,7 @@ class UserApiKeyService {
   /// 兑换 OTP:POST /session/otp/:token → log_on_user → Set-Cookie 新 _t
   /// (与密码登录同源的完整 UserAuthToken)。返回新 _t,失败返回 null。
   ///
-  /// 纯 dio 通道(rhttp/native):
+  /// 纯 dio 通道(网络核心):
   /// - CSRF 与 POST 都走传入的主 dio(完整拦截器链),而非 CsrfTokenService 的
   ///   独立 dio——后者在后台/失效窗口撞 CF 会静默失败(见事故日志)。主 dio 的
   ///   CfChallengeInterceptor 会在 cf_clearance 失效时兜底(前台弹 CF 验证)。
@@ -518,7 +518,7 @@ class UserApiKeyService {
     final beforeToken = await _cookieJar.getTToken();
     try {
       // 1. 主 dio 取 CSRF(GET 无需 CSRF;skipCsrf 避免触发独立 dio 刷新;
-      //    过 CF 靠 rhttp 指纹 + CfChallengeInterceptor 兜底)
+      //    过 CF 靠网络核心的浏览器指纹 + CfChallengeInterceptor 兜底)
       final csrf = await _fetchCsrfViaMainDio(dio);
       if (csrf == null || csrf.isEmpty) {
         _log('warning', 'otp_redeem_no_csrf', 'OTP 兑换取 CSRF 失败');

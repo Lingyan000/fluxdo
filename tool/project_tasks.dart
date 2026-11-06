@@ -484,31 +484,19 @@ Future<void> _prepareWindowsNative(_BuildMode mode) async {
   final stagedOutputs = _windowsStagedOutputs;
 
   if (_nativeStageCurrent('windows', mode, stagedOutputs)) {
-    stdout.writeln('==> Windows DOH 原生产物已是最新状态');
+    stdout.writeln('==> Windows 网络核心产物已是最新状态');
     return;
   }
 
   await runOrExit(
-    title: '构建 Windows DOH 原生产物',
+    title: '构建 Windows 网络核心',
     executable: 'cargo',
-    arguments: [
-      'build',
-      if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
-      '--lib',
-    ],
-    workingDirectory: 'core/doh_proxy',
+    arguments: ['build', if (mode == _BuildMode.release) '--release', '--lib'],
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  _stageFile('core/doh_proxy/target/$cargoDir/doh_proxy.dll', stagedOutputs[0]);
-  _stageFile(
-    'core/doh_proxy/target/$cargoDir/doh_proxy_bin.exe',
-    stagedOutputs[1],
-  );
+  _stageFile('$_netCoreDir/target/$cargoDir/fluxdo_net.dll', stagedOutputs[0]);
   _writeNativeStageStamp('windows', mode);
 }
 
@@ -527,32 +515,26 @@ Future<void> _prepareMacOsNative(_BuildMode mode, {String? arch}) async {
     stagedOutputs,
     variantKey: variantKey,
   )) {
-    stdout.writeln('==> macOS DOH 原生产物已是最新状态(${macTarget.arch})');
+    stdout.writeln('==> macOS 网络核心产物已是最新状态(${macTarget.arch})');
     return;
   }
 
   await runOrExit(
-    title: '构建 macOS DOH 原生产物(${macTarget.arch})',
+    title: '构建 macOS 网络核心(${macTarget.arch})',
     executable: 'cargo',
     arguments: [
       'build',
       if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
       '--lib',
       '--target',
       macTarget.rustTarget,
     ],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  final base = 'core/doh_proxy/target/${macTarget.rustTarget}/$cargoDir';
-  _stageFile('$base/libdoh_proxy.dylib', stagedOutputs[0]);
-  _stageFile('$base/doh_proxy_bin', stagedOutputs[1]);
-  await _chmodIfSupported(stagedOutputs[1]);
+  final base = '$_netCoreDir/target/${macTarget.rustTarget}/$cargoDir';
+  _stageFile('$base/libfluxdo_net.dylib', stagedOutputs[0]);
   _writeNativeStageStamp('macos', mode, variantKey: variantKey);
 }
 
@@ -561,27 +543,19 @@ Future<void> _prepareLinuxNative(_BuildMode mode) async {
 
   final stagedOutputs = _linuxStagedOutputs;
   if (_nativeStageCurrent('linux', mode, stagedOutputs)) {
-    stdout.writeln('==> Linux DOH 原生产物已是最新状态');
+    stdout.writeln('==> Linux 网络核心产物已是最新状态');
     return;
   }
 
   await runOrExit(
-    title: '构建 Linux DOH 原生产物',
+    title: '构建 Linux 网络核心',
     executable: 'cargo',
-    arguments: [
-      'build',
-      if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
-    ],
-    workingDirectory: 'core/doh_proxy',
+    arguments: ['build', if (mode == _BuildMode.release) '--release', '--lib'],
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  _stageFile('core/doh_proxy/target/$cargoDir/doh_proxy_bin', stagedOutputs[0]);
-  await _chmodIfSupported(stagedOutputs[0]);
+  _stageFile('$_netCoreDir/target/$cargoDir/libfluxdo_net.so', stagedOutputs[0]);
   _writeNativeStageStamp('linux', mode);
 }
 
@@ -599,7 +573,7 @@ Future<void> _prepareAndroidNative(
     stagedOutputs,
     variantKey: variantKey,
   )) {
-    stdout.writeln('==> Android DOH 原生产物已是最新状态');
+    stdout.writeln('==> Android 网络核心产物已是最新状态');
     return;
   }
 
@@ -612,23 +586,26 @@ Future<void> _prepareAndroidNative(
     '28',
     'build',
     if (mode == _BuildMode.release) '--release',
-    '--features',
-    'ech',
     '--lib',
   ];
   await runOrExit(
-    title: '构建 Android DOH 原生产物',
+    title: '构建 Android 网络核心',
     executable: 'cargo',
     arguments: cargoArgs,
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
   for (final target in androidTargets) {
     _stageFile(
-      'core/doh_proxy/target/${target.rustTarget}/$cargoDir/libdoh_proxy.so',
+      '$_netCoreDir/target/${target.rustTarget}/$cargoDir/libfluxdo_net.so',
+      'android/app/src/main/jniLibs/${target.androidAbi}/libfluxdo_net.so',
+    );
+    // 旧核心的库若还留在 jniLibs 里会被一起打包，白占体积
+    final legacy = File(
       'android/app/src/main/jniLibs/${target.androidAbi}/libdoh_proxy.so',
     );
+    if (legacy.existsSync()) legacy.deleteSync();
   }
   _writeNativeStageStamp('android', mode, variantKey: variantKey);
 }
@@ -639,40 +616,38 @@ Future<void> _prepareIosNative(_BuildMode mode) async {
   final stagedOutputs = _iosStagedOutputs;
 
   if (_nativeStageCurrent('ios', mode, stagedOutputs)) {
-    stdout.writeln('==> iOS DOH 原生产物已是最新状态');
+    stdout.writeln('==> iOS 网络核心产物已是最新状态');
     return;
   }
 
   final buildArgs = <String>[
     'rustc',
     if (mode == _BuildMode.release) '--release',
-    '--features',
-    'ech',
     '--lib',
     '--crate-type',
     'staticlib',
   ];
 
   await runOrExit(
-    title: '构建 iOS device DOH 原生库',
+    title: '构建 iOS device 网络核心',
     executable: 'cargo',
     arguments: [...buildArgs, '--target', 'aarch64-apple-ios'],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
   await runOrExit(
-    title: '构建 iOS simulator DOH 原生库',
+    title: '构建 iOS simulator 网络核心',
     executable: 'cargo',
     arguments: [...buildArgs, '--target', 'aarch64-apple-ios-sim'],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
   _stageFile(
-    'core/doh_proxy/target/aarch64-apple-ios/$cargoDir/libdoh_proxy.a',
+    '$_netCoreDir/target/aarch64-apple-ios/$cargoDir/libfluxdo_net.a',
     stagedOutputs[0],
   );
   _stageFile(
-    'core/doh_proxy/target/aarch64-apple-ios-sim/$cargoDir/libdoh_proxy.a',
+    '$_netCoreDir/target/aarch64-apple-ios-sim/$cargoDir/libfluxdo_net.a',
     stagedOutputs[1],
   );
   _writeNativeStageStamp('ios', mode);
@@ -724,10 +699,12 @@ String _nativeStageStampContent(_BuildMode mode, {String? variantKey}) {
 String _rustInputStamp() {
   final trackedFiles =
       <File>[
-          File('core/doh_proxy/Cargo.toml'),
-          File('core/doh_proxy/Cargo.lock'),
-          File('core/doh_proxy/build.rs'),
-          ..._collectFiles('core/doh_proxy/src'),
+          File('$_netCoreDir/Cargo.toml'),
+          File('$_netCoreDir/Cargo.lock'),
+          File('$_netCoreDir/build.rs'),
+          File('$_netCoreDir/.cargo/config.toml'),
+          ..._collectFiles('$_netCoreDir/src'),
+          ..._collectFiles('$_netCoreDir/vendor'),
         ].where((file) => file.existsSync()).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
 
@@ -766,18 +743,6 @@ void _stageFile(String sourcePath, String targetPath) {
   target.parent.createSync(recursive: true);
   source.copySync(target.path);
   target.setLastModifiedSync(source.lastModifiedSync());
-}
-
-Future<void> _chmodIfSupported(String path) async {
-  if (Platform.isWindows) {
-    return;
-  }
-
-  await runOrExit(
-    title: '设置可执行权限 $path',
-    executable: 'chmod',
-    arguments: ['755', path],
-  );
 }
 
 Future<void> _runProjectPrep(String command) {
@@ -1129,7 +1094,7 @@ List<String> _androidStagedOutputs(List<_AndroidTarget> targets) {
   return targets
       .map(
         (target) =>
-            'android/app/src/main/jniLibs/${target.androidAbi}/libdoh_proxy.so',
+            'android/app/src/main/jniLibs/${target.androidAbi}/libfluxdo_net.so',
       )
       .toList(growable: false);
 }
@@ -1255,21 +1220,18 @@ const _flutterTestOptionsWithValue = <String>{
   '--test-randomize-ordering-seed',
 };
 
-const _windowsStagedOutputs = <String>[
-  'windows/runner/native/doh_proxy.dll',
-  'windows/runner/native/doh_proxy_bin.exe',
-];
+/// 网络核心 crate 目录。
+const _netCoreDir = 'core/net_core';
 
-const _macOsStagedOutputs = <String>[
-  'macos/Runner/native/libdoh_proxy.dylib',
-  'macos/Runner/native/doh_proxy_bin',
-];
+const _windowsStagedOutputs = <String>['windows/runner/native/fluxdo_net.dll'];
 
-const _linuxStagedOutputs = <String>['linux/runner/native/doh_proxy_bin'];
+const _macOsStagedOutputs = <String>['macos/Runner/native/libfluxdo_net.dylib'];
+
+const _linuxStagedOutputs = <String>['linux/runner/native/libfluxdo_net.so'];
 
 const _iosStagedOutputs = <String>[
-  'ios/rust_libs/device/libdoh_proxy.a',
-  'ios/rust_libs/simulator/libdoh_proxy.a',
+  'ios/rust_libs/device/libfluxdo_net.a',
+  'ios/rust_libs/simulator/libfluxdo_net.a',
 ];
 
 const _allAndroidTargets = <_AndroidTarget>[

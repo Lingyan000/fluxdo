@@ -1,0 +1,12 @@
+# Start the server before the simulator begins its bounded readiness probe.
+# Upstream's inverse dependency spends that probe waiting for Docker startup.
+services:
+  server:
+    depends_on: !reset []
+    # Client compliance checks start only sim + client, without a server.
+    profiles: [interop-server]
+  sim:
+    depends_on:
+      server:
+        condition: service_started
+        required: false

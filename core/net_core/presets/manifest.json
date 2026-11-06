@@ -1,0 +1,171 @@
+{
+  "schema": 1,
+  "rama_commit": "23d59722e125fb6f2de66df588f772205318e555",
+  "rama_source_sha256": "6ed0d048b864a55184d94b3178bfb1e761522f7a10d1b96223e32d226b323d2c",
+  "presets": [
+    {
+      "id": "android-webview133",
+      "platform": "android",
+      "engine": "chromium",
+      "major": 133,
+      "source": "FluxDO local Android emulator WebView probe 2026-11-05",
+      "source_sha256": "e920dd2c61f2bf0bd2f533ebbbad79d12f25bc8297881b657e64a9642d4431bd",
+      "sha256": "b94b17a3f769d509ba4e092230f33e5b4ee21aa9fcdf2c05d983417309d223e0"
+    },
+    {
+      "id": "android-chrome149",
+      "platform": "android",
+      "engine": "chromium",
+      "major": 149,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 28,
+      "capture_ua": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36",
+      "source_info": {
+        "browser_name": "chrome",
+        "browser_version": "",
+        "device_name": "OnePlus 12R",
+        "os": "",
+        "os_version": "14.0"
+      },
+      "updated_at": "2026-10-04 21:06:36",
+      "sha256": "e453ff38dbdc33b9e085b20a7e7548d32c2d39a9c65b14de690d8da27bf6258d"
+    },
+    {
+      "id": "ios-safari18",
+      "platform": "ios",
+      "engine": "webkit",
+      "major": 18,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 26,
+      "capture_ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
+      "source_info": {
+        "browser_name": "safari",
+        "browser_version": "",
+        "device_name": "iPhone 16 Plus",
+        "os": "",
+        "os_version": "18"
+      },
+      "updated_at": "2026-10-04 21:07:24",
+      "sha256": "05ef92b3c1a98d00c4ff06d1a810e31d8347da59960941cb44486bf95b259e2f"
+    },
+    {
+      "id": "ios-safari17",
+      "platform": "ios",
+      "engine": "webkit",
+      "major": 17,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 18,
+      "capture_ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+      "source_info": {
+        "browser_name": "safari",
+        "browser_version": "",
+        "device_name": "iPhone 15",
+        "os": "",
+        "os_version": "17"
+      },
+      "updated_at": "2026-09-27 21:11:12",
+      "sha256": "675a9ba3b3a4273719a9647296cb349444bf2ba530f687a68f707cf823379c91"
+    },
+    {
+      "id": "macos-safari18",
+      "platform": "macos",
+      "engine": "webkit",
+      "major": 18,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 36,
+      "capture_ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15",
+      "source_info": {
+        "browser_name": "Safari",
+        "browser_version": "latest",
+        "device_name": "",
+        "os": "OS X",
+        "os_version": "Sequoia"
+      },
+      "updated_at": "2026-10-04 20:55:58",
+      "sha256": "1863c73206a468f247780016a589ec0a6b3b054fd0fbd96872fd55a58d1b6955"
+    },
+    {
+      "id": "macos-safari26",
+      "platform": "macos",
+      "engine": "webkit",
+      "major": 26,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 37,
+      "capture_ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15",
+      "source_info": {
+        "browser_name": "Safari",
+        "browser_version": "latest",
+        "device_name": "",
+        "os": "OS X",
+        "os_version": "Tahoe"
+      },
+      "updated_at": "2026-10-04 20:55:51",
+      "sha256": "d4daf2fb1e857a89b215d122aa5f4444efa7159171d0c7a9a25e1caa09a89c47"
+    },
+    {
+      "id": "windows-edge152",
+      "platform": "windows",
+      "engine": "chromium",
+      "major": 152,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 45,
+      "capture_ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0",
+      "source_info": {
+        "browser_name": "Edge",
+        "browser_version": "latest-2",
+        "device_name": "",
+        "os": "Windows",
+        "os_version": "11"
+      },
+      "updated_at": "2026-10-04 20:59:37",
+      "sha256": "2fdf3d8834057a9d150f6699d20316a2ddebb1cde1f9f9d501d7b08bcbf05161"
+    },
+    {
+      "id": "windows-edge153",
+      "platform": "windows",
+      "engine": "chromium",
+      "major": 153,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 47,
+      "capture_ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+      "source_info": {
+        "browser_name": "Edge",
+        "browser_version": "latest-1",
+        "device_name": "",
+        "os": "Windows",
+        "os_version": "11"
+      },
+      "updated_at": "2026-10-04 20:57:15",
+      "sha256": "2fd84b345030b8fb17e09a0b1d55d6043267ca48232f51dcba75991686e7a87a"
+    },
+    {
+      "id": "windows-edge154",
+      "platform": "windows",
+      "engine": "chromium",
+      "major": 154,
+      "source": "rama-23d59722/rama-ua legacy browser_profiles.json",
+      "source_row": 49,
+      "capture_ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+      "source_info": {
+        "browser_name": "Edge",
+        "browser_version": "latest",
+        "device_name": "",
+        "os": "Windows",
+        "os_version": "11"
+      },
+      "updated_at": "2026-10-04 20:54:30",
+      "sha256": "6947e616e95703500249fd325ecb11d12cd22431d92125dc8006413f63a953b1"
+    },
+    {
+      "id": "ios-safari26",
+      "platform": "ios",
+      "engine": "webkit",
+      "major": 26,
+      "source": "curl-impersonate/tests/signatures/safari_26.0_iOS.yaml",
+      "source_commit": "5b1c3542fc7fc0e9fe623a6c9a848d16f92fe99a",
+      "source_sha256": "f42652cda0baaed181f3c8005fd60dfcbe832a98f9388b562679fbb151888e31",
+      "sha256": "59b3971455fbe2e27fe5a6d4066beb908721875781d673a2cff3b224bf1ce483",
+      "notes": "完整冷连接 TLS/H2 签名；导航头不作为 fetch 头，因此 fetch_header_order 留空"
+    }
+  ]
+}

@@ -71,7 +71,7 @@
   "debugTools_exportCfLogs": "导出 CF 日志",
   "debugTools_logsCleared": "日志已清除",
   "debugTools_networkLogs": "网络日志",
-  "debugTools_networkLogsDesc": "查看 DOH/代理诊断日志",
+  "debugTools_networkLogsDesc": "网络核心、DoH 与代理的诊断日志",
   "debugTools_noCfLogs": "暂无 CF 验证日志",
   "debugTools_noCfLogsHint": "触发 CF 验证后会产生日志",
   "debugTools_noCfLogsToShare": "暂无 CF 日志可分享",

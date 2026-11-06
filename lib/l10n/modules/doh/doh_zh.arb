@@ -50,12 +50,6 @@
   "dohDetail_editServer": "编辑服务器",
   "dohDetail_exampleDns": "例如：My DNS",
   "dohDetail_forceRefresh": "强制刷新",
-  "dohDetail_gatewayDisabledDesc": "已关闭，使用 MITM 双重 TLS",
-  "dohDetail_gatewayEnabledDesc": "单次 TLS，通过反向代理转发",
-  "dohDetail_gatewayMode": "Gateway 模式",
-  "dohDetail_h2Mitm": "WebView HTTP/2（实验）",
-  "dohDetail_h2MitmDisabledDesc": "已关闭，WebView 经代理锁 HTTP/1.1",
-  "dohDetail_h2MitmEnabledDesc": "已开启，WebView 经代理走 h2 多路复用（需实测 CF）",
   "dohDetail_ipAddress": "IP 地址",
   "dohDetail_ipv6Prefer": "IPv6 优先",
   "dohDetail_ipv6PreferDesc": "优先尝试 IPv6，失败自动回落 IPv4",
@@ -130,26 +124,11 @@
   "dohSettings_certTrustHint": "前往 设置 → 通用 → 关于本机 → 证书信任设置，开启 DOH Proxy CA 的信任开关。",
   "dohSettings_disabledDesc": "使用系统默认 DNS",
   "dohSettings_enabledDesc": "已启用加密 DNS 解析",
-  "dohSettings_errorCopied": "已复制错误信息",
   "dohSettings_moreSettings": "更多设置",
   "dohSettings_moreSettingsDesc": "服务器、IPv6、ECH 等",
   "dohSettings_perDeviceCert": "设备独有证书",
   "dohSettings_perDeviceCertDisabledDesc": "启用后每台设备生成独立的 CA 证书，更安全",
   "dohSettings_perDeviceCertEnabledDesc": "已启用，每台设备使用独立 CA 证书",
-  "dohSettings_port": "端口 {port}",
-  "@dohSettings_port": {
-    "placeholders": {
-      "port": {
-        "type": "int"
-      }
-    }
-  },
-  "dohSettings_proxyNotStarted": "代理未启动",
-  "dohSettings_proxyRunning": "代理运行中",
-  "dohSettings_proxyStartFailed": "代理启动失败，DoH/ECH 无法生效",
-  "dohSettings_restartProxy": "重启代理",
-  "dohSettings_restarting": "正在重启...",
-  "dohSettings_starting": "正在启动...",
   "dohSettings_suppressedByVpn": "已被 VPN 自动关闭，VPN 断开后将自动恢复",
   "dohSettings_webViewRestartRequired": "WebView 代理变更将在重启应用后生效；当前会话会继续使用原来的 WebView 网络线路。",
   "doh_cannotConnect": "无法连接到 DOH 服务",

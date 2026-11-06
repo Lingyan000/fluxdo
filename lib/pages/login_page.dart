@@ -197,7 +197,7 @@ class _LoginPageState extends State<LoginPage>
 
     // Step 1-3: WebView 内 JS 全流程登录 (csrf → hcaptcha/create → session)。
     // 三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 cf_clearance 时一致,
-    // 避开 dio (IO/rhttp 适配器) 指纹不匹配导致的 403 (BAD CSRF)。
+    // 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
     // 2FA 通过 onNeedSecondFactor 回调弹 TOTP, 由 dialog 内同一 WebView 重试。
     final result = await showWebViewLoginDialog(
       context,

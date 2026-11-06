@@ -41,7 +41,6 @@ dependencies:
   http: ^1.6.0
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
-  native_dio_adapter: ^1.6.0
   flutter_secure_storage: ^10.3.1
   flutter_inappwebview: ^6.2.0-beta.3
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
@@ -124,7 +123,8 @@ dependencies:
   hive_ce: ^2.19.3
   hive_ce_flutter: ^2.3.4
   dns_client: ^1.3.1
-  cronet_http: ^1.8.0
+  # 安卓读取 Java 系统属性（系统代理），随配置下发给网络核心
+  jni: ^1.1.1
   package_info_plus: ^8.1.2
   pro_image_editor: ^11.18.4
   flutter_image_compress: ^2.4.0
@@ -132,7 +132,6 @@ dependencies:
   flutter_math_fork: ^0.7.4
   device_info_plus: 12.3.0
   connectivity_plus: 7.0.0
-  ua_client_hints: ^1.4.1
   ota_update: ^7.1.0
   app_links: ^7.1.1
   chat_bottom_container: ^0.4.0
@@ -193,17 +192,15 @@ dependencies:
   just_audio_platform_interface: ^4.6.0 # JustAudioGst 实现平台接口
   audioplayers_linux: ^4.3.0
   audioplayers_platform_interface: ^7.2.0
-  rhttp:
-    git:
-      url: https://github.com/Lingyan000/rhttp_plus.git
-      path: rhttp
-  dio_compatibility_layer: ^0.1.1
   ffi: any
   # 性能诊断:掉帧时 app 内连接自身 VM Service 抓取当帧 timeline,
   # 自动归并出耗时 widget(debug/profile 有效,release 无 VM Service)
   vm_service: ^15.2.0
   full_svg_flutter: ^1.3.0
 dependency_overrides:
+  # 固定 Dio 5.11.1，仅修复响应流订阅、背压、取消和接收计时。
+  dio:
+    path: third_party/dio
   # super_clipboard 0.9.1 要求 device_info_plus <12.0.0，
   # 但实际 12.x 接口兼容，强制使用项目版本
   device_info_plus: 12.3.0
@@ -213,9 +210,6 @@ dependency_overrides:
   # vendored 版本带 aliveGuard 修复
   flutter_inappwebview_windows:
     path: packages/flutter_inappwebview_windows
-  # 锁定 flutter_rust_bridge 版本，与 rhttp 插件的 codegen 版本保持一致。
-  # rhttp_plus 已同步 upstream 0.18.0，生成代码基于 2.12.0。
-  flutter_rust_bridge: 2.12.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -227,7 +221,7 @@ melos:
   useRootAsPackage: true
 
 flutter:
-  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、rhttp、
+  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、
   # super_native_extensions 等插件未支持 SwiftPM，不能只升级 SDK 就切换。
   # Apple 最低版本已同步 iOS 15 / macOS 12；待插件链路验证后独立迁移。
   config:

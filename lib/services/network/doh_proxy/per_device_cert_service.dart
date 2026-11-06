@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'doh_proxy_service.dart';
+import '../core/net_core_service.dart';
 
 /// Per-device CA 证书管理服务
 ///
@@ -47,8 +47,8 @@ class PerDeviceCertService {
       return true;
     }
 
-    // 通过 FFI 生成新 CA
-    final result = await DohProxyService.instance.generateCa();
+    // 通过网络核心生成新 CA
+    final result = NetCoreService.instance.generateCa();
     if (result == null) {
       debugPrint('[PerDeviceCert] CA 生成失败');
       return false;

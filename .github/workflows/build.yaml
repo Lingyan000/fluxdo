@@ -94,7 +94,7 @@ jobs:
         if: startsWith(matrix.platform, 'android') || matrix.platform == 'macos' || matrix.platform == 'ios' || matrix.platform == 'windows'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/doh_proxy
+          workspaces: core/net_core
           key: ${{ matrix.platform }}-${{ matrix.arch || matrix.flutter-target }}
 
       - name: Setup iOS Rust targets
@@ -140,10 +140,10 @@ jobs:
       - name: Build Android
         if: startsWith(matrix.platform, 'android')
         run: |
-          dart tool/flutterw.dart build apk --release --target-platform ${{ matrix.flutter-target }} --dart-define=cronetHttpNoPlay=true --split-debug-info=build/symbols
-          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep "lib/${{ matrix.arch }}/libdoh_proxy.so"
-          cmp -s core/doh_proxy/certs/ca.der android/app/src/main/res/raw/proxy_ca.der
-          cmp -s core/doh_proxy/certs/ca.crt assets/certs/proxy_ca.pem
+          dart tool/flutterw.dart build apk --release --target-platform ${{ matrix.flutter-target }} --split-debug-info=build/symbols
+          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep "lib/${{ matrix.arch }}/libfluxdo_net.so"
+          cmp -s core/net_core/certs/ca.der android/app/src/main/res/raw/proxy_ca.der
+          cmp -s core/net_core/certs/ca.crt assets/certs/proxy_ca.pem
           mkdir -p dist
           mv build/app/outputs/flutter-apk/app-release.apk dist/fluxdo-${{ matrix.arch }}.apk
 
@@ -174,7 +174,7 @@ jobs:
         if: matrix.platform == 'ios'
         run: |
           dart tool/flutterw.dart build ios --release --no-codesign
-          nm -gU build/ios/iphoneos/Runner.app/Runner | grep "_doh_proxy_start_with_config_json"
+          nm -gU build/ios/iphoneos/Runner.app/Runner | grep "_fluxdo_net_request_start"
           mkdir -p dist
           cd build/ios/iphoneos
           mkdir Payload
@@ -235,11 +235,9 @@ jobs:
           dart tool/flutterw.dart build macos --release
           mkdir -p dist
           APP_PATH="build/macos/Build/Products/Release/fluxdo.app"
-          test -f "$APP_PATH/Contents/Frameworks/libdoh_proxy.dylib"
-          test -f "$APP_PATH/Contents/Resources/native/doh_proxy_bin"
-          test -x "$APP_PATH/Contents/Resources/native/doh_proxy_bin"
+          test -f "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib"
           lipo -archs "$APP_PATH/Contents/MacOS/fluxdo" | grep -qw "${{ matrix.arch }}"
-          lipo -archs "$APP_PATH/Contents/Frameworks/libdoh_proxy.dylib" | grep -qw "${{ matrix.arch }}"
+          lipo -archs "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib" | grep -qw "${{ matrix.arch }}"
           # 有证书时校验产物确实用自签证书签名(而非静默回退 adhoc)
           if [ "$HAS_CODESIGN_CERT" = "true" ]; then
             codesign -dvv "$APP_PATH" 2>&1 | grep "Authority=FluxDO Code Signing"
@@ -279,8 +277,7 @@ jobs:
         run: |
           dart tool/flutterw.dart build windows --release
           $releaseDir = "build\\windows\\x64\\runner\\Release"
-          if (-not (Test-Path "$releaseDir\\native\\doh_proxy.dll")) { throw "Missing doh_proxy.dll" }
-          if (-not (Test-Path "$releaseDir\\native\\doh_proxy_bin.exe")) { throw "Missing doh_proxy_bin.exe" }
+          if (-not (Test-Path "$releaseDir\\native\\fluxdo_net.dll")) { throw "Missing fluxdo_net.dll" }
           mkdir dist
 
       - name: Package Windows ZIP
@@ -322,8 +319,11 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/doh_proxy
+          workspaces: core/net_core
           key: flatpak
+
+      - name: Test offline Rust toolchain staging
+        run: python3 scripts/ci/flatpak/test_stage_rust_toolchain.py
 
       - name: Prepare Flatpak source tree
         env:

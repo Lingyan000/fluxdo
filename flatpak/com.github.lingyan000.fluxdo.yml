@@ -4,7 +4,6 @@ runtime-version: '48'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.llvm20
-  - org.freedesktop.Sdk.Extension.rust-stable
 command: fluxdo
 separate-locales: false
 build-options:

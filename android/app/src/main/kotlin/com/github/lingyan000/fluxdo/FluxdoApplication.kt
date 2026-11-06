@@ -64,6 +64,8 @@ class FluxdoApplication : Application() {
         // 金标联盟公平运行内存机制:进程级注册 TRIM 广播接收器
         // (非联盟 ROM 收不到该广播,注册零成本)
         FairMemoryReceiver.initialize(this)
+        // 网络核心要经 JNI 调系统证书校验,先交接 Context(早于 Flutter 引擎启动)
+        NetCoreBridge.initialize(this)
         // 不在此处初始化 Firebase，等待用户主动开启
     }
 }

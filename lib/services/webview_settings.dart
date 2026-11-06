@@ -2,15 +2,18 @@ import 'dart:async';
 import 'dart:collection' show UnmodifiableListView;
 import 'dart:convert';
 import 'dart:io' show Platform;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+
 import '../constants.dart';
 import 'eruda_settings_service.dart';
 import 'log/log_writer.dart';
 import 'network/doh/network_settings_service.dart';
+import 'network/core/net_core_bindings.dart';
 
 /// WebView 配置工具类
 /// 区分 Headless（后台同步）和 Visible（用户可见页面）两种场景
@@ -86,21 +89,24 @@ class WebViewSettings {
     return _JsonScrollListener(getController: getController, child: child);
   }
 
-  /// Gateway 模式下 WebView 的 SSL 信任回调
-  ///
-  /// 代理做 MITM 时会用自签 CA 签发证书，WKWebView/WebView 不信任它。
-  /// 仅在本地代理网关模式运行时放行，其他情况走系统默认验证。
+  /// 只有叶子证书通过当前核心 CA 的签名、有效期和主机名校验才额外信任。
+  /// 缺少 DER、核心不可用或校验失败时，交回平台默认处理，绝不按 CN 放行。
   static Future<ServerTrustAuthResponse?> handleServerTrustAuthRequest(
     URLAuthenticationChallenge challenge,
   ) async {
-    // Android/macOS: gateway MITM 模式下放行代理 CA 证书。
-    // iOS: 使用隧道模式（非 MITM），不会触发代理 CA 信任问题。
-    if (NetworkSettingsService.instance.isGatewayMode) {
-      return ServerTrustAuthResponse(
-        action: ServerTrustAuthResponseAction.PROCEED,
-      );
+    if (!NetworkSettingsService.instance.webViewUsesCoreMitm) return null;
+    final der =
+        challenge.protectionSpace.sslCertificate?.x509Certificate?.encoded;
+    if (der == null ||
+        !NetCoreBindings.instance.verifyWebViewCertificate(
+          der,
+          challenge.protectionSpace.host,
+        )) {
+      return null;
     }
-    return null;
+    return ServerTrustAuthResponse(
+      action: ServerTrustAuthResponseAction.PROCEED,
+    );
   }
 
   /// Headless WebView 配置（后台同步用，轻量）

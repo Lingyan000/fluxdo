@@ -2,8 +2,8 @@ import 'dart:io';
 
 import '_workspace_cli.dart';
 
-const _certCrtPath = 'core/doh_proxy/certs/ca.crt';
-const _certDerPath = 'core/doh_proxy/certs/ca.der';
+const _certCrtPath = 'core/net_core/certs/ca.crt';
+const _certDerPath = 'core/net_core/certs/ca.der';
 const _assetCertPath = 'assets/certs/proxy_ca.pem';
 const _androidCertPath = 'android/app/src/main/res/raw/proxy_ca.der';
 const _androidKeyPropertiesPath = 'android/key.properties';
@@ -69,7 +69,7 @@ Future<void> _ensureProxyCertResources() async {
       title: '生成代理证书',
       executable: 'cargo',
       arguments: const ['run', '--bin', 'gen_ca'],
-      workingDirectory: 'core/doh_proxy',
+      workingDirectory: 'core/net_core',
     );
   }
 

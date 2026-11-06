@@ -9,7 +9,7 @@ import '../../l10n/s.dart';
 import '../../services/network/doh/doh_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../services/network/doh/network_settings_service.dart';
-import '../../services/network/doh_proxy/doh_proxy_ffi.dart';
+import '../../services/network/core/net_core_service.dart';
 import '../../services/toast_service.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import 'package:common_ui/common_ui.dart';
@@ -57,28 +57,6 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
               // IPv6 开关
               SegmentedCardGroup(
                 children: [
-                  SwitchListTile(
-                    title: Text(context.l10n.dohDetail_gatewayMode),
-                    subtitle: Text(
-                      settings.gatewayEnabled
-                          ? context.l10n.dohDetail_gatewayEnabledDesc
-                          : context.l10n.dohDetail_gatewayDisabledDesc,
-                    ),
-                    secondary: const Icon(Symbols.swap_horiz_rounded),
-                    value: settings.gatewayEnabled,
-                    onChanged: (value) => _service.setGatewayEnabled(value),
-                  ),
-                  SwitchListTile(
-                    title: Text(context.l10n.dohDetail_h2Mitm),
-                    subtitle: Text(
-                      settings.h2Mitm
-                          ? context.l10n.dohDetail_h2MitmEnabledDesc
-                          : context.l10n.dohDetail_h2MitmDisabledDesc,
-                    ),
-                    secondary: const Icon(Symbols.bolt_rounded),
-                    value: settings.h2Mitm,
-                    onChanged: (value) => _service.setH2Mitm(value),
-                  ),
                   SwitchListTile(
                     title: Text(context.l10n.dohDetail_ipv6Prefer),
                     subtitle: Text(context.l10n.dohDetail_ipv6PreferDesc),
@@ -864,7 +842,7 @@ class _DnsCacheRecordGroup {
   const _DnsCacheRecordGroup({required this.host, required this.records});
 
   final String host;
-  final List<DohDnsCacheRecord> records;
+  final List<NetCoreDnsRecord> records;
 
   bool get hasEch => records.any((r) => r.kind == 'ech');
   bool get hasEchNegative => records.any((r) => r.kind == 'ech_negative');
@@ -880,10 +858,10 @@ class _DnsCacheRecordGroup {
       .fold(Duration.zero, (a, b) => a > b ? a : b);
 }
 
-List<_DnsCacheRecordGroup> _groupDnsRecords(List<DohDnsCacheRecord> records) {
-  final grouped = <String, List<DohDnsCacheRecord>>{};
+List<_DnsCacheRecordGroup> _groupDnsRecords(List<NetCoreDnsRecord> records) {
+  final grouped = <String, List<NetCoreDnsRecord>>{};
   for (final record in records) {
-    grouped.putIfAbsent(record.host, () => <DohDnsCacheRecord>[]).add(record);
+    grouped.putIfAbsent(record.host, () => <NetCoreDnsRecord>[]).add(record);
   }
 
   final groups = grouped.entries.map((entry) {
@@ -941,7 +919,7 @@ class _DnsRecordsSheet extends StatefulWidget {
 
 class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
   final TextEditingController _searchController = TextEditingController();
-  late final Future<List<DohDnsCacheRecord>> _recordsFuture;
+  late final Future<List<NetCoreDnsRecord>> _recordsFuture;
   String _query = '';
 
   @override
@@ -967,7 +945,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
     final theme = Theme.of(context);
     final l10n = context.l10n;
 
-    return FutureBuilder<List<DohDnsCacheRecord>>(
+    return FutureBuilder<List<NetCoreDnsRecord>>(
       future: _recordsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -980,7 +958,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
           );
         }
 
-        final records = snapshot.data ?? const <DohDnsCacheRecord>[];
+        final records = snapshot.data ?? const <NetCoreDnsRecord>[];
         final groups = _groupDnsRecords(records);
         final visibleGroups = _query.isEmpty
             ? groups

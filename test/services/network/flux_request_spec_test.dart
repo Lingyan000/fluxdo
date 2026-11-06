@@ -20,7 +20,6 @@ void main() {
       expect(FluxRequestKeys.skipNetworkLog, 'skipNetworkLog');
       expect(FluxRequestKeys.skipSessionStateSync, 'skipSessionStateSync');
       expect(FluxRequestKeys.skipWebViewAdapter, 'skipWebViewAdapter');
-      expect(FluxRequestKeys.skipRhttpAdapter, 'skipRhttpAdapter');
       expect(FluxRequestKeys.skipScheduler, 'skipScheduler');
       expect(FluxRequestKeys.allowRedirectSetCookie, 'allowRedirectSetCookie');
       expect(FluxRequestKeys.skipCfChallenge, 'skipCfChallenge');
@@ -53,7 +52,6 @@ void main() {
       expect(spec.skipNetworkLog, isFalse);
       expect(spec.skipSessionStateSync, isFalse);
       expect(spec.skipWebViewAdapter, isFalse);
-      expect(spec.skipRhttpAdapter, isFalse);
       expect(spec.skipScheduler, isFalse);
       expect(spec.allowRedirectSetCookie, isFalse);
       expect(spec.skipCfChallenge, isFalse);
