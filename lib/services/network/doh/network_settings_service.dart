@@ -16,6 +16,7 @@ import '../doh_proxy/per_device_cert_service.dart';
 import '../doh_proxy/proxy_certificate.dart';
 import '../doh_proxy/windows_cert_trust_service.dart';
 import '../fingerprint/fingerprint_template_service.dart';
+import '../fingerprint/fingerprint_presets.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../system_proxy_service.dart';
 import '../../windows_webview_environment_service.dart';
@@ -30,11 +31,13 @@ class NetworkSettings {
     required this.customServers,
     required this.proxyPort,
     this.preferIPv6 = false,
+    this.fingerprintPreset = FingerprintPreset.automatic,
     this.serverIp,
     this.echDnsPolicy = const EchDnsPolicy(),
   });
 
   final bool dohEnabled;
+  final String fingerprintPreset;
 
   /// DNS 解析服务器（A/AAAA 查询）
   final String selectedServerUrl;
@@ -56,6 +59,7 @@ class NetworkSettings {
 
   NetworkSettings copyWith({
     bool? dohEnabled,
+    String? fingerprintPreset,
     String? selectedServerUrl,
     String? Function()? echServerUrl,
     List<DohServer>? customServers,
@@ -66,6 +70,7 @@ class NetworkSettings {
   }) {
     return NetworkSettings(
       dohEnabled: dohEnabled ?? this.dohEnabled,
+      fingerprintPreset: fingerprintPreset ?? this.fingerprintPreset,
       selectedServerUrl: selectedServerUrl ?? this.selectedServerUrl,
       echServerUrl: echServerUrl != null ? echServerUrl() : this.echServerUrl,
       customServers: customServers ?? this.customServers,
@@ -188,6 +193,8 @@ class NetworkSettingsService {
     ...notifier.value.customServers,
   ];
 
+  static const fingerprintPresetKey = 'network_fingerprint_preset';
+
   Future<void> initialize(SharedPreferences prefs) async {
     if (_prefs != null) return;
     _prefs = prefs;
@@ -215,6 +222,9 @@ class NetworkSettingsService {
     final resolvedSelected = _resolveSelected(selected, custom);
     notifier.value = NetworkSettings(
       dohEnabled: dohEnabled,
+      fingerprintPreset: FingerprintPreset.normalize(
+        prefs.getString(fingerprintPresetKey),
+      ),
       selectedServerUrl: resolvedSelected,
       echServerUrl: echServer,
       customServers: custom,
@@ -232,6 +242,19 @@ class NetworkSettingsService {
     _coreService.configureEchDnsPolicy(echDnsPolicy);
     await _applyProxyState();
     await refreshDnsCacheStats();
+    _touch();
+  }
+
+  Future<void> setFingerprintPreset(String value) async {
+    final selected = FingerprintPreset.normalize(value);
+    final prefs = _prefs;
+    if (prefs == null || selected == current.fingerprintPreset) return;
+    if (!await prefs.setString(fingerprintPresetKey, selected)) {
+      throw StateError('保存网络模板失败');
+    }
+    FingerprintTemplateService.instance.reset();
+    notifier.value = current.copyWith(fingerprintPreset: selected);
+    await _applyProxyState();
     _touch();
   }
 
@@ -454,6 +477,10 @@ class NetworkSettingsService {
           webViewMitm: webViewMitm,
           fingerprintCachePath: await _fingerprintCachePath(),
           fingerprintUserAgent: await AppConstants.getUserAgent(),
+          fingerprintPreset:
+              current.fingerprintPreset == FingerprintPreset.automatic
+              ? null
+              : current.fingerprintPreset,
           caCertPem: caCertPem,
           caKeyPem: caKeyPem,
         ),
@@ -482,7 +509,8 @@ class NetworkSettingsService {
         await _clearWebViewProxy();
       }
       // 直连模式下 WebView 不经过核心，指纹只能靠探针采样
-      if (port != null) {
+      if (port != null &&
+          current.fingerprintPreset == FingerprintPreset.automatic) {
         unawaited(FingerprintTemplateService.instance.ensure(port));
       }
     } finally {

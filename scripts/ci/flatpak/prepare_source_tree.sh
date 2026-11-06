@@ -96,10 +96,14 @@ rsync -a --delete \
   --exclude '.vscode/' \
   --exclude '.idea/' \
   --exclude 'build/' \
+  --exclude 'target/' \
   --exclude 'flatpak/stage/' \
   --exclude 'logs/' \
   "${PROJECT_ROOT}/" \
   "${SOURCE_TREE_ROOT}/"
+
+echo "==> Staging Rust toolchain for offline sandbox builds"
+bash "${SCRIPT_DIR}/stage_rust_toolchain.sh" "${SOURCE_TREE_ROOT}"
 
 echo "==> Copying offline pub cache"
 rsync -a --delete "${PUB_CACHE_DIR}/" "${SOURCE_TREE_ROOT}/.pub-cache/"

@@ -115,6 +115,7 @@ pub struct FingerprintTemplate {
 #[derive(Default)]
 pub struct FingerprintTemplates {
     preset: Option<FingerprintTemplate>,
+    pinned: bool,
     source: RwLock<TemplateSource>,
     hello: RwLock<Option<ClientHello>>,
     h2: RwLock<Option<(EarlyFrameCapture, PseudoHeaderOrder)>>,
@@ -200,6 +201,26 @@ impl FingerprintTemplates {
         Self::with_profile(cache_path, std::env::consts::OS, None)
     }
 
+    /// 手选模板直接用于核心请求；不读取、采样或覆盖自动模式缓存。
+    pub fn with_selection(
+        cache_path: Option<PathBuf>,
+        platform: &str,
+        user_agent: Option<&str>,
+        preset_id: Option<&str>,
+    ) -> Result<Self> {
+        if let Some(id) = preset_id {
+            let preset = crate::presets::by_id(id)
+                .ok_or_else(|| NetError::Parse(format!("Unknown fingerprint preset: {id}")))?;
+            info!("Pinned fingerprint preset: {id}");
+            return Ok(Self {
+                preset: Some(preset),
+                pinned: true,
+                ..Self::default()
+            });
+        }
+        Ok(Self::with_profile(cache_path, platform, user_agent))
+    }
+
     pub fn with_profile(
         cache_path: Option<PathBuf>,
         platform: &str,
@@ -250,6 +271,9 @@ impl FingerprintTemplates {
     }
 
     pub fn record_hello(&self, hello: &ClientHello) {
+        if self.pinned {
+            return;
+        }
         let hash = profile_hash(hello);
         let mut previous = self.hello_hash.lock();
         let old_hash = previous.replace(hash);
@@ -296,6 +320,9 @@ impl FingerprintTemplates {
 
     /// 从镜像经过的 WebView 请求中采集 HTTP 层特征。
     pub fn observe_request<B>(&self, request: &Request<B>) {
+        if self.pinned {
+            return;
+        }
         let extensions = request.extensions();
         if let (Some(frames), Some(order)) = (
             extensions.get_ref::<EarlyFrameCapture>(),
@@ -341,6 +368,9 @@ impl FingerprintTemplates {
 
     /// TLS 与 HTTP/2 特征都已采到时返回完整模板；fetch 请求头可缺省。
     pub fn snapshot(&self) -> Option<FingerprintTemplate> {
+        if self.pinned {
+            return self.preset.clone();
+        }
         self.captured_snapshot().or_else(|| self.preset.clone())
     }
 
@@ -690,6 +720,42 @@ mod profile_tests {
         ))
         .unwrap()
     }
+    #[test]
+    fn explicit_preset_ignores_cache_and_capture_without_overwriting_auto_cache() {
+        let path = std::env::temp_dir().join(format!("fluxdo-pinned-{}.json", uuid_for_test()));
+        let cached = crate::presets::by_id("android-webview133").unwrap();
+        let original = serde_json::to_vec(&cached).unwrap();
+        std::fs::write(&path, &original).unwrap();
+        let pinned = FingerprintTemplates::with_selection(
+            Some(path.clone()),
+            "android",
+            Some("Chrome/156.0"),
+            Some("ios-safari26"),
+        )
+        .unwrap();
+        pinned.record_hello(&cached.hello);
+        let mut request = Request::builder()
+            .header("user-agent", "Chrome/156.0")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(cached.early_frames);
+        request.extensions_mut().insert(cached.pseudo_order);
+        pinned.observe_request(&request);
+        pinned.maybe_persist();
+        let selected = pinned.snapshot().unwrap();
+        assert_eq!(selected.source, TemplateSource::Builtin("ios-safari26"));
+        assert_eq!(selected.generation, 0);
+        assert!(pinned.captured_snapshot().is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        let auto = FingerprintTemplates::with_selection(Some(path.clone()), "android", None, None)
+            .unwrap();
+        assert_eq!(auto.snapshot().unwrap().source, TemplateSource::Cached);
+        assert!(
+            FingerprintTemplates::with_selection(None, "android", None, Some("missing")).is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn fallback_does_not_suppress_probe_or_persist_as_capture() {
         let path = std::env::temp_dir().join(format!("fluxdo-preset-{}.json", uuid_for_test()));

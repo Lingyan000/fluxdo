@@ -133,6 +133,11 @@ impl EgressConnector {
         }
     }
 
+    /// 固定 TCP 代理无需发起 QUIC 探测；PAC 仍保留逐目标出口检查。
+    pub fn has_fixed_proxy(&self) -> bool {
+        self.upstream_proxy.is_some() || self.system_proxy.is_some()
+    }
+
     pub fn dns(&self) -> Option<&Arc<DnsResolver>> {
         self.dns.as_ref()
     }

@@ -248,6 +248,7 @@ class NetCoreConfig {
     this.webViewMitm = false,
     this.fingerprintCachePath,
     this.fingerprintUserAgent,
+    this.fingerprintPreset,
     this.caCertPem,
     this.caKeyPem,
   });
@@ -270,6 +271,7 @@ class NetCoreConfig {
   final bool webViewMitm;
   final String? fingerprintCachePath;
   final String? fingerprintUserAgent;
+  final String? fingerprintPreset;
   final String? caCertPem;
   final String? caKeyPem;
 
@@ -296,6 +298,7 @@ class NetCoreConfig {
     webViewMitm: webViewMitm,
     fingerprintCachePath: fingerprintCachePath,
     fingerprintUserAgent: fingerprintUserAgent,
+    fingerprintPreset: fingerprintPreset,
     caCertPem: caCertPem,
     caKeyPem: caKeyPem,
   );
@@ -315,6 +318,7 @@ class NetCoreConfig {
     if (serverIp != null && serverIp!.isNotEmpty) 'server_ip': serverIp,
     'webview_mitm': webViewMitm,
     'fingerprint_platform': Platform.operatingSystem,
+    if (fingerprintPreset != null) 'fingerprint_preset': fingerprintPreset,
     if (fingerprintUserAgent != null)
       'fingerprint_user_agent': fingerprintUserAgent,
     if (fingerprintCachePath != null)
@@ -411,6 +415,7 @@ class NetCoreStatus {
     this.templateReady = false,
     this.templateSource,
     this.templatePreset,
+    this.templateMode = 'auto',
     this.userAgent,
     this.webViewMitm = false,
     this.systemProxy = false,
@@ -428,6 +433,7 @@ class NetCoreStatus {
   final bool templateReady;
   final String? templateSource;
   final String? templatePreset;
+  final String templateMode;
 
   /// 采样时 WebView 的 UA；与当前 UA 不符说明 WebView 升级过，需要重采。
   final String? userAgent;
@@ -449,6 +455,7 @@ class NetCoreStatus {
       templateReady: json['template_ready'] == true,
       templateSource: json['template_source'] as String?,
       templatePreset: json['template_preset'] as String?,
+      templateMode: json['template_mode'] as String? ?? 'auto',
       userAgent: json['user_agent'] as String?,
       webViewMitm: json['webview_mitm'] == true,
       systemProxy: json['system_proxy'] == true,

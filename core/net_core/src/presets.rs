@@ -30,6 +30,15 @@ static PRESETS: &[Preset] = &[
     preset!("windows-edge154", "windows", 154),
 ];
 
+/// 用户主动选择时按 ID 精确取档，不受宿主平台与缓存影响。
+pub(crate) fn by_id(id: &str) -> Option<FingerprintTemplate> {
+    let selected = PRESETS.iter().find(|preset| preset.id == id)?;
+    let mut template: FingerprintTemplate = serde_json::from_str(selected.json).ok()?;
+    template.source = TemplateSource::Builtin(selected.id);
+    template.generation = 0;
+    Some(template)
+}
+
 fn major_after(ua: &str, marker: &str) -> Option<u16> {
     ua.split_once(marker)?
         .1

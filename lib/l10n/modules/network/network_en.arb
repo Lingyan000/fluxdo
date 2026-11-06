@@ -47,9 +47,15 @@
   "networkSettings_rateLimitSummary": "Up to {maxPerWindow} requests every {windowSeconds}s, {maxConcurrent} in parallel",
   "@networkSettings_rateLimitSummary": {
     "placeholders": {
-      "windowSeconds": { "type": "int" },
-      "maxPerWindow": { "type": "int" },
-      "maxConcurrent": { "type": "int" }
+      "windowSeconds": {
+        "type": "int"
+      },
+      "maxPerWindow": {
+        "type": "int"
+      },
+      "maxConcurrent": {
+        "type": "int"
+      }
     }
   },
   "network_adapterCore": "Network core",
@@ -81,5 +87,21 @@
   "webviewAdapter_title": "WebView Network Engine",
   "networkSettings_upload": "File uploads",
   "networkSettings_forceDisableMultipart": "Force disable multipart uploads",
-  "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload."
+  "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload.",
+  "fingerprintPreset_title": "Fingerprint template",
+  "fingerprintPreset_auto": "Automatic",
+  "fingerprintPreset_autoDescription": "Use the device’s browser sample; use a matching preset until sampling completes.",
+  "fingerprintPreset_scope": "Applies to app requests using the network core (TLS/HTTP/2). Does not change the device User-Agent or WebView’s own fingerprint.",
+  "fingerprintPreset_active": "Using: {name}",
+  "fingerprintPreset_sampled": "Live browser sample",
+  "fingerprintPreset_cached": "Cached browser sample",
+  "fingerprintPreset_standard": "Standard TLS",
+  "fingerprintPreset_saveFailed": "Could not save the template selection",
+  "@fingerprintPreset_active": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

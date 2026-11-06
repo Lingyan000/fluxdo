@@ -14,6 +14,8 @@ import '../../../services/network/proxy/proxy_settings_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
+import '../../../services/network/fingerprint/fingerprint_presets.dart';
+import 'fingerprint_preset_dialog.dart';
 import 'doh_settings_card.dart' show ensureWindowsCertTrusted;
 
 /// 网络状态卡片
@@ -46,12 +48,55 @@ class EngineCard extends StatelessWidget {
         return SegmentedCardGroup(
           children: [
             const _StatusHeader(),
+            const _FingerprintPresetRow(),
             if (startFailed) const _StartFailedRow(),
             if (autoFellBack && !startFailed) const _FallbackRow(),
             if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
             _WebViewSwitch(webview: webview),
           ],
         );
+      },
+    );
+  }
+}
+
+class _FingerprintPresetRow extends StatelessWidget {
+  const _FingerprintPresetRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = NetworkSettingsService.instance;
+    final status = NetCoreService.instance.status;
+    final l10n = context.l10n;
+    final selected = settings.current.fingerprintPreset;
+    final selectedName =
+        FingerprintPreset.labelFor(selected) ?? l10n.fingerprintPreset_auto;
+    final activeName =
+        FingerprintPreset.labelFor(status.templatePreset) ??
+        switch (status.templateSource) {
+          'sampled' => l10n.fingerprintPreset_sampled,
+          'cached' => l10n.fingerprintPreset_cached,
+          _ => l10n.fingerprintPreset_standard,
+        };
+    return ListTile(
+      leading: const Icon(Symbols.fingerprint_rounded),
+      title: Text(l10n.fingerprintPreset_title),
+      subtitle: Text(
+        '$selectedName${status.running ? '\n${l10n.fingerprintPreset_active(activeName)}' : ''}',
+      ),
+      trailing: const Icon(Symbols.chevron_right_rounded),
+      enabled: !settings.isApplying.value,
+      onTap: () async {
+        final result = await showAppDialog<String>(
+          context: context,
+          builder: (_) => FingerprintPresetDialog(selected: selected),
+        );
+        if (result == null) return;
+        try {
+          await settings.setFingerprintPreset(result);
+        } catch (_) {
+          ToastService.showError(l10n.fingerprintPreset_saveFailed);
+        }
       },
     );
   }

@@ -47,9 +47,15 @@
   "networkSettings_rateLimitSummary": "每 {windowSeconds} 秒內最多 {maxPerWindow} 個請求，同時進行 {maxConcurrent} 個",
   "@networkSettings_rateLimitSummary": {
     "placeholders": {
-      "windowSeconds": { "type": "int" },
-      "maxPerWindow": { "type": "int" },
-      "maxConcurrent": { "type": "int" }
+      "windowSeconds": {
+        "type": "int"
+      },
+      "maxPerWindow": {
+        "type": "int"
+      },
+      "maxConcurrent": {
+        "type": "int"
+      }
     }
   },
   "network_adapterCore": "網路核心",
@@ -98,5 +104,21 @@
   "network_unprocessable": "請求無法處理",
   "networkSettings_upload": "檔案上傳",
   "networkSettings_forceDisableMultipart": "強制關閉分片上傳",
-  "networkSettings_forceDisableMultipartDescription": "開啟後，所有檔案均使用一般上傳，忽略站點分片設定。伺服器分片異常時可開啟，對下一次上傳生效。"
+  "networkSettings_forceDisableMultipartDescription": "開啟後，所有檔案均使用一般上傳，忽略站點分片設定。伺服器分片異常時可開啟，對下一次上傳生效。",
+  "fingerprintPreset_title": "指紋範本",
+  "fingerprintPreset_auto": "自動",
+  "fingerprintPreset_autoDescription": "優先使用目前裝置的瀏覽器取樣，取樣完成前使用相符的預設範本。",
+  "fingerprintPreset_scope": "用於經過網路核心的應用程式請求（TLS/HTTP/2），不會改變裝置 UA 或 WebView 本身的指紋。",
+  "fingerprintPreset_active": "目前生效：{name}",
+  "fingerprintPreset_sampled": "即時瀏覽器取樣",
+  "fingerprintPreset_cached": "瀏覽器取樣快取",
+  "fingerprintPreset_standard": "標準 TLS",
+  "fingerprintPreset_saveFailed": "無法儲存範本選擇",
+  "@fingerprintPreset_active": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

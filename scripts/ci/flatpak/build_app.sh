@@ -29,10 +29,18 @@ if [[ -d "/usr/lib/sdk/llvm20/lib" ]]; then
   LLVM_SDK_LIB="/usr/lib/sdk/llvm20/lib"
 fi
 
-export PATH="${CARGO_HOME}/bin:${FLUTTER_ROOT}/bin:${FLUTTER_ROOT}/bin/cache/dart-sdk/bin:/usr/lib/sdk/rust-stable/bin${LLVM_SDK_BIN:+:${LLVM_SDK_BIN}}:${PATH}"
+RUST_SDK_ROOT="${SOURCE_TREE_ROOT}/rust-sdk"
+if [[ ! -x "${RUST_SDK_ROOT}/bin/rustc" || ! -x "${RUST_SDK_ROOT}/bin/cargo" ]]; then
+  echo "Missing staged Rust toolchain; rerun prepare_source_tree.sh" >&2
+  exit 1
+fi
+export PATH="${CARGO_HOME}/bin:${RUST_SDK_ROOT}/bin:${FLUTTER_ROOT}/bin:${FLUTTER_ROOT}/bin/cache/dart-sdk/bin${LLVM_SDK_BIN:+:${LLVM_SDK_BIN}}:${PATH}"
 if [[ -n "${LLVM_SDK_LIB}" ]]; then
   export LD_LIBRARY_PATH="${LLVM_SDK_LIB}:${LD_LIBRARY_PATH:-}"
 fi
+
+rustc --version
+cargo --version
 
 mkdir -p "${HOME}" "${CARGO_HOME}" "${INSTALL_ROOT}"
 mkdir -p "${XDG_CONFIG_HOME}/flutter"

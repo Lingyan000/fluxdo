@@ -2,6 +2,7 @@
 name = "fluxdo_net"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.96"
 description = "FluxDO 网络核心：dio 的进程内网络栈（FFI）、WebView 本地代理与指纹采样"
 
 [lib]

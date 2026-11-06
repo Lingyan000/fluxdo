@@ -47,9 +47,15 @@
   "networkSettings_rateLimitSummary": "每 {windowSeconds} 秒内最多 {maxPerWindow} 个请求,同时进行 {maxConcurrent} 个",
   "@networkSettings_rateLimitSummary": {
     "placeholders": {
-      "windowSeconds": { "type": "int" },
-      "maxPerWindow": { "type": "int" },
-      "maxConcurrent": { "type": "int" }
+      "windowSeconds": {
+        "type": "int"
+      },
+      "maxPerWindow": {
+        "type": "int"
+      },
+      "maxConcurrent": {
+        "type": "int"
+      }
     }
   },
   "network_adapterCore": "网络核心",
@@ -102,5 +108,21 @@
   "webviewAdapter_title": "WebView 网络引擎",
   "networkSettings_upload": "文件上传",
   "networkSettings_forceDisableMultipart": "强制关闭分片上传",
-  "networkSettings_forceDisableMultipartDescription": "开启后，所有文件均使用普通上传，忽略站点分片配置。服务端分片异常时可开启，对下一次上传生效。"
+  "networkSettings_forceDisableMultipartDescription": "开启后，所有文件均使用普通上传，忽略站点分片配置。服务端分片异常时可开启，对下一次上传生效。",
+  "fingerprintPreset_title": "指纹模板",
+  "fingerprintPreset_auto": "自动",
+  "fingerprintPreset_autoDescription": "优先使用当前设备的浏览器采样，采样完成前使用匹配的预置。",
+  "fingerprintPreset_scope": "用于经过网络核心的应用请求（TLS/HTTP/2），不会改变设备 UA 或 WebView 自身的指纹。",
+  "fingerprintPreset_active": "当前生效：{name}",
+  "fingerprintPreset_sampled": "实时浏览器采样",
+  "fingerprintPreset_cached": "浏览器采样缓存",
+  "fingerprintPreset_standard": "标准 TLS",
+  "fingerprintPreset_saveFailed": "无法保存模板选择",
+  "@fingerprintPreset_active": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

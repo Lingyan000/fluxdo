@@ -177,6 +177,9 @@ pub struct NetConfig {
     pub fingerprint_user_agent: Option<String>,
     #[serde(default)]
     pub fingerprint_platform: Option<String>,
+    /// 指定预置 ID；缺省为实时采样/缓存优先的自动模式。
+    #[serde(default)]
+    pub fingerprint_preset: Option<String>,
     #[serde(default)]
     pub tls_session_cache_path: Option<String>,
     #[serde(default)]
@@ -207,6 +210,7 @@ impl Default for NetConfig {
             fingerprint_cache_path: None,
             fingerprint_user_agent: None,
             fingerprint_platform: None,
+            fingerprint_preset: None,
             tls_session_cache_path: None,
             tls_session_cache_key: None,
             ca_cert_pem: None,

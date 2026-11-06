@@ -322,6 +322,9 @@ jobs:
           workspaces: core/net_core
           key: flatpak
 
+      - name: Test offline Rust toolchain staging
+        run: python3 scripts/ci/flatpak/test_stage_rust_toolchain.py
+
       - name: Prepare Flatpak source tree
         env:
           PUB_CACHE: ${{ github.workspace }}/.pub-cache

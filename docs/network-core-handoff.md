@@ -414,3 +414,11 @@ Android arm64 最终原生 release 编译通过（1m06s，无警告）；本轮�
 - 发布范围：本轮网络实现和相应验证、来源、维护文档；排除 .openidea/、test/_probe/、标注“不入库”的 docs/network-egress-core-plan.md。beta 标签计划使用 v0.2.30-beta.5，远端推送结果以实际 Git 记录为准。
 
 提交前暂存检查：617 个文件，包含完整 vendored Rama QUIC 源码与许可证，不含原生构建产物、私钥、临时探针或个人配置。diff --check 仅在原样保留的上游 Safari YAML 与 Dio README 中发现 5 处尾随空格；其余文件通过。保留来源文件字节，避免破坏来源摘要核对。
+
+## 2026-11-06 CI 修复与主动模板选择
+
+- beta.5 的 7 个 Android/iOS/macOS/Windows 构建均成功。唯一失败是 Flatpak：GNOME 48 的 rust-stable 扩展仍为 Rust 1.89，Rama 要求 >=1.96，发布聚合因此未执行。
+- Flatpak 改为将源准备阶段实际使用的 Rust sysroot（编译器、Cargo、标准库及依赖库）带入离线沙箱，提前检查核心 MSRV 与 Linux x86_64 宿主并保存版本记录。移除旧 Rust 扩展依赖；保留 GNOME/WPE 运行库。源树不复制 target 缓存，Rust SDK 不复制文档。
+- 网络设置增加自动和 10 个手动档。指定模板持久化并重建核心，优先于缓存和采样，不改写自动缓存，不运行采样探针。切回自动恢复旧规则。范围为网络核心 TLS/H2 请求；不改设备 UA 或 WebView 自身指纹，QUIC 行为不属于这些模板。设置和日志均显示实际来源。
+- 固定 TCP 代理提前跳过 H3 升级观察和探针，不申请探针/连接配额、不做无用解析；动态 PAC 仍保留逐目标出口检查。日志头保留 proxyEnabled 旧含义，补充 systemProxyEnabled/effectiveProxyEnabled/proxySource 和模板模式、来源、ID。
+- 本地验证：Rust 76 项通过；Flutter 3.47.4 网络/真实 FFI/选择 UI/日志/图片回归 261 项通过，3 项 Windows 条件跳过。含手动档不被缓存/采样覆盖、切回自动、固定代理不发 H3 探针，以及 375 宽/横屏/2 倍字体/深浅主题选择。工具链搬迁、旧版本与错误架构拒绝的 Python 回归通过，shell 语法检查通过。日志：/tmp/fluxdo-preset-choice-rust-final.log、/tmp/fluxdo-beta6-pinned-tests.log。Flatpak 是否修复仍以新 CI 实际构建为准。

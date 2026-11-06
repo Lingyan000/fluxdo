@@ -135,6 +135,10 @@ impl Http3Upgrade {
         pool: Arc<PoolState>,
         exec: Executor,
     ) {
+        // 固定代理不支持直接 UDP；不占探针名额，不做 DNS 或重复写失败日志。
+        if egress.has_fixed_proxy() {
+            return;
+        }
         self.observe(target.key, target.host, headers);
         let Ok(permit) = self.probes.clone().try_acquire_owned() else {
             return;
@@ -387,6 +391,37 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn fixed_proxy_skips_quic_before_dns_or_probe_allocation() {
+        let state = Arc::new(Http3Upgrade::default());
+        let pool = Arc::new(PoolState::default());
+        let proxy: crate::UpstreamProxyConfig = serde_json::from_value(serde_json::json!({
+            "host": "127.0.0.1", "port": 7890, "protocol": "http"
+        }))
+        .unwrap();
+        let egress = Arc::new(EgressConnector::new(
+            None,
+            None,
+            Some(proxy),
+            None,
+            Duration::from_secs(1),
+        ));
+        let target = Target {
+            key: "proxy",
+            template: None,
+            host: "not-resolved.invalid",
+            port: 443,
+            secure: true,
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("alt-svc", "h3=\":443\"; ma=600".parse().unwrap());
+        let permits = state.probes.available_permits();
+        state.observe_and_upgrade(&target, &headers, egress, pool.clone(), Executor::new());
+        assert!(state.alternatives.lock().is_empty());
+        assert_eq!(state.probes.available_permits(), permits);
+        assert!(pool.hosts.lock().is_empty());
+    }
+
     #[tokio::test]
     async fn bounded_h3_race_bypasses_stalled_first_address() {
         let first = "[::1]:443".parse().unwrap();

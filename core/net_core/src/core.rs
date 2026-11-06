@@ -42,7 +42,7 @@ impl Core {
     }
 
     pub async fn start(config: NetConfig) -> Result<Arc<Self>> {
-        let templates = Arc::new(FingerprintTemplates::with_profile(
+        let templates = Arc::new(FingerprintTemplates::with_selection(
             config
                 .fingerprint_cache_path
                 .as_ref()
@@ -52,7 +52,8 @@ impl Core {
                 .as_deref()
                 .unwrap_or(std::env::consts::OS),
             config.fingerprint_user_agent.as_deref(),
-        ));
+            config.fingerprint_preset.as_deref(),
+        )?);
 
         // DoH 开启时才建解析器；关闭时出站走系统 DNS
         let dns = match (config.enable_doh, config.doh_server.as_deref()) {
@@ -175,6 +176,7 @@ impl Core {
             "port": self.port(),
             "template_ready": template.as_ref().is_some_and(|template| template.source.id().is_none()),
             "template_source": template.as_ref().map(|template| template.source.name()),
+            "template_mode": if self.config.fingerprint_preset.is_some() { "preset" } else { "auto" },
             "template_preset": template.as_ref().and_then(|template| template.source.id()),
             "user_agent": template.and_then(|template| template.user_agent),
             "webview_mitm": self.config.webview_mitm,

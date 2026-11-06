@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../app_logger.dart';
 import '../network/adapters/platform_adapter.dart';
 import '../network/doh/network_settings_service.dart';
+import '../network/core/net_core_service.dart';
 import '../network/health/network_health_controller.dart';
 import '../network/proxy/proxy_settings_service.dart';
 import '../../l10n/s.dart';
@@ -263,7 +264,18 @@ class LoggerUtils {
     }
 
     final proxy = ProxySettingsService.instance.current;
+    final core = NetCoreService.instance.status;
+    // 保留旧字段含义，新增实际出口，避免把系统代理误读为直连。
     map['proxyEnabled'] = proxy.isValid;
+    map['systemProxyEnabled'] = core.systemProxy;
+    map['effectiveProxyEnabled'] = proxy.isValid || core.systemProxy;
+    map['proxySource'] = proxy.isValid
+        ? 'app'
+        : (core.systemProxy ? 'system' : 'direct');
+    map['fingerprintSelection'] = doh.fingerprintPreset;
+    map['templateMode'] = core.templateMode;
+    map['templateSource'] = core.templateSource;
+    map['templatePreset'] = core.templatePreset;
     if (proxy.isValid) {
       map['proxyHost'] = '${proxy.host}:${proxy.port}';
     }
