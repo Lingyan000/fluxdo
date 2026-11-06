@@ -578,6 +578,120 @@ mod ech_query_tests {
         assert_eq!(transport.calls.load(Ordering::Relaxed), 2);
         assert!(r.ech_inflight.lock().is_empty());
     }
+    /// 把清理前的 DNS 回答挂起，模拟换网/手动刷新与旧查询完成交错。
+    struct RefreshRaceDoh {
+        old: std::sync::atomic::AtomicBool,
+        old_negative_ech: bool,
+        started: tokio::sync::Semaphore,
+        release: tokio::sync::Semaphore,
+        inner: FakeDoh,
+    }
+    impl RefreshRaceDoh {
+        fn new(old_negative_ech: bool) -> Self {
+            Self {
+                old: std::sync::atomic::AtomicBool::new(true),
+                old_negative_ech,
+                started: tokio::sync::Semaphore::new(0),
+                release: tokio::sync::Semaphore::new(0),
+                inner: FakeDoh::default(),
+            }
+        }
+    }
+    impl DohTransport for RefreshRaceDoh {
+        fn get<'a>(
+            &'a self,
+            url: String,
+        ) -> Pin<Box<dyn Future<Output = Result<DohResponse>> + Send + 'a>> {
+            Box::pin(async move {
+                let old = self.old.load(Ordering::Relaxed);
+                let mut response = self.inner.get(url).await?;
+                let mut message = Message::from_vec(&response.body).unwrap();
+                if old && self.old_negative_ech {
+                    message
+                        .answers_mut()
+                        .retain(|r| r.record_type() != RecordType::HTTPS);
+                } else if !old {
+                    for record in message.answers_mut() {
+                        match record.data() {
+                            Some(RData::A(_)) => {
+                                record.set_data(Some(RData::A(A("192.0.2.20".parse().unwrap()))));
+                            }
+                            Some(RData::HTTPS(_)) => {
+                                record.set_data(Some(RData::HTTPS(HTTPS(SVCB::new(
+                                    1,
+                                    Name::root(),
+                                    vec![(
+                                        SvcParamKey::EchConfig,
+                                        SvcParamValue::EchConfig(EchConfig(vec![4, 5, 6])),
+                                    )],
+                                )))));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                response.body = Bytes::from(message.to_vec().unwrap());
+                if old {
+                    self.started.add_permits(1);
+                    self.release.acquire().await.unwrap().forget();
+                }
+                Ok(response)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn dns_refresh_does_not_wait_for_or_restore_old_answers() {
+        for all_hosts in [false, true] {
+            for old_negative in [false, true] {
+                let transport = Arc::new(RefreshRaceDoh::new(old_negative));
+                let mut resolver = DnsResolver::empty(false);
+                let endpoint: Uri = "https://doh.test/dns-query".parse().unwrap();
+                resolver.doh_uri_ip = Some(endpoint.clone());
+                resolver.doh_uri_ech = Some(endpoint);
+                resolver.transport = Some(transport.clone());
+                let resolver = Arc::new(resolver);
+                let old = {
+                    let resolver = resolver.clone();
+                    tokio::spawn(
+                        async move { resolver.lookup_host("cdn.ldstatic.com", false).await },
+                    )
+                };
+                tokio::time::timeout(Duration::from_secs(1), transport.started.acquire_many(3))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .forget();
+                if all_hosts {
+                    resolver.clear_all_caches();
+                } else {
+                    resolver.clear_host_cache("cdn.ldstatic.com");
+                }
+                transport.old.store(false, Ordering::Relaxed);
+                let fresh = tokio::time::timeout(
+                    Duration::from_millis(500),
+                    resolver.lookup_host("cdn.ldstatic.com", false),
+                )
+                .await;
+                // 先释放旧任务，再断言，避免失败测试遗留阻塞任务。
+                transport.release.add_permits(3);
+                old.await.unwrap().unwrap();
+                let fresh = fresh.expect("清理后的请求不能等待旧查询").unwrap();
+                assert!(fresh.addrs.contains(&"192.0.2.20".parse().unwrap()));
+                assert_eq!(fresh.ech_config, Some(vec![0, 3, 4, 5, 6]));
+                let cached = resolver
+                    .lookup_host("cdn.ldstatic.com", false)
+                    .await
+                    .unwrap();
+                assert!(cached.addrs.contains(&"192.0.2.20".parse().unwrap()));
+                assert!(!cached.addrs.contains(&"192.0.2.10".parse().unwrap()));
+                assert_eq!(cached.ech_config, Some(vec![0, 3, 4, 5, 6]));
+                assert!(resolver.ech_negative_cache.read().is_empty());
+                assert_eq!(transport.inner.queries.lock().await.len(), 6);
+            }
+        }
+    }
+
     impl DohTransport for InvalidDoh {
         fn get<'a>(
             &'a self,
@@ -1300,7 +1414,8 @@ impl DnsResolver {
     }
 
     pub fn clear_host_cache(&self, domain: &str) {
-        self.clear_query_cache();
+        let mut queries = self.queries.lock();
+        self.clear_query_cache(&mut queries);
         self.ip_cache.write().remove(domain);
         self.ech_cache.write().remove(domain);
         self.ech_negative_cache.write().remove(domain);
@@ -1308,7 +1423,8 @@ impl DnsResolver {
     }
 
     pub fn clear_all_caches(&self) {
-        self.clear_query_cache();
+        let mut queries = self.queries.lock();
+        self.clear_query_cache(&mut queries);
         self.ip_cache.write().clear();
         self.ech_cache.write().clear();
         self.ech_negative_cache.write().clear();
@@ -1316,11 +1432,14 @@ impl DnsResolver {
         self.preferred_host_ip_cache.write().clear();
     }
 
-    fn clear_query_cache(&self) {
-        let mut queries = self.queries.lock();
+    // 清理与写入共用 queries 锁，避免检查代数之后、写缓存之前再次被刷新。
+    fn clear_query_cache(&self, queries: &mut DohQueries) {
         queries.generation = queries.generation.wrapping_add(1);
         queries.cache.clear();
         queries.flights.clear();
+        // 新请求不能加入清理前的主机级查询。旧任务仍可完成，但不能回填新缓存。
+        self.ip_inflight.lock().clear();
+        self.ech_inflight.lock().clear();
     }
 
     pub fn cache_stats(&self) -> DnsCacheStats {
@@ -1539,7 +1658,11 @@ impl DnsResolver {
     }
 
     /// 写入 IP 缓存，超过上限时淘汰过期条目
-    fn put_ip_cache(&self, domain: &str, addrs: Vec<IpAddr>, ttl: Duration) {
+    fn put_ip_cache(&self, domain: &str, addrs: Vec<IpAddr>, ttl: Duration, generation: u64) {
+        let queries = self.queries.lock();
+        if queries.generation != generation {
+            return;
+        }
         let mut cache = self.ip_cache.write();
         cache.insert(
             domain.to_string(),
@@ -1554,7 +1677,11 @@ impl DnsResolver {
     }
 
     /// 写入 ECH 缓存，超过上限时淘汰过期条目
-    fn put_ech_cache(&self, domain: &str, config: Vec<u8>, ttl: Duration) {
+    fn put_ech_cache(&self, domain: &str, config: Vec<u8>, ttl: Duration, generation: u64) {
+        let queries = self.queries.lock();
+        if queries.generation != generation {
+            return;
+        }
         // 找到 ECH，清除可能存在的负缓存
         self.ech_negative_cache.write().remove(domain);
         let mut cache = self.ech_cache.write();
@@ -1571,7 +1698,11 @@ impl DnsResolver {
     }
 
     /// 写入 ECH 负缓存（确定无 ECH 时调用）
-    fn put_ech_negative(&self, domain: &str) {
+    fn put_ech_negative(&self, domain: &str, generation: u64) {
+        let queries = self.queries.lock();
+        if queries.generation != generation {
+            return;
+        }
         let expires_at = std::time::Instant::now() + Duration::from_secs(ECH_NEGATIVE_TTL_SECS);
         let mut cache = self.ech_negative_cache.write();
         cache.insert(domain.to_string(), expires_at);
@@ -1670,6 +1801,7 @@ impl DnsResolver {
     }
 
     async fn lookup_ech_config_via_doh_get(&self, domain: &str) -> Result<Option<Vec<u8>>> {
+        let generation = self.queries.lock().generation;
         let start = std::time::Instant::now();
         let Some(message) = self
             .doh_get_message_with(
@@ -1686,7 +1818,7 @@ impl DnsResolver {
             if let Some(hickory_proto::rr::RData::HTTPS(https)) = record.data() {
                 if let Some(ech_config) = self.extract_ech_from_https(https) {
                     let ttl = Self::clamp_ttl(record.ttl());
-                    self.put_ech_cache(domain, ech_config.clone(), ttl);
+                    self.put_ech_cache(domain, ech_config.clone(), ttl, generation);
                     debug!(
                         "ECH DoH GET lookup succeeded for {} in {} ms (TTL: {}s)",
                         domain,
@@ -1699,11 +1831,12 @@ impl DnsResolver {
         }
 
         // 收到响应但记录中没有 ECH 参数：确定无 ECH，写入负缓存
-        self.put_ech_negative(domain);
+        self.put_ech_negative(domain, generation);
         Ok(None)
     }
 
     async fn lookup_ip_via_doh_get(&self, domain: &str) -> Result<Vec<IpAddr>> {
+        let generation = self.queries.lock().generation;
         let start = std::time::Instant::now();
         let mut addrs = Vec::new();
         let mut min_ttl = MAX_TTL_SECS as u32;
@@ -1764,7 +1897,7 @@ impl DnsResolver {
         }
 
         let ttl = Self::clamp_ttl(min_ttl);
-        self.put_ip_cache(domain, addrs.clone(), ttl);
+        self.put_ip_cache(domain, addrs.clone(), ttl, generation);
 
         debug!(
             "IP DoH GET lookup succeeded for {} in {} ms (TTL: {}s)",

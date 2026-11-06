@@ -131,3 +131,26 @@ ImageResourceLoader/DecodedImageCache 主路径能追到内存缓存、整段 Da
 - /tmp/linuxdo-main-objc.txt、/tmp/linuxdo-main-asm.txt：完整类信息与主程序指令。
 - /tmp/linuxdo-community-symbols.txt、/tmp/linuxdo-community-asm.txt：framework 符号与指令。
 - /tmp/linuxdo_macho.py、/tmp/linuxdo_trace.py、/tmp/linuxdo_objc_calls.py：只读解析脚本。
+
+## 2026-11-06 网络路径补充复核与对应修复
+
+仍使用上文同一份官方 iOS 包；本轮不再继续引入其他 fork 的策略。没有官方 Android 样本或同网络性能对照。
+
+### 新确认的官方实现
+
+- **ECH 解析任务确实共享**：CommunityFoundation 的 echResolution 字段位于 ivar 表 0x7c44f0。0x38b78–0x38bcc 读取可选任务并分支；已有任务走 0x38da8 后续共享等待；缺失时 0x38e78 创建 task，0x38efc 存回字段。0x39514 取 task，0x39538 调用 swift_task_future_wait_throwing。这超出了此前只根据类型名推测的证据范围。未据此推断所有普通 DNS 请求都采用相同机制。
+- **公共 ECH 入口有实际调用**：0x39260 构造 cloudflare-ech.com，0x39290 设置解析调用超时 5 秒，0x392b4 调用 CurlMultiActor.resolve。0x46e98–0x46f10 构造真实 host 到 cloudflare-ech.com 的 CURLOPT_CONNECT_TO 映射，后续设置 CURLOPT_ECH。CONNECT_TO 改建连目标，保留应用请求与证书校验主机语义，见 [curl 文档](https://curl.se/libcurl/c/CURLOPT_CONNECT_TO.html)。
+- **策略覆盖不等于图片实际路径**：usesSharedCloudflareECH 的 0x67374 检查 HTTPS，以及 linux.do/ldstatic.com（含子域）；usesCustomTransport 与普通图片入口是另一条判定。普通 CDN 图片仍选 URLSession，不能看到 ldstatic.com 出现在 ECH 策略里就认定图片走 curl。
+- **解析配置变化会隔离旧状态**：0x350f4 获取并比较 resolverConfiguration；改变时清理两个对象缓存，调用 0x38024 处理 ECH 任务，0x351c8–0x351d8 递增 resolverEpoch，0x351dc 进入连接/DNS 缓存失效路径；0x4587c 实际调用 curl_multi_setopt 的 NETWORK_CHANGED 选项。选项语义见 [curl 文档](https://curl.se/libcurl/c/CURLMOPT_NETWORK_CHANGED.html)。没有据此宣称所有网络事件都必然触发该分支。
+- **H3 不只是配置字符串**：包内存在 Curl_cf_ngtcp2_create、连接/收发、ngtcp2_h3_stream_setup、nghttp3 等实现，结合之前确认的 Alt-Svc 配置，可以确认包含 QUIC/H3 实现。但没有实际请求指标证明某张图片使用 H3。
+- **图片入口错误不会在这一层自动换 curl**：普通图片的系统传输返回到 0x10009d450；错误分支 0x10009d4ec 清理请求并把错误向上传递，没有在这条 continuation 中重新选择 curl。这不排除更高层重新请求，也不是所有重定向路径的运行时证明。
+
+### 对照后落到项目的实际修复
+
+FluxDO 已有公共 ECH 查询合并、H2/H3 连接复用及配置重建；没有因为官方使用 curl 就替换核心，也没有改变用户指定 DoH 的含义。
+
+本轮发现 DNS 清理的版本隔离只保护原始 DoH 报文缓存，主机级 IP、ECH 与无 ECH 负缓存仍会被清理前的查询重新填入；主机级在途表也没有清理，刷新后的请求会加入旧查询并等待。
+
+新增隔离回归 dns_refresh_does_not_wait_for_or_restore_old_answers：挂起旧 A/AAAA/HTTPS 查询，刷新单主机或全部缓存，发起新查询，再让旧查询最后返回。旧代码在“清理后的请求不能等待旧查询”失败；修复后同时覆盖旧 ECH 成功/负答案、旧结果不得覆盖新 IP/ECH、不得污染负缓存。修复复用已有解析代数，并让缓存写入与清理互斥；没有增加网络请求的常态并发、后台轮询或测速服务。
+
+Rust 全量 77 项通过。这个修复解决刷新与查询交错的确定性缺陷，不证明用户持续 DoH 慢图完全由它造成。普通图片走不同传输仍是官方与本项目最重要的对照差异；尚不能得出“本项目已到性能极限”或“只剩用户网络问题”。
