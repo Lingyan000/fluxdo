@@ -19,6 +19,9 @@ import '../../providers/locale_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/app_background_service.dart';
+import '../../services/discourse_cache_manager.dart'
+    show BlobImageCache, BlobImageProvider;
+import '../../services/emoji_handler.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_palettes.dart';
@@ -310,6 +313,20 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       ],
     ),
 
+    // ── 表情风格 ──────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_emojiStyle,
+      icon: Symbols.add_reaction_rounded,
+      items: [
+        CustomModel(
+          id: 'emojiStyle',
+          title: l10n.appearance_emojiStyle,
+          subtitle: l10n.appearance_emojiStyleDesc,
+          builder: (context, ref) => const _EmojiStyleSection(),
+        ),
+      ],
+    ),
+
     // ── 屏幕帧率（仅 Android）──────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_displayMode,
@@ -523,6 +540,92 @@ void _showLanguagePicker(
     },
   );
 }
+
+// ── 表情风格 ─────────────────────────────────────────────────────
+
+/// 表情风格单选:每项右侧用该风格画几个示例表情,选之前就能看到画风。
+class _EmojiStyleSection extends ConsumerWidget {
+  const _EmojiStyleSection();
+
+  /// 预览用的示例表情(官方回应默认组里的几个,各表情集都有图)
+  static const _samples = ['heart', '+1', 'laughing'];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final current = ref.watch(preferencesProvider.select((p) => p.emojiStyle));
+    final options = <(String, String, String)>[
+      // (偏好值, 名称, 预览用的表情集)
+      (
+        EmojiHandler.followSite,
+        l10n.appearance_emojiStyleFollowSite,
+        EmojiHandler.siteSet,
+      ),
+      for (final set in EmojiHandler.selectableSets)
+        (set, _emojiSetLabel(l10n, set), set),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            l10n.appearance_emojiStyleDesc,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        RadioGroup<String>(
+          groupValue: current,
+          onChanged: (value) {
+            if (value == null) return;
+            ref.read(preferencesProvider.notifier).setEmojiStyle(value);
+          },
+          child: Column(
+            children: [
+              for (final (value, label, set) in options)
+                RadioListTile<String>(
+                  value: value,
+                  title: Text(label),
+                  secondary: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final name in _samples)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Image(
+                            image: BlobImageProvider(
+                              EmojiHandler.urlForSet(name, set),
+                              bucket: BlobImageCache.emojiBucket,
+                            ),
+                            width: 22,
+                            height: 22,
+                            errorBuilder: (_, _, _) =>
+                                const SizedBox(width: 22, height: 22),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _emojiSetLabel(AppLocalizations l10n, String set) => switch (set) {
+  'noto' => 'Noto Emoji',
+  'twemoji' => 'Twemoji',
+  'fluentui' => 'Fluent Emoji',
+  'openmoji' => 'OpenMoji',
+  'unicode' => l10n.appearance_emojiStyleStandard,
+  _ => set,
+};
 
 // ── 屏幕帧率选择器（仅 Android）────────────────────────────────
 

@@ -142,6 +142,15 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     }
   }
 
+  /// 完整动画路径初始化解码器时记下的帧数(url → 帧数)。
+  ///
+  /// 只播一遍的场景(回应面板动态表情)按 Image.frameBuilder 的帧序号
+  /// 数满一圈即停,需要知道一圈有几帧;首帧交付前解码器已初始化,取得到。
+  static final Map<String, int> _frameCounts = {};
+
+  /// [url] 动画的帧数;尚未解码过返回 null。
+  static int? frameCountOf(String url) => _frameCounts[url];
+
   static String _thumbnailCacheKey(String url, int targetSize) {
     return 'avif_thumb:$targetSize:$url';
   }
@@ -237,6 +246,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
         maxDim: key.maxDimension,
       );
       await codec.init(bytes);
+      _frameCounts[key.url] = codec.frameCount;
       return codec;
     }
     final codec = fa.MultiFrameAvifCodec(
@@ -244,6 +254,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
       avifBytes: bytes,
     );
     await codec.ready();
+    _frameCounts[key.url] = codec.frameCount;
     return codec;
   }
 

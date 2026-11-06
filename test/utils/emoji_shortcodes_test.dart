@@ -137,12 +137,36 @@ void main() {
       );
     });
 
-    test('animatedUrl skips tone variants', () {
+    test('animatedUrl supports tone variants like the official component', () {
       expect(
         EmojiHandler().animatedUrl('heart'),
         endsWith('/images/emoji/noto_animated/heart.avif?v=16'),
       );
-      expect(EmojiHandler().animatedUrl('wave:t3'), isNull);
+      expect(
+        EmojiHandler().animatedUrl('+1:t3'),
+        endsWith('/images/emoji/noto_animated/+1/3.avif?v=16'),
+      );
+    });
+
+    test('emoji style preference switches the display set', () {
+      addTearDown(() => EmojiHandler.setPreference(null));
+
+      EmojiHandler.setPreference('twemoji');
+      expect(
+        EmojiHandler().getEmojiUrl('heart'),
+        endsWith('/images/emoji/twemoji/heart.png?v=16'),
+      );
+      expect(
+        EmojiHandler.displayUrl(
+          'https://cdn.example.com/images/emoji/twitter/heart.png?v=12',
+        ),
+        'https://cdn.example.com/images/emoji/twemoji/heart.png?v=16',
+      );
+      // 动态表情只有 Noto 画风,其他风格不播放
+      expect(EmojiHandler().animatedUrl('heart'), isNull);
+
+      EmojiHandler.setPreference('not_a_set');
+      expect(EmojiHandler.preference, EmojiHandler.defaultPreference);
     });
   });
 }

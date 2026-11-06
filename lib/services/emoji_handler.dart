@@ -13,17 +13,55 @@ import '../utils/emoji_shortcodes.dart';
 /// - 不依赖 `/emojis.json` API（该接口仅供 emoji picker 使用）
 ///
 /// **展示表情集与站点表情集分离**:站点 `emoji_set` 只决定服务端 cooked
-/// 里写哪套地址;展示统一用 [displaySet]。回应面板的动态表情
-/// ([animatedUrl])只有 Noto 一套,静态图跟着用 Noto 才能全站同一画风。
+/// 里写哪套地址;展示用 [displaySet](用户在外观设置里选,默认 Noto)。
+/// 回应面板的动态表情([animatedUrl])只有 Noto 一套,展示表情集是 Noto
+/// 时才播放,避免动图与静态图两套画风来回切换。
 class EmojiHandler {
   static final EmojiHandler _instance = EmojiHandler._internal();
   factory EmojiHandler() => _instance;
   EmojiHandler._internal();
 
-  /// 展示用的标准 emoji 表情集。
-  static const displaySet = 'noto';
+  /// 偏好值:跟随站点 `emoji_set`。
+  static const followSite = 'site';
 
-  /// 动态表情集:AVIF 动图序列,与 [displaySet] 同一套 Noto 画。
+  /// 可选表情集,取官方 EmojiSetSiteSetting 中未弃用的几项(apple/twitter/
+  /// google/win10 等在官方文案里已标注 deprecated,分别并入下列表情集)。
+  static const selectableSets = [
+    'noto',
+    'twemoji',
+    'fluentui',
+    'openmoji',
+    'unicode',
+  ];
+
+  /// 默认偏好:Noto(与动态表情同一画风)。
+  static const defaultPreference = 'noto';
+
+  static String _preference = defaultPreference;
+
+  /// 当前表情风格偏好:[followSite] 或 [selectableSets] 之一。
+  static String get preference => _preference;
+
+  /// 设置表情风格偏好(偏好层启动时与切换时调用),非法值回落默认。
+  static void setPreference(String? value) {
+    _preference = value == followSite || selectableSets.contains(value)
+        ? value!
+        : defaultPreference;
+  }
+
+  /// 站点表情集(服务端 cooked 里写的那套)。
+  static String get siteSet =>
+      PreloadedDataService().siteSettingsSync?['emoji_set'] as String? ??
+      _defaultSiteSet;
+
+  /// 展示用的标准 emoji 表情集。
+  static String get displaySet =>
+      _preference == followSite ? siteSet : _preference;
+
+  /// 展示表情集与动态表情同属 Noto 画风时才播放动态表情。
+  static bool get animationEnabled => displaySet == 'noto';
+
+  /// 动态表情集:AVIF 动图序列,Noto 画风。
   static const _animatedSet = 'noto_animated';
 
   /// 图片版本参数(同官方 IMAGE_VERSION)。展示地址统一带同一版本,
@@ -89,25 +127,40 @@ class EmojiHandler {
       return UrlHelper.resolveUrlWithCdn(customUrl);
     }
 
-    // 肤色变体 `name:t3` → `name/3`(官方 code.replace(/:t/, "/"))
-    final toneMatch = _toneRegex.firstMatch(normalized);
-    final path = toneMatch != null
-        ? '${toneMatch.group(1)}/${toneMatch.group(2)}'
-        : normalized;
-    return UrlHelper.resolveUrlWithCdn(_standardPath(displaySet, path));
+    return UrlHelper.resolveUrlWithCdn(
+      _standardPath(displaySet, _standardName(normalized)),
+    );
   }
 
-  /// 标准 emoji 的动态表情地址;自定义 emoji / 肤色变体没有动态版返回 null。
+  /// 指定表情集下标准 emoji 的地址(设置页预览各风格用,不做展示改写)。
+  static String urlForSet(String name, String set) {
+    final normalized = normalizeEmojiShortcodeName(name);
+    return UrlHelper.resolveUrlWithCdn(
+      _standardPath(set, _standardName(normalized)),
+    );
+  }
+
+  /// 标准 emoji 的动态表情地址;自定义 emoji 没有动态版、展示表情集不是
+  /// Noto 时不播放,均返回 null。肤色变体同官方 `+1/3.avif`。
   ///
   /// 动态表情集并非全量(国旗、区域字母等缺图 404),调用方须以 [getEmojiUrl]
   /// 的静态图兜底。
   String? animatedUrl(String name) {
+    if (!animationEnabled) return null;
     final normalized = normalizeEmojiShortcodeName(name);
     if (_customEmojiMap?.containsKey(normalized) ?? false) return null;
-    if (_toneRegex.hasMatch(normalized)) return null;
     return UrlHelper.resolveUrlWithCdn(
-      '/images/emoji/$_animatedSet/$normalized.avif?v=$_imageVersion',
+      '/images/emoji/$_animatedSet/${_standardName(normalized)}.avif'
+      '?v=$_imageVersion',
     );
+  }
+
+  /// 肤色变体 `name:t3` → `name/3`(官方 code.replace(/:t/, "/"))。
+  static String _standardName(String normalized) {
+    final toneMatch = _toneRegex.firstMatch(normalized);
+    return toneMatch != null
+        ? '${toneMatch.group(1)}/${toneMatch.group(2)}'
+        : normalized;
   }
 
   /// 把任意标准表情集的 emoji 地址改写到 [displaySet](cooked 里的
@@ -128,9 +181,7 @@ class EmojiHandler {
   static String? fallbackUrl(String url) {
     final match = _standardPathRegex.firstMatch(url);
     if (match == null || match.group(1) != displaySet) return null;
-    final siteSet =
-        PreloadedDataService().siteSettingsSync?['emoji_set'] as String? ??
-        _defaultSiteSet;
+    final siteSet = EmojiHandler.siteSet;
     if (siteSet == displaySet) return null;
     return url.substring(0, match.start) +
         _standardPath(siteSet, match.group(2)!);

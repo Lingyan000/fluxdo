@@ -14,6 +14,7 @@ import '../../../../services/emoji_handler.dart';
 import '../../../../services/preloaded_data_service.dart';
 import '../../../../utils/platform_utils.dart';
 import 'post_reaction_picker.dart';
+import 'reaction_emoji.dart';
 
 /// 获取 emoji 图片 URL（未加载完成时返回空字符串，由 errorBuilder 处理）
 String _getEmojiUrl(String emojiName) {
@@ -118,9 +119,20 @@ class _PostActionBarState extends State<PostActionBar>
         vsync: this,
         onReactionSelected: (id) {
           widget.onReactionSelected(id);
-          _bounce.forward(from: 0);
+          _playLanding();
         },
       );
+
+  /// 按钮里的表情播一遍的触发令牌:选中的表情落地、点赞加上 ❤️ 时递增。
+  /// 滚动进出视口重建的按钮令牌为 0,不会无端播放。
+  int _emojiPlayToken = 0;
+
+  /// 表情落进按钮:按钮弹跳一下,按钮里的表情接着播一遍动画
+  void _playLanding() {
+    if (!mounted) return;
+    setState(() => _emojiPlayToken++);
+    _bounce.forward(from: 0);
+  }
 
   @override
   void initState() {
@@ -516,14 +528,11 @@ class _PostActionBarState extends State<PostActionBar>
       ),
       alignment: Alignment.center,
       child: widget.currentUserReaction != null
-          ? Image(
-              image: emojiImageProvider(
-                _getEmojiUrl(widget.currentUserReaction!.id),
-              ),
-              width: 20,
-              height: 20,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Symbols.favorite_rounded, size: 20),
+          ? ReactionEmoji(
+              reactionId: widget.currentUserReaction!.id,
+              size: 20,
+              playToken: _emojiPlayToken,
+              fallbackIcon: Symbols.favorite_rounded,
             )
           : Icon(
               Symbols.favorite_rounded,
@@ -539,7 +548,11 @@ class _PostActionBarState extends State<PostActionBar>
         : RawGestureDetector(
             behavior: HitTestBehavior.opaque,
             gestures: _touchGestures(() {
-              if (!widget.isLiking) widget.onToggleLike();
+              if (widget.isLiking) return;
+              final adding = widget.currentUserReaction == null;
+              widget.onToggleLike();
+              // 点赞是乐观更新,❤️ 当帧就出现,跟着播一遍
+              if (adding) setState(() => _emojiPlayToken++);
             }),
             child: likeIcon,
           );

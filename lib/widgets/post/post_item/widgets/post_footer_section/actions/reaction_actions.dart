@@ -26,22 +26,8 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
 
     HapticFeedback.lightImpact();
     setState(() => _isLiking = true);
-
     try {
-      final reactionId = _currentUserReaction?.id ?? 'heart';
-      final result = await _service.toggleReaction(widget.post.id, reactionId);
-      if (!mounted) return;
-
-      setState(() {
-        _reactions = result['reactions'] as List<PostReaction>;
-        _currentUserReaction = result['currentUserReaction'] as PostReaction?;
-      });
-
-      _syncReactionToProvider(_reactions, _currentUserReaction);
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
-    } catch (e, s) {
-      AppErrorHandler.handleUnexpected(e, s);
+      await _submitReaction(_currentUserReaction?.id ?? 'heart');
     } finally {
       if (mounted) {
         setState(() => _isLiking = false);
@@ -49,10 +35,33 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
     }
   }
 
-  Future<void> _toggleReaction(String reactionId) async {
+  Future<void> _toggleReaction(String reactionId) =>
+      _submitReaction(reactionId);
+
+  /// 乐观切换回应(同官方 discourse-reactions 的 toggleReaction):
+  /// 先在本地改好计数与「我的回应」立即显示,再提交;失败回滚。
+  ///
+  /// 此前等接口返回才换按钮里的表情 —— 选中的表情飞回按钮后,按钮还是
+  /// 旧状态,网络往返结束新表情才冒出来,看起来像消失了又出现。
+  ///
+  /// 连续快速切换时只认最后一次提交的结果:早发出的请求晚回来,
+  /// 不能拿它的(已过期)状态覆盖当前显示。
+  Future<void> _submitReaction(String reactionId) async {
+    final saved = (_reactions, _currentUserReaction);
+    final seq = ++_reactionSeq;
+    setState(() {
+      final next = applyReactionToggle(
+        _reactions,
+        _currentUserReaction,
+        reactionId,
+      );
+      _reactions = next.$1;
+      _currentUserReaction = next.$2;
+    });
+
     try {
       final result = await _service.toggleReaction(widget.post.id, reactionId);
-      if (!mounted) return;
+      if (!mounted || seq != _reactionSeq) return;
 
       setState(() {
         _reactions = result['reactions'] as List<PostReaction>;
@@ -60,10 +69,15 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
       });
 
       _syncReactionToProvider(_reactions, _currentUserReaction);
-    } on DioException catch (_) {
-      // 网络错误已由 ErrorInterceptor 处理
     } catch (e, s) {
-      AppErrorHandler.handleUnexpected(e, s);
+      if (mounted && seq == _reactionSeq) {
+        setState(() {
+          _reactions = saved.$1;
+          _currentUserReaction = saved.$2;
+        });
+      }
+      // 网络错误已由 ErrorInterceptor 处理
+      if (e is! DioException) AppErrorHandler.handleUnexpected(e, s);
     }
   }
 

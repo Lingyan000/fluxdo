@@ -15,6 +15,7 @@ import '../services/network/request_scheduler_config.dart';
 import '../services/uploads/upload_settings.dart';
 import '../services/cf_challenge_service.dart';
 import '../services/crash_context_reporter.dart';
+import '../services/emoji_handler.dart';
 import '../services/render_backend_service.dart';
 import '../utils/blocked_user_filter.dart';
 import '../widgets/topic/topic_card_layout.dart';
@@ -307,6 +308,9 @@ class AppPreferences {
   /// 话题卡片自定义样式（元信息字段开关 / 头像布局 / 动态头像）
   final TopicCardStyle topicCardStyle;
 
+  /// 表情风格:[EmojiHandler.followSite] 或 [EmojiHandler.selectableSets] 之一
+  final String emojiStyle;
+
   AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
@@ -372,6 +376,7 @@ class AppPreferences {
     this.editorToolbarTools = kDefaultSourceVisibleTools,
     this.richToolbarTools = kDefaultRichVisibleTools,
     this.topicCardStyle = TopicCardStyle.defaults,
+    this.emojiStyle = EmojiHandler.defaultPreference,
   });
 
   AppPreferences copyWith({
@@ -439,6 +444,7 @@ class AppPreferences {
     List<String>? editorToolbarTools,
     List<String>? richToolbarTools,
     TopicCardStyle? topicCardStyle,
+    String? emojiStyle,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -531,6 +537,7 @@ class AppPreferences {
       editorToolbarTools: editorToolbarTools ?? this.editorToolbarTools,
       richToolbarTools: richToolbarTools ?? this.richToolbarTools,
       topicCardStyle: topicCardStyle ?? this.topicCardStyle,
+      emojiStyle: emojiStyle ?? this.emojiStyle,
     );
   }
 }
@@ -621,6 +628,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _editorToolbarToolsKey = 'pref_editor_toolbar_tools';
   static const String _richToolbarToolsKey = 'pref_rich_toolbar_tools';
   static const String _topicCardStyleKey = 'pref_topic_card_style';
+  static const String _emojiStyleKey = 'pref_emoji_style';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -740,10 +748,14 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           topicCardStyle: TopicCardStyle.fromJsonString(
             _prefs.getString(_topicCardStyleKey),
           ),
+          emojiStyle:
+              _prefs.getString(_emojiStyleKey) ??
+              EmojiHandler.defaultPreference,
         ),
       ) {
     isPortraitLocked = state.portraitLock;
     TopicCardStyleScope.current = state.topicCardStyle;
+    EmojiHandler.setPreference(state.emojiStyle);
     CfChallengeService().autoVerifyEnabled = state.autoCfChallenge;
     // CF 服务在「切兼容」询问里给用户第二条出路(关掉自动过盾),但它拿不到
     // Riverpod 容器,也不该自己写 SharedPreferences —— 这里把持久化通道注入。
@@ -1004,6 +1016,17 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     TopicCardStyleScope.current = style;
     TopicCardLayout.evictAll();
     await _prefs.setString(_topicCardStyleKey, style.toJsonString());
+  }
+
+  /// 切换表情风格。emoji 地址在取图时按 [EmojiHandler.displaySet] 拼接/
+  /// 改写,新建的组件立即用新风格;话题卡排版里缓存着标题 emoji 地址,
+  /// 清掉重排。已在屏的正文随重建刷新。
+  Future<void> setEmojiStyle(String style) async {
+    if (state.emojiStyle == style) return;
+    EmojiHandler.setPreference(style);
+    state = state.copyWith(emojiStyle: EmojiHandler.preference);
+    TopicCardLayout.evictAll();
+    await _prefs.setString(_emojiStyleKey, EmojiHandler.preference);
   }
 
   Future<void> setShowSignatures(bool enabled) async {

@@ -12,6 +12,7 @@ import '../../../../../providers/discourse_providers.dart';
 import '../../../../../providers/ai_translation_provider.dart';
 import '../../../../../providers/preferences_provider.dart';
 import '../../../../../utils/blocked_user_filter.dart';
+import '../../../../../utils/reaction_toggle.dart';
 import '../../../../../utils/share_utils.dart';
 import '../../../../../utils/frame_jank_monitor.dart';
 import 'package:dio/dio.dart';
@@ -145,6 +146,9 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   bool _isBookmarking = false;
   late List<PostReaction> _reactions;
   PostReaction? _currentUserReaction;
+
+  /// 回应提交序号:乐观更新后只认最后一次提交的结果(见 _submitReaction)
+  int _reactionSeq = 0;
   late List<Boost> _boosts;
   late bool _canBoost;
   final List<Post> _replies = [];
