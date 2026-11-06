@@ -47,8 +47,9 @@ class EngineCard extends StatelessWidget {
         final autoFellBack = fallback.hasFallenBack;
         return SegmentedCardGroup(
           children: [
-            const _StatusHeader(),
-            const _FingerprintPresetRow(),
+            // 子组件读取服务状态，必须随通知重建。
+            _StatusHeader(),
+            _FingerprintPresetRow(),
             if (startFailed) const _StartFailedRow(),
             if (autoFellBack && !startFailed) const _FallbackRow(),
             if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
@@ -61,7 +62,7 @@ class EngineCard extends StatelessWidget {
 }
 
 class _FingerprintPresetRow extends StatelessWidget {
-  const _FingerprintPresetRow();
+  _FingerprintPresetRow();
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +105,7 @@ class _FingerprintPresetRow extends StatelessWidget {
 
 /// 状态头：当前网络栈 + 出站路径摘要 + 重启入口。
 class _StatusHeader extends StatelessWidget {
-  const _StatusHeader();
+  _StatusHeader();
 
   @override
   Widget build(BuildContext context) {

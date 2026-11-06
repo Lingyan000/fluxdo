@@ -422,3 +422,7 @@ Android arm64 最终原生 release 编译通过（1m06s，无警告）；本轮�
 - 网络设置增加自动和 10 个手动档。指定模板持久化并重建核心，优先于缓存和采样，不改写自动缓存，不运行采样探针。切回自动恢复旧规则。范围为网络核心 TLS/H2 请求；不改设备 UA 或 WebView 自身指纹，QUIC 行为不属于这些模板。设置和日志均显示实际来源。
 - 固定 TCP 代理提前跳过 H3 升级观察和探针，不申请探针/连接配额、不做无用解析；动态 PAC 仍保留逐目标出口检查。日志头保留 proxyEnabled 旧含义，补充 systemProxyEnabled/effectiveProxyEnabled/proxySource 和模板模式、来源、ID。
 - 本地验证：Rust 76 项通过；Flutter 3.47.4 网络/真实 FFI/选择 UI/日志/图片回归 261 项通过，3 项 Windows 条件跳过。含手动档不被缓存/采样覆盖、切回自动、固定代理不发 H3 探针，以及 375 宽/横屏/2 倍字体/深浅主题选择。工具链搬迁、旧版本与错误架构拒绝的 Python 回归通过，shell 语法检查通过。日志：/tmp/fluxdo-preset-choice-rust-final.log、/tmp/fluxdo-beta6-pinned-tests.log。Flatpak 是否修复仍以新 CI 实际构建为准。
+
+### 状态卡刷新回归
+
+Android 设备冒烟发现核心已切换、状态行仍显示旧选项：AnimatedBuilder 内的 const 子组件读取服务状态，未随通知重建。已让模板行和状态头随通知重建。新增整卡测试能够在旧实现上复现失败，修复后选择、恢复自动及弹层共 7 项通过。beta.6 构建已主动取消，避免发布已知显示问题；后续使用新标签，不改写原标签。原生模板持久化与主站/CDN 实际采用指定模板已验证，网页列表和头像加载正常。

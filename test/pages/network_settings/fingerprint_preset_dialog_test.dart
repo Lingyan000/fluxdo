@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
+import 'package:fluxdo/pages/network_settings_page/widgets/engine_card.dart';
 import 'package:fluxdo/pages/network_settings_page/widgets/fingerprint_preset_dialog.dart';
 import 'package:fluxdo/services/network/fingerprint/fingerprint_presets.dart';
 import 'package:fluxdo/services/network/doh/network_settings_service.dart';
@@ -11,6 +14,39 @@ import 'package:fluxdo/services/network/doh/network_settings_service.dart';
 import 'ech_settings_card_test.dart' show host;
 
 void main() {
+  testWidgets('状态卡收到模板选择通知后立即重建，不保留旧档位', (tester) async {
+    final settings = NetworkSettingsService.instance;
+    final original = settings.current;
+    addTearDown(() {
+      settings.notifier.value = original;
+    });
+    settings.notifier.value = original.copyWith(fingerprintPreset: 'auto');
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: const Scaffold(
+            body: SingleChildScrollView(child: EngineCard()),
+          ),
+        ),
+      ),
+    );
+    final context = tester.element(find.byType(EngineCard));
+    expect(find.text(context.l10n.fingerprintPreset_auto), findsOneWidget);
+    settings.notifier.value = settings.current.copyWith(
+      fingerprintPreset: 'android-chrome149',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Android · Chrome 149'), findsOneWidget);
+    expect(find.text(context.l10n.fingerprintPreset_auto), findsNothing);
+    settings.notifier.value = settings.current.copyWith(
+      fingerprintPreset: 'auto',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(context.l10n.fingerprintPreset_auto), findsOneWidget);
+    expect(find.text('Android · Chrome 149'), findsNothing);
+  });
+
   test('选项与原生模板清单一致，未知旧值回到自动，复制其他设置保留选择', () {
     final manifest = jsonDecode(
       File('core/net_core/presets/manifest.json').readAsStringSync(),
