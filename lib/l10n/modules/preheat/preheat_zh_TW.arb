@@ -1,5 +1,6 @@
 {
   "@@locale": "zh_TW",
+  "preheat_cfVerifying": "正在完成安全驗證…",
   "preheat_logoutConfirm": "確定要退出當前賬號嗎？退出後將清除本地登入資訊。",
   "preheat_logoutMessage": "使用者主動退出登入（預熱失敗頁面）",
   "preheat_networkSettings": "網路設定",

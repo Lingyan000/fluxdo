@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:io' as io;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/cf_challenge_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
+import 'package:fluxdo/widgets/draggable_floating_pill.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/cf_test_platform.dart';
 
@@ -27,23 +32,33 @@ void main() {
     WidgetTester tester,
     List<bool> results, {
     Set<String>? oldWebViewValues,
+    ValueListenable<CfVerifyPresentation?>? presentation,
+    VoidCallback? onPromote,
   }) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          navigatorKey: navigatorKey,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: AppLocaleUtils.supportedLocales,
-          home: CfChallengePage(
-            verifyUrl: verifyUrl,
-            oldCfClearanceValue: 'old',
-            oldCfClearanceValues: oldWebViewValues,
-            startInBackground: true,
-            onResult: results.add,
+      // 前台验证面板读取模糊偏好，需要 ProviderScope
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppLocaleUtils.supportedLocales,
+            home: CfChallengePage(
+              verifyUrl: verifyUrl,
+              oldCfClearanceValue: 'old',
+              oldCfClearanceValues: oldWebViewValues,
+              presentation:
+                  presentation ?? ValueNotifier(CfVerifyPresentation.pill),
+              onResult: results.add,
+              onPromoteRequest: onPromote,
+            ),
           ),
         ),
       ),
@@ -272,5 +287,98 @@ void main() {
     expect(action, NavigationResponseAction.ALLOW);
     expect(results, isEmpty);
     await unmount(tester);
+  });
+
+  group('后台验证按展示等级升级', () {
+    const challengeHtml =
+        '<html><body><div class="cf-turnstile"></div></body></html>';
+
+    Future<void> startChallenge(WidgetTester tester) async {
+      platform.controller.documentHtml = challengeHtml;
+      platform.webView!.params.onPageCommitVisible!(
+        platform.controller.wrapped,
+        WebUri(verifyUrl),
+      );
+      await tester.pump();
+    }
+
+    Future<void> elapse(WidgetTester tester, int seconds) async {
+      for (var i = 0; i < seconds; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+    }
+
+    testWidgets('hidden 超时静默放弃，全程不显示胶囊', (tester) async {
+      final results = <bool>[];
+      var promoted = 0;
+      await mount(
+        tester,
+        results,
+        presentation: ValueNotifier(CfVerifyPresentation.hidden),
+        onPromote: () => promoted++,
+      );
+      await startChallenge(tester);
+      await elapse(tester, 4);
+      expect(find.byType(DraggableFloatingPill), findsNothing);
+
+      await elapse(tester, 6);
+      expect(results, [false]);
+      expect(promoted, 0);
+      expect(find.byType(DraggableFloatingPill), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('pill 超时只切胶囊，blocking 加入后才弹面板', (tester) async {
+      final results = <bool>[];
+      var promoted = 0;
+      final presentation = ValueNotifier<CfVerifyPresentation?>(
+        CfVerifyPresentation.pill,
+      );
+      await mount(
+        tester,
+        results,
+        presentation: presentation,
+        onPromote: () => promoted++,
+      );
+      await startChallenge(tester);
+      expect(find.byType(DraggableFloatingPill), findsNothing);
+      await elapse(tester, 3);
+      expect(find.byType(DraggableFloatingPill), findsOneWidget);
+
+      await elapse(tester, 7);
+      expect(results, isEmpty);
+      expect(promoted, 0);
+      expect(find.text(S.current.cf_backgroundNeedsAction), findsOneWidget);
+
+      presentation.value = CfVerifyPresentation.blocking;
+      await tester.pump();
+      expect(promoted, 1);
+      expect(find.byType(DraggableFloatingPill), findsNothing);
+      await unmount(tester);
+      // 升级时弹出的提示 toast 带自动消失计时，走完再结束
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('blocking 收到 Turnstile 交互态立即弹面板', (tester) async {
+      final results = <bool>[];
+      var promoted = 0;
+      await mount(
+        tester,
+        results,
+        presentation: ValueNotifier(CfVerifyPresentation.blocking),
+        onPromote: () => promoted++,
+      );
+      await startChallenge(tester);
+      expect(find.byType(DraggableFloatingPill), findsOneWidget);
+
+      platform.controller.handlers['onChallengeInteractive']!(const [
+        'interactiveBegin',
+      ]);
+      await tester.pump();
+      expect(promoted, 1);
+      expect(results, isEmpty);
+      await unmount(tester);
+      await tester.pump(const Duration(seconds: 10));
+    });
   });
 }

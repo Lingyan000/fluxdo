@@ -10,6 +10,7 @@ import '../pages/about_page.dart';
 import '../pages/network_settings_page/network_settings_page.dart';
 import '../providers/app_icon_provider.dart';
 import '../services/browser_trust_coordinator.dart';
+import '../services/cf_challenge_service.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/emoji_handler.dart';
 import '../services/log/log_writer.dart';
@@ -177,6 +178,8 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   @override
   void initState() {
     super.initState();
+    // 启动页可见期间由它承接 CF 验证状态，验证页不再显示胶囊
+    CfChallengeService().registerStatusHost();
     if (widget.onSkip != null) {
       _skipTimer = Timer(const Duration(seconds: 10), () {
         if (mounted) setState(() => _showSkip = true);
@@ -189,6 +192,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
 
   @override
   void dispose() {
+    CfChallengeService().unregisterStatusHost();
     _skipTimer?.cancel();
     super.dispose();
   }
@@ -220,6 +224,26 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
                 ),
                 const SizedBox(height: 56),
                 const LoadingSpinner(size: 40),
+                const SizedBox(height: 16),
+                // 常驻占位只切透明度，出现/消失时 logo 不跳位
+                ValueListenableBuilder<CfVerifyPresentation?>(
+                  valueListenable: CfChallengeService().presentationNotifier,
+                  builder: (context, presentation, _) {
+                    final visible =
+                        presentation != null &&
+                        presentation != CfVerifyPresentation.hidden;
+                    return AnimatedOpacity(
+                      opacity: visible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Text(
+                        context.l10n.preheat_cfVerifying,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),

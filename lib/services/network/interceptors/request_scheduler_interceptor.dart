@@ -175,23 +175,39 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
-    // CF 验证进行中时冻结所有业务请求，模拟"网页 CF 403 直接停滞"的语义，
-    // 避免挑战完成瞬间一次性 flush 心跳/poll/timings 触发服务端 429，
-    // 同时也能防止用户在验证弹窗期间触发的请求带着旧 cf_clearance 又判 403
-    // 进入挑战循环。
-    //
-    // 仅 CfChallengeInterceptor 内部 retry（标记 skipCfBlock=true）能绕过。
-    if (!options.spec.skipCfBlock &&
-        CfChallengeService().isVerifying) {
-      handler.reject(
-        DioException(
-          requestOptions: options,
-          type: DioExceptionType.cancel,
-          error: CfChallengeException(silentBlockedDuringChallenge: true),
-        ),
-        true,
-      );
-      return;
+    // CF 验证进行中时冻结业务请求，防止带着旧 cf_clearance 又判 403 进入
+    // 挑战循环。仅 CfChallengeInterceptor 内部 retry（标记 skipCfBlock=true）
+    // 能绕过。
+    final cfService = CfChallengeService();
+    if (!options.spec.skipCfBlock && cfService.isVerifying) {
+      // 静默请求直接拒绝：模拟"网页 CF 403 直接停滞"，避免挑战完成瞬间
+      // 一次性 flush 心跳/poll/timings 触发服务端 429。
+      if (options.spec.isSilent) {
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+            error: CfChallengeException(silentBlockedDuringChallenge: true),
+          ),
+          true,
+        );
+        return;
+      }
+      // 用户在等的请求不能直接失败（后台静默过盾时用户会莫名看到报错）：
+      // 暂存到本轮验证结束，再走下方正常排队，届时 CookieManager 取到新值。
+      // 同时把本轮展示抬到 blocking，让用户知道在等什么。
+      cfService.raisePresentation(CfVerifyPresentation.blocking);
+      await _waitForCfIdle(options);
+      if (options.cancelToken?.isCancelled ?? false) {
+        handler.reject(
+          DioException.requestCancelled(
+            requestOptions: options,
+            reason: '请求在等待 CF 验证期间被取消',
+          ),
+          true,
+        );
+        return;
+      }
     }
 
     await _waitForBrowserTrustIfNeeded(options);
@@ -323,6 +339,14 @@ class RequestSchedulerInterceptor extends Interceptor {
       state.pendingTimer = null;
       _scheduleNext(state);
     });
+  }
+
+  /// 等到当前 CF 验证轮次结束；请求被取消时提前返回。
+  Future<void> _waitForCfIdle(RequestOptions options) {
+    final idle = CfChallengeService().waitUntilIdle();
+    final cancelToken = options.cancelToken;
+    if (cancelToken == null) return idle;
+    return Future.any<void>([idle, cancelToken.whenCancel.then((_) {})]);
   }
 
   Future<void> _waitForBrowserTrustIfNeeded(RequestOptions options) async {

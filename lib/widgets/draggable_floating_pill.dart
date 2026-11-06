@@ -11,6 +11,15 @@ class DraggableFloatingPill extends StatefulWidget {
   final bool initiallyExpanded;
   final bool tapToExpand;
 
+  /// 前导图标。
+  final IconData icon;
+
+  /// 进行中：图标外套一圈不确定进度环。
+  final bool busy;
+
+  /// 需要用户处理：改用 primary 色底，与进行中态区分。
+  final bool emphasized;
+
   const DraggableFloatingPill({
     super.key,
     required this.child,
@@ -19,6 +28,9 @@ class DraggableFloatingPill extends StatefulWidget {
     this.initialTop = 100,
     this.initiallyExpanded = false,
     this.tapToExpand = true,
+    this.icon = Symbols.gpp_maybe_rounded,
+    this.busy = false,
+    this.emphasized = false,
   });
 
   @override
@@ -101,8 +113,12 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
     final borderRadius = BorderRadius.circular(999);
     final pos = floatingPosition();
     final colorScheme = Theme.of(context).colorScheme;
-    final backgroundColor = colorScheme.inverseSurface;
-    final contentColor = colorScheme.onInverseSurface;
+    final backgroundColor = widget.emphasized
+        ? colorScheme.primary
+        : colorScheme.inverseSurface;
+    final contentColor = widget.emphasized
+        ? colorScheme.onPrimary
+        : colorScheme.onInverseSurface;
 
     // Padding 动画：吸附时增加 padding 防止内容被埋在 offscreen 区域
     final basePadding = widget.padding;
@@ -172,12 +188,36 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Symbols.gpp_maybe_rounded,
-                      fill: _isExpanded ? 1 : 0,
-                      size: 20,
-                      color: contentColor,
-                    ),
+                    if (widget.busy)
+                      // 进度环与原图标同占 20 见方，胶囊尺寸不变
+                      SizedBox.square(
+                        dimension: 20,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: contentColor,
+                              backgroundColor: contentColor.withValues(
+                                alpha: 0.2,
+                              ),
+                            ),
+                            Icon(
+                              widget.icon,
+                              fill: 1,
+                              size: 12,
+                              color: contentColor,
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Icon(
+                        widget.icon,
+                        fill: _isExpanded ? 1 : 0,
+                        size: 20,
+                        color: contentColor,
+                      ),
                     AnimatedSize(
                       duration: const Duration(milliseconds: 200),
                       child: SizedBox(

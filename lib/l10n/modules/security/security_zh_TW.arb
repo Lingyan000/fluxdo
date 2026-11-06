@@ -11,6 +11,7 @@
   "cf_autoVerifyBannerTitle": "正在自動處理安全驗證",
   "cf_autoVerifyDisabled": "已關閉自動 CF 驗證，請在錯誤頁面手動完成",
   "cf_autoVerifyTimeout": "自動驗證需要你確認，請依頁面提示完成",
+  "cf_backgroundNeedsAction": "點選完成驗證",
   "cf_backgroundVerifying": "正在自動驗證，點選查看",
   "cf_cannotOpenVerifyPage": "無法開啟驗證頁面，請稍後重試",
   "cf_challengeFailedCooldown": "安全驗證失敗，已進入冷卻期，請稍後再試",

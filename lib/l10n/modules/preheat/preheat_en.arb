@@ -1,5 +1,6 @@
 {
   "@@locale": "en",
+  "preheat_cfVerifying": "Completing security check…",
   "preheat_logoutConfirm": "Log out? This will clear local login data.",
   "preheat_logoutMessage": "User logged out (preload failure page)",
   "preheat_networkSettings": "Network settings",
