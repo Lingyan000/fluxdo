@@ -256,7 +256,22 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
               S.current.editor_noContent,
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             )
-          : MarkdownBody(data: text),
+          : MarkdownBody(
+              data: text,
+              // 富文本通过图片菜单修改尺寸；直接改 raw 会使语义镜像失效。
+              onImageScaleChanged: _richModeEnabled && !_richFallback
+                  ? null
+                  : (image, scale) {
+                      final next = applyImageScaleToRaw(
+                        _contentController.text,
+                        image,
+                        scale,
+                      );
+                      if (next == null) return;
+                      _contentController.text = next;
+                      setState(() {});
+                    },
+            ),
     );
   }
 

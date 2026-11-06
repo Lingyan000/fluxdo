@@ -27,9 +27,11 @@ import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_desktop_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/content_actions_button.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/markdown_renderer.dart';
 import 'package:fluxdo/widgets/post/reply_sheet.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
 import 'package:fluxdo_render/editor.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ImageRun;
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> _pumpReply(
@@ -178,6 +180,48 @@ Future<void> _waitForRichDraft(WidgetTester tester, String text) async {
 }
 
 void main() {
+  testWidgets('回复预览缩放图片后，返回编辑与再次预览保留尺寸', (tester) async {
+    await _pumpReply(tester);
+    final field = find.descendant(
+      of: find.byType(MarkdownEditor),
+      matching: find.byType(TextField),
+    );
+    final controller = tester.widget<TextField>(field).controller!;
+    controller.text =
+        '![first|320x240](upload://first.png)\n\n'
+        '![second|640x480](upload://second.png)';
+    await tester.pump();
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump();
+    final preview = find.descendant(
+      of: find.byKey(const ValueKey('reply-preview')),
+      matching: find.byType(MarkdownBody),
+    );
+    final body = tester.widget<MarkdownBody>(preview);
+    expect(body.onImageScaleChanged, isNotNull);
+    // 使用 cook 回传的图片序号，确认重复操作只修改目标图片。
+    body.onImageScaleChanged!(
+      const ImageRun(src: 'upload://second.png', previewImageIndex: 1),
+      50,
+    );
+    await tester.pump();
+    expect(
+      controller.text,
+      '![first|320x240](upload://first.png)\n\n'
+      '![second|640x480, 50%](upload://second.png)',
+    );
+    expect(tester.widget<MarkdownBody>(preview).data, controller.text);
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump();
+    expect(tester.widget<TextField>(field).controller, same(controller));
+    expect(controller.text, contains('640x480, 50%'));
+    await tester.tap(find.byType(ComposerPreviewButton));
+    await tester.pump();
+    expect(tester.widget<MarkdownBody>(preview).data, controller.text);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   for (final (width, scale, username) in [
     (320.0, 1.0, 'IG2018'),
     (390.0, 1.0, 'IG2018'),
