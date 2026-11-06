@@ -20,6 +20,18 @@ import 'webview_session_cookie_refresh_service.dart';
 
 enum BrowserTrustPreloadPath { native, webView }
 
+/// 启动预加载当前所处阶段，供启动页展示等待状态。
+enum BrowserTrustPreloadStage {
+  /// 原生直连加载首页数据
+  native,
+
+  /// 原生不可信或失败，经共享 WebView 加载首页
+  webView,
+
+  /// WebView 通道超时/不可用，回退原生直连
+  fallback,
+}
+
 /// 启动期共享 WebView 任务的协作式取消令牌。
 @visibleForTesting
 class BrowserTrustRunCancellation {
@@ -84,6 +96,10 @@ class BrowserTrustCoordinator {
   final PreloadedDataService _preload = PreloadedDataService();
 
   Future<void>? _activePreload;
+
+  /// 预加载进行中的阶段；空闲（未开始或已结束）时为 null。
+  final ValueNotifier<BrowserTrustPreloadStage?> preloadStage =
+      ValueNotifier<BrowserTrustPreloadStage?>(null);
   Future<bool>? _activeBrowserTrust;
   Future<bool>? _activeBrowserTrustGate;
   Timer? _backgroundPauseTimer;
@@ -169,9 +185,11 @@ class BrowserTrustCoordinator {
     }
 
     late final Future<void> future;
+    preloadStage.value = BrowserTrustPreloadStage.native;
     future = _ensurePreloadedInternal(reason: reason).whenComplete(() {
       if (identical(_activePreload, future)) {
         _activePreload = null;
+        preloadStage.value = null;
       }
     });
     _activePreload = future;
@@ -283,6 +301,7 @@ class BrowserTrustCoordinator {
     }
 
     _log('preload path=startup_webview reason=$reason');
+    preloadStage.value = BrowserTrustPreloadStage.webView;
     var hydrated = false;
     final cancellation = BrowserTrustRunCancellation();
     final hydrateTask = _hydratePreloadThroughWebView(
@@ -311,6 +330,7 @@ class BrowserTrustCoordinator {
       'startup WebView preload unavailable, fallback native reason=$reason',
       level: 'warning',
     );
+    preloadStage.value = BrowserTrustPreloadStage.fallback;
     await _preload.ensureLoaded();
     _log('fallback native preload success reason=$reason');
     _startBrowserTrustAfterNativePreload(reason: reason);

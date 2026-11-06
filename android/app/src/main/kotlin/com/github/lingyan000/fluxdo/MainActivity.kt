@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -57,6 +58,12 @@ class MainActivity : FlutterActivity() {
         // 上来、快照尚未生成时仍能正确读到用户已有的设置。
         const val RENDER_FAST_PREFS_FILE = "render_backend_fast"
         const val RENDER_FAST_PREF_KEY = "renderer_gles"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 每次启动按当前启用的图标同步一次，覆盖升级、备份恢复等未经切换通道的变化
+        syncSplashScreenTheme()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -770,6 +777,36 @@ class MainActivity : FlutterActivity() {
         }
 
         Log.d("AppIcon", "图标已切换: ${iconName ?: "DefaultIcon"}")
+        syncSplashScreenTheme(iconName)
+    }
+
+    /** 当前启用的图标 alias 短名，经典图标返回 null（与 [setAlternateIcon] 入参同语义）。 */
+    private fun currentIconAlias(): String? {
+        val state = packageManager.getComponentEnabledSetting(
+            ComponentName(packageName, "$packageName.ModernIcon")
+        )
+        return if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) "ModernIcon" else null
+    }
+
+    /**
+     * 按图标登记下次冷启动使用的启动屏主题（Android 13+，系统持久化）。
+     *
+     * activity-alias 不能单独指定 theme，静态 LaunchTheme 只能显示系统默认的
+     * 启动器图标；登记后启动屏改用与 Flutter 启动页等大同位的 logo，
+     * 首帧接管时无跳变。Android 12 及以下保持系统默认表现。
+     */
+    private fun syncSplashScreenTheme(iconName: String? = currentIconAlias()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val theme = if (iconName == "ModernIcon") {
+            R.style.SplashTheme_Modern
+        } else {
+            R.style.SplashTheme_Classic
+        }
+        try {
+            splashScreen.setSplashScreenTheme(theme)
+        } catch (e: Exception) {
+            Log.w("AppIcon", "登记启动屏主题失败: ${e.message}")
+        }
     }
 
     // ======================== 应用链接解析与启动 ========================

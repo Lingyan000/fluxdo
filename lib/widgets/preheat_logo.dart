@@ -1,14 +1,12 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../providers/app_icon_provider.dart';
 
-/// 启动页"绘制 logo"动画组件
+/// 启动页 logo
 ///
-/// 入场时用主题色细线沿轮廓逐段描出 logo,随后各色块依次淡入、
-/// 描边线淡出,终态与 assets 中的 SVG 完全一致(直接用 CustomPainter
-/// 复刻几何,无需切换回 SVG)。绘制完成后保持光晕缓慢呼吸。
+/// 首帧即完整静态 logo,与原生启动屏(Android 13+ 按图标登记的启动屏主题)
+/// 等大同位,接管时无跳变;之后主题色光晕淡入并缓慢呼吸,表示仍在加载。
+/// 直接用 CustomPainter 复刻 assets 中 SVG 的几何。
 class PreheatLogo extends StatefulWidget {
   final AppIconStyle style;
   final double size;
@@ -21,8 +19,8 @@ class PreheatLogo extends StatefulWidget {
 
 class _PreheatLogoState extends State<PreheatLogo>
     with TickerProviderStateMixin {
-  late final AnimationController _entry = AnimationController(
-    duration: const Duration(milliseconds: 2200),
+  late final AnimationController _glowIn = AnimationController(
+    duration: const Duration(milliseconds: 900),
     vsync: this,
   );
   late final AnimationController _glow = AnimationController(
@@ -36,14 +34,9 @@ class _PreheatLogoState extends State<PreheatLogo>
   @override
   void initState() {
     super.initState();
-    _entry
-      ..addStatusListener((status) {
-        // 绘制完成后才开始光晕呼吸
-        if (status == AnimationStatus.completed) {
-          _glow.repeat(reverse: true);
-        }
-      })
-      ..forward();
+    // 原生启动屏没有光晕,首帧不带光晕,接管后再淡入
+    _glowIn.forward();
+    _glow.repeat(reverse: true);
   }
 
   @override
@@ -72,7 +65,7 @@ class _PreheatLogoState extends State<PreheatLogo>
 
   @override
   void dispose() {
-    _entry.dispose();
+    _glowIn.dispose();
     _glow.dispose();
     super.dispose();
   }
@@ -83,15 +76,21 @@ class _PreheatLogoState extends State<PreheatLogo>
     final viewSize = widget.style == AppIconStyle.modern ? 1890.0 : 1024.0;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_entry, _glow]),
-      builder: (context, _) {
-        // 光晕随填充出现而渐亮,之后跟随 _glow 缓慢呼吸
-        final glowIn = _segment(_entry.value, 0.45, 1.0, Curves.easeIn);
+      animation: Listenable.merge([_glowIn, _glow]),
+      // logo 本体静态,隔离在 RepaintBoundary 里不随光晕重绘
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size.square(widget.size),
+          painter: _LogoPainter(shapes: _shapes, viewSize: viewSize),
+        ),
+      ),
+      builder: (context, child) {
+        final glowIn = Curves.easeIn.transform(_glowIn.value);
         final breathe = Curves.easeInOutSine.transform(_glow.value);
         final glowAlpha = glowIn * (0.12 + 0.10 * breathe);
         final glowBlur = 36.0 + 16.0 * breathe;
 
-        return Container(
+        return DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
@@ -101,78 +100,31 @@ class _PreheatLogoState extends State<PreheatLogo>
               ),
             ],
           ),
-          child: RepaintBoundary(
-            child: CustomPaint(
-              size: Size.square(widget.size),
-              painter: _LogoPainter(
-                shapes: _shapes,
-                t: _entry.value,
-                strokeColor: colorScheme.primary,
-                viewSize: viewSize,
-              ),
-            ),
-          ),
+          child: child,
         );
       },
     );
   }
 }
 
-/// 将整体进度 [t] 映射到 [start, end] 区间内的局部进度并应用曲线
-double _segment(
-  double t,
-  double start,
-  double end, [
-  Curve curve = Curves.easeInOutCubic,
-]) {
-  return curve.transform(((t - start) / (end - start)).clamp(0.0, 1.0));
-}
-
-/// logo 的一个组成形状:填充路径 + 可选的描边路径与裁剪
+/// logo 的一个组成形状:填充路径 + 可选裁剪
 class _LogoShape {
   final Path fillPath;
   final Color fill;
 
-  /// 描边动画走的路径,可与填充轮廓不同(如经典 logo 用分界弦线)
-  final Path? strokePath;
-
   /// 填充时的裁剪范围(经典 logo 三条色带裁剪在内圆中)
   final Path? clip;
 
-  final double strokeStart;
-  final double strokeEnd;
-  final double fillStart;
-  final double fillEnd;
-
-  const _LogoShape({
-    required this.fillPath,
-    required this.fill,
-    this.strokePath,
-    this.clip,
-    this.strokeStart = 0,
-    this.strokeEnd = 1,
-    required this.fillStart,
-    required this.fillEnd,
-  });
+  const _LogoShape({required this.fillPath, required this.fill, this.clip});
 }
 
 class _LogoPainter extends CustomPainter {
   final List<_LogoShape> shapes;
-  final double t;
-  final Color strokeColor;
 
   /// viewBox 边长,绘制时统一缩放到组件尺寸
   final double viewSize;
 
-  /// 描边线在该进度后整体淡出
-  static const double _strokeFadeStart = 0.84;
-
-  const _LogoPainter({
-    required this.shapes,
-    required this.t,
-    required this.strokeColor,
-    required this.viewSize,
-  });
+  const _LogoPainter({required this.shapes, required this.viewSize});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -181,50 +133,12 @@ class _LogoPainter extends CustomPainter {
     canvas.scale(scale);
 
     for (final shape in shapes) {
-      final fillT = _segment(
-        t,
-        shape.fillStart,
-        shape.fillEnd,
-        Curves.easeInOut,
-      );
-      if (fillT <= 0) continue;
       canvas.save();
       if (shape.clip != null) {
         canvas.clipPath(shape.clip!);
       }
-      canvas.drawPath(
-        shape.fillPath,
-        Paint()..color = shape.fill.withValues(alpha: fillT),
-      );
+      canvas.drawPath(shape.fillPath, Paint()..color = shape.fill);
       canvas.restore();
-    }
-
-    final strokeAlpha =
-        1.0 - _segment(t, _strokeFadeStart, 1.0, Curves.easeOut);
-    if (strokeAlpha > 0) {
-      final strokePaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5 / scale
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = strokeColor.withValues(alpha: strokeAlpha);
-      for (final shape in shapes) {
-        final strokePath = shape.strokePath;
-        if (strokePath == null) continue;
-        final strokeT = _segment(
-          t,
-          shape.strokeStart,
-          shape.strokeEnd,
-          Curves.easeInOutCubic,
-        );
-        if (strokeT <= 0) continue;
-        for (final metric in strokePath.computeMetrics()) {
-          canvas.drawPath(
-            metric.extractPath(0, metric.length * strokeT),
-            strokePaint,
-          );
-        }
-      }
     }
 
     canvas.restore();
@@ -232,70 +146,33 @@ class _LogoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LogoPainter oldDelegate) {
-    return oldDelegate.t != t ||
-        oldDelegate.shapes != shapes ||
-        oldDelegate.strokeColor != strokeColor;
+    return oldDelegate.shapes != shapes || oldDelegate.viewSize != viewSize;
   }
 }
 
-/// 经典 logo(assets/logo.svg):底圆 + 内圆裁剪的三条色带,viewBox 1024
+/// 经典 logo(assets/logo.svg):底圆 + 内圆裁剪的上下两条色带,viewBox 1024
 List<_LogoShape> _buildClassicShapes() {
   const center = Offset(512, 512);
-  const innerRadius = 421.0;
 
   final outerCircle = Path()
     ..addOval(Rect.fromCircle(center: center, radius: 448));
   final innerClip = Path()
-    ..addOval(Rect.fromCircle(center: center, radius: innerRadius));
-
-  // 色带分界线在内圆中的弦
-  Path chord(double y) {
-    final dy = y - center.dy;
-    final half = math.sqrt(innerRadius * innerRadius - dy * dy);
-    return Path()
-      ..moveTo(center.dx - half, y)
-      ..lineTo(center.dx + half, y);
-  }
+    ..addOval(Rect.fromCircle(center: center, radius: 421));
 
   Path band(double top, double height) =>
       Path()..addRect(Rect.fromLTWH(91, top, 842, height));
 
   return [
-    _LogoShape(
-      fillPath: outerCircle,
-      fill: const Color(0xFFF0F0F0),
-      strokePath: outerCircle,
-      strokeStart: 0.0,
-      strokeEnd: 0.45,
-      fillStart: 0.45,
-      fillEnd: 0.66,
-    ),
+    _LogoShape(fillPath: outerCircle, fill: const Color(0xFFF0F0F0)),
     _LogoShape(
       fillPath: band(91, 233),
       fill: const Color(0xFF1C1C1E),
       clip: innerClip,
-      strokePath: chord(324),
-      strokeStart: 0.20,
-      strokeEnd: 0.42,
-      fillStart: 0.52,
-      fillEnd: 0.72,
-    ),
-    _LogoShape(
-      fillPath: band(324, 376),
-      fill: const Color(0xFFF0F0F0),
-      clip: innerClip,
-      strokePath: chord(700),
-      strokeStart: 0.30,
-      strokeEnd: 0.52,
-      fillStart: 0.58,
-      fillEnd: 0.78,
     ),
     _LogoShape(
       fillPath: band(700, 233),
       fill: const Color(0xFFFFB003),
       clip: innerClip,
-      fillStart: 0.64,
-      fillEnd: 0.84,
     ),
   ];
 }
@@ -345,58 +222,10 @@ List<_LogoShape> _buildModernShapes(Brightness brightness) {
     ..cubicTo(999.38, 653.89, 1006.67, 655.53, 1013.34, 658.68)
     ..close();
 
-  _LogoShape shape(
-    Path path,
-    Color fill, {
-    required double strokeStart,
-    required double strokeEnd,
-    required double fillStart,
-    required double fillEnd,
-  }) {
-    final shifted = path.shift(offset);
-    return _LogoShape(
-      fillPath: shifted,
-      fill: fill,
-      strokePath: shifted,
-      strokeStart: strokeStart,
-      strokeEnd: strokeEnd,
-      fillStart: fillStart,
-      fillEnd: fillEnd,
-    );
-  }
-
   return [
-    shape(
-      circle,
-      circleColor,
-      strokeStart: 0.0,
-      strokeEnd: 0.45,
-      fillStart: 0.48,
-      fillEnd: 0.68,
-    ),
-    shape(
-      flag,
-      flagColor,
-      strokeStart: 0.20,
-      strokeEnd: 0.50,
-      fillStart: 0.56,
-      fillEnd: 0.76,
-    ),
-    shape(
-      bar,
-      flagColor,
-      strokeStart: 0.32,
-      strokeEnd: 0.54,
-      fillStart: 0.62,
-      fillEnd: 0.82,
-    ),
-    shape(
-      accent,
-      const Color(0xFFFFB003),
-      strokeStart: 0.42,
-      strokeEnd: 0.58,
-      fillStart: 0.66,
-      fillEnd: 0.86,
-    ),
+    _LogoShape(fillPath: circle.shift(offset), fill: circleColor),
+    _LogoShape(fillPath: flag.shift(offset), fill: flagColor),
+    _LogoShape(fillPath: bar.shift(offset), fill: flagColor),
+    _LogoShape(fillPath: accent.shift(offset), fill: const Color(0xFFFFB003)),
   ];
 }

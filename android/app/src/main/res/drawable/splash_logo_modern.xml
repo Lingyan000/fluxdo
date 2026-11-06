@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动屏 logo(现代，浅色)：系统启动屏无图标背景时按 288dp 框绘制，
+     logo 居中占 108dp，与 Flutter 启动页 PreheatLogo 等大同位 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+
+    <!-- viewBox 1890 → 108，平移到中心 -->
+    <group
+        android:translateX="90"
+        android:translateY="90"
+        android:scaleX="0.057142857"
+        android:scaleY="0.057142857">
+
+        <!-- 将 SVG viewBox(-158,-158,1890,1890) 映射到正坐标系 -->
+        <group
+            android:translateX="158"
+            android:translateY="158">
+
+            <path
+                android:fillColor="#F0F0F3"
+                android:pathData="M787,0 a787,787 0 1,0 0,1574 a787,787 0 1,0 0,-1574 Z" />
+
+            <path
+                android:fillColor="#1C1C1E"
+                android:pathData="M783.34,550.29 L413.34,375.67 C388.37,363.88 358.57,374.57 346.78,399.55 C343.63,406.22 342,413.51 342,420.89 L342,842 C342,869.62 364.38,892 392,892 L762,892 C789.62,892 812,869.62 812,842 L812,595.51 C812,576.16 800.84,558.55 783.34,550.29 Z" />
+
+            <path
+                android:fillColor="#1C1C1E"
+                android:pathData="M392,1022 h790 a50,50 0 0,1 50,50 v110 a50,50 0 0,1 -50,50 h-790 a50,50 0 0,1 -50,-50 v-110 a50,50 0 0,1 50,-50 Z" />
+
+            <path
+                android:fillColor="#FFB003"
+                android:pathData="M1013.34,658.68 L1203.34,748.37 C1220.84,756.63 1232,774.24 1232,793.59 L1232,842 C1232,869.62 1209.62,892 1182,892 L992,892 C964.38,892 942,869.62 942,842 L942,703.89 C942,676.28 964.38,653.89 992,653.89 C999.38,653.89 1006.67,655.53 1013.34,658.68 Z" />
+
+        </group>
+    </group>
+</vector>

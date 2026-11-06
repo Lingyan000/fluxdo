@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动屏底色：取默认主题深色 surface，与 Flutter 启动页首帧衔接 -->
+    <color name="splash_background">#111418</color>
+</resources>

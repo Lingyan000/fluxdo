@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动屏 logo(经典)：系统启动屏无图标背景时按 288dp 框绘制，
+     logo 居中占 108dp，与 Flutter 启动页 PreheatLogo 等大同位 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+
+    <!-- viewBox 1024 → 108，平移到中心 -->
+    <group
+        android:translateX="90"
+        android:translateY="90"
+        android:scaleX="0.10546875"
+        android:scaleY="0.10546875">
+
+        <path
+            android:fillColor="#F0F0F0"
+            android:pathData="M 512 64 A 448 448 0 1 0 512 960 A 448 448 0 1 0 512 64 Z" />
+
+        <path
+            android:fillColor="#1C1C1E"
+            android:pathData="M 135.3 324 L 888.7 324 A 421 421 0 0 0 135.3 324 z" />
+
+        <path
+            android:fillColor="#FFB003"
+            android:pathData="M 135.3 700 L 888.7 700 A 421 421 0 0 1 135.3 700 z" />
+
+    </group>
+</vector>

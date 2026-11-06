@@ -1,6 +1,11 @@
 {
   "@@locale": "en",
   "preheat_cfVerifying": "Completing security check…",
+  "preheat_statusBrowser": "Loading via the built-in browser…",
+  "preheat_statusConnecting": "Connecting to the community…",
+  "preheat_statusFallback": "Browser channel timed out, switching to a direct connection…",
+  "preheat_statusOffline": "No network connection. Will continue once you are back online",
+  "preheat_statusSlow": "The network is slow, still loading…",
   "preheat_logoutConfirm": "Log out? This will clear local login data.",
   "preheat_logoutMessage": "User logged out (preload failure page)",
   "preheat_networkSettings": "Network settings",

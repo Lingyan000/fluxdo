@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <!-- 启动屏底色，与 Flutter 启动页首帧衔接 -->
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+    </style>
+    <!-- 运行时按当前图标登记的启动屏主题(Android 13+ setSplashScreenTheme)。
+         activity-alias 不能单独指定 theme，静态 LaunchTheme 只能用系统默认的启动器图标。 -->
+    <style name="SplashTheme.Classic" parent="LaunchTheme">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_classic</item>
+    </style>
+    <style name="SplashTheme.Modern" parent="LaunchTheme">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_modern</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>

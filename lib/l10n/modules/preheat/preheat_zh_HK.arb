@@ -1,6 +1,11 @@
 {
   "@@locale": "zh_HK",
   "preheat_cfVerifying": "正在完成安全驗證…",
+  "preheat_statusBrowser": "正在透過內置瀏覽器載入…",
+  "preheat_statusConnecting": "正在連接社區…",
+  "preheat_statusFallback": "瀏覽器通道逾時，正在改用直連…",
+  "preheat_statusOffline": "網絡未連接，恢復後將自動繼續",
+  "preheat_statusSlow": "網絡有點慢，仍在努力載入…",
   "preheat_logoutConfirm": "確定要退出當前賬號嗎？退出後將清除本地登錄信息。",
   "preheat_logoutMessage": "用户主動退出登錄（預熱失敗頁面）",
   "preheat_networkSettings": "網絡設置",
