@@ -142,15 +142,6 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
     }
   }
 
-  /// 完整动画路径初始化解码器时记下的帧数(url → 帧数)。
-  ///
-  /// 只播一遍的场景(回应面板动态表情)按 Image.frameBuilder 的帧序号
-  /// 数满一圈即停,需要知道一圈有几帧;首帧交付前解码器已初始化,取得到。
-  static final Map<String, int> _frameCounts = {};
-
-  /// [url] 动画的帧数;尚未解码过返回 null。
-  static int? frameCountOf(String url) => _frameCounts[url];
-
   static String _thumbnailCacheKey(String url, int targetSize) {
     return 'avif_thumb:$targetSize:$url';
   }
@@ -246,7 +237,6 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
         maxDim: key.maxDimension,
       );
       await codec.init(bytes);
-      _frameCounts[key.url] = codec.frameCount;
       return codec;
     }
     final codec = fa.MultiFrameAvifCodec(
@@ -254,7 +244,6 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
       avifBytes: bytes,
     );
     await codec.ready();
-    _frameCounts[key.url] = codec.frameCount;
     return codec;
   }
 
@@ -565,6 +554,26 @@ class _FastAvifCodec implements fa.AvifCodec {
   }
 }
 
+/// 动画 AVIF 解码流的播放进度。
+///
+/// [AvifImageProvider] 完整(动画)路径的 completer 实现它。需要按动画
+/// 周期控制播放的调用方(回应表情「播一遍」停在一圈的末帧)自己订阅
+/// 解码流,从 `ImageStream.completer` 取用 —— 监听回调里读到的就是
+/// 正在交付的这一帧。
+abstract interface class AvifPlaybackProgress {
+  /// 一圈的帧数;解码器尚未初始化为 null。
+  int? get frameCount;
+
+  /// 最近交付的帧在一圈里的序号(0 起);当前解码器尚未交付过帧为 -1。
+  int get frameIndex;
+
+  /// 解码器是否在工作(有监听者且已初始化)。
+  ///
+  /// 为 false 时新监听者同步收到的是暂停前留下的旧帧,紧接着会从第 0 帧
+  /// 重新解码。
+  bool get isPlaying;
+}
+
 /// AVIF 流式动画 Completer。
 ///
 /// 与旧实现("`fa.decodeAvif` 全帧预解,Timer 轮播内存中的帧列表")的区别:
@@ -577,7 +586,8 @@ class _FastAvifCodec implements fa.AvifCodec {
 ///   从不调 `codec.dispose()`,Rust 端 decoder 注册表会随预览次数泄漏。
 ///   这里在最后一个 listener 移除时 dispose 解码器,重新监听时通过
 ///   [codecFactory] 重建(bytes 来自磁盘缓存,重建是毫秒级)。
-class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
+class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter
+    implements AvifPlaybackProgress {
   _AvifAnimatedImageStreamCompleter({
     required Future<fa.AvifCodec> Function() codecFactory,
     required this.scale,
@@ -611,6 +621,18 @@ class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
   /// 暂停代号:每次 [_pause] 自增,使在途的异步解码结果作废。
   int _generation = 0;
 
+  int? _frameCount;
+  int _frameIndex = -1;
+
+  @override
+  int? get frameCount => _frameCount;
+
+  @override
+  int get frameIndex => _frameIndex;
+
+  @override
+  bool get isPlaying => _codec != null && hasListeners;
+
   @override
   void addListener(ImageStreamListener listener) {
     final hadListeners = hasListeners;
@@ -631,6 +653,8 @@ class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
   Future<void> _start() async {
     if (_codec != null || _starting) return;
     _starting = true;
+    // 新解码器从第 0 帧解起(暂停前交付的旧帧序号作废)
+    _frameIndex = -1;
     final gen = _generation;
     try {
       final codec = await _codecFactory();
@@ -640,6 +664,7 @@ class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
         return;
       }
       _codec = codec;
+      _frameCount = codec.frameCount;
       await _decodeAndEmitNext();
     } catch (error, stack) {
       _onError?.call();
@@ -701,7 +726,10 @@ class _AvifAnimatedImageStreamCompleter extends ImageStreamCompleter {
       image = resized;
     }
 
-    // setImage 接管 image 所有权(替换时基类会 dispose 旧帧)
+    // setImage 接管 image 所有权(替换时基类会 dispose 旧帧)。
+    // 序号先于 setImage 更新:监听回调里读到的是正在交付的这一帧
+    final count = codec.frameCount;
+    _frameIndex = count > 0 ? (_frameIndex + 1) % count : 0;
     setImage(ImageInfo(image: image, scale: scale));
     _hasEmittedFrame = true;
 

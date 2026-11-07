@@ -703,7 +703,6 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
           isCurrent: ctrl.currentUserReaction?.id == ctrl.reactions[i],
           isHighlighted: isHighlighted,
           isNeighbor: isNeighbor,
-          animate: isHighlighted && !closing,
           pop: pop,
           lift: lift,
           onTap: _interactive
@@ -955,7 +954,6 @@ class _ReactionItem extends StatelessWidget {
     required this.isCurrent,
     required this.isHighlighted,
     required this.isNeighbor,
-    required this.animate,
     required this.pop,
     required this.lift,
     required this.onTap,
@@ -969,9 +967,6 @@ class _ReactionItem extends StatelessWidget {
 
   /// 高亮项同行相邻:略缩小让位
   final bool isNeighbor;
-
-  /// 播放动态表情(高亮且面板未在收回)
-  final bool animate;
 
   /// 弹出进度(easeOutBack 会略超过 1)
   final double pop;
@@ -997,7 +992,7 @@ class _ReactionItem extends StatelessWidget {
         ? primary.withValues(alpha: 0.1)
         : primary.withValues(alpha: 0);
 
-    Widget content = AnimatedContainer(
+    final Widget content = AnimatedContainer(
       duration: _kHighlightDuration,
       curve: Curves.easeOutCubic,
       margin: const EdgeInsets.all(2),
@@ -1006,29 +1001,29 @@ class _ReactionItem extends StatelessWidget {
         shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
       ),
       child: Center(
-        // 面板弹出时每个表情播一遍,高亮期间循环
+        // 面板开着就一直循环:Noto 动画起止姿势与静态图不同,播一遍
+        // 停下来总有一下跳变;面板收起时表情随之缩没,不存在「停下」
         child: ReactionEmoji(
           reactionId: reactionId,
           size: _kIconSize,
-          loop: animate,
-          playOnMount: true,
+          loop: true,
         ),
       ),
     );
 
-    if (onTap != null) {
-      // 按压反馈与选中底色保持相同圆角，整个槽位均可点击。
-      content = Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
-          splashFactory: NoSplash.splashFactory,
-          highlightColor: primary.withValues(alpha: 0.08),
-          child: content,
-        ),
-      );
-    }
+    // 按压反馈与选中底色保持相同圆角，整个槽位均可点击。
+    // InkWell 恒在、不可点时 onTap 为 null:拖选 → 停驻点选 → 收回切换
+    // 交互态时树结构不变,否则底下的表情被重新挂载,动画从头再播。
+    final tappable = Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: primary.withValues(alpha: 0.08),
+        child: content,
+      ),
+    );
 
     return Semantics(
       button: true,
@@ -1044,7 +1039,7 @@ class _ReactionItem extends StatelessWidget {
             scale: highlightScale,
             duration: _kHighlightDuration,
             curve: Curves.easeOutCubic,
-            child: content,
+            child: tappable,
           ),
         ),
       ),
