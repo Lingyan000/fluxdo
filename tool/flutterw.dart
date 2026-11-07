@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '_cli_ui.dart';
 import '_workspace_cli.dart';
 
 const _commandsRequiringAppPrep = {'run', 'build', 'drive'};
@@ -8,6 +9,7 @@ const _commandsRequiringTestPrep = {'test'};
 
 Future<void> main(List<String> args) async {
   enterWorkspaceRoot();
+  args = List.of(args);
 
   if (args.isEmpty) {
     stderr.writeln('用法: dart tool/flutterw.dart <flutter args...>');
@@ -37,11 +39,21 @@ Future<void> main(List<String> args) async {
 }
 
 Future<void> _runNativePrepIfNeeded(String command, List<String> args) async {
-  final target = await _detectNativeTarget(command, args);
-  if (target == null) {
-    return;
+  final targets = await _detectNativeTargets(command, args);
+  final prepared = <String>{};
+  for (final target in targets) {
+    final key = '${target.platform}/${target.androidTargetPlatform}';
+    if (prepared.add(key)) {
+      await _prepareNativeTarget(target, command, args);
+    }
   }
+}
 
+Future<void> _prepareNativeTarget(
+  _NativeTarget target,
+  String command,
+  List<String> args,
+) async {
   final buildMode = _detectBuildMode(command, args);
   final nativeArgs = <String>[
     'tool/project_tasks.dart',
@@ -83,11 +95,14 @@ String? _macOsArchFromEnv() {
   return (value == null || value.isEmpty) ? null : value;
 }
 
-Future<_NativeTarget?> _detectNativeTarget(String command, List<String> args) async {
+Future<List<_NativeTarget>> _detectNativeTargets(
+  String command,
+  List<String> args,
+) async {
   switch (command) {
     case 'build':
       final buildTarget = _firstPositionalAfter(args, 'build');
-      return switch (buildTarget) {
+      final target = switch (buildTarget) {
         'windows' => const _NativeTarget('windows'),
         'macos' => _NativeTarget('macos', macOsArch: _macOsArchFromEnv()),
         'linux' => const _NativeTarget('linux'),
@@ -95,6 +110,7 @@ Future<_NativeTarget?> _detectNativeTarget(String command, List<String> args) as
         'apk' || 'appbundle' || 'aar' => const _NativeTarget('android'),
         _ => null,
       };
+      return [?target];
     case 'run':
     case 'drive':
       final deviceId = _extractOptionValue(args, '-d', '--device-id');
@@ -107,21 +123,103 @@ Future<_NativeTarget?> _detectNativeTarget(String command, List<String> args) as
         _ => null,
       };
       if (directTarget != null) {
-        return directTarget;
+        return [directTarget];
+      }
+      if (const ['chrome', 'edge', 'web-server'].contains(deviceId)) {
+        return const [];
       }
 
-      final devices = await _loadFlutterDevices();
-      final resolvedDevice = switch (deviceId) {
-        null => devices.length == 1 ? devices.single : null,
-        _ => devices.where((device) => device.id == deviceId).firstOrNull,
-      };
-      if (resolvedDevice == null) {
-        return null;
-      }
-      return _nativeTargetFromDevice(resolvedDevice);
+      final devices = await _selectRunDevices(args, deviceId);
+      return devices
+          .map(_nativeTargetFromDevice)
+          .whereType<_NativeTarget>()
+          .toList();
     default:
-      return null;
+      return const [];
   }
+}
+
+Future<List<_FlutterDevice>> _selectRunDevices(
+  List<String> args,
+  String? deviceId,
+) async {
+  var devices = await _loadFlutterDevices(args);
+  if (deviceId == null || deviceId == 'all') {
+    devices = devices.where((device) {
+      final platform = _nativeTargetFromDevice(device)?.platform;
+      if (platform != null) return Directory(platform).existsSync();
+      return deviceId != 'all' &&
+          device.targetPlatform.startsWith('web') &&
+          Directory('web').existsSync();
+    }).toList();
+  } else {
+    final query = deviceId.toLowerCase();
+    final exact = devices.where(
+      (device) =>
+          device.id.toLowerCase() == query ||
+          device.name.toLowerCase() == query,
+    );
+    devices = exact.isNotEmpty
+        ? [exact.first]
+        : devices.where((device) {
+            return device.id.toLowerCase().startsWith(query) ||
+                device.name.toLowerCase().startsWith(query);
+          }).toList();
+  }
+
+  if (devices.isEmpty) {
+    stderr.writeln('未找到匹配的运行设备，请检查连接或使用 -d 指定设备。');
+    exit(1);
+  }
+  if (deviceId == 'all') return devices;
+
+  // Flutter 在未指定设备时优先选择唯一的手机或模拟器。
+  if (deviceId == null) {
+    final mobileDevices = devices
+        .where(
+          (device) =>
+              device.targetPlatform.startsWith('android') ||
+              device.targetPlatform == 'ios',
+        )
+        .toList();
+    if (mobileDevices.length == 1) devices = mobileDevices;
+  }
+
+  final selected = devices.length == 1
+      ? devices.single
+      : await CliUi().select<_FlutterDevice>(
+          title: '选择运行设备',
+          options: [
+            for (final device in devices)
+              CliOption(
+                value: device,
+                label: device.name,
+                detail: '${device.id} (${device.targetPlatform})',
+                aliases: [device.id],
+              ),
+          ],
+        );
+  if (selected == null) exit(0);
+
+  // 把本次选择传给 Flutter，确保启动设备与预先编译的核心一致。
+  _setRunDevice(args, selected.id);
+  return [selected];
+}
+
+void _setRunDevice(List<String> args, String deviceId) {
+  for (var index = 0; index < args.length; index++) {
+    final arg = args[index];
+    if (arg == '-d' || arg == '--device-id') {
+      args[index + 1] = deviceId;
+      return;
+    }
+    if (arg.startsWith('--device-id=') || arg.startsWith('-d=')) {
+      args[index] = '--device-id=$deviceId';
+      return;
+    }
+  }
+  final separator = args.indexOf('--');
+  args.insertAll(separator == -1 ? args.length : separator, ['-d', deviceId]);
 }
 
 String _detectBuildMode(String command, List<String> args) {
@@ -152,7 +250,11 @@ String? _firstPositionalAfter(List<String> args, String command) {
   return null;
 }
 
-String? _extractOptionValue(List<String> args, String shortOption, String longOption) {
+String? _extractOptionValue(
+  List<String> args,
+  String shortOption,
+  String longOption,
+) {
   for (var index = 0; index < args.length; index++) {
     final value = args[index];
     if (value == shortOption || value == longOption) {
@@ -161,29 +263,36 @@ String? _extractOptionValue(List<String> args, String shortOption, String longOp
       }
       return null;
     }
-    if (value.startsWith('$longOption=')) {
-      return value.substring(longOption.length + 1);
+    if (value.startsWith('$longOption=') || value.startsWith('$shortOption=')) {
+      return value.substring(value.indexOf('=') + 1);
     }
   }
   return null;
 }
 
-Future<List<_FlutterDevice>> _loadFlutterDevices() async {
+Future<List<_FlutterDevice>> _loadFlutterDevices(List<String> args) async {
   try {
+    final discoveryArgs = ['devices', '--machine'];
+    for (final option in ['--device-timeout', '--device-connection']) {
+      final value = _extractOptionValue(args, option, option);
+      if (value != null) discoveryArgs.add('$option=$value');
+    }
     final result = await Process.run(
       flutterExecutable,
-      const ['devices', '--machine'],
+      discoveryArgs,
       runInShell: Platform.isWindows,
       environment: await androidBuildEnvironment(),
       workingDirectory: workspaceRootPath,
     );
     if (result.exitCode != 0) {
-      return const [];
+      stderr.write(result.stderr);
+      stderr.writeln('读取 Flutter 设备列表失败，无法准备网络核心。');
+      exit(result.exitCode);
     }
 
     final decoded = jsonDecode(result.stdout.toString());
     if (decoded is! List) {
-      return const [];
+      throw const FormatException('设备列表不是 JSON 数组');
     }
 
     return decoded
@@ -191,12 +300,14 @@ Future<List<_FlutterDevice>> _loadFlutterDevices() async {
         .map((item) => _FlutterDevice.fromJson(item.cast<String, dynamic>()))
         .whereType<_FlutterDevice>()
         .toList();
-  } catch (_) {
-    return const [];
+  } catch (error) {
+    stderr.writeln('读取 Flutter 设备列表失败，无法准备网络核心。$error');
+    exit(1);
   }
 }
 
-_NativeTarget? _nativeTargetFromDevice(_FlutterDevice device) {  final targetPlatform = device.targetPlatform;
+_NativeTarget? _nativeTargetFromDevice(_FlutterDevice device) {
+  final targetPlatform = device.targetPlatform;
   if (targetPlatform.startsWith('android')) {
     return _NativeTarget('android', androidTargetPlatform: targetPlatform);
   }
@@ -216,7 +327,11 @@ _NativeTarget? _nativeTargetFromDevice(_FlutterDevice device) {  final targetPla
 }
 
 class _NativeTarget {
-  const _NativeTarget(this.platform, {this.androidTargetPlatform, this.macOsArch});
+  const _NativeTarget(
+    this.platform, {
+    this.androidTargetPlatform,
+    this.macOsArch,
+  });
 
   final String platform;
   final String? androidTargetPlatform;
@@ -226,22 +341,28 @@ class _NativeTarget {
 class _FlutterDevice {
   const _FlutterDevice({
     required this.id,
+    required this.name,
     required this.targetPlatform,
   });
 
   final String id;
+  final String name;
   final String targetPlatform;
 
   static _FlutterDevice? fromJson(Map<String, dynamic> json) {
+    if (json['isSupported'] == false) return null;
     final id = json['id']?.toString().trim();
     final targetPlatform = json['targetPlatform']?.toString().trim();
-    if (id == null || id.isEmpty || targetPlatform == null || targetPlatform.isEmpty) {
+    if (id == null ||
+        id.isEmpty ||
+        targetPlatform == null ||
+        targetPlatform.isEmpty) {
       return null;
     }
-    return _FlutterDevice(id: id, targetPlatform: targetPlatform);
+    return _FlutterDevice(
+      id: id,
+      name: json['name']?.toString() ?? id,
+      targetPlatform: targetPlatform,
+    );
   }
-}
-
-extension on Iterable<_FlutterDevice> {
-  _FlutterDevice? get firstOrNull => isEmpty ? null : first;
 }

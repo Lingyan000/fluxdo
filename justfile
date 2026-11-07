@@ -21,8 +21,8 @@ l10n-check:
   @dart run tool/gen_l10n.dart --check
 
 # 检查开发环境和生成产物状态
-doctor:
-  @dart run tool/project_prep.dart doctor
+doctor *args:
+  @dart run tool/project_prep.dart doctor {{args}}
 
 # 生成并同步代理证书资源
 certs:

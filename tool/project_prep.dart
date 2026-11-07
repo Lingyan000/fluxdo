@@ -25,7 +25,7 @@ Future<void> main(List<String> args) async {
       await _ensureProxyCertResources();
       return;
     case 'doctor':
-      await _runDoctor();
+      await _runDoctor(args.sublist(1));
       return;
     case 'help':
     case '--help':
@@ -115,7 +115,7 @@ bool _syncIfNeeded(File source, File target) {
   return true;
 }
 
-Future<void> _runDoctor() async {
+Future<void> _runDoctor(List<String> args) async {
   stdout.writeln('==> 检查开发环境');
   await _printCommandStatus('Flutter', flutterExecutable, const ['--version']);
   await _printCommandStatus('Dart', Platform.resolvedExecutable, const ['--version']);
@@ -145,6 +145,12 @@ Future<void> _runDoctor() async {
 
   stdout.writeln('==> 检查 Android 签名状态');
   _printAndroidSigningStatus();
+
+  await runOrExit(
+    title: '检查 Android 网络核心构建环境',
+    executable: Platform.resolvedExecutable,
+    arguments: ['tool/project_tasks.dart', 'native:doctor', ...args],
+  );
 }
 
 Future<void> _printAndroidJavaStatus() async {
@@ -330,5 +336,5 @@ const _usage = '''
   dart tool/project_prep.dart app
   dart tool/project_prep.dart test
   dart tool/project_prep.dart certs
-  dart tool/project_prep.dart doctor
+  dart tool/project_prep.dart doctor [--target-platform=android-arm64,android-arm,android-x64]
 ''';
