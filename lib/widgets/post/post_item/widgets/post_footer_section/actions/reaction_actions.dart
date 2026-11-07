@@ -41,14 +41,18 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
   /// 乐观切换回应(同官方 discourse-reactions 的 toggleReaction):
   /// 先在本地改好计数与「我的回应」立即显示,再提交;失败回滚。
   ///
-  /// 此前等接口返回才换按钮里的表情 —— 选中的表情飞回按钮后,按钮还是
-  /// 旧状态,网络往返结束新表情才冒出来,看起来像消失了又出现。
+  /// 乐观状态**同时写进页面 provider**,并在请求在途期间挡住帖子对象
+  /// 替换回写(见 [_PostFooterSectionState._pendingReactions])。服务端
+  /// 切换回应时会先后推送 liked(只带点赞数)、acted —— 页面收到 liked
+  /// 就用 provider 里的帖子换掉本楼的 post,此前 provider 还是旧回应,
+  /// footer 被同步回旧状态,接口返回后又切回来:选中 → 空 → 选中。
   ///
   /// 连续快速切换时只认最后一次提交的结果:早发出的请求晚回来,
   /// 不能拿它的(已过期)状态覆盖当前显示。
   Future<void> _submitReaction(String reactionId) async {
     final saved = (_reactions, _currentUserReaction);
     final seq = ++_reactionSeq;
+    _pendingReactions++;
     setState(() {
       final next = applyReactionToggle(
         _reactions,
@@ -58,6 +62,7 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
       _reactions = next.$1;
       _currentUserReaction = next.$2;
     });
+    _syncReactionToProvider(_reactions, _currentUserReaction);
 
     try {
       final result = await _service.toggleReaction(widget.post.id, reactionId);
@@ -75,9 +80,12 @@ extension _PostFooterReactionActions on _PostFooterSectionState {
           _reactions = saved.$1;
           _currentUserReaction = saved.$2;
         });
+        _syncReactionToProvider(_reactions, _currentUserReaction);
       }
       // 网络错误已由 ErrorInterceptor 处理
       if (e is! DioException) AppErrorHandler.handleUnexpected(e, s);
+    } finally {
+      _pendingReactions--;
     }
   }
 

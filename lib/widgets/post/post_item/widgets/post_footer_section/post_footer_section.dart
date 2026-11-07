@@ -149,6 +149,10 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
 
   /// 回应提交序号:乐观更新后只认最后一次提交的结果(见 _submitReaction)
   int _reactionSeq = 0;
+
+  /// 在途的回应提交数。期间帖子对象被别处换掉(MessageBus 的 liked 推送
+  /// 只改点赞数、acted 刷新等),回应字段以本地乐观状态为准,不回写成旧值。
+  int _pendingReactions = 0;
   late List<Boost> _boosts;
   late bool _canBoost;
   final List<Post> _replies = [];
@@ -184,8 +188,10 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   }
 
   void _syncState() {
-    _reactions = List.from(widget.post.reactions ?? []);
-    _currentUserReaction = widget.post.currentUserReaction;
+    if (_pendingReactions == 0) {
+      _reactions = List.from(widget.post.reactions ?? []);
+      _currentUserReaction = widget.post.currentUserReaction;
+    }
     _isBookmarked = widget.post.bookmarked;
     _bookmarkId = widget.post.bookmarkId;
     _bookmarkName = widget.post.bookmarkName;
