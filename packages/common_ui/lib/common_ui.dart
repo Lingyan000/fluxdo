@@ -9,6 +9,7 @@
 ///   统一桌面滚动期间的控件点击，接入应用入口即可覆盖后代滚动容器。
 library;
 
+export 'src/app_content_state.dart' show AppEmptyState;
 export 'src/app_sheet_scaffold.dart';
 export 'src/dismissible_popup_menu.dart';
 export 'src/desktop_scroll_interaction.dart';

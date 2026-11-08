@@ -1,7 +1,18 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+
+part 'popup_menu_morph.dart';
+part 'popup_menu_interaction.dart';
 
 // ============================================================
 // 以下常量和私有类复制自 Flutter popup_menu.dart，
@@ -10,8 +21,8 @@ import 'package:flutter/rendering.dart';
 
 // 菜单开合:统一"从触发点缩放生长/收回 + 淡入淡出"。开/关时长分开,
 // 且外层与子面板用同一套关闭时长,保证整链一起关时同步、像一个整体收起。
-const Duration _kMenuDuration = Duration(milliseconds: 160);
-const Duration _kMenuCloseDuration = Duration(milliseconds: 180);
+const Duration _kMenuDuration = Duration(milliseconds: 280);
+const Duration _kMenuCloseDuration = Duration(milliseconds: 240);
 const double _kMenuMaxWidth = 5.0 * _kMenuWidthStep;
 const double _kMenuMinWidth = 2.0 * _kMenuWidthStep;
 const double _kMenuWidthStep = 56.0;
@@ -145,29 +156,35 @@ class _QuickActionButton extends StatelessWidget {
     final bool enabled = action.enabled && (action.onTap != null || hasSubmenu);
     final Color bg = action.active ? activeColor : inactiveColor;
     final Color fg = action.active ? activeIconColor : inactiveIconColor;
-    final Widget button = Material(
-      color: bg,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: enabled
-            ? () {
-                if (hasSubmenu) {
-                  _openSubmenu(context);
-                } else {
-                  onAfterTap();
-                  action.onTap!();
-                }
-              }
-            : null,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Icon(
-            action.icon,
-            size: 20,
-            fill: action.active ? 1 : 0,
-            color: enabled ? fg : fg.withValues(alpha: 0.38),
+    void activate() {
+      if (hasSubmenu) {
+        _openSubmenu(context);
+      } else {
+        onAfterTap();
+        action.onTap!();
+      }
+    }
+
+    final Widget button = _MenuDragTarget(
+      enabled: enabled,
+      opensSubmenu: hasSubmenu,
+      round: true,
+      onInvoke: activate,
+      child: Material(
+        color: bg,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? activate : null,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(
+              action.icon,
+              size: 20,
+              fill: action.active ? 1 : 0,
+              color: enabled ? fg : fg.withValues(alpha: 0.38),
+            ),
           ),
         ),
       ),
@@ -229,6 +246,11 @@ class _MenuExpansionScope extends InheritedNotifier<_MenuExpansionController> {
 /// 标记:属于同一条"弹出菜单链"的 route(外层菜单 + 各级子面板)。
 /// 点击/滑动 barrier 时,沿这个标记把整条链一次性全部关闭,而不是逐层关。
 mixin _MenuChainRoute<T> on PopupRoute<T> {
+  _MenuPressSession? _ownPressSession;
+  _MenuPressSession get pressSession =>
+      belowChainRoute?.pressSession ??
+      (_ownPressSession ??= _MenuPressSession());
+
   /// 紧邻其下方的同链 route(子面板指向其父菜单)。用于子面板判断"点在父菜单上"。
   _MenuChainRoute<dynamic>? belowChainRoute;
 
@@ -261,6 +283,12 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
       r.left + (menuPivotAlignment.x + 1) / 2 * r.width,
       r.top + (menuPivotAlignment.y + 1) / 2 * r.height,
     );
+  }
+
+  @override
+  void dispose() {
+    _ownPressSession?.dispose();
+    super.dispose();
   }
 }
 
@@ -361,6 +389,7 @@ class _MenuPopTransitionState extends State<_MenuPopTransition> {
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
     return FadeTransition(
       opacity: _fade,
       child: AnimatedBuilder(
@@ -541,43 +570,47 @@ class _SubmenuRowTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final Color fg = selected ? cs.primary : cs.onSurface;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, fill: selected ? 1 : 0, color: fg),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: fg,
-                      fontWeight: selected
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
+    return _MenuDragTarget(
+      selected: selected,
+      onInvoke: onTap,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, fill: selected ? 1 : 0, color: fg),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      subtitle!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
+                      label,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: fg,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
                       ),
                     ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            if (selected)
-              Icon(Symbols.check_rounded, size: 18, color: cs.primary),
-          ],
+              if (selected)
+                Icon(Symbols.check_rounded, size: 18, color: cs.primary),
+            ],
+          ),
         ),
       ),
     );
@@ -598,6 +631,7 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
     required this.capturedThemes,
     required this.subtitleCount,
     this.anchor,
+    this.reducedMotion = false,
   });
 
   final IconData icon;
@@ -610,6 +644,7 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
   /// tiles 中带 subtitle 的行数（高度估算用：带副标题的行更高）
   final int subtitleCount;
   final Rect? anchor;
+  final bool reducedMotion;
 
   @override
   Color? get barrierColor => null;
@@ -619,9 +654,11 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
   @override
   String get barrierLabel => 'submenu';
   @override
-  Duration get transitionDuration => _kMenuDuration;
+  Duration get transitionDuration =>
+      reducedMotion ? Duration.zero : _kMenuDuration;
   @override
-  Duration get reverseTransitionDuration => _kMenuCloseDuration;
+  Duration get reverseTransitionDuration =>
+      reducedMotion ? Duration.zero : _kMenuCloseDuration;
 
   @override
   Widget buildPage(
@@ -640,19 +677,23 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: _ExpandableHeader(
-              icon: icon,
-              label: label,
-              iconColor: iconColor ?? cs.onSurface,
-              labelColor: labelColor ?? cs.onSurface,
-              trailing: Icon(
-                Symbols.keyboard_arrow_up_rounded,
-                size: 20,
-                color: cs.onSurfaceVariant,
+        _MenuDragTarget(
+          opensSubmenu: true,
+          onInvoke: () => Navigator.of(context).maybePop(),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: () => Navigator.of(context).maybePop(),
+              child: _ExpandableHeader(
+                icon: icon,
+                label: label,
+                iconColor: iconColor ?? cs.onSurface,
+                labelColor: labelColor ?? cs.onSurface,
+                trailing: Icon(
+                  Symbols.keyboard_arrow_up_rounded,
+                  size: 20,
+                  color: cs.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -678,6 +719,10 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
 
           double targetWidth = anchor?.width ?? minPanelWidth;
           targetWidth = targetWidth.clamp(minPanelWidth, maxPanelWidth);
+          targetWidth = math.min(
+            targetWidth,
+            math.max(0, screen.width - screenPadding * 2),
+          );
 
           // 估算最终高度：header(48) + 分隔线(1) + 尾部 padding(4)。
           // 行高按实际构成算：单行 tile = 10+20+10 ≈ 40（bodyMedium 文字
@@ -698,7 +743,12 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
               : screen.height * 0.2;
           final double topLimit = safeInsets.top + screenPadding;
           final double bottomLimit =
-              screen.height - safeInsets.bottom - screenPadding;
+              screen.height -
+              math.max(
+                safeInsets.bottom,
+                MediaQuery.viewInsetsOf(context).bottom,
+              ) -
+              screenPadding;
           if (targetLeft + targetWidth > screen.width - screenPadding) {
             targetLeft = screen.width - screenPadding - targetWidth;
           }
@@ -734,18 +784,26 @@ class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
                 left: targetLeft,
                 top: targetTop,
                 width: targetWidth,
-                child: _MenuPopTransition(
-                  key: menuContentKey,
-                  animation: animation,
-                  alignment: scaleAlign,
-                  chainRoute: this,
-                  child: Material(
-                    shape: shape,
-                    color: popupMenuTheme.color ?? cs.surfaceContainerLow,
-                    surfaceTintColor: Colors.transparent,
-                    elevation: popupMenuTheme.elevation ?? 3,
-                    clipBehavior: Clip.antiAlias,
-                    child: panelContent,
+                child: _MenuDragRegion(
+                  route: this,
+                  child: _MenuPopTransition(
+                    key: menuContentKey,
+                    animation: animation,
+                    alignment: scaleAlign,
+                    chainRoute: this,
+                    child: Material(
+                      shape: shape,
+                      color: popupMenuTheme.color ?? cs.surfaceContainerLow,
+                      surfaceTintColor: Colors.transparent,
+                      elevation: popupMenuTheme.elevation ?? 3,
+                      clipBehavior: Clip.antiAlias,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: math.max(0, bottomLimit - targetTop),
+                        ),
+                        child: SingleChildScrollView(child: panelContent),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -824,9 +882,15 @@ class _PopupMenu<T> extends StatefulWidget {
 
 class _PopupMenuState<T> extends State<_PopupMenu<T>> {
   final _MenuExpansionController _expansion = _MenuExpansionController();
+  late final CurvedAnimation _morphAnimation = CurvedAnimation(
+    parent: widget.route.animation!,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInOutCubic,
+  );
 
   @override
   void dispose() {
+    _morphAnimation.dispose();
     _expansion.dispose();
     super.dispose();
   }
@@ -837,11 +901,36 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
     final ThemeData theme = Theme.of(context);
     final PopupMenuThemeData popupMenuTheme = PopupMenuTheme.of(context);
 
+    final menuShape =
+        widget.route.shape ??
+        popupMenuTheme.shape ??
+        RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16));
+    final menuColor =
+        widget.route.color ??
+        popupMenuTheme.color ??
+        theme.colorScheme.surfaceContainerLow;
+
     for (int i = 0; i < widget.route.items.length; i += 1) {
       Widget item = widget.route.items[i];
-      if (widget.route.initialValue != null &&
-          widget.route.items[i].represents(widget.route.initialValue)) {
-        item = ColoredBox(color: theme.highlightColor, child: item);
+      if (item is! PopupMenuDivider) {
+        final entry = widget.route.items[i];
+        final supported =
+            entry is PopupMenuItem<T> || entry is ExpandablePopupMenuEntry<T>;
+        item = supported
+            ? _MenuDragTarget(
+                enabled: entry is! PopupMenuItem<T> || entry.enabled,
+                opensSubmenu: entry is ExpandablePopupMenuEntry<T>,
+                selected:
+                    widget.route.initialValue != null &&
+                    entry.represents(widget.route.initialValue),
+                child: item,
+              )
+            : _MenuRowSurface(
+                selected:
+                    widget.route.initialValue != null &&
+                    widget.route.items[i].represents(widget.route.initialValue),
+                child: item,
+              );
       }
       children.add(
         _MenuItem(
@@ -927,71 +1016,107 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
     final Alignment originAlign = Alignment(originX, originY);
     widget.route.menuPivotAlignment = originAlign;
 
-    return _MenuPopTransition(
-      key: widget.route.menuContentKey,
-      animation: widget.route.animation!,
-      alignment: originAlign,
-      chainRoute: widget.route,
-      child: AnimatedBuilder(
-        animation: _expansion,
-        builder: (context, menuChild) {
-          // 子面板展开时,外层菜单后退一档(缩放 + 蒙层)做层级提示。
-          final bool dimmed = _expansion.isAnyActive;
-          return AnimatedScale(
-            scale: dimmed ? 0.94 : 1.0,
-            alignment: originAlign,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            child: Stack(
-              children: [
-                widget.route.surfaceBuilder?.call(context, menuChild!) ??
-                    Material(
-                      shape: widget.route.shape ?? popupMenuTheme.shape,
-                      color: widget.route.color ?? popupMenuTheme.color,
-                      clipBehavior: widget.clipBehavior,
-                      type: MaterialType.card,
-                      elevation:
-                          widget.route.elevation ??
-                          popupMenuTheme.elevation ??
-                          8.0,
-                      shadowColor:
-                          widget.route.shadowColor ??
-                          popupMenuTheme.shadowColor,
-                      surfaceTintColor:
-                          widget.route.surfaceTintColor ??
-                          popupMenuTheme.surfaceTintColor,
-                      child: menuChild,
-                    ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: !dimmed,
-                    child: AnimatedOpacity(
-                      opacity: dimmed ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      child: DecoratedBox(
-                        decoration: ShapeDecoration(
-                          color: Colors.black.withValues(alpha: 0.32),
-                          shape: RoundedSuperellipseBorder(
-                            borderRadius:
-                                (widget.route.shape ?? popupMenuTheme.shape)
-                                    is RoundedSuperellipseBorder
-                                ? ((widget.route.shape ?? popupMenuTheme.shape!)
-                                          as RoundedSuperellipseBorder)
-                                      .borderRadius
-                                      .resolve(Directionality.of(context))
-                                : null,
-                          ),
+    final surface = AnimatedBuilder(
+      animation: _expansion,
+      builder: (context, menuChild) {
+        // 子面板展开时,外层菜单后退一档(缩放 + 蒙层)做层级提示。
+        final bool dimmed = _expansion.isAnyActive;
+        return AnimatedScale(
+          scale: dimmed ? 0.94 : 1.0,
+          alignment: originAlign,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: Stack(
+            children: [
+              widget.route.surfaceBuilder?.call(context, menuChild!) ??
+                  Material(
+                    shape: menuShape,
+                    color: menuColor,
+                    clipBehavior: widget.clipBehavior,
+                    type: MaterialType.card,
+                    elevation:
+                        widget.route.elevation ??
+                        popupMenuTheme.elevation ??
+                        8.0,
+                    shadowColor:
+                        widget.route.shadowColor ?? popupMenuTheme.shadowColor,
+                    surfaceTintColor:
+                        widget.route.surfaceTintColor ??
+                        popupMenuTheme.surfaceTintColor,
+                    child: menuChild,
+                  ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !dimmed,
+                  child: AnimatedOpacity(
+                    opacity: dimmed ? 1 : 0,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: Colors.black.withValues(alpha: 0.32),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius:
+                              (widget.route.shape ?? popupMenuTheme.shape)
+                                  is RoundedSuperellipseBorder
+                              ? ((widget.route.shape ?? popupMenuTheme.shape!)
+                                        as RoundedSuperellipseBorder)
+                                    .borderRadius
+                                    .resolve(Directionality.of(context))
+                              : null,
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          );
-        },
-        child: child,
+              ),
+            ],
+          ),
+        );
+      },
+      child: child,
+    );
+
+    final overlay = widget.route.navigator?.overlay?.context.findRenderObject();
+    final anchor = widget.route.animationAnchorRect;
+    if (anchor != null &&
+        overlay is RenderBox &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      return _MenuDragRegion(
+        route: widget.route,
+        child: _MenuMorphTransition(
+          key: widget.route.menuContentKey,
+          animation: _morphAnimation,
+          anchor: Rect.fromPoints(
+            overlay.localToGlobal(anchor.topLeft),
+            overlay.localToGlobal(anchor.bottomRight),
+          ),
+          shape: menuShape,
+          color: menuColor,
+          shadowColor:
+              widget.route.shadowColor ??
+              popupMenuTheme.shadowColor ??
+              theme.shadowColor,
+          elevation: widget.route.elevation ?? popupMenuTheme.elevation ?? 8,
+          textDirection: Directionality.of(context),
+          chainRoute: widget.route,
+          source: widget.route.source,
+          child: surface,
+        ),
+      );
+    }
+    return _MenuDragRegion(
+      route: widget.route,
+      child: _MenuPopTransition(
+        key: widget.route.menuContentKey,
+        animation: widget.route.animation!,
+        alignment: originAlign,
+        chainRoute: widget.route,
+        child: surface,
       ),
     );
   }
@@ -1121,6 +1246,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
     this.popUpAnimationStyle,
     this.headerActions,
     this.surfaceBuilder,
+    this.source,
   }) : itemSizes = List<Size?>.filled(items.length, null),
        super(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
 
@@ -1143,6 +1269,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   final AnimationStyle? popUpAnimationStyle;
   final List<MenuQuickAction>? headerActions;
   final PopupMenuSurfaceBuilder? surfaceBuilder;
+  final _MenuSourceImage? source;
 
   CurvedAnimation? _animation;
 
@@ -1165,7 +1292,8 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
       popUpAnimationStyle?.duration ?? _kMenuDuration;
 
   @override
-  Duration get reverseTransitionDuration => _kMenuCloseDuration;
+  Duration get reverseTransitionDuration =>
+      popUpAnimationStyle?.reverseDuration ?? _kMenuCloseDuration;
 
   // 关键：禁用框架自带的 barrier，改由 buildPage 中自行处理
   @override
@@ -1248,6 +1376,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   @override
   void dispose() {
     _animation?.dispose();
+    source?.dispose();
     super.dispose();
   }
 }
@@ -1336,8 +1465,60 @@ Future<T?> showSwipeDismissibleMenu<T>({
   bool? requestFocus,
   List<MenuQuickAction>? headerActions,
   PopupMenuSurfaceBuilder? surfaceBuilder,
+}) => _showSwipeDismissibleMenu<T>(
+  context: context,
+  position: position,
+  items: items,
+  navigator: navigator,
+  animationAnchorRect: animationAnchorRect,
+  initialValue: initialValue,
+  elevation: elevation,
+  shadowColor: shadowColor,
+  surfaceTintColor: surfaceTintColor,
+  semanticLabel: semanticLabel,
+  shape: shape,
+  menuPadding: menuPadding,
+  color: color,
+  useRootNavigator: useRootNavigator,
+  constraints: constraints,
+  clipBehavior: clipBehavior,
+  routeSettings: routeSettings,
+  popUpAnimationStyle: popUpAnimationStyle,
+  requestFocus: requestFocus,
+  headerActions: headerActions,
+  surfaceBuilder: surfaceBuilder,
+);
+
+Future<T?> _showSwipeDismissibleMenu<T>({
+  required BuildContext context,
+  required RelativeRect position,
+  required List<PopupMenuEntry<T>> items,
+  NavigatorState? navigator,
+  Rect? animationAnchorRect,
+  T? initialValue,
+  double? elevation,
+  Color? shadowColor,
+  Color? surfaceTintColor,
+  String? semanticLabel,
+  ShapeBorder? shape,
+  EdgeInsetsGeometry? menuPadding,
+  Color? color,
+  bool useRootNavigator = false,
+  BoxConstraints? constraints,
+  Clip clipBehavior = Clip.antiAlias,
+  RouteSettings? routeSettings,
+  AnimationStyle? popUpAnimationStyle,
+  bool? requestFocus,
+  List<MenuQuickAction>? headerActions,
+  PopupMenuSurfaceBuilder? surfaceBuilder,
+  _MenuSourceImage? source,
+  _MenuPressSession? pressSession,
+  VoidCallback? onCompleted,
 }) {
   assert(items.isNotEmpty);
+  if (MediaQuery.disableAnimationsOf(context)) {
+    popUpAnimationStyle = AnimationStyle.noAnimation;
+  }
 
   switch (Theme.of(context).platform) {
     case TargetPlatform.iOS:
@@ -1367,34 +1548,36 @@ Future<T?> showSwipeDismissibleMenu<T>({
     }
     return true;
   });
-  return targetNavigator.push(
-    _SwipeDismissiblePopupRoute<T>(
-      position: position,
-      animationAnchorRect: animationAnchorRect,
-      items: items,
-      itemKeys: menuItemKeys,
-      initialValue: initialValue,
-      elevation: elevation,
-      shadowColor: shadowColor,
-      surfaceTintColor: surfaceTintColor,
-      semanticLabel: semanticLabel,
-      barrierLabel: MaterialLocalizations.of(context).menuDismissLabel,
-      shape: shape,
-      menuPadding: menuPadding,
-      color: color,
-      capturedThemes: InheritedTheme.capture(
-        from: context,
-        to: navigatorIsAncestor ? targetNavigator.context : null,
-      ),
-      constraints: constraints,
-      clipBehavior: clipBehavior,
-      settings: routeSettings,
-      requestFocus: requestFocus,
-      popUpAnimationStyle: popUpAnimationStyle,
-      headerActions: headerActions,
-      surfaceBuilder: surfaceBuilder,
+  final route = _SwipeDismissiblePopupRoute<T>(
+    position: position,
+    animationAnchorRect: animationAnchorRect,
+    items: items,
+    itemKeys: menuItemKeys,
+    initialValue: initialValue,
+    elevation: elevation,
+    shadowColor: shadowColor,
+    surfaceTintColor: surfaceTintColor,
+    semanticLabel: semanticLabel,
+    barrierLabel: MaterialLocalizations.of(context).menuDismissLabel,
+    shape: shape,
+    menuPadding: menuPadding,
+    color: color,
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigatorIsAncestor ? targetNavigator.context : null,
     ),
+    constraints: constraints,
+    clipBehavior: clipBehavior,
+    settings: routeSettings,
+    requestFocus: requestFocus,
+    popUpAnimationStyle: popUpAnimationStyle,
+    headerActions: headerActions,
+    surfaceBuilder: surfaceBuilder,
+    source: source,
   );
+  route._ownPressSession = pressSession;
+  route.completed.whenComplete(() => onCompleted?.call());
+  return targetNavigator.push(route);
 }
 
 /// 支持滑动空白区域关闭的 PopupMenuButton。
@@ -1489,7 +1672,56 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
 
 class _SwipeDismissiblePopupMenuButtonState<T>
     extends State<SwipeDismissiblePopupMenuButton<T>> {
+  final _sourceKey = GlobalKey();
+  bool _active = false;
+  bool _sourceHidden = false;
+  int? _pointer;
+  Offset _pressOrigin = Offset.zero;
+  bool _carrying = false;
+  _MenuPressSession? _session;
+
+  void _openFromPress(PointerDownEvent event) {
+    _pointer = event.pointer;
+    _pressOrigin = event.position;
+    _carrying = false;
+    showButtonMenu();
+  }
+
+  void _movePress(PointerMoveEvent event) {
+    if (event.pointer != _pointer || _session == null) return;
+    if (!_carrying &&
+        (event.position - _pressOrigin).distance >
+            computeHitSlop(
+              event.kind,
+              MediaQuery.maybeGestureSettingsOf(context),
+            )) {
+      _carrying = true;
+      _session!.begin(_pressOrigin);
+    }
+    if (_carrying) _session!.move(event.position);
+  }
+
+  void _endPress(PointerUpEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    if (_carrying) _session?.end(event.position);
+    _carrying = false;
+  }
+
+  void _cancelPress() {
+    _pointer = null;
+    _carrying = false;
+    _session?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _cancelPress();
+    super.dispose();
+  }
+
   void showButtonMenu() {
+    if (!mounted || _active || !widget.enabled) return;
     final RenderBox button = context.findRenderObject()! as RenderBox;
     final NavigatorState navigator =
         widget.menuNavigatorKey?.currentState ??
@@ -1532,9 +1764,50 @@ class _SwipeDismissiblePopupMenuButtonState<T>
     final List<PopupMenuEntry<T>> items = widget.itemBuilder(context);
     if (items.isEmpty) return;
 
+    _active = true;
+    _session = _MenuPressSession()
+      ..pointer = _pointer
+      ..feedback =
+          (widget.enableFeedback ?? popupMenuTheme.enableFeedback ?? true);
+    _carryMenuPointer(Navigator.of(context), _pointer);
+    if (navigator != Navigator.of(context)) {
+      _carryMenuPointer(navigator, _pointer);
+    }
+    _MenuSourceImage? source;
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      final boundary = _sourceKey.currentContext?.findRenderObject();
+      if (boundary is RenderRepaintBoundary &&
+          boundary.hasSize &&
+          !boundary.size.isEmpty) {
+        try {
+          final image = boundary.toImageSync(
+            pixelRatio: math.min(2, MediaQuery.devicePixelRatioOf(context)),
+          );
+          final originalRect =
+              boundary.localToGlobal(Offset.zero) & boundary.size;
+          source = _MenuSourceImage(
+            image: image,
+            anchorOf: () {
+              final box = _sourceKey.currentContext?.findRenderObject();
+              return mounted && box is RenderBox && box.attached && box.hasSize
+                  ? box.localToGlobal(Offset.zero) & box.size
+                  : originalRect;
+            },
+            onReveal: () {
+              if (mounted && _sourceHidden) {
+                setState(() => _sourceHidden = false);
+              }
+            },
+          );
+          setState(() => _sourceHidden = true);
+        } catch (_) {
+          // 尚未绘制的入口使用原有轮廓过渡，不能阻断打开菜单。
+        }
+      }
+    }
     widget.onOpened?.call();
 
-    showSwipeDismissibleMenu<T>(
+    _showSwipeDismissibleMenu<T>(
       context: context,
       position: position,
       items: items,
@@ -1554,6 +1827,16 @@ class _SwipeDismissiblePopupMenuButtonState<T>
       routeSettings: widget.routeSettings,
       requestFocus: widget.requestFocus,
       headerActions: widget.headerActions,
+      source: source,
+      pressSession: _session,
+      onCompleted: () {
+        if (!mounted) return;
+        setState(() {
+          _active = false;
+          _sourceHidden = false;
+        });
+        _session = null;
+      },
     ).then<void>((T? newValue) {
       if (!mounted) return;
       if (newValue == null) {
@@ -1565,7 +1848,30 @@ class _SwipeDismissiblePopupMenuButtonState<T>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => RawGestureDetector(
+    excludeFromSemantics: true,
+    gestures: {
+      _MenuAnchorRecognizer:
+          GestureRecognizerFactoryWithHandlers<_MenuAnchorRecognizer>(
+            () => _MenuAnchorRecognizer(debugOwner: this),
+            (recognizer) => recognizer
+              ..canOpen = (() => mounted && widget.enabled && !_active)
+              ..delay = Scrollable.maybeOf(context) == null
+                  ? Duration.zero
+                  : kPressTimeout
+              ..onOpen = _openFromPress
+              ..onMove = _movePress
+              ..onUp = _endPress
+              ..onCancel = _cancelPress,
+          ),
+    },
+    child: Opacity(
+      opacity: _sourceHidden ? 0 : 1,
+      child: RepaintBoundary(key: _sourceKey, child: _buildButton(context)),
+    ),
+  );
+
+  Widget _buildButton(BuildContext context) {
     final IconThemeData iconTheme = IconTheme.of(context);
     final PopupMenuThemeData popupMenuTheme = PopupMenuTheme.of(context);
     final bool enableFeedback =
@@ -1636,6 +1942,9 @@ Future<void> showAnchoredSubmenu({
   );
   // 记录下方的父级菜单 route,供整链关闭时即时移除下层(整体收起)。
   final ModalRoute<dynamic>? belowRoute = ModalRoute.of(context);
+  if (belowRoute is _MenuChainRoute) {
+    _carryMenuPointer(navigator, belowRoute.pressSession.pointer);
+  }
   final Object id = Object();
   expansion?.open(id);
   await navigator.push(
@@ -1669,6 +1978,7 @@ Future<void> showAnchoredSubmenu({
             ),
         ],
         anchor: anchor,
+        reducedMotion: MediaQuery.disableAnimationsOf(context),
         capturedThemes: InheritedTheme.capture(
           from: context,
           to: navigator.context,

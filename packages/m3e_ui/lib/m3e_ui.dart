@@ -7,7 +7,7 @@
 /// - [M3eLinearProgress]:wavy 线性进度条(确定态 + 不定态);
 /// - [M3eCircularProgress]:wavy 圆形进度环(确定态);
 /// - [M3eRefreshIndicator]:M3E 下拉刷新(LoadingSpinner 表现层);
-/// - [M3eButtonGroup]:联排按钮组(按压展宽/邻项挤压);
+/// - [M3eButtonGroup]:联排按钮组(选中形变/弹性按压);
 /// - [M3eFabMenu]:FAB 菜单(stagger 入场 + FAB 收圆变形);
 /// - [SegmentedCardGroup]:M3E 分段卡片列表。
 library;
