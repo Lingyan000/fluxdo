@@ -34,6 +34,7 @@ import '../../services/embedded_browser_controller_pool.dart';
 import '../../services/network/cookie/webview_cookie_priming.dart';
 import '../../services/navigation/app_route_observer.dart';
 import '../../services/webview_settings.dart';
+import '../../services/webview_surface_capture.dart';
 import '../../services/windows_webview_environment_service.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/platform_utils.dart';
@@ -287,7 +288,6 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
   final _surfaceTheme = BrowserSurfaceTheme();
   bool _pointerActive = false;
   final _surfacePointers = <int>{};
-  Offset _webScroll = Offset.zero;
   Timer? _pointerIdle;
   bool _hostLoading = false, _hostFailed = false, _webPermission = false;
   bool _hostReady = false;
@@ -1420,34 +1420,14 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         devicePixelRatio: density,
       );
     } else {
-      // Android 的裁切原点属于文档；WKWebView 使用可视区域。
-      final scroll = defaultTargetPlatform == TargetPlatform.android
-          ? _webScroll
-          : Offset.zero;
-      final bytes = await controller.takeScreenshot(
-        screenshotConfiguration: ScreenshotConfiguration(
-          rect: InAppWebViewRect(
-            x: local.left + scroll.dx,
-            y: local.top + scroll.dy,
-            width: local.width,
-            height: local.height,
-          ),
-          snapshotWidth:
-              (local.width * density).clamp(1.0, maxWidth.toDouble()) / density,
-          compressFormat: CompressFormat.JPEG,
-          quality: 65,
+      frame = await WebViewSurfaceCapture.capture(
+        takeScreenshot: (configuration) => controller.takeScreenshot(
+          screenshotConfiguration: configuration,
         ),
-      );
-      if (bytes == null ||
-          !mounted ||
-          epoch != _documentEpoch ||
-          controller != _controller ||
-          !AuthSession().isValid(_generation)) {
-        return null;
-      }
-      frame = await SurfaceFrame.decode(
-        bytes,
-        actualGlobal,
+        platform: defaultTargetPlatform,
+        viewport: render.localToGlobal(Offset.zero) & size,
+        region: actualGlobal,
+        devicePixelRatio: density,
         maxWidth: maxWidth,
       );
     }
@@ -2066,10 +2046,6 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                             : null;
                                       },
                                       onScrollChanged: (_, x, y) {
-                                        _webScroll = Offset(
-                                          x.toDouble(),
-                                          y.toDouble(),
-                                        );
                                         _pointerActive = true;
                                         _syncSurfaceSampling();
                                         _resumeSurfaceSampling();
@@ -2078,7 +2054,6 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                         if (mounted &&
                                             viewEpoch == _viewEpoch) {
                                           _traceWindowsLaunch('document-start');
-                                          _webScroll = Offset.zero;
                                           _documentEpoch++;
                                           _invalidatePermissionAnswer();
                                           _modalBlur.refresh();

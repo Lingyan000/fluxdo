@@ -16,6 +16,72 @@ Future<ui.Image> _frame(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('迟到截图与退出末帧不会把过时的清晰画面盖回网页', (tester) async {
+    tester.view.physicalSize = const Size(120, 200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final blur = MiniAppModalBlur();
+    final gate = Completer<ui.Image?>();
+    final key = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: RepaintBoundary(
+          key: key,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 网页继续运行，当前画面与刚取得的截图不同。
+              const ColoredBox(color: Color(0xff0000ff)),
+              MiniAppModalFrame(blur: blur),
+            ],
+          ),
+        ),
+      ),
+    );
+    Future<List<int>> pixel() async {
+      final boundary =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      return (await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        try {
+          final data = (await image.toByteData())!;
+          return [
+            for (var c = 0; c < 4; c++) data.getUint8((60 * 120 + 60) * 4 + c),
+          ];
+        } finally {
+          image.dispose();
+        }
+      }))!;
+    }
+
+    final menu = blur.acquire(() => gate.future);
+    menu.onBlurSigmaChanged(18);
+    await tester.pump(const Duration(milliseconds: 300));
+    gate.complete(await _frame(tester));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(RawImage), findsOneWidget);
+    expect(await pixel(), [0, 0, 255, 255], reason: '首帧不能突兀切换到旧截图');
+    await tester.pump(const Duration(milliseconds: 60));
+    final middle = await pixel();
+    expect(middle[1], inExclusiveRange(0, 102), reason: '准备好的模糊画面渐入');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect((await pixel())[1], 102);
+
+    menu.onBlurSigmaChanged(1);
+    await tester.pump();
+    expect((await pixel())[2], greaterThan(150), reason: '退场末尾渐回实时画面');
+    // 有效租约仍在，但路由拖回起点时截图不应再可见。
+    menu.onBlurSigmaChanged(0);
+    await tester.pump();
+    expect(await pixel(), [0, 0, 255, 255]);
+    menu.finish();
+    await tester.pumpWidget(const SizedBox.shrink());
+    blur.dispose();
+  });
+
   testWidgets('工具栏和网页画面跨边界共同取样，无分段滤镜硬边', (tester) async {
     tester.view.physicalSize = const Size(120, 200);
     tester.view.devicePixelRatio = 1;

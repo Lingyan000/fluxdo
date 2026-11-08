@@ -173,13 +173,19 @@ class MiniAppModalFrame extends StatelessWidget {
                     ? Duration.zero
                     : const Duration(milliseconds: 120),
                 builder: (_, readiness, child) => ClipRect(
-                  child: ImageFiltered(
-                    imageFilter: ui.ImageFilter.blur(
-                      sigmaX: blur.sigma * readiness,
-                      sigmaY: blur.sigma * readiness,
-                      tileMode: ui.TileMode.clamp,
+                  // 截图可能迟到，也可能与继续运行的网页已经不同。
+                  // 淡入已模糊的画面，退场低模糊阶段淡回实时网页；不能在
+                  // sigma 为零时仍用不透明的低清旧截图替换网页一帧。
+                  child: Opacity(
+                    opacity: readiness * (blur.sigma / 4).clamp(0.0, 1.0),
+                    child: ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(
+                        sigmaX: blur.sigma,
+                        sigmaY: blur.sigma,
+                        tileMode: ui.TileMode.clamp,
+                      ),
+                      child: child,
                     ),
-                    child: child,
                   ),
                 ),
                 child: RawImage(
