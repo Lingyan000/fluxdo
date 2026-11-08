@@ -265,26 +265,28 @@ void main() {
     }
   });
 
-  testWidgets('按钮图文由截图接续过渡，整段动画结束后恢复入口，键盘仍可激活', (tester) async {
+  testWidgets('入口保留键盘激活，收回期间不重复打开，完成后可以再次打开', (tester) async {
     await tester.pumpWidget(host(menu()));
     await tester.pumpAndSettle();
-    Finder sourceOpacity() => find.descendant(
-      of: find.byType(SwipeDismissiblePopupMenuButton<int>),
-      matching: find.byType(Opacity),
-    );
-    expect(tester.widget<Opacity>(sourceOpacity()).opacity, 1);
     final focus = Focus.of(tester.element(find.text('Open')));
     focus.requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
-    expect(tester.widget<Opacity>(sourceOpacity()).opacity, 0);
+    expect(find.text('One'), findsOneWidget);
     Navigator.of(tester.element(find.text('One'))).pop();
     await tester.pump();
-    expect(tester.widget<Opacity>(sourceOpacity()).opacity, 0);
+    final sourceInk = tester.widget<InkWell>(
+      find.descendant(
+        of: find.byType(SwipeDismissiblePopupMenuButton<int>),
+        matching: find.byType(InkWell),
+      ),
+    );
+    sourceInk.onTap!();
+    await tester.pump();
     await tester.pumpAndSettle();
-    expect(tester.widget<Opacity>(sourceOpacity()).opacity, 1);
+    expect(find.text('One'), findsNothing);
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     expect(find.text('One'), findsOneWidget);

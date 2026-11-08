@@ -60,7 +60,7 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
     required this.elevation,
     required this.textDirection,
     required this.chainRoute,
-    this.source,
+    this.anchorRectOf,
     required super.child,
   });
   final Animation<double> animation;
@@ -70,7 +70,7 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
   final double elevation;
   final TextDirection textDirection;
   final _MenuChainRoute<dynamic> chainRoute;
-  final _MenuSourceImage? source;
+  final Rect? Function()? anchorRectOf;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
@@ -85,6 +85,12 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
 class _RenderMenuMorph extends RenderProxyBox {
   _RenderMenuMorph(this._configuration);
   _MenuMorphTransition _configuration;
+  double? _chainStartProgress;
+
+  void _freezeForChainClose() {
+    _chainStartProgress = _progress;
+    markNeedsPaint();
+  }
 
   set configuration(_MenuMorphTransition value) {
     if (attached && value.animation != _configuration.animation) {
@@ -99,10 +105,12 @@ class _RenderMenuMorph extends RenderProxyBox {
   void attach(PipelineOwner owner) {
     super.attach(owner);
     _configuration.animation.addListener(_tick);
+    _configuration.chainRoute.freezeForChainClose = _freezeForChainClose;
   }
 
   @override
   void detach() {
+    _configuration.chainRoute.freezeForChainClose = null;
     _configuration.animation.removeListener(_tick);
     super.detach();
   }
@@ -115,10 +123,11 @@ class _RenderMenuMorph extends RenderProxyBox {
   @override
   bool get alwaysNeedsCompositing => true;
 
-  double get _progress => _configuration.animation.value.clamp(0.0, 1.0);
+  double get _progress =>
+      _chainStartProgress ?? _configuration.animation.value.clamp(0.0, 1.0);
 
   Rect get _source {
-    final anchor = _configuration.source?.anchorOf() ?? _configuration.anchor;
+    final anchor = _configuration.anchorRectOf?.call() ?? _configuration.anchor;
     return Rect.fromPoints(
       globalToLocal(anchor.topLeft),
       globalToLocal(anchor.bottomRight),
@@ -160,43 +169,61 @@ class _RenderMenuMorph extends RenderProxyBox {
       ? (Offset.zero & size).expandToInclude(_source).inflate(32)
       : super.paintBounds;
 
+  Matrix4? get _chainTransform {
+    final group = _configuration.chainRoute.chainClose;
+    return group?.transformAt(globalToLocal(group.pivot));
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     if (child == null || size.isEmpty) return;
-    final progress = _progress;
-    // 一级与各级子菜单整链收起时，共用真实触发按钮中心作为目标。
+    // 单面板保留完整的轮廓形变；多面板冻结当前外形后共用整组收回进度。
     _configuration.chainRoute.menuPivotAlignment = _pointToAlignment(
-      _configuration.anchor.center,
-      localToGlobal(Offset.zero) & size,
+      _source.center,
+      Offset.zero & size,
     );
+    final group = _configuration.chainRoute.chainClose;
+    if (group != null) {
+      context.pushOpacity(offset, (255 * group.opacity).round(), (
+        context,
+        offset,
+      ) {
+        context.pushTransform(
+          needsCompositing,
+          offset,
+          _chainTransform!,
+          _paintMorph,
+        );
+      });
+    } else {
+      _paintMorph(context, offset);
+    }
+  }
+
+  void _paintMorph(PaintingContext context, Offset offset) {
+    final progress = _progress;
     if (progress >= 1) {
       super.paint(context, offset);
       return;
     }
-    if (progress <= 0) {
-      _paintSource(context.canvas, offset);
-      return;
-    }
+    if (progress <= 0) return;
 
-    final outline = _outline;
+    // 外形、边框、阴影与内容一起淡出，末帧不留下轮廓或切换到旧按钮截图。
     final visibility = (progress / .3).clamp(0.0, 1.0);
+    context.pushOpacity(offset, (255 * visibility).round(), _paintFrame);
+  }
+
+  void _paintFrame(PaintingContext context, Offset offset) {
+    final outline = _outline;
     final paintedPath = outline.shift(offset);
     final canvas = context.canvas;
     canvas.drawShadow(
       paintedPath,
-      _configuration.shadowColor.withValues(
-        alpha: _configuration.shadowColor.a * visibility,
-      ),
-      _configuration.elevation * progress,
+      _configuration.shadowColor,
+      _configuration.elevation * _progress,
       true,
     );
-    canvas.drawPath(
-      paintedPath,
-      Paint()
-        ..color = _configuration.color.withValues(
-          alpha: _configuration.color.a * visibility,
-        ),
-    );
+    canvas.drawPath(paintedPath, Paint()..color = _configuration.color);
     _frameShape.paint(
       canvas,
       _frame.shift(offset),
@@ -219,27 +246,11 @@ class _RenderMenuMorph extends RenderProxyBox {
         );
       });
     }, clipBehavior: Clip.antiAlias);
-    _paintSource(context.canvas, offset);
-  }
-
-  void _paintSource(Canvas canvas, Offset offset) {
-    final image = _configuration.source?.image;
-    final alpha = (1 - _progress / .48).clamp(0.0, 1.0);
-    if (image == null || alpha <= 0) return;
-    final source = _source;
-    final drift = (_frame.center - source.center) * .16;
-    canvas.drawImageRect(
-      image,
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-      source.shift(offset + drift),
-      Paint()
-        ..color = Color.fromRGBO(255, 255, 255, alpha)
-        ..filterQuality = FilterQuality.medium,
-    );
   }
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (_configuration.chainRoute.chainClose != null) return false;
     if (!hasSize || _progress <= 0) return false;
     if (_progress >= 1) return super.hitTest(result, position: position);
     if (!_outline.contains(position)) return false;
@@ -258,10 +269,149 @@ class _RenderMenuMorph extends RenderProxyBox {
 
   @override
   void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    final chain = _chainTransform;
+    if (chain != null) transform.multiply(chain);
     if (_progress < 1) transform.multiply(_contentTransform);
   }
 
   @override
   Rect? describeApproximatePaintClip(RenderObject child) =>
       _progress < 1 ? _frame : null;
+}
+
+/// 轮廓可以完整回到入口，入口本身保持实时绘制；在入口边缘渐隐避让图文，
+/// 不截取旧画面、不隐藏按钮，也不增加手势识别器。
+class _MenuAnchorGuard extends SingleChildRenderObjectWidget {
+  const _MenuAnchorGuard({
+    this.anchorRectOf,
+    required this.animation,
+    required super.child,
+  });
+  final Rect? Function()? anchorRectOf;
+  final Animation<double> animation;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMenuAnchorGuard(anchorRectOf, animation);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderMenuAnchorGuard renderObject,
+  ) {
+    renderObject.anchorRectOf = anchorRectOf;
+    renderObject.animation = animation;
+  }
+}
+
+class _RenderMenuAnchorGuard extends RenderProxyBox {
+  _RenderMenuAnchorGuard(this._anchorRectOf, this._animation);
+  Rect? Function()? _anchorRectOf;
+  Animation<double> _animation;
+
+  set animation(Animation<double> value) {
+    if (_animation == value) return;
+    if (attached) {
+      _animation.removeListener(markNeedsPaint);
+      value.addListener(markNeedsPaint);
+    }
+    _animation = value;
+    markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => true;
+
+  @override
+  ShaderMaskLayer? get layer => super.layer as ShaderMaskLayer?;
+
+  set anchorRectOf(Rect? Function()? value) {
+    if (_anchorRectOf == value) return;
+    _anchorRectOf = value;
+    markNeedsPaint();
+  }
+
+  Rect? get _anchor {
+    final rect = _anchorRectOf?.call();
+    return rect == null
+        ? null
+        : Rect.fromPoints(
+            globalToLocal(rect.topLeft),
+            globalToLocal(rect.bottomRight),
+          );
+  }
+
+  @override
+  Rect get paintBounds {
+    if (!hasSize || !attached) return super.paintBounds;
+    final bounds = child?.paintBounds ?? (Offset.zero & size);
+    final anchor = _anchor;
+    return (anchor == null ? bounds : bounds.expandToInclude(anchor)).inflate(
+      32,
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final anchor = _anchor;
+    // 菜单原本覆盖入口时保持正常覆盖，只保护菜单外的独立触发按钮。
+    if (_animation.value >= 1 ||
+        anchor == null ||
+        anchor.isEmpty ||
+        (Offset.zero & size).contains(anchor.center)) {
+      layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    // 透明带覆盖入口，沿菜单方向在短距离内恢复不透明；避免硬裁剪留下凹口。
+    final inset = math.min(12.0, anchor.shortestSide * .3);
+    final feather = math.min(8.0, anchor.shortestSide * .2);
+    late Rect band;
+    late Alignment begin, end;
+    if (anchor.center.dy < 0) {
+      band = Rect.fromLTWH(0, anchor.bottom - inset, 1, feather);
+      begin = Alignment.topCenter;
+      end = Alignment.bottomCenter;
+    } else if (anchor.center.dy > size.height) {
+      band = Rect.fromLTWH(0, anchor.top + inset - feather, 1, feather);
+      begin = Alignment.bottomCenter;
+      end = Alignment.topCenter;
+    } else if (anchor.center.dx < 0) {
+      band = Rect.fromLTWH(anchor.right - inset, 0, feather, 1);
+      begin = Alignment.centerLeft;
+      end = Alignment.centerRight;
+    } else {
+      band = Rect.fromLTWH(anchor.left + inset - feather, 0, feather, 1);
+      begin = Alignment.centerRight;
+      end = Alignment.centerLeft;
+    }
+    final bounds = paintBounds;
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: [
+          Colors.white.withValues(
+            alpha: ((_animation.value - .85) / .15).clamp(0.0, 1.0),
+          ),
+          Colors.white,
+        ],
+      ).createShader(band.shift(-bounds.topLeft))
+      ..maskRect = bounds.shift(offset)
+      ..blendMode = BlendMode.dstIn;
+    context.pushLayer(layer!, super.paint, offset);
+  }
 }

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -266,11 +265,38 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
   /// 整组就是一级菜单的那一下动画。为 null 时(单独开/关本层)用 [menuPivotAlignment]。
   Alignment? chainCloseAlignment;
 
+  _MenuChainClose? chainClose;
+  VoidCallback? freezeForChainClose;
+  Rect? Function()? get sourceAnchorRectOf =>
+      belowChainRoute?.sourceAnchorRectOf;
+
+  Duration get remainingCloseDuration => Duration(
+    microseconds:
+        (reverseTransitionDuration.inMicroseconds * (controller?.value ?? 1))
+            .round(),
+  );
+
+  void joinChainClose(_MenuChainClose close, Duration remaining) {
+    if (chainClose != null) return;
+    freezeForChainClose?.call();
+    chainClose = close;
+    // 子菜单尚在展开时也留到整组动画结束，不能按自身较短的剩余距离提前卸载。
+    final motion = controller;
+    if (motion != null && motion.value > 0) {
+      motion.reverseDuration = Duration(
+        microseconds: (remaining.inMicroseconds / motion.value).round(),
+      );
+    }
+  }
+
   /// 本菜单当前的全局矩形(尚未布局时返回 null)。
   Rect? currentMenuRect() {
     final RenderObject? ro = menuContentKey.currentContext?.findRenderObject();
     if (ro is RenderBox && ro.hasSize) {
-      return ro.localToGlobal(Offset.zero) & ro.size;
+      return Rect.fromPoints(
+        ro.localToGlobal(Offset.zero),
+        ro.localToGlobal(ro.size.bottomRight(Offset.zero)),
+      );
     }
     return null;
   }
@@ -289,6 +315,39 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
   void dispose() {
     _ownPressSession?.dispose();
     super.dispose();
+  }
+}
+
+/// 整组只有一条退出进度；每层保留关闭瞬间的形态，再一起移向入口。
+class _MenuChainClose {
+  _MenuChainClose({
+    required this.animation,
+    required this.pivot,
+    this.anchorRectOf,
+  }) : startValue = animation.value;
+
+  final Animation<double> animation;
+  final double startValue;
+  final Offset pivot;
+  final Rect? Function()? anchorRectOf;
+
+  double get progress => startValue <= 0
+      ? 0
+      : Curves.easeInOutCubic.transform(
+          (animation.value / startValue).clamp(0.0, 1.0),
+        );
+  double get opacity => (progress / .3).clamp(0.0, 1.0);
+
+  Matrix4 transformAt(Offset localPivot) {
+    final scale = progress;
+    return Matrix4.identity()
+      ..translateByDouble(
+        localPivot.dx * (1 - scale),
+        localPivot.dy * (1 - scale),
+        0,
+        1,
+      )
+      ..scaleByDouble(scale, scale, 1, 1);
   }
 }
 
@@ -313,6 +372,14 @@ void _prepareChainClose(BuildContext context) {
     bottom = bottom.belowChainRoute!;
   }
   final Offset? pivot = bottom.ownPivotScreenPoint();
+  final group = top != bottom && pivot != null && bottom.animation != null
+      ? _MenuChainClose(
+          animation: bottom.animation!,
+          pivot: pivot,
+          anchorRectOf: bottom.sourceAnchorRectOf,
+        )
+      : null;
+  final remaining = bottom.remainingCloseDuration;
   for (
     _MenuChainRoute<dynamic>? cur = top;
     cur != null;
@@ -322,6 +389,7 @@ void _prepareChainClose(BuildContext context) {
     cur.chainCloseAlignment = (pivot != null && rect != null)
         ? _pointToAlignment(pivot, rect)
         : null;
+    if (group != null) cur.joinChainClose(group, remaining);
   }
 }
 
@@ -361,6 +429,14 @@ class _MenuPopTransition extends StatefulWidget {
 class _MenuPopTransitionState extends State<_MenuPopTransition> {
   late final CurvedAnimation _scale;
   late final CurvedAnimation _fade;
+  double? _closingScale;
+  double? _closingOpacity;
+
+  void _freezeForChainClose() {
+    _closingScale = _scale.value;
+    _closingOpacity = _fade.value;
+    setState(() {});
+  }
 
   @override
   void initState() {
@@ -378,10 +454,12 @@ class _MenuPopTransitionState extends State<_MenuPopTransition> {
       curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
       reverseCurve: Curves.easeOut,
     );
+    widget.chainRoute?.freezeForChainClose = _freezeForChainClose;
   }
 
   @override
   void dispose() {
+    widget.chainRoute?.freezeForChainClose = null;
     _scale.dispose();
     _fade.dispose();
     super.dispose();
@@ -390,6 +468,36 @@ class _MenuPopTransitionState extends State<_MenuPopTransition> {
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    final group = widget.chainRoute?.chainClose;
+    if (group != null) {
+      return IgnorePointer(
+        child: _MenuAnchorGuard(
+          anchorRectOf: group.anchorRectOf,
+          animation: group.animation,
+          child: AnimatedBuilder(
+            animation: group.animation,
+            builder: (context, child) {
+              final box = context.findRenderObject();
+              final pivot = box is RenderBox && box.hasSize
+                  ? box.globalToLocal(group.pivot)
+                  : Offset.zero;
+              return Opacity(
+                opacity: (_closingOpacity ?? 1) * group.opacity,
+                child: Transform(
+                  transform: group.transformAt(pivot),
+                  child: child,
+                ),
+              );
+            },
+            child: Transform.scale(
+              scale: _closingScale ?? 1,
+              alignment: widget.alignment,
+              child: widget.child,
+            ),
+          ),
+        ),
+      );
+    }
     return FadeTransition(
       opacity: _fade,
       child: AnimatedBuilder(
@@ -880,8 +988,39 @@ class _PopupMenu<T> extends StatefulWidget {
   State<_PopupMenu<T>> createState() => _PopupMenuState<T>();
 }
 
-class _PopupMenuState<T> extends State<_PopupMenu<T>> {
+class _PopupMenuState<T> extends State<_PopupMenu<T>>
+    with SingleTickerProviderStateMixin {
   final _MenuExpansionController _expansion = _MenuExpansionController();
+  late final AnimationController _depth = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _expansion.addListener(_updateDepth);
+    widget.route.animation!.addStatusListener(_onRouteStatus);
+  }
+
+  void _updateDepth() {
+    if (widget.route.animation!.status == AnimationStatus.reverse) return;
+    final target = _expansion.isAnyActive ? 1.0 : 0.0;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _depth.value = target;
+    } else {
+      _depth.animateTo(target, curve: Curves.easeOutCubic);
+    }
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) {
+      _depth.stop();
+    } else if (status == AnimationStatus.forward) {
+      _updateDepth();
+    }
+  }
+
   late final CurvedAnimation _morphAnimation = CurvedAnimation(
     parent: widget.route.animation!,
     curve: Curves.easeOutCubic,
@@ -890,6 +1029,9 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
 
   @override
   void dispose() {
+    widget.route.animation!.removeStatusListener(_onRouteStatus);
+    _expansion.removeListener(_updateDepth);
+    _depth.dispose();
     _morphAnimation.dispose();
     _expansion.dispose();
     super.dispose();
@@ -1016,69 +1158,57 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
     final Alignment originAlign = Alignment(originX, originY);
     widget.route.menuPivotAlignment = originAlign;
 
-    final surface = AnimatedBuilder(
-      animation: _expansion,
-      builder: (context, menuChild) {
-        // 子面板展开时,外层菜单后退一档(缩放 + 蒙层)做层级提示。
-        final bool dimmed = _expansion.isAnyActive;
-        return AnimatedScale(
-          scale: dimmed ? 0.94 : 1.0,
-          alignment: originAlign,
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          child: Stack(
-            children: [
-              widget.route.surfaceBuilder?.call(context, menuChild!) ??
-                  Material(
-                    shape: menuShape,
-                    color: menuColor,
-                    clipBehavior: widget.clipBehavior,
-                    type: MaterialType.card,
-                    elevation:
-                        widget.route.elevation ??
-                        popupMenuTheme.elevation ??
-                        8.0,
-                    shadowColor:
-                        widget.route.shadowColor ?? popupMenuTheme.shadowColor,
-                    surfaceTintColor:
-                        widget.route.surfaceTintColor ??
-                        popupMenuTheme.surfaceTintColor,
-                    child: menuChild,
-                  ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !dimmed,
-                  child: AnimatedOpacity(
-                    opacity: dimmed ? 1 : 0,
-                    duration: MediaQuery.disableAnimationsOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: Colors.black.withValues(alpha: 0.32),
-                        shape: RoundedSuperellipseBorder(
-                          borderRadius:
-                              (widget.route.shape ?? popupMenuTheme.shape)
-                                  is RoundedSuperellipseBorder
-                              ? ((widget.route.shape ?? popupMenuTheme.shape!)
-                                        as RoundedSuperellipseBorder)
-                                    .borderRadius
-                                    .resolve(Directionality.of(context))
-                              : null,
-                        ),
-                      ),
-                    ),
+    final surface = Stack(
+      children: [
+        widget.route.surfaceBuilder?.call(context, child) ??
+            Material(
+              shape: menuShape,
+              color: menuColor,
+              clipBehavior: widget.clipBehavior,
+              type: MaterialType.card,
+              elevation:
+                  widget.route.elevation ?? popupMenuTheme.elevation ?? 8.0,
+              shadowColor:
+                  widget.route.shadowColor ?? popupMenuTheme.shadowColor,
+              surfaceTintColor:
+                  widget.route.surfaceTintColor ??
+                  popupMenuTheme.surfaceTintColor,
+              child: child,
+            ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: FadeTransition(
+              opacity: _depth,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius:
+                        (widget.route.shape ?? popupMenuTheme.shape)
+                            is RoundedSuperellipseBorder
+                        ? ((widget.route.shape ?? popupMenuTheme.shape!)
+                                  as RoundedSuperellipseBorder)
+                              .borderRadius
+                              .resolve(Directionality.of(context))
+                        : null,
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        );
-      },
-      child: child,
+        ),
+      ],
+    );
+
+    // 后退层级作用于整个外壳和内容，退出时保持当前比例，不再先恢复到 100%。
+    Widget withDepth(Widget menu) => _MenuAnchorGuard(
+      anchorRectOf: widget.route.anchorRectOf,
+      animation: _morphAnimation,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 1, end: .94).animate(_depth),
+        alignment: originAlign,
+        child: menu,
+      ),
     );
 
     final overlay = widget.route.navigator?.overlay?.context.findRenderObject();
@@ -1088,35 +1218,39 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
         !MediaQuery.disableAnimationsOf(context)) {
       return _MenuDragRegion(
         route: widget.route,
-        child: _MenuMorphTransition(
-          key: widget.route.menuContentKey,
-          animation: _morphAnimation,
-          anchor: Rect.fromPoints(
-            overlay.localToGlobal(anchor.topLeft),
-            overlay.localToGlobal(anchor.bottomRight),
+        child: withDepth(
+          _MenuMorphTransition(
+            key: widget.route.menuContentKey,
+            animation: _morphAnimation,
+            anchor: Rect.fromPoints(
+              overlay.localToGlobal(anchor.topLeft),
+              overlay.localToGlobal(anchor.bottomRight),
+            ),
+            shape: menuShape,
+            color: menuColor,
+            shadowColor:
+                widget.route.shadowColor ??
+                popupMenuTheme.shadowColor ??
+                theme.shadowColor,
+            elevation: widget.route.elevation ?? popupMenuTheme.elevation ?? 8,
+            textDirection: Directionality.of(context),
+            chainRoute: widget.route,
+            anchorRectOf: widget.route.anchorRectOf,
+            child: surface,
           ),
-          shape: menuShape,
-          color: menuColor,
-          shadowColor:
-              widget.route.shadowColor ??
-              popupMenuTheme.shadowColor ??
-              theme.shadowColor,
-          elevation: widget.route.elevation ?? popupMenuTheme.elevation ?? 8,
-          textDirection: Directionality.of(context),
-          chainRoute: widget.route,
-          source: widget.route.source,
-          child: surface,
         ),
       );
     }
     return _MenuDragRegion(
       route: widget.route,
-      child: _MenuPopTransition(
-        key: widget.route.menuContentKey,
-        animation: widget.route.animation!,
-        alignment: originAlign,
-        chainRoute: widget.route,
-        child: surface,
+      child: withDepth(
+        _MenuPopTransition(
+          key: widget.route.menuContentKey,
+          animation: widget.route.animation!,
+          alignment: originAlign,
+          chainRoute: widget.route,
+          child: surface,
+        ),
       ),
     );
   }
@@ -1246,7 +1380,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
     this.popUpAnimationStyle,
     this.headerActions,
     this.surfaceBuilder,
-    this.source,
+    this.anchorRectOf,
   }) : itemSizes = List<Size?>.filled(items.length, null),
        super(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
 
@@ -1269,7 +1403,10 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   final AnimationStyle? popUpAnimationStyle;
   final List<MenuQuickAction>? headerActions;
   final PopupMenuSurfaceBuilder? surfaceBuilder;
-  final _MenuSourceImage? source;
+  final Rect? Function()? anchorRectOf;
+
+  @override
+  Rect? Function()? get sourceAnchorRectOf => anchorRectOf;
 
   CurvedAnimation? _animation;
 
@@ -1376,7 +1513,6 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   @override
   void dispose() {
     _animation?.dispose();
-    source?.dispose();
     super.dispose();
   }
 }
@@ -1511,7 +1647,7 @@ Future<T?> _showSwipeDismissibleMenu<T>({
   bool? requestFocus,
   List<MenuQuickAction>? headerActions,
   PopupMenuSurfaceBuilder? surfaceBuilder,
-  _MenuSourceImage? source,
+  Rect? Function()? anchorRectOf,
   _MenuPressSession? pressSession,
   VoidCallback? onCompleted,
 }) {
@@ -1573,7 +1709,7 @@ Future<T?> _showSwipeDismissibleMenu<T>({
     popUpAnimationStyle: popUpAnimationStyle,
     headerActions: headerActions,
     surfaceBuilder: surfaceBuilder,
-    source: source,
+    anchorRectOf: anchorRectOf,
   );
   route._ownPressSession = pressSession;
   route.completed.whenComplete(() => onCompleted?.call());
@@ -1672,9 +1808,8 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
 
 class _SwipeDismissiblePopupMenuButtonState<T>
     extends State<SwipeDismissiblePopupMenuButton<T>> {
-  final _sourceKey = GlobalKey();
+  final _anchorKey = GlobalKey();
   bool _active = false;
-  bool _sourceHidden = false;
   int? _pointer;
   Offset _pressOrigin = Offset.zero;
   bool _carrying = false;
@@ -1773,38 +1908,6 @@ class _SwipeDismissiblePopupMenuButtonState<T>
     if (navigator != Navigator.of(context)) {
       _carryMenuPointer(navigator, _pointer);
     }
-    _MenuSourceImage? source;
-    if (!MediaQuery.disableAnimationsOf(context)) {
-      final boundary = _sourceKey.currentContext?.findRenderObject();
-      if (boundary is RenderRepaintBoundary &&
-          boundary.hasSize &&
-          !boundary.size.isEmpty) {
-        try {
-          final image = boundary.toImageSync(
-            pixelRatio: math.min(2, MediaQuery.devicePixelRatioOf(context)),
-          );
-          final originalRect =
-              boundary.localToGlobal(Offset.zero) & boundary.size;
-          source = _MenuSourceImage(
-            image: image,
-            anchorOf: () {
-              final box = _sourceKey.currentContext?.findRenderObject();
-              return mounted && box is RenderBox && box.attached && box.hasSize
-                  ? box.localToGlobal(Offset.zero) & box.size
-                  : originalRect;
-            },
-            onReveal: () {
-              if (mounted && _sourceHidden) {
-                setState(() => _sourceHidden = false);
-              }
-            },
-          );
-          setState(() => _sourceHidden = true);
-        } catch (_) {
-          // 尚未绘制的入口使用原有轮廓过渡，不能阻断打开菜单。
-        }
-      }
-    }
     widget.onOpened?.call();
 
     _showSwipeDismissibleMenu<T>(
@@ -1827,14 +1930,17 @@ class _SwipeDismissiblePopupMenuButtonState<T>
       routeSettings: widget.routeSettings,
       requestFocus: widget.requestFocus,
       headerActions: widget.headerActions,
-      source: source,
+      // 入口始终绘制实时内容；菜单只读取位置来形变，避免收回时闪回旧截图。
+      anchorRectOf: () {
+        final box = _anchorKey.currentContext?.findRenderObject();
+        return mounted && box is RenderBox && box.attached && box.hasSize
+            ? box.localToGlobal(Offset.zero) & box.size
+            : null;
+      },
       pressSession: _session,
       onCompleted: () {
         if (!mounted) return;
-        setState(() {
-          _active = false;
-          _sourceHidden = false;
-        });
+        _active = false;
         _session = null;
       },
     ).then<void>((T? newValue) {
@@ -1865,10 +1971,7 @@ class _SwipeDismissiblePopupMenuButtonState<T>
               ..onCancel = _cancelPress,
           ),
     },
-    child: Opacity(
-      opacity: _sourceHidden ? 0 : 1,
-      child: RepaintBoundary(key: _sourceKey, child: _buildButton(context)),
-    ),
+    child: RepaintBoundary(key: _anchorKey, child: _buildButton(context)),
   );
 
   Widget _buildButton(BuildContext context) {

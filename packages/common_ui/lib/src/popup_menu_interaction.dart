@@ -295,9 +295,18 @@ class _MenuDragRegionState extends State<_MenuDragRegion>
   void initState() {
     super.initState();
     session.regions.add(this);
+    widget.route.animation!.addStatusListener(_onRouteStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && session.held) session.move(session._position);
     });
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status != AnimationStatus.reverse) return;
+    // 退出从当前手指形变接续，不让松手回弹叠加在整组收回上。
+    _lift.stop();
+    _x.stop();
+    _y.stop();
   }
 
   @override
@@ -314,7 +323,11 @@ class _MenuDragRegionState extends State<_MenuDragRegion>
     double to,
     SpringDescription spring,
   ) {
-    if (_reduced || !mounted) return;
+    if (_reduced ||
+        !mounted ||
+        widget.route.animation?.status == AnimationStatus.reverse) {
+      return;
+    }
     controller.animateWith(
       SpringSimulation(
         spring,
@@ -368,6 +381,7 @@ class _MenuDragRegionState extends State<_MenuDragRegion>
 
   @override
   void dispose() {
+    widget.route.animation!.removeStatusListener(_onRouteStatus);
     session.regions.remove(this);
     if (session._movingRegion == this) session._movingRegion = null;
     _lift.dispose();
@@ -537,25 +551,6 @@ class _RenderMenuElastic extends RenderProxyBox {
         position: position,
         hitTest: (result, local) => super.hitTest(result, position: local),
       );
-}
-
-/// 按钮截图只活到退出动画结束；原按钮隐藏时仍保持布局和同一条指针路径。
-class _MenuSourceImage {
-  _MenuSourceImage({
-    required this.image,
-    required this.anchorOf,
-    required this.onReveal,
-  });
-  final ui.Image image;
-  final Rect Function() anchorOf;
-  final VoidCallback onReveal;
-  bool _disposed = false;
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
-    onReveal();
-    image.dispose();
-  }
 }
 
 /// 按住入口打开后沿同一指针划选；滚动区域先等待点击容差时间。
