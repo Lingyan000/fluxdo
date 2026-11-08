@@ -138,7 +138,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
       color: isHighlighted
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
           : Colors.transparent,
-      child: SettingsRenderer(model: model),
+      child: SettingsRenderer(model: model, visibilityChecked: true),
     );
   }
 
