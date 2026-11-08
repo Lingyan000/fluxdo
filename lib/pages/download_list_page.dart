@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -31,7 +32,7 @@ class DownloadListPage extends ConsumerStatefulWidget {
   /// 全局导航到下载列表页面
   static void navigateTo({String? highlightItemId}) {
     navigatorKey.currentState?.push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => DownloadListPage(highlightItemId: highlightItemId),
       ),
     );

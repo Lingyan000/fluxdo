@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -290,7 +291,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
         final user = ref.read(currentUserProvider).value;
         if (user != null) {
           Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (context) => BadgePage(
                 badgeId: badge.id,
                 badgeSlug: badge.slug,

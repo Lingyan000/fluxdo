@@ -16,6 +16,7 @@ import '../../services/uploads/upload_progress.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:mime/mime.dart' show lookupMimeType;
 import 'package:path_provider/path_provider.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -249,7 +250,7 @@ Future<String?> compressMediaWithDialog(
   }
   var mode = MediaCompressionMode.compatible;
   if (!isAudio) {
-    final selected = await showDialog<MediaCompressionMode>(
+    final selected = await showInteractionDialog<MediaCompressionMode>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: Text(dialogContext.l10n.mediaPlayer_compressionMode),
@@ -307,7 +308,7 @@ Future<String?> compressMediaWithDialog(
     onStatus: (s) => status.value = s,
   );
 
-  final result = await showDialog<CompressResult>(
+  final result = await showInteractionDialog<CompressResult>(
     context: context,
     barrierDismissible: false,
     builder: (dialogCtx) => _CompressProgressDialog(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,7 +124,7 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: pending.topicId!,
           initialTitle: pending.title,
@@ -233,7 +234,7 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
       // 待审的新主题:原文带回创建话题页
       await Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => CreateTopicPage(
             initialCategoryId: pending.categoryId,
             initialTitle: pending.title,

@@ -183,7 +183,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     }
     return Navigator.push(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {
@@ -222,7 +222,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   static void openBytes(BuildContext context, Uint8List bytes) {
     Navigator.push(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {

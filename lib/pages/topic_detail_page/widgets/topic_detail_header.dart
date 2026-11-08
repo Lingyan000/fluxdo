@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -166,7 +167,7 @@ class TopicDetailHeader extends ConsumerWidget {
                       }
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
+                        InteractionPageRoute(
                           builder: (_) =>
                               CategoryTopicsPage(category: category),
                         ),
@@ -187,7 +188,7 @@ class TopicDetailHeader extends ConsumerWidget {
                         }
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
+                          InteractionPageRoute(
                             builder: (_) => TagTopicsPage(tagName: tag.name),
                           ),
                         );

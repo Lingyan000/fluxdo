@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
@@ -257,7 +258,7 @@ class BoostActions {
     required void Function(Boost boost, {required bool restoreCanBoost})?
         onBoostDeleted,
   }) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showInteractionDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         content: Text(S.current.boost_deleteConfirm),

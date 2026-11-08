@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../models/topic.dart';
@@ -124,6 +125,7 @@ class ReactionPickerController {
   OverlayEntry? _entry;
   Timer? _desktopLeaveTimer;
   bool _closing = false;
+  final _acceptsInput = ValueNotifier(false);
   bool _disposed = false;
 
   /// 监听祖先 Scrollable 的位置变化，滚动时立刻关闭 picker
@@ -202,6 +204,7 @@ class ReactionPickerController {
     // 如果正在收回，直接复用：取消收回，重新正向播放
     if (_entry != null && _closing) {
       _closing = false;
+      _acceptsInput.value = true;
       enter.forward();
       return;
     }
@@ -220,8 +223,12 @@ class ReactionPickerController {
     _computeGeometry(context);
 
     final overlay = Overlay.of(context, rootOverlay: true);
+    _acceptsInput.value = true;
     _entry = OverlayEntry(
-      builder: (_) => _ReactionPickerOverlay(controller: this),
+      builder: (_) => InteractionGate(
+        enabled: _acceptsInput,
+        child: _ReactionPickerOverlay(controller: this),
+      ),
     );
     overlay.insert(_entry!);
 
@@ -477,6 +484,7 @@ class ReactionPickerController {
     _desktopLeaveTimer?.cancel();
     _desktopLeaveTimer = null;
     _closing = true;
+    _acceptsInput.value = false;
     enter.reverse().whenCompleteOrCancel(_disposeEntryIfNeeded);
     flightAnim.forward(from: 0).whenCompleteOrCancel(_onFlightDone);
   }
@@ -496,6 +504,7 @@ class ReactionPickerController {
     if (_disposed) return;
     if (_entry == null || _closing) return;
     _closing = true;
+    _acceptsInput.value = false;
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
@@ -562,6 +571,7 @@ class ReactionPickerController {
     _morph?.dispose();
     _enter?.dispose();
     _flightAnim?.dispose();
+    _acceptsInput.dispose();
   }
 }
 

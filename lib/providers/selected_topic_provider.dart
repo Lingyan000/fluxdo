@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show MaterialPageRoute;
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 // ignore: depend_on_referenced_packages
@@ -611,7 +611,7 @@ class EmbeddedStackScope extends InheritedWidget {
       final container = ProviderScope.containerOf(context, listen: false);
       final notifier = container.read(restoreScope.stackProvider.notifier);
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (routeContext) {
             void restoreProfilePane() {
               restoreScope.restoreCurrentPane();
@@ -652,7 +652,7 @@ class EmbeddedStackScope extends InheritedWidget {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
+      InteractionPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
   }
 
@@ -671,7 +671,7 @@ class EmbeddedStackScope extends InheritedWidget {
     }
     Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+    ).push(InteractionPageRoute(builder: (_) => const SettingsPage()));
   }
 }
 

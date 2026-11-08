@@ -525,7 +525,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   void _openInChannelSearch() {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => ChatSearchPage(channelId: widget.channelId),
       ),
     );
@@ -1057,7 +1057,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
   void _openThread(int threadId) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) =>
             ChatChannelPage(channelId: widget.channelId, threadId: threadId),
       ),
@@ -1482,7 +1482,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
       // 标题统一进会话详情页(成员管理/退出;1:1 里再跳资料)
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => ChatChannelInfoPage(channelId: widget.channelId),
         ),
       ),

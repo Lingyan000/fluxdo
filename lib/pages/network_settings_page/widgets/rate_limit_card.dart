@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -172,7 +173,7 @@ class _RateLimitCardState extends ConsumerState<RateLimitCard> {
     PreferencesNotifier notifier,
   ) async {
     final l10n = context.l10n;
-    final ok = await showDialog<bool>(
+    final ok = await showInteractionDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.networkSettings_rateLimitReset),

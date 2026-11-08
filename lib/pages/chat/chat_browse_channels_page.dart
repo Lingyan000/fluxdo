@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -101,7 +102,7 @@ class _ChatBrowseChannelsPageState
   void _open(ChatChannel channel) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
+      InteractionPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
     );
   }
 

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -328,9 +329,12 @@ class _SidebarNotificationPanelState
           ),
         );
 
-        return showRail
-            ? _buildSidebarLayout(panel, dialogBlur, barrierColor)
-            : _buildMobileLayout(panel, dialogBlur, barrierColor);
+        return InteractionGate(
+          enabled: NotificationQuickPanel.visible,
+          child: showRail
+              ? _buildSidebarLayout(panel, dialogBlur, barrierColor)
+              : _buildMobileLayout(panel, dialogBlur, barrierColor),
+        );
       },
     );
   }
@@ -547,7 +551,7 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
     final navigator = Navigator.of(context, rootNavigator: true);
     navigator.pop();
     navigator.push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
+      InteractionPageRoute(builder: (_) => const NotificationsPage()),
     );
   }
 
@@ -618,7 +622,7 @@ class _NotificationHeader extends ConsumerWidget {
                 () {
                   onClose();
                   Navigator.of(context, rootNavigator: true).push(
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => const NotificationsPage(),
                     ),
                   );

@@ -606,11 +606,21 @@ IconThemeData _appIconTheme(Color color) => IconThemeData(
 /// 返回)降级到 Cupertino 而非官方硬编码的 FadeForwards。
 const _pageTransitionsTheme = PageTransitionsTheme(
   builders: <TargetPlatform, PageTransitionsBuilder>{
-    TargetPlatform.android: PredictiveBackCupertinoPageTransitionsBuilder(),
-    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.android: InterruptiblePageTransitionsBuilder(
+      PredictiveBackCupertinoPageTransitionsBuilder(),
+    ),
+    TargetPlatform.iOS: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
+    TargetPlatform.macOS: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
+    TargetPlatform.windows: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
+    TargetPlatform.linux: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
   },
 );
 
@@ -618,15 +628,23 @@ const _pageTransitionsTheme = PageTransitionsTheme(
 /// 返回手势(转场视觉不变,仅扩大手势探测区);桌面端保持边缘手势。
 const _fullscreenSwipePageTransitionsTheme = PageTransitionsTheme(
   builders: <TargetPlatform, PageTransitionsBuilder>{
-    TargetPlatform.android: FullscreenSwipeBackTransitionsBuilder(
-      PredictiveBackCupertinoPageTransitionsBuilder(),
+    TargetPlatform.android: InterruptiblePageTransitionsBuilder(
+      FullscreenSwipeBackTransitionsBuilder(
+        PredictiveBackCupertinoPageTransitionsBuilder(),
+      ),
     ),
-    TargetPlatform.iOS: FullscreenSwipeBackTransitionsBuilder(
+    TargetPlatform.iOS: InterruptiblePageTransitionsBuilder(
+      FullscreenSwipeBackTransitionsBuilder(CupertinoPageTransitionsBuilder()),
+    ),
+    TargetPlatform.macOS: InterruptiblePageTransitionsBuilder(
       CupertinoPageTransitionsBuilder(),
     ),
-    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
+    TargetPlatform.linux: InterruptiblePageTransitionsBuilder(
+      CupertinoPageTransitionsBuilder(),
+    ),
   },
 );
 
@@ -777,6 +795,8 @@ ThemeData _buildAppTheme(
   );
 }
 
+final _routeInteractionObserver = RouteInteractionObserver();
+
 class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
@@ -824,6 +844,7 @@ class MainApp extends ConsumerWidget {
               // KeyboardFocusGuard 压掉浮层关闭后键盘自弹(移动端)
               // EscFallbackObserver 登记全屏页,桌面 ESC 路由级自动兜底
               navigatorObservers: [
+                _routeInteractionObserver,
                 browserDockObserver,
                 appRouteObserver,
                 keyboardFocusGuard,
@@ -1656,7 +1677,7 @@ class _MainPageState extends ConsumerState<MainPage>
     }
     if (mounted && action == _AuthErrorDialogAction.clearData) {
       await Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const DataManagementPage()));
+          .push(InteractionPageRoute(builder: (_) => const DataManagementPage()));
     }
   }
 

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -323,7 +324,7 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: topic.lastReadPostNumber,

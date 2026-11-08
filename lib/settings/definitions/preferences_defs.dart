@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -374,7 +375,7 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           icon: Symbols.delete_rounded,
           getDynamicSubtitle: (ref) => l10n.crypto_secureStorageNote,
           onTap: (context, ref) async {
-            final confirmed = await showDialog<bool>(
+            final confirmed = await showInteractionDialog<bool>(
               context: context,
               builder: (dialogContext) => AlertDialog(
                 title: Text(l10n.crypto_settingsClearPasswords),

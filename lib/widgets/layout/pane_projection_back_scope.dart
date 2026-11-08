@@ -1,6 +1,4 @@
-import 'dart:io' show Platform;
-
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,7 +18,7 @@ import 'pane_filmstrip.dart';
 ///    拦截,`isStacked ? pop() : clear()`——与宽屏 onBack 同一语义。
 /// 2. **Android 预测返回跟手**:认领手势,进度写入
 ///    [PaneProjectionBack.progress],正在投影的布局平移露出 master;
-///    cancel 弹回,commit 滑出后清栈。
+///    cancel 弹回,commit 立即退栈、退出格继续滑出。
 /// 3. **与 main 层协调**:通过 [hasActiveProjection] 向根 PopScope 报告
 ///    "当前有投影在消费返回",避免双击退出的 toast 抢跑。
 ///
@@ -70,6 +68,7 @@ class _PaneProjectionBackScopeState
   bool _desiredReport = false;
   bool _appliedReport = false;
   bool _reportSyncScheduled = false;
+  int _motionGeneration = 0;
 
   @override
   void initState() {
@@ -79,7 +78,7 @@ class _PaneProjectionBackScopeState
       duration: const Duration(milliseconds: 180),
     );
     // 预测返回是 Android 专属管线,其他平台不挂 observer。
-    if (!kIsWeb && Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       _predictiveBack = PredictiveBackOverlayHandler(
         // 互斥:z 序更高的浮层(分类抽屉/通知面板)开着时让位,
         // 被其他路由盖住时让位(路由自己的预测返回接管)。
@@ -88,9 +87,9 @@ class _PaneProjectionBackScopeState
             (ModalRoute.of(context)?.isCurrent ?? false) &&
             !CategoryDrawerHost.isOpen &&
             !NotificationQuickPanel.isVisible,
-        onStart: () => _settle.stop(),
+        onStart: _stopMotion,
         onUpdate: (progress) {
-          _settle.stop();
+          _stopMotion();
           PaneProjectionBack.progress.value = progress;
         },
         onCancel: () => _animateProgressTo(0),
@@ -108,25 +107,44 @@ class _PaneProjectionBackScopeState
         minDetailWidth: widget.minDetailWidth,
       );
 
-  void _animateProgressTo(double target) {
+  void _stopMotion() {
+    _motionGeneration++;
+    _settle.stop();
+  }
+
+  Future<void> _animateProgressTo(double target) async {
+    _stopMotion();
+    final generation = _motionGeneration;
     final from = PaneProjectionBack.progress.value;
     if (from == target) return;
-    _settle.stop();
     final animation = _settle.drive(
       Tween(begin: from, end: target).chain(CurveTween(curve: Curves.easeOut)),
     );
-    void tick() => PaneProjectionBack.progress.value = animation.value;
+    void tick() {
+      if (mounted && generation == _motionGeneration) {
+        PaneProjectionBack.progress.value = animation.value;
+      }
+    }
+
     _settle.addListener(tick);
-    _settle.forward(from: 0).whenComplete(() {
+    try {
+      await _settle.forward(from: 0).orCancel;
+      if (mounted && generation == _motionGeneration) {
+        PaneProjectionBack.progress.value = target;
+      }
+    } on TickerCanceled {
+      // A newer gesture owns the progress now.
+    } finally {
       _settle.removeListener(tick);
-      PaneProjectionBack.progress.value = target;
-    });
+    }
   }
 
   /// 关闭投影层(ESC/系统返回/onBack):直接退层/清栈——胶片带容器
   /// 对结构变化自己演滑出(退栈=顶格右滑出、下层格/列表跟进),这里
   /// 不再手工播 progress 滑出(旧机制,带模型下会双动)。
   void _closeProjection() {
+    _stopMotion();
+    PaneProjectionBack.progress.value = 0;
     final notifier = ref.read(widget.stackProvider.notifier);
     if (ref.read(widget.stackProvider).isStacked) {
       notifier.pop();
@@ -135,29 +153,11 @@ class _PaneProjectionBackScopeState
     }
   }
 
-  /// 预测返回 commit:手势已把顶格拖出一段(bandDrag),先把 progress
-  /// 补到 1(顶格完全滑出),再清栈——清栈瞬间置 suppress,胶片带对
-  /// 这次结构变化瞬切(滑出已由手势+补间演过,再演一遍会跳回重滑)。
+  /// 确认返回即退栈，胶片带保留退出格并从当前拖动位置收尾。
+  /// 输入交还新栈顶，不再等待额外的 180ms 动画才修改逻辑栈。
   void _commitClose() {
-    final from = PaneProjectionBack.progress.value;
-    _settle.stop();
-    final animation = _settle.drive(
-      Tween(begin: from, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
-    );
-    void tick() => PaneProjectionBack.progress.value = animation.value;
-    _settle.addListener(tick);
-    _settle.forward(from: 0).whenComplete(() {
-      _settle.removeListener(tick);
-      if (!mounted) return;
-      PaneProjectionBack.suppressNextPaneSwitch();
-      final notifier = ref.read(widget.stackProvider.notifier);
-      if (ref.read(widget.stackProvider).isStacked) {
-        notifier.pop();
-      } else {
-        notifier.clear();
-      }
-      PaneProjectionBack.progress.value = 0;
-    });
+    PaneProjectionBack.commitExit(context, PaneProjectionBack.progress.value);
+    _closeProjection();
   }
 
   void _syncReport(bool active) {
@@ -184,6 +184,7 @@ class _PaneProjectionBackScopeState
   void dispose() {
     _syncReport(false);
     _predictiveBack?.dispose();
+    _motionGeneration++;
     _settle.dispose();
     super.dispose();
   }

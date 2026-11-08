@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter/services.dart';
 
 /// 二步验证 (TOTP) 输入对话框。返回用户输入的 6 位 code,取消返 null。
@@ -15,7 +16,7 @@ Future<String?> showTwoFactorDialog(
   String? hint,
   VoidCallback? onUseBackupCode,
 }) {
-  return showDialog<String>(
+  return showInteractionDialog<String>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _TwoFactorDialog(

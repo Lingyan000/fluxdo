@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
@@ -117,7 +118,7 @@ class DeepLinkService {
     final userInfo = DiscourseUrlParser.parseUser(uri.path);
     if (userInfo != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => UserProfilePage(username: userInfo.username),
         ),
       );
@@ -128,7 +129,7 @@ class DeepLinkService {
     final topicInfo = DiscourseUrlParser.parseTopic(uri.path);
     if (topicInfo != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicInfo.topicId,
             scrollToPostNumber: topicInfo.postNumber,
@@ -184,7 +185,7 @@ class DeepLinkService {
 
           if (topicId != null) {
             Navigator.of(context).push(
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => TopicDetailPage(
                   topicId: topicId,
                   scrollToPostNumber: postNumber,
@@ -200,7 +201,7 @@ class DeepLinkService {
         if (pathSegments.length >= 2) {
           final username = pathSegments[1];
           Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => UserProfilePage(username: username),
             ),
           );
@@ -218,7 +219,7 @@ class DeepLinkService {
   Future<void> _handleEmailLogin(BuildContext context, String url) async {
     debugPrint('DeepLinkService: 处理邮箱链接登录: $url');
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => WebViewLoginPage(initialUrl: url)),
+      InteractionPageRoute(builder: (_) => WebViewLoginPage(initialUrl: url)),
     );
     if (result == true) {
       onEmailLoginSuccess?.call();
@@ -234,7 +235,7 @@ class DeepLinkService {
 
       if (context.mounted) {
         Navigator.of(context).push(
-          MaterialPageRoute(
+          InteractionPageRoute(
             builder: (_) =>
                 TopicDetailPage(topicId: detail.id, initialTitle: detail.title),
           ),

@@ -880,7 +880,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
 
   Future<void> _goToLogin() async {
     final result = await Navigator.of(context)
-        .push<bool>(MaterialPageRoute(builder: (_) => const LoginPage()));
+        .push<bool>(InteractionPageRoute(builder: (_) => const LoginPage()));
     if (result == true && mounted) {
       final loading = LoadingDialog.show(
         context,
@@ -935,7 +935,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
               if (id != null) {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) => TopicDetailPage(
                       topicId: id,
                       autoSwitchToMasterDetail: true,
@@ -1314,7 +1314,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
     // 搜索框的 Hero morph（一镜到底）;搜索页单独用淡入配合 Hero 飞行
     Navigator.push(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 320),
         reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, _, _) =>
@@ -2692,7 +2692,7 @@ class _TopicListState extends ConsumerState<_TopicList>
         : topic.lastReadPostNumber;
     // 强制用 Navigator push 打开（而非 Master-Detail 内选中）
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,
@@ -2821,7 +2821,7 @@ class _TopicListState extends ConsumerState<_TopicList>
     }
 
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,

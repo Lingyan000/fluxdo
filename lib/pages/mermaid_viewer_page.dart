@@ -41,7 +41,7 @@ class MermaidViewerPage extends StatefulWidget {
   }) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => MermaidViewerPage(
           svgUrl: svgUrl,
           fallbackImageUrl: fallbackImageUrl,
@@ -63,7 +63,7 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
   void _openAsImage() {
     Navigator.pushReplacement(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (_, _, _) => ImageViewerPage(

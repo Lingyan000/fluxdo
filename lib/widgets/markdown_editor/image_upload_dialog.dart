@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -141,7 +142,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
     }
 
     final result = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (context) => ProImageEditor.file(
           File(_currentImagePath),
           callbacks: ProImageEditorCallbacks(

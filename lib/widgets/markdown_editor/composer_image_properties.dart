@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 
 Future<String?> showComposerAltEditor(BuildContext context, String initial) =>
-    showDialog<String>(
+    showInteractionDialog<String>(
       context: context,
       builder: (_) => _AltDialog(initial: initial),
     );

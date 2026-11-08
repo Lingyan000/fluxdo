@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -66,7 +67,7 @@ Future<void> showPostAssignDialog(
   required int postId,
   PostAssignmentInfo? current,
 }) async {
-  final result = await showDialog<_AssignDialogResult>(
+  final result = await showInteractionDialog<_AssignDialogResult>(
     context: context,
     builder: (ctx) => _AssignDetailsDialog(
       presetUser: current?.assignedToUser,
@@ -267,7 +268,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
     String? initialNote,
     String? initialStatus,
   }) async {
-    final result = await showDialog<_AssignDialogResult>(
+    final result = await showInteractionDialog<_AssignDialogResult>(
       context: context,
       builder: (ctx) => _AssignDetailsDialog(
         presetUser: presetUser,
@@ -498,7 +499,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
   /// 官方 Web 端编辑它用的就是标准帖子编辑器。
   Future<void> _editNote() async {
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => _AssignNoteEditorPage(initialText: _noteText),
         fullscreenDialog: true,
       ),

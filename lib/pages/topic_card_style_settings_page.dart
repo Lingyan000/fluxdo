@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -83,7 +84,7 @@ class _TopicCardStyleSettingsPageState
       final l10n = context.l10n;
       final bool? confirmed;
       try {
-        confirmed = await showDialog<bool>(
+        confirmed = await showInteractionDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(l10n.topicCardStyle_fetchWarningTitle),

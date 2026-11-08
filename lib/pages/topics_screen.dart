@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -376,7 +377,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     // 全屏打开，不再往平行视界栈里塞草稿层。
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const DraftsPage()),
+      InteractionPageRoute(builder: (_) => const DraftsPage()),
     );
   }
 
@@ -385,7 +386,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
     final tags = ref.read(tabTagsProvider(categoryId));
     final topicId = await Navigator.push<int>(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => CreateTopicPage(
           initialCategoryId: categoryId,
           initialTags: tags.isNotEmpty ? tags : null,
@@ -403,7 +404,7 @@ class _TopicsScreenState extends ConsumerState<TopicsScreen> {
       } else {
         // 单栏模式：push 全屏详情页查看新话题
         Navigator.of(context).push(
-          MaterialPageRoute(
+          InteractionPageRoute(
             builder: (_) => TopicDetailPage(
               topicId: topicId,
               autoSwitchToMasterDetail: true,

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -256,7 +257,7 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       // 新话题草稿：进入创建话题页面
       await Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => CreateTopicPage(draftKey: draft.draftKey),
         ),
       );
@@ -309,7 +310,7 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
       // 窄屏:全屏打开,回来再刷新
       await Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicId!,
             scrollToPostNumber: replyToPostNumber,

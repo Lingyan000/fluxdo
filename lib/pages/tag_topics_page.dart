@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
@@ -373,7 +374,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage>
       return;
     }
     await Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,
@@ -410,7 +411,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage>
             icon: const Icon(Symbols.search_rounded),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => SearchPage(
                   initialFilter: SearchFilter(tags: [widget.tagName]),
                 ),

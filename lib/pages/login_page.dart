@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -264,7 +265,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   Future<void> _loginWithWebView([String? initialUrl]) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => WebViewLoginPage(initialUrl: initialUrl),
       ),
     );
@@ -517,7 +518,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   /// 扫码登录:跳转扫码页,成功后 pop 登录页
   Future<void> _loginWithQrScan() async {
     final result = await Navigator.of(context)
-        .push<bool>(MaterialPageRoute(builder: (_) => const QrLoginScanPage()));
+        .push<bool>(InteractionPageRoute(builder: (_) => const QrLoginScanPage()));
     if (result == true && mounted) {
       Navigator.of(context).pop(true);
     }

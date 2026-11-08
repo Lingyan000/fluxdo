@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -181,7 +182,7 @@ Future<void> launchContentLink(
   if (chatInfo != null && isInternalUrlString(url)) {
     await Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => ChatChannelPage(
           channelId: chatInfo.channelId,
           threadId: chatInfo.threadId,

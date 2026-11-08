@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -143,7 +144,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => ChatChannelPage(channelId: newChannel.id),
         ),
       );
@@ -467,7 +468,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
                   ),
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => ChatChannelMembersPage(
                         channelId: widget.channelId,
                         canRemoveMembers:
@@ -501,7 +502,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
                   trailing: const Icon(Symbols.chevron_right_rounded),
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => UserProfilePage(
                         username: channel.dmUsers.first.username,
                       ),

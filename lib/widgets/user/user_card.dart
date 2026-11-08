@@ -240,6 +240,7 @@ class _UserCardMenuNavigatorHost extends StatefulWidget {
 
 class _UserCardMenuNavigatorHostState
     extends State<_UserCardMenuNavigatorHost> {
+  final _routeInteractionObserver = RouteInteractionObserver();
   late final _UserCardMenuNavigatorObserver _observer =
       _UserCardMenuNavigatorObserver(_setMenuActive);
   bool _menuActive = false;
@@ -256,8 +257,8 @@ class _UserCardMenuNavigatorHostState
       child: Navigator(
         key: widget.navigatorKey,
         clipBehavior: Clip.none,
-        observers: [_observer],
-        onGenerateRoute: (_) => PageRouteBuilder<void>(
+        observers: [_routeInteractionObserver, _observer],
+        onGenerateRoute: (_) => InteractionPageRouteBuilder<void>(
           settings: const RouteSettings(
             name: _UserCardMenuNavigator._hostRouteName,
           ),
@@ -582,7 +583,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       if (!anchorContext.mounted) return;
       await Navigator.push(
         anchorContext,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => ChatChannelPage(channelId: channel.id),
         ),
       );

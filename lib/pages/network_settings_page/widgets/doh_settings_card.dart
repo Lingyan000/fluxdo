@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../l10n/s.dart';
@@ -154,7 +155,7 @@ class _DohSettingsCardInner extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                InteractionPageRoute(
                   builder: (_) => const DohDetailSettingsPage(),
                 ),
               );
@@ -177,7 +178,7 @@ Future<bool> ensureWindowsCertTrusted(BuildContext context) async {
   if (!context.mounted) return false;
 
   final l10n = context.l10n;
-  final shouldInstall = await showDialog<bool>(
+  final shouldInstall = await showInteractionDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(l10n.dohSettings_certDialogTitle),

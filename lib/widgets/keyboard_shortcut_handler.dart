@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -289,7 +290,7 @@ class _KeyboardShortcutHandlerState
       case ShortcutAction.openSearch:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             settings: const RouteSettings(name: 'search'),
             builder: (_) => const SearchPage(),
           ),
@@ -304,7 +305,7 @@ class _KeyboardShortcutHandlerState
       case ShortcutAction.openSettings:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             settings: const RouteSettings(name: 'settings'),
             builder: (_) => const SettingsPage(),
           ),
@@ -355,7 +356,7 @@ class _KeyboardShortcutHandlerState
       case ShortcutAction.createTopic:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             builder: (_) => CreateTopicPage(
               initialCategoryId: ref.read(currentTabCategoryIdProvider),
             ),

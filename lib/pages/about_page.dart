@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
@@ -334,7 +335,7 @@ class _AboutPageState extends State<AboutPage> {
                   title: context.l10n.about_appLogs,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const AppLogsPage()),
+                    InteractionPageRoute(builder: (_) => const AppLogsPage()),
                   ),
                 ),
                 // 性能诊断(开发者向工具,文案暂不接入 l10n)
@@ -344,7 +345,7 @@ class _AboutPageState extends State<AboutPage> {
                   title: '性能诊断',
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => const PerfDiagnosticsPage(),
                     ),
                   ),

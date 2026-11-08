@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -162,7 +163,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
 
   Future<String?> _askParentPageId() async {
     final controller = TextEditingController();
-    final result = await showDialog<String>(
+    final result = await showInteractionDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(S.current.notion_pickParentPage),

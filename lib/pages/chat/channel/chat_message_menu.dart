@@ -148,7 +148,7 @@ Future<String?> showChatEmojiPicker(
       ),
     );
   }
-  return showDialog<String>(
+  return showInteractionDialog<String>(
     context: context,
     builder: (dialogContext) => Dialog(
       clipBehavior: Clip.antiAlias,
@@ -180,7 +180,7 @@ Future<ChatMessageMenuResult?> showChatMessageActionsOverlay({
 }) {
   HapticFeedback.mediumImpact();
   return Navigator.of(context, rootNavigator: true).push<ChatMessageMenuResult>(
-    PageRouteBuilder(
+    InteractionPageRouteBuilder(
       opaque: false,
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 320),

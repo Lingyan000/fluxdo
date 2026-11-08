@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,6 +77,11 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
     vsync: this,
   )..addListener(_syncHistory);
 
+  // Logical input ownership is separate from the spring's visible position.
+  // Closing releases the home list immediately, even while the scrim is fading.
+  final _acceptsInput = ValueNotifier(false);
+  int _motionGeneration = 0;
+
   /// 收尾弹簧(与首页头部运动系统同族,见 [kHeaderMotionSpring])
   static final SpringDescription _spring = kHeaderSpringDescription;
 
@@ -103,6 +109,8 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
   void close() => _springTo(0.0);
 
   void dragBy(double dx) {
+    _motionGeneration++;
+    _acceptsInput.value = true;
     _anim.stop();
     _anim.value = (_anim.value + dx / _panelWidth).clamp(0.0, 1.0);
   }
@@ -120,6 +128,8 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
   }
 
   void _onPredictiveBackStart() {
+    _motionGeneration++;
+    _acceptsInput.value = true;
     _anim.stop();
   }
 
@@ -133,14 +143,24 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
     _springTo(1.0);
   }
 
-  void _springTo(double target, {double velocity = 0}) {
-    if (_anim.value == target && velocity == 0) return;
-    _anim
-        .animateWith(SpringSimulation(_spring, _anim.value, target, velocity))
-        .whenComplete(() {
-          // unbounded 不夹值，弹簧收敛后钉到端点
-          _anim.value = target;
-        });
+  Future<void> _springTo(double target, {double velocity = 0}) async {
+    final generation = ++_motionGeneration;
+    _acceptsInput.value = target != 0;
+    // A reversal can happen before the opening animation's first tick.
+    if (_anim.value == target && velocity == 0) {
+      _anim.stop();
+      return;
+    }
+    try {
+      await _anim
+          .animateWith(SpringSimulation(_spring, _anim.value, target, velocity))
+          .orCancel;
+      if (!mounted || generation != _motionGeneration) return;
+      // unbounded 不夹值，只有仍拥有本次运动的收尾才能钉到端点。
+      _anim.value = target;
+    } on TickerCanceled {
+      // A newer drag/animation or disposal owns the position now.
+    }
   }
 
   /// 返回键联动：抽屉可见即挂 LocalHistoryEntry（返回=关抽屉）
@@ -169,8 +189,11 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
   @override
   void dispose() {
     _predictiveBackHandler.dispose();
+    _removingHistory = true;
     _history?.remove();
+    _motionGeneration++;
     _anim.dispose();
+    _acceptsInput.dispose();
     super.dispose();
   }
 
@@ -182,36 +205,40 @@ class ControlledCategoryDrawerState extends State<ControlledCategoryDrawer>
         // unbounded 控制器（弹簧可轻微过冲），显示前夹回 [0,1]
         final v = _anim.value.clamp(0.0, 1.0);
         if (v == 0) return const SizedBox.shrink();
-        return SizedBox.expand(
-          child: Stack(
-            children: [
-              // 遮罩：跟手渐变;点击/拖拽关闭
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: close,
-                  onHorizontalDragUpdate: (d) => dragBy(d.primaryDelta ?? 0),
-                  onHorizontalDragEnd: (d) =>
-                      settle(d.velocity.pixelsPerSecond.dx),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.54 * v),
-                  ),
-                ),
-              ),
-              // 面板：paint 平移跟手滑入;面板上水平拖拽关闭
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FractionalTranslation(
-                  translation: Offset(v - 1.0, 0),
+        return InteractionGate(
+          enabled: _acceptsInput,
+          child: SizedBox.expand(
+            child: Stack(
+              children: [
+                // 遮罩：跟手渐变;点击/拖拽关闭
+                Positioned.fill(
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: close,
                     onHorizontalDragUpdate: (d) => dragBy(d.primaryDelta ?? 0),
                     onHorizontalDragEnd: (d) =>
                         settle(d.velocity.pixelsPerSecond.dx),
-                    child: child,
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 0.54 * v),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                // 面板：paint 平移跟手滑入;面板上水平拖拽关闭
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionalTranslation(
+                    translation: Offset(v - 1.0, 0),
+                    child: GestureDetector(
+                      onHorizontalDragUpdate: (d) =>
+                          dragBy(d.primaryDelta ?? 0),
+                      onHorizontalDragEnd: (d) =>
+                          settle(d.velocity.pixelsPerSecond.dx),
+                      child: child,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -357,7 +384,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   /// context 的 Navigator。
   void _closeAndPush(Widget page) {
     widget.onRequestClose();
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    Navigator.of(context).push(InteractionPageRoute(builder: (_) => page));
   }
 
   /// 长按/右键分类行：收藏与订阅的操作菜单（低频操作不常驻行上）

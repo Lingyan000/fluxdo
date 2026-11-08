@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show InteractionPageRoute;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -193,7 +194,7 @@ class ErrorView extends StatelessWidget {
 
   void _openNetworkSettings(BuildContext context) {
     Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NetworkSettingsPage()));
+        .push(InteractionPageRoute(builder: (_) => const NetworkSettingsPage()));
   }
 
   void _showErrorDetails(BuildContext context) {

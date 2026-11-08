@@ -4,6 +4,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -280,6 +281,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
   final GlobalKey _panelKey = GlobalKey();
 
   _LiftPhase _phase = _LiftPhase.waitingMeasure;
+  final _acceptsInput = ValueNotifier(true);
 
   /// 源矩形(可变:窗口/旋转变化时重测并与窗口求交,见 [didChangeMetrics])。
   late Rect _sourceRect = widget.sourceRect;
@@ -422,6 +424,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
     WidgetsBinding.instance.removeObserver(this);
     _master.dispose();
     _dragReset.dispose();
+    _acceptsInput.dispose();
     super.dispose();
   }
 
@@ -611,6 +614,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
   /// (iOS 上下文菜单源视图不可用时的消散语义)。
   void _close({double? fromDrag}) {
     if (_phase != _LiftPhase.open && _phase != _LiftPhase.opening) return;
+    _acceptsInput.value = false;
     _dragReset.stop();
     if (_isSourceVisible()) {
       _frozenDrag = fromDrag ?? _dragOffset;
@@ -638,6 +642,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
   /// overlay 移除后执行回调。
   void _runAction(VoidCallback onTap) {
     if (_phase != _LiftPhase.open && _phase != _LiftPhase.opening) return;
+    _acceptsInput.value = false;
     HapticFeedback.selectionClick();
     // 选动作整体淡出:源图立即在底下恢复(iOS 交叉淡出语义,遮罩与
     // 预览一起淡去时露出完整页面),动作在淡出完成后执行。
@@ -778,11 +783,7 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
           stack = Opacity(opacity: 1 - m, child: stack);
         }
 
-        return IgnorePointer(
-          // 收回/淡出期间不再响应任何命中。
-          ignoring: _phase == _LiftPhase.closing || _phase == _LiftPhase.fading,
-          child: stack,
-        );
+        return InteractionGate(enabled: _acceptsInput, child: stack);
       },
     );
   }

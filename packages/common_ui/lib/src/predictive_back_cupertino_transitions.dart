@@ -72,6 +72,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'route_interaction.dart';
+
 /// Android 预测返回手势 + Cupertino 滑动转场。
 ///
 /// 系统预测返回手势(Android U+)的进度直接驱动路由动画,Cupertino 平移
@@ -427,10 +429,17 @@ Widget buildPredictiveBackPageTransitions(
     return transitionBuilder(context, animation, secondaryAnimation, child);
   }
 
-  return _PredictiveBackGestureDetector(
+  return RouteInputGate(
     route: route,
-    builder: (BuildContext context) =>
-        transitionBuilder(context, animation, secondaryAnimation, child),
+    child: _PredictiveBackGestureDetector(
+      route: route,
+      builder: (BuildContext context) => transitionBuilder(
+        context,
+        animation,
+        secondaryAnimation,
+        RouteContentInteraction(route: route, child: child),
+      ),
+    ),
   );
 }
 

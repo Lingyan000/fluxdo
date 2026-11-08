@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../l10n/s.dart';
@@ -80,14 +81,17 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
   Widget buildModalBarrier() {
     // 非模态 barrier：卡外按下立即关闭 popover，同时不消费事件，
     // 让下层页面继续响应（滚动/点击一步到位）。
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) {
-        if (isCurrent) {
-          navigator?.pop();
-        }
-      },
-      child: const SizedBox.expand(),
+    return RouteInputGate(
+      route: this,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          if (isCurrent) {
+            navigator?.pop();
+          }
+        },
+        child: const SizedBox.expand(),
+      ),
     );
   }
 
@@ -122,11 +126,14 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
       parent: animation,
       curve: Curves.easeOutCubic,
     );
-    return FadeTransition(
-      opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.95, end: 1).animate(curved),
-        child: child,
+    return RouteInputGate(
+      route: this,
+      child: FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.95, end: 1).animate(curved),
+          child: RouteContentInteraction(route: this, child: child),
+        ),
       ),
     );
   }

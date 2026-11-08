@@ -10,6 +10,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import 'route_interaction.dart';
+
 part 'popup_menu_morph.dart';
 part 'popup_menu_interaction.dart';
 
@@ -729,7 +731,8 @@ class _SubmenuRowTile extends StatelessWidget {
 // Submenu route：以 PopupRoute 形式打开,带 hero 接收。
 // ============================================================
 
-class _SubmenuRoute extends PopupRoute<void> with _MenuChainRoute<void> {
+class _SubmenuRoute extends PopupRoute<void>
+    with _MenuChainRoute<void>, InterruptibleRoute<void> {
   _SubmenuRoute({
     required this.icon,
     required this.label,
@@ -1357,7 +1360,7 @@ class _PopupMenuRouteLayout extends SingleChildLayoutDelegate {
 // ============================================================
 
 class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
-    with _MenuChainRoute<T> {
+    with _MenuChainRoute<T>, InterruptibleRoute<T> {
   _SwipeDismissiblePopupRoute({
     required this.position,
     this.animationAnchorRect,

@@ -188,7 +188,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final restoreScope = FullScreenPaneRestoreScope.maybeOf(context);
     if (restoreScope != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicId,
             initialTitle: initialTitle,
@@ -203,7 +203,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
 
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topicId,
           initialTitle: initialTitle,
@@ -443,7 +443,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => ChatChannelPage(channelId: channel.id),
         ),
       );
@@ -460,7 +460,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   void _openUserSearch() {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => SearchPage(initialQuery: '@${widget.username}'),
       ),
     );
@@ -1853,7 +1853,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _user!.totalFollowing!,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) =>
                   FollowListPage(username: widget.username, isFollowing: true),
             ),
@@ -1866,7 +1866,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _user!.totalFollowers!,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) =>
                   FollowListPage(username: widget.username, isFollowing: false),
             ),
@@ -2498,7 +2498,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(
+                          InteractionPageRoute(
                             builder: (_) => FollowListPage(
                               username: widget.username,
                               isFollowing: true,
@@ -2515,7 +2515,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(
+                          InteractionPageRoute(
                             builder: (_) => FollowListPage(
                               username: widget.username,
                               isFollowing: false,
@@ -3453,7 +3453,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return GestureDetector(
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => BadgePage(badgeId: badge.id)),
+            InteractionPageRoute(builder: (_) => BadgePage(badgeId: badge.id)),
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

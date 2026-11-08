@@ -1873,7 +1873,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onReadingSettings: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
+              InteractionPageRoute(builder: (_) => const ReadingSettingsPage()),
             );
           },
         );
@@ -2261,7 +2261,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       case ProgressGestureAction.readingSettings:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
+          InteractionPageRoute(builder: (_) => const ReadingSettingsPage()),
         );
       case ProgressGestureAction.search:
         ref

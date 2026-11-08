@@ -1,6 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/navigation/browser_dock_observer.dart';
@@ -8,7 +9,7 @@ import '../../services/browser_tabs.dart';
 import 'browser_dock_motion.dart';
 
 /// 浏览器自己的收起转场，不改变小程序共用路由的行为。
-class BrowserPageRoute<T> extends MaterialPageRoute<T> {
+class BrowserPageRoute<T> extends InteractionPageRoute<T> {
   BrowserPageRoute({
     required super.builder,
     this.fromDock = false,
@@ -232,7 +233,7 @@ class BrowserPageRoute<T> extends MaterialPageRoute<T> {
         dock: dock,
         morph: useSnapshotMotion,
         linear: _linearDockProgress,
-        child: child,
+        child: RouteContentInteraction(route: this, child: child),
       ),
     );
   }

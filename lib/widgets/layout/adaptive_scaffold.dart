@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -141,7 +142,7 @@ class AdaptiveScaffold extends ConsumerWidget {
                             onDestinationSelected(0);
                           }
                           await Navigator.of(context).push(
-                            MaterialPageRoute(
+                            InteractionPageRoute(
                               builder: (_) => const PinnedCategoryEditPage(),
                             ),
                           );

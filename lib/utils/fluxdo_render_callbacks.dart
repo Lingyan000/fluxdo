@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -284,7 +285,7 @@ class FluxdoRenderCallbacks {
       return;
     }
     Navigator.of(ctx).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topicId,
           initialTitle: topicSlug,

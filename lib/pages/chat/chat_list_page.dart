@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,7 +71,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
+      InteractionPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
     );
   }
 
@@ -202,7 +203,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
             tooltip: context.l10n.chat_searchAll,
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ChatSearchPage()),
+              InteractionPageRoute(builder: (_) => const ChatSearchPage()),
             ),
           ),
           IconButton(
@@ -210,7 +211,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
             tooltip: context.l10n.chat_browseChannels,
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ChatBrowseChannelsPage()),
+              InteractionPageRoute(builder: (_) => const ChatBrowseChannelsPage()),
             ),
           ),
         ],

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -285,7 +286,7 @@ class _ChatChannelMembersPageState
           ? null
           : () => Navigator.push(
               context,
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => UserProfilePage(username: member.user.username),
               ),
             ),

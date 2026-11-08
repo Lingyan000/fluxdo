@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -62,7 +63,7 @@ class _ReadLaterOverlayState extends ConsumerState<ReadLaterOverlay> {
     // 不参与压栈收敛。
     Navigator.of(context).pop();
     navigatorKey.currentState?.push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: item.topicId,
           initialTitle: item.title,

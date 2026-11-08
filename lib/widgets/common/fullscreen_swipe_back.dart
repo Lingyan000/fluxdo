@@ -18,6 +18,8 @@
 //    在竞技场独占时才立即获胜并实时转发触摸给原生视图;返回手势一旦
 //    入场,裁决要拖到抬手 sweep,原生视图整个拖拽期间收不到事件,
 //    上下左右滚动全部失效。这些区域让位后仍可用屏幕左缘官方手势返回。
+// 4. 取消返回后的回弹可再次按住接管,沿用当前进度与同一次 navigator
+//    手势计数;系统取消触摸始终回到当前页,不按过半阈值提交返回。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -30,7 +32,9 @@ import 'package:flutter/widgets.dart';
 const double _kMinFlingVelocity = 1.0; // Screen widths per second.
 
 // The duration it takes for a dropped swipe page animation to complete.
-const Duration _kDroppedSwipePageAnimationDuration = Duration(milliseconds: 350);
+const Duration _kDroppedSwipePageAnimationDuration = Duration(
+  milliseconds: 350,
+);
 
 /// 全屏侧滑返回装饰器:转场视觉完全委托 [inner],仅在转场树里追加一个
 /// 覆盖整页的 iOS 式返回手势探测器。
@@ -45,7 +49,8 @@ class FullscreenSwipeBackTransitionsBuilder extends PageTransitionsBuilder {
   final PageTransitionsBuilder inner;
 
   @override
-  DelegatedTransitionBuilder? get delegatedTransition => inner.delegatedTransition;
+  DelegatedTransitionBuilder? get delegatedTransition =>
+      inner.delegatedTransition;
 
   @override
   Duration get transitionDuration => inner.transitionDuration;
@@ -63,18 +68,20 @@ class FullscreenSwipeBackTransitionsBuilder extends PageTransitionsBuilder {
   ) {
     // 竖向弹出的 fullscreenDialog 不挂水平返回手势(官方 Cupertino 同约定)。
     if (route.fullscreenDialog) {
-      return inner.buildTransitions(route, context, animation, secondaryAnimation, child);
+      return inner.buildTransitions(
+        route,
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
     }
     return inner.buildTransitions(
       route,
       context,
       animation,
       secondaryAnimation,
-      _FullscreenBackGestureDetector<T>(
-        enabledCallback: () => route.popGestureEnabled,
-        onStartPopGesture: () => _startPopGesture<T>(route),
-        child: child,
-      ),
+      _FullscreenBackGestureDetector<T>(route: route, child: child),
     );
   }
 }
@@ -82,7 +89,10 @@ class FullscreenSwipeBackTransitionsBuilder extends PageTransitionsBuilder {
 // Called by _FullscreenBackGestureDetector when a pop ("back") drag start
 // gesture is detected. The returned controller handles all of the subsequent
 // drag events.
-_FullscreenBackGestureController<T> _startPopGesture<T>(PageRoute<T> route) {
+_FullscreenBackGestureController<T> _startPopGesture<T>(
+  PageRoute<T> route,
+  VoidCallback onFinished,
+) {
   assert(route.popGestureEnabled);
 
   return _FullscreenBackGestureController<T>(
@@ -91,6 +101,7 @@ _FullscreenBackGestureController<T> _startPopGesture<T>(PageRoute<T> route) {
     getIsActive: () => route.isActive,
     // ignore: invalid_use_of_protected_member
     controller: route.controller!, // protected access
+    onFinished: onFinished,
   );
 }
 
@@ -108,16 +119,13 @@ _FullscreenBackGestureController<T> _startPopGesture<T>(PageRoute<T> route) {
 class _FullscreenBackGestureDetector<T> extends StatefulWidget {
   const _FullscreenBackGestureDetector({
     super.key,
-    required this.enabledCallback,
-    required this.onStartPopGesture,
+    required this.route,
     required this.child,
   });
 
   final Widget child;
 
-  final ValueGetter<bool> enabledCallback;
-
-  final ValueGetter<_FullscreenBackGestureController<T>> onStartPopGesture;
+  final PageRoute<T> route;
 
   @override
   _FullscreenBackGestureDetectorState<T> createState() =>
@@ -127,6 +135,8 @@ class _FullscreenBackGestureDetector<T> extends StatefulWidget {
 class _FullscreenBackGestureDetectorState<T>
     extends State<_FullscreenBackGestureDetector<T>> {
   _FullscreenBackGestureController<T>? _backGestureController;
+  int? _pointer;
+  bool _pointerCanceled = false;
 
   late HorizontalDragGestureRecognizer _recognizer;
 
@@ -134,6 +144,7 @@ class _FullscreenBackGestureDetectorState<T>
   void initState() {
     super.initState();
     _recognizer = HorizontalDragGestureRecognizer(debugOwner: this)
+      ..onlyAcceptDragOnThreshold = true
       ..onStart = _handleDragStart
       ..onUpdate = _handleDragUpdate
       ..onEnd = _handleDragEnd
@@ -144,52 +155,88 @@ class _FullscreenBackGestureDetectorState<T>
   void dispose() {
     _recognizer.dispose();
 
-    // If this is disposed during a drag, call navigator.didStopUserGesture.
-    if (_backGestureController != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_backGestureController?.navigator.mounted ?? false) {
-          _backGestureController?.navigator.didStopUserGesture();
-        }
-        _backGestureController = null;
-      });
-    }
+    _backGestureController?.dispose();
+    _backGestureController = null;
     super.dispose();
   }
 
   void _handleDragStart(DragStartDetails details) {
     assert(mounted);
-    assert(_backGestureController == null);
-    _backGestureController = widget.onStartPopGesture();
+    if (_backGestureController != null) return;
+    // PopScope or navigation can change after pointer down but before the drag
+    // wins. Only start a fresh gesture while the route still allows it.
+    if (!widget.route.popGestureEnabled || !widget.route.isCurrent) return;
+    _backGestureController = _startPopGesture<T>(widget.route, () {
+      _backGestureController = null;
+    });
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
     assert(mounted);
-    assert(_backGestureController != null);
-    _backGestureController!.dragUpdate(
+    _backGestureController?.dragUpdate(
       _convertToLogical(details.primaryDelta! / context.size!.width),
     );
   }
 
   void _handleDragEnd(DragEndDetails details) {
     assert(mounted);
-    assert(_backGestureController != null);
-    _backGestureController!.dragEnd(
-      _convertToLogical(details.velocity.pixelsPerSecond.dx / context.size!.width),
+    _backGestureController?.dragEnd(
+      _convertToLogical(
+        details.velocity.pixelsPerSecond.dx / context.size!.width,
+      ),
+      canceled: _pointerCanceled,
     );
-    _backGestureController = null;
   }
 
   void _handleDragCancel() {
     assert(mounted);
     // This can be called even if start is not called, paired with the "down" event
     // that we don't consider here.
-    _backGestureController?.dragEnd(0.0);
-    _backGestureController = null;
+    final gesture = _backGestureController;
+    if (gesture != null && !gesture.isSettling) {
+      gesture.dragEnd(0.0, canceled: true);
+    }
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (widget.enabledCallback() && !_hitsPlatformView(event)) {
-      _recognizer.addPointer(event);
+    if (_pointer != null ||
+        event.buttons != kPrimaryMouseButton ||
+        _hitsPlatformView(event)) {
+      return;
+    }
+    final gesture = _backGestureController;
+    if (gesture != null) {
+      // Bypass only the animation-completed check for our own returning
+      // gesture. Respect navigation changes and all route pop vetoes.
+      final route = widget.route;
+      if (!gesture.canResume ||
+          !route.isCurrent ||
+          route.isFirst ||
+          route.willHandlePopInternally ||
+          // Match the framework's pop veto, including legacy WillPopScope.
+          // ignore: deprecated_member_use, invalid_use_of_protected_member
+          route.hasScopedWillPopCallback ||
+          route.popDisposition == RoutePopDisposition.doNotPop ||
+          !route.secondaryAnimation!.isDismissed) {
+        return;
+      }
+      gesture.resume();
+    } else if (!widget.route.popGestureEnabled ||
+        !widget.route.isCurrent ||
+        widget.route.popGestureInProgress) {
+      return;
+    }
+    _pointer = event.pointer;
+    _pointerCanceled = false;
+    _recognizer.addPointer(event);
+  }
+
+  void _handlePointerEnd(PointerEvent event) {
+    if (_pointer == event.pointer) {
+      // DragGestureRecognizer reports onEnd even for an accepted drag that
+      // receives PointerCancelEvent. Remember the raw termination reason.
+      _pointerCanceled = event is PointerCancelEvent;
+      _pointer = null;
     }
   }
 
@@ -225,6 +272,8 @@ class _FullscreenBackGestureDetectorState<T>
     // translucent 只旁路收集 pointer,页面自身命中与滚动不受影响。
     return Listener(
       onPointerDown: _handlePointerDown,
+      onPointerUp: _handlePointerEnd,
+      onPointerCancel: _handlePointerEnd,
       behavior: HitTestBehavior.translucent,
       child: widget.child,
     );
@@ -251,6 +300,7 @@ class _FullscreenBackGestureController<T> {
     required this.controller,
     required this.getIsActive,
     required this.getIsCurrent,
+    required this.onFinished,
   }) {
     navigator.didStartUserGesture();
   }
@@ -259,6 +309,45 @@ class _FullscreenBackGestureController<T> {
   final NavigatorState navigator;
   final ValueGetter<bool> getIsActive;
   final ValueGetter<bool> getIsCurrent;
+  final VoidCallback onFinished;
+  bool _finished = false;
+  bool _returning = false;
+  bool isSettling = false;
+
+  bool get canResume =>
+      !_finished && isSettling && _returning && getIsCurrent();
+
+  void resume() {
+    assert(canResume);
+    controller.removeStatusListener(_handleAnimationStatus);
+    isSettling = false;
+    controller.stop();
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      _finish();
+    }
+  }
+
+  void _finish({bool defer = false}) {
+    if (_finished) return;
+    _finished = true;
+    controller.removeStatusListener(_handleAnimationStatus);
+    onFinished();
+    void release() {
+      if (navigator.mounted) navigator.didStopUserGesture();
+    }
+
+    if (defer) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => release());
+    } else {
+      release();
+    }
+  }
+
+  void dispose() => _finish(defer: true);
 
   /// The drag gesture has changed by [delta]. The total range of the drag
   /// should be 0.0 to 1.0.
@@ -268,7 +357,7 @@ class _FullscreenBackGestureController<T> {
 
   /// The drag gesture has ended with a horizontal motion of [velocity] as a
   /// fraction of screen width per second.
-  void dragEnd(double velocity) {
+  void dragEnd(double velocity, {bool canceled = false}) {
     // Fling in the appropriate direction.
     //
     // This curve has been determined through rigorously eyeballing native iOS
@@ -285,6 +374,8 @@ class _FullscreenBackGestureController<T> {
       // pop occurs, the route should still be animated off the screen.
       // See https://github.com/flutter/flutter/issues/141268.
       animateForward = getIsActive();
+    } else if (canceled) {
+      animateForward = true;
     } else if (velocity.abs() >= _kMinFlingVelocity) {
       // If the user releases the page before mid screen with sufficient velocity,
       // or after mid screen, we should animate the page out. Otherwise, the page
@@ -294,6 +385,8 @@ class _FullscreenBackGestureController<T> {
       animateForward = controller.value > 0.5;
     }
 
+    isSettling = true;
+    _returning = animateForward;
     if (animateForward) {
       controller.animateTo(
         1.0,
@@ -320,14 +413,9 @@ class _FullscreenBackGestureController<T> {
       // Keep the userGestureInProgress in true state so we don't change the
       // curve of the page transition mid-flight since CupertinoPageTransition
       // depends on userGestureInProgress.
-      late AnimationStatusListener animationStatusCallback;
-      animationStatusCallback = (AnimationStatus status) {
-        navigator.didStopUserGesture();
-        controller.removeStatusListener(animationStatusCallback);
-      };
-      controller.addStatusListener(animationStatusCallback);
+      controller.addStatusListener(_handleAnimationStatus);
     } else {
-      navigator.didStopUserGesture();
+      _finish();
     }
   }
 }

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show InteractionPageRoute;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -160,7 +161,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
       if (go == true && mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const NotionSettingsPage()),
+          InteractionPageRoute(builder: (_) => const NotionSettingsPage()),
         );
       }
       return;

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
 
 import '../widgets/markdown_editor/uploads/upload_task_labels.dart';
@@ -1050,7 +1051,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         actionLabel: S.current.review_viewAction,
         onAction: () {
           navigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+            InteractionPageRoute(builder: (_) => const PendingPostsPage()),
           );
         },
       );

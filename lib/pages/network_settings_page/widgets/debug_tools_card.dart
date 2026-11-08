@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,7 +39,7 @@ class _DebugToolsCardState extends State<DebugToolsCard> {
   void _openLogs(LogTypeFilter type) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => AppLogsPage(initialType: type)),
+      InteractionPageRoute(builder: (_) => AppLogsPage(initialType: type)),
     );
   }
 

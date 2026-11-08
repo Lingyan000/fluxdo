@@ -447,8 +447,9 @@ Future<void> _showNodeSettings(
     ),
   );
   if (MediaQuery.sizeOf(context).width < 600) {
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
+      blur: false,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,

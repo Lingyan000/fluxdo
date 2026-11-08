@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -337,7 +338,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       } else {
         Navigator.push(
           context,
-          MaterialPageRoute(
+          InteractionPageRoute(
             builder: (_) => TopicDetailPage(
               topicId: topic.topicId,
               initialTitle: topic.slug,
@@ -357,7 +358,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => UserProfilePage(username: user.username),
         ),
       );
@@ -725,7 +726,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: searchPost.postNumber,
@@ -741,7 +742,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => UserProfilePage(username: user.username),
       ),
     );

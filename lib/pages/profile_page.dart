@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -214,7 +215,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // 表现为扫码登录成功后 UI 无登录态、要重启才恢复。
     final container = ProviderScope.containerOf(context, listen: false);
     final result = await Navigator.of(context)
-        .push<bool>(MaterialPageRoute(builder: (_) => const LoginPage()));
+        .push<bool>(InteractionPageRoute(builder: (_) => const LoginPage()));
     if (result != true) return;
 
     // 等一帧让路由弹出与重挂载稳定;deactivate 未复活的元素此刻已 unmount,
@@ -716,7 +717,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           statsCardKey: _statsCardKey,
           onEdit: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const ProfileStatsEditPage()),
+            InteractionPageRoute(builder: (_) => const ProfileStatsEditPage()),
           ),
         ),
         const SizedBox(height: 24),
@@ -729,7 +730,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // 全屏打开,不再往「我的」页右栏塞草稿层。
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const DraftsPage()),
+      InteractionPageRoute(builder: (_) => const DraftsPage()),
     );
   }
 
@@ -741,7 +742,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         title: context.l10n.profile_myTopics,
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const MyTopicsPage()),
+          InteractionPageRoute(builder: (_) => const MyTopicsPage()),
         ),
       ),
       (
@@ -750,7 +751,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         title: context.l10n.profile_myBookmarks,
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const BookmarksPage()),
+          InteractionPageRoute(builder: (_) => const BookmarksPage()),
         ),
       ),
       (
@@ -765,7 +766,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         title: context.l10n.profile_browsingHistory,
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const BrowsingHistoryPage()),
+          InteractionPageRoute(builder: (_) => const BrowsingHistoryPage()),
         ),
       ),
     ];
@@ -868,7 +869,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_privateMessages,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const PrivateMessagesPage()),
+            InteractionPageRoute(builder: (_) => const PrivateMessagesPage()),
           ),
         ),
         _buildOptionTile(
@@ -877,7 +878,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.chat_title,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const ChatListPage()),
+            InteractionPageRoute(builder: (_) => const ChatListPage()),
           ),
         ),
         _buildOptionTile(
@@ -886,7 +887,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.review_myPending,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+            InteractionPageRoute(builder: (_) => const PendingPostsPage()),
           ),
         ),
         _buildOptionTile(
@@ -895,7 +896,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_myBadges,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const MyBadgesPage()),
+            InteractionPageRoute(builder: (_) => const MyBadgesPage()),
           ),
         ),
         _buildOptionTile(
@@ -904,7 +905,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_trustRequirements,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => const TrustLevelRequirementsPage(),
             ),
           ),
@@ -916,7 +917,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             title: context.l10n.profile_inviteLinks,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const InviteLinksPage()),
+              InteractionPageRoute(builder: (_) => const InviteLinksPage()),
             ),
           ),
         _buildOptionTile(
@@ -925,7 +926,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.exportHistory_title,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const ExportHistoryPage()),
+            InteractionPageRoute(builder: (_) => const ExportHistoryPage()),
           ),
         ),
         _buildOptionTile(
@@ -934,7 +935,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_metaverse,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const MetaversePage()),
+            InteractionPageRoute(builder: (_) => const MetaversePage()),
           ),
         ),
       ],
@@ -950,7 +951,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_myBrowser,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const MyBrowserPage()),
+            InteractionPageRoute(builder: (_) => const MyBrowserPage()),
           ),
         ),
         _buildOptionTile(
@@ -959,12 +960,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           title: context.l10n.profile_aiModelService,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => AiProvidersPage(
                 onOpenSession: (ctx, topicId, sessionId) {
                   Navigator.push(
                     ctx,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => TopicDetailPage(
                         topicId: topicId,
                         autoOpenAiChat: true,
@@ -1108,7 +1109,7 @@ class _ProfileHeader extends ConsumerWidget {
           ? () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                InteractionPageRoute(
                   builder: (_) => UserProfilePage(username: username),
                 ),
               );

@@ -1,5 +1,6 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,7 +71,7 @@ class _PromptPresetsSheet extends ConsumerWidget {
           onPressed: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PromptPresetsPage()),
+              InteractionPageRoute(builder: (_) => const PromptPresetsPage()),
             );
           },
         ),
@@ -284,7 +285,7 @@ class _PresetTile extends ConsumerWidget {
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).push(
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => PromptPresetEditPage(preset: preset),
                     ),
                   );
@@ -339,7 +340,7 @@ class _PresetTile extends ConsumerWidget {
   }
 
   Future<bool> _confirmDelete(BuildContext context, String name) async {
-    final result = await showDialog<bool>(
+    final result = await showInteractionDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         content: Text(S.current.ai_quickPromptsDeleteConfirm(name)),

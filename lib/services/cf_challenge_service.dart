@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -359,7 +360,7 @@ class CfChallengeService {
     }
     if (context == null || !context.mounted) return false;
 
-    final choice = await showDialog<_CompatPromptChoice>(
+    final choice = await showInteractionDialog<_CompatPromptChoice>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) {
@@ -746,7 +747,7 @@ class CfChallengeService {
       }
 
       // Push 透明 Route 用于拦截返回键
-      interceptorRoute = PageRouteBuilder(
+      interceptorRoute = InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, _, _) {

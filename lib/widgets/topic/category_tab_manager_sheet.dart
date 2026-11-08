@@ -138,7 +138,7 @@ Future<void> _showSubcategoryMenu({
   if (result != null && context.mounted) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: result)),
+      InteractionPageRoute(builder: (_) => CategoryTopicsPage(category: result)),
     );
   }
 }
@@ -231,7 +231,7 @@ class _BrowseContent extends ConsumerWidget {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) => const PinnedCategoryEditPage(),
                   ),
                 );
@@ -322,7 +322,7 @@ class _BrowseContent extends ConsumerWidget {
                 } else {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => CategoryTopicsPage(category: category),
                     ),
                   );

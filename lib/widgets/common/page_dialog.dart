@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -80,7 +81,7 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
     final builder = widget.fullscreenBuilder!;
     final navigator = Navigator.of(context, rootNavigator: true);
     navigator.pop();
-    navigator.push(MaterialPageRoute(builder: builder));
+    navigator.push(InteractionPageRoute(builder: builder));
   }
 
   @override

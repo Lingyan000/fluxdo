@@ -34,6 +34,7 @@ import 'package:flutter/foundation.dart'
         listEquals,
         visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -324,7 +325,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     try {
       if (restore) {
         // lastRaw 相同也不能证明是同一篇文章，始终要求用户确认替换。
-        final confirmed = await showDialog<bool>(
+        final confirmed = await showInteractionDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: Text(S.current.createTopic_restoreDraft),

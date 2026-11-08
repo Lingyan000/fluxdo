@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -79,7 +80,7 @@ Future<WebViewLoginDialogResult?> showWebViewLoginDialog(
   onNeedSecondFactor,
   String? hcaptchaCreateEndpoint,
 }) {
-  return showDialog<WebViewLoginDialogResult>(
+  return showInteractionDialog<WebViewLoginDialogResult>(
     context: context,
     barrierColor: Colors.black54,
     barrierDismissible: false,

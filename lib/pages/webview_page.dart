@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 import 'dart:io' as io;
 
@@ -1339,7 +1340,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       case 'library':
         Navigator.of(
           context,
-        ).push(MaterialPageRoute<void>(builder: (_) => const MyBrowserPage()));
+        ).push(InteractionPageRoute<void>(builder: (_) => const MyBrowserPage()));
         break;
       case 'toggle_bookmark':
         _toggleBookmark();

@@ -364,7 +364,7 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           icon: Symbols.view_agenda_rounded,
           onTap: (context, ref) => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => const TopicCardStyleSettingsPage(),
             ),
           ),

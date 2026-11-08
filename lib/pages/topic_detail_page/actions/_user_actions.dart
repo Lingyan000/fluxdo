@@ -272,7 +272,7 @@ extension _UserActions on _TopicDetailPageState {
         : null;
 
     final result = await Navigator.of(context).push<EditTopicResult>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (context) => EditTopicPage(
           topicDetail: detail,
           firstPost: firstPost,

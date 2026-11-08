@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart' hide Category;
@@ -514,7 +515,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
   Future<void> _createTopic() async {
     final topicId = await Navigator.push<int>(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => CreateTopicPage(
           initialCategoryId: widget.category.id,
           initialTags: _selectedTags.isNotEmpty ? _selectedTags : null,
@@ -547,7 +548,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
       return;
     }
     await Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           initialTitle: topic.title,
@@ -589,7 +590,7 @@ class _CategoryTopicsPageState extends ConsumerState<CategoryTopicsPage>
             icon: const Icon(Symbols.search_rounded),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => SearchPage(
                   initialFilter: SearchFilter(
                     categoryId: widget.category.id,

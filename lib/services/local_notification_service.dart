@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -116,7 +117,7 @@ class LocalNotificationService {
         return;
       }
       navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => chatPage),
+        InteractionPageRoute(builder: (_) => chatPage),
       );
       return;
     }
@@ -144,7 +145,7 @@ class LocalNotificationService {
       return;
     }
     navigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => page),
+      InteractionPageRoute(builder: (_) => page),
     );
   }
 

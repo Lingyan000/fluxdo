@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart' hide Badge;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -561,7 +562,7 @@ class _UserBadgeItem extends StatelessWidget {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => UserProfilePage(username: user.username),
       ),
     );
@@ -580,7 +581,7 @@ class _UserBadgeItem extends StatelessWidget {
       }
       Navigator.push(
         context,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: userBadge.topicId!,
             scrollToPostNumber: userBadge.postNumber,

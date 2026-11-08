@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -42,7 +43,7 @@ class FullscreenVideoPage extends StatefulWidget {
       );
       _opening = false; // 路由已在推,后续重入被 isFullscreen 挡
       await navigator.push(
-        PageRouteBuilder(
+        InteractionPageRouteBuilder(
           settings: const RouteSettings(name: fullscreenVideoRouteName),
           opaque: true,
           barrierColor: Colors.black,

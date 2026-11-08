@@ -378,7 +378,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     );
     if (result == true && mounted) {
       Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const AiProvidersPage()));
+          .push(InteractionPageRoute(builder: (_) => const AiProvidersPage()));
     }
   }
 
@@ -1464,7 +1464,7 @@ class _ThinkingButton extends StatelessWidget {
 
   void _showCustomDialog(BuildContext context, ThinkingConfig current) {
     final controller = TextEditingController(text: '${current.customBudget}');
-    showDialog(
+    showInteractionDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(AiL10n.current.thinkingCustom),

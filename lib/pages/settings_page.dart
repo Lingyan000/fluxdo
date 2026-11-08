@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -61,6 +62,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  final _routeInteractionObserver = RouteInteractionObserver();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _detailNavigatorKey = GlobalKey<NavigatorState>();
@@ -135,8 +137,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         // 内栏子页登记 ESC 兜底(共享全局登记表):有子页时 ESC 先退
         // 子页;退到内栏基层(isFirst 不登记)后落回设置页自身 surface
         // 关整页——修掉"宽屏设置 ESC 直接关整页"的旧行为。
-        observers: [EscFallbackObserver()],
-        onGenerateRoute: (_) => MaterialPageRoute(
+        observers: [_routeInteractionObserver, EscFallbackObserver()],
+        onGenerateRoute: (_) => InteractionPageRoute(
           settings: const RouteSettings(name: 'settings-detail-empty'),
           builder: (_) => _buildDetailEmptyState(theme),
         ),
@@ -238,7 +240,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void _openSettingsPage(WidgetBuilder builder) {
     final canShowParallel = SettingsPage.canShowParallelFor(context);
     if (!canShowParallel) {
-      Navigator.push(context, MaterialPageRoute(builder: builder));
+      Navigator.push(context, InteractionPageRoute(builder: builder));
       return;
     }
 
@@ -246,7 +248,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       final navigator = _detailNavigatorKey.currentState;
       if (navigator == null) return;
       navigator.pushAndRemoveUntil(
-        MaterialPageRoute(builder: builder),
+        InteractionPageRoute(builder: builder),
         (route) => route.isFirst,
       );
     }

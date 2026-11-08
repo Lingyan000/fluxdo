@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter/services.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
@@ -439,7 +440,7 @@ class ComposerObjectController extends ValueNotifier<ComposerObjectSelection?> {
     final before = _resolve(target);
     final state = editor();
     if (before?.image == null || state == null) return;
-    final size = await showDialog<int>(
+    final size = await showInteractionDialog<int>(
       context: context(),
       builder: (context) => SimpleDialog(
         title: const Text('图片尺寸'),

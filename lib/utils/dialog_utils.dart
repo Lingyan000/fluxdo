@@ -330,7 +330,8 @@ Future<T?> showAppBottomSheet<T>({
 }
 
 /// 支持动画模糊的 ModalBottomSheetRoute 子类
-class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
+class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
+    with InterruptibleRoute<T> {
   final bool enableBlur;
 
   _BlurModalBottomSheetRoute({
@@ -394,7 +395,8 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
 }
 
 /// 支持动画模糊的 RawDialogRoute 替代
-class _BlurRawDialogRoute<T> extends PopupRoute<T> {
+class _BlurRawDialogRoute<T> extends PopupRoute<T>
+    with InterruptibleRoute<T> {
   final RoutePageBuilder pageBuilder;
   final bool _barrierDismissible;
   final String? _barrierLabel;
@@ -461,12 +463,15 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (_transitionBuilder != null) {
-      return _transitionBuilder(context, animation, secondaryAnimation, child);
-    }
-    return FadeTransition(
-      opacity: CurvedAnimation(parent: animation, curve: Curves.linear),
-      child: child,
+    final content = RouteContentInteraction(route: this, child: child);
+    return RouteInputGate(
+      route: this,
+      child: _transitionBuilder != null
+          ? _transitionBuilder(context, animation, secondaryAnimation, content)
+          : FadeTransition(
+              opacity: CurvedAnimation(parent: animation, curve: Curves.linear),
+              child: content,
+            ),
     );
   }
 

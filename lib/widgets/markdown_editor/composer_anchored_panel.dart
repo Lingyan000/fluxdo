@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble, SemanticsRole;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'composer_object_surface.dart';
@@ -45,7 +46,7 @@ Future<T?> showComposerAnchoredPanel<T>({
   return value;
 }
 
-class _ComposerPanelRoute<T> extends PopupRoute<T> {
+class _ComposerPanelRoute<T> extends PopupRoute<T> with InterruptibleRoute<T> {
   _ComposerPanelRoute({
     required this.anchor,
     required this.viewport,

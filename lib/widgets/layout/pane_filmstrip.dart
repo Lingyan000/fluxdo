@@ -13,6 +13,32 @@ class PaneProjectionBack {
   PaneProjectionBack._();
 
   static final ValueNotifier<double> progress = ValueNotifier(0);
+  static ({BuildContext owner, double progress})? _committedExit;
+  static int _exitGeneration = 0;
+
+  /// Commit the stack change now; the departing cell keeps painting from the
+  /// hand's last position while the newly current cell accepts input.
+  static void commitExit(BuildContext owner, double value) {
+    _committedExit = (owner: owner, progress: value.clamp(0.0, 1.0));
+    final generation = ++_exitGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_exitGeneration == generation) _committedExit = null;
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  static double? _takeCommittedExit(BuildContext context) {
+    final exit = _committedExit;
+    if (exit == null || !exit.owner.mounted) return null;
+    var owned = false;
+    context.visitAncestorElements((element) {
+      owned = identical(element, exit.owner);
+      return !owned;
+    });
+    if (!owned) return null;
+    _committedExit = null;
+    return exit.progress;
+  }
 
   /// 预测返回 commit 收尾:progress 已把顶格滑出屏,随后的清栈不能再
   /// 演一遍退栈动画(顶格会跳回原位再滑出)。清栈前置位,胶片带在
@@ -151,6 +177,7 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
   int _lastViewportPanes = 0;
   double _lastMasterWidth = 0;
   bool _kickScheduled = false;
+  Key? _lastTopKey;
 
   @override
   void initState() {
@@ -241,7 +268,11 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
     return 1.0;
   }
 
-  void _syncCells(Size size, {required bool animateChanges}) {
+  void _syncCells(
+    Size size, {
+    required bool animateChanges,
+    double? committedExit,
+  }) {
     final targets = _targetLayout(size);
     final t = _progress;
     var structureChanged = false;
@@ -251,7 +282,10 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
     var bandShifted = false;
 
     Rect currentRectOf(_Cell cell) => Rect.fromLTWH(
-      cell.leftAt(t),
+      cell.leftAt(t) +
+          (committedExit != null && identical(cell, _cells[_lastTopKey])
+              ? committedExit * size.width
+              : 0),
       cell.to.top,
       cell.to.width,
       cell.to.height,
@@ -273,7 +307,7 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
       cell.widget = content;
       cell.exiting = false;
       if (cell.to != target) {
-        cell.from = currentRectOf(cell);
+        cell.from = committedExit != null ? target : currentRectOf(cell);
         cell.to = target;
         structureChanged = true;
         bandShifted = true;
@@ -384,6 +418,12 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
         _syncCells(
           size,
           animateChanges: widget.animate && !formChanged && !suppressed,
+          committedExit:
+              widget.viewportPanes <= 1 &&
+                  _lastTopKey != null &&
+                  !widget.panes.any((pane) => pane.key == _lastTopKey)
+              ? PaneProjectionBack._takeCommittedExit(context)
+              : null,
         );
 
         final d = widget.panes.length;
@@ -391,6 +431,7 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
         final rightLeft =
             projecting ? 0.0 : widget.masterWidth;
         final topKey = d > 0 ? widget.panes.last.key : null;
+        _lastTopKey = topKey;
 
         Widget band = AnimatedBuilder(
           animation: widget.bandDrag == null

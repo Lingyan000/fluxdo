@@ -18,6 +18,8 @@ export 'src/desktop_scroll_interaction.dart';
 export 'src/glass_settings.dart';
 export 'src/glass_surface.dart';
 export 'src/glass_surface_frame.dart';
+export 'src/interaction_gate.dart';
+export 'src/route_interaction.dart';
 export 'src/predictive_back_cupertino_transitions.dart';
 export 'src/keyboard_inset_isolation.dart';
 export 'src/route_motion_hold.dart';

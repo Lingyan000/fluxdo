@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/s.dart';
@@ -68,7 +69,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   Future<void> _showAddUserDialog() async {
     final controller = TextEditingController();
-    final username = await showDialog<String>(
+    final username = await showInteractionDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(ctx.l10n.seeking_addUser),
@@ -134,7 +135,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: activity.topicId,
           initialTitle: activity.title,
@@ -152,7 +153,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
+      InteractionPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
   }
 
@@ -560,7 +561,7 @@ class _UserChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         onTap: onTap,
-        onLongPress: () => showDialog<void>(
+        onLongPress: () => showInteractionDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(ctx.l10n.seeking_removeUser),

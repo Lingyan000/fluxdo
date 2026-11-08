@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -268,7 +269,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             return;
           }
           navigator.push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => TopicDetailPage(
                 topicId: topicId,
                 initialTitle: topicSlug,
@@ -453,7 +454,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                     onTap: () {
                       Navigator.of(context).pop();
                       Navigator.of(context).push(
-                        MaterialPageRoute(
+                        InteractionPageRoute(
                           builder: (_) =>
                               CategoryTopicsPage(category: category),
                         ),
@@ -545,7 +546,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
-                MaterialPageRoute(
+                InteractionPageRoute(
                   builder: (_) => TagTopicsPage(tagName: tag.name),
                 ),
               );

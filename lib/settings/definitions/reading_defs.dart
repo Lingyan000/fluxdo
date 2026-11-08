@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -317,7 +318,7 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
               trailing: const Icon(Symbols.chevron_right_rounded),
               onTap: enabled
                   ? () => Navigator.of(context).push(
-                      MaterialPageRoute(
+                      InteractionPageRoute(
                         builder: (_) => const ProgressGestureMenuSettingsPage(),
                       ),
                     )
@@ -379,7 +380,7 @@ void _showLineStylePicker(
     (NestedLineStyle.straight, l10n.nested_lineStyleStraight),
   ];
 
-  showDialog<NestedLineStyle>(
+  showInteractionDialog<NestedLineStyle>(
     context: context,
     builder: (context) => SimpleDialog(
       title: Text(l10n.nested_lineStyle),
@@ -426,7 +427,7 @@ void _showBookmarksOpenModePicker(
     ),
   ];
 
-  showDialog<BookmarksOpenMode>(
+  showInteractionDialog<BookmarksOpenMode>(
     context: context,
     builder: (context) => SimpleDialog(
       title: Text(l10n.reading_bookmarksOpenMode),
@@ -466,7 +467,7 @@ void _showGestureActionPicker(
   void Function(ProgressGestureAction) onPicked,
 ) {
   final l10n = context.l10n;
-  showDialog<ProgressGestureAction>(
+  showInteractionDialog<ProgressGestureAction>(
     context: context,
     builder: (dialogContext) {
       final screen = MediaQuery.of(dialogContext).size;

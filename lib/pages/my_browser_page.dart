@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +50,7 @@ class MyBrowserPage extends ConsumerWidget {
                 subtitle: context.l10n.myBrowser_bookmarkCount(bookmarkCount),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const _BookmarkListPage()),
+                  InteractionPageRoute(builder: (_) => const _BookmarkListPage()),
                 ),
               ),
               _EntryTile(
@@ -59,7 +60,7 @@ class MyBrowserPage extends ConsumerWidget {
                 subtitle: context.l10n.myBrowser_historyDesc,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const _WebHistoryPage()),
+                  InteractionPageRoute(builder: (_) => const _WebHistoryPage()),
                 ),
               ),
               _EntryTile(
@@ -69,7 +70,7 @@ class MyBrowserPage extends ConsumerWidget {
                 subtitle: context.l10n.myBrowser_downloadsDesc,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const DownloadListPage()),
+                  InteractionPageRoute(builder: (_) => const DownloadListPage()),
                 ),
               ),
             ],

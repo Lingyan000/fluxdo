@@ -10,6 +10,103 @@ import 'package:fluxdo/widgets/layout/pane_filmstrip.dart';
 /// - 投影(viewportPanes=1)只露栈顶格;
 /// - pinned 模式 master 恒在左栏。
 void main() {
+  testWidgets('预测返回提交后退出格从当前进度收尾，下层立即可滚动', (tester) async {
+    final scroll = ScrollController(initialScrollOffset: 400);
+    addTearDown(scroll.dispose);
+    addTearDown(() => PaneProjectionBack.progress.value = 0);
+    late BuildContext owner;
+    Widget page(bool detail) => MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) {
+            owner = context;
+            return PaneFilmstrip(
+              master: ListView.builder(
+                controller: scroll,
+                itemCount: 100,
+                itemExtent: 60,
+                itemBuilder: (_, i) => Text('row $i'),
+              ),
+              panes: detail
+                  ? [
+                      const ColoredBox(
+                        key: ValueKey('exit'),
+                        color: Colors.blue,
+                      ),
+                    ]
+                  : [],
+              masterWidth: 400,
+              viewportPanes: 1,
+              pinMaster: false,
+              bandDrag: PaneProjectionBack.progress,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpWidget(page(true));
+    await tester.pumpAndSettle();
+    PaneProjectionBack.progress.value = .35;
+    await tester.pump();
+    final exiting = find.byWidgetPredicate(
+      (widget) => widget is ColoredBox && widget.key == const ValueKey('exit'),
+    );
+    final before = tester.getTopLeft(exiting).dx;
+    PaneProjectionBack.commitExit(owner, .35);
+    PaneProjectionBack.progress.value = 0;
+    await tester.pumpWidget(page(false));
+    expect(tester.getTopLeft(exiting).dx, closeTo(before, .1));
+    final start = scroll.offset;
+    final drag = await tester.startGesture(const Offset(600, 300));
+    await drag.moveBy(const Offset(3, -30));
+    await tester.pump();
+    await drag.moveBy(const Offset(4, -100));
+    await tester.pump();
+    expect(scroll.offset - start, greaterThan(60));
+    await drag.cancel();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('exit')), findsNothing);
+  });
+
+  for (final expire in [false, true]) {
+    testWidgets('退出进度仅归对应宿主且下一帧失效 expire=$expire', (tester) async {
+      late BuildContext owner;
+      Widget strip(int index, bool detail) => Builder(
+        builder: (context) {
+          if (index == 1) owner = context;
+          return PaneFilmstrip(
+            master: const SizedBox.expand(),
+            panes: detail
+                ? [ColoredBox(key: ValueKey(index), color: Colors.blue)]
+                : [],
+            viewportPanes: 1,
+            masterWidth: 400,
+            pinMaster: false,
+          );
+        },
+      );
+      Widget page(bool detail) => MaterialApp(
+        home: Row(
+          children: [
+            Expanded(child: strip(0, detail)),
+            Expanded(child: strip(1, detail)),
+          ],
+        ),
+      );
+      await tester.pumpWidget(page(true));
+      await tester.pumpAndSettle();
+      PaneProjectionBack.commitExit(owner, .5);
+      if (expire) await tester.pump();
+      await tester.pumpWidget(page(false));
+      Finder pane(int index) => find.byWidgetPredicate(
+        (widget) => widget is ColoredBox && widget.key == ValueKey(index),
+      );
+      expect(tester.getTopLeft(pane(0)).dx, 0, reason: '另一个宿主不得消费进度');
+      expect(tester.getTopLeft(pane(1)).dx, expire ? 400 : 600);
+      await tester.pumpAndSettle();
+    });
+  }
+
   Widget host({
     required List<Widget> panes,
     bool pinMaster = false,
@@ -39,10 +136,7 @@ void main() {
 
   testWidgets('压栈:旧顶格滑去左栏,State 不丢;退栈滑回仍不丢', (tester) async {
     addTearDown(tester.view.reset);
-    await pumpWide(
-      tester,
-      host(panes: [const _Counter(key: ValueKey('a'))]),
-    );
+    await pumpWide(tester, host(panes: [const _Counter(key: ValueKey('a'))]));
     await tester.pumpAndSettle();
 
     // 计数 +1
@@ -53,20 +147,19 @@ void main() {
     // 压栈:格 a 滑去左栏,格 b 入场
     await pumpWide(
       tester,
-      host(panes: [
-        const _Counter(key: ValueKey('a')),
-        const Text('层B', key: ValueKey('b')),
-      ]),
+      host(
+        panes: [
+          const _Counter(key: ValueKey('a')),
+          const Text('层B', key: ValueKey('b')),
+        ],
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('层B'), findsOneWidget);
     expect(find.text('1'), findsOneWidget, reason: '格 a 滑到左栏,State 必须保留');
 
     // 退栈:格 b 出场,格 a 滑回右栏
-    await pumpWide(
-      tester,
-      host(panes: [const _Counter(key: ValueKey('a'))]),
-    );
+    await pumpWide(tester, host(panes: [const _Counter(key: ValueKey('a'))]));
     await tester.pumpAndSettle();
     expect(find.text('层B'), findsNothing);
     expect(find.text('1'), findsOneWidget, reason: '格 a 滑回右栏,State 必须保留');
@@ -76,10 +169,12 @@ void main() {
     addTearDown(tester.view.reset);
     await pumpWide(
       tester,
-      host(panes: [
-        const Text('层A', key: ValueKey('a')),
-        const Text('层B', key: ValueKey('b')),
-      ]),
+      host(
+        panes: [
+          const Text('层A', key: ValueKey('a')),
+          const Text('层B', key: ValueKey('b')),
+        ],
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -168,17 +263,12 @@ void main() {
     expect(find.text('空态'), findsOneWidget);
   });
 
-  testWidgets('masterFillsWhenEmpty:栈空 master 撑满且恒无空态,压栈收窄', (
-    tester,
-  ) async {
+  testWidgets('masterFillsWhenEmpty:栈空 master 撑满且恒无空态,压栈收窄', (tester) async {
     addTearDown(tester.view.reset);
     Widget fillHost(List<Widget> panes) => MaterialApp(
       home: Scaffold(
         body: PaneFilmstrip(
-          master: const SizedBox.expand(
-            key: ValueKey('m'),
-            child: Text('资料页'),
-          ),
+          master: const SizedBox.expand(key: ValueKey('m'), child: Text('资料页')),
           panes: panes,
           emptyPane: const Text('空态'),
           masterFillsWhenEmpty: true,
@@ -226,9 +316,6 @@ class _CounterState extends State<_Counter> {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: () => setState(() => n++),
-      child: Text('$n'),
-    );
+    return TextButton(onPressed: () => setState(() => n++), child: Text('$n'));
   }
 }

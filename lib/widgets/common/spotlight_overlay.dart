@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 /// 高亮引导遮罩
@@ -7,6 +8,7 @@ import 'package:app_icons/app_icons.dart';
 /// 点击任意位置关闭。
 class SpotlightOverlay {
   static OverlayEntry? _entry;
+  static ValueNotifier<bool>? _input;
 
   /// 显示高亮引导
   /// [targetKey] 需要高亮的组件的 GlobalKey
@@ -36,31 +38,42 @@ class SpotlightOverlay {
       size.height + padding.top + padding.bottom,
     );
 
-    _entry = OverlayEntry(
+    final input = ValueNotifier(true);
+    _input = input;
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
       builder: (context) => _SpotlightWidget(
+        input: input,
         targetRect: targetRect,
         borderRadius: borderRadius,
         message: message,
-        onDismiss: dismiss,
+        onDismiss: () {
+          if (identical(_entry, entry)) dismiss();
+        },
       ),
     );
-
-    Overlay.of(context).insert(_entry!);
+    _entry = entry;
+    Overlay.of(context).insert(entry);
   }
 
   static void dismiss() {
+    _input?.value = false;
     _entry?.remove();
     _entry = null;
+    _input?.dispose();
+    _input = null;
   }
 }
 
 class _SpotlightWidget extends StatefulWidget {
+  final ValueNotifier<bool> input;
   final Rect targetRect;
   final double borderRadius;
   final String message;
   final VoidCallback onDismiss;
 
   const _SpotlightWidget({
+    required this.input,
     required this.targetRect,
     required this.borderRadius,
     required this.message,
@@ -73,6 +86,7 @@ class _SpotlightWidget extends StatefulWidget {
 
 class _SpotlightWidgetState extends State<_SpotlightWidget>
     with SingleTickerProviderStateMixin {
+  ValueNotifier<bool> get _acceptsInput => widget.input;
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
 
@@ -97,8 +111,14 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
   }
 
   Future<void> _dismiss() async {
-    await _controller.reverse();
-    widget.onDismiss();
+    if (!_acceptsInput.value) return;
+    _acceptsInput.value = false;
+    try {
+      await _controller.reverse().orCancel;
+      if (mounted) widget.onDismiss();
+    } on TickerCanceled {
+      // Removed or replaced before the exit animation completed.
+    }
   }
 
   @override
@@ -110,81 +130,84 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
     final spaceBelow = screenSize.height - widget.targetRect.bottom;
     final showBelow = spaceBelow > 120;
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: GestureDetector(
-        onTap: _dismiss,
-        behavior: HitTestBehavior.opaque,
-        child: Stack(
-          children: [
-            // 半透明遮罩（中间镂空）
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _SpotlightPainter(
-                  targetRect: widget.targetRect,
-                  borderRadius: widget.borderRadius,
-                ),
-              ),
-            ),
-
-            // 高亮边框（呼吸动画）
-            Positioned.fromRect(
-              rect: widget.targetRect,
-              child: IgnorePointer(
-                child: _PulsingBorder(
-                  borderRadius: widget.borderRadius,
-                  color: theme.colorScheme.primary.withValues(alpha: 0.6),
-                ),
-              ),
-            ),
-
-            // 提示文案
-            Positioned(
-              left: 24,
-              right: 24,
-              top: showBelow ? widget.targetRect.bottom + 16 : null,
-              bottom: showBelow
-                  ? null
-                  : screenSize.height - widget.targetRect.top + 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!showBelow)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Icon(
-                        Symbols.arrow_downward_rounded,
-                        color: Colors.white.withValues(alpha: 0.8),
-                        size: 20,
-                      ),
-                    ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: theme.colorScheme.inverseSurface.withValues(
-                        alpha: 0.92,
-                      ),
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      widget.message,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onInverseSurface,
-                        fontWeight: FontWeight.w500,
-                        height: 1.4,
-                      ),
-                    ),
+    return InteractionGate(
+      enabled: _acceptsInput,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: GestureDetector(
+          onTap: _dismiss,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            children: [
+              // 半透明遮罩（中间镂空）
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _SpotlightPainter(
+                    targetRect: widget.targetRect,
+                    borderRadius: widget.borderRadius,
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
+
+              // 高亮边框（呼吸动画）
+              Positioned.fromRect(
+                rect: widget.targetRect,
+                child: IgnorePointer(
+                  child: _PulsingBorder(
+                    borderRadius: widget.borderRadius,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+
+              // 提示文案
+              Positioned(
+                left: 24,
+                right: 24,
+                top: showBelow ? widget.targetRect.bottom + 16 : null,
+                bottom: showBelow
+                    ? null
+                    : screenSize.height - widget.targetRect.top + 16,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!showBelow)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Icon(
+                          Symbols.arrow_downward_rounded,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          size: 20,
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      decoration: ShapeDecoration(
+                        color: theme.colorScheme.inverseSurface.withValues(
+                          alpha: 0.92,
+                        ),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        widget.message,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onInverseSurface,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

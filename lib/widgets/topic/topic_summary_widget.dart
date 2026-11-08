@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -259,7 +260,7 @@ class TopicSummaryWidget extends ConsumerWidget {
                   return;
                 }
                 Navigator.of(context).push(
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) => TopicDetailPage(
                       topicId: linkTopicId,
                       initialTitle: topicSlug,

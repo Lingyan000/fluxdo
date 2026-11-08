@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -117,7 +118,7 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                 return;
               }
               Navigator.of(context).push(
-                MaterialPageRoute(
+                InteractionPageRoute(
                   builder: (_) => TopicDetailPage(
                     topicId: topic.id,
                     initialTitle: topic.title,
@@ -401,7 +402,7 @@ class _BrowseMoreLine extends StatelessWidget {
         alignment: AlignmentDirectional.centerStart,
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => CategoryTopicsPage(category: category),
             ),
           ),
