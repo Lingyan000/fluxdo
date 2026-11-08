@@ -37,7 +37,7 @@ namespace flutter_inappwebview_plugin
     };
   }
 
-  ICoreWebView2WebResourceResponse* WebResourceResponse::toWebView2Response(const wil::com_ptr<ICoreWebView2Environment> webViewEnvironment) const
+  wil::com_ptr<ICoreWebView2WebResourceResponse> WebResourceResponse::toWebView2Response(const wil::com_ptr<ICoreWebView2Environment> webViewEnvironment) const
   {
     wil::com_ptr<ICoreWebView2WebResourceResponse> webResourceResponse;
 
@@ -45,16 +45,18 @@ namespace flutter_inappwebview_plugin
       wil::com_ptr<IStream> postDataStream = nullptr;
       if (data.has_value()) {
         auto postData = std::string(data.value().begin(), data.value().end());
-        postDataStream = SHCreateMemStream(
-          reinterpret_cast<const BYTE*>(postData.data()), static_cast<UINT>(postData.length()));
+        postDataStream.attach(SHCreateMemStream(
+          reinterpret_cast<const BYTE*>(postData.data()), static_cast<UINT>(postData.length())));
+        if (!postDataStream) return nullptr;
       }
 
-      webViewEnvironment->CreateWebResourceResponse(
+      const auto created = webViewEnvironment->CreateWebResourceResponse(
         postDataStream.get(),
         statusCode.value_or(200), // Default to 200 if statusCode is not set
         reasonPhrase.has_value() ? utf8_to_wide(reasonPhrase.value()).c_str() : L"OK", // Default to "OK" if reasonPhrase is not set
         nullptr,
         &webResourceResponse);
+      if (FAILED(created) || !webResourceResponse) return nullptr;
 
       wil::com_ptr<ICoreWebView2HttpResponseHeaders> responseHeaders;
       if (SUCCEEDED(webResourceResponse->get_Headers(&responseHeaders))) {
@@ -65,16 +67,21 @@ namespace flutter_inappwebview_plugin
           }
         }
         if (contentType.has_value() && !contentType.value().empty()) {
-          responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(contentType.value()).c_str());
-        }
-        if (contentEncoding.has_value() && !contentEncoding.value().empty()) {
-          responseHeaders->AppendHeader(L"Content-Encoding", utf8_to_wide(contentEncoding.value()).c_str());
+          auto mime = contentType.value();
+          // Dart contentEncoding 指字符集，不能作为 gzip/br 的 HTTP Content-Encoding。
+          if (contentEncoding.has_value() && !contentEncoding.value().empty() &&
+              mime.find("charset=") == std::string::npos) {
+            mime += "; charset=" + contentEncoding.value();
+          }
+          BOOL hasContentType = FALSE;
+          responseHeaders->Contains(L"Content-Type", &hasContentType);
+          if (!hasContentType) {
+            responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(mime).c_str());
+          }
         }
       }
-
-      webResourceResponse->AddRef();
     }
 
-    return webResourceResponse.get();
+    return webResourceResponse;
   }
 }

@@ -32,6 +32,7 @@ class BrowserTabSession {
   Future<void>? _closing;
 
   bool get isClosed => _closed;
+  bool get supportsDragRestore => true;
   Future<void> get whenDetached => _detached?.future ?? Future.value();
 
   void attach() {

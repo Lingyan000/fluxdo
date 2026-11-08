@@ -7,6 +7,7 @@
 #include "in_app_browser/in_app_browser_manager.h"
 #include "in_app_webview/in_app_webview_manager.h"
 #include "platform_util.h"
+#include "types/channel_delegate.h"
 #include "webview_environment/webview_environment_manager.h"
 
 
@@ -45,6 +46,9 @@ namespace flutter_inappwebview_plugin
 
   FlutterInappwebviewWindowsPlugin::~FlutterInappwebviewWindowsPlugin()
   {
+    // Flutter 已清空 messenger 的 engine。此时只释放插件资源，不能再通过
+    // SetMethodCallHandler 访问停止的引擎；正常单个 WebView 关闭仍注销通道。
+    ChannelDelegate::ShutdownScope shutdown(registrar ? registrar->messenger() : nullptr);
     if (registrar) {
       registrar->UnregisterTopLevelWindowProcDelegate(window_proc_id);
     }

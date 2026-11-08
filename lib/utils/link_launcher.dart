@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/site_customization.dart';
 import '../constants.dart';
+import '../modules/mini_apps/mini_app_navigation.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/webview_page.dart';
@@ -15,6 +16,8 @@ import '../providers/preferences_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
+import '../services/toast_service.dart';
+import '../l10n/s.dart';
 import '../widgets/common/external_link_confirm_dialog.dart';
 import '../widgets/content/discourse_html_content/image_utils.dart';
 import '../widgets/layout/home_workspace_scope.dart';
@@ -66,7 +69,12 @@ bool _isImageLinkUrl(String url) {
 ///
 /// 根据用户偏好决定使用内置浏览器还是外部浏览器
 /// 如果启用了链接安全检查，会根据链接风险等级显示确认对话框
-Future<void> launchExternalLink(BuildContext context, String url) async {
+Future<void> launchExternalLink(
+  BuildContext context,
+  String url, {
+  Future<bool?> Function(String url, LinkRiskLevel risk)? confirm,
+  Future<void> Function(String url)? showBlocked,
+}) async {
   if (url.isEmpty) return;
   final uri = Uri.tryParse(url);
   if (uri == null) return;
@@ -83,17 +91,15 @@ Future<void> launchExternalLink(BuildContext context, String url) async {
         break;
       case LinkRiskLevel.blocked:
         // 阻止链接，显示阻止提示
-        await showLinkBlockedDialog(context, url);
+        await (showBlocked?.call(url) ?? showLinkBlockedDialog(context, url));
         return;
       case LinkRiskLevel.normal:
       case LinkRiskLevel.risky:
       case LinkRiskLevel.dangerous:
         // 需要确认的链接，显示确认对话框
-        final confirmed = await showExternalLinkConfirmDialog(
-          context,
-          url,
-          riskLevel,
-        );
+        final confirmed =
+            await (confirm?.call(url, riskLevel) ??
+                showExternalLinkConfirmDialog(context, url, riskLevel));
         if (confirmed != true) return;
         break;
     }
@@ -113,8 +119,18 @@ Future<void> launchExternalLink(BuildContext context, String url) async {
     return;
   }
 
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  // Android 的包可见性查询可能返回 false，但实际 ACTION_VIEW 仍能打开。
+  // 确认之后直接尝试启动；网页失败则交给内置浏览器，不能悄悄丢掉点击。
+  try {
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+  } catch (_) {
+    // 无可用处理程序、平台插件异常均进入同一兜底。
+  }
+  if (!context.mounted) return;
+  if (uri.scheme == 'https' || uri.scheme == 'http') {
+    WebViewPage.open(context, url);
+  } else {
+    ToastService.showError(context.l10n.common_cannotOpenBrowser);
   }
 }
 
@@ -141,6 +157,9 @@ Future<void> launchContentLink(
     // 短链解析期间列表项可能已离开缓存范围并被销毁，不能再使用旧 context。
     if (!context.mounted) return;
   }
+
+  if (await openMiniAppLink(context, url)) return;
+  if (!context.mounted) return;
 
   // 1. 识别用户链接 /u/username
   final userInfo = DiscourseUrlParser.parseUser(url);
@@ -210,7 +229,6 @@ Future<void> launchContentLink(
     return;
   }
 
-
   // 3. 图片直链(站点自己的域名/CDN/S3 CDN)→ 直接用内置查看器打开,
   //    与网页端一致(点图直接看大图,不当"外部链接"走离站确认弹窗)。
   //    只信任站点自己配置的域名——不是随便一个图片后缀的外链都放行。
@@ -220,7 +238,10 @@ Future<void> launchContentLink(
     );
     final uri = Uri.tryParse(fullUrl);
     if (uri != null && UrlHelper.isTrustedImageHost(uri)) {
-      await ImageViewerPage.open(context, DiscourseImageUtils.getOriginalUrl(fullUrl));
+      await ImageViewerPage.open(
+        context,
+        DiscourseImageUtils.getOriginalUrl(fullUrl),
+      );
       return;
     }
   }

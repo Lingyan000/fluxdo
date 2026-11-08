@@ -3,6 +3,7 @@
 
 #include <flutter/standard_message_codec.h>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "../types/accelerator_key_pressed_detail.h"
@@ -55,7 +56,7 @@ namespace flutter_inappwebview_plugin
       ~ShouldOverrideUrlLoadingCallback() = default;
     };
 
-    class CallJsHandlerCallback : public BaseCallbackResult<const flutter::EncodableValue*> {
+    class CallJsHandlerCallback : public BaseCallbackResult<std::string> {
     public:
       CallJsHandlerCallback();
       ~CallJsHandlerCallback() = default;

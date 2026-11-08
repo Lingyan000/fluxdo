@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
+  desktop_multi_window
   dynamic_color
   file_selector_linux
   flutter_acrylic

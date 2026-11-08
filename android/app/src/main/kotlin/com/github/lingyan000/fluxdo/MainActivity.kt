@@ -135,6 +135,7 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         interactiveKeyboardChannel?.dispose()
         interactiveKeyboardChannel = null
+        MiniAppWindows.detach()
         FairMemoryReceiver.detachEngine(flutterEngine)
         super.cleanUpFlutterEngine(flutterEngine)
     }
@@ -176,6 +177,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MiniAppWindows.attach(this, flutterEngine.dartExecutor.binaryMessenger)
         interactiveKeyboardChannel?.dispose()
         interactiveKeyboardChannel = InteractiveKeyboardChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         // 公平内存预警 → Dart 标准 memoryPressure 的转发依赖 engine 引用

@@ -39,7 +39,7 @@ Rect browserDockRect(Size size, double safeBottom) {
   );
 }
 
-/// 只由浏览器路由驱动；小程序沿用已有路由和底栏避让规则。
+/// 浏览器和小程序共用底栏交接、拖动进度与视口避让。
 class BrowserDockMotion extends ChangeNotifier {
   final stateChanges = ValueNotifier(0);
   Animation<double>? _animation;
@@ -51,6 +51,7 @@ class BrowserDockMotion extends ChangeNotifier {
   double? _restoreDragVelocity;
   ValueChanged<double>? _updateRestore;
   ValueChanged<double>? _endRestore;
+  double? restoreDragExtent;
   bool get active => _animation != null;
   BrowserTabSession? get tab => _tab;
   double get openProgress => _linear
@@ -82,6 +83,7 @@ class BrowserDockMotion extends ChangeNotifier {
     _restoreDragTab = tab;
     _restoreDragProgress = 0;
     _restoreDragVelocity = null;
+    restoreDragExtent = null;
   }
 
   void updateRestoreDrag(double progress) {
@@ -102,6 +104,7 @@ class BrowserDockMotion extends ChangeNotifier {
   }
 
   void clearRestoreDrag() {
+    restoreDragExtent = null;
     _restoreDragTab = null;
     _updateRestore = null;
     _endRestore = null;

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
+import '../modules/mini_apps/mini_app_navigation.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
@@ -945,6 +946,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Widget _buildSystemAndToolsCard(ThemeData theme) {
     return SegmentedCardGroup(
       children: [
+        _buildOptionTile(
+          icon: Symbols.apps_rounded,
+          title: context.l10n.miniApp_title,
+          onTap: () => openMiniAppGallery(context),
+        ),
         _buildOptionTile(
           icon: Symbols.language_rounded,
           iconColor: Colors.blue,

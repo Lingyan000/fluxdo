@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:common_ui/common_ui.dart';
 
 import '../../providers/shortcut_provider.dart';
@@ -37,6 +38,9 @@ abstract final class AppBottomSheet {
     bool isDismissible = true,
     bool enableDrag = true,
     bool blur = true,
+    ValueChanged<double>? onBlurSigmaChanged,
+    ValueListenable<bool>? blurReady,
+    bool filterBackdrop = true,
     ShortcutSurfaceConfig? shortcutSurface,
     Widget? footer,
     required WidgetBuilder builder,
@@ -49,6 +53,9 @@ abstract final class AppBottomSheet {
       // 表单卡片式禁止下滑关闭,避免误关丢失输入(列表式保留下滑关闭)
       enableDrag: style == AppSheetStyle.card ? false : enableDrag,
       blur: blur,
+      onBlurSigmaChanged: onBlurSigmaChanged,
+      blurReady: blurReady,
+      filterBackdrop: filterBackdrop,
       shortcutSurface: shortcutSurface,
       builder: (ctx) => AppSheetScaffold(
         style: style,

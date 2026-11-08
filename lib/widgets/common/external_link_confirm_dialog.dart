@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 
@@ -14,10 +15,16 @@ import 'app_bottom_sheet.dart';
 Future<bool?> showExternalLinkConfirmDialog(
   BuildContext context,
   String url,
-  LinkRiskLevel riskLevel,
-) {
+  LinkRiskLevel riskLevel, {
+  bool filterBackdrop = true,
+  ValueListenable<bool>? blurReady,
+  ValueChanged<double>? onBlurSigmaChanged,
+}) {
   return showAppBottomSheet<bool>(
     context: context,
+    filterBackdrop: filterBackdrop,
+    blurReady: blurReady,
+    onBlurSigmaChanged: onBlurSigmaChanged,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     enableDrag: false, // 确认弹框:禁止下滑误关
@@ -27,9 +34,18 @@ Future<bool?> showExternalLinkConfirmDialog(
 }
 
 /// 显示链接被阻止的提示
-Future<void> showLinkBlockedDialog(BuildContext context, String url) {
+Future<void> showLinkBlockedDialog(
+  BuildContext context,
+  String url, {
+  bool filterBackdrop = true,
+  ValueListenable<bool>? blurReady,
+  ValueChanged<double>? onBlurSigmaChanged,
+}) {
   return showAppBottomSheet(
     context: context,
+    filterBackdrop: filterBackdrop,
+    blurReady: blurReady,
+    onBlurSigmaChanged: onBlurSigmaChanged,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     enableDrag: false, // 提示弹框:禁止下滑误关
@@ -46,7 +62,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final config = _getConfigForLevel(riskLevel, theme);
+    final config = _getConfigForLevel(context, riskLevel, theme);
     final urlInfo = _parseUrl(url);
 
     return AppSheetScaffold(
@@ -226,7 +242,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
 
   void _copyUrl(BuildContext context) {
     Clipboard.setData(ClipboardData(text: url));
-    ToastService.showSuccess(S.current.common_linkCopied);
+    ToastService.showSuccess(context.l10n.common_linkCopied);
   }
 
   _UrlInfo _parseUrl(String url) {
@@ -236,8 +252,12 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
     return _UrlInfo(host: uri.host, path: path);
   }
 
-  _DialogConfig _getConfigForLevel(LinkRiskLevel level, ThemeData theme) {
-    final l10n = S.current;
+  _DialogConfig _getConfigForLevel(
+    BuildContext context,
+    LinkRiskLevel level,
+    ThemeData theme,
+  ) {
+    final l10n = context.l10n;
     switch (level) {
       case LinkRiskLevel.normal:
         return _DialogConfig(

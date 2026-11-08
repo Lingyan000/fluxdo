@@ -2,6 +2,7 @@ import Cocoa
 import FlutterMacOS
 import WebKit
 import window_manager
+import desktop_multi_window
 
 class MainFlutterWindow: NSWindow {
   /// CGEvent 注入式 Cmd+V 的粘贴补丁(语音输入法/剪贴板管理器兼容)。
@@ -26,6 +27,9 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
+      RegisterGeneratedPlugins(registry: controller)
+    }
 
     // CGEvent 注入的 Cmd+V(语音输入法/剪贴板管理器)在 Flutter macOS 上会被
     // 框架吞掉,这里装一层只接管该形态的兜底。上游修复后可连同文件一并删除。

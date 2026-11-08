@@ -14,6 +14,9 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../models/topic.dart';
+import '../modules/mini_apps/home_mini_apps_layer.dart';
+import '../modules/mini_apps/mini_app_interaction.dart';
+
 import '../models/category.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
@@ -1278,6 +1281,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
           // 同曲线张开迎接胶囊缩成的图标（胶囊本体在
           // _CollapsibleHeader 的 overlay 层绘制，这里只占位）
           _SearchSlotSpacer(controller: _headerController),
+
           if (isLoggedIn && !Responsive.showNavigationRail(context))
             const NotificationIconButton(compact: true),
           if (kDebugMode)
@@ -2964,6 +2968,10 @@ class _TopicListState extends ConsumerState<_TopicList>
       hiddenByBlocked = byBlocked;
       return visible;
     });
+    final miniAppPullEnabled =
+        ref.watch(miniAppPullEnabledProvider) &&
+        widget.categoryId == null &&
+        widget.parentActive;
     final selectedTopicId = ref.watch(selectedTopicProvider).topicId;
     // 列表层读取一次；itemBuilder 冷挂载每张卡时直接复用结果。
     final enableLongPress = ref.watch(
@@ -3017,6 +3025,13 @@ class _TopicListState extends ConsumerState<_TopicList>
           statsAvailableWidth: statsAvailableWidth,
           child: DesktopRefreshIndicator(
             refreshIndicatorKey: _refreshIndicatorKey,
+            onSecondaryAction: miniAppPullEnabled
+                ? () => HomeMiniAppsLayer.of(context).open()
+                : null,
+            externalReveal: miniAppPullEnabled,
+            revealOffset: miniAppPullEnabled
+                ? () => HomeMiniAppsLayer.of(context).offset
+                : null,
             refreshNotifier: masterRefreshNotifier,
             // 头部可折叠段悬浮在列表上方;列表贴顶时头部必然全展开
             // （见 _HeaderCollapseController.handleScrollDelta 的上限规则），
@@ -3057,10 +3072,22 @@ class _TopicListState extends ConsumerState<_TopicList>
                       controller: _scrollController,
                       // 顶带吸附下沉在弹道层（继承惯性速度的弹簧 + 起手
                       // 分治迟滞，见 _TopSnapScrollPhysics）
-                      physics: _TopSnapScrollPhysics(
-                        controller: widget.headerController,
-                        parent: const AlwaysScrollableScrollPhysics(),
-                      ),
+                      physics: miniAppPullEnabled
+                          ? RefreshRevealScrollPhysics(
+                              holdLeadingEdge: () =>
+                                  _refreshIndicatorKey
+                                      .currentState
+                                      ?.isRevealing ??
+                                  false,
+                              parent: _TopSnapScrollPhysics(
+                                controller: widget.headerController,
+                                parent: const AlwaysScrollableScrollPhysics(),
+                              ),
+                            )
+                          : _TopSnapScrollPhysics(
+                              controller: widget.headerController,
+                              parent: const AlwaysScrollableScrollPhysics(),
+                            ),
                       slivers: [
                         SliverPadding(
                           // 底部让出 extendBody 注入的底栏高度（底栏滑出式后

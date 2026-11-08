@@ -123,17 +123,15 @@ class _BrowserDockHostState extends State<BrowserDockHost>
 
   void _startBarDrag(DragStartDetails details) {
     final tabs = widget.controller.tabs;
-    if (tabs.length > 1 &&
-        tabs.every((tab) => tab.runtimeType == BrowserTabSession)) {
+    if (tabs.length > 1) {
       _interactiveOverview = true;
       _overviewDragging = true;
       _overviewAnimation.stop();
       _setExpanded(true, animate: false);
       return;
     }
-    // 小程序继续通过其已有恢复入口运行，不介入它的路由和手势。
     if (tabs.length != 1 ||
-        tabs.single.runtimeType != BrowserTabSession ||
+        !tabs.single.supportsDragRestore ||
         _motion.active ||
         _restoreDragging) {
       return;
@@ -151,7 +149,10 @@ class _BrowserDockHostState extends State<BrowserDockHost>
     }
     if (!_restoreDragging) return;
     final media = MediaQuery.of(context);
-    final travel = browserDockRect(media.size, media.padding.bottom).top;
+    final travel =
+        _motion.restoreDragExtent ??
+        browserDockRect(media.size, media.padding.bottom).top;
+    if (travel <= 0) return;
     _restoreProgress = (_restoreProgress - details.delta.dy / travel).clamp(
       0.0,
       1.0,
@@ -221,9 +222,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
       final browserInFront =
           widget.observer.currentRoute?.settings.name == browserPageRouteName;
       final tabs = widget.controller.tabs;
-      final browserOnlyTabs =
-          tabs.isNotEmpty &&
-          tabs.every((tab) => tab.runtimeType == BrowserTabSession);
+      final canSwipeOverview = tabs.isNotEmpty;
       final movingTab = _motion.tab;
       final barTabs = [
         ...tabs,
@@ -366,13 +365,13 @@ class _BrowserDockHostState extends State<BrowserDockHost>
                 },
                 child: BrowserTabOverview(
                   visible: expanded,
-                  animation: browserOnlyTabs && _interactiveOverview
+                  animation: canSwipeOverview && _interactiveOverview
                       ? _overviewAnimation
                       : null,
-                  onDragStart: browserOnlyTabs ? _startOverviewDrag : null,
-                  onDragUpdate: browserOnlyTabs ? _updateOverviewDrag : null,
-                  onDragEnd: browserOnlyTabs ? _endOverviewDrag : null,
-                  onDragCancel: browserOnlyTabs
+                  onDragStart: canSwipeOverview ? _startOverviewDrag : null,
+                  onDragUpdate: canSwipeOverview ? _updateOverviewDrag : null,
+                  onDragEnd: canSwipeOverview ? _endOverviewDrag : null,
+                  onDragCancel: canSwipeOverview
                       ? () {
                           _overviewDragging = false;
                           _setExpanded(true);

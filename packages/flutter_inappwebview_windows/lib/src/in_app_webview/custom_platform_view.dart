@@ -103,6 +103,8 @@ class CustomPlatformViewController
   Completer<void> _creatingCompleter = Completer<void>();
   int _textureId = 0;
   bool _isDisposed = false;
+  Size? _surfaceSize;
+  double? _surfaceScaleFactor;
 
   Future<void> get ready => _creatingCompleter.future;
 
@@ -240,15 +242,29 @@ class CustomPlatformViewController
 
   /// Sets the surface size to the provided [size].
   Future<void> _setSize(Size size, double scaleFactor) async {
-    if (_isDisposed) {
+    if (_isDisposed || size.isEmpty) {
       return;
     }
     assert(value.isInitialized);
-    return _methodChannel.invokeMethod('setSize', [
-      size.width,
-      size.height,
-      scaleFactor,
-    ]);
+    // 点击、移动窗口、恢复焦点都会上报尺寸。相同尺寸不能重复下发，
+    // 原生端收到 setSize 会重建捕获帧池，干扰网页显示。
+    if (_surfaceSize == size && _surfaceScaleFactor == scaleFactor) return;
+    _surfaceSize = size;
+    _surfaceScaleFactor = scaleFactor;
+    try {
+      await _methodChannel.invokeMethod('setSize', [
+        size.width,
+        size.height,
+        scaleFactor,
+      ]);
+    } catch (_) {
+      // 失败的尺寸允许再次上报，不覆盖已经排入队列的新尺寸。
+      if (_surfaceSize == size && _surfaceScaleFactor == scaleFactor) {
+        _surfaceSize = null;
+        _surfaceScaleFactor = null;
+      }
+      rethrow;
+    }
   }
 
   /// Sets the surface size to the provided [size].
@@ -354,6 +370,22 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   void onWindowMove() {
     _reportSurfaceSize();
     _reportWidgetPosition();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 跨显示器时逻辑尺寸可能不变，但当前 FlutterView 的 DPI 会改变。
+    MediaQuery.maybeDevicePixelRatioOf(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportSurfaceSize());
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomPlatformView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scaleFactor != widget.scaleFactor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportSurfaceSize());
+    }
   }
 
   @override
@@ -501,27 +533,29 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   }
 
   void _reportSurfaceSize() async {
+    await _controller.ready;
+    if (!mounted) return;
     final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      await _controller.ready;
+    if (box != null && box.attached && box.hasSize) {
       unawaited(
         _controller._setSize(
           box.size,
-          widget.scaleFactor ?? window.devicePixelRatio,
+          widget.scaleFactor ?? View.of(context).devicePixelRatio,
         ),
       );
     }
   }
 
   void _reportWidgetPosition() async {
+    await _controller.ready;
+    if (!mounted) return;
     final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      await _controller.ready;
+    if (box != null && box.attached && box.hasSize) {
       final position = box.localToGlobal(Offset.zero);
       unawaited(
         _controller._setPosition(
           position,
-          widget.scaleFactor ?? window.devicePixelRatio,
+          widget.scaleFactor ?? View.of(context).devicePixelRatio,
         ),
       );
     }

@@ -9,8 +9,20 @@ import workmanager_apple
   // 窗口由 UIScene 持有，不能再从 AppDelegate.window 获取界面。
   private weak var flutterViewController: FlutterViewController?
 
+  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
+                   options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    if options.userActivities.contains(where: { $0.activityType == MiniAppScenes.kind }) {
+      let cfg = UISceneConfiguration(name: "MiniApp", sessionRole: session.role)
+      cfg.delegateClass = MiniAppSceneDelegate.self
+      cfg.storyboard = nil
+      return cfg
+    }
+    return UISceneConfiguration(name: "flutter", sessionRole: session.role)
+  }
+
   func connectFlutterViewController(_ controller: FlutterViewController) {
     flutterViewController = controller
+    MiniAppScenes.shared.presenter = { [weak self] in self?.flutterViewController }
     PublicFileHandler.shared.attach(viewController: controller)
   }
   override func application(
@@ -29,6 +41,7 @@ import workmanager_apple
   }
 
   private func registerNativeChannels(messenger: FlutterBinaryMessenger) {
+    MiniAppScenes.shared.attach(messenger)
     PublicFileHandler.shared.register(messenger: messenger)
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
     MediaTranscodeHandler.shared.register(
@@ -816,6 +829,177 @@ class CookieStoreObserverHandler: NSObject, WKHTTPCookieStoreObserver {
 
     DispatchQueue.main.async { [weak self] in
       self?.channel?.invokeMethod("onCookiesChanged", arguments: nil)
+    }
+  }
+}
+/// iPad 使用独立场景，iPhone 使用独立 Flutter 控制器；两者共享完整客户端运行页。
+private final class MiniAppScenes {
+  static let shared = MiniAppScenes()
+  static let kind = "com.fluxdo.miniapp"
+  struct Entry { let url: URL; let name: String; let key: String }
+  var entries: [String: Entry] = [:]
+  var sessions: [String: UISceneSession] = [:]
+  var hosts: [String: MiniAppFlutterHost] = [:]
+  var channel: FlutterMethodChannel?
+  var presenter: (() -> FlutterViewController?)?
+  private let engines = FlutterEngineGroup(name: "mini-app-windows", project: nil)
+  private var pending: [String: [FlutterResult]] = [:]
+
+  func makeHost(_ id: String, close: @escaping () -> Void) -> MiniAppFlutterHost? {
+    guard let entry = entries[id] else { return nil }
+    let engine = engines.makeEngine(withEntrypoint: "miniAppWindowMain",
+      libraryURI: "package:fluxdo/modules/mini_apps/mini_app_window_app.dart")
+    GeneratedPluginRegistrant.register(with: engine)
+    let host = MiniAppFlutterHost(engine: engine, id: id, entry: entry, close: close)
+    hosts[id] = host
+    return host
+  }
+  func attach(_ messenger: FlutterBinaryMessenger) {
+    let bridge = FlutterMethodChannel(name: "com.fluxdo/mini_app_windows", binaryMessenger: messenger)
+    channel = bridge
+    bridge.setMethodCallHandler { [weak self] call, reply in
+      guard let self = self else { reply(false); return }
+      if call.method == "getLaunch" { reply(nil); return }
+      if call.method == "invalidate" {
+        self.entries.removeAll()
+        for key in Array(self.pending.keys) { self.resolve(key, false) }
+        for host in Array(self.hosts.values) { host.revoke() }
+        for session in self.sessions.values {
+          UIApplication.shared.requestSceneSessionDestruction(session, options: nil, errorHandler: nil)
+        }
+        self.hosts.removeAll()
+        self.sessions.removeAll()
+        reply(nil); return
+      }
+      guard call.method == "open" else { reply(FlutterMethodNotImplemented); return }
+      guard let args = call.arguments as? [String: Any], let id = args["id"] as? String,
+            let key = args["key"] as? String, UUID(uuidString: id) != nil,
+            let raw = args["url"] as? String, let url = URL(string: raw),
+            url.scheme == "https", url.host == "linux.do", url.user == nil, url.password == nil,
+            url.port == nil, url.path == "/apps/" + id else {
+        reply(FlutterError(code: "INVALID_ENTRY", message: nil, details: nil)); return
+      }
+      self.entries[id] = Entry(url: url, name: args["name"] as? String ?? "FluxDO", key: key)
+      self.sessions = self.sessions.filter { UIApplication.shared.openSessions.contains($0.value) }
+      if UIApplication.shared.supportsMultipleScenes {
+        let activity = NSUserActivity(activityType: Self.kind)
+        activity.userInfo = ["id": id]
+        if self.pending[id] != nil { self.pending[id]?.append(reply); return }
+        self.pending[id] = [reply]
+        UIApplication.shared.requestSceneSessionActivation(self.sessions[id], userActivity: activity, options: nil) { _ in
+          // 系统拒绝新场景时仍展示完整 Flutter 控制器。
+          self.present(id) { ok in self.resolve(id, ok) }
+        }
+      } else { self.present(id, completion: reply) }
+    }
+  }
+  private func present(_ id: String, completion: @escaping FlutterResult) {
+    guard let presenter = presenter?() else { completion(false); return }
+    if let host = hosts[id] {
+      host.activate()
+      if host.controller.presentingViewController == nil {
+        presenter.present(host.controller, animated: true) { completion(true) }
+      } else { completion(true) }
+      return
+    }
+    guard let host = makeHost(id, close: { [weak self] in
+      guard let host = self?.hosts.removeValue(forKey: id) else { return }
+      host.controller.dismiss(animated: true)
+      if let entry = self?.entries.removeValue(forKey: id) {
+        self?.channel?.invokeMethod("closed", arguments: ["key": entry.key])
+      }
+    }) else { completion(false); return }
+    host.controller.modalPresentationStyle = .fullScreen
+    presenter.present(host.controller, animated: true) { completion(true) }
+  }
+  func resolve(_ id: String, _ result: Any?) {
+    pending.removeValue(forKey: id)?.forEach { $0(result) }
+  }
+}
+
+private final class MiniAppFlutterHost {
+  let engine: FlutterEngine
+  let controller: FlutterViewController
+  let bridge: FlutterMethodChannel
+  private let controls: FlutterMethodChannel
+  private let id: String
+  private let close: () -> Void
+  init(engine: FlutterEngine, id: String, entry: MiniAppScenes.Entry, close: @escaping () -> Void) {
+    self.engine = engine
+    self.id = id
+    self.close = close
+    controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
+    bridge = FlutterMethodChannel(name: "com.fluxdo/mini_app_windows", binaryMessenger: engine.binaryMessenger)
+    controls = FlutterMethodChannel(name: "com.fluxdo/mini_app_window_controls", binaryMessenger: engine.binaryMessenger)
+    bridge.setMethodCallHandler { [weak self] call, reply in
+      guard self != nil, MiniAppScenes.shared.entries[id]?.key == entry.key,
+            let parent = MiniAppScenes.shared.channel else {
+        reply(FlutterError(code: "SESSION_REVOKED", message: nil, details: nil)); return
+      }
+      if call.method == "getLaunch" { reply(entry.key); return }
+      parent.invokeMethod(call.method, arguments: call.arguments, result: reply)
+      if call.method == "community", let main = MiniAppScenes.shared.presenter?() {
+        if let scene = main.view.window?.windowScene, UIApplication.shared.supportsMultipleScenes {
+          UIApplication.shared.requestSceneSessionActivation(scene.session, userActivity: nil, options: nil, errorHandler: nil)
+        } else { self?.controller.dismiss(animated: true) }
+      }
+    }
+    controls.setMethodCallHandler { call, reply in
+      if call.method == "close" { reply(nil); DispatchQueue.main.async(execute: close) }
+      else { reply(FlutterMethodNotImplemented) }
+    }
+  }
+  func activate() {
+    guard let entry = MiniAppScenes.shared.entries[id] else { revoke(); return }
+    bridge.invokeMethod("activate", arguments: entry.url.absoluteString)
+  }
+  func revoke() { bridge.invokeMethod("revoke", arguments: nil); close() }
+  deinit {
+    bridge.setMethodCallHandler(nil)
+    controls.setMethodCallHandler(nil)
+    engine.destroyContext()
+  }
+}
+
+final class MiniAppSceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+  private var id: String?
+  private var host: MiniAppFlutterHost?
+  func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+    let requested = options.userActivities.first(where: { $0.activityType == MiniAppScenes.kind })?.userInfo?["id"] as? String
+    let retained = MiniAppScenes.shared.sessions.first(where: { $0.value.persistentIdentifier == session.persistentIdentifier })?.key
+    guard let ws = scene as? UIWindowScene, let key = requested ?? retained,
+          let entry = MiniAppScenes.shared.entries[key] else {
+      UIApplication.shared.requestSceneSessionDestruction(session, options: nil, errorHandler: nil); return
+    }
+    id = key
+    MiniAppScenes.shared.sessions[key] = session
+    host = MiniAppScenes.shared.makeHost(key, close: { [weak self] in
+      self?.window?.rootViewController = nil
+      self?.host = nil
+      MiniAppScenes.shared.hosts.removeValue(forKey: key)
+      if let entry = MiniAppScenes.shared.entries.removeValue(forKey: key) {
+        MiniAppScenes.shared.channel?.invokeMethod("closed", arguments: ["key": entry.key])
+      }
+      UIApplication.shared.requestSceneSessionDestruction(session, options: nil, errorHandler: nil)
+    })
+    let window = UIWindow(windowScene: ws)
+    window.rootViewController = host?.controller
+    self.window = window
+    ws.title = entry.name
+    window.makeKeyAndVisible()
+    MiniAppScenes.shared.resolve(key, true)
+  }
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) { host?.activate() }
+  func sceneDidEnterBackground(_ scene: UIScene) {
+    if let id = id { MiniAppScenes.shared.channel?.invokeMethod("updated", arguments: id) }
+  }
+  func sceneDidDisconnect(_ scene: UIScene) {
+    window?.rootViewController = nil
+    host = nil
+    if let id = id {
+      MiniAppScenes.shared.hosts.removeValue(forKey: id)
+      MiniAppScenes.shared.channel?.invokeMethod("updated", arguments: id)
     }
   }
 }

@@ -20,6 +20,9 @@ namespace flutter_inappwebview_plugin
   {
   public:
     std::string id;
+    // WebView2 与 CDP 使用不同的注册/注销接口，标识不能混用。
+    bool nativeDocumentScript = false;
+    bool removalRequested = false;
     const std::optional<std::string> groupName;
     const std::string source;
     const UserScriptInjectionTime injectionTime;

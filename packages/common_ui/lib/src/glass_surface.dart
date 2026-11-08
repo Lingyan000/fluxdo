@@ -258,9 +258,11 @@ class GlassSurface extends StatefulWidget {
     super.key,
     required this.recipe,
     required this.shape,
+    this.opticalShape,
     this.tintColor,
     this.enabled = true,
     this.drawFallbackBorder = true,
+    this.drawOpticalBorder = true,
     this.fallbackBorderRadius,
     this.child,
   });
@@ -277,6 +279,10 @@ class GlassSurface extends StatefulWidget {
   /// 非对称或椭圆半径使用降级路径。
   final ShapeBorder shape;
 
+  /// 形变表面的透镜采样轮廓。底色仍严格使用 [shape]，由外层按同一路径裁切；
+  /// 变形期间可用规则圆角近似采样，避免切换材质造成闪变。
+  final ShapeBorder? opticalShape;
+
   /// 色罩颜色覆盖。默认为 null,用配方里的**固定灰阶**
   /// ([GlassRecipe.tintGrayFor]) —— 不要随手传主题色,会把中性
   /// 玻璃染成彩色塑料板。
@@ -287,6 +293,9 @@ class GlassSurface extends StatefulWidget {
 
   /// 外壳自绘边缘光时关闭，避免均匀描边与方向性描边叠加。
   final bool drawFallbackBorder;
+
+  /// 自绘形变边缘时关闭，防止规则透镜描边露出实际轮廓。
+  final bool drawOpticalBorder;
 
   /// 外壳的方向性降级描边半径。由本实例按实际路径绘制，避免加载中或
   /// shader 加载失败时，外壳误判 GPU 能力而漏掉描边。
@@ -426,7 +435,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
           highContrast: highContrast,
           locallyEnabled: widget.enabled,
         ) &&
-        _shapeSupported(widget.shape);
+        _shapeSupported(widget.opticalShape ?? widget.shape);
 
     // 前景始终留在同一个槽位；异步加载或切换模糊时只替换背景，不能
     // 重新挂载编辑器、焦点和导航动画。由前景布局尺寸约束背景，而不是
@@ -447,14 +456,14 @@ class _GlassSurfaceState extends State<GlassSurface> {
               : _buildFallback(context, tint, recipe, isDark),
         ),
         widget.child ?? const SizedBox.shrink(),
-        if (useShader)
+        if (useShader && widget.drawOpticalBorder)
           Positioned.fill(
             child: IgnorePointer(
               child: LayoutBuilder(
                 builder: (context, constraints) => CustomPaint(
                   painter: GlassOpticalBorder(
                     radius:
-                        _cornerRadiusOf(widget.shape) ??
+                        _cornerRadiusOf(widget.opticalShape ?? widget.shape) ??
                         constraints.maxHeight / 2,
                     isDark: isDark,
                     strength: recipe.highlightAlpha,
@@ -512,7 +521,8 @@ class _GlassSurfaceState extends State<GlassSurface> {
     required bool isDark,
   }) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final radiusLogical = _cornerRadiusOf(widget.shape) ?? size.height / 2;
+    final opticalShape = widget.opticalShape ?? widget.shape;
+    final radiusLogical = _cornerRadiusOf(opticalShape) ?? size.height / 2;
 
     // 深色模式下白色边缘光必须大幅衰减,否则像描了荧光边
     // 窄高光由色罩上方的光学轮廓统一负责；shader 不重复加白边。
@@ -544,7 +554,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
       ..setFloat(14, recipe.saturation)
       ..setFloat(15, recipe.brightness)
       ..setFloat(16, recipe.contrast)
-      ..setFloat(17, widget.shape is RoundedSuperellipseBorder ? 1 : 0);
+      ..setFloat(17, opticalShape is RoundedSuperellipseBorder ? 1 : 0);
     final radius = radiusLogical.clamp(0.0, size.shortestSide / 2) * dpr;
     final octants = [
       ...glassSuperellipseOctant(size.width * dpr / 2, radius),

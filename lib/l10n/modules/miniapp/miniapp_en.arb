@@ -1,0 +1,173 @@
+{
+  "miniApp_engine": "Mini app engine",
+  "miniApp_engineWeb": "Official webpage",
+  "miniApp_engineLightweight": "Lightweight host",
+  "miniApp_engineSettingDescription": "Choose the engine for newly opened mini apps",
+  "miniApp_engineWebDescription": "Compatibility fallback when the lightweight host cannot run an app",
+  "miniApp_engineLightweightDescription": "Skip forum initialization while keeping the official loader and resource cache",
+  "miniApp_engineRestart": "Switch engine and restart",
+  "miniApp_engineFallback": "Retry with the official webpage",
+  "miniApp_engineBootFailed": "The lightweight host could not start. Retry or switch to the official webpage.",
+  "miniApp_separateWindow": "Open in separate window",
+  "@@locale": "en",
+  "miniApp_title": "App gallery",
+  "miniApp_subtitle": "Tools and games from the community",
+  "miniApp_search": "Search apps",
+  "miniApp_latest": "Latest",
+  "miniApp_hot": "Trending",
+  "miniApp_rating": "Top rated",
+  "miniApp_used": "Most used",
+  "miniApp_favorites": "Favorites",
+  "miniApp_recent": "Recently opened",
+  "miniApp_lastOpened": "Last opened",
+  "miniApp_empty": "No apps found",
+  "miniApp_emptyHint": "Try another search or filter",
+  "miniApp_open": "Open app",
+  "miniApp_info": "App information",
+  "miniApp_description": "Description",
+  "miniApp_releaseNotes": "Release notes",
+  "miniApp_developer": "Developer",
+  "miniApp_discussion": "Discussion",
+  "miniApp_noRating": "Not rated",
+  "miniApp_favorite": "Add to favorites",
+  "miniApp_unfavorite": "Remove from favorites",
+  "miniApp_rate": "Your rating",
+  "miniApp_tip": "Tip developer",
+  "miniApp_report": "Report app",
+  "miniApp_share": "Share app",
+  "miniApp_shareEmbed": "Copy embed code",
+  "miniApp_sound": "Sound",
+  "miniApp_mute": "Mute",
+  "miniApp_unmute": "Enable sound",
+  "miniApp_fullscreen": "Full screen",
+  "miniApp_retry": "Retry",
+  "miniApp_loadMore": "Load more",
+  "miniApp_pull": "Pull to refresh",
+  "miniApp_releaseRefresh": "Release to refresh",
+  "miniApp_releaseOpen": "Release to open apps",
+  "miniApp_refreshing": "Refreshing",
+  "miniApp_unavailable": "App unavailable. Try again",
+  "miniApp_browserBusy": "Browser busy. Try again shortly",
+  "miniApp_sessionChanged": "Session changed. Open the app again",
+  "miniApp_actionUnavailable": "This action is currently unavailable",
+  "miniApp_confirm": "Confirm",
+  "miniApp_cancel": "Cancel",
+  "miniApp_saved": "Saved",
+  "miniApp_copied": "Copied",
+  "miniApp_submit": "Submit",
+  "miniApp_reportReason": "Describe the issue",
+  "miniApp_reportType": "Report type",
+  "miniApp_reportSent": "Report submitted",
+  "miniApp_tipCooldown": "Tips for this app are on cooldown",
+  "miniApp_tipNotice": "The selected points will be deducted. After tipping, wait for the cooldown to end before tipping again.",
+  "miniApp_tipConfirm": "Confirm tip",
+  "miniApp_balance": "Balance: {balance}",
+  "@miniApp_balance": {
+    "placeholders": {
+      "balance": {
+        "type": "String"
+      }
+    }
+  },
+  "miniApp_points": "{amount} points",
+  "@miniApp_points": {
+    "placeholders": {
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_count": "{count} apps",
+  "@miniApp_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_usage": "{count} uses",
+  "@miniApp_usage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_version": "Version {version}",
+  "@miniApp_version": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "miniApp_score": "{score} / 5 · {count} ratings",
+  "@miniApp_score": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_discover": "Discover",
+  "miniApp_sort": "Sort apps",
+  "miniApp_searchResults": "Search results",
+  "miniApp_backToCommunity": "Back to home",
+  "miniApp_noFavorites": "No favorites yet",
+  "miniApp_favoritesHint": "Save an app from its menu to find it here",
+  "miniApp_endOfList": "You have reached the end",
+  "miniApp_keepPulling": "Pull further to open apps",
+  "miniApp_more": "App menu",
+  "miniApp_landscape": "Switch to landscape",
+  "miniApp_portrait": "Switch to portrait",
+  "miniApp_systemOrientation": "Follow system rotation",
+  "miniApp_exitFullscreen": "Exit fullscreen",
+  "miniApp_showControls": "Show controls",
+  "miniApp_hideControls": "Hide controls",
+  "miniApp_supportDeveloper": "Support the developer",
+  "miniApp_moreActions": "More actions",
+  "miniApp_tipEncouragement": "Encourage a creator you enjoy",
+  "miniApp_pointsUnit": "points",
+  "miniApp_insufficientBalance": "Not enough points to send a tip",
+  "miniApp_tipPay": "Confirm {amount}-point tip",
+  "@miniApp_tipPay": {
+    "placeholders": {
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_tipSent": "Tip sent. Thank you for supporting the developer.",
+  "miniApp_ratingPrompt": "How was your experience?",
+  "miniApp_ratingHint": "Choose a rating and submit. You can change it later.",
+  "miniApp_ratingValue": "{score} stars",
+  "@miniApp_ratingValue": {
+    "placeholders": {
+      "score": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_rating1": "Needs improvement",
+  "miniApp_rating2": "Could be better",
+  "miniApp_rating3": "Good",
+  "miniApp_rating4": "Really good",
+  "miniApp_rating5": "Excellent",
+  "miniApp_launchPreparing": "Getting your app ready",
+  "miniApp_launchFailed": "The app could not start",
+  "miniApp_permissionChoice": "Review the purpose above before making your choice.",
+  "miniApp_pullSetting": "Pull down to open Mini Apps",
+  "miniApp_pullSettingDescription": "Pull further on Home to open Mini Apps. When off, pulling only refreshes; Mini Apps remains available in your profile.",
+  "miniApp_contentLabel": "Mini App",
+  "miniApp_contentHint": "Open to use; collapse to keep reading the topic.",
+  "miniApp_metadataLoading": "Loading app name and description…",
+  "miniApp_metadataFailed": "App information is unavailable. Please retry.",
+  "miniApp_expandPanel": "Expand app",
+  "miniApp_openPage": "Open as page",
+  "miniApp_restorePanel": "Restore panel",
+  "miniApp_collapsePanel": "Collapse app",
+  "miniApp_resumePanel": "Resume app"
+}

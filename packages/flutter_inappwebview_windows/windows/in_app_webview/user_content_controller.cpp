@@ -348,6 +348,7 @@ namespace flutter_inappwebview_plugin
       if (completionHandler) {
         completionHandler(userScript->id);
       }
+      return;
     }
 
     std::string source = userScript->source;
@@ -355,6 +356,39 @@ namespace flutter_inappwebview_plugin
       source = "if (document.readyState === 'complete') { " + source + "} else { window.addEventListener('load', function() { " + source + " }); }";
     }
     source = UserContentController::wrapSourceCodeAddChecks(source, userScript);
+
+    // CDP 主 target 的脚本不会进入跨进程沙箱 iframe。页面世界且要求子框架
+    // 注入时使用 WebView2 原生接口，保留原有来源检查和浏览器沙箱约束。
+    if (!userScript->forMainFrameOnly &&
+      (!userScript->contentWorld || ContentWorld::isPage(userScript->contentWorld))) {
+      userScript->nativeDocumentScript = true;
+      userScript->removalRequested = false;
+      auto webView = webView_->webView;
+      auto alive = webView_->aliveGuard;
+      auto hr = webView->AddScriptToExecuteOnDocumentCreated(utf8_to_wide(source).c_str(),
+        Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+          [userScript, completionHandler, webView, alive](HRESULT errorCode, LPCWSTR id)
+          {
+            if (!*alive) {
+              return S_OK;
+            }
+            if (succeededOrLog(errorCode) && id) {
+              userScript->id = wide_to_utf8(id);
+              // 注册完成前可能已收到移除请求，不能把迟到脚本留到下一次导航。
+              if (userScript->removalRequested) {
+                failedLog(webView->RemoveScriptToExecuteOnDocumentCreated(id));
+              }
+            }
+            if (completionHandler) {
+              completionHandler(userScript->id);
+            }
+            return S_OK;
+          }).Get());
+      if (failedAndLog(hr) && completionHandler) {
+        completionHandler(userScript->id);
+      }
+      return;
+    }
 
     nlohmann::json parameters = {
       {"source", source}
@@ -385,7 +419,19 @@ namespace flutter_inappwebview_plugin
 
   void UserContentController::removeScriptFromWebView(std::shared_ptr<UserScript> userScript, const std::function<void()> completionHandler) const
   {
+    userScript->removalRequested = true;
     if (!webView_ || !(webView_->webView)) {
+      if (completionHandler) {
+        completionHandler();
+      }
+      return;
+    }
+
+    if (userScript->nativeDocumentScript) {
+      if (!userScript->id.empty()) {
+        failedLog(webView_->webView->RemoveScriptToExecuteOnDocumentCreated(
+          utf8_to_wide(userScript->id).c_str()));
+      }
       if (completionHandler) {
         completionHandler();
       }

@@ -34,9 +34,18 @@ namespace flutter_inappwebview_plugin
 
   WebViewChannelDelegate::CallJsHandlerCallback::CallJsHandlerCallback()
   {
-    decodeResult = [](const flutter::EncodableValue* value)
+    decodeResult = [](const flutter::EncodableValue* value) -> std::optional<std::string>
       {
-        return value;
+        // 无返回值的成功回执由 MethodCodec 解码为 nullptr，不能将它包装成
+        // 有值的 optional 指针。只持有 JSON 文本，空回执统一交给 JS resolve(null)。
+        if (!value || value->IsNull()) {
+          return std::nullopt;
+        }
+        if (const auto* json = std::get_if<std::string>(value)) {
+          return *json;
+        }
+        debugLog("Invalid JavaScript handler response: expected JSON string");
+        return std::nullopt;
       };
   }
 

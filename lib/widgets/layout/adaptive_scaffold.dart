@@ -6,6 +6,9 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../pages/topics_page.dart';
+import '../../modules/mini_apps/home_mini_apps_layer.dart';
+import '../../modules/mini_apps/mini_app_interaction.dart';
+import '../../utils/platform_utils.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/topic_list/tab_state_provider.dart';
@@ -60,7 +63,8 @@ class AdaptiveScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showRail =
-        Responsive.showNavigationRail(context) && !hideNavigationRail;
+        (PlatformUtils.isDesktop || Responsive.showNavigationRail(context)) &&
+        !hideNavigationRail;
     final sidebarCategoryController = ref.read(
       activeSidebarCategoryIdProvider.notifier,
     );
@@ -87,7 +91,7 @@ class AdaptiveScaffold extends ConsumerWidget {
               (useAcrylicRail ? 0.0 : 1.0)
         : 0.0;
 
-    return Stack(
+    final content = Stack(
       children: [
         Scaffold(
           backgroundColor: useAcrylicRail ? Colors.transparent : null,
@@ -104,10 +108,15 @@ class AdaptiveScaffold extends ConsumerWidget {
                     onDestinationSelected(index);
                   },
                   destinations: destinations,
-                  topDestinationCount: destinations.isEmpty ? 0 : 1,
-                  bottomDestinationCount: destinations.length <= 1
+                  topDestinationCount: destinations.isEmpty
                       ? 0
-                      : destinations.length - 1,
+                      : PlatformUtils.isDesktop
+                      ? 2
+                      : 1,
+                  bottomDestinationCount:
+                      destinations.length <= (PlatformUtils.isDesktop ? 2 : 1)
+                      ? 0
+                      : destinations.length - (PlatformUtils.isDesktop ? 2 : 1),
                   categoryShortcuts: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -211,6 +220,12 @@ class AdaptiveScaffold extends ConsumerWidget {
           },
         ),
       ],
+    );
+    // 桌面主内容区由导航切换，不创建移动端的整页位移和底部返回条。
+    if (PlatformUtils.isDesktop) return content;
+    return HomeMiniAppsLayer(
+      enabled: ref.watch(miniAppPullEnabledProvider),
+      child: content,
     );
   }
 }

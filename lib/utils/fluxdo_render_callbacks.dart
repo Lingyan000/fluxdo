@@ -19,6 +19,9 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
+import '../constants.dart';
+import '../modules/mini_apps/mini_app_url.dart';
+import '../modules/mini_apps/mini_app_embed_card.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
@@ -595,6 +598,10 @@ class FluxdoRenderCallbacks {
   /// 嵌入 iframe:用 IframeNode 结构化字段直接构造 IframeWidget(webview),
   /// 不再反构造 DOM。web 平台无 InAppWebView,返回 null 走子包内置占位卡。
   static IframeBuilder get _iframeBuilder => (ctx, node) {
+    final appUri = MiniAppUrl.parse(node.src, AppConstants.baseUrl);
+    if (appUri != null && MiniAppUrl.appId(appUri) != null) {
+      return MiniAppEmbedCard(url: appUri.toString(), title: node.title);
+    }
     if (kIsWeb) return null; // web 走子包内置占位卡
     if (node.src.isEmpty) return null;
     return IframeWidget(

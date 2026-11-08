@@ -258,22 +258,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('混合会话概览保留原有恢复与手势入口', (tester) async {
+  testWidgets('网页和小程序混合会话也支持上滑展开概览', (tester) async {
     await tester.pumpWidget(app());
     addTab('普通网页');
     tabs.minimize(_ExternalTab());
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('browser-dock-card')));
+    await tester.fling(
+      find.byKey(const ValueKey('browser-restore-drag-area')),
+      const Offset(0, -240),
+      1200,
+    );
     await tester.pumpAndSettle();
     final overview = tester.widget<BrowserTabOverview>(
       find.byType(BrowserTabOverview),
     );
     expect(overview.visible, isTrue);
-    expect(overview.animation, isNull);
-    expect(overview.onDragStart, isNull);
-    expect(overview.onDragUpdate, isNull);
-    expect(overview.onDragEnd, isNull);
-    expect(overview.onDragCancel, isNull);
+    expect(overview.animation, isNotNull);
+    expect(overview.onDragStart, isNotNull);
+    expect(overview.onDragUpdate, isNotNull);
+    expect(overview.onDragEnd, isNotNull);
+    expect(overview.onDragCancel, isNotNull);
     expect(restored, isEmpty);
   });
 

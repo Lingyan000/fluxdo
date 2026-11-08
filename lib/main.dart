@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'modules/mini_apps/mini_app_window_app.dart';
+
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
@@ -121,6 +123,9 @@ import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
 import 'widgets/browser/browser_dock_host.dart';
+import 'modules/mini_apps/mini_app_tab_session.dart';
+import 'modules/mini_apps/mini_app_runner_page.dart';
+import 'modules/mini_apps/mini_app_icon.dart';
 import 'services/browser_tabs.dart';
 import 'services/navigation/browser_dock_observer.dart';
 import 'pages/webview_page.dart';
@@ -163,11 +168,20 @@ Future<void> _applyAndroidDisplayMode(SharedPreferences prefs) async {
   }
 }
 
+// Android 新版嵌入层通过 FlutterEngineGroup 按根库函数名启动子引擎，
+// 不读取 Activity 的 libraryUri。入口必须实际声明在 main.dart 中。
+@pragma('vm:entry-point')
+Future<void> androidMiniAppWindowMain() async {
+  await miniAppWindowMain();
+}
+
 Future<void> main() async {
   // 自定义 binding:接管标准图片解码入口,全局限制解码并发(= 限制
   // Impeller 纹理上传并发,图密话题快滚 raster 尖峰的对症闸门,
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
+  // 子引擎只启动完整的微应用运行页，不重复启动消息总线、通知和网络核心。
+  if (await startMiniAppWindow()) return;
 
   // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
   // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
@@ -798,7 +812,9 @@ ThemeData _buildAppTheme(
 final _routeInteractionObserver = RouteInteractionObserver();
 
 class MainApp extends ConsumerWidget {
-  const MainApp({super.key});
+  const MainApp({super.key, this.windowHome, this.windowTitle = 'FluxDO'});
+  final Widget? windowHome;
+  final String windowTitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -854,7 +870,7 @@ class MainApp extends ConsumerWidget {
                 // custom keys);未开启崩溃采集时内部 no-op。
                 CrashContextNavObserver(),
               ],
-              title: 'FluxDO',
+              title: windowTitle,
               locale: TranslationProvider.of(context).flutterLocale,
               localizationsDelegates: const [
                 GlobalMaterialLocalizations.delegate,
@@ -888,9 +904,10 @@ class MainApp extends ConsumerWidget {
                     ? Brightness.dark
                     : Brightness.light;
                 // 桌面平台：跟随应用主题明暗切换窗口效果
-                if (Platform.isMacOS ||
-                    Platform.isWindows ||
-                    Platform.isLinux) {
+                if (windowHome == null &&
+                    (Platform.isMacOS ||
+                        Platform.isWindows ||
+                        Platform.isLinux)) {
                   final isDark = brightness == Brightness.dark;
                   acrylic.Window.setEffect(
                     // 透明模式下禁用系统窗口效果，避免桌面壁纸
@@ -921,15 +938,33 @@ class MainApp extends ConsumerWidget {
                     systemNavigationBarContrastEnforced: false,
                   ),
                   child: BrowserDockHost(
+                    enabled: windowHome == null,
                     blurEnabled: ref.watch(
                       preferencesProvider.select((p) => p.dialogBlur),
                     ),
                     controller: ref.read(browserTabsProvider),
                     observer: browserDockObserver,
+                    iconBuilder: (context, session, size) =>
+                        session is MiniAppTabSession
+                        ? MiniAppIcon(session.details.app, size: size)
+                        : const Icon(Icons.language_rounded),
+                    subtitleBuilder: (context, session) =>
+                        session is MiniAppTabSession
+                        ? [
+                            context.l10n.miniApp_contentLabel,
+                            session.details.app.author,
+                          ].where((s) => s.isNotEmpty).join(' · ')
+                        : session.url,
                     onRestore: (session) {
                       final navigator = navigatorKey.currentState;
                       if (navigator != null) {
-                        WebViewPage.restore(navigator, session);
+                        if (session is MiniAppTabSession) {
+                          unawaited(
+                            MiniAppRunnerPage.restore(navigator, session),
+                          );
+                        } else {
+                          WebViewPage.restore(navigator, session);
+                        }
                       } else {
                         unawaited(session.close());
                       }
@@ -945,7 +980,7 @@ class MainApp extends ConsumerWidget {
                             ),
                           ),
                         child!,
-                        const ReadLaterBubble(),
+                        if (windowHome == null) const ReadLaterBubble(),
                       ],
                     ),
                   ),
@@ -954,16 +989,24 @@ class MainApp extends ConsumerWidget {
                 result = Listener(
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (event) {
-                    UserPresenceService().markUserActivity();
+                    if (windowHome == null) {
+                      UserPresenceService().markUserActivity();
+                    }
                     // 鼠标侧键返回（第 4 按钮，bit flag 0x08）
                     if (PlatformUtils.isDesktop && event.buttons & 0x08 != 0) {
                       navigatorKey.currentState?.maybePop();
                     }
                   },
-                  onPointerMove: (_) =>
-                      UserPresenceService().markUserActivity(),
-                  onPointerSignal: (_) =>
-                      UserPresenceService().markUserActivity(),
+                  onPointerMove: (_) {
+                    if (windowHome == null) {
+                      UserPresenceService().markUserActivity();
+                    }
+                  },
+                  onPointerSignal: (_) {
+                    if (windowHome == null) {
+                      UserPresenceService().markUserActivity();
+                    }
+                  },
                   child: result,
                 );
 
@@ -981,7 +1024,7 @@ class MainApp extends ConsumerWidget {
                 );
 
                 // 桌面端：全局键盘快捷键（HardwareKeyboard）
-                if (PlatformUtils.isDesktop) {
+                if (PlatformUtils.isDesktop && windowHome == null) {
                   result = KeyboardShortcutHandler(
                     navigatorKey: navigatorKey,
                     child: result,
@@ -1016,7 +1059,9 @@ class MainApp extends ConsumerWidget {
 
                 return AppGlassSettings(child: result);
               },
-              home: const OnboardingGate(child: PreheatGate(child: MainPage())),
+              home:
+                  windowHome ??
+                  const OnboardingGate(child: PreheatGate(child: MainPage())),
             ),
           ),
         );
@@ -1676,8 +1721,9 @@ class _MainPageState extends ConsumerState<MainPage>
       navigatorKey.currentState?.popUntil((route) => route.isFirst);
     }
     if (mounted && action == _AuthErrorDialogAction.clearData) {
-      await Navigator.of(context)
-          .push(InteractionPageRoute(builder: (_) => const DataManagementPage()));
+      await Navigator.of(
+        context,
+      ).push(InteractionPageRoute(builder: (_) => const DataManagementPage()));
     }
   }
 
@@ -1899,6 +1945,8 @@ class _MainPageState extends ConsumerState<MainPage>
       seen.add(id);
     }
 
-    return resolved;
+    return PlatformUtils.isDesktop
+        ? NavEntryRegistry.desktopEntries(resolved)
+        : resolved;
   }
 }

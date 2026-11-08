@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -28,11 +29,12 @@ Widget _buildAnimatedBlurBarrier({
   required Widget barrier,
   required Animation<double> animation,
   required ModalBlurScene scene,
+  ValueListenable<bool>? blurReady,
 }) {
-  return AnimatedBuilder(
+  Widget buildBlur(double readiness) => AnimatedBuilder(
     animation: animation,
     builder: (context, child) {
-      final t = animation.value;
+      final t = animation.value * readiness;
       if (t == 0) return child!;
 
       final sigma = (scene.sigma * t).clamp(0.01, scene.sigma);
@@ -41,6 +43,18 @@ Widget _buildAnimatedBlurBarrier({
       return BackdropFilter(filter: filter, child: child);
     },
     child: barrier,
+  );
+  if (blurReady == null) return buildBlur(1);
+  return ValueListenableBuilder<bool>(
+    valueListenable: blurReady,
+    builder: (context, ready, _) => TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: ready ? 1 : 0),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      builder: (_, progress, _) => buildBlur(progress),
+    ),
   );
 }
 
@@ -125,6 +139,8 @@ Future<T?> pushAppRoute<T>({
 ///
 /// API 与 [showDialog] 基本一致，额外支持 [blur] 参数控制是否启用模糊
 /// （默认 true，即跟随用户设置；设为 false 则强制不模糊）。
+/// [blurReady] 用于需要异步准备背景画面的原生视图；不阻塞弹层，
+/// 就绪后才渐入整页模糊。未传入时保持普通弹层的动画行为。
 Future<T?> showAppDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -134,6 +150,9 @@ Future<T?> showAppDialog<T>({
   bool useRootNavigator = true,
   RouteSettings? routeSettings,
   bool blur = true,
+  ValueChanged<double>? onBlurSigmaChanged,
+  ValueListenable<bool>? blurReady,
+  bool filterBackdrop = true,
   Duration transitionDuration = const Duration(milliseconds: 150),
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
@@ -164,6 +183,9 @@ Future<T?> showAppDialog<T>({
     transitionBuilder: _buildMaterialDialogTransitions,
     settings: routeSettings,
     enableBlur: enableBlur,
+    onBlurSigmaChanged: onBlurSigmaChanged,
+    blurReady: blurReady,
+    filterBackdrop: filterBackdrop,
   );
 
   return _pushOverlayRoute(
@@ -188,6 +210,9 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
   bool useRootNavigator = true,
   RouteSettings? routeSettings,
   bool blur = true,
+  ValueChanged<double>? onBlurSigmaChanged,
+  ValueListenable<bool>? blurReady,
+  bool filterBackdrop = true,
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
   VoidCallback? onDisposed,
@@ -211,6 +236,9 @@ Future<T?> showAppGeneralDialog<T extends Object?>({
     transitionBuilder: transitionBuilder,
     settings: routeSettings,
     enableBlur: enableBlur,
+    onBlurSigmaChanged: onBlurSigmaChanged,
+    blurReady: blurReady,
+    filterBackdrop: filterBackdrop,
     onDisposed: onDisposed,
   );
 
@@ -277,6 +305,9 @@ Future<T?> showAppBottomSheet<T>({
   Offset? anchorPoint,
   AnimationStyle? sheetAnimationStyle,
   bool blur = true,
+  ValueChanged<double>? onBlurSigmaChanged,
+  ValueListenable<bool>? blurReady,
+  bool filterBackdrop = true,
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
 }) {
@@ -318,6 +349,9 @@ Future<T?> showAppBottomSheet<T>({
     useSafeArea: useSafeArea,
     sheetAnimationStyle: sheetAnimationStyle,
     enableBlur: enableBlur,
+    onBlurSigmaChanged: onBlurSigmaChanged,
+    blurReady: blurReady,
+    filterBackdrop: filterBackdrop,
   );
 
   return _pushOverlayRoute(
@@ -329,10 +363,45 @@ Future<T?> showAppBottomSheet<T>({
   );
 }
 
+/// 将公共模糊动画同步给无法被 Flutter 背景取样的原生内容。
+/// 跟随路由真实进度（包括拖动和预测返回），退出动画结束后再恢复清晰。
+mixin _ModalBlurSync<T> on ModalRoute<T> {
+  bool get enableBlur;
+  ValueChanged<double>? get onBlurSigmaChanged;
+  ModalBlurScene get blurScene;
+
+  void _syncBlur() => onBlurSigmaChanged?.call(
+    enableBlur ? blurScene.sigma * (animation?.value ?? 0).clamp(0.0, 1.0) : 0,
+  );
+
+  @override
+  void install() {
+    super.install();
+    if (onBlurSigmaChanged != null) {
+      animation?.addListener(_syncBlur);
+      _syncBlur();
+    }
+  }
+
+  @override
+  void dispose() {
+    animation?.removeListener(_syncBlur);
+    onBlurSigmaChanged?.call(0);
+    super.dispose();
+  }
+}
+
 /// 支持动画模糊的 ModalBottomSheetRoute 子类
 class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
-    with InterruptibleRoute<T> {
+    with _ModalBlurSync<T>, InterruptibleRoute<T> {
+  @override
   final bool enableBlur;
+  @override
+  final ValueChanged<double>? onBlurSigmaChanged;
+  final ValueListenable<bool>? blurReady;
+  final bool filterBackdrop;
+  @override
+  ModalBlurScene get blurScene => ModalBlurScene.sheet;
 
   _BlurModalBottomSheetRoute({
     required super.builder,
@@ -354,16 +423,20 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
     super.useSafeArea,
     super.sheetAnimationStyle,
     this.enableBlur = false,
+    this.onBlurSigmaChanged,
+    this.blurReady,
+    this.filterBackdrop = true,
   });
 
   @override
   Widget buildModalBarrier() {
     final barrier = super.buildModalBarrier();
-    if (!enableBlur) return barrier;
+    if (!enableBlur || !filterBackdrop) return barrier;
     return _buildAnimatedBlurBarrier(
       barrier: barrier,
       animation: animation!,
       scene: ModalBlurScene.sheet,
+      blurReady: blurReady,
     );
   }
 
@@ -396,7 +469,7 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
 
 /// 支持动画模糊的 RawDialogRoute 替代
 class _BlurRawDialogRoute<T> extends PopupRoute<T>
-    with InterruptibleRoute<T> {
+    with _ModalBlurSync<T>, InterruptibleRoute<T> {
   final RoutePageBuilder pageBuilder;
   final bool _barrierDismissible;
   final String? _barrierLabel;
@@ -404,7 +477,14 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T>
   final Duration _transitionDuration;
   final Duration? _reverseTransitionDuration;
   final RouteTransitionsBuilder? _transitionBuilder;
+  @override
   final bool enableBlur;
+  @override
+  final ValueChanged<double>? onBlurSigmaChanged;
+  final ValueListenable<bool>? blurReady;
+  final bool filterBackdrop;
+  @override
+  ModalBlurScene get blurScene => ModalBlurScene.dialog;
   final VoidCallback? onDisposed;
 
   _BlurRawDialogRoute({
@@ -417,6 +497,9 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T>
     RouteTransitionsBuilder? transitionBuilder,
     super.settings,
     this.enableBlur = false,
+    this.onBlurSigmaChanged,
+    this.blurReady,
+    this.filterBackdrop = true,
     this.onDisposed,
   }) : _barrierDismissible = barrierDismissible,
        _barrierLabel = barrierLabel,
@@ -478,11 +561,12 @@ class _BlurRawDialogRoute<T> extends PopupRoute<T>
   @override
   Widget buildModalBarrier() {
     final barrier = super.buildModalBarrier();
-    if (!enableBlur) return barrier;
+    if (!enableBlur || !filterBackdrop) return barrier;
     return _buildAnimatedBlurBarrier(
       barrier: barrier,
       animation: animation!,
       scene: ModalBlurScene.dialog,
+      blurReady: blurReady,
     );
   }
 }

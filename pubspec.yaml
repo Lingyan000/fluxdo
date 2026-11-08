@@ -28,6 +28,7 @@ workspace:
   - packages/paper_shaders
 
 dependencies:
+  desktop_multi_window: ^0.3.1
   flutter:
     sdk: flutter
   flutter_localizations:

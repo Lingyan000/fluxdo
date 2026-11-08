@@ -8,17 +8,15 @@ import '../../services/navigation/browser_dock_observer.dart';
 import '../../services/browser_tabs.dart';
 import 'browser_dock_motion.dart';
 
-/// 浏览器自己的收起转场，不改变小程序共用路由的行为。
+/// 浏览器和小程序页面共用跟手恢复与收起转场。
 class BrowserPageRoute<T> extends InteractionPageRoute<T> {
   BrowserPageRoute({
     required super.builder,
     this.fromDock = false,
     this.motion,
     this.session,
-  }) : super(
-         settings: const RouteSettings(name: browserPageRouteName),
-         allowSnapshotting: false,
-       ) {
+    String name = browserPageRouteName,
+  }) : super(settings: RouteSettings(name: name), allowSnapshotting: false) {
     useSnapshotMotion = !fromDock || session?.preview != null;
     _restoringFromDock = fromDock;
   }

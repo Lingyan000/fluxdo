@@ -3,11 +3,69 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/pages/topics_page.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
 import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
+import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
+import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => PlatformUtils.debugDesktopOverride = false);
+  tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('桌面窄窗口保留侧栏和广场入口，不挂移动端下拉层或底栏', (tester) async {
+    PlatformUtils.debugDesktopOverride = true;
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    SharedPreferences.setMockInitialValues({
+      'pref_mini_app_pull_enabled': true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    var selected = -1;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          categoriesProvider.overrideWith((_) async => []),
+        ],
+        child: MaterialApp(
+          home: AdaptiveScaffold(
+            selectedIndex: 0,
+            onDestinationSelected: (index) => selected = index,
+            destinations: const [
+              AdaptiveDestination(
+                id: 'home',
+                icon: Icon(Icons.home),
+                selectedIcon: Icon(Icons.home),
+                label: '首页',
+              ),
+              AdaptiveDestination(
+                id: 'mini_apps',
+                icon: Icon(Icons.apps),
+                selectedIcon: Icon(Icons.apps),
+                label: '应用广场',
+              ),
+              AdaptiveDestination(
+                id: 'profile',
+                icon: Icon(Icons.person),
+                selectedIcon: Icon(Icons.person),
+                label: '我的',
+              ),
+            ],
+            body: const Text('主内容区'),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(HomeMiniAppsLayer), findsNothing);
+    expect(find.byType(AdaptiveBottomNavigation), findsNothing);
+    expect(find.byType(AdaptiveNavigationRail), findsOneWidget);
+    await tester.tap(find.byTooltip('应用广场'));
+    expect(selected, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('手机端 barVisibility 为 0 时将底部导航栏平移出屏', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(390, 844));

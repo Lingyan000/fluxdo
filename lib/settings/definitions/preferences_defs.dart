@@ -1,12 +1,13 @@
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../modules/mini_apps/mini_app_engine_picker.dart';
 import '../../providers/ai_post_review_provider.dart';
 import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
@@ -16,6 +17,7 @@ import '../../services/crypto/crypto_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../../utils/platform_utils.dart';
 import '../../widgets/ai/ai_model_select_sheet.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/sticker_market_service.dart';
@@ -122,6 +124,41 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
       title: l10n.preferences_interaction,
       icon: Symbols.gesture_rounded,
       items: [
+        ActionModel(
+          id: 'miniAppEngine',
+          title: l10n.miniApp_engine,
+          subtitle: l10n.miniApp_engineSettingDescription,
+          icon: Symbols.apps_rounded,
+          getDynamicSubtitle: (ref) => miniAppEngineLabel(
+            context,
+            ref.watch(preferencesProvider).miniAppEngine,
+          ),
+          onTap: (context, ref) async {
+            final selected = await showMiniAppEnginePicker(
+              context,
+              current: ref.read(preferencesProvider).miniAppEngine,
+              anchorContext: context,
+            );
+            if (selected != null && context.mounted) {
+              await ref
+                  .read(preferencesProvider.notifier)
+                  .setMiniAppEngine(selected);
+            }
+          },
+        ),
+        PlatformConditionalModel(
+          inner: SwitchModel(
+            id: 'miniAppPullEnabled',
+            title: l10n.miniApp_pullSetting,
+            subtitle: l10n.miniApp_pullSettingDescription,
+            icon: Symbols.swipe_down_rounded,
+            getValue: (ref) =>
+                ref.watch(preferencesProvider).miniAppPullEnabled,
+            onChanged: (ref, v) =>
+                ref.read(preferencesProvider.notifier).setMiniAppPullEnabled(v),
+          ),
+          condition: () => !PlatformUtils.isDesktop,
+        ),
         PlatformConditionalModel(
           inner: SwitchModel(
             id: 'portraitLock',

@@ -2,6 +2,8 @@ import '../constants/composer_tool_defaults.dart';
 
 import 'dart:io';
 
+import '../modules/mini_apps/mini_app_engine.dart';
+
 import 'package:collection/collection.dart';
 import 'package:common_ui/common_ui.dart' show GlassEffectLevel;
 import 'package:flutter/services.dart';
@@ -113,6 +115,12 @@ class AppPreferences {
 
   /// 在首页创作按钮上方显示独立刷新入口，默认关闭
   final bool homeRefreshButton;
+
+  /// 移动端首页深拉打开应用广场；关闭时使用普通下拉刷新。
+  final bool miniAppPullEnabled;
+
+  /// 默认运行引擎；修改只影响随后打开的应用。
+  final MiniAppEngine miniAppEngine;
 
   /// 自动识别剪贴板中的 Linux.do 话题链接
   final bool clipboardTopicLinkDetection;
@@ -321,6 +329,8 @@ class AppPreferences {
     required this.shareImageThemeIndex,
     required this.autoFillLogin,
     this.homeRefreshButton = false,
+    this.miniAppPullEnabled = true,
+    this.miniAppEngine = MiniAppEngine.lightweight,
     required this.clipboardTopicLinkDetection,
     required this.topicFilterKeywords,
     this.topicFilterWholeWord = false,
@@ -389,6 +399,8 @@ class AppPreferences {
     int? shareImageThemeIndex,
     bool? autoFillLogin,
     bool? homeRefreshButton,
+    bool? miniAppPullEnabled,
+    MiniAppEngine? miniAppEngine,
     bool? clipboardTopicLinkDetection,
     List<String>? topicFilterKeywords,
     bool? topicFilterWholeWord,
@@ -457,6 +469,8 @@ class AppPreferences {
       shareImageThemeIndex: shareImageThemeIndex ?? this.shareImageThemeIndex,
       autoFillLogin: autoFillLogin ?? this.autoFillLogin,
       homeRefreshButton: homeRefreshButton ?? this.homeRefreshButton,
+      miniAppPullEnabled: miniAppPullEnabled ?? this.miniAppPullEnabled,
+      miniAppEngine: miniAppEngine ?? this.miniAppEngine,
       clipboardTopicLinkDetection:
           clipboardTopicLinkDetection ?? this.clipboardTopicLinkDetection,
       topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
@@ -553,6 +567,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _shareImageThemeIndexKey = 'pref_share_image_theme_index';
   static const String _autoFillLoginKey = 'pref_auto_fill_login';
   static const String _homeRefreshButtonKey = 'pref_home_refresh_button';
+  static const String _miniAppPullEnabledKey = 'pref_mini_app_pull_enabled';
+  static const String _miniAppEngineKey = 'pref_mini_app_engine';
   static const String _clipboardTopicLinkDetectionKey =
       'pref_clipboard_topic_link_detection';
   static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
@@ -647,6 +663,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           shareImageThemeIndex: _prefs.getInt(_shareImageThemeIndexKey) ?? 0,
           autoFillLogin: _prefs.getBool(_autoFillLoginKey) ?? true,
           homeRefreshButton: _prefs.getBool(_homeRefreshButtonKey) ?? false,
+          miniAppPullEnabled: _prefs.getBool(_miniAppPullEnabledKey) ?? true,
+          miniAppEngine: MiniAppEngine.parse(
+            _prefs.getString(_miniAppEngineKey),
+          ),
           clipboardTopicLinkDetection:
               _prefs.getBool(_clipboardTopicLinkDetectionKey) ?? false,
           topicFilterKeywords:
@@ -811,6 +831,16 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setHomeRefreshButton(bool enabled) async {
     state = state.copyWith(homeRefreshButton: enabled);
     await _prefs.setBool(_homeRefreshButtonKey, enabled);
+  }
+
+  Future<void> setMiniAppPullEnabled(bool enabled) async {
+    state = state.copyWith(miniAppPullEnabled: enabled);
+    await _prefs.setBool(_miniAppPullEnabledKey, enabled);
+  }
+
+  Future<void> setMiniAppEngine(MiniAppEngine engine) async {
+    state = state.copyWith(miniAppEngine: engine);
+    await _prefs.setString(_miniAppEngineKey, engine.name);
   }
 
   Future<void> setClipboardTopicLinkDetection(bool enabled) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:common_ui/common_ui.dart';
 
 import '../widgets/common/app_bottom_sheet.dart';
@@ -35,12 +36,19 @@ class AdaptiveMenuDivider<T> extends AdaptiveMenuItem<T?> {
 ///
 /// [anchorContext] 桌面锚点:优先用触发按钮的 context(菜单挂其下缘);
 /// [globalPosition] 次优(右键场景传鼠标位置);都缺省时退化为移动弹层。
+/// [blur] 控制底部弹层的背景模糊；原生平台视图上可关闭，使用统一遮罩。
 Future<T?> showAdaptiveMenu<T>({
   required BuildContext context,
   required List<AdaptiveMenuItem<T?>> items,
   BuildContext? anchorContext,
   Offset? globalPosition,
   String? title,
+  Widget? mobileTitleWidget,
+  WidgetBuilder? mobileContentBuilder,
+  bool blur = true,
+  ValueChanged<double>? onBlurSigmaChanged,
+  ValueListenable<bool>? blurReady,
+  bool filterBackdrop = true,
 }) {
   final desktop = PlatformUtils.isDesktop;
 
@@ -122,40 +130,52 @@ Future<T?> showAdaptiveMenu<T>({
   // 移动端(或桌面无锚点兜底):底部弹层
   return AppBottomSheet.show<T>(
     context: context,
+    blur: blur,
+    onBlurSigmaChanged: onBlurSigmaChanged,
+    blurReady: blurReady,
+    filterBackdrop: filterBackdrop,
     title: title,
+    titleWidget: mobileTitleWidget,
     showCloseButton: false,
     contentPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-    builder: (sheetContext) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final item in items)
-          if (item is AdaptiveMenuDivider)
-            Divider(
-              height: 8,
-              indent: 16,
-              endIndent: 16,
-              color: Theme.of(
-                sheetContext,
-              ).colorScheme.outlineVariant.withValues(alpha: 0.4),
-            )
-          else
-            ListTile(
-              leading: Icon(
-                item.icon,
-                color: item.destructive
-                    ? Theme.of(sheetContext).colorScheme.error
-                    : null,
-              ),
-              title: Text(
-                item.label,
-                style: item.destructive
-                    ? TextStyle(color: Theme.of(sheetContext).colorScheme.error)
-                    : null,
-              ),
-              subtitle: item.subtitle != null ? Text(item.subtitle!) : null,
-              onTap: () => Navigator.pop(sheetContext, item.value),
-            ),
-      ],
-    ),
+    builder:
+        mobileContentBuilder ??
+        (sheetContext) => SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final item in items)
+                if (item is AdaptiveMenuDivider)
+                  Divider(
+                    height: 8,
+                    indent: 16,
+                    endIndent: 16,
+                    color: Theme.of(sheetContext).colorScheme.outlineVariant
+                        .withValues(alpha: 0.4),
+                  )
+                else
+                  ListTile(
+                    leading: Icon(
+                      item.icon,
+                      color: item.destructive
+                          ? Theme.of(sheetContext).colorScheme.error
+                          : null,
+                    ),
+                    title: Text(
+                      item.label,
+                      style: item.destructive
+                          ? TextStyle(
+                              color: Theme.of(sheetContext).colorScheme.error,
+                            )
+                          : null,
+                    ),
+                    subtitle: item.subtitle != null
+                        ? Text(item.subtitle!)
+                        : null,
+                    onTap: () => Navigator.pop(sheetContext, item.value),
+                  ),
+            ],
+          ),
+        ),
   );
 }

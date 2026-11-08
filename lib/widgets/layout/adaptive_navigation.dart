@@ -206,48 +206,51 @@ class _NavigationRailItem extends StatelessWidget {
         ? colorScheme.onSecondaryContainer
         : colorScheme.onSurfaceVariant;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Material(
-        color: backgroundColor,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: InkWell(
-          customBorder: RoundedSuperellipseBorder(
+    return Tooltip(
+      message: extended ? '' : label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Material(
+          color: backgroundColor,
+          shape: RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          onTap: onTap,
-          child: SizedBox(
-            height: 56,
-            child: extended
-                ? Row(
-                    children: [
-                      const SizedBox(width: 16),
-                      IconTheme(
+          child: InkWell(
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            onTap: onTap,
+            child: SizedBox(
+              height: 56,
+              child: extended
+                  ? Row(
+                      children: [
+                        const SizedBox(width: 16),
+                        IconTheme(
+                          data: IconThemeData(color: iconColor, size: 24),
+                          child: icon,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: iconColor,
+                              fontWeight: selected
+                                  ? FontWeight.w500
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Center(
+                      child: IconTheme(
                         data: IconThemeData(color: iconColor, size: 24),
                         child: icon,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            color: iconColor,
-                            fontWeight: selected
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Center(
-                    child: IconTheme(
-                      data: IconThemeData(color: iconColor, size: 24),
-                      child: icon,
                     ),
-                  ),
+            ),
           ),
         ),
       ),

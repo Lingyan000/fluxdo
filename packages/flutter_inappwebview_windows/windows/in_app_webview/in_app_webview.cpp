@@ -37,6 +37,7 @@
 #include "../types/web_notification.h"
 #include "../types/web_resource_error.h"
 #include "../types/web_resource_request.h"
+#include "../types/web_resource_request_deferral.h"
 #include "../utils/base64.h"
 #include "../utils/log.h"
 #include "../utils/map.h"
@@ -943,9 +944,11 @@ namespace flutter_inappwebview_plugin
         [this](
           ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args)
         {
-          wil::com_ptr<ICoreWebView2Deferral> deferral;
           wil::com_ptr<ICoreWebView2WebResourceRequest> webResourceRequest;
-          if (channelDelegate && succeededOrLog(args->get_Request(&webResourceRequest)) && succeededOrLog(args->GetDeferral(&deferral))) {
+          if (channelDelegate && succeededOrLog(args->get_Request(&webResourceRequest))) {
+            auto pending = std::make_shared<WebResourceRequestDeferral>(args);
+            if (!pending->valid()) return S_OK;
+            const auto environment = webViewEnv;
             auto request = std::make_shared<WebResourceRequest>(webResourceRequest);
 
             // The add_WebResourceRequested event is by default raised for file, http, and https URI schemes.
@@ -954,19 +957,20 @@ namespace flutter_inappwebview_plugin
             auto url = request->url.has_value() ? request->url.value() : "";
             auto isCustomScheme = !url.empty() && !starts_with(url, std::string{ "file://" }) && !starts_with(url, std::string{ "http://" }) && !starts_with(url, std::string{ "https://" });
 
-            auto onLoadResourceWithCustomSchemeCallback = [this, deferral, request, args]()
+            auto onLoadResourceWithCustomSchemeCallback = [this, pending, request, environment]()
               {
                 if (channelDelegate) {
                   auto callback = std::make_unique<WebViewChannelDelegate::LoadResourceWithCustomSchemeCallback>();
                   callback->aliveGuard = aliveGuard;
-                  auto defaultBehaviour = [this, deferral, args](const std::optional<std::shared_ptr<CustomSchemeResponse>> response)
+                  auto defaultBehaviour = [pending](const std::optional<std::shared_ptr<CustomSchemeResponse>> response)
                     {
-                      failedLog(deferral->Complete());
+                      pending->Complete();
                     };
-                  callback->nonNullSuccess = [this, deferral, args](const std::shared_ptr<CustomSchemeResponse> response)
+                  callback->nonNullSuccess = [pending, environment](const std::shared_ptr<CustomSchemeResponse> response)
                     {
-                      args->put_Response(response->toWebView2Response(webViewEnv));
-                      failedLog(deferral->Complete());
+                      wil::com_ptr<ICoreWebView2WebResourceResponse> nativeResponse;
+                      nativeResponse.attach(response->toWebView2Response(environment));
+                      pending->Complete(nativeResponse.get());
                       return false;
                     };
                   callback->defaultBehaviour = defaultBehaviour;
@@ -978,30 +982,30 @@ namespace flutter_inappwebview_plugin
                   channelDelegate->onLoadResourceWithCustomScheme(request, std::move(callback));
                 }
                 else {
-                  failedLog(deferral->Complete());
+                  pending->Complete();
                 }
               };
 
             if (settings->useShouldInterceptRequest) {
               auto callback = std::make_unique<WebViewChannelDelegate::ShouldInterceptRequestCallback>();
               callback->aliveGuard = aliveGuard;
-              auto defaultBehaviour = [this, deferral, args](const std::optional<std::shared_ptr<WebResourceResponse>> response)
+              auto defaultBehaviour = [pending](const std::optional<std::shared_ptr<WebResourceResponse>> response)
                 {
-                  failedLog(deferral->Complete());
+                  pending->Complete();
                 };
-              callback->nonNullSuccess = [this, deferral, args](const std::shared_ptr<WebResourceResponse> response)
+              callback->nonNullSuccess = [pending, environment](const std::shared_ptr<WebResourceResponse> response)
                 {
-                  args->put_Response(response->toWebView2Response(webViewEnv));
-                  failedLog(deferral->Complete());
+                  const auto nativeResponse = response->toWebView2Response(environment);
+                  pending->Complete(nativeResponse.get());
                   return false;
                 };
-              callback->nullSuccess = [this, deferral, args, isCustomScheme, onLoadResourceWithCustomSchemeCallback]()
+              callback->nullSuccess = [pending, isCustomScheme, onLoadResourceWithCustomSchemeCallback]()
                 {
                   if (isCustomScheme) {
                     onLoadResourceWithCustomSchemeCallback();
                   }
                   else {
-                    failedLog(deferral->Complete());
+                    pending->Complete();
                   }
                   return false;
                 };
@@ -1017,7 +1021,7 @@ namespace flutter_inappwebview_plugin
               onLoadResourceWithCustomSchemeCallback();
             }
             else {
-              failedLog(deferral->Complete());
+              pending->Complete();
             }
           }
           return S_OK;
@@ -4114,12 +4118,9 @@ namespace flutter_inappwebview_plugin
 
           auto callback = std::make_unique<WebViewChannelDelegate::CallJsHandlerCallback>();
           callback->aliveGuard = aliveGuard;
-          callback->defaultBehaviour = [this, callHandlerID](const std::optional<const flutter::EncodableValue*> response)
+          callback->defaultBehaviour = [this, callHandlerID](const std::optional<std::string> response)
             {
-              std::string json = "null";
-              if (response.has_value() && !response.value()->IsNull()) {
-                json = std::get<std::string>(*(response.value()));
-              }
+              const auto json = response.value_or("null");
 
               evaluateJavascript("if (window." + JavaScriptBridgeJS::get_JAVASCRIPT_BRIDGE_NAME() + "[" + std::to_string(callHandlerID) + "] != null) { \
                       window." + JavaScriptBridgeJS::get_JAVASCRIPT_BRIDGE_NAME() + "[" + std::to_string(callHandlerID) + "].resolve(" + json + "); \

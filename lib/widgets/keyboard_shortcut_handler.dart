@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo_render/editor.dart' show FluxdoEditor;
 
 import '../models/shortcut_binding.dart';
+import '../navigation/nav_action_bus.dart';
 import '../pages/create_topic_page.dart';
 import '../pages/search_page.dart';
 import '../providers/topic_list/tab_state_provider.dart';
@@ -348,10 +349,10 @@ class _KeyboardShortcutHandlerState
         }
         return true;
       case ShortcutAction.switchToTopics:
-        ref.read(switchTabProvider.notifier).state = 0;
+        ref.requestNavDestination(NavEntryIds.home);
         return true;
       case ShortcutAction.switchToProfile:
-        ref.read(switchTabProvider.notifier).state = 1;
+        ref.requestNavDestination(NavEntryIds.profile);
         return true;
       case ShortcutAction.createTopic:
         return _pushOrRevealRoute(

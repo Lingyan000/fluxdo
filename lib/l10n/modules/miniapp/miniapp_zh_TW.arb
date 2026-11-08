@@ -1,0 +1,62 @@
+{
+  "miniApp_engine": "小程式執行引擎",
+  "miniApp_engineWeb": "官方網頁",
+  "miniApp_engineLightweight": "輕量宿主",
+  "miniApp_engineSettingDescription": "選擇預設引擎，下次開啟小程式時生效",
+  "miniApp_engineWebDescription": "相容備用，輕量宿主無法執行時使用",
+  "miniApp_engineLightweightDescription": "省去論壇頁面初始化，繼續使用官方載入器與資源快取",
+  "miniApp_engineRestart": "切換引擎並重新啟動",
+  "miniApp_engineFallback": "使用官方網頁引擎重試",
+  "miniApp_engineBootFailed": "輕量宿主未能啟動，請重試或切換至官方網頁引擎",
+  "miniApp_separateWindow": "在獨立視窗開啟",
+  "@@locale": "zh_TW",
+  "miniApp_landscape": "切換至橫向",
+  "miniApp_portrait": "切換至直向",
+  "miniApp_systemOrientation": "跟隨系統旋轉",
+  "miniApp_exitFullscreen": "離開全螢幕",
+  "miniApp_showControls": "展開控制列",
+  "miniApp_hideControls": "收起控制列",
+  "miniApp_supportDeveloper": "支持開發者",
+  "miniApp_moreActions": "更多操作",
+  "miniApp_tipEncouragement": "給喜歡的作品一點鼓勵",
+  "miniApp_pointsUnit": "積分",
+  "miniApp_insufficientBalance": "目前積分不足，暫時無法打賞",
+  "miniApp_tipPay": "確認打賞 {amount} 積分",
+  "@miniApp_tipPay": {
+    "placeholders": {
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_tipSent": "打賞成功，感謝你支持開發者",
+  "miniApp_ratingPrompt": "這個應用用起來怎麼樣？",
+  "miniApp_ratingHint": "選擇星級後提交，你可以隨時修改自己的評分",
+  "miniApp_ratingValue": "{score} 星",
+  "@miniApp_ratingValue": {
+    "placeholders": {
+      "score": {
+        "type": "int"
+      }
+    }
+  },
+  "miniApp_rating1": "還需改進",
+  "miniApp_rating2": "有待完善",
+  "miniApp_rating3": "體驗不錯",
+  "miniApp_rating4": "很喜歡",
+  "miniApp_rating5": "非常出色",
+  "miniApp_launchPreparing": "正在為你準備應用",
+  "miniApp_launchFailed": "這次未能開啟應用",
+  "miniApp_permissionChoice": "請根據上方用途選擇是否允許",
+  "miniApp_pullSetting": "下拉開啟應用廣場",
+  "miniApp_pullSettingDescription": "首頁深拉進入應用廣場；關閉後僅下拉重新整理，仍可從「我的」進入",
+  "miniApp_contentLabel": "微應用",
+  "miniApp_contentHint": "開啟即可使用，收起後可繼續閱讀話題",
+  "miniApp_metadataLoading": "正在取得應用名稱與介紹…",
+  "miniApp_metadataFailed": "暫時無法取得應用資訊，請重試",
+  "miniApp_expandPanel": "展開應用",
+  "miniApp_openPage": "在頁面開啟",
+  "miniApp_restorePanel": "還原面板",
+  "miniApp_collapsePanel": "收起應用",
+  "miniApp_resumePanel": "繼續使用"
+}

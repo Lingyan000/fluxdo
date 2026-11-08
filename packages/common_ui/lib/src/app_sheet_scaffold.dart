@@ -41,6 +41,7 @@ class AppSheetScaffold extends StatelessWidget {
     this.contentPadding = const EdgeInsets.fromLTRB(16, 0, 16, 16),
     this.maxHeightFactor = 0.9,
     this.expandToFill = false,
+    this.borderRadius,
     this.footer,
     required this.child,
   });
@@ -76,6 +77,9 @@ class AppSheetScaffold extends StatelessWidget {
   /// 此时内容用 [Expanded] 撑满,且不再叠加键盘内边距(交由内容自身处理)。
   final bool expandToFill;
 
+  /// 可展开的内容面板沿用公共外壳，仅在全屏或桌面时调整边角。
+  final BorderRadiusGeometry? borderRadius;
+
   /// 固定在内容下方、不随内容滚动的底部区域(如确认/提交按钮)。
   /// 位于内容滚动区之外,自带内边距,处于底部安全区内。
   final Widget? footer;
@@ -107,9 +111,11 @@ class AppSheetScaffold extends StatelessWidget {
     final shell = Material(
       color: cs.surface,
       shape: RoundedSuperellipseBorder(
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(_kSheetCornerRadius),
-        ),
+        borderRadius:
+            borderRadius ??
+            const BorderRadius.vertical(
+              top: Radius.circular(_kSheetCornerRadius),
+            ),
       ),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
