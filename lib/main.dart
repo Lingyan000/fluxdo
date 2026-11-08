@@ -120,6 +120,10 @@ import 'widgets/layout/pane_projection_back_scope.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
 import 'widgets/read_later/read_later_bubble.dart';
+import 'widgets/browser/browser_dock_host.dart';
+import 'services/browser_tabs.dart';
+import 'services/navigation/browser_dock_observer.dart';
+import 'pages/webview_page.dart';
 import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
 import 'navigation/nav_entry_registry.dart';
@@ -820,6 +824,7 @@ class MainApp extends ConsumerWidget {
               // KeyboardFocusGuard 压掉浮层关闭后键盘自弹(移动端)
               // EscFallbackObserver 登记全屏页,桌面 ESC 路由级自动兜底
               navigatorObservers: [
+                browserDockObserver,
                 appRouteObserver,
                 keyboardFocusGuard,
                 JankNavObserver(),
@@ -894,19 +899,34 @@ class MainApp extends ConsumerWidget {
                     // 关闭系统自动 scrim，实现完全沉浸
                     systemNavigationBarContrastEnforced: false,
                   ),
-                  child: Stack(
-                    fit: StackFit.passthrough,
-                    children: [
-                      // 透明模式的用户背景层，垫在 Navigator 之下
-                      if (resolvedTheme.transparent)
-                        Positioned.fill(
-                          child: AppBackgroundLayer(
-                            background: themeState.background,
+                  child: BrowserDockHost(
+                    blurEnabled: ref.watch(
+                      preferencesProvider.select((p) => p.dialogBlur),
+                    ),
+                    controller: ref.read(browserTabsProvider),
+                    observer: browserDockObserver,
+                    onRestore: (session) {
+                      final navigator = navigatorKey.currentState;
+                      if (navigator != null) {
+                        WebViewPage.restore(navigator, session);
+                      } else {
+                        unawaited(session.close());
+                      }
+                    },
+                    child: Stack(
+                      fit: StackFit.passthrough,
+                      children: [
+                        // 透明模式的用户背景层，垫在 Navigator 之下
+                        if (resolvedTheme.transparent)
+                          Positioned.fill(
+                            child: AppBackgroundLayer(
+                              background: themeState.background,
+                            ),
                           ),
-                        ),
-                      child!,
-                      const ReadLaterBubble(),
-                    ],
+                        child!,
+                        const ReadLaterBubble(),
+                      ],
+                    ),
                   ),
                 );
 

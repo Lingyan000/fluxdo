@@ -8,6 +8,7 @@ import '../models/web_bookmark.dart';
 import '../models/web_history_item.dart';
 import '../providers/web_bookmark_provider.dart';
 import '../providers/web_history_provider.dart';
+import '../services/browser_navigation.dart';
 import '../utils/time_utils.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -79,12 +80,12 @@ class MyBrowserPage extends ConsumerWidget {
   }
 
   void _openUrl(BuildContext context, String input) {
-    var url = input.trim();
-    if (url.isEmpty) return;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://$url';
-    }
-    WebViewPage.open(context, url);
+    final engine = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(browserSearchEngineProvider);
+    final target = BrowserNavigationTarget.parse(input, engine);
+    if (target != null) WebViewPage.open(context, target.uri.toString());
   }
 }
 
@@ -113,10 +114,10 @@ class _AddressBarState extends State<_AddressBar> {
 
     return TextField(
       controller: _controller,
-      keyboardType: TextInputType.url,
+      keyboardType: TextInputType.text,
       textInputAction: TextInputAction.go,
       decoration: InputDecoration(
-        hintText: context.l10n.myBrowser_inputUrl,
+        hintText: context.l10n.webview_addressHint,
         prefixIcon: const Icon(Symbols.language_rounded),
         suffixIcon: IconButton(
           icon: const Icon(Symbols.arrow_forward_rounded),

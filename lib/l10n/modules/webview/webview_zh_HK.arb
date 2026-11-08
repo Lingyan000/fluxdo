@@ -16,6 +16,44 @@
   "webviewLogin_loginSuccess": "登錄成功！",
   "webviewLogin_savedPassword": "已保存的密碼",
   "webviewLogin_title": "登錄 LINUX.DO",
+  "webview_addressHint": "搜尋或輸入網址",
+  "webview_editAddress": "編輯網址或搜尋",
+  "webview_invalidAddress": "請輸入有效的網址或搜尋詞",
+  "webview_currentPage": "當前網頁",
+  "webview_searchEngine": "搜尋引擎",
+  "webview_searchWith": "使用 {engine} 搜尋",
+  "webview_findInPage": "在網頁中尋找",
+  "webview_stopLoading": "停止載入",
+  "webview_googleUnavailable": "無法連接 Google，可以試試 Bing。",
+  "webview_googleSlow": "Google 回應較慢",
+  "webview_searchFailed": "暫時無法搜尋",
+  "webview_defaultSearchEngine": "預設搜尋引擎",
+  "webview_tryBing": "本次用 Bing 搜尋",
+  "webview_loadFailed": "無法載入此網頁",
+  "webview_checkConnection": "請檢查網絡連線，或稍後重試。",
+  "webview_findMatches": "找到 {count} 處符合項目",
+  "webview_previousMatch": "上一處",
+  "webview_nextMatch": "下一處",
+  "webview_shareFailed": "暫時無法分享連結",
+  "@webview_searchWith": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@webview_findMatches": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "webview_minimize": "收起到底部",
+  "webview_minimizedPages": "已收起的網頁",
+  "webview_minimizedCount": "{count} 個網頁",
+  "@webview_minimizedCount": { "placeholders": { "count": { "type": "int" } } },
+  "webview_closeAll": "全部關閉",
   "webview_browser": "瀏覽器",
   "webview_cannotOpenBrowser": "無法打開外部瀏覽器",
   "webview_goBack": "後退",

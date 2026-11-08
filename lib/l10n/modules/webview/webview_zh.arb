@@ -62,6 +62,44 @@
   "webviewLogin_loginSuccess": "登录成功！",
   "webviewLogin_savedPassword": "已保存的密码",
   "webviewLogin_title": "登录 LINUX.DO",
+  "webview_addressHint": "搜索或输入网址",
+  "webview_editAddress": "编辑网址或搜索",
+  "webview_invalidAddress": "请输入有效的网址或搜索词",
+  "webview_currentPage": "当前网页",
+  "webview_searchEngine": "搜索引擎",
+  "webview_searchWith": "使用 {engine} 搜索",
+  "webview_findInPage": "在网页中查找",
+  "webview_stopLoading": "停止加载",
+  "webview_googleUnavailable": "无法连接 Google，可以试试 Bing。",
+  "webview_googleSlow": "Google 响应较慢",
+  "webview_searchFailed": "暂时无法搜索",
+  "webview_defaultSearchEngine": "默认搜索引擎",
+  "webview_tryBing": "本次用 Bing 搜索",
+  "webview_loadFailed": "无法加载此网页",
+  "webview_checkConnection": "请检查网络连接，或稍后重试。",
+  "webview_findMatches": "找到 {count} 处匹配",
+  "webview_previousMatch": "上一处",
+  "webview_nextMatch": "下一处",
+  "webview_shareFailed": "暂时无法分享链接",
+  "@webview_searchWith": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@webview_findMatches": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "webview_minimize": "收起到底部",
+  "webview_minimizedPages": "已收起的网页",
+  "webview_minimizedCount": "{count} 个网页",
+  "@webview_minimizedCount": { "placeholders": { "count": { "type": "int" } } },
+  "webview_closeAll": "全部关闭",
   "webview_addBookmark": "收藏此页",
   "webview_bookmarkAdded": "已收藏",
   "webview_bookmarkRemoved": "已取消收藏",

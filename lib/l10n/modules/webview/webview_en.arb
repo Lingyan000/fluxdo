@@ -55,6 +55,44 @@
   "webviewLogin_loginSuccess": "Login successful!",
   "webviewLogin_savedPassword": "Saved password",
   "webviewLogin_title": "Log in to LINUX.DO",
+  "webview_addressHint": "Search or enter address",
+  "webview_editAddress": "Edit address or search",
+  "webview_invalidAddress": "Enter a valid address or search term",
+  "webview_currentPage": "Current page",
+  "webview_searchEngine": "Search engine",
+  "webview_searchWith": "Search with {engine}",
+  "webview_findInPage": "Find in page",
+  "webview_stopLoading": "Stop loading",
+  "webview_googleUnavailable": "Can't connect to Google. Try Bing for this search.",
+  "webview_googleSlow": "Google is taking longer",
+  "webview_searchFailed": "Search is unavailable",
+  "webview_defaultSearchEngine": "Default search engine",
+  "webview_tryBing": "Search once with Bing",
+  "webview_loadFailed": "Unable to load this page",
+  "webview_checkConnection": "Check your connection or try again later.",
+  "webview_findMatches": "{count} matches",
+  "webview_previousMatch": "Previous match",
+  "webview_nextMatch": "Next match",
+  "webview_shareFailed": "Unable to share this link",
+  "@webview_searchWith": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@webview_findMatches": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "webview_minimize": "Minimize",
+  "webview_minimizedPages": "Minimized pages",
+  "webview_minimizedCount": "{count} pages",
+  "@webview_minimizedCount": { "placeholders": { "count": { "type": "int" } } },
+  "webview_closeAll": "Close all",
   "webview_addBookmark": "Bookmark this page",
   "webview_bookmarkAdded": "Bookmarked",
   "webview_bookmarkRemoved": "Bookmark removed",
