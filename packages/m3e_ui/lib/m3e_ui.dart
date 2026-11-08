@@ -15,6 +15,7 @@ library;
 export 'src/loading_spinner.dart';
 export 'src/m3e_button_group.dart';
 export 'src/m3e_circular_progress.dart';
+export 'src/m3e_elastic_press.dart';
 export 'src/m3e_fab_menu.dart';
 export 'src/m3e_flags.dart';
 export 'src/m3e_linear_progress.dart';

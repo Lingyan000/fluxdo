@@ -45,6 +45,49 @@ void main() {
     matching: find.byType(Material),
   );
 
+  testWidgets('独立按钮形变不重复激活，保留长按和起手滚动', (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    var taps = 0, holds = 0;
+    await tester.pumpWidget(
+      host(
+        ListView(
+          controller: scroll,
+          children: [
+            const SizedBox(height: 80),
+            Center(
+              child: M3eElasticPress(
+                child: FilledButton.tonal(
+                  onPressed: () => taps++,
+                  onLongPress: () => holds++,
+                  child: const Text('Action'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 1000),
+          ],
+        ),
+      ),
+    );
+    final button = find.text('Action');
+    final idle = tester.getRect(button);
+    final gesture = await tester.startGesture(idle.center);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(tester.getRect(button).width, greaterThan(idle.width));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(button), idle);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.longPress(button);
+    await tester.pumpAndSettle();
+    await tester.drag(button, const Offset(0, -100));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(20));
+    expect([taps, holds], [1, 1]);
+  });
+
   testWidgets('联排按钮选中时渐变颜色与圆角，按压只改变绘制尺寸，取消后复原', (tester) async {
     var selected = 0;
     var calls = 0;
@@ -197,6 +240,63 @@ void main() {
       await tester.tap(find.text('已收藏'));
       await tester.pumpAndSettle();
       expect(calls, 1);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('三项按钮组逐项拖过邻项时只形变起手按钮，LTR 与 RTL 一致', (tester) async {
+    for (final direction in TextDirection.values) {
+      var calls = 0;
+      await tester.pumpWidget(
+        host(
+          SizedBox(
+            width: 358,
+            child: M3eButtonGroup<int>(
+              items: const [
+                M3eButtonGroupItem(value: 0, label: Text('规则')),
+                M3eButtonGroupItem(value: 1, label: Text('全局')),
+                M3eButtonGroupItem(value: 2, label: Text('直连')),
+              ],
+              selected: 0,
+              onSelected: (_) => calls++,
+            ),
+          ),
+          direction: direction,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final group = find.byType(M3eButtonGroup<int>);
+      final bounds = tester.getRect(group);
+      final resting = [
+        for (var i = 0; i < 3; i++) tester.getRect(buttons().at(i)),
+      ];
+      for (var active = 0; active < 3; active++) {
+        final gesture = await tester.startGesture(resting[active].center);
+        await tester.pumpAndSettle();
+        for (final dx in [140.0, -140.0]) {
+          await gesture.moveTo(resting[active].center + Offset(dx, 25));
+          await tester.pumpAndSettle();
+          expect(tester.getRect(group), bounds);
+          for (var i = 0; i < 3; i++) {
+            final actual = tester.getRect(buttons().at(i));
+            if (i == active) {
+              expect(actual.width, greaterThan(resting[i].width));
+              expect(actual.center.dy, greaterThan(resting[i].center.dy));
+            } else {
+              expect(actual, resting[i]);
+            }
+          }
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 3; i++) {
+          expect(tester.getRect(buttons().at(i)), resting[i]);
+        }
+        expect(calls, active);
+        await tester.tap(buttons().at(active));
+        await tester.pumpAndSettle();
+        expect(calls, active + 1);
+      }
       expect(tester.takeException(), isNull);
     }
   });

@@ -25,15 +25,18 @@ class BalanceCardActionButton extends StatelessWidget {
         : const Icon(Symbols.refresh_rounded, size: 18);
 
     if (filled) {
-      return FilledButton.icon(
-        onPressed: isLoading ? null : onPressed,
-        icon: icon,
-        label: Text(label),
-        style: FilledButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.2),
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.white.withValues(alpha: 0.15),
-          disabledForegroundColor: Colors.white70,
+      return M3eElasticPress(
+        enabled: !isLoading,
+        child: FilledButton.icon(
+          onPressed: isLoading ? null : onPressed,
+          icon: icon,
+          label: Text(label),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.white.withValues(alpha: 0.15),
+            disabledForegroundColor: Colors.white70,
+          ),
         ),
       );
     }
