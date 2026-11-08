@@ -47,7 +47,7 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
 
 ### 前置要求
 
-- Flutter SDK ^3.10.4
+- Flutter SDK 3.47.9（版本由 `.fvmrc` 固定）
 - Rust 工具链（用于编译 DOH 代理）
 - Android Studio / Xcode（移动端开发）
 

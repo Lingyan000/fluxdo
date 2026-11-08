@@ -27,11 +27,7 @@ void main() {
         child: MaterialApp(
           navigatorKey: navigatorKey,
           home: Scaffold(
-            body: ComposerExpandedTools(
-              anchor: anchor,
-              animation: const AlwaysStoppedAnimation(1),
-              flyingIds: const {},
-            ),
+            body: ComposerExpandedTools(anchor: anchor),
           ),
         ),
       ),

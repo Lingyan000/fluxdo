@@ -5,7 +5,7 @@ version: 0.2.29+2026102016
 
 environment:
   sdk: ^3.13.0
-  flutter: ">=3.47.4"
+  flutter: ">=3.47.9"
 
 # sqlite3(经 sqflite_common_ffi 引入)的 build hook 默认在构建期从 GitHub
 # 下载预编译库,Flatpak 离线沙箱内必然失败;指向 vendored amalgamation
