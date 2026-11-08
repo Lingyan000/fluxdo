@@ -1802,9 +1802,12 @@ class _MainPageState extends ConsumerState<MainPage>
                           enabled: safePageIndex == i,
                           child: ExcludeFocus(
                             excluding: safePageIndex != i,
-                            child: pageEntries[i].pageBuilder!(
-                              context,
-                              safePageIndex == i,
+                            child: KeyboardInsetIsolation(
+                              active: safePageIndex == i,
+                              child: pageEntries[i].pageBuilder!(
+                                context,
+                                safePageIndex == i,
+                              ),
                             ),
                           ),
                         ),

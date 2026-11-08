@@ -1,5 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -507,27 +508,32 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
               }
             }
 
-            return ClipRect(
-              child: ColoredBox(
-                // 带底兜底铺色:格子运动/几何调整的任何瞬时缝隙都不
-                // 透出窗口底(桌面 acrylic 半透明,露底=发透+水印)。
-                color: Theme.of(context).scaffoldBackgroundColor,
-                child: Stack(
-                  children: [
-                    ...masterChildren,
-                    Positioned(
-                      left: clipLeft,
-                      top: 0,
-                      bottom: 0,
-                      width: (size.width - clipLeft).clamp(0.0, size.width),
-                      child: ClipRect(
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: paneChildren,
+            return PageMotionScope(
+              moving: _kickScheduled ||
+                  _controller.isAnimating ||
+                  (widget.bandDrag?.value ?? 0) > 0,
+              child: ClipRect(
+                child: ColoredBox(
+                  // 带底兜底铺色:格子运动/几何调整的任何瞬时缝隙都不
+                  // 透出窗口底(桌面 acrylic 半透明,露底=发透+水印)。
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: Stack(
+                    children: [
+                      ...masterChildren,
+                      Positioned(
+                        left: clipLeft,
+                        top: 0,
+                        bottom: 0,
+                        width: (size.width - clipLeft).clamp(0.0, size.width),
+                        child: ClipRect(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: paneChildren,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -545,7 +551,14 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
         excluding: inert,
         child: IgnorePointer(
           ignoring: inert,
-          child: TickerMode(enabled: !inert, child: child),
+          child: TickerMode(
+            enabled: !inert,
+            child: KeyboardInsetIsolation(
+              active: !inert,
+              requireFocus: true,
+              child: child,
+            ),
+          ),
         ),
       ),
     );

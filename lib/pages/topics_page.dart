@@ -40,6 +40,7 @@ import '../navigation/nav_action_bus.dart';
 import '../providers/app_state_refresher.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/load_more_coordinator.dart';
+import '../utils/async_presentation_cache.dart';
 import '../utils/motion_springs.dart';
 import '../utils/topic_keyword_filter.dart';
 import '../utils/frame_jank_monitor.dart';
@@ -2489,8 +2490,17 @@ class _TopicList extends ConsumerStatefulWidget {
   ConsumerState<_TopicList> createState() => _TopicListState();
 }
 
+typedef _TopicListPresentation = ({
+  AsyncValue<List<Topic>> topics,
+  int incomingCount,
+  bool loadingUpdates,
+});
+
 class _TopicListState extends ConsumerState<_TopicList>
-    with AutomaticKeepAliveClientMixin, TopicListUpdatesMixin<_TopicList> {
+    with
+        AutomaticKeepAliveClientMixin,
+        TopicListUpdatesMixin<_TopicList>,
+        RouteMotionHoldMixin<_TopicList, _TopicListPresentation> {
   final _refreshIndicatorKey = GlobalKey<M3eRefreshIndicatorState>();
 
   /// overlay 头部架构下无 NestedScrollView 注入的 PrimaryScrollController，
@@ -2553,14 +2563,43 @@ class _TopicListState extends ConsumerState<_TopicList>
     return _topicIdToVisibleIndex;
   }
 
+  Object? _cardEnvironment;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _topicItemCache.clear();
+    final environment = (
+      Theme.of(context),
+      MediaQuery.sizeOf(context),
+      MediaQuery.textScalerOf(context),
+      Localizations.localeOf(context),
+      Directionality.of(context),
+    );
+    if (_cardEnvironment != environment) {
+      _cardEnvironment = environment;
+      _topicItemCache.clear();
+    }
   }
 
   /// 本地缓存的话题数据，非当前 tab 时使用此缓存渲染，不订阅 provider
-  AsyncValue<List<Topic>>? _cachedTopicsAsync;
+  final _topicsCache = AsyncPresentationCache<List<Topic>>();
+  bool _identityRefreshScheduled = false;
+
+  void _refreshObsoleteIdentity(Object identity) {
+    if (_identityRefreshScheduled) return;
+    _identityRefreshScheduled = true;
+    Future.microtask(() {
+      _identityRefreshScheduled = false;
+      if (!mounted || _topicsCache.identity != identity) return;
+      final provider = topicListProvider(widget.categoryId);
+      final latest = ref.read(provider);
+      // 用户信息有可能晚于列表到达。仅在现有刷新链没有启动请求、
+      // provider 仍是旧身份的同一份结果时补一次刷新，避免永久等骨架。
+      if (_topicsCache.needsRefresh(latest)) {
+        ref.invalidate(provider);
+      }
+    });
+  }
 
   /// 键盘焦点索引（J/K 导航用）
   int _keyboardFocusIndex = -1;
@@ -2821,12 +2860,35 @@ class _TopicListState extends ConsumerState<_TopicList>
     final isCurrentTab =
         ref.watch(currentTabCategoryIdProvider) == widget.categoryId;
 
+    final updateQuery = TopicListUpdateQuery(
+      filter: ref.watch(topicFilterProvider),
+      subset: ref.watch(topicNewSubsetProvider),
+      categoryId: widget.categoryId,
+      tags: ref.watch(tabTagsProvider(widget.categoryId)),
+      order: ref.watch(topicSortOrderProvider).apiValue,
+      ascending: ref.watch(topicSortAscendingProvider),
+      newNewView: newNewViewEnabled,
+    );
+    final contentIdentity = (
+      ref.watch(currentUserProvider.select((value) => value.value?.id)),
+      updateQuery.filter,
+      updateQuery.subset,
+      updateQuery.categoryId,
+      updateQuery.tags.join('\u0000'),
+      updateQuery.order,
+      updateQuery.ascending,
+    );
+    _topicsCache.selectIdentity(contentIdentity);
+
     // 当前 tab：watch provider 建立订阅，并缓存到本地
     // 非当前 tab：stale 显示 loading，否则显示缓存数据；均不订阅 provider
-    final AsyncValue<List<Topic>> topicsAsync;
+    AsyncValue<List<Topic>> topicsAsync;
     if (isCurrentTab) {
-      topicsAsync = ref.watch(topicListProvider(providerKey));
-      _cachedTopicsAsync = topicsAsync;
+      final latest = ref.watch(topicListProvider(providerKey));
+      topicsAsync = _topicsCache.accept(latest);
+      if (_topicsCache.needsRefresh(latest)) {
+        _refreshObsoleteIdentity(contentIdentity);
+      }
 
       // 以下 listener 仅当前 tab 需要
       ref.listen(fabRefreshSignalProvider, (_, _) {
@@ -2852,7 +2914,7 @@ class _TopicListState extends ConsumerState<_TopicList>
       final isStale = ref.watch(staleTabsProvider).contains(widget.categoryId);
       topicsAsync = isStale
           ? const AsyncValue.loading()
-          : (_cachedTopicsAsync ?? const AsyncValue.loading());
+          : _topicsCache.cached;
     }
 
     final keywords = ref.watch(
@@ -2864,6 +2926,27 @@ class _TopicListState extends ConsumerState<_TopicList>
     final blockedUsernames = ref.watch(
       preferencesProvider.select((p) => p.normalizedBlockedUsernames),
     );
+    watchTopicUpdates(
+      updateQuery,
+      tags: isCurrentTab
+          ? ref.read(topicListProvider(providerKey).notifier).knownTags
+          : const [],
+    );
+    final presentationIdentity = (
+      contentIdentity,
+      keywords.join('\u0000'),
+      wholeWord,
+      (blockedUsernames.toList()..sort()).join('\u0000'),
+    );
+    final presentation = holdDuringRouteMotion(
+      (
+        topics: topicsAsync,
+        incomingCount: topicUpdateSnapshot.length,
+        loadingUpdates: isLoadingTopicUpdates,
+      ),
+      identity: presentationIdentity,
+    );
+    topicsAsync = presentation.topics;
     final showFilterHint = ref.watch(
       preferencesProvider.select((p) => p.showFilterHint),
     );
@@ -2911,26 +2994,12 @@ class _TopicListState extends ConsumerState<_TopicList>
       });
     }
 
-    final updateQuery = TopicListUpdateQuery(
-      filter: ref.read(topicFilterProvider),
-      subset: ref.read(topicNewSubsetProvider),
-      categoryId: widget.categoryId,
-      tags: ref.read(tabTagsProvider(widget.categoryId)),
-      order: ref.read(topicSortOrderProvider).apiValue,
-      ascending: ref.read(topicSortAscendingProvider),
-      newNewView: newNewViewEnabled,
-    );
-    watchTopicUpdates(
-      updateQuery,
-      tags: isCurrentTab
-          ? ref.read(topicListProvider(providerKey).notifier).knownTags
-          : const [],
-    );
-
-    return visibleTopicsAsync.when(
+    final content = visibleTopicsAsync.when(
+      skipLoadingOnRefresh: true,
+      skipLoadingOnReload: true,
       data: (topics) {
-        final newTopicCount = topicUpdateSnapshot.length;
-        final hasNewTopics = newTopicCount > 0 || isLoadingTopicUpdates;
+        final newTopicCount = presentation.incomingCount;
+        final hasNewTopics = newTopicCount > 0 || presentation.loadingUpdates;
         final newTopicOffset = hasNewTopics ? 1 : 0;
         final hintOffset = (showFilterHint && hiddenCount > 0) ? 1 : 0;
         final headerOffset = newTopicOffset + hintOffset;
@@ -3200,22 +3269,7 @@ class _TopicListState extends ConsumerState<_TopicList>
           ),
         );
       },
-      loading: () => ClipRSuperellipse(
-        borderRadius: _topBorderRadius,
-        // 骨架屏无滚动位置可与头部互动，顶部让位实时贴头部下缘
-        // （visibleExtentFor）——按恒定 inset 让位会在胶囊折叠时
-        // 露 48px 空洞（切 tab 到 stale 分类 = 折叠态遇 loading）
-        child: ListenableBuilder(
-          listenable: widget.headerController,
-          builder: (context, _) => TopicListSkeleton(
-            padding: EdgeInsets.only(
-              top:
-                  widget.headerController.visibleExtentFor(widget.topInset) + 8,
-              bottom: 12,
-            ),
-          ),
-        ),
-      ),
+      loading: () => const SizedBox.expand(),
       error: (error, stack) => ClipRSuperellipse(
         borderRadius: _topBorderRadius,
         child: ListenableBuilder(
@@ -3232,6 +3286,27 @@ class _TopicListState extends ConsumerState<_TopicList>
           ),
         ),
       ),
+    );
+    return AppLoadingSwitcher(
+      identity: presentationIdentity,
+      loading: visibleTopicsAsync.isLoading && !visibleTopicsAsync.hasValue,
+      loadingBuilder: (context) => ClipRSuperellipse(
+        borderRadius: _topBorderRadius,
+        // 骨架屏无滚动位置可与头部互动，顶部让位实时贴头部下缘
+        // （visibleExtentFor）——按恒定 inset 让位会在胶囊折叠时
+        // 露 48px 空洞（切 tab 到 stale 分类 = 折叠态遇 loading）
+        child: ListenableBuilder(
+          listenable: widget.headerController,
+          builder: (context, _) => TopicListSkeleton(
+            padding: EdgeInsets.only(
+              top:
+                  widget.headerController.visibleExtentFor(widget.topInset) + 8,
+              bottom: 12,
+            ),
+          ),
+        ),
+      ),
+      child: content,
     );
   }
 
