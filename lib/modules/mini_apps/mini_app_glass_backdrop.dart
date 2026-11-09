@@ -15,24 +15,36 @@ class MiniAppGlassBackdrop extends StatefulWidget {
     this.showBackdrop = true,
     this.enabled = true,
     this.onSample,
+    this.captureBounds,
+    this.builder,
   });
   final MiniAppGlassCapture capture;
   final bool showBackdrop, enabled;
   final ValueChanged<SurfaceColorSample>? onSample;
+
+  /// 本地坐标下的最终覆盖区域，展开时一次取得完整菜单背景。
+  final Rect? captureBounds;
+  final Widget Function(BuildContext, Widget backdrop, double readiness)?
+  builder;
 
   @override
   State<MiniAppGlassBackdrop> createState() => _MiniAppGlassBackdropState();
 }
 
 class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   MiniAppGlassFrame? _frame;
+  Rect? _frameRequest;
   Timer? _timer;
   bool _pending = false;
   bool _foreground = true, _ticking = true;
   int _epoch = 0, _failures = 0;
   final _colorClock = Stopwatch();
   Duration _cost = Duration.zero;
+  late final _frameFade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 160),
+  );
   bool get _enabled => widget.enabled && _foreground && _ticking;
 
   @override
@@ -60,7 +72,8 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.enabled != widget.enabled ||
         oldWidget.showBackdrop != widget.showBackdrop) {
-      _restart();
+      // 暂停取样不等于清空画面；按住、吸附和短时遮挡保留当前小块底图。
+      _restart(clear: !widget.showBackdrop);
     }
   }
 
@@ -71,12 +84,16 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
     if (mounted) setState(() {});
   }
 
-  void _restart() {
+  void _restart({bool clear = true}) {
     _epoch++;
     _timer?.cancel();
-    final frame = _frame;
-    _frame = null;
-    if (frame != null) _disposeImage(frame.image);
+    if (clear) {
+      final frame = _frame;
+      _frame = null;
+      _frameRequest = null;
+      _frameFade.value = 0;
+      if (frame != null) _disposeImage(frame.image);
+    }
     if (_enabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
     }
@@ -86,9 +103,8 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
     if (!mounted || _pending || !_enabled) return;
     final render = context.findRenderObject();
     if (render is! RenderBox || !render.hasSize || render.size.isEmpty) return;
-    final bounds = (render.localToGlobal(Offset.zero) & render.size).inflate(
-      16,
-    );
+    final region = widget.captureBounds ?? Offset.zero & render.size;
+    final bounds = region.shift(render.localToGlobal(Offset.zero)).inflate(16);
     _pending = true;
     final epoch = _epoch;
     final clock = Stopwatch()..start();
@@ -121,14 +137,31 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
     }
     if (epoch != _epoch || !_enabled) {
       next?.image.dispose();
-      _schedule();
+      // 例如低频色样尚未返回时用户已展开；丢弃后立即补当前请求，
+      // 不额外等待色样的 1.2 秒轮询间隔，仍始终只有一个截图在途。
+      if (_enabled) _timer = Timer(Duration.zero, _capture);
       return;
     }
     _failures = next == null ? (_failures + 1).clamp(0, 4) : 0;
     if (sample != null) widget.onSample?.call(sample);
+    if (!mounted || epoch != _epoch) {
+      next?.image.dispose();
+      return;
+    }
     if (next != null && widget.showBackdrop) {
       final old = _frame;
-      setState(() => _frame = next);
+      setState(() {
+        _frame = next;
+        _frameRequest = bounds;
+      });
+      // 只有首帧接入需要过渡；周期更新不能反复从透明开始，否则会脉冲闪烁。
+      if (old == null) {
+        if (MediaQuery.disableAnimationsOf(context)) {
+          _frameFade.value = 1;
+        } else {
+          _frameFade.forward(from: 0);
+        }
+      }
       if (old != null) _disposeImage(old.image);
     } else {
       next?.image.dispose();
@@ -156,6 +189,7 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
   @override
   void dispose() {
     _timer?.cancel();
+    _frameFade.dispose();
     WidgetsBinding.instance.removeObserver(this);
     final frame = _frame;
     if (frame != null) _disposeImage(frame.image);
@@ -164,28 +198,53 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
 
   @override
   Widget build(BuildContext context) => IgnorePointer(
-    child: CustomPaint(
-      painter: _BackdropPainter(
-        widget.showBackdrop && _enabled ? _frame : null,
-        context,
-      ),
+    child: AnimatedBuilder(
+      animation: _frameFade,
+      builder: (context, _) {
+        final frame = widget.showBackdrop && _foreground && _ticking
+            ? _frame
+            : null;
+        final backdrop = CustomPaint(
+          painter: _BackdropPainter(
+            frame,
+            context,
+            request: _frameRequest,
+            target: widget.captureBounds?.inflate(16),
+          ),
+        );
+        final readiness = frame == null ? 0.0 : _frameFade.value;
+        return widget.builder?.call(context, backdrop, readiness) ??
+            Opacity(opacity: readiness, child: backdrop);
+      },
     ),
   );
 }
 
 class _BackdropPainter extends CustomPainter {
-  const _BackdropPainter(this.frame, this.context);
+  const _BackdropPainter(this.frame, this.context, {this.request, this.target});
   final MiniAppGlassFrame? frame;
   final BuildContext context;
+  final Rect? request, target;
 
   @override
   void paint(Canvas canvas, Size size) {
     final value = frame;
     final render = context.findRenderObject();
     if (value == null || render is! RenderBox) return;
-    final destination = value.globalBounds.shift(
+    var destination = value.globalBounds.shift(
       -render.localToGlobal(Offset.zero),
     );
+    final from = request, to = target;
+    if (from != null && to != null && !from.isEmpty) {
+      // 按住时不截图，底图随同一块玻璃平移；松手后再采当前位置。
+      // 保留视口边缘裁切比例，不能把截掉的区域拉伸填满菜单。
+      destination = Rect.fromLTWH(
+        to.left + (value.globalBounds.left - from.left) * to.width / from.width,
+        to.top + (value.globalBounds.top - from.top) * to.height / from.height,
+        value.globalBounds.width * to.width / from.width,
+        value.globalBounds.height * to.height / from.height,
+      );
+    }
     canvas.drawImageRect(
       value.image,
       Rect.fromLTWH(

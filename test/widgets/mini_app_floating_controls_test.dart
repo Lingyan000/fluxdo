@@ -166,6 +166,126 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     scroll.dispose();
   });
+
+  testWidgets('展开首帧有底色，模糊连续接入；周期更新与按住拖动不闪透明', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final scene = GlobalKey();
+    final regions = <Rect>[];
+    var gate = Completer<MiniAppGlassFrame?>();
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: scene,
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: GlassSettingsScope(
+              settings: const GlassSettings(level: GlassEffectLevel.basic),
+              child: ColoredBox(
+                color: Colors.black,
+                child: MiniAppFullscreenDock(
+                  onExit: () {},
+                  onMenu: (_) {},
+                  onRotate: () {},
+                  landscape: false,
+                  captureBackdrop: (bounds, {maxWidth}) {
+                    if (maxWidth == 32) return Future.value(null);
+                    regions.add(bounds);
+                    return gate.future;
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final dock = find.byKey(const ValueKey('mini-app-fullscreen-dock'));
+    final cover = find.byKey(const ValueKey('mini-app-dock-frame-cover'));
+    double coverAlpha() =>
+        (tester.widget<DecoratedBox>(cover).decoration as ShapeDecoration)
+            .color!
+            .a;
+    Future<Color> pixel() async {
+      final point = tester.getRect(dock).topCenter + const Offset(0, 8);
+      return (await tester.runAsync(() async {
+        final boundary =
+            scene.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+        final image = await boundary.toImage();
+        final bytes = (await image.toByteData())!;
+        final index = (point.dy.floor() * image.width + point.dx.floor()) * 4;
+        final color = Color.fromARGB(
+          255,
+          bytes.getUint8(index),
+          bytes.getUint8(index + 1),
+          bytes.getUint8(index + 2),
+        );
+        image.dispose();
+        return color;
+      }))!;
+    }
+
+    Future<void> complete(Color color) async {
+      final pending = gate;
+      gate = Completer<MiniAppGlassFrame?>();
+      await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder).drawColor(color, BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(80, 40);
+        picture.dispose();
+        pending.complete(MiniAppGlassFrame(image, regions.last));
+      });
+      await tester.pump();
+      // capture 的回执先在测试微任务中接续，随后取色才会调用引擎的
+      // toByteData；等它完成但不推进动画时钟，才能检查首帧的淡出过程。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    }
+
+    await tester.tap(dock);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(regions, hasLength(1));
+    expect(coverAlpha(), 1);
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(
+      regions.single,
+      rectMoreOrLessEquals(tester.getRect(dock).inflate(16)),
+      reason: '展开途中即按最终宽度取样，不先拿到窄圆弧的背景',
+    );
+    expect((await pixel()).r, greaterThan(.95), reason: '慢截图期间也不能透出黑色底图');
+    await complete(Colors.green);
+    expect(coverAlpha(), 1);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(coverAlpha(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(coverAlpha(), 0);
+    final ready = await pixel();
+    expect(ready.g, greaterThan(ready.r), reason: '真实图像经过公共玻璃材质后参与画面');
+    // 新帧替换不中断材质透明度；按住/拖动仅停采，底图与玻璃一起移动。
+    await tester.pump(const Duration(milliseconds: 170));
+    await complete(Colors.blue);
+    expect(coverAlpha(), 0);
+    final updated = await pixel();
+    expect(updated.b, greaterThan(updated.r));
+    final count = regions.length;
+    final drag = await tester.startGesture(tester.getCenter(dock));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(coverAlpha(), 0);
+    await drag.moveBy(const Offset(-60, 40));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(regions.length, count);
+    final moved = await pixel();
+    expect(moved.b, greaterThan(moved.r));
+    await drag.cancel();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('圆弧二维跟手，松手就近靠边；变形菜单不占布局，外侧点击透传', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);

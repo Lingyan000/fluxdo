@@ -1847,68 +1847,54 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: AdaptiveSurfaceColors.overlay(topColor, bottomColor),
-        child: Listener(
-          onPointerDown: (event) {
-            _surfacePointers.add(event.pointer);
-            _pointerIdle?.cancel();
-            if (!_pointerActive) setState(() => _pointerActive = true);
-            _syncSurfaceSampling();
-          },
-          onPointerUp: (event) {
-            _surfacePointers.remove(event.pointer);
-            _resumeSurfaceSampling();
-          },
-          onPointerCancel: (event) {
-            _surfacePointers.remove(event.pointer);
-            _resumeSurfaceSampling();
-          },
-          child: Stack(
-            key: _pageKey,
-            fit: StackFit.expand,
-            children: [
-              Scaffold(
-                backgroundColor: bottomColor,
-                appBar: _fullscreen
-                    ? null
-                    : PreferredSize(
-                        preferredSize: Size.fromHeight(landscape ? 48 : 56),
-                        child: RepaintBoundary(
-                          key: _toolbarKey,
-                          child: MiniAppRunnerToolbar(
-                            backgroundColor: topColor,
-                            independentWindow: widget.independentWindow,
-                            app: _details.app,
-                            onBack:
-                                widget.onCloseWindow ??
-                                () => Navigator.maybePop(context),
-                            onMinimize: widget.asPanel ? _minimize : null,
-                            onOpenPage: widget.asPanel ? _openAsPage : null,
-                            primary: !widget.asPanel,
-                            minimizeBusy: _minimizing || _permission != null,
-                            onInfo: _info,
-                            onMenu: (anchor) => _menu(loggedIn, anchor),
-                            onFullscreen: () => _setFullscreen(true),
-                            onRotate: PlatformUtils.isMobile ? _rotate : null,
-                            landscape: landscape,
-                            compact: landscape,
-                          ),
+        child: Stack(
+          key: _pageKey,
+          fit: StackFit.expand,
+          children: [
+            Scaffold(
+              backgroundColor: bottomColor,
+              appBar: _fullscreen
+                  ? null
+                  : PreferredSize(
+                      preferredSize: Size.fromHeight(landscape ? 48 : 56),
+                      child: RepaintBoundary(
+                        key: _toolbarKey,
+                        child: MiniAppRunnerToolbar(
+                          backgroundColor: topColor,
+                          independentWindow: widget.independentWindow,
+                          app: _details.app,
+                          onBack:
+                              widget.onCloseWindow ??
+                              () => Navigator.maybePop(context),
+                          onMinimize: widget.asPanel ? _minimize : null,
+                          onOpenPage: widget.asPanel ? _openAsPage : null,
+                          primary: !widget.asPanel,
+                          minimizeBusy: _minimizing || _permission != null,
+                          onInfo: _info,
+                          onMenu: (anchor) => _menu(loggedIn, anchor),
+                          onFullscreen: () => _setFullscreen(true),
+                          onRotate: PlatformUtils.isMobile ? _rotate : null,
+                          landscape: landscape,
+                          compact: landscape,
                         ),
                       ),
-                body: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [topColor, bottomColor],
                     ),
+              body: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [topColor, bottomColor],
                   ),
-                  child: SafeArea(
-                    // 全屏仍避让刘海/挖孔；系统栏隐藏后这些 inset 只保留物理遮挡。
-                    top: _fullscreen,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: Stack(
+                ),
+                child: SafeArea(
+                  // 全屏仍避让刘海/挖孔；系统栏隐藏后这些 inset 只保留物理遮挡。
+                  top: _fullscreen,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: _trackSurfacePointers(
+                          Stack(
                             key: _viewportKey,
                             fit: StackFit.expand,
                             children: [
@@ -2342,35 +2328,55 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                             ],
                           ),
                         ),
-                        if (_fullscreen)
-                          Positioned.fill(
-                            child: MiniAppFullscreenDock(
-                              samplingEnabled:
-                                  !_covered &&
-                                  _nativeOverlays == 0 &&
-                                  !_pointerActive &&
-                                  widget.visible,
-                              captureBackdrop: _canSampleSurface
-                                  ? _captureDockBackdrop
-                                  : null,
-                              onExit: _leaveFullscreen,
-                              onMenu: (anchor) => _menu(loggedIn, anchor),
-                              onRotate: PlatformUtils.isMobile ? _rotate : null,
-                              landscape: landscape,
-                            ),
+                      ),
+                      if (_fullscreen)
+                        Positioned.fill(
+                          child: MiniAppFullscreenDock(
+                            samplingEnabled:
+                                !_covered &&
+                                _nativeOverlays == 0 &&
+                                !_pointerActive &&
+                                widget.visible,
+                            captureBackdrop: _canSampleSurface
+                                ? _captureDockBackdrop
+                                : null,
+                            onExit: _leaveFullscreen,
+                            onMenu: (anchor) => _menu(loggedIn, anchor),
+                            onRotate: PlatformUtils.isMobile ? _rotate : null,
+                            landscape: landscape,
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ),
-              Positioned.fill(child: MiniAppModalFrame(blur: _modalBlur)),
-            ],
-          ),
+            ),
+            Positioned.fill(child: MiniAppModalFrame(blur: _modalBlur)),
+          ],
         ),
       ),
     );
   }
+
+  /// 只有网页交互需要等待滚动空闲；原生圆弧自己管理按住/吸附期间停采，
+  /// 点击展开不能再被页面级的 500ms 等待挡住第一张玻璃背景。
+  Widget _trackSurfacePointers(Widget child) => Listener(
+    onPointerDown: (event) {
+      _surfacePointers.add(event.pointer);
+      _pointerIdle?.cancel();
+      if (!_pointerActive) setState(() => _pointerActive = true);
+      _syncSurfaceSampling();
+    },
+    onPointerUp: (event) {
+      _surfacePointers.remove(event.pointer);
+      _resumeSurfaceSampling();
+    },
+    onPointerCancel: (event) {
+      _surfacePointers.remove(event.pointer);
+      _resumeSurfaceSampling();
+    },
+    child: child,
+  );
 
   void _resumeSurfaceSampling() {
     _pointerIdle?.cancel();

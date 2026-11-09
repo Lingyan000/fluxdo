@@ -231,6 +231,47 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
     _scheduleHide();
   }
 
+  Widget _glassSurface(
+    ShapeBorder shape,
+    GlassRecipe recipe, {
+    Widget? backdrop,
+    double readiness = 1,
+  }) {
+    final gray = recipe.tintGrayFor(
+      Theme.of(context).brightness == Brightness.dark,
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ?backdrop,
+        // 材质始终在同一合成层；不能用 Opacity 隔离 BackdropFilter 的采样源。
+        GlassSurface(
+          key: const ValueKey('mini-app-dock-glass'),
+          recipe: recipe,
+          shape: shape,
+          opticalShape: const StadiumBorder(),
+          drawFallbackBorder: false,
+          drawOpticalBorder: false,
+        ),
+        if (backdrop != null)
+          // 首帧尚未到达时先用同一配方的中性底色，避免清晰网页穿透。
+          // 只淡出这层保护色，不对每次截图重新淡入，也不延迟菜单操作。
+          DecoratedBox(
+            key: const ValueKey('mini-app-dock-frame-cover'),
+            decoration: ShapeDecoration(
+              shape: shape,
+              color: Color.from(
+                alpha: 1 - readiness,
+                red: gray,
+                green: gray,
+                blue: gray,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _hideTimer?.cancel();
@@ -360,26 +401,34 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
                                         !_pressed &&
                                         !_settle.isAnimating,
                                     showBackdrop: glass && materialProgress > 0,
+                                    captureBounds: materialProgress > 0
+                                        ? Rect.fromLTWH(
+                                            _right ? width - _menuWidth : 0,
+                                            0,
+                                            _menuWidth,
+                                            _height,
+                                          )
+                                        : null,
                                     onSample: _sampleColor,
+                                    builder: (_, backdrop, readiness) =>
+                                        materialProgress == 0
+                                        ? const SizedBox.expand()
+                                        : _glassSurface(
+                                            shape,
+                                            p > 0
+                                                ? GlassRecipe.toolbar
+                                                : GlassRecipe.navigation,
+                                            backdrop: glass ? backdrop : null,
+                                            readiness: readiness,
+                                          ),
                                   ),
-                                if (materialProgress > 0)
-                                  Opacity(
-                                    opacity: const Interval(
-                                      0,
-                                      .6,
-                                    ).transform(materialProgress),
-                                    child: GlassSurface(
-                                      key: const ValueKey(
-                                        'mini-app-dock-glass',
-                                      ),
-                                      recipe: p > 0
-                                          ? GlassRecipe.toolbar
-                                          : GlassRecipe.navigation,
-                                      shape: shape,
-                                      opticalShape: const StadiumBorder(),
-                                      drawFallbackBorder: false,
-                                      drawOpticalBorder: false,
-                                    ),
+                                if (widget.captureBackdrop == null &&
+                                    materialProgress > 0)
+                                  _glassSurface(
+                                    shape,
+                                    p > 0
+                                        ? GlassRecipe.toolbar
+                                        : GlassRecipe.navigation,
                                   ),
                                 if (p > 0)
                                   IgnorePointer(

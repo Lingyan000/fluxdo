@@ -1378,7 +1378,15 @@ void main() {
     patch.image.dispose();
     // 真正展开后，慢取样不挡住按钮，且不会生成全屏的截图覆盖层。
     controller.screenshotGate = Completer<Uint8List?>();
+    final beforeOpen = controller.captures;
     await tester.tap(find.byKey(const ValueKey('mini-app-show-controls')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(
+      controller.captures,
+      greaterThan(beforeOpen),
+      reason: '原生圆弧点击展开不能等网页滚动的 500ms 空闲计时',
+    );
     await tester.pumpAndSettle();
     expect(find.byType(MiniAppGlassBackdrop), findsOneWidget);
     expect(
