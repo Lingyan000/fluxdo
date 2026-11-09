@@ -9,8 +9,7 @@ import 'preheat_logo_motion.g.dart';
 ///
 /// 描线动画由 [entry] 驱动，几何与时间线来自生成的规格（与 Android 原生
 /// 启动屏同源）。logo 完整呈现（[shown]）后主题色光晕淡入并缓慢呼吸；
-/// 退场时 [merge] 驱动内部部件并入圆体，光晕随之淡出。[notch] 给出时，
-/// 在 logo 上挖出透明缺口（状态角标停靠处），缺口里不透出光晕。
+/// 退场时 [merge] 驱动内部部件并入圆体，光晕随之淡出。
 class PreheatLogo extends StatefulWidget {
   final AppIconStyle style;
   final Animation<double> entry;
@@ -19,11 +18,6 @@ class PreheatLogo extends StatefulWidget {
   final ValueListenable<bool> shown;
   final Animation<double>? merge;
 
-  /// 缺口半径（logo 边长归一化），0 为不挖
-  final Animation<double>? notch;
-
-  /// 缺口中心（相对 logo 中心，logo 边长归一化）
-  final Offset notchCenter;
   final double size;
 
   const PreheatLogo({
@@ -32,8 +26,6 @@ class PreheatLogo extends StatefulWidget {
     required this.entry,
     required this.shown,
     this.merge,
-    this.notch,
-    this.notchCenter = Offset.zero,
     this.size = logoMotionLogoSize,
   });
 
@@ -107,10 +99,9 @@ class _PreheatLogoState extends State<PreheatLogo>
     final theme = Theme.of(context);
     final spec = PreheatLogo.specOf(widget.style);
     final merge = widget.merge ?? kAlwaysDismissedAnimation;
-    final notch = widget.notch ?? kAlwaysDismissedAnimation;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.entry, merge, notch, _glowIn, _glow]),
+      animation: Listenable.merge([widget.entry, merge, _glowIn, _glow]),
       builder: (context, _) {
         final breathe = Curves.easeInOutSine.transform(_glow.value);
         final glowAlpha =
@@ -132,10 +123,6 @@ class _PreheatLogoState extends State<PreheatLogo>
                 progress: widget.entry.value,
                 brightness: theme.brightness,
                 merge: merge.value,
-                cutoutCenter:
-                    Offset(widget.size / 2, widget.size / 2) +
-                    widget.notchCenter * widget.size,
-                cutoutRadius: notch.value * widget.size,
               ),
             ),
           ),
@@ -147,8 +134,7 @@ class _PreheatLogoState extends State<PreheatLogo>
 
 /// logo 光晕：主题色圆形柔光，只画在圆体之外。
 ///
-/// 圆体不透明，本就盖住其下的光晕；只画在外面是为了 logo 挖出透明缺口时，
-/// 缺口里不透出光晕。裁剪圆比圆体小 1px，避免圆体抗锯齿边缘露缝。
+/// 裁剪圆比圆体小 1px，避免圆体抗锯齿边缘露缝。
 class _GlowPainter extends CustomPainter {
   _GlowPainter({
     required this.color,

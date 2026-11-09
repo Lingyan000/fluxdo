@@ -3,7 +3,6 @@ import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -277,7 +276,7 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
 }
 
 /// 退场时间线（占 [duration] 的比例）：
-/// 0 ~ [mergeEnd] 内部部件并入圆体、角标缩回、文字淡出；
+/// 0 ~ [mergeEnd] 内部部件并入圆体，角标与文字淡出；
 /// ~ [squeezeEnd] 圆体收缩蓄力；之后圆体化作窗口加速放大，首页从窗内显现。
 abstract final class _ExitTimeline {
   static Duration get duration =>
@@ -394,12 +393,12 @@ class _PreheatLoading extends StatefulWidget {
   State<_PreheatLoading> createState() => _PreheatLoadingState();
 }
 
-class _PreheatLoadingState extends State<_PreheatLoading>
-    with SingleTickerProviderStateMixin {
+class _PreheatLoadingState extends State<_PreheatLoading> {
   /// 与原生启动屏 logo 等大（规格单一来源）
   static const double _logoSize = logoMotionLogoSize;
 
-  static const double _badgeSize = _BadgeGeometry.radius * 2 * _logoSize;
+  static const double _badgeSize = 30;
+  static const Duration _badgeFadeDuration = Duration(milliseconds: 120);
 
   /// 快路径不出任何状态，超过该时长仍在加载才展示
   static const Duration _statusDelay = Duration(milliseconds: 1200);
@@ -410,15 +409,11 @@ class _PreheatLoadingState extends State<_PreheatLoading>
   final _coordinator = BrowserTrustCoordinator.instance;
   final _cf = CfChallengeService();
 
-  /// 角标衍生进度：从圆体鼓出 → 拉到停靠位 → 液颈断开
-  late final AnimationController _badge = AnimationController(
-    duration: const Duration(milliseconds: 600),
-    vsync: this,
-  );
   late final Animation<double> _merge = widget.exit.drive(
     CurveTween(curve: Interval(0, _ExitTimeline.mergeEnd)),
   );
-  late final Animation<double> _notch = _badge.drive(const _NotchRadius());
+  _PreheatStatus? _paintedStatus;
+  _PreheatStatus? _exitStatus;
 
   bool _showSkip = false;
   bool _statusRevealed = false;
@@ -429,7 +424,6 @@ class _PreheatLoadingState extends State<_PreheatLoading>
   Timer? _slowTimer;
   StreamSubscription<bool>? _connectivitySub;
   String? _version;
-  ui.FragmentProgram? _budProgram;
 
   @override
   void initState() {
@@ -458,19 +452,14 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _version = info.version);
     });
-    _BadgeBudPainter.load().then((program) {
-      if (mounted) setState(() => _budProgram = program);
-    }, onError: (Object e) => debugPrint('[PreheatGate] badge shader: $e'));
-    widget.logoShown.addListener(_syncBadge);
-    _syncBadge();
   }
 
   @override
   void didUpdateWidget(covariant _PreheatLoading oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 退场时角标沿液颈缩回圆体，与部件融合同步
     if (widget.exiting && !oldWidget.exiting) {
-      _badge.animateBack(0, duration: _ExitTimeline.mergeDuration);
+      // 保留上一帧的状态：预加载完成会清空阶段，不能在退场时闪回“连接中”。
+      _exitStatus = _paintedStatus ?? _status;
     }
   }
 
@@ -479,19 +468,16 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     _cf.unregisterStatusHost();
     _cf.presentationNotifier.removeListener(_onStatusInputChanged);
     _coordinator.preloadStage.removeListener(_onStageChanged);
-    widget.logoShown.removeListener(_syncBadge);
     _connectivitySub?.cancel();
     _skipTimer?.cancel();
     _revealTimer?.cancel();
     _slowTimer?.cancel();
-    _badge.dispose();
     super.dispose();
   }
 
   void _update(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
-    _syncBadge();
   }
 
   void _onStatusInputChanged() => _update(() {});
@@ -509,6 +495,7 @@ class _PreheatLoadingState extends State<_PreheatLoading>
   }
 
   _PreheatStatus get _status {
+    if (_exitStatus != null) return _exitStatus!;
     if (_offline) return _PreheatStatus.offline;
     final presentation = _cf.presentationNotifier.value;
     if (presentation != null && presentation != CfVerifyPresentation.hidden) {
@@ -531,16 +518,6 @@ class _PreheatLoadingState extends State<_PreheatLoading>
         status == _PreheatStatus.verifying;
   }
 
-  /// 角标从圆体衍生而出，logo 完整呈现（描线画完、原生屏撤下）后才开始
-  void _syncBadge() {
-    if (widget.exiting) return;
-    if (!_statusVisible) {
-      _badge.reverse();
-    } else if (widget.logoShown.value) {
-      _badge.forward();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -548,6 +525,7 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     final brightness = theme.brightness;
     final windowReveal = _ExitTimeline.windowReveal;
     final status = _status;
+    _paintedStatus = status;
     final statusVisible = _statusVisible;
     final spec = PreheatLogo.specOf(widget.iconStyle);
     final bodyColor = spec.body.fillFor(brightness)!;
@@ -555,11 +533,17 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     final background = brightness == Brightness.dark
         ? logoMotionBackgroundDark
         : logoMotionBackgroundLight;
-    // 角标停靠位：沿右下 45° 落在圆体外缘
+    final badgeFadeDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _badgeFadeDuration;
+    // 固定在圆体右下角，只做短暂淡入淡出。
     final badgeCenter =
-        _BadgeGeometry.center(spec.bodyRadiusRatio) * _logoSize +
+        Offset.fromDirection(
+          math.pi / 4,
+          spec.bodyRadiusRatio * _logoSize + 2,
+        ) +
         const Offset(_logoSize / 2, _logoSize / 2);
-    final budColor = status.alert
+    final badgeColor = status.alert
         ? colorScheme.errorContainer
         // 品牌标志自带颜色，衬中性底，避免与主题色撞色
         : status.icon == null
@@ -605,17 +589,11 @@ class _PreheatLoadingState extends State<_PreheatLoading>
                     // 部件融合完成后圆体交给底层画布，作为窗口继续动画
                     AnimatedBuilder(
                       animation: widget.exit,
-                      // 角标停靠后在 logo 上挖出透明缺口：只在与 logo
-                      // 重叠处可见，不给角标描整圈边
                       child: PreheatLogo(
                         style: widget.iconStyle,
                         entry: widget.entry,
                         shown: widget.logoShown,
                         merge: _merge,
-                        notch: _notch,
-                        notchCenter: _BadgeGeometry.center(
-                          spec.bodyRadiusRatio,
-                        ),
                         size: _logoSize,
                       ),
                       builder: (context, child) => Opacity(
@@ -628,62 +606,46 @@ class _PreheatLoadingState extends State<_PreheatLoading>
                       ),
                     ),
                     Positioned(
-                      left: -_logoSize * 0.2,
-                      top: -_logoSize * 0.2,
-                      right: -_logoSize * 0.2,
-                      bottom: -_logoSize * 0.2,
-                      child: TweenAnimationBuilder<Color?>(
-                        tween: ColorTween(end: budColor),
-                        duration: const Duration(milliseconds: 250),
-                        builder: (context, color, _) => CustomPaint(
-                          painter: _BadgeBudPainter(
-                            program: _budProgram,
-                            progress: _badge,
-                            logoSize: _logoSize,
-                            bodyRadius: spec.bodyRadiusRatio,
-                            body: bodyColor,
-                            badge: color ?? budColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
                       left: badgeCenter.dx - _badgeSize / 2,
                       top: badgeCenter.dy - _badgeSize / 2,
                       width: _badgeSize,
                       height: _badgeSize,
-                      child: AnimatedBuilder(
-                        animation: _badge,
-                        builder: (context, child) => Opacity(
-                          // 断开停靠后图标才浮现
-                          opacity: ((_badge.value - 0.75) / 0.2).clamp(
-                            0.0,
-                            1.0,
-                          ),
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: widget.logoShown,
+                        builder: (context, shown, child) => AnimatedOpacity(
+                          opacity: shown && statusVisible && !widget.exiting
+                              ? 1
+                              : 0,
+                          duration: badgeFadeDuration,
+                          curve: Curves.easeInOut,
                           child: child,
                         ),
-                        child: Center(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(
-                                  opacity: animation,
-                                  child: ScaleTransition(
-                                    scale: animation,
+                        child: AnimatedContainer(
+                          duration: badgeFadeDuration,
+                          decoration: BoxDecoration(
+                            color: badgeColor,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: AnimatedSwitcher(
+                              duration: badgeFadeDuration,
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
                                     child: child,
                                   ),
-                                ),
-                            child: status.icon == null
-                                ? CloudflareMark(
-                                    key: ValueKey(status),
-                                    width: 19,
-                                  )
-                                : Icon(
-                                    status.icon,
-                                    key: ValueKey(status),
-                                    size: 16,
-                                    color: iconColor,
-                                  ),
+                              child: status.icon == null
+                                  ? CloudflareMark(
+                                      key: ValueKey(status),
+                                      width: 19,
+                                    )
+                                  : Icon(
+                                      status.icon,
+                                      key: ValueKey(status),
+                                      size: 16,
+                                      color: iconColor,
+                                    ),
+                            ),
                           ),
                         ),
                       ),
@@ -861,108 +823,6 @@ class _LaunchBackdropPainter extends CustomPainter {
   bool shouldRepaint(covariant _LaunchBackdropPainter oldDelegate) =>
       oldDelegate.background != background ||
       oldDelegate.body != body ||
-      oldDelegate.bodyRadius != bodyRadius;
-}
-
-/// 状态角标几何（logo 边长归一化），Dart 与 preheat_badge.frag 共用这一份
-abstract final class _BadgeGeometry {
-  /// 角标半径（logo 108 时为 15）
-  static const double radius = 15 / 108;
-
-  /// 停靠位：角标中心距圆体边缘的外移量
-  static const double dock = 0.02;
-
-  /// 停靠后角标与 logo 之间的透明缝宽
-  static const double gap = 2.5 / 108;
-
-  /// 停靠位中心（相对 logo 中心，沿右下 45°）
-  static Offset center(double bodyRadius) =>
-      Offset.fromDirection(math.pi / 4, bodyRadius + dock);
-
-  /// logo 上挖出的缺口半径：角标到位、液颈断开后才出现，缝宽渐显
-  static double notchRadius(double progress) {
-    final t = ((progress - 0.7) / 0.22).clamp(0.0, 1.0);
-    if (t <= 0) return 0;
-    return radius + gap * Curves.easeInOut.transform(t);
-  }
-}
-
-/// 角标进度 → logo 上缺口半径（归一化）
-class _NotchRadius extends Animatable<double> {
-  const _NotchRadius();
-
-  @override
-  double transform(double t) => _BadgeGeometry.notchRadius(t);
-}
-
-/// 状态角标的衍生效果（preheat_badge.frag）：从圆体右下鼓出、拉到停靠位后断开。
-/// 画布以 logo 中心为中心；shader 未就绪时退化为普通圆形角标。
-class _BadgeBudPainter extends CustomPainter {
-  _BadgeBudPainter({
-    required this.program,
-    required this.progress,
-    required this.logoSize,
-    required this.bodyRadius,
-    required this.body,
-    required this.badge,
-  }) : super(repaint: progress);
-
-  static Future<ui.FragmentProgram>? _loading;
-  static Future<ui.FragmentProgram> load() =>
-      _loading ??= ui.FragmentProgram.fromAsset('shaders/preheat_badge.frag');
-
-  final ui.FragmentProgram? program;
-  final Animation<double> progress;
-  final double logoSize;
-
-  /// 圆体半径占 logo 边长的比例
-  final double bodyRadius;
-  final Color body;
-  final Color badge;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final b = progress.value;
-    if (b <= 0) return;
-    final center = size.center(Offset.zero);
-    final program = this.program;
-    if (program == null) {
-      canvas.drawCircle(
-        center + _BadgeGeometry.center(bodyRadius) * logoSize,
-        _BadgeGeometry.radius * logoSize * Curves.easeOut.transform(b),
-        Paint()..color = badge,
-      );
-      return;
-    }
-    var i = 0;
-    final shader = program.fragmentShader();
-    void f(double v) => shader.setFloat(i++, v);
-    void color(Color c) {
-      f(c.r);
-      f(c.g);
-      f(c.b);
-      f(c.a);
-    }
-
-    f(size.width);
-    f(size.height);
-    f(center.dx);
-    f(center.dy);
-    f(logoSize);
-    f(bodyRadius);
-    f(b);
-    f(_BadgeGeometry.radius);
-    f(_BadgeGeometry.dock);
-    color(body);
-    color(badge);
-    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BadgeBudPainter oldDelegate) =>
-      oldDelegate.program != program ||
-      oldDelegate.body != body ||
-      oldDelegate.badge != badge ||
       oldDelegate.bodyRadius != bodyRadius;
 }
 

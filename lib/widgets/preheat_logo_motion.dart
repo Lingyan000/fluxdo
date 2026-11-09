@@ -78,8 +78,6 @@ class LogoMotionPainter extends CustomPainter {
     required this.progress,
     required this.brightness,
     this.merge = 0,
-    this.cutoutCenter = Offset.zero,
-    this.cutoutRadius = 0,
   });
 
   final LogoMotionSpec spec;
@@ -91,25 +89,11 @@ class LogoMotionPainter extends CustomPainter {
   /// 退场时内部部件并入圆体的进度 0..1
   final double merge;
 
-  /// 从 logo 上挖掉的透明圆（画布坐标），半径为 0 时不挖
-  final Offset cutoutCenter;
-  final double cutoutRadius;
-
   @override
   void paint(Canvas canvas, Size size) {
     final viewBox = spec.viewBox;
     final scale = size.shortestSide / viewBox.width;
     canvas.save();
-    if (cutoutRadius > 0) {
-      canvas.clipPath(
-        Path()
-          ..fillType = PathFillType.evenOdd
-          ..addRect((Offset.zero & size).inflate(size.longestSide))
-          ..addOval(
-            Rect.fromCircle(center: cutoutCenter, radius: cutoutRadius),
-          ),
-      );
-    }
     canvas.scale(scale);
     canvas.translate(-viewBox.left, -viewBox.top);
 
@@ -189,7 +173,5 @@ class LogoMotionPainter extends CustomPainter {
       oldDelegate.spec != spec ||
       oldDelegate.progress != progress ||
       oldDelegate.brightness != brightness ||
-      oldDelegate.merge != merge ||
-      oldDelegate.cutoutCenter != cutoutCenter ||
-      oldDelegate.cutoutRadius != cutoutRadius;
+      oldDelegate.merge != merge;
 }

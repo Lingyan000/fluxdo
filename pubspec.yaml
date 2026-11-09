@@ -233,7 +233,6 @@ flutter:
   uses-material-design: true
   shaders:
     - shaders/progressive_top_blur.frag
-    - shaders/preheat_badge.frag
   assets:
     - assets/logo.svg
     - assets/logo_modern.svg
