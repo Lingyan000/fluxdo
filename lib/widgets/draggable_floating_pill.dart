@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'floating_widget_mixin.dart';
 
@@ -13,6 +14,9 @@ class DraggableFloatingPill extends StatefulWidget {
 
   /// 前导图标。
   final IconData icon;
+
+  /// 自带颜色的标志（如品牌 logo），提供时取代 [icon]，不跟随内容色。
+  final Widget? mark;
 
   /// 进行中：图标外套一圈不确定进度环。
   final bool busy;
@@ -29,6 +33,7 @@ class DraggableFloatingPill extends StatefulWidget {
     this.initiallyExpanded = false,
     this.tapToExpand = true,
     this.icon = Symbols.gpp_maybe_rounded,
+    this.mark,
     this.busy = false,
     this.emphasized = false,
   });
@@ -36,6 +41,13 @@ class DraggableFloatingPill extends StatefulWidget {
   @override
   State<DraggableFloatingPill> createState() => _DraggableFloatingPillState();
 }
+
+/// 进度环直径。比普通图标（20）大一圈：M3E 波浪环会向内起伏，
+/// 留出余量免得贴住内部标志。
+const double _busyRingSize = 24;
+
+/// 普通图标尺寸。
+const double _iconSize = 20;
 
 class _DraggableFloatingPillState extends State<DraggableFloatingPill>
     with TickerProviderStateMixin, FloatingWidgetMixin {
@@ -121,7 +133,12 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
         : colorScheme.onInverseSurface;
 
     // Padding 动画：吸附时增加 padding 防止内容被埋在 offscreen 区域
-    final basePadding = widget.padding;
+    // 进度环比图标高出的部分从上下内边距里扣回，各状态胶囊等高
+    final ringExtra = widget.busy ? (_busyRingSize - _iconSize) / 2 : 0.0;
+    final basePadding = widget.padding.copyWith(
+      top: widget.padding.top - ringExtra,
+      bottom: widget.padding.bottom - ringExtra,
+    );
     final overlap = floatingOverlap;
     final isRight = floatingIsRight;
     final targetPadding = floatingIsAdsorbed
@@ -189,35 +206,36 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (widget.busy)
-                      // 进度环与原图标同占 20 见方，胶囊尺寸不变
+                      // 进度环包住标志；M3E 开关关闭时组件内部回退为经典转圈
                       SizedBox.square(
-                        dimension: 20,
+                        dimension: _busyRingSize,
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            CircularProgressIndicator(
+                            M3eCircularProgress(
+                              size: _busyRingSize,
                               strokeWidth: 1.5,
                               color: contentColor,
-                              backgroundColor: contentColor.withValues(
-                                alpha: 0.2,
-                              ),
+                              trackColor: contentColor.withValues(alpha: 0.2),
                             ),
-                            Icon(
-                              widget.icon,
-                              fill: 1,
-                              size: 12,
-                              color: contentColor,
-                            ),
+                            widget.mark ??
+                                Icon(
+                                  widget.icon,
+                                  fill: 1,
+                                  size: 12,
+                                  color: contentColor,
+                                ),
                           ],
                         ),
                       )
                     else
-                      Icon(
-                        widget.icon,
-                        fill: _isExpanded ? 1 : 0,
-                        size: 20,
-                        color: contentColor,
-                      ),
+                      widget.mark ??
+                          Icon(
+                            widget.icon,
+                            fill: _isExpanded ? 1 : 0,
+                            size: _iconSize,
+                            color: contentColor,
+                          ),
                     AnimatedSize(
                       duration: const Duration(milliseconds: 200),
                       child: SizedBox(

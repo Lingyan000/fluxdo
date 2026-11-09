@@ -24,6 +24,7 @@ import 'windows_webview_environment_service.dart';
 import '../l10n/s.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/blur_config.dart';
+import '../widgets/common/cloudflare_mark.dart';
 import '../widgets/draggable_floating_pill.dart';
 
 CookieManager get _cfCookieManager =>
@@ -2792,9 +2793,9 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
             initiallyExpanded: _needsInteraction,
             busy: !_needsInteraction,
             emphasized: _needsInteraction,
-            icon: _needsInteraction
-                ? Symbols.touch_app_rounded
-                : Symbols.gpp_maybe_rounded,
+            icon: Symbols.touch_app_rounded,
+            // 进行中显示 Cloudflare 标志；需要操作时换回点按手势强调动作
+            mark: _needsInteraction ? null : const CloudflareMark(width: 13),
             onTap: _promoteToForeground,
             child: Text(
               _needsInteraction
