@@ -54,11 +54,18 @@ class _PreheatLogoState extends State<PreheatLogo>
     duration: const Duration(milliseconds: 2400),
     vsync: this,
   );
+  bool _reduceMotion = false;
 
   @override
   void initState() {
     super.initState();
     widget.shown.addListener(_onShown);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
     _onShown();
   }
 
@@ -74,9 +81,16 @@ class _PreheatLogoState extends State<PreheatLogo>
 
   // logo 完整呈现后才开始光晕：原生启动屏没有光晕，各平台都在此之后出现
   void _onShown() {
-    if (widget.shown.value && !_glow.isAnimating) {
+    if (!widget.shown.value) {
+      _glowIn.value = 0;
+      _glow.value = 0;
+    } else if (_reduceMotion) {
+      // 停在当前明度，切换系统设置时也不会跳到另一个呼吸阶段。
+      _glow.stop();
+      _glowIn.value = 1;
+    } else {
       _glowIn.forward();
-      _glow.repeat(reverse: true);
+      if (!_glow.isAnimating) _glow.repeat(reverse: true);
     }
   }
 

@@ -280,8 +280,11 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
 /// 0 ~ [mergeEnd] 内部部件并入圆体、角标缩回、文字淡出；
 /// ~ [squeezeEnd] 圆体收缩蓄力；之后圆体化作窗口加速放大，首页从窗内显现。
 abstract final class _ExitTimeline {
-  static const duration = Duration(milliseconds: 900);
-  static const mergeEnd = 0.2;
+  static Duration get duration =>
+      Duration(milliseconds: windowReveal ? 900 : 650);
+  static const mergeDuration = Duration(milliseconds: 180);
+  static double get mergeEnd =>
+      mergeDuration.inMicroseconds / duration.inMicroseconds;
   static const squeezeEnd = 0.33;
   static const squeezeScale = 0.85;
 
@@ -313,7 +316,8 @@ abstract final class _ExitTimeline {
       1.1 - 0.1 * Curves.easeOut.transform(grow(t));
 
   /// 标题、状态、版本号等文字的不透明度
-  static double uiOpacity(double t) => 1 - _seg(t, 0, 0.15);
+  static double uiOpacity(double t) =>
+      1 - _seg(t, 0, 135 / duration.inMilliseconds);
 }
 
 /// 只在退场（动画反向）时淡出，入场直接不透明。
@@ -412,7 +416,7 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     vsync: this,
   );
   late final Animation<double> _merge = widget.exit.drive(
-    CurveTween(curve: const Interval(0, _ExitTimeline.mergeEnd)),
+    CurveTween(curve: Interval(0, _ExitTimeline.mergeEnd)),
   );
   late final Animation<double> _notch = _badge.drive(const _NotchRadius());
 
@@ -466,10 +470,7 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     super.didUpdateWidget(oldWidget);
     // 退场时角标沿液颈缩回圆体，与部件融合同步
     if (widget.exiting && !oldWidget.exiting) {
-      _badge.animateBack(
-        0,
-        duration: _ExitTimeline.duration * _ExitTimeline.mergeEnd,
-      );
+      _badge.animateBack(0, duration: _ExitTimeline.mergeDuration);
     }
   }
 
@@ -700,12 +701,21 @@ class _PreheatLoadingState extends State<_PreheatLoading>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // 原生启动屏只有 logo，标题在接管后淡入
-                          TweenAnimationBuilder<double>(
-                            tween: Tween(begin: 0, end: 1),
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.easeOut,
-                            builder: (context, value, child) =>
-                                Opacity(opacity: value, child: child),
+                          ValueListenableBuilder<bool>(
+                            valueListenable: widget.logoShown,
+                            builder: (context, shown, child) =>
+                                TweenAnimationBuilder<double>(
+                                  tween: Tween(
+                                    begin: 0,
+                                    // 快速加载完成时直接退场，避免标题刚出现就消失。
+                                    end: shown && !widget.exiting ? 1 : 0,
+                                  ),
+                                  duration: const Duration(milliseconds: 500),
+                                  curve: Curves.easeOut,
+                                  builder: (context, value, child) =>
+                                      Opacity(opacity: value, child: child),
+                                  child: child,
+                                ),
                             child: Text(
                               'FluxDO',
                               style: theme.textTheme.headlineMedium?.copyWith(
@@ -795,12 +805,14 @@ class _PreheatLoadingState extends State<_PreheatLoading>
     // 退场期间不再接收点击（下层首页尚未完全显现）
     final interactive = IgnorePointer(ignoring: widget.exiting, child: page);
     if (windowReveal) return interactive;
-    // 桌面亚克力：整体淡出
+    // 桌面亚克力：用平缓曲线衔接融合与整体淡出。
     return AnimatedBuilder(
       animation: widget.exit,
       child: interactive,
-      builder: (context, child) =>
-          Opacity(opacity: 1 - widget.exit.value, child: child),
+      builder: (context, child) => Opacity(
+        opacity: 1 - Curves.easeInOutSine.transform(widget.exit.value),
+        child: child,
+      ),
     );
   }
 }
