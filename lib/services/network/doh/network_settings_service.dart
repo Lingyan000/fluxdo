@@ -427,7 +427,7 @@ class NetworkSettingsService {
   ///
   /// 核心在所有模式下都运行：它是 dio 的网络栈，同时为 WebView 提供
   /// 本地监听与指纹采样。DoH / 应用内代理开启时，WebView 额外经核心做 MITM。
-  Future<void> _applyProxyState() async {
+  Future<void> _applyProxyState({bool forceRestart = false}) async {
     final startedAt = DateTime.now();
     _applyDepth++;
     if (_applyDepth == 1) {
@@ -488,6 +488,7 @@ class NetworkSettingsService {
           caCertPem: caCertPem,
           caKeyPem: caKeyPem,
         ),
+        forceRestart: forceRestart,
       );
 
       if (!started) {
@@ -593,8 +594,9 @@ class NetworkSettingsService {
   }
 
   Future<void> restartProxy() async {
+    _applyDebounce?.cancel();
     _beginApply();
-    await _applyProxyState();
+    await _applyProxyState(forceRestart: true);
     _touch();
   }
 

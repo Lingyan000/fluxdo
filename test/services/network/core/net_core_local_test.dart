@@ -173,6 +173,38 @@ void main() {
     NetCoreService.instance.resetConnections(reason: 'test_reset');
     expect(monitor.forOrigin(Uri.parse(dio.options.baseUrl)), isNull);
   }, skip: skip);
+  test('相同配置正常复用，显式重启重建连接并清除旧观测', () async {
+    final core = NetCoreService.instance;
+    final config = NetCoreConfig(
+      fingerprintCachePath: '${templateDirectory.path}/template.json',
+    );
+    expect(await core.start(config), isTrue);
+    final first = await dio.get<String>('/path');
+    final firstId =
+        (first.extra[netCoreConnectionExtraKey] as Map)['connectionId'];
+    expect(await core.start(config), isTrue);
+    final reused = await dio.get<String>('/path');
+    expect(
+      (reused.extra[netCoreConnectionExtraKey] as Map)['connectionId'],
+      firstId,
+    );
+    final monitor = NetworkHealthMonitor.instance;
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
+    expect(await core.start(config, forceRestart: true), isTrue);
+    expect(monitor.forOrigin(Uri.parse(dio.options.baseUrl)), isNull);
+    final fresh = await dio.get<String>('/path');
+    expect(
+      (fresh.extra[netCoreConnectionExtraKey] as Map)['connectionId'],
+      isNot(firstId),
+    );
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
+  }, skip: skip);
   test('大请求体完整送达，Cookie 原样传递', () async {
     final bytes = List<int>.generate(1024 * 1024, (i) => i % 256);
     final response = await dio.post<Map<String, dynamic>>(

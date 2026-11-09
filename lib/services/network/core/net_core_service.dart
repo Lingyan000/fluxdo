@@ -56,8 +56,8 @@ class NetCoreService {
   /// 本地监听端口（WebView 代理与采样探针用）。
   int? get port => _status.port;
 
-  /// 按配置启动或重启核心。配置未变时不重启。
-  Future<bool> start(NetCoreConfig config) {
+  /// 按配置启动核心；显式重启不受相同配置去重影响。
+  Future<bool> start(NetCoreConfig config, {bool forceRestart = false}) {
     final result = _serialize(() async {
       if (!_bindings.isAvailable) {
         _lastError = _bindings.lastInitError ?? '网络核心不可用';
@@ -69,7 +69,7 @@ class NetCoreService {
       // 签名按探测后的配置算：安卓系统代理变了也要重启，否则 dio 与 WebView 出口不一致
       final resolved = await config.withDetectedSystemProxy();
       final signature = jsonEncode(resolved.toJson());
-      if (_status.running && signature == _configSignature) {
+      if (!forceRestart && _status.running && signature == _configSignature) {
         return true;
       }
       final nativeConfig = resolved.toJson();
@@ -116,7 +116,7 @@ class NetCoreService {
       _configSignature = signature;
       _refreshStatus();
       NetworkLogger.log(
-        '[NetCore] ${restarting ? '已按新配置重启' : '已启动'}，'
+        '[NetCore] ${restarting ? (forceRestart ? '已手动重启' : '已按新配置重启') : '已启动'}，'
         '端口 $port，耗时 ${DateTime.now().difference(started).inMilliseconds}ms'
         '（${resolved.describe()}）',
       );
