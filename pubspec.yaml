@@ -199,6 +199,9 @@ dependencies:
   vm_service: ^15.2.0
   full_svg_flutter: ^1.3.0
 dependency_overrides:
+  # Android 12+ 标准免确认自更新，保留系统确认回退。
+  ota_update:
+    path: third_party/ota_update
   # 固定 Dio 5.11.1，仅修复响应流订阅、背压、取消和接收计时。
   dio:
     path: third_party/dio

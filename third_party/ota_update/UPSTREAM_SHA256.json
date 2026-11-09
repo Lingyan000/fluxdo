@@ -1,0 +1,18 @@
+{
+  "LICENSE": "c4a498827da91f1f8003d66dc1f7e2193850334e0cdea91f5fd9802d23e3d0ae",
+  "pubspec.yaml": "a32452c1c52a83d3e1208e2c9aeb6412dc702c0e3eb7824acb1c22e0501adf70",
+  "README.md": "bf20a5a2529bbdb68b08c506f7ea5b0df006887246a95e632682422aa668f0e8",
+  "CHANGELOG.md": "6615d707f6f2f4b245027d176ed021fed578aa16fbc5f37f194cb0c442f3f51f",
+  "android/build.gradle": "612bdfaccea1004a3b9d129b2b830cdb1324b968a2ee8c024ae19408f4a11cc8",
+  "android/gradle.properties": "eb08e01bc569bc15549eea76ad4a95db5c26b697fe4dbc27ceca3fabb095d754",
+  "android/settings.gradle": "e97eda65d4a222bc63633a631117cf11817c1df08101e1a93409c4f90b77d10d",
+  "lib/ota_update.dart": "ab5652b2c41be6e30d2819688c41abe90bc55cfb4a95f34d23a1bd3c558fadf7",
+  "android/src/main/AndroidManifest.xml": "a5b67c77ad75d5e2718c9c47f8f17103804dfe4b8f951f21a4d597d670a3c5e1",
+  "android/src/main/java/sk/fourq/otaupdate/InstallResultReceiver.java": "6fe4583c49f7c093f2e9654041e70557d13138194681c51532a2dc533120b282",
+  "android/src/main/java/sk/fourq/otaupdate/ProgressListener.java": "a7d5419307ae06dad4bffef99b8919c88a5042fbbf54a380ff298c66855c08a4",
+  "android/src/main/java/sk/fourq/otaupdate/ProgressResponseBody.java": "f6c14bbd6c840c49c72ad02dfff5a4ef1fde7dca531b0cf73ed26ab7c0581921",
+  "android/src/main/java/sk/fourq/otaupdate/OtaUpdatePlugin.java": "a7b0c2ad230bd9742fa4a8c1dce620c56ba5ecbedef2591e2355a14505d9ec86",
+  "android/src/main/java/sk/fourq/otaupdate/Sha256ChecksumValidator.java": "2fee8694366c695f9cd9f601d2b5e22fa1d97b7b817f00af505c049d00134efc",
+  "android/src/main/java/sk/fourq/otaupdate/InstallSessionCallback.java": "3d25e3c344d4ad19d5bf39164e98cfbecb1add761356a33c4dffde510c0c4519",
+  "android/src/main/java/sk/fourq/otaupdate/OtaUpdateFileProvider.java": "d09cbc1ad760dc5af9826e269541524b3c1893ea7ca1bc12a57c28a117f1ed88"
+}

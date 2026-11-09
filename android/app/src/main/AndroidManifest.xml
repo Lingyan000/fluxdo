@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- APK 安装权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Android 12+ 在系统允许时免确认更新自身 -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"/>
     <!-- 查询所有已安装应用（内置浏览器解析应用链接需要获取目标应用图标和名称） -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
     <!-- 前台服务权限（后台通知保活） -->
@@ -154,6 +156,9 @@
             android:name="flutterEmbedding"
             android:value="2" />
         <!-- FileProvider for OTA update -->
+        <receiver
+            android:name="sk.fourq.otaupdate.InstallResultReceiver"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.ota_update_provider"

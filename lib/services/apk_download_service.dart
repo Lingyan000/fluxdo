@@ -20,17 +20,14 @@ class ApkDownloadProgress {
   final int progress; // 0-100
   final String? error;
 
-  ApkDownloadProgress({
-    required this.status,
-    this.progress = 0,
-    this.error,
-  });
+  ApkDownloadProgress({required this.status, this.progress = 0, this.error});
 }
 
 /// APK 下载安装服务
 class ApkDownloadService {
   final Dio _dio;
   bool _cancelled = false;
+  OtaUpdate? _activeUpdate;
 
   ApkDownloadService({Dio? dio}) : _dio = dio ?? Dio();
 
@@ -42,8 +39,10 @@ class ApkDownloadService {
 
     // 应用用户配置的 GitHub 反代前缀（未配置时保持直连）
     final githubProxy = await UpdateService.getGithubProxy();
-    final downloadUrl =
-        UpdateService.applyGithubProxy(asset.downloadUrl, githubProxy);
+    final downloadUrl = UpdateService.applyGithubProxy(
+      asset.downloadUrl,
+      githubProxy,
+    );
 
     // 阶段 1：获取 SHA256 校验和（如果有）
     String? expectedSha256;
@@ -70,11 +69,16 @@ class ApkDownloadService {
       progress: 0,
     );
 
+    final update = OtaUpdate();
+    _activeUpdate = update;
     try {
-      final otaEvent = OtaUpdate().execute(
+      final otaEvent = update.execute(
         downloadUrl,
         destinationFilename: asset.name,
         sha256checksum: expectedSha256,
+        // Android 12+ 尝试免确认自更新；系统要求确认时仍显示安装界面。
+        usePackageInstaller: true,
+        confirmationNotificationText: S.current.update_notification_ready,
       );
 
       await for (final event in otaEvent) {
@@ -122,7 +126,9 @@ class ApkDownloadService {
           case OtaStatus.DOWNLOAD_ERROR:
             yield ApkDownloadProgress(
               status: ApkDownloadStatus.error,
-              error: S.current.download_failedWithError(event.value ?? S.current.error_unknown),
+              error: S.current.download_failedWithError(
+                event.value ?? S.current.error_unknown,
+              ),
             );
             break;
 
@@ -143,7 +149,9 @@ class ApkDownloadService {
           case OtaStatus.INSTALLATION_ERROR:
             yield ApkDownloadProgress(
               status: ApkDownloadStatus.error,
-              error: S.current.download_installFailed(event.value ?? S.current.error_unknown),
+              error: S.current.download_installFailed(
+                event.value ?? S.current.error_unknown,
+              ),
             );
             break;
 
@@ -157,6 +165,8 @@ class ApkDownloadService {
         status: ApkDownloadStatus.error,
         error: S.current.download_failed('$e'),
       );
+    } finally {
+      if (identical(_activeUpdate, update)) _activeUpdate = null;
     }
   }
 
@@ -177,7 +187,8 @@ class ApkDownloadService {
   }
 
   /// 取消下载
-  void cancelDownload() {
+  Future<void> cancelDownload() async {
     _cancelled = true;
+    await _activeUpdate?.cancel();
   }
 }

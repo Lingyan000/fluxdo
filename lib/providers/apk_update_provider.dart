@@ -84,7 +84,7 @@ class ApkUpdateNotifier extends StateNotifier<ApkUpdateState> {
   }
 
   Future<void> _stopInternal({required bool clearNotification}) async {
-    _service.cancelDownload();
+    await _service.cancelDownload();
     await _sub?.cancel();
     _sub = null;
     if (clearNotification) {

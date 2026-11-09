@@ -1517,10 +1517,9 @@ packages:
   ota_update:
     dependency: "direct main"
     description:
-      name: ota_update
-      sha256: "1f4c7c3c4f306729a6c00b84435096ce2d8b28439013f7237173acc699b2abc8"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/ota_update"
+      relative: true
+    source: path
     version: "7.1.0"
   package_config:
     dependency: transitive

@@ -185,6 +185,12 @@ class MainActivity : FlutterActivity() {
         handler.post(block)
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        // 后台更新需要系统确认时，恢复此前未能展示的安装页面。
+        sk.fourq.otaupdate.InstallResultReceiver.resumePendingConfirmation(this)
+    }
+
     override fun onDestroy() {
         cookieThread?.quitSafely()
         cookieThread = null
