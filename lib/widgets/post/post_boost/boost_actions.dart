@@ -10,11 +10,13 @@ import '../../../services/discourse/discourse_service.dart';
 import '../../../services/app_error_handler.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
+import '../../../utils/html_to_markdown.dart';
+import '../../../utils/quote_builder.dart';
 import '../../user/user_card.dart';
 import '../post_item/widgets/boost_flag_sheet.dart';
 import 'boost_author_popover.dart';
 
-/// Boost 点击后的完整操作流(作者预览/主页/举报/删除),从帖脚抽出的
+/// Boost 点击后的完整操作流(作者预览/回复/主页/举报/删除),从帖脚抽出的
 /// 独立版本 —— 弹幕层挂在正文上(短帖 PostItem / 长帖首 chunk),
 /// 长帖 chunk 与 footer 是不同 sliver item(footer 可能都没挂载),
 /// 不能再经 GlobalKey 借用帖脚的实现。
@@ -60,6 +62,9 @@ class BoostActions {
   }
 
   /// 展示 boost 操作弹层。[post] 是 boost 所在帖子。
+  ///
+  /// [onReply] 非空时弹层提供「回复」:预填引用该 boost 并 @ 作者
+  /// (自己的 boost 不提供)。
   static Future<void> show({
     required BuildContext context,
     required WidgetRef ref,
@@ -71,6 +76,7 @@ class BoostActions {
     void Function(Boost boost)? onBoostChanged,
     void Function(Boost boost, {required bool restoreCanBoost})?
         onBoostDeleted,
+    void Function({String? initialContent})? onReply,
   }) async {
     void applyChanged(Boost updated) {
       onBoostChanged?.call(updated);
@@ -126,7 +132,13 @@ class BoostActions {
             boost: resolvedBoost,
             currentUsername: currentUsername,
           );
-    final canShowSheet = canPreviewAuthor || canFlag || canDelete;
+    final canReply =
+        onReply != null &&
+        resolvedBoost.user.username.isNotEmpty &&
+        currentUsername != null &&
+        currentUsername.isNotEmpty &&
+        currentUsername != resolvedBoost.user.username;
+    final canShowSheet = canPreviewAuthor || canReply || canFlag || canDelete;
     if (actionStateLoadFailed) {
       ToastService.showError(S.current.common_loadFailed);
     }
@@ -143,6 +155,7 @@ class BoostActions {
       anchorRect: resolvedAnchor,
       boost: resolvedBoost,
       canViewAuthor: canPreviewAuthor,
+      canReply: canReply,
       canFlag: canFlag,
       canDelete: canDelete,
     );
@@ -157,6 +170,8 @@ class BoostActions {
           topicTitle: topicTitle,
           postNumber: post.postNumber,
         );
+      case BoostAuthorPopoverAction.reply:
+        onReply?.call(initialContent: _replyContent(resolvedBoost));
       case BoostAuthorPopoverAction.profile:
         EmbeddedStackScope.openProfile(context, resolvedBoost.user.username);
       case BoostAuthorPopoverAction.flag:
@@ -175,6 +190,21 @@ class BoostActions {
           onBoostDeleted: onBoostDeleted,
         );
     }
+  }
+
+  /// 回复 boost 的预填内容:引用 + @ 作者。boost 不属于所在楼层的正文,
+  /// 引用不锚定楼层(见 [QuoteBuilder.buildUnanchored]);内容走
+  /// HtmlToMarkdown 还原链接/emoji/图片,转不出内容时只 @。
+  static String _replyContent(Boost boost) {
+    final username = boost.user.username;
+    final markdown = HtmlToMarkdown.convert(boost.cooked).trim();
+    final mention = '@$username ';
+    if (markdown.isEmpty) return mention;
+    return QuoteBuilder.buildUnanchored(
+          markdown: markdown,
+          username: username,
+        ) +
+        mention;
   }
 
   static Rect _fallbackAnchorRect(BuildContext context) {

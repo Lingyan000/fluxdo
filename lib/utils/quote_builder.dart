@@ -40,4 +40,24 @@ class QuoteBuilder {
         : '$username, post:$postNumber, topic:$topicId';
     return '[quote="$header"]\n$content\n[/quote]\n\n';
   }
+
+  /// 构建不锚定楼层的引用（内容不属于任何一楼时用，如 boost）
+  ///
+  /// 不带 `post:`/`topic:`：官方客户端渲染时按 `post:N` 查该楼作者头像、
+  /// 展开按钮按 `post:N` 拉该楼原文，服务端还会登记被引用关系 —— 内容
+  /// 不是该楼正文时三处全错。只留 username，服务端按用户名查头像。
+  ///
+  /// 返回格式：
+  /// ```
+  /// [quote="username"]
+  /// markdown
+  /// [/quote]
+  ///
+  /// ```
+  static String buildUnanchored({
+    required String markdown,
+    required String username,
+  }) {
+    return '[quote="$username"]\n${markdown.trim()}\n[/quote]\n\n';
+  }
 }

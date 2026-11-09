@@ -274,6 +274,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
         topicTitle: widget.topicTitle,
         onBoostChanged: _onBoostChangedLocal,
         onBoostDeleted: _onBoostDeletedLocal,
+        onReply: widget.onReply,
       );
 
   Future<void> _openBoostInput() async {

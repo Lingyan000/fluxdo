@@ -13,6 +13,9 @@ enum BoostAuthorPopoverAction {
   /// 点击作者行：弹标准用户卡片
   authorCard,
 
+  /// 点击「回复」：引用该 boost 并 @ 作者
+  reply,
+
   /// 点击「主页」：直接进入个人主页
   profile,
 
@@ -35,6 +38,7 @@ Future<BoostAuthorPopoverAction?> showBoostAuthorPopover({
   required Rect anchorRect,
   required Boost boost,
   bool canViewAuthor = false,
+  bool canReply = false,
   bool canFlag = false,
   bool canDelete = false,
 }) {
@@ -43,6 +47,7 @@ Future<BoostAuthorPopoverAction?> showBoostAuthorPopover({
       anchorRect: anchorRect,
       boost: boost,
       canViewAuthor: canViewAuthor,
+      canReply: canReply,
       canFlag: canFlag,
       canDelete: canDelete,
     ),
@@ -53,6 +58,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
   final Rect anchorRect;
   final Boost boost;
   final bool canViewAuthor;
+  final bool canReply;
   final bool canFlag;
   final bool canDelete;
 
@@ -60,6 +66,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
     required this.anchorRect,
     required this.boost,
     required this.canViewAuthor,
+    required this.canReply,
     required this.canFlag,
     required this.canDelete,
   });
@@ -109,6 +116,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
       child: _BoostAuthorPopoverCard(
         boost: boost,
         canViewAuthor: canViewAuthor,
+        canReply: canReply,
         canFlag: canFlag,
         canDelete: canDelete,
       ),
@@ -190,12 +198,14 @@ class _BoostPopoverLayoutDelegate extends SingleChildLayoutDelegate {
 class _BoostAuthorPopoverCard extends StatelessWidget {
   final Boost boost;
   final bool canViewAuthor;
+  final bool canReply;
   final bool canFlag;
   final bool canDelete;
 
   const _BoostAuthorPopoverCard({
     required this.boost,
     required this.canViewAuthor,
+    required this.canReply,
     required this.canFlag,
     required this.canDelete,
   });
@@ -216,6 +226,12 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
         : user.getAvatarUrl(size: 96);
 
     final actions = <Widget>[
+      if (canReply)
+        _PopoverActionButton(
+          icon: Symbols.reply_rounded,
+          label: context.l10n.common_reply,
+          onTap: () => _select(context, BoostAuthorPopoverAction.reply),
+        ),
       if (canViewAuthor)
         _PopoverActionButton(
           icon: Symbols.person_rounded,
