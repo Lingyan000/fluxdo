@@ -7,6 +7,7 @@ import '../../log/log_policy.dart';
 import '../adapters/adapter_log_metadata.dart';
 import '../core/net_core_http_adapter.dart';
 import '../flux_request_spec.dart';
+import '../deadline_dio.dart';
 import '../cookie/csrf_session_trace.dart';
 
 /// 网络请求日志拦截器，记录每个请求的 method/url/statusCode/duration
@@ -40,8 +41,10 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    final deadlineExceeded = err.error is CallDeadlineExceeded;
     if (err.requestOptions.spec.skipNetworkLog &&
-        err.type == DioExceptionType.cancel) {
+        err.type == DioExceptionType.cancel &&
+        !deadlineExceeded) {
       handler.next(err);
       return;
     }
@@ -55,7 +58,8 @@ class NetworkLogInterceptor extends Interceptor {
     // isSilent + 超时: MessageBus 长轮询超时是正常行为，记录为 debug
     // 其他错误: 记录为 warning
     final level =
-        (err.type == DioExceptionType.cancel || (isSilent && isTimeout))
+        (!deadlineExceeded &&
+            (err.type == DioExceptionType.cancel || (isSilent && isTimeout)))
         ? 'debug'
         : 'warning';
 
@@ -140,7 +144,12 @@ class NetworkLogInterceptor extends Interceptor {
       entry['ttfbMs'] = connection['ttfbMs'];
     }
     if (error != null && error.type != DioExceptionType.badResponse) {
-      entry['errorType'] = error.type.name;
+      entry['errorType'] = error.error is CallDeadlineExceeded
+          ? 'call_deadline'
+          : error.type.name;
+      if (error.error case CallDeadlineExceeded(:final limit)) {
+        entry['callTimeoutMs'] = limit.inMilliseconds;
+      }
       final reason = error.error?.toString() ?? error.message;
       if (reason != null && reason.isNotEmpty) {
         entry['error'] = reason;

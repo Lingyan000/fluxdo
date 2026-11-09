@@ -69,10 +69,7 @@ class RecoveryCoordinator extends Interceptor {
       return;
     }
 
-    final outcome = AttemptOutcome.success(
-      response: response,
-      attemptIndex: 0,
-    );
+    final outcome = AttemptOutcome.success(response: response, attemptIndex: 0);
     if (_firstMatch(outcome) == null) {
       handler.next(response);
       return;
@@ -124,14 +121,29 @@ class RecoveryCoordinator extends Interceptor {
   ///
   /// 全项目唯一的重放点。返回最终结果(成功响应或最后一次失败)。
   Future<AttemptOutcome> _runLoop(AttemptOutcome initial) async {
+    try {
+      return await _runActiveLoop(initial);
+    } on DioException catch (error) {
+      return AttemptOutcome.failure(
+        error: error,
+        attemptIndex: initial.attemptIndex,
+      );
+    }
+  }
+
+  Future<AttemptOutcome> _runActiveLoop(AttemptOutcome initial) async {
     var outcome = initial;
     final budget = _budgetFactory();
+    final options =
+        initial.error?.requestOptions ?? initial.response!.requestOptions;
 
     while (true) {
+      _checkCancelled(options);
       final policy = _firstMatch(outcome);
       if (policy == null) return outcome;
 
-      final decision = await policy.decide(outcome);
+      final decision = await _withCancellation(policy.decide(outcome), options);
+      _checkCancelled(options);
       final uri = _uriOf(outcome);
 
       switch (decision) {
@@ -154,7 +166,8 @@ class RecoveryCoordinator extends Interceptor {
           }
 
           if (decision is RecoveryRecoverThenRetry) {
-            final ok = await decision.action.run();
+            // 取消本调用的等待，不取消其他调用正在共享的恢复动作。
+            final ok = await _withCancellation(decision.action.run(), options);
             if (!ok) {
               debugPrint(
                 '[Recovery] 恢复动作失败 action=${decision.action.name} '
@@ -170,8 +183,16 @@ class RecoveryCoordinator extends Interceptor {
             _ => Duration.zero,
           };
           if (delay > Duration.zero) {
-            await Future<void>.delayed(delay);
+            final ready = Completer<void>();
+            final timer = Timer(delay, ready.complete);
+            try {
+              await _withCancellation(ready.future, options);
+            } finally {
+              timer.cancel();
+            }
           }
+
+          _checkCancelled(options);
 
           debugPrint(
             '[Recovery] 重放 policy=${policy.name} '
@@ -181,6 +202,20 @@ class RecoveryCoordinator extends Interceptor {
           if (outcome.isSuccess) return outcome;
       }
     }
+  }
+
+  static Future<T> _withCancellation<T>(
+    Future<T> work,
+    RequestOptions options,
+  ) {
+    final token = options.cancelToken;
+    if (token == null) return work;
+    return Future.any([work, token.whenCancel.then<T>((error) => throw error)]);
+  }
+
+  static void _checkCancelled(RequestOptions options) {
+    final error = options.cancelToken?.cancelError;
+    if (error != null) throw error;
   }
 
   static Uri _uriOf(AttemptOutcome outcome) =>

@@ -41,7 +41,7 @@ use crate::{BoxStream, UpstreamProxyConfig};
 const TCP_TIMEOUT: Duration = Duration::from_secs(5);
 /// 单次 TLS 握手的超时，由调用方的握手实现负责遵守。
 pub const EGRESS_TLS_TIMEOUT: Duration = Duration::from_secs(10);
-/// 一次出站（含全部重试）的总时限，超过后不再开始新的尝试。
+/// 一次出站（含解析、全部候选与备用握手）的总时限，到期取消在途工作。
 const EGRESS_BUDGET: Duration = Duration::from_secs(25);
 /// Happy Eyeballs：候选地址之间错开发起的间隔。
 const ATTEMPT_STAGGER: Duration = Duration::from_millis(250);
@@ -79,10 +79,9 @@ pub struct HandshakeFailure {
 
 impl HandshakeFailure {
     pub fn retry(error: NetError) -> Self {
-        Self {
-            error,
-            retryable: true,
-        }
+        // 证书错误不能通过换地址或关闭 ECH 变成“可恢复”的握手失败。
+        let retryable = !matches!(error, NetError::Certificate(_) | NetError::Cancelled);
+        Self { error, retryable }
     }
 
     pub fn abort(error: NetError) -> Self {
@@ -176,7 +175,7 @@ impl EgressConnector {
         F: FnMut(BoxStream, Option<Vec<u8>>) -> Fut + Send + 'a,
         Fut: Future<Output = std::result::Result<T, HandshakeFailure>> + Send + 'a,
     {
-        Box::pin(self.connect_inner(host, port, handshake))
+        Box::pin(self.with_budget(host, port, self.connect_inner(host, port, handshake)))
     }
 
     /// 客户端出站：在 [`Self::connect_with_handshake`] 的基础上，TLS 握手卡住
@@ -197,7 +196,7 @@ impl EgressConnector {
         F: FnMut(BoxStream, Option<Vec<u8>>) -> Fut + Clone + Send + 'a,
         Fut: Future<Output = std::result::Result<T, HandshakeFailure>> + Send + 'a,
     {
-        Box::pin(async move {
+        Box::pin(self.with_budget(host, port, async move {
             let (targets, ech, connected, first) = self.prepare_egress(host, port).await?;
             // 备用从下一个候选开始；单候选时重连同一地址（握手丢包多半只是这条连接倒霉）
             let mut backup_targets = targets.clone();
@@ -253,7 +252,22 @@ impl EgressConnector {
                     Err(_) => primary.await,
                 },
             }
-        })
+        }))
+    }
+
+    /// 在最外层约束整次出站，备用连接和换地址不能重新获得完整预算。
+    /// future 被取消时，其持有的 socket、ConnectRace 与握手任务一起释放。
+    async fn with_budget<T>(
+        &self,
+        host: &str,
+        port: u16,
+        work: impl Future<Output = Result<T>>,
+    ) -> Result<T> {
+        let budget = self.timeout.min(EGRESS_BUDGET);
+        tokio::time::timeout(budget, work).await.map_err(|_| {
+            warn!("Egress to {host}:{port} exceeded total budget {budget:?}");
+            NetError::Timeout
+        })?
     }
 
     async fn connect_inner<T, F, Fut>(&self, host: &str, port: u16, handshake: F) -> Result<T>
@@ -388,13 +402,6 @@ impl EgressConnector {
                     let mut attempt_ech = ech.clone();
                     // 同一地址最多两次：带 ECH 与不带 ECH
                     while let Some(ready) = stream.take() {
-                        if started.elapsed() > EGRESS_BUDGET {
-                            warn!(
-                                "Egress to {host}:{port} gave up after {:?}",
-                                started.elapsed()
-                            );
-                            return Err(last_error.unwrap_or(NetError::Timeout));
-                        }
                         let attempt_started = Instant::now();
                         let used_ech = attempt_ech.is_some();
                         match handshake(ready, attempt_ech.clone()).await {
@@ -826,6 +833,118 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::Relaxed), 1, "不该为正常握手起备用");
+    }
+
+    #[tokio::test]
+    async fn total_budget_cancels_stalled_handshake_and_closes_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut byte = [0];
+            socket.read(&mut byte).await.unwrap()
+        });
+        let mut connector = connector();
+        connector.timeout = Duration::from_millis(100);
+        let result: Result<()> = connector
+            .connect_client("127.0.0.1", port, |stream, _| async move {
+                let _held = stream;
+                std::future::pending().await
+            })
+            .await;
+        assert!(matches!(result, Err(NetError::Timeout)));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .unwrap()
+                .unwrap(),
+            0,
+            "截止必须关闭 socket，不能只向调用方报告超时"
+        );
+    }
+
+    #[tokio::test]
+    async fn total_budget_includes_pending_ech_and_releases_ready_tcp() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            socket.read(&mut [0]).await.unwrap()
+        });
+        let mut connector = connector();
+        connector.timeout = Duration::from_millis(100);
+        let result = connector
+            .with_budget(
+                "127.0.0.1",
+                port,
+                connector.prepare_egress_with_ech("127.0.0.1", port, std::future::pending()),
+            )
+            .await;
+        assert!(matches!(result, Err(NetError::Timeout)));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn backup_shares_primary_deadline_and_both_sockets_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut primary, _) = listener.accept().await.unwrap();
+            let (mut backup, _) = listener.accept().await.unwrap();
+            let mut a_buf = [0];
+            let mut b_buf = [0];
+            let (a, b) = tokio::join!(primary.read(&mut a_buf), backup.read(&mut b_buf));
+            (a.unwrap(), b.unwrap())
+        });
+        let mut connector = connector();
+        connector.timeout = CLIENT_TLS_BACKUP_DELAY + Duration::from_millis(200);
+        let start = Instant::now();
+        let result: Result<()> = connector
+            .connect_client("127.0.0.1", port, |stream, _| async move {
+                let _held = stream;
+                std::future::pending().await
+            })
+            .await;
+        assert!(matches!(result, Err(NetError::Timeout)));
+        assert!(start.elapsed() < connector.timeout + Duration::from_millis(500));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .unwrap()
+                .unwrap(),
+            (0, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn certificate_failure_does_not_try_another_address_or_remove_ech() {
+        let good = upstream(true).await;
+        let mut attempts = 0;
+        let result: Result<()> = connector()
+            .connect_targets(
+                "example.com",
+                443,
+                vec![good.clone(), good],
+                Some(vec![1]),
+                |_, ech| {
+                    attempts += 1;
+                    assert!(ech.is_some());
+                    async {
+                        Err(HandshakeFailure::retry(NetError::Certificate(
+                            "untrusted".into(),
+                        )))
+                    }
+                },
+            )
+            .await;
+        assert!(matches!(result, Err(NetError::Certificate(_))));
+        assert_eq!(attempts, 1);
     }
 
     #[tokio::test]

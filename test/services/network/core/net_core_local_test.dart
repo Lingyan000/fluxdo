@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/dio_http_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:fluxdo/services/network/core/net_core_http_adapter.dart';
+import 'package:fluxdo/services/network/deadline_dio.dart';
 import 'package:fluxdo/services/network/cookie/csrf_session_trace.dart';
 import 'package:fluxdo/services/network/core/net_core_service.dart';
 import 'package:fluxdo/services/network/interceptors/redirect_interceptor.dart';
@@ -467,6 +468,58 @@ void main() {
     await arrived;
     token.cancel();
     await assertion;
+  }, skip: skip);
+
+  test('逻辑截止经真实 FFI 中断慢响应体并关闭上游连接', () async {
+    final listener = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final closed = Completer<void>();
+    Socket? peer;
+    final accept = listener.listen((socket) {
+      peer = socket;
+      var sent = false;
+      final header = <int>[];
+      socket.listen(
+        (data) {
+          header.addAll(data);
+          if (!sent && latin1.decode(header).contains('\r\n\r\n')) {
+            sent = true;
+            socket.write('HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\nx');
+          }
+        },
+        onDone: () {
+          if (!closed.isCompleted) closed.complete();
+        },
+        onError: (Object error) {
+          if (!closed.isCompleted) closed.completeError(error);
+        },
+      );
+    });
+    final bounded = DeadlineDio(
+      BaseOptions(),
+      const Duration(milliseconds: 250),
+    )..httpClientAdapter = NetCoreHttpAdapter();
+    try {
+      await expectLater(
+        bounded.get<List<int>>(
+          'http://127.0.0.1:${listener.port}/image',
+          options: Options(responseType: ResponseType.bytes),
+        ),
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.error,
+            'cause',
+            isA<CallDeadlineExceeded>(),
+          ),
+        ),
+      );
+      await closed.future.timeout(const Duration(seconds: 2));
+      expect((await dio.get<String>('/path')).data, '/path');
+    } finally {
+      bounded.close(force: true);
+      peer?.destroy();
+      await accept.cancel();
+      await listener.close();
+    }
   }, skip: skip);
   test('取消等待下一块数据的上传时立即取消数据源订阅', () async {
     final listened = Completer<void>();

@@ -185,17 +185,24 @@ void main() {
         extension: 'gif',
       );
     }
-    await Future.wait([
-      adapter.waitFor('https://cdn.example.com/animated0.gif'),
-      adapter.waitFor('https://cdn.example.com/animated1.gif'),
-    ]).timeout(const Duration(seconds: 5));
+    final animated = [
+      for (var i = 0; i < 3; i++) 'https://cdn.example.com/animated$i.gif',
+    ];
+    // 磁盘缓存查找是异步的，不保证 animated0/1 先入队；验证任意两条
+    // 获准下载且第三条保持排队，才是并发隔离契约。
+    await Stream.fromFutures(animated.map(adapter.waitFor))
+        .take(2)
+        .drain<void>()
+        .timeout(const Duration(seconds: 5));
     await Future.wait([
       for (var i = 0; i < 6; i++)
         fetch(BlobImageCache.avatarBucket, 'static$i'),
     ]).timeout(const Duration(seconds: 2));
     expect(
-      adapter.started.containsKey('https://cdn.example.com/animated2.gif'),
-      isFalse,
+      animated
+          .where((url) => adapter.started[url]?.isCompleted ?? false)
+          .length,
+      2,
     );
     expect(adapter.bodies.values.every((gate) => !gate.isCompleted), isTrue);
   });

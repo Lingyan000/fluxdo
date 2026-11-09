@@ -43,6 +43,10 @@ class FluxRequestKeys {
   /// 诊断链路标签,进网络日志与 CF 检测日志,便于按链路而非 URL 归因。
   static const String requestTag = 'requestTag';
 
+  /// 整次调用的时限（毫秒），含重定向、重试及响应体；0 显式关闭。
+  /// 流式下载、上传和长轮询由调用方指定，不套普通接口的默认预算。
+  static const String callTimeoutMillis = 'callTimeoutMillis';
+
   // --- 逐环节豁免 ---
 
   /// 跳过 CSRF 注入与"POST 前自动刷新 CSRF"。
@@ -118,6 +122,11 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
   String? get requestTag {
     final value = _extra[FluxRequestKeys.requestTag]?.toString();
     return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Duration? get callTimeout {
+    final value = _extra[FluxRequestKeys.callTimeoutMillis];
+    return value is int ? Duration(milliseconds: value) : null;
   }
 
   bool get skipCsrf => _extra[FluxRequestKeys.skipCsrf] == true;

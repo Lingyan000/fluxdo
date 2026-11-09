@@ -54,6 +54,8 @@ class _PriorityQueue {
   void add(_RequestEntry entry) => _queue.add(entry);
 
   _RequestEntry removeFirst() => _queue.removeFirst();
+
+  bool remove(_RequestEntry entry) => _queue.remove(entry);
 }
 
 /// 滑动窗口速率限制器
@@ -199,13 +201,7 @@ class RequestSchedulerInterceptor extends Interceptor {
       cfService.raisePresentation(CfVerifyPresentation.blocking);
       await _waitForCfIdle(options);
       if (options.cancelToken?.isCancelled ?? false) {
-        handler.reject(
-          DioException.requestCancelled(
-            requestOptions: options,
-            reason: '请求在等待 CF 验证期间被取消',
-          ),
-          true,
-        );
+        handler.reject(options.cancelToken!.cancelError!, true);
         return;
       }
     }
@@ -218,13 +214,7 @@ class RequestSchedulerInterceptor extends Interceptor {
 
     // cancelToken 已取消，直接拒绝
     if (options.cancelToken?.isCancelled ?? false) {
-      handler.reject(
-        DioException.requestCancelled(
-          requestOptions: options,
-          reason: '请求在排队前已被取消',
-        ),
-        true,
-      );
+      handler.reject(options.cancelToken!.cancelError!, true);
       return;
     }
 
@@ -250,7 +240,12 @@ class RequestSchedulerInterceptor extends Interceptor {
     options.cancelToken?.whenCancel.then((_) {
       if (!entry.completer.isCompleted) {
         entry.isCancelled = true;
+        state.queue.remove(entry);
         entry.completer.complete();
+        if (state.queue.isEmpty) {
+          state.pendingTimer?.cancel();
+          state.pendingTimer = null;
+        }
       }
     });
 
@@ -267,13 +262,7 @@ class RequestSchedulerInterceptor extends Interceptor {
 
     // 被唤醒后检查是否已取消
     if (entry.isCancelled) {
-      handler.reject(
-        DioException.requestCancelled(
-          requestOptions: options,
-          reason: '请求在排队中被取消',
-        ),
-        true,
-      );
+      handler.reject(options.cancelToken!.cancelError!, true);
       return;
     }
 
@@ -362,8 +351,13 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
-    await BrowserTrustCoordinator.instance.waitForActiveBrowserTrust(
-      reason: '${options.method.toUpperCase()} ${options.uri}',
-    );
+    final ready = BrowserTrustCoordinator.instance
+        .waitForActiveBrowserTrust(
+          reason: '${options.method.toUpperCase()} ${options.uri}',
+        )
+        .then<void>((_) {});
+    final token = options.cancelToken;
+    if (token == null) return ready;
+    await Future.any<void>([ready, token.whenCancel.then((_) {})]);
   }
 }

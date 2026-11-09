@@ -848,14 +848,18 @@ impl HttpEgressClient {
                 // 握手放进独立任务：rama 的 h2 握手 future 跨 await 持有借用，
                 // 直接留在这里会让编译器无法证明本 future 对所有生命周期 Send
                 let input = ConnectRequest::new(HostWithPort::new(server_host, port));
-                let established = tokio::spawn(http_connect(tls, input, exec))
-                    .await
-                    .map_err(|e| {
-                        HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}")))
-                    })?
-                    .map_err(|e| {
-                        HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
-                    })?;
+                // 普通 JoinHandle 在丢弃时会脱离外层继续运行；取消请求或
+                // 备用路径胜出时必须终止这个握手，避免遗留 socket/任务。
+                let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+                    http_connect(tls, input, exec),
+                ))
+                .await
+                .map_err(|e| {
+                    HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}")))
+                })?
+                .map_err(|e| {
+                    HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
+                })?;
                 let conn = Conn {
                     id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
                     service: established.conn,
@@ -1437,6 +1441,83 @@ mod tests {
         assert_eq!(client.pooled_connections(), (0, 0));
         let info = get_ok(&client, port).await;
         assert!(!info.reused);
+        assert_eq!(accepted.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_tls_blackhole_shares_failure_and_releases_transport() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let closed = Arc::new(AtomicUsize::new(0));
+        let server = tokio::spawn({
+            let accepted = accepted.clone();
+            let closed = closed.clone();
+            async move {
+                while let Ok((mut socket, _)) = listener.accept().await {
+                    accepted.fetch_add(1, Ordering::Relaxed);
+                    let closed = closed.clone();
+                    tokio::spawn(async move {
+                        let mut hello = Vec::new();
+                        socket.read_to_end(&mut hello).await.unwrap();
+                        assert!(!hello.is_empty(), "应确实发出 ClientHello 后卡住");
+                        closed.fetch_add(1, Ordering::Relaxed);
+                    });
+                }
+            }
+        });
+        let egress = EgressConnector::new(None, None, None, None, Duration::from_millis(200));
+        let client = HttpEgressClient::new(Arc::new(egress), None);
+        let started = Instant::now();
+        let responses = futures_join_all(
+            (0..12)
+                .map(|_| {
+                    let request = Request::builder()
+                        .uri(format!("https://127.0.0.1:{port}/image"))
+                        .body(Body::empty())
+                        .unwrap();
+                    client.send(request, None, None)
+                })
+                .collect(),
+        )
+        .await;
+        assert!(responses.iter().all(Result::is_err));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            1,
+            "同批失败不能串行重复握手"
+        );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while closed.load(Ordering::Relaxed) != 1 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(client.pool.capacity.available_permits(), MAX_CONNECTIONS);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn network_reset_does_not_repopulate_pool_from_old_inflight_response() {
+        let (port, accepted) = h1_server(Duration::from_millis(150), false).await;
+        let client = plain_client();
+        let first = get_ok(&client, port);
+        let reset = async {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while accepted.load(Ordering::Relaxed) == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            client.reset_connections().await;
+        };
+        tokio::join!(first, reset);
+        assert_eq!(client.pooled_connections(), (0, 0));
+        let next = get_ok(&client, port).await;
+        assert!(!next.reused);
         assert_eq!(accepted.load(Ordering::Relaxed), 2);
     }
 
