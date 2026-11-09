@@ -139,5 +139,24 @@
   "networkMap_tapToConfigure": "點擊節點設定 · 連線表示設定關聯",
   "networkMap_showList": "切換普通顯示",
   "networkMap_showGraph": "切換圖形顯示",
-  "networkMap_restarting": "正在重新啟動網絡核心…"
+  "networkMap_restarting": "正在重新啟動網絡核心…",
+  "networkStatus_recentResponse": "{host} 最近收到回應",
+  "@networkStatus_recentResponse": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "networkStatus_recentFailure": "{host} 請求失敗 · {count} 次",
+  "@networkStatus_recentFailure": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

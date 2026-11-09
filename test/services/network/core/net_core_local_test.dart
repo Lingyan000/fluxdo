@@ -16,6 +16,7 @@ import 'package:fluxdo/services/network/core/net_core_http_adapter.dart';
 import 'package:fluxdo/services/network/deadline_dio.dart';
 import 'package:fluxdo/services/network/cookie/csrf_session_trace.dart';
 import 'package:fluxdo/services/network/core/net_core_service.dart';
+import 'package:fluxdo/services/network/core/network_health_monitor.dart';
 import 'package:fluxdo/services/network/interceptors/redirect_interceptor.dart';
 import 'package:fluxdo/services/network/proxy/proxy_settings_service.dart';
 
@@ -151,6 +152,26 @@ void main() {
     final connection = response.extra[netCoreConnectionExtraKey] as Map;
     expect(connection['echApplied'], isFalse);
     expect(connection['echAccepted'], isFalse);
+  }, skip: skip);
+  test('被动观测由真实核心错误与完成事件更新，不把重置当恢复', () async {
+    final monitor = NetworkHealthMonitor.instance;
+    monitor.reset(reason: 'test_start');
+    await expectLater(
+      dio.get<String>(
+        '/slow',
+        options: Options(receiveTimeout: const Duration(milliseconds: 150)),
+      ),
+      throwsA(isA<DioException>()),
+    );
+    expect(monitor.problem?.failures, 1);
+    await dio.get<String>('/path');
+    expect(monitor.problem, isNull);
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
+    NetCoreService.instance.resetConnections(reason: 'test_reset');
+    expect(monitor.forOrigin(Uri.parse(dio.options.baseUrl)), isNull);
   }, skip: skip);
   test('大请求体完整送达，Cookie 原样传递', () async {
     final bytes = List<int>.generate(1024 * 1024, (i) => i % 256);

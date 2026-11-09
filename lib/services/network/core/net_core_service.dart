@@ -13,6 +13,7 @@ import '../../network_logger.dart';
 import '../doh/ech_dns_policy.dart';
 import '../proxy/proxy_settings_service.dart';
 import 'net_core_bindings.dart';
+import 'network_health_monitor.dart';
 
 /// 网络核心的生命周期与配置。
 ///
@@ -98,6 +99,7 @@ class NetCoreService {
       final configJson = jsonEncode(nativeConfig);
       final restarting = _status.running;
       final started = DateTime.now();
+      NetworkHealthMonitor.instance.reset(reason: 'core_start');
       final port = _bindings.start(configJson);
       if (port < 0) {
         // 具体原因由核心日志给出（同在网络日志里）
@@ -146,6 +148,7 @@ class NetCoreService {
   Future<void> stop() {
     return _serialize(() async {
       if (!_status.running) return;
+      NetworkHealthMonitor.instance.reset(reason: 'core_stop');
       _bindings.shutdown();
       _configSignature = null;
       _publish(const NetCoreStatus.stopped());
@@ -160,6 +163,7 @@ class NetCoreService {
   /// 不主动丢弃会一直等到 NAT 超时才失败。
   void resetConnections({String reason = ''}) {
     if (!_status.running) return;
+    NetworkHealthMonitor.instance.reset(reason: reason);
     _bindings.resetConnections();
     NetworkLogger.log('[NetCore] 已清空连接池${reason.isEmpty ? '' : '（$reason）'}');
   }

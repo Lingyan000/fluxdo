@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
+import '../../../constants.dart';
 import '../../../services/network/adapters/core_fallback_service.dart';
 import '../../../services/network/adapters/platform_adapter.dart';
 import '../../../services/network/core/net_core_service.dart';
+import '../../../services/network/core/network_health_monitor.dart';
 import '../../../services/network/doh/network_settings_service.dart';
 import '../../../services/network/proxy/proxy_settings_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
@@ -42,6 +44,7 @@ class EngineCard extends StatelessWidget {
         webview.notifier,
         webview.effectiveNotifier,
         fallback,
+        NetworkHealthMonitor.instance,
       ]),
       builder: (context, _) {
         final startFailed =
@@ -87,6 +90,9 @@ class _ConnectionOverview extends StatelessWidget {
     final settings = service.current;
     final effective = resolveEffectiveAdapter();
     final fallback = effective.reason == AdapterReason.fallback;
+    final health = NetworkHealthMonitor.instance;
+    final observed =
+        health.problem ?? health.forOrigin(Uri.parse(AppConstants.baseUrl));
     final webview = WebViewAdapterSettingsService.instance;
     final useDoh =
         (!fallback || (webview.effectiveEnabled && status.webViewMitm)) &&
@@ -113,6 +119,14 @@ class _ConnectionOverview extends StatelessWidget {
           ? ConnectionPhase.warming
           : ConnectionPhase.running,
       engine: getAdapterDisplayName(effective.type),
+      connectivitySummary: applying || fallback || observed == null
+          ? null
+          : observed.failures > 0
+          ? l10n.networkStatus_recentFailure(observed.host, observed.failures)
+          : observed.responded
+          ? l10n.networkStatus_recentResponse(observed.host)
+          : null,
+      connectivityFailed: observed != null && observed.failures > 0,
       dns: dns,
       outbound: fallback ? l10n.networkStatus_systemNetwork : coreOutbound,
       webViewOutbound: coreOutbound,

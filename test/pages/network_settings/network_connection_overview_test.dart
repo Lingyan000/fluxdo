@@ -12,9 +12,13 @@ Widget overview({
   bool viaCore = false,
   FutureOr<void> Function()? restart,
   ValueChanged<String>? configure,
+  String? connectivity,
+  bool failed = false,
 }) => NetworkConnectionOverview(
   phase: phase,
   engine: phase == ConnectionPhase.fallback ? '应急路径（Dart IO）' : '网络核心',
+  connectivitySummary: connectivity,
+  connectivityFailed: failed,
   dns: phase == ConnectionPhase.fallback ? '系统 DNS' : '阿里云 · DoH',
   outbound: phase == ConnectionPhase.fallback ? '系统网络' : '直连',
   webViewOutbound: '应用代理',
@@ -30,6 +34,26 @@ Widget overview({
 );
 
 void main() {
+  testWidgets('请求失败与核心运行分别展示，重启仍可直接使用', (tester) async {
+    var restarted = false;
+    await tester.pumpWidget(
+      host(
+        overview(
+          connectivity: 'forum.test 请求失败 · 12 次',
+          failed: true,
+          restart: () => restarted = true,
+        ),
+      ),
+    );
+    expect(find.text('网络核心运行中'), findsOneWidget);
+    expect(find.text('forum.test 请求失败 · 12 次'), findsOneWidget);
+    await tester.tap(find.byTooltip('重启网络核心'));
+    await tester.pumpAndSettle();
+    expect(restarted, isTrue);
+    await tester.tap(find.byTooltip('切换普通展示'));
+    await tester.pumpAndSettle();
+    expect(find.text('forum.test 请求失败 · 12 次'), findsOneWidget);
+  });
   testWidgets('重启期间保持图形高度、禁止连点并在完成后恢复', (tester) async {
     final completion = Completer<void>();
     var calls = 0;
@@ -160,7 +184,12 @@ void main() {
         await tester.pumpWidget(
           host(
             SingleChildScrollView(
-              child: overview(compatibility: true, viaCore: true),
+              child: overview(
+                compatibility: true,
+                viaCore: true,
+                connectivity: 'very-long-image-host.example.com 请求失败 · 12 次',
+                failed: true,
+              ),
             ),
             dark: dark,
             scale: 2,
