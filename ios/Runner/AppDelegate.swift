@@ -9,7 +9,7 @@ import workmanager_apple
   // 窗口由 UIScene 持有，不能再从 AppDelegate.window 获取界面。
   private weak var flutterViewController: FlutterViewController?
 
-  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
+  override func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                    options: UIScene.ConnectionOptions) -> UISceneConfiguration {
     if options.userActivities.contains(where: { $0.activityType == MiniAppScenes.kind }) {
       let cfg = UISceneConfiguration(name: "MiniApp", sessionRole: session.role)
