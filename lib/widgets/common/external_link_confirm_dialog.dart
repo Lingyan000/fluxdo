@@ -9,10 +9,13 @@ import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import 'app_bottom_sheet.dart';
 
+/// 外部链接本次选择的打开方式。
+enum ExternalLinkOpenChoice { systemBrowser, inAppBrowser }
+
 /// 显示外部链接确认对话框
 ///
-/// 返回 `true` 表示用户确认继续访问，`false` 或 `null` 表示取消
-Future<bool?> showExternalLinkConfirmDialog(
+/// 返回本次打开方式，`null` 表示取消或关闭。
+Future<ExternalLinkOpenChoice?> showExternalLinkConfirmDialog(
   BuildContext context,
   String url,
   LinkRiskLevel riskLevel, {
@@ -20,7 +23,7 @@ Future<bool?> showExternalLinkConfirmDialog(
   ValueListenable<bool>? blurReady,
   ValueChanged<double>? onBlurSigmaChanged,
 }) {
-  return showAppBottomSheet<bool>(
+  return showAppBottomSheet<ExternalLinkOpenChoice>(
     context: context,
     filterBackdrop: filterBackdrop,
     blurReady: blurReady,
@@ -64,178 +67,207 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final config = _getConfigForLevel(context, riskLevel, theme);
     final urlInfo = _parseUrl(url);
+    final uri = Uri.tryParse(url);
+    final canOpenInApp = uri?.scheme == 'http' || uri?.scheme == 'https';
 
     return AppSheetScaffold(
       style: AppSheetStyle.card,
       contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 顶部图标和标题
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: config.color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 顶部图标和标题
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: config.color.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(config.icon, color: config.color, size: 28),
             ),
-            child: Icon(config.icon, color: config.color, size: 28),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            config.title,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            config.message,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: 20),
-
-          // URL 显示区域
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: ShapeDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 16),
+            Text(
+              config.title,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w500,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 域名高亮显示
-                Row(
-                  children: [
-                    Icon(
-                      Symbols.language_rounded,
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        urlInfo.host,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            Text(
+              config.message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+
+            const SizedBox(height: 20),
+
+            // URL 显示区域
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: ShapeDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 域名高亮显示
+                  Row(
+                    children: [
+                      Icon(
+                        Symbols.language_rounded,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                    ),
-                    // 复制按钮
-                    GestureDetector(
-                      onTap: () => _copyUrl(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: ShapeDecoration(
-                          color: theme.colorScheme.surfaceContainerLow,
-                          shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(6),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          urlInfo.host,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // 复制按钮
+                      GestureDetector(
+                        onTap: () => _copyUrl(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: ShapeDecoration(
+                            color: theme.colorScheme.surfaceContainerLow,
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: Icon(
+                            Symbols.content_copy_rounded,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        child: Icon(
-                          Symbols.content_copy_rounded,
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                  if (urlInfo.path.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      urlInfo.path,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // 警告提示
+            if (config.warning != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: ShapeDecoration(
+                  color: config.color.withValues(alpha: 0.08),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: config.color.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Symbols.warning_amber_rounded,
+                      color: config.color,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        config.warning!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: config.color,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                   ],
                 ),
-                if (urlInfo.path.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    urlInfo.path,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontFamily: 'monospace',
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // 警告提示
-          if (config.warning != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: ShapeDecoration(
-                color: config.color.withValues(alpha: 0.08),
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: config.color.withValues(alpha: 0.2)),
-                ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Symbols.warning_amber_rounded,
-                    color: config.color,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      config.warning!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: config.color,
-                        fontWeight: FontWeight.w500,
+            ],
+
+            const SizedBox(height: 24),
+
+            // 操作按钮
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                    child: Text(context.l10n.common_cancel),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(
+                      context,
+                      ExternalLinkOpenChoice.systemBrowser,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: config.buttonColor,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(context.l10n.externalLink_openInSystemBrowser),
+                  ),
+                ),
+              ],
             ),
-          ],
-
-          const SizedBox(height: 24),
-
-          // 操作按钮
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
+            if (canOpenInApp) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(
+                    context,
+                    ExternalLinkOpenChoice.inAppBrowser,
+                  ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedSuperellipseBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(context.l10n.common_cancel),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: config.buttonColor,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(context.l10n.common_continueVisit),
+                  icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
+                  label: Text(context.l10n.externalLink_openInAppBrowser),
                 ),
               ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -37,6 +37,8 @@
   "externalLink_contactAdmin": "Contact site admin if you have questions",
   "externalLink_leavingMessage": "You are about to visit an external website",
   "externalLink_leavingTitle": "Leaving",
+  "externalLink_openInAppBrowser": "Open in in-app browser",
+  "externalLink_openInSystemBrowser": "Open in system browser",
   "externalLink_securityWarningHint": "May contain promotional content or security risks",
   "externalLink_securityWarningMessage": "This link has been flagged as potentially risky",
   "externalLink_securityWarningTitle": "Security warning",

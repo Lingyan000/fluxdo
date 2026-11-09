@@ -457,7 +457,7 @@ void main() {
         );
         await tester.pump();
         expect(
-          find.text(t.common_continueVisit),
+          find.text(t.externalLink_openInSystemBrowser),
           findsNothing,
           reason: '原生授权回答仍在等待时不能丢请求或同时弹出离站确认',
         );
@@ -481,7 +481,7 @@ void main() {
       Future<void> confirm() async {
         expect(find.byType(MiniAppPermissionSurface), findsNothing);
         expect(find.text('hb.lafi.sh'), findsOneWidget);
-        await tester.tap(find.text(t.common_continueVisit));
+        await tester.tap(find.text(t.externalLink_openInSystemBrowser));
         await tester.pumpAndSettle();
         expect(controller.url, details.embedUrl);
       }
@@ -494,12 +494,12 @@ void main() {
 
       await prompt();
       await answer(false);
-      expect(find.text(t.common_continueVisit), findsNothing);
+      expect(find.text(t.externalLink_openInSystemBrowser), findsNothing);
       expect(launcher.opened, [url]);
 
       await prompt();
       await answer(true, accepted: false);
-      expect(find.text(t.common_continueVisit), findsNothing);
+      expect(find.text(t.externalLink_openInSystemBrowser), findsNothing);
       expect(controller.externalLink, isNull);
 
       await prompt();
@@ -511,7 +511,7 @@ void main() {
       controller.permissionGate!.complete(true);
       await tester.pump(const Duration(milliseconds: 260));
       await tester.pumpAndSettle();
-      expect(find.text(t.common_continueVisit), findsNothing);
+      expect(find.text(t.externalLink_openInSystemBrowser), findsNothing);
 
       await prompt(navigation: true);
       await answer(true);
@@ -520,7 +520,7 @@ void main() {
 
       await prompt(navigation: true);
       await answer(false);
-      expect(find.text(t.common_continueVisit), findsNothing);
+      expect(find.text(t.externalLink_openInSystemBrowser), findsNothing);
 
       await prompt(navigation: true);
       await tester.tap(find.byKey(const ValueKey('mini-app-permission-allow')));
@@ -529,7 +529,7 @@ void main() {
       controller.permission = null;
       await tester.pump(const Duration(milliseconds: 260));
       await tester.pumpAndSettle();
-      expect(find.text(t.common_continueVisit), findsNothing);
+      expect(find.text(t.externalLink_openInSystemBrowser), findsNothing);
       expect(launcher.opened, [url, url], reason: '刷新后的旧授权不能打开页面');
       await callbacks.shouldOverrideUrlLoading!(
         controller.wrapped,
@@ -540,7 +540,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.text(t.common_continueVisit),
+        find.text(t.externalLink_openInSystemBrowser),
         findsOneWidget,
         reason: '新文档的主动导航不等待上一文档未结束的授权',
       );
@@ -645,7 +645,9 @@ void main() {
         expect(find.text('hb.lafi.sh'), findsOneWidget);
         expect(launcher.opened.length, before);
         await tester.tap(
-          find.text(confirm ? t.common_continueVisit : t.common_cancel),
+          find.text(
+            confirm ? t.externalLink_openInSystemBrowser : t.common_cancel,
+          ),
         );
         await tester.pumpAndSettle();
         expect(launcher.opened.length, before + (confirm ? 1 : 0));

@@ -1335,7 +1335,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         await launchExternalLink(
           context,
           url,
-          confirm: (target, risk) => _withNativeOverlay(
+          confirm: (target, risk) => _withNativeOverlay<ExternalLinkOpenChoice>(
             (ready, onBlur, filterBackdrop) => showExternalLinkConfirmDialog(
               context,
               target,
