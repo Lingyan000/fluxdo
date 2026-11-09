@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -67,12 +68,12 @@ bool _isImageLinkUrl(String url) {
 
 /// 打开外部链接
 ///
-/// 根据用户偏好决定使用内置浏览器还是外部浏览器
-/// 如果启用了链接安全检查，会根据链接风险等级显示确认对话框
+/// 需要安全确认时，由用户选择本次打开方式；其余链接按用户偏好分流。
 Future<void> launchExternalLink(
   BuildContext context,
   String url, {
-  Future<bool?> Function(String url, LinkRiskLevel risk)? confirm,
+  Future<ExternalLinkOpenChoice?> Function(String url, LinkRiskLevel risk)?
+  confirm,
   Future<void> Function(String url)? showBlocked,
 }) async {
   if (url.isEmpty) return;
@@ -80,6 +81,7 @@ Future<void> launchExternalLink(
   if (uri == null) return;
 
   // 链接安全检查
+  ExternalLinkOpenChoice? explicitChoice;
   final config = AppConstants.siteCustomization.linkSecurityConfig;
   if (config != null && config.enableExitConfirmation) {
     final riskLevel = LinkSecurity.checkUrl(url, config);
@@ -97,10 +99,10 @@ Future<void> launchExternalLink(
       case LinkRiskLevel.risky:
       case LinkRiskLevel.dangerous:
         // 需要确认的链接，显示确认对话框
-        final confirmed =
+        explicitChoice =
             await (confirm?.call(url, riskLevel) ??
                 showExternalLinkConfirmDialog(context, url, riskLevel));
-        if (confirmed != true) return;
+        if (explicitChoice == null) return;
         break;
     }
   }
@@ -108,11 +110,14 @@ Future<void> launchExternalLink(
   // 安全确认对话框关闭时，原帖子/页面可能已经被滚动回收或导航销毁。
   if (!context.mounted) return;
 
-  final prefs = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(preferencesProvider);
-  final preferInApp = prefs.openExternalLinksInAppBrowser;
+  final preferInApp = switch (explicitChoice) {
+    ExternalLinkOpenChoice.inAppBrowser => true,
+    ExternalLinkOpenChoice.systemBrowser => false,
+    null => ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(preferencesProvider).openExternalLinksInAppBrowser,
+  };
 
   if (preferInApp && (uri.scheme == 'http' || uri.scheme == 'https')) {
     WebViewPage.open(context, url);

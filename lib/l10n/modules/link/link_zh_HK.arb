@@ -51,6 +51,8 @@
   "externalLink_contactAdmin": "如有疑問，請聯繫站點管理員",
   "externalLink_leavingMessage": "您即將訪問外部網站",
   "externalLink_leavingTitle": "即將離開",
+  "externalLink_openInAppBrowser": "使用內置瀏覽器打開",
+  "externalLink_openInSystemBrowser": "系統瀏覽器打開",
   "externalLink_securityWarningHint": "可能包含推廣內容或存在安全隱患，請謹慎訪問",
   "externalLink_securityWarningMessage": "此鏈接被標記為潛在風險鏈接",
   "externalLink_securityWarningTitle": "安全警告",
