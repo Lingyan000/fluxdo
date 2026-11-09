@@ -86,6 +86,10 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
+      # flutterw 导入的 CLI 界面依赖 dart_console，必须先安装依赖才能启动。
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       - name: Setup Rust
         if: startsWith(matrix.platform, 'android') || matrix.platform == 'macos' || matrix.platform == 'ios' || matrix.platform == 'windows'
         uses: dtolnay/rust-toolchain@stable
