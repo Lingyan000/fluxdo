@@ -78,4 +78,12 @@ void main() {
     );
     expect(quote, '[quote="sam, post:1, topic:2"]\n内容\n[/quote]\n\n');
   });
+
+  test('不锚定楼层的引用:只带 username,不带 post/topic', () {
+    final quote = QuoteBuilder.buildUnanchored(
+      markdown: '  内容  \n',
+      username: 'sam',
+    );
+    expect(quote, '[quote="sam"]\n内容\n[/quote]\n\n');
+  });
 }
