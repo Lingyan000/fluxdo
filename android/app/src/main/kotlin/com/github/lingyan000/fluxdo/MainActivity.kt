@@ -1,5 +1,6 @@
 package com.github.lingyan000.fluxdo
 
+import android.app.UiModeManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
@@ -29,6 +30,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterActivity() {
@@ -58,12 +61,75 @@ class MainActivity : FlutterActivity() {
         // 上来、快照尚未生成时仍能正确读到用户已有的设置。
         const val RENDER_FAST_PREFS_FILE = "render_backend_fast"
         const val RENDER_FAST_PREF_KEY = "renderer_gles"
+
+        // 已登记的启动屏主题（只存一个短字符串的独立小文件，onCreate 同步读）
+        private const val SPLASH_PREFS_FILE = "launch_splash"
+        private const val SPLASH_REGISTERED_KEY = "registered_theme"
+        private const val SPLASH_NIGHT_MODE_KEY = "night_mode"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 本次启动屏用的是"上次登记"的主题：登记过即播放了 logo 描线动画。
+        // 必须在 super.onCreate 之前确定——引擎在其中创建，Dart 启动即会来问
+        nativeSplashLogo = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            getSharedPreferences(SPLASH_PREFS_FILE, MODE_PRIVATE)
+                .getString(SPLASH_REGISTERED_KEY, null) != null
         super.onCreate(savedInstanceState)
+        if (nativeSplashLogo) holdSplashUntilLogoDrawn()
         // 每次启动按当前启用的图标同步一次，覆盖升级、备份恢复等未经切换通道的变化
         syncSplashScreenTheme()
+    }
+
+    // ======================== 启动屏交接 ========================
+    //
+    // Android 13+ 原生启动屏播放 logo 描线（与 Flutter 启动页同源生成）。
+    // Flutter 首帧若早于描线播完，原生屏停留到播完再撤下；Flutter 下层已是
+    // 同一帧的完整 logo，撤下即无缝。撤下后通知 Dart 开始光晕、角标与退场。
+
+    private val SPLASH_CHANNEL = "com.github.lingyan000.fluxdo/splash"
+    private var nativeSplashLogo = false
+    private var nativeSplashRemoved = false
+    private var splashChannel: MethodChannel? = null
+
+    /**
+     * 把应用内深浅色设置告知系统（Android 12+）。系统持久化该设置，绘制启动屏
+     * 时据此选用 -night 资源，原生启动屏与 Flutter 启动页的深浅色一致。
+     * 跟随系统传 MODE_NIGHT_AUTO（系统映射为不覆盖，沿用全局配置）。
+     * Activity 声明了 uiMode 配置变更，不会因此重建；值未变时不重复设置。
+     */
+    private fun applyNightMode(mode: String?) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val value = when (mode) {
+            "light" -> UiModeManager.MODE_NIGHT_NO
+            "dark" -> UiModeManager.MODE_NIGHT_YES
+            else -> UiModeManager.MODE_NIGHT_AUTO
+        }
+        val prefs = getSharedPreferences(SPLASH_PREFS_FILE, MODE_PRIVATE)
+        if (prefs.getInt(SPLASH_NIGHT_MODE_KEY, -1) == value) return
+        try {
+            getSystemService(UiModeManager::class.java).setApplicationNightMode(value)
+            prefs.edit().putInt(SPLASH_NIGHT_MODE_KEY, value).apply()
+        } catch (e: Exception) {
+            Log.w("LaunchSplash", "同步应用深浅色设置失败: ${e.message}")
+        }
+    }
+
+    private fun holdSplashUntilLogoDrawn() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        splashScreen.setOnExitAnimationListener { view ->
+            val start = view.iconAnimationStart
+            val duration = view.iconAnimationDuration
+            val remaining = if (start != null && duration != null) {
+                (duration - Duration.between(start, Instant.now())).toMillis().coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            view.postDelayed({
+                view.remove()
+                nativeSplashRemoved = true
+                splashChannel?.invokeMethod("removed", null)
+            }, remaining)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -133,6 +199,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        splashChannel?.setMethodCallHandler(null)
+        splashChannel = null
         interactiveKeyboardChannel?.dispose()
         interactiveKeyboardChannel = null
         MiniAppWindows.detach()
@@ -177,6 +245,20 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        splashChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SPLASH_CHANNEL).also {
+            it.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "state" -> result.success(
+                        mapOf("nativeLogo" to nativeSplashLogo, "removed" to nativeSplashRemoved)
+                    )
+                    "setNightMode" -> {
+                        applyNightMode(call.argument<String>("mode"))
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         MiniAppWindows.attach(this, flutterEngine.dartExecutor.binaryMessenger)
         interactiveKeyboardChannel?.dispose()
         interactiveKeyboardChannel = InteractiveKeyboardChannel(this, flutterEngine.dartExecutor.binaryMessenger)
@@ -806,6 +888,10 @@ class MainActivity : FlutterActivity() {
         }
         try {
             splashScreen.setSplashScreenTheme(theme)
+            // 记下已登记：下次启动原生屏会播放描线，Flutter 据此从完整 logo 接手
+            getSharedPreferences(SPLASH_PREFS_FILE, MODE_PRIVATE).edit()
+                .putString(SPLASH_REGISTERED_KEY, if (theme == R.style.SplashTheme_Modern) "modern" else "classic")
+                .apply()
         } catch (e: Exception) {
             Log.w("AppIcon", "登记启动屏主题失败: ${e.message}")
         }

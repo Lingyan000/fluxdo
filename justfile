@@ -20,6 +20,14 @@ l10n:
 l10n-check:
   @dart run tool/gen_l10n.dart --check
 
+# 从单一规格生成启动 logo 描线动画（Flutter 启动页 + 原生启动屏）
+splash-motion:
+  @dart run tool/gen_splash_motion.dart
+
+# 校验启动动画生成结果是否最新
+splash-motion-check:
+  @dart run tool/gen_splash_motion.dart --check
+
 # 检查开发环境和生成产物状态
 doctor *args:
   @dart run tool/project_prep.dart doctor {{args}}

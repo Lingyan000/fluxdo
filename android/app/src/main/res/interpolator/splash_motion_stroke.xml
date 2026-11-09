@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 tool/gen_splash_motion.dart 根据 tool/splash_motion/logo_motion.json 生成，勿手改。
+     修改动画请改规格文件后执行 just splash-motion。 -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.645"
+    android:controlY1="0.045"
+    android:controlX2="0.355"
+    android:controlY2="1" />

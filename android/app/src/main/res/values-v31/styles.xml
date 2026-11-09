@@ -8,14 +8,20 @@
         <!-- 启动屏底色，与 Flutter 启动页首帧衔接 -->
         <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <!-- 未登记图标主题时(Android 12、13+ 首次启动)只显示底色:
+             这两种情况拿不到当前图标,由 Flutter 启动页从空白开始描线 -->
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
     </style>
     <!-- 运行时按当前图标登记的启动屏主题(Android 13+ setSplashScreenTheme)。
-         activity-alias 不能单独指定 theme，静态 LaunchTheme 只能用系统默认的启动器图标。 -->
+         activity-alias 不能单独指定 theme，静态 LaunchTheme 拿不到当前图标。
+         图标是由 tool/gen_splash_motion.dart 生成的描线动画，与 Flutter 启动页同源。 -->
     <style name="SplashTheme.Classic" parent="LaunchTheme">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_classic</item>
+        <item name="android:windowSplashScreenAnimationDuration">@integer/splash_motion_duration</item>
     </style>
     <style name="SplashTheme.Modern" parent="LaunchTheme">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_modern</item>
+        <item name="android:windowSplashScreenAnimationDuration">@integer/splash_motion_duration</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>

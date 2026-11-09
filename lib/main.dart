@@ -28,6 +28,7 @@ import 'services/auth_issue_notice_service.dart';
 import 'services/crash_context_reporter.dart';
 import 'providers/app_state_refresher.dart';
 import 'services/highlighter_service.dart';
+import 'services/launch_splash_handoff.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/app_glass_settings.dart';
 import 'widgets/common/anchor_guard_sliver.dart';
@@ -512,6 +513,9 @@ Future<void> main() async {
   } else {
     await LocaleSettings.useDeviceLocale();
   }
+
+  // 启动页首帧要知道原生启动屏是否已画过 logo（Android 13+ 描线交接）
+  await LaunchSplashHandoff.init();
 
   // 过滤 Flutter 框架已知 bug（https://github.com/flutter/flutter/issues/115787）
   // SelectionArea + CustomScrollView 拖选时触发的断言错误，仅 debug 模式出现

@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 tool/gen_splash_motion.dart 根据 tool/splash_motion/logo_motion.json 生成，勿手改。
+     修改动画请改规格文件后执行 just splash-motion。 -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="288dp"
+            android:height="288dp"
+            android:viewportWidth="288"
+            android:viewportHeight="288">
+            <group
+                android:translateX="90"
+                android:translateY="90"
+                android:scaleX="0.10546875"
+                android:scaleY="0.10546875">
+                <path
+                    android:name="circle_fill"
+                    android:fillColor="#F0F0F0"
+                    android:fillAlpha="0"
+                    android:pathData="M512,64 A448,448,0,1,1,512,960 A448,448,0,1,1,512,64 Z" />
+                <path
+                    android:name="top_fill"
+                    android:fillColor="#1C1C1E"
+                    android:fillAlpha="0"
+                    android:pathData="M135.3,324 L888.7,324 A421,421,0,0,0,135.3,324 Z" />
+                <path
+                    android:name="bottom_fill"
+                    android:fillColor="#FFB003"
+                    android:fillAlpha="0"
+                    android:pathData="M135.3,700 L888.7,700 A421,421,0,0,1,135.3,700 Z" />
+                <path
+                    android:name="circle_stroke"
+                    android:strokeColor="#F0F0F3"
+                    android:strokeWidth="23.7037"
+                    android:strokeLineCap="round"
+                    android:strokeLineJoin="round"
+                    android:trimPathEnd="0"
+                    android:pathData="M512,64 A448,448,0,1,1,512,960 A448,448,0,1,1,512,64 Z" />
+                <path
+                    android:name="top_stroke"
+                    android:strokeColor="#F0F0F3"
+                    android:strokeWidth="23.7037"
+                    android:strokeLineCap="round"
+                    android:strokeLineJoin="round"
+                    android:trimPathEnd="0"
+                    android:pathData="M135.3,324 L888.7,324" />
+                <path
+                    android:name="middle_stroke"
+                    android:strokeColor="#F0F0F3"
+                    android:strokeWidth="23.7037"
+                    android:strokeLineCap="round"
+                    android:strokeLineJoin="round"
+                    android:trimPathEnd="0"
+                    android:pathData="M135.3,700 L888.7,700" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="circle_fill">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:propertyName="fillAlpha"
+                android:startOffset="450"
+                android:duration="210"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType"
+                android:interpolator="@interpolator/splash_motion_fill" />
+        </aapt:attr>
+    </target>
+    <target android:name="top_fill">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:propertyName="fillAlpha"
+                android:startOffset="520"
+                android:duration="200"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType"
+                android:interpolator="@interpolator/splash_motion_fill" />
+        </aapt:attr>
+    </target>
+    <target android:name="bottom_fill">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:propertyName="fillAlpha"
+                android:startOffset="640"
+                android:duration="200"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType"
+                android:interpolator="@interpolator/splash_motion_fill" />
+        </aapt:attr>
+    </target>
+    <target android:name="circle_stroke">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="trimPathEnd"
+                    android:startOffset="0"
+                    android:duration="450"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke" />
+                <objectAnimator
+                    android:propertyName="strokeAlpha"
+                    android:startOffset="840"
+                    android:duration="160"
+                    android:valueFrom="1"
+                    android:valueTo="0"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke_fade" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="top_stroke">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="trimPathEnd"
+                    android:startOffset="200"
+                    android:duration="220"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke" />
+                <objectAnimator
+                    android:propertyName="strokeAlpha"
+                    android:startOffset="840"
+                    android:duration="160"
+                    android:valueFrom="1"
+                    android:valueTo="0"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke_fade" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="middle_stroke">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="trimPathEnd"
+                    android:startOffset="300"
+                    android:duration="220"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke" />
+                <objectAnimator
+                    android:propertyName="strokeAlpha"
+                    android:startOffset="840"
+                    android:duration="160"
+                    android:valueFrom="1"
+                    android:valueTo="0"
+                    android:valueType="floatType"
+                    android:interpolator="@interpolator/splash_motion_stroke_fade" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

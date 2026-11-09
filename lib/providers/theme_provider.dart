@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/launch_splash_handoff.dart';
 import '../theme/accent_colors.dart';
 import '../theme/app_background.dart';
 import '../theme/app_palettes.dart';
@@ -166,7 +167,10 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
 
   final SharedPreferences _prefs;
 
-  ThemeNotifier(this._prefs) : super(_loadTheme(_prefs));
+  ThemeNotifier(this._prefs) : super(_loadTheme(_prefs)) {
+    // 启动时对齐一次：覆盖升级等未经设置页切换的情况
+    LaunchSplashHandoff.syncNightMode(state.mode);
+  }
 
   static ThemeState _loadTheme(SharedPreferences prefs) {
     // ── 主题模式 ──
@@ -259,6 +263,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     state = state.copyWith(mode: mode);
+    LaunchSplashHandoff.syncNightMode(mode);
     String value = 'system';
     if (mode == ThemeMode.light) {
       value = 'light';
