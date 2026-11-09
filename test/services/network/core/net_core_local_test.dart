@@ -13,8 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/dio_http_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:fluxdo/services/network/core/net_core_http_adapter.dart';
+import 'package:fluxdo/services/network/deadline_dio.dart';
 import 'package:fluxdo/services/network/cookie/csrf_session_trace.dart';
 import 'package:fluxdo/services/network/core/net_core_service.dart';
+import 'package:fluxdo/services/network/core/network_health_monitor.dart';
 import 'package:fluxdo/services/network/interceptors/redirect_interceptor.dart';
 import 'package:fluxdo/services/network/proxy/proxy_settings_service.dart';
 
@@ -150,6 +152,58 @@ void main() {
     final connection = response.extra[netCoreConnectionExtraKey] as Map;
     expect(connection['echApplied'], isFalse);
     expect(connection['echAccepted'], isFalse);
+  }, skip: skip);
+  test('被动观测由真实核心错误与完成事件更新，不把重置当恢复', () async {
+    final monitor = NetworkHealthMonitor.instance;
+    monitor.reset(reason: 'test_start');
+    await expectLater(
+      dio.get<String>(
+        '/slow',
+        options: Options(receiveTimeout: const Duration(milliseconds: 150)),
+      ),
+      throwsA(isA<DioException>()),
+    );
+    expect(monitor.problem?.failures, 1);
+    await dio.get<String>('/path');
+    expect(monitor.problem, isNull);
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
+    NetCoreService.instance.resetConnections(reason: 'test_reset');
+    expect(monitor.forOrigin(Uri.parse(dio.options.baseUrl)), isNull);
+  }, skip: skip);
+  test('相同配置正常复用，显式重启重建连接并清除旧观测', () async {
+    final core = NetCoreService.instance;
+    final config = NetCoreConfig(
+      fingerprintCachePath: '${templateDirectory.path}/template.json',
+    );
+    expect(await core.start(config), isTrue);
+    final first = await dio.get<String>('/path');
+    final firstId =
+        (first.extra[netCoreConnectionExtraKey] as Map)['connectionId'];
+    expect(await core.start(config), isTrue);
+    final reused = await dio.get<String>('/path');
+    expect(
+      (reused.extra[netCoreConnectionExtraKey] as Map)['connectionId'],
+      firstId,
+    );
+    final monitor = NetworkHealthMonitor.instance;
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
+    expect(await core.start(config, forceRestart: true), isTrue);
+    expect(monitor.forOrigin(Uri.parse(dio.options.baseUrl)), isNull);
+    final fresh = await dio.get<String>('/path');
+    expect(
+      (fresh.extra[netCoreConnectionExtraKey] as Map)['connectionId'],
+      isNot(firstId),
+    );
+    expect(
+      monitor.forOrigin(Uri.parse(dio.options.baseUrl))?.responded,
+      isTrue,
+    );
   }, skip: skip);
   test('大请求体完整送达，Cookie 原样传递', () async {
     final bytes = List<int>.generate(1024 * 1024, (i) => i % 256);
@@ -467,6 +521,58 @@ void main() {
     await arrived;
     token.cancel();
     await assertion;
+  }, skip: skip);
+
+  test('逻辑截止经真实 FFI 中断慢响应体并关闭上游连接', () async {
+    final listener = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final closed = Completer<void>();
+    Socket? peer;
+    final accept = listener.listen((socket) {
+      peer = socket;
+      var sent = false;
+      final header = <int>[];
+      socket.listen(
+        (data) {
+          header.addAll(data);
+          if (!sent && latin1.decode(header).contains('\r\n\r\n')) {
+            sent = true;
+            socket.write('HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\nx');
+          }
+        },
+        onDone: () {
+          if (!closed.isCompleted) closed.complete();
+        },
+        onError: (Object error) {
+          if (!closed.isCompleted) closed.completeError(error);
+        },
+      );
+    });
+    final bounded = DeadlineDio(
+      BaseOptions(),
+      const Duration(milliseconds: 250),
+    )..httpClientAdapter = NetCoreHttpAdapter();
+    try {
+      await expectLater(
+        bounded.get<List<int>>(
+          'http://127.0.0.1:${listener.port}/image',
+          options: Options(responseType: ResponseType.bytes),
+        ),
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.error,
+            'cause',
+            isA<CallDeadlineExceeded>(),
+          ),
+        ),
+      );
+      await closed.future.timeout(const Duration(seconds: 2));
+      expect((await dio.get<String>('/path')).data, '/path');
+    } finally {
+      bounded.close(force: true);
+      peer?.destroy();
+      await accept.cancel();
+      await listener.close();
+    }
   }, skip: skip);
   test('取消等待下一块数据的上传时立即取消数据源订阅', () async {
     final listened = Completer<void>();

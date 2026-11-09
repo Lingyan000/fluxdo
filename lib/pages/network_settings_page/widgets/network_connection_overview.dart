@@ -27,9 +27,13 @@ class NetworkConnectionOverview extends StatefulWidget {
     required this.onProxy,
     required this.onCompatibility,
     required this.onRestart,
+    this.connectivitySummary,
+    this.connectivityFailed = false,
   });
 
   final ConnectionPhase phase;
+  final String? connectivitySummary;
+  final bool connectivityFailed;
   final String engine, dns, outbound, webViewOutbound;
   final String templateName, templateDetail;
   final bool compatibility, webViewViaCore;
@@ -121,9 +125,27 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
         Expanded(
           child: Semantics(
             liveRegion: true,
-            child: Text(
-              _restarting ? l.networkMap_restarting : title,
-              style: theme.textTheme.titleSmall,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _restarting ? l.networkMap_restarting : title,
+                  style: theme.textTheme.titleSmall,
+                ),
+                if (!applying && widget.connectivitySummary != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.connectivitySummary!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: widget.connectivityFailed
+                          ? c.error
+                          : c.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

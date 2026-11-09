@@ -15,6 +15,7 @@ import 'app_logger.dart';
 import 'network/core/net_core_http_adapter.dart';
 import 'network/interceptors/redirect_interceptor.dart';
 import 'network/discourse_dio.dart';
+import 'network/deadline_dio.dart';
 import 'network/adapters/webview_http_adapter.dart';
 
 /// [DioHttpClient.fetchBytes] 的非 200 响应。
@@ -240,6 +241,35 @@ class DioHttpClient extends http.BaseClient {
     void Function(int received, int? total)? onProgress,
     Future<void> Function(Uint8List bytes)? onBytesReady,
     dio.CancelToken? cancellation,
+    Duration callTimeout = const Duration(minutes: 2),
+  }) async {
+    try {
+      return await DeadlineDio.withDeadline(
+        dio.RequestOptions(path: url.toString(), cancelToken: cancellation),
+        callTimeout,
+        (request) => _fetchBytes(
+          url,
+          channel: channel,
+          priority: priority,
+          onProgress: onProgress,
+          onBytesReady: onBytesReady,
+          cancellation: request.cancelToken,
+          requestExtra: request.extra,
+        ),
+      );
+    } on dio.DioException catch (error) {
+      throw http.ClientException('Dio error: ${error.message}', url);
+    }
+  }
+
+  Future<Uint8List> _fetchBytes(
+    Uri url, {
+    required DownloadChannel channel,
+    required DownloadPriority priority,
+    required void Function(int received, int? total)? onProgress,
+    required Future<void> Function(Uint8List bytes)? onBytesReady,
+    required dio.CancelToken? cancellation,
+    required Map<String, dynamic> requestExtra,
   }) async {
     final elapsed = Stopwatch()..start();
     final semaphore = _semaphoreOf(channel);
@@ -269,6 +299,7 @@ class DioHttpClient extends http.BaseClient {
     Map<String, dynamic>? connection;
     var receivedBytes = 0;
     final diagnosticExtra = <String, dynamic>{
+      ...requestExtra,
       'traceId': LogPolicy.newTraceId(),
     };
     try {

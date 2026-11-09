@@ -143,5 +143,24 @@
   "networkMap_tapToConfigure": "点击节点配置 · 连线表示配置关联",
   "networkMap_showList": "切换普通展示",
   "networkMap_showGraph": "切换图形展示",
-  "networkMap_restarting": "正在重启网络核心…"
+  "networkMap_restarting": "正在重启网络核心…",
+  "networkStatus_recentResponse": "{host} 最近收到响应",
+  "@networkStatus_recentResponse": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "networkStatus_recentFailure": "{host} 请求失败 · {count} 次",
+  "@networkStatus_recentFailure": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

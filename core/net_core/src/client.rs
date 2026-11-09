@@ -38,7 +38,7 @@ use rama::{
     },
     rt::Executor,
     tls::{
-        boring::client::{TlsConnectorData, tls_connect},
+        boring::client::{TlsConnectError, TlsConnectorData, tls_connect},
         client::{ClientHello, TlsClientConfig},
     },
 };
@@ -368,6 +368,8 @@ pub struct HttpEgressClient {
     sessions: ClientSessions,
     exec: Executor,
     h3: Arc<h3::Http3Upgrade>,
+    #[cfg(test)]
+    test_tls: parking_lot::Mutex<Option<TlsClientConfig>>,
 }
 
 impl HttpEgressClient {
@@ -381,11 +383,20 @@ impl HttpEgressClient {
             sessions: ClientSessions::default(),
             exec: Executor::new(),
             h3: Arc::default(),
+            #[cfg(test)]
+            test_tls: Default::default(),
         }
     }
 
     pub(crate) fn with_sessions(mut self, sessions: ClientSessions) -> Self {
         self.sessions = sessions;
+        self
+    }
+
+    pub(crate) fn with_http3_cache(mut self, path: Option<&str>, namespace: &str) -> Self {
+        if let Some(path) = path {
+            self.h3 = Arc::new(h3::Http3Upgrade::with_cache(path.into(), namespace));
+        }
         self
     }
 
@@ -460,7 +471,7 @@ impl HttpEgressClient {
         let secure = scheme == "https";
         let (host, port) = authority_of(&request)?;
         let template = self.templates.as_ref().and_then(|t| t.snapshot());
-        let key = format!("{scheme}:{}", pool_key(template.as_ref(), &host, port));
+        let key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
         let target = Target {
             key: &key,
             template: template.as_ref(),
@@ -510,6 +521,7 @@ impl HttpEgressClient {
         fresh: bool,
     ) -> Result<Response, Failure> {
         let started = Instant::now();
+        let h3_generation = self.h3.generation();
         let checkout = self.checkout(target, fresh);
         let checkout = match connect_timeout {
             Some(limit) => tokio::time::timeout(limit, checkout)
@@ -552,7 +564,7 @@ impl HttpEgressClient {
             Some(limit) => match tokio::time::timeout(limit, exchange).await {
                 Ok(result) => result,
                 Err(_) if checkout.conn.version == Version::HTTP_3 => {
-                    self.h3.failed(target.key);
+                    self.h3.failed(target.key, h3_generation);
                     self.pool.discard(target.key, &checkout.conn);
                     return Err(Failure::Stale(NetError::ReceiveTimeout.into()));
                 }
@@ -563,7 +575,8 @@ impl HttpEgressClient {
         match result {
             Ok(response) => {
                 if target.secure && checkout.conn.version == Version::HTTP_3 {
-                    self.h3.observe(target.key, target.host, response.headers());
+                    self.h3
+                        .observe_at(target.key, target.host, response.headers(), h3_generation);
                 }
                 if target.secure && checkout.conn.version != Version::HTTP_3 {
                     self.h3.observe_and_upgrade(
@@ -572,6 +585,7 @@ impl HttpEgressClient {
                         self.egress.clone(),
                         self.pool.clone(),
                         self.exec.clone(),
+                        h3_generation,
                     );
                 }
                 // 解压层换掉了响应体类型，统一回 Body 交给调用方；
@@ -592,7 +606,7 @@ impl HttpEgressClient {
             Err(error) => {
                 // 请求体可能已被消费，这里不重试；是否可重放由调用方判断
                 if checkout.conn.version == Version::HTTP_3 {
-                    self.h3.failed(target.key);
+                    self.h3.failed(target.key, h3_generation);
                     self.pool.discard(target.key, &checkout.conn);
                     return Err(Failure::Stale(error));
                 }
@@ -711,7 +725,14 @@ impl HttpEgressClient {
             .await
             .map_err(|_| NetError::Cancelled)?;
         let mut conn = if target.secure {
-            self.connect(target.template, target.host, target.port)
+            self.h3
+                .connect_or_tcp(
+                    target,
+                    &self.egress,
+                    &self.pool,
+                    self.exec.clone(),
+                    self.connect(target.template, target.host, target.port),
+                )
                 .await?
         } else {
             self.connect_plain(target.host, target.port).await?
@@ -795,6 +816,8 @@ impl HttpEgressClient {
         });
         let exec = self.exec.clone();
         let sessions = self.sessions.clone();
+        #[cfg(test)]
+        let test_tls = self.test_tls.lock().clone();
 
         let attempt = move |stream: BoxStream, ech: Option<Vec<u8>>| {
             let server_host = server_host.clone();
@@ -802,6 +825,8 @@ impl HttpEgressClient {
             let h2_params = h2_params.clone();
             let exec = exec.clone();
             let sessions = sessions.clone();
+            #[cfg(test)]
+            let test_tls = test_tls.clone();
             // 装箱成 `dyn Future + Send`：rama 的握手 future 内部跨 await 持有借用，
             // 留给自动推断时编译器无法证明它对所有生命周期 Send
             Box::pin(async move {
@@ -820,13 +845,21 @@ impl HttpEgressClient {
                 .map_err(|e| {
                     HandshakeFailure::abort(NetError::Proxy(format!("Build egress: {e}")))
                 })?;
+                #[cfg(test)]
+                let connector_data = match test_tls {
+                    Some(mut config) => {
+                        config.set_server_name(server_host.clone());
+                        sessions.connector_data(&config).unwrap()
+                    }
+                    None => connector_data,
+                };
                 let tls = tokio::time::timeout(
                     EGRESS_TLS_TIMEOUT,
                     tls_connect(ServiceInput::new(stream), Some(connector_data)),
                 )
                 .await
                 .map_err(|_| HandshakeFailure::retry(NetError::Timeout))?
-                .map_err(|e| HandshakeFailure::retry(tls_error(&e.to_string())))?;
+                .map_err(|e| tls_handshake_failure(&e))?;
 
                 let resumed = tls.ssl_ref().session_reused();
                 let ech_accepted = tls.ssl_ref().ech_accepted();
@@ -848,14 +881,18 @@ impl HttpEgressClient {
                 // 握手放进独立任务：rama 的 h2 握手 future 跨 await 持有借用，
                 // 直接留在这里会让编译器无法证明本 future 对所有生命周期 Send
                 let input = ConnectRequest::new(HostWithPort::new(server_host, port));
-                let established = tokio::spawn(http_connect(tls, input, exec))
-                    .await
-                    .map_err(|e| {
-                        HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}")))
-                    })?
-                    .map_err(|e| {
-                        HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
-                    })?;
+                // 普通 JoinHandle 在丢弃时会脱离外层继续运行；取消请求或
+                // 备用路径胜出时必须终止这个握手，避免遗留 socket/任务。
+                let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+                    http_connect(tls, input, exec),
+                ))
+                .await
+                .map_err(|e| {
+                    HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}")))
+                })?
+                .map_err(|e| {
+                    HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
+                })?;
                 let conn = Conn {
                     id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
                     service: established.conn,
@@ -925,6 +962,30 @@ fn replicate(error: &BoxError) -> NetError {
 }
 
 /// TLS 握手失败的分类：证书校验失败单列，宿主据此提示证书问题而不是网络不通。
+fn tls_handshake_failure<S>(error: &TlsConnectError<S>) -> HandshakeFailure {
+    match error {
+        TlsConnectError::Handshake {
+            error: handshake, ..
+        } if handshake.as_ssl_error_stack().is_some_and(|stack| {
+            stack
+                .iter()
+                .any(|error| error.reason() == Some("ECH_REJECTED"))
+        }) =>
+        {
+            // BoringSSL 只有完成公共名称的证书认证后才返回 ECH_REJECTED。
+            // 其他错误不能调用 get_ech_retry_configs，否则会触发 BoringSSL 断言。
+            match handshake.ssl() {
+                Some(ssl) => HandshakeFailure::authenticated_ech_retry(
+                    ssl.get_ech_retry_configs().unwrap_or_default().to_vec(),
+                ),
+                None => HandshakeFailure::abort(tls_error(&error.to_string())),
+            }
+        }
+        TlsConnectError::Builder(_) => HandshakeFailure::abort(tls_error(&error.to_string())),
+        _ => HandshakeFailure::retry(tls_error(&error.to_string())),
+    }
+}
+
 fn tls_error(message: &str) -> NetError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("certificate") || lower.contains("cert_verify") {
@@ -1017,7 +1078,11 @@ fn authority_of<B>(request: &Request<B>) -> Result<(String, u16), BoxError> {
 
 fn pool_key(template: Option<&FingerprintTemplate>, host: &str, port: u16) -> String {
     let generation = template.map_or(0, |template| template.generation);
-    format!("{host}:{port}#{generation}")
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}#{generation}")
+    } else {
+        format!("{host}:{port}#{generation}")
+    }
 }
 
 /// HTTP/2 连接结束后其准入状态随之释放，尝试准入即可判断连接是否仍可用。
@@ -1136,6 +1201,137 @@ fn reorder_headers(headers: &HeaderMap, order: &[String]) -> HeaderMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 真实 BoringSSL 拒绝路径：公共名称通过证书校验后才可提取重试配置。
+    #[tokio::test]
+    async fn authenticated_ech_rejection_updates_keys_or_disables_once() {
+        use crate::ech_test_keys::{ECH_CONFIG, ECH_KEY};
+        use rama::tls::boring::core::{
+            hpke::HpkeKey,
+            pkey::PKey,
+            ssl::{SslAcceptor, SslEchKeys, SslMethod},
+            tokio::accept,
+            x509::X509,
+        };
+        let list = |config: &[u8]| {
+            let mut list = (config.len() as u16).to_be_bytes().to_vec();
+            list.extend_from_slice(config);
+            list
+        };
+        for server_supports_ech in [true, false] {
+            let (chain, key) = rama_crypto::cert::generate_server_auth(
+                rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                    rama::net::address::Domain::from_static("ech.com"),
+                ),
+            )
+            .unwrap();
+            let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
+            acceptor
+                .set_certificate(&X509::from_der(chain[0].as_ref()).unwrap())
+                .unwrap();
+            acceptor
+                .set_private_key(&PKey::private_key_from_der(key.secret_der()).unwrap())
+                .unwrap();
+            let mut new_config = ECH_CONFIG.to_vec();
+            new_config[4] = 2; // 服务端轮换 config_id，旧 DNS 配置仍是 1。
+            if server_supports_ech {
+                let mut keys = SslEchKeys::builder().unwrap();
+                keys.add_key(
+                    true,
+                    &new_config,
+                    HpkeKey::dhkem_x25519_sha256(ECH_KEY).unwrap(),
+                )
+                .unwrap();
+                acceptor.set_ech_keys(&keys.build()).unwrap();
+            }
+            let acceptor = Arc::new(acceptor.build());
+            let config = TlsClientConfig::new()
+                .with_server_name(Host::from_static("ech.com"))
+                .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+                .unwrap();
+            let mut data = TlsConnectorData::try_from(&config).unwrap();
+            data.config.set_ech_config_list(&list(ECH_CONFIG)).unwrap();
+            let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+            let server = tokio::spawn({
+                let acceptor = acceptor.clone();
+                async move {
+                    let _ = accept(&acceptor, server_io).await;
+                }
+            });
+            let error = match tls_connect(ServiceInput::new(client_io), Some(data)).await {
+                Ok(_) => panic!("旧 ECH 配置应该被拒绝"),
+                Err(error) => error,
+            };
+            let failure = tls_handshake_failure(&error);
+            assert!(failure.retryable);
+            let retry = failure
+                .ech_retry_configs()
+                .expect("只有认证拒绝可携带重试信息");
+            if server_supports_ech {
+                assert_eq!(retry, list(&new_config));
+            } else {
+                assert!(retry.is_empty());
+            }
+            server.await.unwrap();
+
+            // 新连接使用服务端确认的配置，保留相同证书校验要求。
+            let mut data = TlsConnectorData::try_from(&config).unwrap();
+            if !retry.is_empty() {
+                data.config.set_ech_config_list(retry).unwrap();
+            }
+            let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+            let server = tokio::spawn(async move { accept(&acceptor, server_io).await.is_ok() });
+            let tls = tls_connect(ServiceInput::new(client_io), Some(data))
+                .await
+                .unwrap();
+            assert_eq!(tls.ssl_ref().ech_accepted(), server_supports_ech);
+            assert!(server.await.unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn untrusted_ech_rejection_never_authorizes_retry_without_ech() {
+        use crate::ech_test_keys::ECH_CONFIG;
+        use rama::tls::boring::core::{
+            pkey::PKey,
+            ssl::{SslAcceptor, SslMethod},
+            tokio::accept,
+            x509::X509,
+        };
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("ech.com"),
+            ),
+        )
+        .unwrap();
+        let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
+        acceptor
+            .set_certificate(&X509::from_der(chain[0].as_ref()).unwrap())
+            .unwrap();
+        acceptor
+            .set_private_key(&PKey::private_key_from_der(key.secret_der()).unwrap())
+            .unwrap();
+        let acceptor = acceptor.build();
+        let mut config = TlsClientConfig::new().with_server_name(Host::from_static("ech.com"));
+        config.set_platform_verifier();
+        let mut data = TlsConnectorData::try_from(&config).unwrap();
+        let mut list = (ECH_CONFIG.len() as u16).to_be_bytes().to_vec();
+        list.extend_from_slice(ECH_CONFIG);
+        data.config.set_ech_config_list(&list).unwrap();
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let server = tokio::spawn(async move {
+            let _ = accept(&acceptor, server_io).await;
+        });
+        let error = match tls_connect(ServiceInput::new(client_io), Some(data)).await {
+            Ok(_) => panic!("未信任的公共名称证书不能通过"),
+            Err(error) => error,
+        };
+        let failure = tls_handshake_failure(&error);
+        assert!(!failure.retryable);
+        assert!(failure.ech_retry_configs().is_none());
+        assert!(matches!(failure.error, NetError::Certificate(_)));
+        server.await.unwrap();
+    }
 
     #[test]
     fn standard_tls_applies_ech_before_browser_template_is_available() {
@@ -1437,6 +1633,83 @@ mod tests {
         assert_eq!(client.pooled_connections(), (0, 0));
         let info = get_ok(&client, port).await;
         assert!(!info.reused);
+        assert_eq!(accepted.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_tls_blackhole_shares_failure_and_releases_transport() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let closed = Arc::new(AtomicUsize::new(0));
+        let server = tokio::spawn({
+            let accepted = accepted.clone();
+            let closed = closed.clone();
+            async move {
+                while let Ok((mut socket, _)) = listener.accept().await {
+                    accepted.fetch_add(1, Ordering::Relaxed);
+                    let closed = closed.clone();
+                    tokio::spawn(async move {
+                        let mut hello = Vec::new();
+                        socket.read_to_end(&mut hello).await.unwrap();
+                        assert!(!hello.is_empty(), "应确实发出 ClientHello 后卡住");
+                        closed.fetch_add(1, Ordering::Relaxed);
+                    });
+                }
+            }
+        });
+        let egress = EgressConnector::new(None, None, None, None, Duration::from_millis(200));
+        let client = HttpEgressClient::new(Arc::new(egress), None);
+        let started = Instant::now();
+        let responses = futures_join_all(
+            (0..12)
+                .map(|_| {
+                    let request = Request::builder()
+                        .uri(format!("https://127.0.0.1:{port}/image"))
+                        .body(Body::empty())
+                        .unwrap();
+                    client.send(request, None, None)
+                })
+                .collect(),
+        )
+        .await;
+        assert!(responses.iter().all(Result::is_err));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            1,
+            "同批失败不能串行重复握手"
+        );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while closed.load(Ordering::Relaxed) != 1 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(client.pool.capacity.available_permits(), MAX_CONNECTIONS);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn network_reset_does_not_repopulate_pool_from_old_inflight_response() {
+        let (port, accepted) = h1_server(Duration::from_millis(150), false).await;
+        let client = plain_client();
+        let first = get_ok(&client, port);
+        let reset = async {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while accepted.load(Ordering::Relaxed) == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            client.reset_connections().await;
+        };
+        tokio::join!(first, reset);
+        assert_eq!(client.pooled_connections(), (0, 0));
+        let next = get_ok(&client, port).await;
+        assert!(!next.reused);
         assert_eq!(accepted.load(Ordering::Relaxed), 2);
     }
 

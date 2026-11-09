@@ -122,5 +122,24 @@
   "networkMap_tapToConfigure": "Tap to configure · Lines show setting relationships",
   "networkMap_showList": "Switch to list",
   "networkMap_showGraph": "Switch to diagram",
-  "networkMap_restarting": "Restarting network core…"
+  "networkMap_restarting": "Restarting network core…",
+  "networkStatus_recentResponse": "Recent response from {host}",
+  "@networkStatus_recentResponse": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "networkStatus_recentFailure": "{host}: {count} failed requests",
+  "@networkStatus_recentFailure": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

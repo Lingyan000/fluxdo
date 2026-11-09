@@ -13,6 +13,7 @@ import '../../network_logger.dart';
 import '../doh/ech_dns_policy.dart';
 import '../proxy/proxy_settings_service.dart';
 import 'net_core_bindings.dart';
+import 'network_health_monitor.dart';
 
 /// 网络核心的生命周期与配置。
 ///
@@ -55,8 +56,8 @@ class NetCoreService {
   /// 本地监听端口（WebView 代理与采样探针用）。
   int? get port => _status.port;
 
-  /// 按配置启动或重启核心。配置未变时不重启。
-  Future<bool> start(NetCoreConfig config) {
+  /// 按配置启动核心；显式重启不受相同配置去重影响。
+  Future<bool> start(NetCoreConfig config, {bool forceRestart = false}) {
     final result = _serialize(() async {
       if (!_bindings.isAvailable) {
         _lastError = _bindings.lastInitError ?? '网络核心不可用';
@@ -68,7 +69,7 @@ class NetCoreService {
       // 签名按探测后的配置算：安卓系统代理变了也要重启，否则 dio 与 WebView 出口不一致
       final resolved = await config.withDetectedSystemProxy();
       final signature = jsonEncode(resolved.toJson());
-      if (_status.running && signature == _configSignature) {
+      if (!forceRestart && _status.running && signature == _configSignature) {
         return true;
       }
       final nativeConfig = resolved.toJson();
@@ -98,6 +99,7 @@ class NetCoreService {
       final configJson = jsonEncode(nativeConfig);
       final restarting = _status.running;
       final started = DateTime.now();
+      NetworkHealthMonitor.instance.reset(reason: 'core_start');
       final port = _bindings.start(configJson);
       if (port < 0) {
         // 具体原因由核心日志给出（同在网络日志里）
@@ -114,7 +116,7 @@ class NetCoreService {
       _configSignature = signature;
       _refreshStatus();
       NetworkLogger.log(
-        '[NetCore] ${restarting ? '已按新配置重启' : '已启动'}，'
+        '[NetCore] ${restarting ? (forceRestart ? '已手动重启' : '已按新配置重启') : '已启动'}，'
         '端口 $port，耗时 ${DateTime.now().difference(started).inMilliseconds}ms'
         '（${resolved.describe()}）',
       );
@@ -146,6 +148,7 @@ class NetCoreService {
   Future<void> stop() {
     return _serialize(() async {
       if (!_status.running) return;
+      NetworkHealthMonitor.instance.reset(reason: 'core_stop');
       _bindings.shutdown();
       _configSignature = null;
       _publish(const NetCoreStatus.stopped());
@@ -160,6 +163,7 @@ class NetCoreService {
   /// 不主动丢弃会一直等到 NAT 超时才失败。
   void resetConnections({String reason = ''}) {
     if (!_status.running) return;
+    NetworkHealthMonitor.instance.reset(reason: reason);
     _bindings.resetConnections();
     NetworkLogger.log('[NetCore] 已清空连接池${reason.isEmpty ? '' : '（$reason）'}');
   }
@@ -247,6 +251,7 @@ class NetCoreConfig {
     this.serverIp,
     this.webViewMitm = false,
     this.fingerprintCachePath,
+    this.http3CachePath,
     this.fingerprintUserAgent,
     this.fingerprintPreset,
     this.caCertPem,
@@ -270,6 +275,7 @@ class NetCoreConfig {
   /// WebView 是否经本地监听做 MITM（DoH / 代理模式）。
   final bool webViewMitm;
   final String? fingerprintCachePath;
+  final String? http3CachePath;
   final String? fingerprintUserAgent;
   final String? fingerprintPreset;
   final String? caCertPem;
@@ -297,6 +303,7 @@ class NetCoreConfig {
     serverIp: serverIp,
     webViewMitm: webViewMitm,
     fingerprintCachePath: fingerprintCachePath,
+    http3CachePath: http3CachePath,
     fingerprintUserAgent: fingerprintUserAgent,
     fingerprintPreset: fingerprintPreset,
     caCertPem: caCertPem,
@@ -323,6 +330,7 @@ class NetCoreConfig {
       'fingerprint_user_agent': fingerprintUserAgent,
     if (fingerprintCachePath != null)
       'fingerprint_cache_path': fingerprintCachePath,
+    if (http3CachePath != null) 'http3_cache_path': http3CachePath,
     if (caCertPem != null) 'ca_cert_pem': caCertPem,
     if (caKeyPem != null) 'ca_key_pem': caKeyPem,
   };

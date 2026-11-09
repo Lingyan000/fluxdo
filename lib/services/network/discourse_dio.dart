@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../constants.dart';
+import 'deadline_dio.dart';
 import 'adapters/platform_adapter.dart';
 import 'cookie/app_cookie_manager.dart';
 import 'cookie/cookie_jar_service.dart';
@@ -23,6 +24,8 @@ class DiscourseDio {
   static Dio create({
     Duration connectTimeout = const Duration(seconds: 30),
     Duration receiveTimeout = const Duration(seconds: 30),
+    // 普通有限读取的产品预算；不是 OkHttp 默认值。流式/写操作需要显式配置。
+    Duration? callTimeout = const Duration(seconds: 30),
     Map<String, dynamic>? defaultHeaders,
     String? baseUrl,
 
@@ -34,7 +37,7 @@ class DiscourseDio {
     bool enableCookies = true,
     bool enableNetworkLog = true,
   }) {
-    final dio = Dio(
+    final dio = DeadlineDio(
       BaseOptions(
         baseUrl: baseUrl ?? AppConstants.baseUrl,
         connectTimeout: connectTimeout,
@@ -46,6 +49,7 @@ class DiscourseDio {
         validateStatus: (status) =>
             status != null && status >= 200 && status < 400,
       ),
+      callTimeout,
     );
 
     // 大响应(>50KB)的 JSON 解码移入 isolate:话题列表/详情等大 JSON

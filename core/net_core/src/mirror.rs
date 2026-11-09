@@ -567,12 +567,14 @@ impl MirrorRelay {
                         .insert(ConnectorTarget(HostWithPort::new(server_host, port)));
                     // 握手放进独立任务：rama 握手 future 内部跨 await 持有借用，
                     // 直接嵌进泛型的重试循环会让编译器无法证明外层 future 对所有生命周期 Send
-                    let handshake = tokio::spawn(async move {
-                        let handshake = this
-                            .tls
-                            .handshake(BridgeIo(ingress_input, egress), Some(built.connector_data));
-                        tokio::time::timeout(EGRESS_TLS_TIMEOUT, handshake).await
-                    });
+                    let handshake =
+                        tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+                            let handshake = this.tls.handshake(
+                                BridgeIo(ingress_input, egress),
+                                Some(built.connector_data),
+                            );
+                            tokio::time::timeout(EGRESS_TLS_TIMEOUT, handshake).await
+                        }));
                     let outcome = handshake.await.map_err(|e| {
                         HandshakeFailure::abort(NetError::Proxy(format!(
                             "Mirror handshake task: {e}"
@@ -581,6 +583,12 @@ impl MirrorRelay {
                     match outcome {
                         Ok(Ok(tls_bridge)) => Ok((tls_bridge, ech_applied)),
                         Ok(Err(error)) => match error.kind() {
+                            TlsMitmRelayErrorKind::Handshake {
+                                direction: TlsMitmRelayErrorDirection::Egress,
+                                classification: HandshakeRelayClassification::CertTrust,
+                            } => Err(HandshakeFailure::abort(NetError::Certificate(
+                                error.to_string(),
+                            ))),
                             TlsMitmRelayErrorKind::Handshake {
                                 direction: TlsMitmRelayErrorDirection::Egress,
                                 ..

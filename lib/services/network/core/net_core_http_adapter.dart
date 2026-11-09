@@ -10,6 +10,8 @@ import '../../network_logger.dart';
 import '../../log/log_policy.dart';
 import 'net_core_bindings.dart';
 import '../cookie/csrf_session_trace.dart';
+import '../flux_request_spec.dart';
+import 'network_health_monitor.dart';
 
 /// [Response.extra] 里网络核心附带的连接信息：
 /// `reused` / `tlsResumed` / `connectMs` / `ttfbMs`。
@@ -274,6 +276,11 @@ class _PendingRequest {
     required this.onAbandon,
     required this.onFinished,
   }) {
+    observation = NetworkHealthMonitor.instance.begin(
+      options.uri,
+      traceId: options.extra['traceId']?.toString(),
+      requestId: options.extra['coreRequestId'] as int?,
+    );
     // 订阅、暂停、恢复转给核心；异步回调在途的数据另由 Rust 字节预算约束。
     _body = StreamController<Uint8List>(
       onListen: onResume,
@@ -284,6 +291,7 @@ class _PendingRequest {
   }
 
   final RequestOptions options;
+  late final CoreRequestObservation observation;
 
   /// 终态（完成、出错、被放弃）时调用一次，用于移出在途表。
   final VoidCallback onFinished;
@@ -325,6 +333,13 @@ class _PendingRequest {
   void onHead(String json) {
     if (_head.isCompleted) return;
     final decoded = jsonDecode(json) as Map<String, dynamic>;
+    NetworkHealthMonitor.instance.headers(
+      observation,
+      statusCode: decoded['status'] as int,
+      protocol: decoded['http_version'] as String?,
+      connectMs: decoded['connect_ms'] as int?,
+      ttfbMs: decoded['ttfb_ms'] as int?,
+    );
     if ((decoded['status'] as int) >= 400) stopUpload();
     final trace = options.extra[CsrfSessionTrace.extraKey];
     if (trace is Map && decoded['request_trace'] is Map) {
@@ -367,6 +382,7 @@ class _PendingRequest {
 
   void onDone() {
     if (_finished) return;
+    NetworkHealthMonitor.instance.completed(observation);
     _finished = true;
     _finish();
     if (!_body.isClosed) _body.close();
@@ -377,6 +393,12 @@ class _PendingRequest {
     _finished = true;
     _finish();
     final error = _toDioException(json);
+    // 用户取消和长轮询的正常等待截止不作为连通性故障。
+    if (error.type != DioExceptionType.cancel &&
+        !(options.spec.isSilent &&
+            error.type == DioExceptionType.receiveTimeout)) {
+      NetworkHealthMonitor.instance.failed(observation, kind: error.type.name);
+    }
     if (!_head.isCompleted) {
       _head.completeError(error);
       // 头都没拿到，响应体流不会被订阅，直接关掉避免悬挂
