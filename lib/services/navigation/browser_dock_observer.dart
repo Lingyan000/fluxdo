@@ -8,9 +8,12 @@ const fullscreenVideoRouteName = '/fullscreen-video';
 /// 底栏给浏览器、沉浸式查看器和模态弹层让位。
 class BrowserDockObserver extends NavigatorObserver {
   final hidden = ValueNotifier(false);
+  final routeChanges = ValueNotifier(0);
   final List<Route<dynamic>> _routes = [];
   bool _scheduled = false;
   Route<dynamic>? get currentRoute => _routes.lastOrNull;
+  Route<dynamic>? get previousRoute =>
+      _routes.length > 1 ? _routes[_routes.length - 2] : null;
 
   void _update() {
     // 普通 push 浏览器时首帧就给全屏页面让位；若正在 build，仍遵守
@@ -19,6 +22,7 @@ class BrowserDockObserver extends NavigatorObserver {
         SchedulerBinding.instance.schedulerPhase !=
             SchedulerPhase.persistentCallbacks) {
       hidden.value = true;
+      routeChanges.value++;
       return;
     }
     // Navigator 的初始路由可能在 build 期间安装，合并到帧末通知宿主。
@@ -27,6 +31,7 @@ class BrowserDockObserver extends NavigatorObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduled = false;
       final route = _routes.lastOrNull;
+      routeChanges.value++;
       hidden.value =
           route != null &&
           (route is PopupRoute ||

@@ -26,13 +26,14 @@ double browserDockOpenProgress(double value, {bool closing = false}) {
 double browserDockPageOpacity(double progress) =>
     Curves.easeInOut.transform((progress / .24).clamp(0.0, 1.0));
 
-Rect browserDockRect(Size size, double safeBottom) {
-  final width = (size.width - browserDockInset * 2).clamp(
+Rect browserDockRect(Size size, double safeBottom, {double leftInset = 0}) {
+  final left = leftInset.clamp(0.0, size.width);
+  final width = (size.width - left - browserDockInset * 2).clamp(
     0.0,
     browserDockMaxWidth,
   );
   return Rect.fromLTWH(
-    (size.width - width) / 2,
+    left + (size.width - left - width) / 2,
     size.height - safeBottom - browserDockHeight + 8,
     width,
     browserDockCardHeight,
@@ -137,11 +138,13 @@ class BrowserDockViewport extends InheritedWidget {
     super.key,
     required this.media,
     required this.motion,
+    this.dockLeftInset = 0,
     required super.child,
   });
 
   final MediaQueryData media;
   final BrowserDockMotion motion;
+  final double dockLeftInset;
 
   static BrowserDockViewport? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<BrowserDockViewport>();
@@ -151,5 +154,7 @@ class BrowserDockViewport extends InheritedWidget {
 
   @override
   bool updateShouldNotify(BrowserDockViewport oldWidget) =>
-      media != oldWidget.media || motion != oldWidget.motion;
+      media != oldWidget.media ||
+      motion != oldWidget.motion ||
+      dockLeftInset != oldWidget.dockLeftInset;
 }

@@ -7,9 +7,10 @@ import '../../l10n/s.dart';
 import '../../services/browser_tabs.dart';
 import '../../services/navigation/browser_dock_observer.dart';
 import 'browser_dock_motion.dart';
+import 'browser_dock_content_layout.dart';
 import 'browser_tab_overview.dart';
 
-/// 在根导航器外预留底部空间，导航、Toast、浮球随内容区一起避让。
+/// 普通页面在根导航器外避让底栏；带常驻侧栏的页面只缩短主内容区。
 class BrowserDockHost extends StatefulWidget {
   const BrowserDockHost({
     super.key,
@@ -42,6 +43,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
   LocalHistoryEntry? _overviewHistory;
   final _overviewFocus = FocusNode(debugLabel: 'browser overview');
   final _motion = BrowserDockMotion();
+  final _contentLayouts = BrowserDockContentLayouts();
   List<BrowserTabSession> _lastBarTabs = const [];
   bool _disposing = false;
   bool _restoreDragging = false;
@@ -94,6 +96,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
     _overviewFocus.dispose();
     _overviewAnimation.dispose();
     _motion.dispose();
+    _contentLayouts.dispose();
     super.dispose();
   }
 
@@ -212,6 +215,8 @@ class _BrowserDockHostState extends State<BrowserDockHost>
     listenable: Listenable.merge([
       widget.controller,
       widget.observer.hidden,
+      widget.observer.routeChanges,
+      _contentLayouts,
       _motion.stateChanges,
     ]),
     builder: (context, _) {
@@ -219,6 +224,12 @@ class _BrowserDockHostState extends State<BrowserDockHost>
       final justFinishedMotion = _wasMotionActive && !_motion.active;
       _wasMotionActive = _motion.active;
       final media = MediaQuery.of(context);
+      final contentLeft = _contentLayouts.leftFor(widget.observer.currentRoute);
+      final dockLeft =
+          contentLeft ??
+          (_motion.active
+              ? _contentLayouts.leftFor(widget.observer.previousRoute) ?? 0.0
+              : 0.0);
       final browserInFront =
           widget.observer.currentRoute?.settings.name == browserPageRouteName;
       final tabs = widget.controller.tabs;
@@ -243,6 +254,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
       return BrowserDockViewport(
         media: media,
         motion: _motion,
+        dockLeftInset: dockLeft,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -265,29 +277,17 @@ class _BrowserDockHostState extends State<BrowserDockHost>
                     ? 1.0
                     : (reserved / (browserDockHeight + media.padding.bottom))
                           .clamp(0.0, 1.0);
-                final bottom = (media.padding.bottom - reserved).clamp(
-                  0.0,
-                  double.infinity,
-                );
-                final contentMedia = media.copyWith(
-                  size: Size(
-                    media.size.width,
-                    (media.size.height - reserved).clamp(0.0, double.infinity),
-                  ),
-                  padding: media.padding.copyWith(bottom: bottom),
-                  viewPadding: media.viewPadding.copyWith(
-                    bottom: (media.viewPadding.bottom - reserved).clamp(
-                      0.0,
-                      double.infinity,
-                    ),
-                  ),
+                final navigatorInset = contentLeft == null ? reserved : 0.0;
+                final contentMedia = browserDockContentMedia(
+                  media,
+                  navigatorInset,
                 );
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     // 覆盖内容区与底栏之间的亚像素接缝，防止收缩末帧透出底色。
                     Positioned(
-                      left: 0,
+                      left: dockLeft,
                       right: 0,
                       bottom: 0,
                       height: reserved.ceilToDouble(),
@@ -295,47 +295,56 @@ class _BrowserDockHostState extends State<BrowserDockHost>
                         color: Theme.of(context).colorScheme.surface,
                       ),
                     ),
-                    Column(
-                      children: [
-                        Expanded(
-                          child: MediaQuery(
-                            data: contentMedia,
-                            child: widget.child,
-                          ),
+                    Positioned.fill(
+                      bottom: navigatorInset,
+                      child: BrowserDockContentScope(
+                        layouts: _contentLayouts,
+                        route: contentLeft == null
+                            ? null
+                            : widget.observer.currentRoute,
+                        bottomInset: contentLeft == null ? 0 : reserved,
+                        child: MediaQuery(
+                          data: contentMedia,
+                          child: widget.child,
                         ),
-                        SizedBox(
-                          height: reserved,
-                          child: ColoredBox(
-                            color: Theme.of(context).colorScheme.surface,
-                            child: ClipRect(
-                              child: OverflowBox(
-                                alignment: Alignment.topCenter,
-                                minHeight:
-                                    browserDockHeight + media.padding.bottom,
-                                maxHeight:
-                                    browserDockHeight + media.padding.bottom,
-                                child: IgnorePointer(
-                                  ignoring: !visible || _motion.active,
-                                  child: ExcludeSemantics(
-                                    excluding: !visible,
-                                    child: displayTabs.isEmpty
-                                        ? const SizedBox.shrink()
-                                        : Opacity(
-                                            opacity: exitOpacity,
-                                            child: Overlay.wrap(
-                                              child: _buildBar(
-                                                context,
-                                                displayTabs,
-                                              ),
+                      ),
+                    ),
+                    Positioned(
+                      left: dockLeft,
+                      right: 0,
+                      bottom: 0,
+                      height: reserved,
+                      child: ColoredBox(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topCenter,
+                            minHeight: browserDockHeight + media.padding.bottom,
+                            maxHeight: browserDockHeight + media.padding.bottom,
+                            child: IgnorePointer(
+                              ignoring: !visible || _motion.active,
+                              child: ExcludeSemantics(
+                                excluding: !visible,
+                                child: displayTabs.isEmpty
+                                    ? const SizedBox.shrink()
+                                    : Opacity(
+                                        opacity: exitOpacity,
+                                        child: MediaQuery.removePadding(
+                                          context: context,
+                                          removeLeft: dockLeft > 0,
+                                          child: Overlay.wrap(
+                                            child: _buildBar(
+                                              context,
+                                              displayTabs,
                                             ),
                                           ),
-                                  ),
-                                ),
+                                        ),
+                                      ),
                               ),
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 );
@@ -348,7 +357,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
                 animation: _motion,
                 child: Overlay.wrap(child: _buildCard(context, barTabs)),
                 builder: (context, child) =>
-                    _buildMovingCard(context, media, child!),
+                    _buildMovingCard(context, media, dockLeft, child!),
               ),
             Overlay.wrap(
               child: Focus(
@@ -447,11 +456,12 @@ class _BrowserDockHostState extends State<BrowserDockHost>
   Widget _buildMovingCard(
     BuildContext context,
     MediaQueryData media,
+    double leftInset,
     Widget card,
   ) {
     final t = _motion.openProgress;
     final rect = Rect.lerp(
-      browserDockRect(media.size, media.padding.bottom),
+      browserDockRect(media.size, media.padding.bottom, leftInset: leftInset),
       Offset.zero & media.size,
       t,
     )!;

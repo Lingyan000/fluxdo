@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'adaptive_navigation.dart';
 import 'category_shortcuts.dart';
 import '../topic/category_tab_manager_sheet.dart';
 import '../topic/category_drawer.dart';
+import '../browser/browser_dock_content_layout.dart';
 
 /// 自适应 Scaffold
 ///
@@ -91,141 +93,171 @@ class AdaptiveScaffold extends ConsumerWidget {
               (useAcrylicRail ? 0.0 : 1.0)
         : 0.0;
 
-    final content = Stack(
-      children: [
-        Scaffold(
-          backgroundColor: useAcrylicRail ? Colors.transparent : null,
-          // 底栏隐藏改为整条平移出屏（paint-only），内容延伸到底栏后面;
-          // body 高度不再随底栏显隐变化，收放过程零 relayout
-          extendBody: true,
-          body: Row(
-            children: [
-              if (showRail) ...[
-                AdaptiveNavigationRail(
-                  selectedIndex: railSelectedIndex,
-                  onDestinationSelected: (index) {
-                    sidebarCategoryController.state = null;
-                    onDestinationSelected(index);
-                  },
-                  destinations: destinations,
-                  topDestinationCount: destinations.isEmpty
-                      ? 0
-                      : PlatformUtils.isDesktop
-                      ? 2
-                      : 1,
-                  bottomDestinationCount:
-                      destinations.length <= (PlatformUtils.isDesktop ? 2 : 1)
-                      ? 0
-                      : destinations.length - (PlatformUtils.isDesktop ? 2 : 1),
-                  categoryShortcuts: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CategoryShortcuts(
-                        extended: extendedRail,
-                        onCategorySelected: (categoryId) {
-                          sidebarCategoryController.state = categoryId;
-                          // 再次点击当前板块也必须形成一次明确导航事件（高亮
-                          // 状态 provider 同值会被去重），首页靠 tap 事件从
-                          // 深层平行视界退回板块列表。
-                          final tap = ref.read(sidebarCategoryTapProvider);
-                          ref
-                              .read(sidebarCategoryTapProvider.notifier)
-                              .state = (
-                            categoryId: categoryId,
-                            nonce: (tap?.nonce ?? 0) + 1,
-                          );
-                          if (selectedIndex != 0) {
-                            onDestinationSelected(0);
-                          }
-                          ref
-                                  .read(currentTabCategoryIdProvider.notifier)
-                                  .state =
-                              categoryId;
-                        },
+    return BrowserDockContentLayout(
+      leftInset: overlayLeftInset,
+      builder: (context, dockInset) {
+        final contentMedia = browserDockContentMedia(
+          MediaQuery.of(context),
+          dockInset,
+        );
+        final content = Stack(
+          children: [
+            Scaffold(
+              backgroundColor: useAcrylicRail ? Colors.transparent : null,
+              // 底栏隐藏改为整条平移出屏（paint-only），内容延伸到底栏后面;
+              // body 高度不再随底栏显隐变化，收放过程零 relayout
+              extendBody: true,
+              body: Row(
+                children: [
+                  if (showRail) ...[
+                    AdaptiveNavigationRail(
+                      selectedIndex: railSelectedIndex,
+                      onDestinationSelected: (index) {
+                        sidebarCategoryController.state = null;
+                        onDestinationSelected(index);
+                      },
+                      destinations: destinations,
+                      topDestinationCount: destinations.isEmpty
+                          ? 0
+                          : PlatformUtils.isDesktop
+                          ? 2
+                          : 1,
+                      bottomDestinationCount:
+                          destinations.length <=
+                              (PlatformUtils.isDesktop ? 2 : 1)
+                          ? 0
+                          : destinations.length -
+                                (PlatformUtils.isDesktop ? 2 : 1),
+                      categoryShortcuts: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CategoryShortcuts(
+                            extended: extendedRail,
+                            onCategorySelected: (categoryId) {
+                              sidebarCategoryController.state = categoryId;
+                              // 再次点击当前板块也必须形成一次明确导航事件（高亮
+                              // 状态 provider 同值会被去重），首页靠 tap 事件从
+                              // 深层平行视界退回板块列表。
+                              final tap = ref.read(sidebarCategoryTapProvider);
+                              ref
+                                  .read(sidebarCategoryTapProvider.notifier)
+                                  .state = (
+                                categoryId: categoryId,
+                                nonce: (tap?.nonce ?? 0) + 1,
+                              );
+                              if (selectedIndex != 0) {
+                                onDestinationSelected(0);
+                              }
+                              ref
+                                      .read(
+                                        currentTabCategoryIdProvider.notifier,
+                                      )
+                                      .state =
+                                  categoryId;
+                            },
+                          ),
+                          _SidebarCategoryAddButton(
+                            extended: extendedRail,
+                            onOpenCategoryManager: () async {
+                              sidebarCategoryController.state = null;
+                              if (selectedIndex != 0) {
+                                onDestinationSelected(0);
+                              }
+                              await Navigator.of(context).push(
+                                InteractionPageRoute(
+                                  builder: (_) =>
+                                      const PinnedCategoryEditPage(),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                      _SidebarCategoryAddButton(
-                        extended: extendedRail,
-                        onOpenCategoryManager: () async {
-                          sidebarCategoryController.state = null;
-                          if (selectedIndex != 0) {
-                            onDestinationSelected(0);
-                          }
-                          await Navigator.of(context).push(
-                            InteractionPageRoute(
-                              builder: (_) => const PinnedCategoryEditPage(),
-                            ),
-                          );
-                        },
+                      extended: extendedRail,
+                      leading: railLeading,
+                      bottomLeading: railBottomLeading,
+                    ),
+                    if (!useAcrylicRail)
+                      const VerticalDivider(thickness: 1, width: 1),
+                  ],
+                  Expanded(
+                    key: const ValueKey('adaptive-body'),
+                    // 桌面 acrylic 模式：用 Material 给 body 提供不透明背景
+                    // TopicsScreen 等页面没有自己的 Scaffold，
+                    // Material 和 Scaffold 内部是同一个组件，不会产生双层背景。
+                    // Material 必须**恒驻**(acrylic 与否只切颜色):acrylic 随
+                    // showRail 翻转(深层平行视界隐藏 Rail→退栈 Rail 回来),
+                    // 若按条件插拔 Material,body 链型变化会把整棵页面子树
+                    // (含平行视界容器/切换动画 State)连根重建——退栈动画
+                    // 直接丢失,只剩瞬切。
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: dockInset),
+                      child: MediaQuery(
+                        data: contentMedia,
+                        child: Material(
+                          type: useAcrylicRail
+                              ? MaterialType.canvas
+                              : MaterialType.transparency,
+                          color: useAcrylicRail
+                              ? Theme.of(context).colorScheme.surface
+                              : null,
+                          child: body,
+                        ),
                       ),
-                    ],
+                    ),
                   ),
-                  extended: extendedRail,
-                  leading: railLeading,
-                  bottomLeading: railBottomLeading,
-                ),
-                if (!useAcrylicRail)
-                  const VerticalDivider(thickness: 1, width: 1),
-              ],
-              Expanded(
-                key: const ValueKey('adaptive-body'),
-                // 桌面 acrylic 模式：用 Material 给 body 提供不透明背景
-                // TopicsScreen 等页面没有自己的 Scaffold，
-                // Material 和 Scaffold 内部是同一个组件，不会产生双层背景。
-                // Material 必须**恒驻**(acrylic 与否只切颜色):acrylic 随
-                // showRail 翻转(深层平行视界隐藏 Rail→退栈 Rail 回来),
-                // 若按条件插拔 Material,body 链型变化会把整棵页面子树
-                // (含平行视界容器/切换动画 State)连根重建——退栈动画
-                // 直接丢失,只剩瞬切。
-                child: Material(
-                  type: useAcrylicRail
-                      ? MaterialType.canvas
-                      : MaterialType.transparency,
-                  color: useAcrylicRail
-                      ? Theme.of(context).colorScheme.surface
-                      : null,
-                  child: body,
-                ),
+                ],
               ),
-            ],
-          ),
-          floatingActionButton: floatingActionButton,
-          bottomNavigationBar: showRail || hideNavigationRail
-              ? null
-              : _AnimatedBottomNav(
-                  selectedIndex: selectedIndex,
-                  onDestinationSelected: onDestinationSelected,
-                  destinations: destinations,
-                  forceHidden: hideBottomNavigation,
-                ),
-        ),
-        Positioned.fill(
-          left: overlayLeftInset,
-          child: const SidebarNotificationPanel(),
-        ),
-        // 分类侧栏：宿主挂本层 Stack 末位（盖得住底栏/FAB，被详情页
-        // 路由天然遮挡）。打开方式：☰ / chips ＋ / 首页"全部"tab 整页
-        // 右滑跟手拖出（TabBarView 首缘 overscroll 逐帧喂 dragBy，见
-        // TopicsPage）。受控实现（非 DrawerController：其拖拽驱动是
-        // 私有 API，做不了外部逐帧喂增量的跟手拖出）。
-        ControlledCategoryDrawer(
-          key: CategoryDrawerHost.drawerKey,
-          onPinnedSelected: (category) {
-            // 与 rail 的 CategoryShortcuts 同通路：首页监听
-            // activeSidebarCategoryIdProvider 切分类 tab
-            sidebarCategoryController.state = category.id;
-            if (selectedIndex != 0) {
-              onDestinationSelected(0);
-            }
-            ref.read(currentTabCategoryIdProvider.notifier).state = category.id;
-          },
-        ),
-      ],
-    );
-    // 桌面主内容区由导航切换，不创建移动端的整页位移和底部返回条。
-    if (PlatformUtils.isDesktop) return content;
-    return HomeMiniAppsLayer(
-      enabled: ref.watch(miniAppPullEnabledProvider),
-      child: content,
+              floatingActionButton: floatingActionButton == null
+                  ? null
+                  : Padding(
+                      padding: EdgeInsets.only(
+                        bottom:
+                            (dockInset - MediaQuery.paddingOf(context).bottom)
+                                .clamp(0.0, double.infinity),
+                      ),
+                      child: floatingActionButton,
+                    ),
+              bottomNavigationBar: showRail || hideNavigationRail
+                  ? null
+                  : _AnimatedBottomNav(
+                      selectedIndex: selectedIndex,
+                      onDestinationSelected: onDestinationSelected,
+                      destinations: destinations,
+                      forceHidden: hideBottomNavigation,
+                    ),
+            ),
+            Positioned.fill(
+              left: overlayLeftInset,
+              child: const SidebarNotificationPanel(),
+            ),
+            // 分类侧栏：宿主挂本层 Stack 末位（盖得住底栏/FAB，被详情页
+            // 路由天然遮挡）。打开方式：☰ / chips ＋ / 首页"全部"tab 整页
+            // 右滑跟手拖出（TabBarView 首缘 overscroll 逐帧喂 dragBy，见
+            // TopicsPage）。受控实现（非 DrawerController：其拖拽驱动是
+            // 私有 API，做不了外部逐帧喂增量的跟手拖出）。
+            ControlledCategoryDrawer(
+              key: CategoryDrawerHost.drawerKey,
+              onPinnedSelected: (category) {
+                // 与 rail 的 CategoryShortcuts 同通路：首页监听
+                // activeSidebarCategoryIdProvider 切分类 tab
+                sidebarCategoryController.state = category.id;
+                if (selectedIndex != 0) {
+                  onDestinationSelected(0);
+                }
+                ref.read(currentTabCategoryIdProvider.notifier).state =
+                    category.id;
+              },
+            ),
+          ],
+        );
+        // 桌面主内容区由导航切换，不创建移动端的整页位移和底部返回条。
+        if (PlatformUtils.isDesktop) return content;
+        return HomeMiniAppsLayer(
+          enabled: ref.watch(miniAppPullEnabledProvider),
+          child: content,
+        );
+      },
     );
   }
 }

@@ -253,11 +253,15 @@ class _BrowserRouteSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media =
-        BrowserDockViewport.maybeOf(context)?.media ?? MediaQuery.of(context);
+    final viewport = BrowserDockViewport.maybeOf(context);
+    final media = viewport?.media ?? MediaQuery.of(context);
     final size = media.size;
     final full = Offset.zero & size;
-    final destination = browserDockRect(size, media.padding.bottom);
+    final destination = browserDockRect(
+      size,
+      media.padding.bottom,
+      leftInset: viewport?.dockLeftInset ?? 0,
+    );
     return OverflowBox(
       alignment: Alignment.topLeft,
       minWidth: size.width,
