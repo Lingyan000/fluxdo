@@ -458,6 +458,7 @@ class NetworkSettingsService {
         }
       }
 
+      final fingerprintCachePath = await _fingerprintCachePath();
       final started = await _coreService.start(
         NetCoreConfig(
           bindPort:
@@ -475,7 +476,10 @@ class NetworkSettingsService {
           systemProxy: Platform.isWindows ? _windowsSystemProxy() : null,
           serverIp: current.serverIp,
           webViewMitm: webViewMitm,
-          fingerprintCachePath: await _fingerprintCachePath(),
+          fingerprintCachePath: fingerprintCachePath,
+          http3CachePath: fingerprintCachePath == null
+              ? null
+              : '${File(fingerprintCachePath).parent.path}/http3_services.json',
           fingerprintUserAgent: await AppConstants.getUserAgent(),
           fingerprintPreset:
               current.fingerprintPreset == FingerprintPreset.automatic

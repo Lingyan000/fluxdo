@@ -8,6 +8,7 @@ void main() {
     const config = NetCoreConfig(
       fingerprintUserAgent: 'actual WebView UA',
       fingerprintPreset: 'android-chrome149',
+      http3CachePath: '/app/cache/http3_services.json',
     );
     final copied = config.copyWith(
       systemProxy: const NetCoreProxy(host: 'localhost', port: 7890),
@@ -15,6 +16,10 @@ void main() {
     expect(copied.toJson()['fingerprint_user_agent'], 'actual WebView UA');
     expect(copied.toJson()['fingerprint_platform'], Platform.operatingSystem);
     expect(copied.toJson()['fingerprint_preset'], 'android-chrome149');
+    expect(
+      copied.toJson()['http3_cache_path'],
+      '/app/cache/http3_services.json',
+    );
     expect(
       const NetCoreConfig().toJson().containsKey('fingerprint_preset'),
       false,

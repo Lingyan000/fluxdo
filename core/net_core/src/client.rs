@@ -368,6 +368,8 @@ pub struct HttpEgressClient {
     sessions: ClientSessions,
     exec: Executor,
     h3: Arc<h3::Http3Upgrade>,
+    #[cfg(test)]
+    test_tls: parking_lot::Mutex<Option<TlsClientConfig>>,
 }
 
 impl HttpEgressClient {
@@ -381,11 +383,20 @@ impl HttpEgressClient {
             sessions: ClientSessions::default(),
             exec: Executor::new(),
             h3: Arc::default(),
+            #[cfg(test)]
+            test_tls: Default::default(),
         }
     }
 
     pub(crate) fn with_sessions(mut self, sessions: ClientSessions) -> Self {
         self.sessions = sessions;
+        self
+    }
+
+    pub(crate) fn with_http3_cache(mut self, path: Option<&str>, namespace: &str) -> Self {
+        if let Some(path) = path {
+            self.h3 = Arc::new(h3::Http3Upgrade::with_cache(path.into(), namespace));
+        }
         self
     }
 
@@ -460,7 +471,7 @@ impl HttpEgressClient {
         let secure = scheme == "https";
         let (host, port) = authority_of(&request)?;
         let template = self.templates.as_ref().and_then(|t| t.snapshot());
-        let key = format!("{scheme}:{}", pool_key(template.as_ref(), &host, port));
+        let key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
         let target = Target {
             key: &key,
             template: template.as_ref(),
@@ -510,6 +521,7 @@ impl HttpEgressClient {
         fresh: bool,
     ) -> Result<Response, Failure> {
         let started = Instant::now();
+        let h3_generation = self.h3.generation();
         let checkout = self.checkout(target, fresh);
         let checkout = match connect_timeout {
             Some(limit) => tokio::time::timeout(limit, checkout)
@@ -552,7 +564,7 @@ impl HttpEgressClient {
             Some(limit) => match tokio::time::timeout(limit, exchange).await {
                 Ok(result) => result,
                 Err(_) if checkout.conn.version == Version::HTTP_3 => {
-                    self.h3.failed(target.key);
+                    self.h3.failed(target.key, h3_generation);
                     self.pool.discard(target.key, &checkout.conn);
                     return Err(Failure::Stale(NetError::ReceiveTimeout.into()));
                 }
@@ -563,7 +575,8 @@ impl HttpEgressClient {
         match result {
             Ok(response) => {
                 if target.secure && checkout.conn.version == Version::HTTP_3 {
-                    self.h3.observe(target.key, target.host, response.headers());
+                    self.h3
+                        .observe_at(target.key, target.host, response.headers(), h3_generation);
                 }
                 if target.secure && checkout.conn.version != Version::HTTP_3 {
                     self.h3.observe_and_upgrade(
@@ -572,6 +585,7 @@ impl HttpEgressClient {
                         self.egress.clone(),
                         self.pool.clone(),
                         self.exec.clone(),
+                        h3_generation,
                     );
                 }
                 // 解压层换掉了响应体类型，统一回 Body 交给调用方；
@@ -592,7 +606,7 @@ impl HttpEgressClient {
             Err(error) => {
                 // 请求体可能已被消费，这里不重试；是否可重放由调用方判断
                 if checkout.conn.version == Version::HTTP_3 {
-                    self.h3.failed(target.key);
+                    self.h3.failed(target.key, h3_generation);
                     self.pool.discard(target.key, &checkout.conn);
                     return Err(Failure::Stale(error));
                 }
@@ -711,7 +725,14 @@ impl HttpEgressClient {
             .await
             .map_err(|_| NetError::Cancelled)?;
         let mut conn = if target.secure {
-            self.connect(target.template, target.host, target.port)
+            self.h3
+                .connect_or_tcp(
+                    target,
+                    &self.egress,
+                    &self.pool,
+                    self.exec.clone(),
+                    self.connect(target.template, target.host, target.port),
+                )
                 .await?
         } else {
             self.connect_plain(target.host, target.port).await?
@@ -795,6 +816,8 @@ impl HttpEgressClient {
         });
         let exec = self.exec.clone();
         let sessions = self.sessions.clone();
+        #[cfg(test)]
+        let test_tls = self.test_tls.lock().clone();
 
         let attempt = move |stream: BoxStream, ech: Option<Vec<u8>>| {
             let server_host = server_host.clone();
@@ -802,6 +825,8 @@ impl HttpEgressClient {
             let h2_params = h2_params.clone();
             let exec = exec.clone();
             let sessions = sessions.clone();
+            #[cfg(test)]
+            let test_tls = test_tls.clone();
             // 装箱成 `dyn Future + Send`：rama 的握手 future 内部跨 await 持有借用，
             // 留给自动推断时编译器无法证明它对所有生命周期 Send
             Box::pin(async move {
@@ -820,6 +845,14 @@ impl HttpEgressClient {
                 .map_err(|e| {
                     HandshakeFailure::abort(NetError::Proxy(format!("Build egress: {e}")))
                 })?;
+                #[cfg(test)]
+                let connector_data = match test_tls {
+                    Some(mut config) => {
+                        config.set_server_name(server_host.clone());
+                        sessions.connector_data(&config).unwrap()
+                    }
+                    None => connector_data,
+                };
                 let tls = tokio::time::timeout(
                     EGRESS_TLS_TIMEOUT,
                     tls_connect(ServiceInput::new(stream), Some(connector_data)),
@@ -1021,7 +1054,11 @@ fn authority_of<B>(request: &Request<B>) -> Result<(String, u16), BoxError> {
 
 fn pool_key(template: Option<&FingerprintTemplate>, host: &str, port: u16) -> String {
     let generation = template.map_or(0, |template| template.generation);
-    format!("{host}:{port}#{generation}")
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}#{generation}")
+    } else {
+        format!("{host}:{port}#{generation}")
+    }
 }
 
 /// HTTP/2 连接结束后其准入状态随之释放，尝试准入即可判断连接是否仍可用。

@@ -247,6 +247,7 @@ class NetCoreConfig {
     this.serverIp,
     this.webViewMitm = false,
     this.fingerprintCachePath,
+    this.http3CachePath,
     this.fingerprintUserAgent,
     this.fingerprintPreset,
     this.caCertPem,
@@ -270,6 +271,7 @@ class NetCoreConfig {
   /// WebView 是否经本地监听做 MITM（DoH / 代理模式）。
   final bool webViewMitm;
   final String? fingerprintCachePath;
+  final String? http3CachePath;
   final String? fingerprintUserAgent;
   final String? fingerprintPreset;
   final String? caCertPem;
@@ -297,6 +299,7 @@ class NetCoreConfig {
     serverIp: serverIp,
     webViewMitm: webViewMitm,
     fingerprintCachePath: fingerprintCachePath,
+    http3CachePath: http3CachePath,
     fingerprintUserAgent: fingerprintUserAgent,
     fingerprintPreset: fingerprintPreset,
     caCertPem: caCertPem,
@@ -323,6 +326,7 @@ class NetCoreConfig {
       'fingerprint_user_agent': fingerprintUserAgent,
     if (fingerprintCachePath != null)
       'fingerprint_cache_path': fingerprintCachePath,
+    if (http3CachePath != null) 'http3_cache_path': http3CachePath,
     if (caCertPem != null) 'ca_cert_pem': caCertPem,
     if (caKeyPem != null) 'ca_key_pem': caKeyPem,
   };

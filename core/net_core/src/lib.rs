@@ -172,6 +172,9 @@ pub struct NetConfig {
     /// 指纹模板缓存文件路径（应用数据目录内），冷启动即可按模板出站
     #[serde(default)]
     pub fingerprint_cache_path: Option<String>,
+    /// 经过 HTTPS 认证且声明 persist=1 的同源 Alt-Svc 缓存。
+    #[serde(default)]
+    pub http3_cache_path: Option<String>,
     /// 宿主当前 WebView UA，用于缓存失效与就近预置选择。
     #[serde(default)]
     pub fingerprint_user_agent: Option<String>,
@@ -208,6 +211,7 @@ impl Default for NetConfig {
             server_ip: None,
             webview_mitm: false,
             fingerprint_cache_path: None,
+            http3_cache_path: None,
             fingerprint_user_agent: None,
             fingerprint_platform: None,
             fingerprint_preset: None,

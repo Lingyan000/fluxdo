@@ -78,6 +78,16 @@ impl Core {
             config.server_ip.as_deref(),
             Duration::from_secs(config.timeout_secs),
         ));
+        let namespace = serde_json::to_string(&(
+            config.enable_doh,
+            &config.doh_server,
+            &config.doh_server_ech,
+            &config.ech_dns_policy,
+            &config.server_ip,
+            config.upstream_proxy.as_ref().map(|p| p.cache_key()),
+            config.system_proxy.as_ref().map(|p| p.cache_key()),
+        ))
+        .unwrap_or_default();
         let mut sessions = crate::browser_tls::ClientSessions::default();
         if let (Some(path), Some(key)) = (
             &config.tls_session_cache_path,
@@ -85,24 +95,15 @@ impl Core {
         ) {
             match crate::session_cache::TicketStore::open(path.into(), key) {
                 Ok(store) => {
-                    let namespace = serde_json::to_string(&(
-                        config.enable_doh,
-                        &config.doh_server,
-                        &config.doh_server_ech,
-                        &config.ech_dns_policy,
-                        &config.server_ip,
-                        config.upstream_proxy.as_ref().map(|p| p.cache_key()),
-                        config.system_proxy.as_ref().map(|p| p.cache_key()),
-                    ))
-                    .unwrap_or_default();
-                    sessions = sessions.with_persistence(store, namespace);
+                    sessions = sessions.with_persistence(store, namespace.clone());
                 }
                 Err(_) => tracing::warn!("TLS ticket storage unavailable; using memory sessions"),
             }
         }
         let client = Arc::new(
             HttpEgressClient::new(connector.clone(), Some(templates.clone()))
-                .with_sessions(sessions),
+                .with_sessions(sessions)
+                .with_http3_cache(config.http3_cache_path.as_deref(), &namespace),
         );
         let dns = connector.dns().cloned();
 
