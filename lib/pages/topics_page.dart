@@ -1104,8 +1104,14 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
         if (index >= 0 && index < _tabController.length) {
           _tabController.animateTo(index);
         }
-        ref.read(tabTagsProvider(categoryId).notifier).state =
-            widget.externalTag == null ? const [] : [widget.externalTag!];
+        final tags = widget.externalTag == null
+            ? const <String>[]
+            : [widget.externalTag!];
+        // 首帧也会同步外部选择；条件未变时不发通知，避免空标签让
+        // 刚显示的预加载列表立即再请求一次。
+        if (!listEquals(ref.read(tabTagsProvider(categoryId)), tags)) {
+          ref.read(tabTagsProvider(categoryId).notifier).state = tags;
+        }
       });
     }
 
@@ -2903,7 +2909,7 @@ class _TopicListState extends ConsumerState<_TopicList>
         scrollToTop();
       });
       ref.listen(tabTagsProvider(widget.categoryId), (prev, next) {
-        if (prev != next) {
+        if (!listEquals(prev, next)) {
           _loadMoreCoordinator.resetCooldown();
           ref.read(topicListProvider(widget.categoryId).notifier).refresh();
           _clearIncomingState();
