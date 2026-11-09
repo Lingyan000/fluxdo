@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
@@ -21,6 +22,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.window.SplashScreenView
 import android.webkit.CookieManager as WebCookieManager
 import android.webkit.WebView
 import androidx.webkit.CookieManagerCompat
@@ -84,7 +86,9 @@ class MainActivity : FlutterActivity() {
     //
     // Android 13+ 原生启动屏播放 logo 描线（与 Flutter 启动页同源生成）。
     // Flutter 首帧若早于描线播完，原生屏停留到播完再撤下；Flutter 下层已是
-    // 同一帧的完整 logo，撤下即无缝。撤下后通知 Dart 开始光晕、角标与退场。
+    // 同一帧的完整 logo。先提交透明背景帧，再释放原生 logo 的独立 Surface，
+    // 避免 Surface 先消失、背景后撤下时露出一帧空底。
+    // 撤下后通知 Dart 开始光晕、角标与退场。
 
     private val SPLASH_CHANNEL = "com.github.lingyan000.fluxdo/splash"
     private var nativeSplashLogo = false
@@ -125,10 +129,37 @@ class MainActivity : FlutterActivity() {
                 0L
             }
             view.postDelayed({
-                view.remove()
-                nativeSplashRemoved = true
-                splashChannel?.invokeMethod("removed", null)
+                revealFlutterBeforeRemovingSplash(view)
             }, remaining)
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun revealFlutterBeforeRemovingSplash(view: SplashScreenView) {
+        val remove = Runnable {
+            if (nativeSplashRemoved) return@Runnable
+            view.remove()
+            nativeSplashRemoved = true
+            splashChannel?.invokeMethod("removed", null)
+        }
+        if (isDestroyed || !view.isAttachedToWindow) {
+            remove.run()
+            return
+        }
+
+        // FlutterActivity 已等到 Flutter 首帧才允许 Android 绘制。
+        // 此时下层已有完整 logo；只清背景，保留上层原生 logo 覆盖交接。
+        // 不能设置整个 view 的 alpha：SplashScreenView 会连独立图标 Surface 一起改。
+        view.setBackgroundColor(Color.TRANSPARENT)
+        if (view.isHardwareAccelerated) {
+            view.viewTreeObserver.registerFrameCommitCallback {
+                // 通过主线程消息移除视图并通知 Dart，不在绘制回调内修改视图树。
+                mainHandler.post(remove)
+            }
+            view.invalidate()
+        } else {
+            // 软件渲染没有提交回调：跨过一次完整绘制，再在下一帧移除。
+            view.postOnAnimation { view.postOnAnimation(remove) }
         }
     }
 
