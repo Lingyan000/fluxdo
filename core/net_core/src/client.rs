@@ -38,7 +38,7 @@ use rama::{
     },
     rt::Executor,
     tls::{
-        boring::client::{TlsConnectorData, tls_connect},
+        boring::client::{TlsConnectError, TlsConnectorData, tls_connect},
         client::{ClientHello, TlsClientConfig},
     },
 };
@@ -859,7 +859,7 @@ impl HttpEgressClient {
                 )
                 .await
                 .map_err(|_| HandshakeFailure::retry(NetError::Timeout))?
-                .map_err(|e| HandshakeFailure::retry(tls_error(&e.to_string())))?;
+                .map_err(|e| tls_handshake_failure(&e))?;
 
                 let resumed = tls.ssl_ref().session_reused();
                 let ech_accepted = tls.ssl_ref().ech_accepted();
@@ -962,6 +962,30 @@ fn replicate(error: &BoxError) -> NetError {
 }
 
 /// TLS 握手失败的分类：证书校验失败单列，宿主据此提示证书问题而不是网络不通。
+fn tls_handshake_failure<S>(error: &TlsConnectError<S>) -> HandshakeFailure {
+    match error {
+        TlsConnectError::Handshake {
+            error: handshake, ..
+        } if handshake.as_ssl_error_stack().is_some_and(|stack| {
+            stack
+                .iter()
+                .any(|error| error.reason() == Some("ECH_REJECTED"))
+        }) =>
+        {
+            // BoringSSL 只有完成公共名称的证书认证后才返回 ECH_REJECTED。
+            // 其他错误不能调用 get_ech_retry_configs，否则会触发 BoringSSL 断言。
+            match handshake.ssl() {
+                Some(ssl) => HandshakeFailure::authenticated_ech_retry(
+                    ssl.get_ech_retry_configs().unwrap_or_default().to_vec(),
+                ),
+                None => HandshakeFailure::abort(tls_error(&error.to_string())),
+            }
+        }
+        TlsConnectError::Builder(_) => HandshakeFailure::abort(tls_error(&error.to_string())),
+        _ => HandshakeFailure::retry(tls_error(&error.to_string())),
+    }
+}
+
 fn tls_error(message: &str) -> NetError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("certificate") || lower.contains("cert_verify") {
@@ -1177,6 +1201,137 @@ fn reorder_headers(headers: &HeaderMap, order: &[String]) -> HeaderMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 真实 BoringSSL 拒绝路径：公共名称通过证书校验后才可提取重试配置。
+    #[tokio::test]
+    async fn authenticated_ech_rejection_updates_keys_or_disables_once() {
+        use crate::ech_test_keys::{ECH_CONFIG, ECH_KEY};
+        use rama::tls::boring::core::{
+            hpke::HpkeKey,
+            pkey::PKey,
+            ssl::{SslAcceptor, SslEchKeys, SslMethod},
+            tokio::accept,
+            x509::X509,
+        };
+        let list = |config: &[u8]| {
+            let mut list = (config.len() as u16).to_be_bytes().to_vec();
+            list.extend_from_slice(config);
+            list
+        };
+        for server_supports_ech in [true, false] {
+            let (chain, key) = rama_crypto::cert::generate_server_auth(
+                rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                    rama::net::address::Domain::from_static("ech.com"),
+                ),
+            )
+            .unwrap();
+            let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
+            acceptor
+                .set_certificate(&X509::from_der(chain[0].as_ref()).unwrap())
+                .unwrap();
+            acceptor
+                .set_private_key(&PKey::private_key_from_der(key.secret_der()).unwrap())
+                .unwrap();
+            let mut new_config = ECH_CONFIG.to_vec();
+            new_config[4] = 2; // 服务端轮换 config_id，旧 DNS 配置仍是 1。
+            if server_supports_ech {
+                let mut keys = SslEchKeys::builder().unwrap();
+                keys.add_key(
+                    true,
+                    &new_config,
+                    HpkeKey::dhkem_x25519_sha256(ECH_KEY).unwrap(),
+                )
+                .unwrap();
+                acceptor.set_ech_keys(&keys.build()).unwrap();
+            }
+            let acceptor = Arc::new(acceptor.build());
+            let config = TlsClientConfig::new()
+                .with_server_name(Host::from_static("ech.com"))
+                .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+                .unwrap();
+            let mut data = TlsConnectorData::try_from(&config).unwrap();
+            data.config.set_ech_config_list(&list(ECH_CONFIG)).unwrap();
+            let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+            let server = tokio::spawn({
+                let acceptor = acceptor.clone();
+                async move {
+                    let _ = accept(&acceptor, server_io).await;
+                }
+            });
+            let error = match tls_connect(ServiceInput::new(client_io), Some(data)).await {
+                Ok(_) => panic!("旧 ECH 配置应该被拒绝"),
+                Err(error) => error,
+            };
+            let failure = tls_handshake_failure(&error);
+            assert!(failure.retryable);
+            let retry = failure
+                .ech_retry_configs()
+                .expect("只有认证拒绝可携带重试信息");
+            if server_supports_ech {
+                assert_eq!(retry, list(&new_config));
+            } else {
+                assert!(retry.is_empty());
+            }
+            server.await.unwrap();
+
+            // 新连接使用服务端确认的配置，保留相同证书校验要求。
+            let mut data = TlsConnectorData::try_from(&config).unwrap();
+            if !retry.is_empty() {
+                data.config.set_ech_config_list(retry).unwrap();
+            }
+            let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+            let server = tokio::spawn(async move { accept(&acceptor, server_io).await.is_ok() });
+            let tls = tls_connect(ServiceInput::new(client_io), Some(data))
+                .await
+                .unwrap();
+            assert_eq!(tls.ssl_ref().ech_accepted(), server_supports_ech);
+            assert!(server.await.unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn untrusted_ech_rejection_never_authorizes_retry_without_ech() {
+        use crate::ech_test_keys::ECH_CONFIG;
+        use rama::tls::boring::core::{
+            pkey::PKey,
+            ssl::{SslAcceptor, SslMethod},
+            tokio::accept,
+            x509::X509,
+        };
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("ech.com"),
+            ),
+        )
+        .unwrap();
+        let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
+        acceptor
+            .set_certificate(&X509::from_der(chain[0].as_ref()).unwrap())
+            .unwrap();
+        acceptor
+            .set_private_key(&PKey::private_key_from_der(key.secret_der()).unwrap())
+            .unwrap();
+        let acceptor = acceptor.build();
+        let mut config = TlsClientConfig::new().with_server_name(Host::from_static("ech.com"));
+        config.set_platform_verifier();
+        let mut data = TlsConnectorData::try_from(&config).unwrap();
+        let mut list = (ECH_CONFIG.len() as u16).to_be_bytes().to_vec();
+        list.extend_from_slice(ECH_CONFIG);
+        data.config.set_ech_config_list(&list).unwrap();
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let server = tokio::spawn(async move {
+            let _ = accept(&acceptor, server_io).await;
+        });
+        let error = match tls_connect(ServiceInput::new(client_io), Some(data)).await {
+            Ok(_) => panic!("未信任的公共名称证书不能通过"),
+            Err(error) => error,
+        };
+        let failure = tls_handshake_failure(&error);
+        assert!(!failure.retryable);
+        assert!(failure.ech_retry_configs().is_none());
+        assert!(matches!(failure.error, NetError::Certificate(_)));
+        server.await.unwrap();
+    }
 
     #[test]
     fn standard_tls_applies_ech_before_browser_template_is_available() {

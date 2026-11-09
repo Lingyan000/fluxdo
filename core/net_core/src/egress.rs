@@ -7,14 +7,13 @@
 //! 2. 建连：候选地址按 Happy Eyeballs 并发竞速（TCP 层），先连上的先交付；
 //! 3. 握手：由调用方传入（镜像要把入站一起握手，客户端只握上游），**串行**执行——
 //!    镜像的入站句柄同一时刻只能交给一次握手，不能并发；
-//! 4. 失败重试：握手失败换下一个已连上的地址；注入了 ECH 的失败先在同一地址去掉
-//!    ECH 重试一次，成功即判定该站点 ECH 不通并记下。
+//! 4. 失败重试：可恢复的传输失败换下一个地址；只有经过 TLS 认证的 ECH 拒绝
+//!    才允许按服务端返回的配置重连一次，普通网络错误不改变 ECH 策略。
 //!
 //! 证书校验走平台校验器（企业 / 用户安装的 CA、系统吊销策略都算数），
 //! 没有平台校验器的 Linux 由 rama 自动退回系统信任库。
 
 use std::{
-    collections::HashMap,
     fmt,
     future::Future,
     net::{IpAddr, SocketAddr},
@@ -26,7 +25,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use parking_lot::Mutex;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
@@ -47,9 +45,6 @@ const EGRESS_BUDGET: Duration = Duration::from_secs(25);
 const ATTEMPT_STAGGER: Duration = Duration::from_millis(250);
 /// 客户端 TLS 握手卡住多久后起备用握手，见 [`EgressConnector::connect_client`]。
 const CLIENT_TLS_BACKUP_DELAY: Duration = Duration::from_millis(1500);
-/// 站点 ECH 不通后，这段时间内不再注入 ECH。
-const ECH_FAILURE_TTL: Duration = Duration::from_secs(600);
-
 /// 一个候选上游。代理项自带要用的配置：出口可能来自应用内代理，也可能来自
 /// 按目标求值的系统代理（含 PAC），两者在这里统一。
 #[derive(Debug, Clone)]
@@ -69,26 +64,46 @@ impl fmt::Display for EgressTarget {
     }
 }
 
-/// 一次握手的失败。`retryable` 为真表示失败发生在出站一侧，可以换地址或去掉 ECH 重试；
+/// 一次握手的失败。`retryable` 为真表示失败发生在出站一侧，可以换地址重试；
 /// 为假时立即放弃（例如镜像的入站已经开始握手，换地址会把客户端的连接搞坏）。
 #[derive(Debug)]
 pub struct HandshakeFailure {
     pub error: NetError,
     pub retryable: bool,
+    /// 仅由 TLS 后端认证过的 ECH_REJECTED 填入；空配置表示服务端指示禁用 ECH。
+    ech_retry_configs: Option<Vec<u8>>,
 }
 
 impl HandshakeFailure {
     pub fn retry(error: NetError) -> Self {
         // 证书错误不能通过换地址或关闭 ECH 变成“可恢复”的握手失败。
         let retryable = !matches!(error, NetError::Certificate(_) | NetError::Cancelled);
-        Self { error, retryable }
+        Self {
+            error,
+            retryable,
+            ech_retry_configs: None,
+        }
     }
 
     pub fn abort(error: NetError) -> Self {
         Self {
             error,
             retryable: false,
+            ech_retry_configs: None,
         }
+    }
+
+    pub(crate) fn authenticated_ech_retry(configs: Vec<u8>) -> Self {
+        Self {
+            error: NetError::Proxy("Authenticated ECH rejection".into()),
+            retryable: true,
+            ech_retry_configs: Some(configs),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn ech_retry_configs(&self) -> Option<&[u8]> {
+        self.ech_retry_configs.as_deref()
     }
 }
 
@@ -102,7 +117,6 @@ pub struct EgressConnector {
     /// 用户指定的服务端 IP，跳过 DNS 解析
     server_ip: Option<IpAddr>,
     timeout: Duration,
-    ech_failures: Mutex<HashMap<String, Instant>>,
 }
 
 impl EgressConnector {
@@ -128,7 +142,6 @@ impl EgressConnector {
             system_proxy: system_proxy.filter(UpstreamProxyConfig::is_valid),
             server_ip,
             timeout,
-            ech_failures: Mutex::new(HashMap::new()),
         }
     }
 
@@ -238,6 +251,7 @@ impl EgressConnector {
             tokio::select! {
                 result = &mut primary => match result {
                     Ok(value) => Ok(value),
+                    Err(error @ (NetError::Certificate(_) | NetError::Cancelled)) => Err(error),
                     // 备用已经在握手：主路径失败不代表备用也会失败，等它的结果
                     Err(error) if backup_started.load(AtomicOrdering::Relaxed) => {
                         backup.await.map_err(|_| error)
@@ -249,6 +263,7 @@ impl EgressConnector {
                         info!("Backup handshake to {host}:{port} won");
                         Ok(value)
                     }
+                    Err(error @ (NetError::Certificate(_) | NetError::Cancelled)) => Err(error),
                     Err(_) => primary.await,
                 },
             }
@@ -388,7 +403,8 @@ impl EgressConnector {
         Fut: Future<Output = std::result::Result<T, HandshakeFailure>>,
     {
         let started = Instant::now();
-        let ech = ech.filter(|_| !self.ech_recently_failed(host));
+        let mut ech = ech;
+        let mut ech_retried = false;
         let mut last_error = None;
         // TCP 并发竞速、TLS 串行：镜像的入站句柄同一时刻只能交给一次握手
         while let Some((target, stream)) = match first.take() {
@@ -400,7 +416,7 @@ impl EgressConnector {
                 Ok(stream) => {
                     let mut stream = Some(stream);
                     let mut attempt_ech = ech.clone();
-                    // 同一地址最多两次：带 ECH 与不带 ECH
+                    // 整次建连只接受一次经过认证的 ECH 配置更新。
                     while let Some(ready) = stream.take() {
                         let attempt_started = Instant::now();
                         let used_ech = attempt_ech.is_some();
@@ -412,12 +428,6 @@ impl EgressConnector {
                                     attempt_started.elapsed().as_millis()
                                 );
                                 self.record_success(host, target, attempt_started.elapsed());
-                                if ech.is_some() && !used_ech {
-                                    warn!("ECH unusable for {host}, skipping it for a while");
-                                    self.ech_failures
-                                        .lock()
-                                        .insert(host.to_owned(), Instant::now());
-                                }
                                 return Ok(value);
                             }
                             Err(failure) if !failure.retryable => return Err(failure.error),
@@ -427,8 +437,17 @@ impl EgressConnector {
                                     failure.error
                                 );
                                 last_error = Some(failure.error);
-                                // 带 ECH 失败：同一地址重连一次，不带 ECH 再试
-                                if attempt_ech.take().is_some() {
+                                if used_ech
+                                    && !ech_retried
+                                    && let Some(configs) = failure.ech_retry_configs
+                                {
+                                    ech_retried = true;
+                                    ech = (!configs.is_empty()).then_some(configs);
+                                    attempt_ech = ech.clone();
+                                    info!(
+                                        "Authenticated ECH retry for {host}:{port} (ECH requested: {})",
+                                        attempt_ech.is_some()
+                                    );
                                     match open_target(target, host, port, self.timeout).await {
                                         Ok(retry) => stream = Some(retry),
                                         Err(e) => last_error = Some(e),
@@ -554,18 +573,6 @@ impl EgressConnector {
             (self.dns.as_ref(), target)
         {
             resolver.clear_preferred_host_ip(host);
-        }
-    }
-
-    fn ech_recently_failed(&self, host: &str) -> bool {
-        let mut failures = self.ech_failures.lock();
-        match failures.get(host) {
-            Some(at) if at.elapsed() < ECH_FAILURE_TTL => true,
-            Some(_) => {
-                failures.remove(host);
-                false
-            }
-            None => false,
         }
     }
 }
@@ -836,6 +843,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn certificate_failure_aborts_an_already_running_backup() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let EgressTarget::Addr { addr, .. } = upstream(true).await else {
+            unreachable!()
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let result: Result<()> = tokio::time::timeout(
+            Duration::from_secs(3),
+            connector().connect_client("127.0.0.1", addr.port(), move |stream, _| {
+                let first = seen.fetch_add(1, Ordering::Relaxed) == 0;
+                async move {
+                    let _stream = stream;
+                    if first {
+                        tokio::time::sleep(CLIENT_TLS_BACKUP_DELAY + Duration::from_millis(100))
+                            .await;
+                        Err(HandshakeFailure::retry(NetError::Certificate(
+                            "untrusted".into(),
+                        )))
+                    } else {
+                        std::future::pending().await
+                    }
+                }
+            }),
+        )
+        .await
+        .expect("不能在证书失败后继续等备用超时");
+        assert!(matches!(result, Err(NetError::Certificate(_))));
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
     async fn total_budget_cancels_stalled_handshake_and_closes_socket() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -963,7 +1002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retries_same_address_without_ech_and_remembers() {
+    async fn authenticated_empty_ech_retry_is_call_local() {
         let good = upstream(true).await;
         let connector = connector();
         let mut seen = Vec::new();
@@ -977,9 +1016,7 @@ mod tests {
                     seen.push(ech.is_some());
                     async move {
                         if ech.is_some() {
-                            return Err(HandshakeFailure::retry(NetError::Proxy(
-                                "ech blocked".into(),
-                            )));
+                            return Err(HandshakeFailure::authenticated_ech_retry(Vec::new()));
                         }
                         read_marker(stream).await
                     }
@@ -988,9 +1025,7 @@ mod tests {
             .await
             .expect("plain retry should succeed");
         assert_eq!(seen, [true, false]);
-        assert!(connector.ech_recently_failed("example.com"));
-
-        // 之后的连接直接跳过 ECH
+        // 服务器的本次禁用指示不变成跨请求、跨网络的猜测性降级缓存。
         let mut seen = Vec::new();
         connector
             .connect_targets(
@@ -1005,7 +1040,49 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(seen, [false]);
+        assert_eq!(seen, [true]);
+    }
+
+    #[tokio::test]
+    async fn transport_failure_keeps_ech_on_the_next_address() {
+        let first = upstream(true).await;
+        let second = upstream(true).await;
+        let mut seen = Vec::new();
+        connector()
+            .connect_targets(
+                "example.com",
+                443,
+                vec![first, second],
+                Some(vec![1]),
+                |stream, ech| {
+                    seen.push(ech);
+                    let first = seen.len() == 1;
+                    async move {
+                        if first {
+                            Err(HandshakeFailure::retry(NetError::Timeout))
+                        } else {
+                            read_marker(stream).await
+                        }
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(seen, [Some(vec![1]), Some(vec![1])]);
+    }
+
+    #[tokio::test]
+    async fn authenticated_ech_retry_config_is_applied_once() {
+        let target = upstream(true).await;
+        let mut seen = Vec::new();
+        let result: Result<()> = connector()
+            .connect_targets("example.com", 443, vec![target], Some(vec![1]), |_, ech| {
+                seen.push(ech);
+                async { Err(HandshakeFailure::authenticated_ech_retry(vec![2])) }
+            })
+            .await;
+        assert!(result.is_err());
+        assert_eq!(seen, [Some(vec![1]), Some(vec![2])]);
     }
 
     #[tokio::test]

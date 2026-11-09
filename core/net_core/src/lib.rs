@@ -33,6 +33,10 @@ pub mod system_proxy;
 mod upload_timeout;
 pub mod upstream;
 
+#[cfg(test)]
+#[path = "../tests/fixtures/ech_keys.rs"]
+mod ech_test_keys;
+
 pub use error::NetError;
 
 /// Upstream proxy configuration

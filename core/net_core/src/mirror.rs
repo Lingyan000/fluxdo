@@ -585,6 +585,12 @@ impl MirrorRelay {
                         Ok(Err(error)) => match error.kind() {
                             TlsMitmRelayErrorKind::Handshake {
                                 direction: TlsMitmRelayErrorDirection::Egress,
+                                classification: HandshakeRelayClassification::CertTrust,
+                            } => Err(HandshakeFailure::abort(NetError::Certificate(
+                                error.to_string(),
+                            ))),
+                            TlsMitmRelayErrorKind::Handshake {
+                                direction: TlsMitmRelayErrorDirection::Egress,
                                 ..
                             } if !ingress.touched() => {
                                 Err(HandshakeFailure::retry(NetError::Proxy(error.to_string())))
