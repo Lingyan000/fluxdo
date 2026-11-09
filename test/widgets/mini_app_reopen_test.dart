@@ -12,6 +12,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:common_ui/common_ui.dart';
 // ignore: depend_on_referenced_packages
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -706,7 +707,11 @@ void main() {
           child: TranslationProvider(
             child: MaterialApp(
               navigatorKey: nav,
-              navigatorObservers: [observer, appRouteObserver],
+              navigatorObservers: [
+                observer,
+                appRouteObserver,
+                RouteInteractionObserver(),
+              ],
               builder: (context, child) => BrowserDockHost(
                 controller: tabs,
                 observer: observer,
@@ -758,6 +763,53 @@ void main() {
 
       await scrollBothWays();
       if (!desktop) {
+        final runner = find.byType(MiniAppRunnerPage);
+        final viewportSize = tester.getSize(find.byType(InAppWebView));
+        final expandedY = tester.getTopLeft(runner).dy;
+        final loads = platform.loads;
+        // 顶栏与把手都能下拉；停手即停、回拉即退，网页尺寸不随拖动变化。
+        for (final headerY in [-12.0, 20.0]) {
+          final captures = original.captures;
+          final drag = await tester.startGesture(
+            tester.getTopLeft(runner) + Offset(180, headerY),
+          );
+          await drag.moveBy(const Offset(0, 24));
+          await tester.pump();
+          final start = tester.getTopLeft(runner).dy;
+          await drag.moveBy(const Offset(0, 65));
+          await tester.pump();
+          expect(tester.getTopLeft(runner).dy, closeTo(start + 65, 1));
+          expect(tester.getSize(find.byType(InAppWebView)), viewportSize);
+          await tester.pump(const Duration(milliseconds: 120));
+          expect(tester.getTopLeft(runner).dy, closeTo(start + 65, 1));
+          await drag.moveBy(const Offset(0, -30));
+          await tester.pump();
+          expect(tester.getTopLeft(runner).dy, closeTo(start + 35, 1));
+          expect(original.captures, captures, reason: '跟手期间不取帧');
+          await drag.cancel();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 32));
+          final interruptedY = tester.getTopLeft(runner).dy;
+          // 回弹未完成时重新按下，可从当前位置接手，不能跳回展开端点。
+          final resumed = await tester.startGesture(
+            tester.getTopLeft(runner) + const Offset(180, 20),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(tester.getTopLeft(runner).dy, closeTo(interruptedY, 1));
+          await resumed.moveBy(const Offset(0, 24));
+          await tester.pump();
+          final resumedY = tester.getTopLeft(runner).dy;
+          await resumed.moveBy(const Offset(0, 40));
+          await tester.pump();
+          expect(tester.getTopLeft(runner).dy, closeTo(resumedY + 40, 1));
+          await resumed.cancel();
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(runner).dy, closeTo(expandedY, 1));
+          expect(tabs.tabs, isEmpty);
+          expect(nav.currentState!.userGestureInProgress, isFalse);
+          await scrollBothWays();
+        }
+        expect(platform.loads, loads);
         final pauses = original.pauses, resumes = original.resumes;
         // 原生 select/日期弹层只使窗口失焦；不能暂停网页或强制恢复焦点。
         tester.binding.handleAppLifecycleStateChanged(
@@ -870,7 +922,25 @@ void main() {
       final token = platform.views.first.params.keepAlive!;
       expect(observer.currentRoute, isA<PopupRoute>());
       expect(observer.hidden.value, isTrue);
-      await tester.tap(find.byKey(const ValueKey('mini-app-minimize')));
+      if (desktop) {
+        await tester.tap(find.byKey(const ValueKey('mini-app-minimize')));
+      } else {
+        // 快速下甩确认收起，不依赖截图完成；真实实例随后从底栏恢复。
+        original.screenshotGate = Completer<Uint8List?>();
+        final before = original.captures;
+        final gesture = await tester.startGesture(
+          tester.getTopLeft(find.byType(MiniAppRunnerPage)) +
+              const Offset(180, 20),
+        );
+        await gesture.moveBy(const Offset(0, 24));
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.moveBy(const Offset(0, 160));
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.up();
+        expect(original.captures, before);
+        original.screenshotGate!.complete(null);
+        original.screenshotGate = null;
+      }
       await tester.pump();
       expect(tabs.tabs, hasLength(1));
       final saved = tabs.tabs.single;
@@ -991,7 +1061,26 @@ void main() {
       expect(platform.released, hasLength(2));
       expect(find.text(t.miniApp_resumePanel), findsNothing);
       expect(tester.takeException(), isNull);
+      if (!desktop) {
+        // 导航器在回弹中销毁（退出账号/切换窗口）也不能遗留活跃 ticker。
+        await tester.tap(find.text(t.miniApp_open));
+        await settleRuntime();
+        final drag = await tester.startGesture(
+          tester.getTopLeft(find.byType(MiniAppRunnerPage)) +
+              const Offset(180, 20),
+        );
+        await drag.moveBy(const Offset(0, 24));
+        await tester.pump();
+        await drag.moveBy(const Offset(0, 65));
+        await tester.pump();
+        await drag.cancel();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+      }
       await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(platform.released, hasLength(desktop ? 2 : 3));
       tabs.dispose();
     });
   }
@@ -1212,7 +1301,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('Android 全屏玻璃只捕获控件区域，收回后改用低频取色', (tester) async {
+  testWidgets('Android 全屏玻璃从完整快照裁出控件区域，收回后改用低频取色', (tester) async {
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
@@ -1277,13 +1366,14 @@ void main() {
     expect(patch, isNotNull);
     expect(patch!.globalBounds.right, lessThanOrEqualTo(390));
     expect(
-      controller.lastCaptureConfiguration!.rect!.width,
-      lessThanOrEqualTo(180),
+      controller.lastCaptureConfiguration!.rect,
+      isNull,
+      reason: 'Android 不再调用会干扰嵌套滚动的原生局部截图',
     );
-    expect(controller.lastCaptureConfiguration!.rect!.height, 80);
+    expect(patch.globalBounds, const Rect.fromLTWH(250, 200, 140, 80));
     expect(
       controller.lastCaptureConfiguration!.snapshotWidth! * 2,
-      lessThanOrEqualTo(220),
+      lessThanOrEqualTo(512),
     );
     patch.image.dispose();
     // 真正展开后，慢取样不挡住按钮，且不会生成全屏的截图覆盖层。

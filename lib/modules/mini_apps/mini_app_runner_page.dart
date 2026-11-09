@@ -58,7 +58,7 @@ import 'mini_app_tab_session.dart';
 import 'mini_app_lightweight_host.dart';
 import 'mini_app_launch_report.dart';
 import 'mini_app_panel_shell.dart';
-import 'mini_app_panel_restore_motion.dart';
+import 'mini_app_panel_motion.dart';
 import 'mini_app_glass_backdrop.dart';
 
 enum _PanelResult { openPage }
@@ -76,7 +76,7 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
     this.initialEngine,
     this.tabSession,
     this.asPanel = false,
-    this.panelRestoreMotion,
+    this.panelMotion,
   });
   final MiniAppDetails details;
   final Uri? launchUri;
@@ -88,7 +88,7 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
   final MiniAppEngine? initialEngine;
   final MiniAppTabSession? tabSession;
   final bool asPanel;
-  final MiniAppPanelRestoreMotion? panelRestoreMotion;
+  final MiniAppPanelMotion? panelMotion;
 
   static Future<void> open(
     BuildContext context,
@@ -147,29 +147,26 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
     if (session.preferPanel) {
       ModalRoute<dynamic>? panelRoute;
       final motion = BrowserDockViewport.motionOf(navigator.context);
-      final panelMotion =
-          !PlatformUtils.isDesktop &&
-              fromDock &&
-              motion?.restoringByDrag(session) == true
-          ? MiniAppPanelRestoreMotion(navigator, motion!, session)
+      final panelMotion = !PlatformUtils.isDesktop
+          ? MiniAppPanelMotion(
+              navigator,
+              motion,
+              session,
+              reduceMotion: MediaQuery.disableAnimationsOf(navigator.context),
+            )
           : null;
       Widget panelBuilder(BuildContext context) {
         panelRoute = ModalRoute.of(context);
         return MiniAppPanelShell(
-          onHeightChanged: panelMotion == null
-              ? null
-              : (height) {
-                  if (motion!.restoringByDrag(session)) {
-                    motion.restoreDragExtent = height;
-                  }
-                },
+          motion: panelMotion,
+          onHeightChanged: panelMotion?.updateExtent,
           builder: (onFullscreenChanged) => MiniAppRunnerPage(
             details: session.details,
             launchUri: session.entry,
             initialEngine: session.engine,
             tabSession: session,
             asPanel: true,
-            panelRestoreMotion: panelMotion,
+            panelMotion: panelMotion,
             onFullscreenChanged: onFullscreenChanged,
           ),
         );
@@ -188,9 +185,10 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
               constraints: const BoxConstraints(maxWidth: double.infinity),
-              // 游戏拖动不能关闭整个弹窗；关闭和收起均通过明确按钮操作。
+              // 网页内部手势交给 WebView，仅顶部把手/工具栏驱动收起。
               enableDrag: false,
               transitionAnimationController: panelMotion?.controller,
+              onDisposed: panelMotion?.dispose,
               sheetAnimationStyle: panelMotion == null
                   ? null
                   : const AnimationStyle(
@@ -199,11 +197,11 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
                     ),
               builder: panelBuilder,
             );
-      panelMotion?.start();
+      panelMotion?.start(fromDock: fromDock);
       final result = await pending;
       if (panelMotion != null) {
+        panelMotion.didPop();
         await panelRoute?.completed;
-        panelMotion.dispose();
       }
       if (result != _PanelResult.openPage) return;
       // 只有确认旧平台视图已卸载，才能将同一实例交给完整页面。
@@ -434,17 +432,39 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     final route = ModalRoute.of(context);
     if (route != null) appRouteObserver.subscribe(this, route);
     if (route is MinimizablePageRoute) route.onReturnToDock = _returnToDock;
-    widget.panelRestoreMotion?.onReturnToDock = _returnToDock;
+    widget.panelMotion
+      ?..onReturnToDock = _returnToDock
+      ..canDrag = () =>
+          mounted &&
+          widget.visible &&
+          !_fullscreen &&
+          !_minimized &&
+          !_transferring &&
+          _permission == null &&
+          !_switchingEngine &&
+          _nativeOverlays == 0 &&
+          ModalRoute.of(context)?.isCurrent == true;
     final animation = route is MinimizablePageRoute && route.fromDock
         ? route.transitionAnimation
-        : widget.panelRestoreMotion?.controller.view;
+        : widget.panelMotion?.controller.view;
     if (_restoreAnimation == null && animation != null) {
       _restoreAnimation = animation;
+      widget.panelMotion?.moving.addListener(_panelMotionChanged);
       if (animation.status != AnimationStatus.completed) {
         _minimizePreview = _tab?.preview;
         animation.addStatusListener(_restoreFinished);
       }
     }
+  }
+
+  void _panelMotionChanged() {
+    if (!mounted) return;
+    if (widget.panelMotion?.moving.value == true) {
+      _stateTimer?.cancel();
+    } else if (!_minimized) {
+      unawaited(_startPolling());
+    }
+    _syncSurfaceSampling();
   }
 
   void _restoreFinished(AnimationStatus status) {
@@ -630,7 +650,10 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     _localMediaLifecycle.dispose();
     _invalidatePermissionAnswer();
     _restoreAnimation?.removeStatusListener(_restoreFinished);
-    widget.panelRestoreMotion?.onReturnToDock = null;
+    widget.panelMotion?.moving.removeListener(_panelMotionChanged);
+    widget.panelMotion
+      ?..onReturnToDock = null
+      ..canDrag = null;
     _pointerIdle?.cancel();
     _surfaceTheme.dispose();
     _bootTimer?.cancel();
@@ -681,6 +704,11 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     FocusManager.instance.primaryFocus?.unfocus();
     _stateTimer?.cancel();
     if (_fullscreen) _leaveFullscreen();
+    if (widget.panelMotion != null) {
+      // 弹窗只平移实时原生表面；不能在用户操作后先同步截屏再开始动画。
+      _returnToDock();
+      return;
+    }
     final snapshot = _visualCapturePending
         ? Future<Uint8List?>.value()
         : Future<Uint8List?>.sync(
@@ -710,6 +738,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
   void _returnToDock() {
     final tab = _tab;
     if (!mounted || tab == null || tab.isClosed || _minimized) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     _stateTimer?.cancel();
     tab
       ..details = _details
@@ -720,13 +749,14 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     tab.onRevoked = () => tabs.close(tab);
     setState(() {
       _minimized = true;
-      _minimizePreview = tab.preview;
+      _minimizePreview = widget.panelMotion == null ? tab.preview : null;
     });
     _syncMediaState();
     final route = ModalRoute.of(context);
     if (route is MinimizablePageRoute) {
       route.beginMinimize(tab, hasSnapshot: tab.preview != null);
     }
+    widget.panelMotion?.minimize();
     tabs.minimize(tab);
     Navigator.of(context).pop();
   }
@@ -805,7 +835,11 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
 
   Future<void> _startPolling() {
     _stateTimer?.cancel();
-    if (!mounted || !widget.visible || _covered || _backgrounded) {
+    if (!mounted ||
+        !widget.visible ||
+        _covered ||
+        _backgrounded ||
+        widget.panelMotion?.moving.value == true) {
       return Future.value();
     }
     _stateTimer = Timer.periodic(
@@ -823,6 +857,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         !_active ||
         _covered ||
         _backgrounded ||
+        widget.panelMotion?.moving.value == true ||
         !widget.visible) {
       return;
     }
@@ -1387,6 +1422,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     final controller = _controller;
     final render = _viewportKey.currentContext?.findRenderObject();
     if (!_active ||
+        widget.panelMotion?.moving.value == true ||
         !widget.visible ||
         (WidgetsBinding.instance.lifecycleState != null &&
             WidgetsBinding.instance.lifecycleState !=
@@ -1421,9 +1457,8 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       );
     } else {
       frame = await WebViewSurfaceCapture.capture(
-        takeScreenshot: (configuration) => controller.takeScreenshot(
-          screenshotConfiguration: configuration,
-        ),
+        takeScreenshot: (configuration) =>
+            controller.takeScreenshot(screenshotConfiguration: configuration),
         platform: defaultTargetPlatform,
         viewport: render.localToGlobal(Offset.zero) & size,
         region: actualGlobal,
@@ -1433,6 +1468,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     }
     if (frame == null) return null;
     if (!mounted ||
+        widget.panelMotion?.moving.value == true ||
         epoch != _documentEpoch ||
         controller != _controller ||
         size != _viewportKey.currentContext?.size ||
@@ -1771,6 +1807,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
           !_covered &&
           _nativeOverlays == 0 &&
           !_pointerActive &&
+          widget.panelMotion?.moving.value != true &&
           !_nativeSurfaceCoversView &&
           _permission == null &&
           _hostReady,

@@ -302,6 +302,9 @@ Future<T?> showAppBottomSheet<T>({
   bool useSafeArea = false,
   RouteSettings? routeSettings,
   AnimationController? transitionAnimationController,
+
+  /// 在路由卸载时同步释放调用方持有的转场资源，包括导航器被整体销毁。
+  VoidCallback? onDisposed,
   Offset? anchorPoint,
   AnimationStyle? sheetAnimationStyle,
   bool blur = true,
@@ -345,6 +348,7 @@ Future<T?> showAppBottomSheet<T>({
     constraints: constraints,
     settings: routeSettings,
     transitionAnimationController: transitionAnimationController,
+    onDisposed: onDisposed,
     anchorPoint: anchorPoint,
     useSafeArea: useSafeArea,
     sheetAnimationStyle: sheetAnimationStyle,
@@ -400,6 +404,7 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
   final ValueChanged<double>? onBlurSigmaChanged;
   final ValueListenable<bool>? blurReady;
   final bool filterBackdrop;
+  final VoidCallback? onDisposed;
   @override
   ModalBlurScene get blurScene => ModalBlurScene.sheet;
 
@@ -426,7 +431,14 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
     this.onBlurSigmaChanged,
     this.blurReady,
     this.filterBackdrop = true,
+    this.onDisposed,
   });
+
+  @override
+  void dispose() {
+    onDisposed?.call();
+    super.dispose();
+  }
 
   @override
   Widget buildModalBarrier() {
