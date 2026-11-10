@@ -15,6 +15,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/nested/nested_post_card.dart';
 import 'package:fluxdo/widgets/nested/nested_reading_scope.dart';
+import 'package:fluxdo/widgets/nested/nested_thread_sheet.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
@@ -155,6 +156,53 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('继续主题弹层按需构建子回复并保持拖拽与阅读上报', (tester) async {
+    final node = NestedNode(
+      post: _post(2),
+      children: [for (var n = 3; n <= 80; n++) NestedNode(post: _post(n))],
+    );
+    Set<int> visible = {};
+    await _pump(
+      tester,
+      state: NestedTopicState(roots: [node]),
+      onVisible: (posts) => visible = posts,
+    );
+    final context = tester.element(find.byType(NestedPostCard).first);
+    showNestedThreadSheet(
+      context: context,
+      node: node,
+      topicId: 1,
+      detail: _detail,
+      params: const NestedTopicParams(topicId: 1),
+      maxDepth: 5,
+      rootPostNumber: 2,
+      isLoggedIn: false,
+      onReply: (_, {initialContent}) {},
+      onEdit: (_) {},
+      onRefreshPost: (_) {},
+      onJumpToPost: (_) {},
+    );
+    await tester.pumpAndSettle();
+    final sheetList = find.byType(PositionedStreamList).last;
+    final before = tester.getSize(sheetList).height;
+    expect(find.byType(NestedPostCard).evaluate().length, lessThan(30));
+    await tester.drag(sheetList, const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(sheetList).height, greaterThan(before));
+    final list = tester.widget<PositionedStreamList>(sheetList);
+    final jump = list.listController.jumpToIndex(
+      list.itemKeys.indexOf('post-60'),
+    );
+    await tester.pumpAndSettle();
+    await jump;
+    expect(visible.contains(60), isTrue);
+    expect(visible.contains(2), isFalse);
+    Navigator.of(tester.element(sheetList)).pop();
+    await tester.pumpAndSettle();
+    expect(visible.contains(2), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('同一分支内上方正文增高时保持当前子回复的位置', (tester) async {
     final session = NestedReadingSession();
     NestedTopicState state({bool expandedBody = false}) => NestedTopicState(

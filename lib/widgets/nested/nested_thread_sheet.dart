@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
 import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
@@ -12,6 +13,7 @@ import '../../providers/preferences_provider.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
+import '../common/positioned_stream_list.dart';
 import 'nested_post_card.dart';
 
 /// 打开深层嵌套子树弹框
@@ -105,17 +107,24 @@ class _NestedThreadSheetContentState
   final Map<int, bool> _expansionState = {};
   final NestedViewportController _viewport = NestedViewportController();
   final NestedReadingSession _session = NestedReadingSession();
+  final ListController _listController = ListController();
+  HeaderAnchorHandle? _readingAnchor;
+  RenderNestedPostAnchor? _anchoredPost;
   bool _interacted = false;
 
   @override
   void initState() {
     super.initState();
     widget.sourceReading?.controller.beginOverlay();
-    _viewport.onSample = (visible, position) => widget
-        .sourceReading
-        ?.controller
-        .onOverlaySample
-        ?.call(visible, position, _interacted);
+    _listController.itemPositions.addListener(_viewport.scheduleSample);
+    _viewport.onSample = (visible, position) {
+      if (position != null) _anchorReadingPost(position.postNumber);
+      widget.sourceReading?.controller.onOverlaySample?.call(
+        visible,
+        position,
+        _interacted,
+      );
+    };
     _viewport.onOverlaySample = (visible, position, interacted) => widget
         .sourceReading
         ?.controller
@@ -131,8 +140,25 @@ class _NestedThreadSheetContentState
   @override
   void dispose() {
     widget.sourceReading?.controller.endOverlay();
+    _readingAnchor?.cancel();
+    _listController.itemPositions.removeListener(_viewport.scheduleSample);
+    _listController.dispose();
     _viewport.dispose();
     super.dispose();
+  }
+
+  void _anchorReadingPost(int postNumber) {
+    if (!_listController.isAttached ||
+        _listController.scrollPosition?.isScrollingNotifier.value != false) {
+      return;
+    }
+    final post = _viewport.find(postNumber);
+    if (post == null ||
+        (identical(post, _anchoredPost) && _readingAnchor?.isActive == true)) {
+      return;
+    }
+    _anchoredPost = post;
+    _readingAnchor = _listController.preserveHeader(post);
   }
 
   Future<void> _loadChildren() async {
@@ -192,6 +218,9 @@ class _NestedThreadSheetContentState
             session: _session,
             child: NotificationListener<ScrollNotification>(
               onNotification: (notification) {
+                if (notification is ScrollStartNotification) {
+                  _readingAnchor?.cancel();
+                }
                 if (notification is ScrollStartNotification &&
                     notification.dragDetails != null) {
                   _interacted = true;
@@ -199,14 +228,22 @@ class _NestedThreadSheetContentState
                 _viewport.scheduleSample();
                 return false;
               },
-              child: ListView(
+              child: PositionedStreamList(
                 key: _viewport.viewportKey,
-                controller: scrollController,
-                padding: const EdgeInsets.only(bottom: 32),
-                children: [
-                  // 子回复列表，depth 从 0 重新开始
-                  for (int i = 0; i < children.length; i++)
-                    NestedPostCard(
+                scrollController: scrollController,
+                listController: _listController,
+                positionKey: widget.node.post.id,
+                initialIndex: null,
+                cacheExtent: 300,
+                physics: const ScrollPhysics(),
+                itemKeys: [
+                  for (final child in children) 'post-${child.post.id}',
+                  if (_hasMore) 'load-more',
+                  'bottom-inset',
+                ],
+                itemBuilder: (context, i) {
+                  if (i < children.length) {
+                    return NestedPostCard(
                       key: ValueKey(children[i].post.id),
                       node: children[i],
                       rootPostNumber:
@@ -226,10 +263,10 @@ class _NestedThreadSheetContentState
                       onSolutionChanged: widget.onSolutionChanged,
                       onQuoteSelection: widget.onQuoteSelection,
                       expansionState: _expansionState,
-                    ),
-                  // 加载更多
-                  if (_hasMore)
-                    Padding(
+                    );
+                  }
+                  if (i == children.length && _hasMore) {
+                    return Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
@@ -242,8 +279,10 @@ class _NestedThreadSheetContentState
                                 child: Text(context.l10n.nested_loadMore),
                               ),
                             ),
-                    ),
-                ],
+                    );
+                  }
+                  return const SizedBox(height: 32);
+                },
               ),
             ),
           ),
