@@ -28,7 +28,6 @@ import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:scroll_to_index/scroll_to_index.dart';
 
 class _ImagePicker extends ImagePickerPlatform {
   _ImagePicker(this.paths);
@@ -288,10 +287,18 @@ Future<void> _nearHistory(
 Finder _visibleMessage(WidgetTester tester) {
   final viewport = tester.getRect(find.byType(CustomScrollView));
   final bottom = tester.getTopLeft(find.byType(TextField)).dy;
-  final visible = find.byType(AutoScrollTag).evaluate().firstWhere((element) {
-    final rect = tester.getRect(find.byKey(element.widget.key!));
-    return rect.top >= viewport.top && rect.bottom <= bottom;
-  });
+  final visible = find
+      .byWidgetPredicate(
+        (widget) =>
+            widget is KeyedSubtree &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith('chat_msg_'),
+      )
+      .evaluate()
+      .firstWhere((element) {
+        final rect = tester.getRect(find.byKey(element.widget.key!));
+        return rect.top >= viewport.top && rect.bottom <= bottom;
+      });
   return find.byKey(visible.widget.key!);
 }
 
@@ -302,6 +309,34 @@ void main() {
   });
 
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('引用定位与新消息同帧到达时仍落到原目标', (tester) async {
+    final messages = _Messages(
+      count: 200,
+      variedHeights: true,
+      canLoadMoreFuture: false,
+    );
+    await _pumpPage(tester, messages);
+    messages.addReplyReference(300, 120);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('chat_msg_120')), findsNothing);
+    await tester.tap(find.text('定位到消息 120'));
+    await tester.pump();
+    messages.receiveMessage();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    final target = find.byKey(const ValueKey('chat_msg_120'));
+    expect(target, findsOneWidget);
+    expect(
+      tester
+          .getRect(find.byType(CustomScrollView))
+          .contains(tester.getCenter(target)),
+      isTrue,
+    );
+    expect(messages.pastCalls, 0);
+    expect(messages.futureCalls, 0);
+    await _disposePage(tester);
+  });
 
   for (final count in [1, 2]) {
     testWidgets('聊天选图进入共用确认框，取消不创建附件 count=$count', (tester) async {
@@ -619,14 +654,15 @@ void main() {
       await tester.pump();
       final message = _visibleMessage(tester);
       final before = tester.getTopLeft(message);
-      final offset = controller.offset;
       messages.finishFuture(count: 50);
       await tester.pump();
       await tester.pump();
 
       expect(message, findsOneWidget);
       expect(tester.getTopLeft(message), before);
-      expect(controller.offset, offset);
+      await gesture.moveBy(const Offset(0, -40));
+      await tester.pump();
+      expect(tester.getTopLeft(message).dy, closeTo(before.dy - 40, 1));
       expect(messages.futureCalls, page);
       await gesture.up();
       await tester.pumpAndSettle();
@@ -672,7 +708,7 @@ void main() {
 
     messages.finishFuture(count: 50, hasMore: false);
     await tester.pumpAndSettle();
-    expect(controller.position.minScrollExtent, lessThan(0));
+    expect(controller.position.maxScrollExtent, greaterThan(600));
     expect(controller.position.extentBefore, greaterThan(600));
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
@@ -686,8 +722,9 @@ void main() {
   testWidgets('实时消息仅在贴底时跟随，阅读历史时保持原位', (tester) async {
     final messages = _Messages(variedHeights: true, canLoadMoreFuture: false);
     final controller = await _pumpPage(tester, messages);
-    controller.jumpTo(800);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 800));
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
     final message = _visibleMessage(tester);
     final before = tester.getTopLeft(message);
     messages.receiveMessage();
@@ -712,7 +749,7 @@ void main() {
     await tester.pump();
     messages.finishFuture(count: 2);
     await tester.pumpAndSettle();
-    controller.jumpTo(-100);
+    controller.jumpTo(100);
     await tester.pumpAndSettle();
 
     final older = tester.getRect(find.byKey(const ValueKey('chat_msg_140')));
@@ -773,8 +810,11 @@ void main() {
     final controller = await _pumpPage(tester, messages);
     controller.jumpTo(1800);
     await tester.pumpAndSettle();
-    final visible = tester.widget<AutoScrollTag>(_visibleMessage(tester));
-    messages.addReplyReference(visible.index, 50);
+    final visible = tester.widget<KeyedSubtree>(_visibleMessage(tester));
+    final visibleId = int.parse(
+      (visible.key! as ValueKey<String>).value.substring('chat_msg_'.length),
+    );
+    messages.addReplyReference(visibleId, 50);
     await tester.pumpAndSettle();
     await tester.tap(find.text('定位到消息 50'));
     await tester.pump();
