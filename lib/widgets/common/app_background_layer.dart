@@ -7,10 +7,10 @@ import 'package:flutter/material.dart';
 import '../../theme/app_background.dart';
 import '../../theme/neutral_ramps.dart';
 
-/// 透明模式的根背景层：用户背景图 + 遮罩。
+/// 透明模式的页面背景：不透明底色 + 用户背景图 + 遮罩。
 ///
-/// 垫在 Navigator 之下（MaterialApp.builder 的 Stack 最底层），配合
-/// 透明中性层让背景图透出来。图片固定不滚动，内容在其上滚动。
+/// 每条普通页面路由独立承载，随页面一起转场，避免透出上一页内容。
+/// 图片固定不滚动，内容在其上滚动。
 ///
 /// 遮罩颜色跟随亮度（浅色盖白、深色盖黑），透明度由用户调节且
 /// 明暗分开记忆——同一张图在两种亮度下都能调出可读性。
@@ -57,6 +57,12 @@ class AppBackgroundLayer extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
+        // 解码前、透明 PNG 和模糊边缘也必须不透明。
+        ColoredBox(
+          color: brightness == Brightness.light
+              ? NeutralRamp.light.surface
+              : NeutralRamp.dark.surface,
+        ),
         image,
         ColoredBox(
           color:

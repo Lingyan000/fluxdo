@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'page_background.dart';
 
 /// One instance per Navigator, including nested Navigators.
 /// Keeps visual gesture settlement separate from ownership of new input.
@@ -209,7 +210,14 @@ class InterruptiblePageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       animation,
       secondaryAnimation,
-      RouteContentInteraction(route: route, child: child),
+      // App routes add their background in buildPage (also inside custom
+      // browser transitions). Framework-created routes, including home, need
+      // it here, inside the transition. Keep the input guard next to child.
+      route.opaque && route is! PageBackgroundRoute
+          ? RoutePageBackground(
+              child: RouteContentInteraction(route: route, child: child),
+            )
+          : RouteContentInteraction(route: route, child: child),
     ),
   );
 }
@@ -278,7 +286,7 @@ class _InteractionDialogRoute<T> extends DialogRoute<T>
 /// Use for application pages so the framework barrier also releases input in
 /// the same frame as pop. Theme decoration alone cannot wrap that barrier.
 class InteractionPageRoute<T> extends MaterialPageRoute<T>
-    with InterruptibleRoute<T> {
+    with InterruptibleRoute<T>, PageBackgroundRoute<T> {
   InteractionPageRoute({
     required super.builder,
     super.settings,
@@ -293,7 +301,7 @@ class InteractionPageRoute<T> extends MaterialPageRoute<T>
 }
 
 class InteractionPageRouteBuilder<T> extends PageRouteBuilder<T>
-    with InterruptibleRoute<T> {
+    with InterruptibleRoute<T>, PageBackgroundRoute<T> {
   InteractionPageRouteBuilder({
     required super.pageBuilder,
     super.settings,

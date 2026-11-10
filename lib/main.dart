@@ -784,14 +784,21 @@ class MainApp extends ConsumerWidget {
                     child: Stack(
                       fit: StackFit.passthrough,
                       children: [
-                        // 透明模式的用户背景层，垫在 Navigator 之下
+                        // 根背景只兜底路由间隙；各普通页面独立铺壁纸，隔离前后页。
                         if (resolvedTheme.transparent)
                           Positioned.fill(
                             child: AppBackgroundLayer(
                               background: themeState.background,
                             ),
                           ),
-                        child!,
+                        PageBackgroundScope(
+                          backgroundBuilder: resolvedTheme.transparent
+                              ? (_) => AppBackgroundLayer(
+                                  background: themeState.background,
+                                )
+                              : null,
+                          child: child!,
+                        ),
                         if (windowHome == null) const ReadLaterBubble(),
                       ],
                     ),
