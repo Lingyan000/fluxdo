@@ -44,4 +44,5 @@ jobs:
           flutter build macos --debug
           cd ../..
           build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee build/mac-probe/flutter-result.log
+          grep -q 'EXPECTED_FIXTURE_DENIAL' build/mac-probe/flutter-result.log
           cat build/mac-probe/server.log

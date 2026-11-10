@@ -55,7 +55,10 @@ class Probe extends StatelessWidget {
     onLoadStop:(c,u) async {report('flutter-stop',u.toString());await c.injectCSSCode(source:MiniAppHostAdapter.css);},
     onReceivedError:(c,r,e)=>report('flutter-error',{'type':e.type.toString(),'description':e.description,'main':r.isForMainFrame}),
     onConsoleMessage:(c,m)=>report('flutter-console',m.message),
-    onReceivedServerTrustAuthRequest:(c,challenge) async => challenge.protectionSpace.host=='community.miniapp-probe.test'?ServerTrustAuthResponse(action:ServerTrustAuthResponseAction.PROCEED):null,
+    onReceivedServerTrustAuthRequest:(c,challenge) async {
+      report('flutter-trust',challenge.protectionSpace.host);
+      return challenge.protectionSpace.host=='community.miniapp-probe.test'?ServerTrustAuthResponse(action:ServerTrustAuthResponseAction.PROCEED):null;
+    },
     shouldOverrideUrlLoading:(c,a) async {
       final uri=a.request.url;
       var allow=uri==null;
