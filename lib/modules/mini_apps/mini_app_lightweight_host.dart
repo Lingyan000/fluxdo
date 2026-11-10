@@ -151,6 +151,8 @@ $script
   const lifetime = new AbortController();
   let runtime, provider, muted = true, closed = false;
   let phase = 'environment';
+  let frameHostState = 'not_loaded', runtimeState = 'not_started';
+  let runtimeTracking;
   let suspended = false, resumeMuted = true, mediaQueue = Promise.resolve();
   function setSuspended(value) {
     // 仅主宿主可调用；保留用户原先的声音选择，快速收起/恢复按顺序执行。
@@ -168,6 +170,7 @@ $script
     if (closed) return;
     closed = true;
     lifetime.abort();
+    runtimeTracking?.abort();
     runtime?.destroy();
     provider?.destroy();
     runtime = provider = null;
@@ -177,6 +180,48 @@ $script
   Object.defineProperty(window, 'fluxdoMiniAppHost', {
     value: Object.freeze({destroy, setSuspended}), configurable:false, writable:false,
   });
+  // load 不冒泡，必须在捕获阶段记录；官方校验失败会立即移除 frame。
+  // 只观察可信 frame-host 的标记和握手类型，不进入应用沙箱、不替代校验。
+  document.addEventListener('load', event => {
+    const frame = event.target;
+    if (closed || frame?.tagName !== 'IFRAME' ||
+        !frame.classList.contains('mini-app-frame-host') || !root.contains(frame) ||
+        frame.src !== new URL(boot.configuration.frameHostUrl, location.origin).href) return;
+    runtimeTracking?.abort();
+    runtimeTracking = new AbortController();
+    runtimeState = 'not_started';
+    try {
+      const child = frame.contentWindow, doc = frame.contentDocument;
+      if (!doc?.body) frameHostState = 'inaccessible';
+      else if (child.location.href !== frame.src) frameHostState = 'unexpected_url';
+      else if (doc.querySelector('meta[name="discourse-mini-app-host"]')?.content !== '1') {
+        frameHostState = 'invalid_marker';
+      } else {
+        frameHostState = 'ready';
+        child.addEventListener('message', event => {
+          const app = doc.querySelector('body > iframe');
+          if (closed || !app || event.source !== app.contentWindow || event.origin !== 'null') return;
+          const type = event.data?.type;
+          if (type === 'runtime-ready') runtimeState = 'ready';
+          else if (type === 'runtime-failed') runtimeState = 'failed';
+          else if (type === 'app-ready') runtimeState = 'app_ready';
+          if (runtimeState === 'failed' || runtimeState === 'app_ready') runtimeTracking.abort();
+        }, {signal:runtimeTracking.signal});
+      }
+    } catch { frameHostState = 'inaccessible'; }
+  }, {capture:true, signal:lifetime.signal});
+  function runtimeErrorDetail(code, message) {
+    runtimeTracking?.abort();
+    const expected = new URL(boot.entry);
+    document.getElementById('fluxdo-mini-app-boot-failure').textContent = JSON.stringify({
+      appId:boot.configuration.appId, code, phase:'runtime',
+      frameHost:frameHostState, runtime:runtimeState,
+      secureContext:isSecureContext, sameOrigin:location.origin === expected.origin,
+      entryMatches:location.href === expected.href,
+    });
+    return message + '\n[' + code + ' · frame_host: ' + frameHostState +
+      ' · runtime: ' + runtimeState + ']';
+  }
   function asset(value, kind, worker = false, extension = 'js') {
     if (typeof value !== 'string' || value.includes('\\')) throw invalid('INVALID_RUNTIME_ASSET');
     const url = new URL(value, location.origin);
@@ -277,6 +322,16 @@ $script
       throw invalid('INVALID_RUNTIME_ASSET');
     }
     phase = 'loader_mount';
+    // 官方 mountLoader 内部自行 catch；外层 start().catch 接收不到这些错误。
+    // 它显示错误时读取翻译，按需补充错误码及此前观察到的握手阶段。
+    const errors = {...config.translations?.errors};
+    for (const code of ['SANDBOX_UNAVAILABLE','START_FAILED','START_TIMEOUT',
+      'UNEXPECTED_NAVIGATION','WORKER_UNAVAILABLE']) {
+      const message = typeof errors[code] === 'string' ? errors[code] : code;
+      Object.defineProperty(errors, code, {enumerable:true, configurable:true,
+        get:() => runtimeErrorDetail(code, message)});
+    }
+    config.translations = {...config.translations, errors};
     provider = loader.createUserDataProvider({
       getCurrentUser: () => { active(); return current; },
       isActive: () => !closed,

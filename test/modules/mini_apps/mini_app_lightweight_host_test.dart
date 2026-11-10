@@ -171,6 +171,22 @@ void main() {
     expect(window['event'], 'mini_app_host_failed');
     expect(window['independentWindow'], true);
     expect(jsonEncode(window), isNot(contains('secret')));
+    final sandbox = MiniAppLaunchReport.hostFailure({
+      ...raw,
+      'phase': 'runtime',
+      'code': 'SANDBOX_UNAVAILABLE',
+      'frameHost': 'invalid_marker',
+      'runtime': 'not_started',
+    }, id)!;
+    expect(sandbox['frameHost'], 'invalid_marker');
+    expect(sandbox['runtime'], 'not_started');
+    final unknown = MiniAppLaunchReport.hostFailure({
+      ...sandbox,
+      'frameHost': 'https://secret',
+      'runtime': 'secret-token',
+    }, id)!;
+    expect(unknown.containsKey('frameHost'), false);
+    expect(unknown.containsKey('runtime'), false);
   });
 
   test('原生启动失败保留可定位的阶段与枚举，跨窗口丢弃任意错误正文', () {
@@ -228,11 +244,12 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const settle = async () => { for(let i=0;i<12;i++) await new Promise(setImmediate); };
 async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=false,anonymous=false,
-  requestFailure=null,importFailure=false,mountFailure=false,insecure=false}={}) {
+  requestFailure=null,importFailure=false,mountFailure=false,insecure=false,runtimeFailure=null}={}) {
   const calls=[], imports=[], lifecycle={}, listeners={}, links=[];
+  let documentLoad;
   const stage={textContent:''},detail={textContent:''},progress={},retry={hidden:true};
   const loading={hidden:false,querySelector:s=>s==='progress'?progress:null};
-  const root={classList:{remove(){},add(){}},querySelector:s=>({
+  const root={contains:frame=>frame.fixture===true,classList:{remove(){},add(){}},querySelector:s=>({
     '.mini-app-loader__loading':loading,'[data-role="stage"]':stage,
     '[data-role="detail"]':detail,'[data-action="retry"]':retry,
   })[s]};
@@ -241,6 +258,7 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     addEventListener:(event,fn)=>listeners[event]=fn};
   const release={textContent:''},bootFailure={textContent:''},csrfMeta={content:''};
   const document={head:{append:link=>links.push(link)},createElement:()=>({}),
+    addEventListener:(name,fn,options)=>{assert.equal(name,'load');assert.equal(options.capture,true);documentLoad=fn;},
     getElementById:id=>id==='fluxdo-mini-app-boot-failure'?bootFailure:release,
     querySelector:s=>({'.mini-app-loader':root,'.mini-app-page':page,
       '.mini-app-page__audio-trigger':audio,'meta[name="csrf-token"]':csrfMeta})[s]};
@@ -296,6 +314,43 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   await settle();
   if(delay){window.fluxdoMiniAppHost.destroy();resolveFetch();await settle();
     assert.equal(imports.length,0);assert.equal(disposed,0);return;}
+  if(runtimeFailure) {
+    let message, tracking;
+    const app={contentWindow:{}};
+    const child={location:{href:'https://linux.do/mini-app-api/frame-host'},
+      addEventListener:(name,fn,options)=>{message=fn;tracking=options.signal;}};
+    const doc={body:{},querySelector:s=>s==='body > iframe'?app:
+      runtimeFailure==='invalid_marker'?null:{content:'1'}};
+    const frame={fixture:true,tagName:'IFRAME',classList:{contains:()=>true},
+      src:child.location.href,contentDocument:doc,contentWindow:child};
+    if(runtimeFailure==='unexpected_url') child.location.href='https://linux.do/login?secret';
+    if(runtimeFailure==='inaccessible') frame.contentDocument=null;
+    // 不读取其他 frame；页面正文和凭据不进入诊断。
+    documentLoad({target:{...frame,fixture:false,get contentDocument(){throw Error('wrong frame');}}});
+    documentLoad({target:frame});
+    if(message) {
+      message({source:{},origin:'null',data:{type:'runtime-failed',token:'secret'}});
+      message({source:app.contentWindow,origin:'https://evil.test',data:{type:'runtime-failed'}});
+      if(runtimeFailure==='runtime_failed') {
+        message({source:app.contentWindow,origin:'null',data:{type:'runtime-failed',token:'secret'}});
+        assert.equal(tracking.aborted,true);
+      }
+    }
+    // 模拟官方运行器内部捕获异常后移除 iframe，再读取错误翻译。
+    root.contains=()=>false;
+    detail.textContent=options.translations.errors.SANDBOX_UNAVAILABLE;
+    const diagnostic=JSON.parse(bootFailure.textContent);
+    assert.equal(diagnostic.phase,'runtime');
+    assert.equal(diagnostic.code,'SANDBOX_UNAVAILABLE');
+    assert.equal(diagnostic.frameHost,['runtime_failed','ready'].includes(runtimeFailure)?'ready':runtimeFailure);
+    assert.equal(diagnostic.runtime,runtimeFailure==='runtime_failed'?'failed':'not_started');
+    assert.equal(detail.textContent.includes('SANDBOX_UNAVAILABLE'),true);
+    assert.equal(detail.textContent.includes('frame_host: '+diagnostic.frameHost),true);
+    assert.equal(bootFailure.textContent.includes('secret'),false);
+    if(tracking) assert.equal(tracking.aborted,true);
+    window.fluxdoMiniAppHost.destroy();
+    return;
+  }
   if(badOrigin||badAsset||wrongUser||requestFailure||importFailure||mountFailure||insecure){
     assert.equal(imports.length,mountFailure?1:0);
     assert.equal(retry.hidden,false);assert.equal(stage.textContent,'失败');
@@ -347,5 +402,8 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   await scenario({requestFailure:{path:'/session/current.json',phase:'session',status:403}});
   await scenario({requestFailure:{path:'/session/csrf',phase:'csrf',json:true}});
   await scenario({requestFailure:{path:'/mini-app-api/runtime-assets.json',phase:'runtime_assets'}});
+  for(const runtimeFailure of ['invalid_marker','unexpected_url','inaccessible','ready','runtime_failed']) {
+    await scenario({runtimeFailure});
+  }
 })().catch(error=>{console.error(error);process.exitCode=1;});
 ''';

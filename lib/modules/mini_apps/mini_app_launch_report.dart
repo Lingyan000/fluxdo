@@ -42,6 +42,7 @@ abstract final class MiniAppLaunchReport {
           'identity',
           'loader_import',
           'loader_mount',
+          'runtime',
         }.contains(value['phase']) ||
         !{
           'ACCESS_DENIED',
@@ -50,6 +51,10 @@ abstract final class MiniAppLaunchReport {
           'INVALID_USER',
           'REQUEST_FAILED',
           'START_FAILED',
+          'SANDBOX_UNAVAILABLE',
+          'START_TIMEOUT',
+          'UNEXPECTED_NAVIGATION',
+          'WORKER_UNAVAILABLE',
         }.contains(value['code'])) {
       return null;
     }
@@ -62,6 +67,21 @@ abstract final class MiniAppLaunchReport {
       'appId': appId,
       'phase': value['phase'],
       'code': value['code'],
+      if ({
+        'not_loaded',
+        'inaccessible',
+        'unexpected_url',
+        'invalid_marker',
+        'ready',
+      }.contains(value['frameHost']))
+        'frameHost': value['frameHost'],
+      if ({
+        'not_started',
+        'ready',
+        'failed',
+        'app_ready',
+      }.contains(value['runtime']))
+        'runtime': value['runtime'],
       if ({
         'Error',
         'TypeError',

@@ -329,3 +329,12 @@ MD3E 统一作用于客户端入口、列表、详情、过渡和提示；具体
 - 隔离分支 `codex/macos-mini-app-probe-20261110` 使用合成本地 HTTPS 站点、临时证书和测试会话，不携带真实社区账号或启动授权。原生 WKWebView 在 macOS 15.8.2、27.0.1 上对照 `loadData`、`loadSimulatedRequest` 和网络文档三种方式，均保留 HTTPS 来源、启动参数与 Cookie，能导入官方加载器并收到夹具预设的授权拒绝。
 - macOS 27.0.1 的真实 `flutter_inappwebview 6.2.0-beta.3` 最小应用也已验证到同一授权阶段，使用生产轻量 HTML、兼容脚本、宿主适配脚本和相同主文档导航策略；原生 `getUrl` 和 Dart 状态快照正常。[验证运行](https://github.com/Lingyan000/fluxdo/actions/runs/42751299692)。这不是完整应用包成功运行测试，也没有复现用户设备故障，不能将诊断增强视为已经修复 macOS 启动失败。
 - 后续普通 HTTPS 测试域对照曾出现 `runtime_assets / TypeError`；网络文档也同时报 `SECURE_CONNECTION_FAILED`。仅在隔离 CI 系统中信任临时测试证书后，`loadData`、`loadSimulatedRequest`、网络文档三种模式均进入预设授权拒绝，说明该次失败属于夹具证书问题，不能归因于生产加载 API。[六组证书/加载方式对照](https://github.com/Lingyan000/fluxdo/actions/runs/42754143933)。用户已确认同一台 macOS 27 上官方网页能开而轻量失败；尚缺其设备的实际失败阶段，保持待定位状态。
+
+### 官方运行器内部沙箱错误（2026-11-10）
+
+- 用户截图中的“浏览器无法安全运行此应用，请升级或更换浏览器”对应官方运行器的 `SANDBOX_UNAVAILABLE`。运行器会自行捕获这些异常，外层宿主的 `start().catch` 收不到，因此上一版启动诊断没有覆盖截图中的路径；这条文案本身不能证明 macOS 版本过低。
+- 轻量宿主现在在官方运行器读取错误翻译时，附加真实错误码及隔离页、沙箱的最后状态。通过捕获 `load` 在官方校验移除 iframe 之前记录同源隔离页是否可访问、地址是否匹配、官方标记是否存在；只观察该隔离页中真正应用 frame 发来的有限握手类型，不读取应用内容、不接管端口、不改变权限或校验结果。正常就绪或失败后移除握手监听，关闭时释放全部监听，没有新增轮询、网络请求或截图。
+- 错误页与现有日志共用固定枚举：`frame_host` 为 `not_loaded/inaccessible/unexpected_url/invalid_marker/ready`，`runtime` 为 `not_started/ready/failed/app_ready`。不读取或记录 frame 页面正文、实际重定向地址、任意消息或凭据；独立窗口沿用既有白名单校验与 IPC。
+- 隔离 macOS 27 对照覆盖 `loadData`、`loadSimulatedRequest`、网络文档，包含同源 iframe、CSP `frame-ancestors`、X-Frame-Options、沙箱不透明来源、MessagePort 传递、`document.write` 后二次握手，均通过。[两层沙箱回归](https://github.com/Lingyan000/fluxdo/actions/runs/42770391985)。随后使用公开且固定哈希的官方 loader/SDK、合成应用与夹具 package-worker，三种加载方式均到达 `ready`，覆盖网络与持久资源缓存。[官方运行器挂载对照](https://github.com/Lingyan000/fluxdo/actions/runs/42771369285)。此夹具替代了加密包处理与线上运行页，不等同于完整线上应用或用户设备验收；用户故障根因仍待其运行器失败状态确认，不能据此更换加载 API 或放宽沙箱。
+- 本地 20 项启动/宿主适配/重开回归通过，定向静态检查无问题。JavaScript 回归覆盖隔离页错误文档、错误地址、不可访问、沙箱主动失败、伪造来源消息及官方移除 iframe 后仍保留失败详情。
+- 最终 macOS 27 真实插件回归分为正常隔离页和 HTTP 403 错误隔离页，两组各运行三种加载方式：正常组均 `ready` 且无失败诊断；错误组均显示 `SANDBOX_UNAVAILABLE · frame_host: invalid_marker · runtime: not_started`，同一状态也能通过生产快照读取。六组均有明确成功断言。[错误详情显示回归](https://github.com/Lingyan000/fluxdo/actions/runs/42773058523)。这验证了本次补齐的诊断路径，尚未证明用户实际收到了 HTTP 403。
