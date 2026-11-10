@@ -8,6 +8,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 import '../providers/apk_update_provider.dart';
 import '../services/apk_download_service.dart';
+import '../theme/app_colors.dart';
 
 /// APK 下载进度对话框
 ///
@@ -130,7 +131,7 @@ class DownloadProgressDialog extends ConsumerWidget {
           break;
         case ApkDownloadStatus.error:
           icon = Symbols.error_rounded;
-          iconColor = isDark ? Colors.white : Colors.red.shade700;
+          iconColor = isDark ? Colors.white : context.appColors.red.shade700;
           break;
         default:
           icon = Symbols.download_rounded;

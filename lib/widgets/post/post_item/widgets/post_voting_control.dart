@@ -26,6 +26,7 @@ import '../../../../utils/dialog_utils.dart';
 import '../../../common/app_bottom_sheet.dart';
 import '../../../common/smart_avatar.dart';
 import '../../../user/user_card.dart';
+import '../../../../theme/app_colors.dart';
 
 class PostVotingControl extends ConsumerStatefulWidget {
   final Post post;
@@ -165,7 +166,7 @@ class _PostVotingControlState extends ConsumerState<PostVotingControl> {
     final downActive = _direction == 'down';
     final muted = theme.colorScheme.onSurfaceVariant;
     // 官方配色:已投上=绿(--success),已投下=红(--danger)
-    final upColor = upActive ? Colors.green : muted;
+    final upColor = upActive ? context.appColors.green : muted;
     final downColor = downActive ? theme.colorScheme.error : muted;
     final vertical = widget.axis == Axis.vertical;
 
@@ -207,7 +208,7 @@ class _PostVotingControlState extends ConsumerState<PostVotingControl> {
             color: _count == 0
                 ? muted.withValues(alpha: 0.7)
                 : (upActive
-                      ? Colors.green
+                      ? context.appColors.green
                       : downActive
                       ? theme.colorScheme.error
                       : theme.colorScheme.onSurface),

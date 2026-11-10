@@ -213,7 +213,7 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                         ? Symbols.check_box_rounded
                         : Symbols.check_box_outline_blank_rounded,
                     color: _isAcceptedAnswer
-                        ? Colors.green
+                        ? context.appColors.green
                         : theme.colorScheme.onSurface,
                   ),
                   title: Text(
@@ -222,7 +222,7 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                         : context.l10n.post_acceptSolution,
                     style: TextStyle(
                       color: _isAcceptedAnswer
-                          ? Colors.green
+                          ? context.appColors.green
                           : theme.colorScheme.onSurface,
                     ),
                   ),

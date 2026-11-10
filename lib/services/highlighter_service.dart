@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:re_highlight/languages/all.dart';
 import 'package:re_highlight/re_highlight.dart';
-import 'package:re_highlight/styles/github.dart';
-import 'package:re_highlight/styles/github-dark.dart';
+
+import '../theme/app_colors.dart';
 
 /// 可序列化的高亮 token
 class HighlightToken {
@@ -274,11 +274,13 @@ class HighlighterService {
   /// wrapper 的 TextStyle 继承链等价),相邻同样式 token 合并为单个 span。
   /// 大代码块 token 数以千计,嵌套树 + 逐 token span 是主线程排版大头,
   /// 合并后 span 数下降一个量级。
+  ///
+  /// [syntax] 是当前主题的高亮表（`context.appColors.syntax`）。
   TextSpan tokensToSpan(List<HighlightToken> tokens, {
-    bool isDark = false,
+    required Map<String, TextStyle> syntax,
     TextStyle? baseStyle,
   }) {
-    final theme = isDark ? githubDarkTheme : githubTheme;
+    final theme = syntax;
     final base = baseStyle ?? firaCodeStyle;
 
     final spans = <InlineSpan>[];
@@ -334,7 +336,6 @@ class HighlighterService {
   Widget buildHighlightView(
     String code, {
     String? language,
-    bool isDark = false,
     Color? backgroundColor,
     EdgeInsets padding = const EdgeInsets.all(12),
     TextStyle? textStyle,
@@ -343,7 +344,6 @@ class HighlighterService {
     return HighlightCodeBlock(
       code: code,
       language: language,
-      isDark: isDark,
       backgroundColor: backgroundColor,
       padding: padding,
       textStyle: textStyle,
@@ -396,7 +396,6 @@ class HighlighterService {
 class HighlightCodeBlock extends StatefulWidget {
   final String code;
   final String? language;
-  final bool isDark;
   final Color? backgroundColor;
   final EdgeInsets padding;
   final TextStyle? textStyle;
@@ -406,7 +405,6 @@ class HighlightCodeBlock extends StatefulWidget {
     super.key,
     required this.code,
     this.language,
-    this.isDark = false,
     this.backgroundColor,
     this.padding = const EdgeInsets.all(12),
     this.textStyle,
@@ -453,7 +451,7 @@ class _HighlightCodeBlockState extends State<HighlightCodeBlock> {
     final textSpan = _tokens != null
         ? HighlighterService.instance.tokensToSpan(
             _tokens!,
-            isDark: widget.isDark,
+            syntax: context.appColors.syntax,
             baseStyle: baseStyle,
           )
         : TextSpan(text: widget.code, style: baseStyle);

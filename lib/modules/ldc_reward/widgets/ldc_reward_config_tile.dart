@@ -7,6 +7,7 @@ import '../../../pages/webview_page.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../services/toast_service.dart';
 import '../providers/ldc_reward_provider.dart';
+import '../../../theme/app_colors.dart';
 
 /// LDC 打赏凭证配置卡片（元宇宙页面用）
 class LdcRewardConfigTile extends ConsumerWidget {
@@ -82,7 +83,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
                     ? Symbols.check_circle_rounded
                     : Symbols.settings_rounded,
                 color: isConfigured
-                    ? Colors.green
+                    ? context.appColors.green
                     : theme.colorScheme.onSurfaceVariant,
               ),
             ],

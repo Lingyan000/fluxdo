@@ -2,21 +2,27 @@ import 'package:flutter/material.dart';
 
 import '../utils/seed_color_scheme.dart';
 import 'accent_colors.dart';
+import 'app_colors.dart';
 import 'color_scheme_roles.dart';
 import 'neutral_ramps.dart';
 import 'theme_spec.dart';
 
-/// 一次主题解析的产出：明暗两套 ColorScheme + MaterialApp 的 themeMode。
+/// 一次主题解析的产出：明暗两套 ColorScheme 与语义色 + MaterialApp 的
+/// themeMode。
 class ResolvedTheme {
   const ResolvedTheme({
     required this.light,
     required this.dark,
+    required this.lightColors,
+    required this.darkColors,
     required this.mode,
     required this.transparent,
   });
 
   final ColorScheme light;
   final ColorScheme dark;
+  final AppColors lightColors;
+  final AppColors darkColors;
   final ThemeMode mode;
 
   /// 透明模式是否生效（供根背景层/脚手架背景判断）。
@@ -114,7 +120,7 @@ class ThemeResolver {
     required DynamicSchemeVariant variant,
     String? accentId,
   }) {
-    ColorScheme schemeFor(Brightness brightness) {
+    (ColorScheme, AppColors) schemeFor(Brightness brightness) {
       final useBlack =
           black && spec.supportsPureBlack && brightness == Brightness.dark;
       if (!spec.isGenerated) {
@@ -134,7 +140,7 @@ class ThemeResolver {
             : brightness == Brightness.light
             ? NeutralRamp.light
             : NeutralRamp.dark;
-        return resolveColorScheme(
+        final scheme = resolveColorScheme(
           accent: AccentColors.fromSeed(
             seedColor: seed,
             brightness: brightness,
@@ -143,24 +149,30 @@ class ThemeResolver {
           neutral: transparent ? NeutralRamp.transparent(base) : base,
           brightness: brightness,
         );
+        return (scheme, AppColors.material(brightness));
       }
       // 原始路径：完整 fromSeed，表面带种子色相
-      return SeedColorScheme.from(
+      final scheme = SeedColorScheme.from(
         seedColor: seed,
         brightness: brightness,
         variant: variant,
       );
+      return (scheme, AppColors.material(brightness));
     }
 
+    final (light, lightColors) = schemeFor(Brightness.light);
+    final (dark, darkColors) = schemeFor(Brightness.dark);
     return ResolvedTheme(
-      light: schemeFor(Brightness.light),
-      dark: schemeFor(Brightness.dark),
+      light: light,
+      dark: dark,
+      lightColors: lightColors,
+      darkColors: darkColors,
       mode: mode,
       transparent: transparent,
     );
   }
 
-  static ColorScheme _fixedScheme({
+  static (ColorScheme, AppColors) _fixedScheme({
     required ThemeSpec spec,
     required Brightness brightness,
     required String? accentId,
@@ -204,7 +216,20 @@ class ThemeResolver {
               if (!NeutralRamp.roleNames.contains(e.key)) e.key: e.value,
           }
         : palette.roles;
-    return ColorSchemeRoles.apply(scheme, overrides);
+    final resolved = ColorSchemeRoles.apply(scheme, overrides);
+    // 语义色基于不透明的表面推导（透明模式下代码块仍需实底）
+    final isLight = brightness == Brightness.light;
+    final colors = AppColors.fromHues(
+      base: palette.hues,
+      brightness: brightness,
+      surface: ramp.surface,
+      onSurface: resolved.onSurface,
+      onSurfaceVariant: resolved.onSurfaceVariant,
+      codeBackground: isLight
+          ? ramp.surfaceContainerHigh
+          : ramp.surfaceContainerLowest,
+    );
+    return (resolved, colors);
   }
 }
 

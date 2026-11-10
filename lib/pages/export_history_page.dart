@@ -23,6 +23,7 @@ import '../utils/platform_utils.dart';
 import '../utils/share_utils.dart';
 import '../utils/time_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
+import '../theme/app_colors.dart';
 
 /// 导出历史页面：列出当前账号所有导出/同步记录。
 class ExportHistoryPage extends ConsumerStatefulWidget {
@@ -73,7 +74,7 @@ class _ExportHistoryPageState extends ConsumerState<ExportHistoryPage> {
                     trailingActions: [
                       SwipeAction(
                         icon: Symbols.delete_rounded,
-                        color: Colors.red,
+                        color: context.appColors.red,
                         label: context.l10n.exportHistory_deleteRecord,
                         onPressed: () => ref
                             .read(exportHistoryProvider.notifier)

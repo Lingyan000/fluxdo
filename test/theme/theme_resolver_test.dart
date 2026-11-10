@@ -1,4 +1,5 @@
 import 'package:fluxdo/theme/accent_colors.dart';
+import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_palettes.dart';
 import 'package:fluxdo/theme/color_contrast.dart';
 import 'package:fluxdo/theme/neutral_ramps.dart';
@@ -46,6 +47,8 @@ ResolvedTheme _legacyResolve({
   return ResolvedTheme(
     light: schemeFor(Brightness.light),
     dark: schemeFor(Brightness.dark),
+    lightColors: AppColors.material(Brightness.light),
+    darkColors: AppColors.material(Brightness.dark),
     mode: mode,
     transparent: transparent,
   );
@@ -63,12 +66,31 @@ Map<String, dynamic> _fixedJson() => {
     'fgMuted': '#6C6F85',
     'border': '#CCD0DA',
     'error': '#D20F39',
+    'hues': <String, dynamic>{
+      'red': '#D20F39',
+      'orange': '#FE640B',
+      'yellow': '#DF8E1D',
+      'green': '#40A02B',
+      'cyan': '#04A5E5',
+      'blue': '#1E66F5',
+      'purple': '#8839EF',
+      'teal': '#179299',
+    },
   },
   'dark': <String, dynamic>{
     'bg': '#1E1E2E',
     'fg': '#CDD6F4',
     'fgMuted': '#A6ADC8',
     'border': '#45475A',
+    'hues': <String, dynamic>{
+      'red': '#F38BA8',
+      'orange': '#FAB387',
+      'yellow': '#F9E2AF',
+      'green': '#A6E3A1',
+      'cyan': '#89DCEB',
+      'blue': '#89B4FA',
+      'purple': '#CBA6F7',
+    },
     'roles': {'surfaceContainerHigh': '#313244', 'primary': '#F5C2E7'},
   },
   'accents': [
@@ -116,6 +138,8 @@ void main() {
                 expect(actual.light, expected.light, reason: '$where light');
                 expect(actual.dark, expected.dark, reason: '$where dark');
                 expect(actual.transparent, expected.transparent);
+                expect(actual.lightColors, same(expected.lightColors));
+                expect(actual.darkColors, same(expected.darkColors));
               }
             }
           }
@@ -160,6 +184,16 @@ void main() {
       final badColor = _fixedJson();
       (badColor['light'] as Map)['outline'] = 'red';
       expect(() => ThemeSpec.fromJson(badColor), throwsFormatException);
+    });
+
+    test('色相表缺基础色或含未知色相时拒绝', () {
+      final missing = _fixedJson();
+      ((missing['dark'] as Map)['hues'] as Map).remove('blue');
+      expect(() => ThemeSpec.fromJson(missing), throwsFormatException);
+
+      final unknown = _fixedJson();
+      ((unknown['dark'] as Map)['hues'] as Map)['magenta'] = '#FF00FF';
+      expect(() => ThemeSpec.fromJson(unknown), throwsFormatException);
     });
 
     test('颜色格式', () {
@@ -297,6 +331,74 @@ void main() {
       expect(
         l(dark.surfaceContainerHighest),
         greaterThan(l(dark.surfaceContainer)),
+      );
+    });
+  });
+
+  group('AppColors', () {
+    test('Material 语义色就是 Flutter 原色板与 GitHub 高亮', () {
+      final light = AppColors.material(Brightness.light);
+      final dark = AppColors.material(Brightness.dark);
+      expect(light.red, same(Colors.red));
+      expect(light.grey, same(Colors.grey));
+      expect(light.redAccent, same(Colors.redAccent));
+      expect(light.codeBackground, const Color(0xfff6f8fa));
+      expect(dark.codeBackground, const Color(0xff282a36));
+      expect(light.syntax['keyword']!.color, const Color(0xffd73a49));
+      // 渲染引擎调色板取默认值（callout 等与引入前一致）
+      expect(light.render.blue, Colors.blue);
+      expect(light.render.clickCountBackground, isNull);
+    });
+
+    test('固定配色主题的色相来自主题，shade500 为主题原色', () {
+      final themes = ThemeResolver.resolve(
+        spec: ThemeSpec.fromJson(_fixedJson()),
+        mode: ThemeMode.system,
+        black: false,
+        transparent: false,
+        seed: Colors.blue,
+        variant: DynamicSchemeVariant.tonalSpot,
+      );
+      final dark = themes.darkColors;
+      expect(dark.blue.shade500, const Color(0xFF89B4FA));
+      expect(dark.teal, isNotNull);
+      expect(dark.redAccent.shade200, dark.red.shade300);
+      // 档位明暗单调
+      double l(Color c) => c.computeLuminance();
+      expect(l(dark.green.shade300), greaterThan(l(dark.green.shade500)));
+      expect(l(dark.green.shade700), lessThan(l(dark.green.shade500)));
+      expect(dark.render.blue, const Color(0xFF89B4FA));
+      expect(dark.render.clickCountBackground, isNotNull);
+      // 浅色侧提供了 teal，按原色使用
+      expect(themes.lightColors.teal.shade500, const Color(0xFF179299));
+    });
+
+    test('固定配色主题的高亮色对代码块底色可读', () {
+      final themes = ThemeResolver.resolve(
+        spec: ThemeSpec.fromJson(_fixedJson()),
+        mode: ThemeMode.system,
+        black: false,
+        transparent: false,
+        seed: Colors.blue,
+        variant: DynamicSchemeVariant.tonalSpot,
+      );
+      for (final colors in [themes.lightColors, themes.darkColors]) {
+        for (final entry in colors.syntax.entries) {
+          expect(
+            ColorContrast.ratio(entry.value.color!, colors.codeBackground),
+            greaterThanOrEqualTo(ColorContrast.text - 0.01),
+            reason: entry.key,
+          );
+        }
+      }
+    });
+
+    test('未注入扩展时 context.appColors 回退 Material', () {
+      final theme = ThemeData(brightness: Brightness.dark);
+      expect(theme.extension<AppColors>(), isNull);
+      expect(
+        AppColors.material(theme.brightness).codeBackground,
+        const Color(0xff282a36),
       );
     });
   });

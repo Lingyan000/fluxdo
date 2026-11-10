@@ -13,6 +13,7 @@ import '../services/notion/notion_sync_service.dart';
 import '../services/toast_service.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
+import '../theme/app_colors.dart';
 
 /// Notion 同步设置页：分步引导 + 配置编辑。
 class NotionSettingsPage extends ConsumerStatefulWidget {
@@ -482,7 +483,7 @@ class _UpgradeBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = Colors.amber.shade700;
+    final accent = context.appColors.amber.shade700;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: ShapeDecoration(

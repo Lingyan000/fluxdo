@@ -12,6 +12,7 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/master_detail_pane_host.dart';
 import 'user_profile_page.dart';
 import '../l10n/s.dart';
+import '../theme/app_colors.dart';
 
 /// 关注/粉丝列表页面
 class FollowListPage extends ConsumerStatefulWidget {
@@ -91,9 +92,9 @@ class _FollowListPageState extends ConsumerState<FollowListPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Symbols.group_rounded, size: 48, color: Colors.grey[400]),
+                          Icon(Symbols.group_rounded, size: 48, color: context.appColors.grey[400]),
                           const SizedBox(height: 8),
-                          Text(context.l10n.common_noData, style: TextStyle(color: Colors.grey[600])),
+                          Text(context.l10n.common_noData, style: TextStyle(color: context.appColors.grey[600])),
                         ],
                       ),
                     )

@@ -15,6 +15,7 @@ import '../utils/font_awesome_helper.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import 'badge_page.dart';
 import '../l10n/s.dart';
+import '../theme/app_colors.dart';
 
 /// 我的徽章页面
 class MyBadgesPage extends ConsumerStatefulWidget {
@@ -116,12 +117,12 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                             Icon(
                               Symbols.military_tech_rounded,
                               size: 64,
-                              color: Colors.grey[400],
+                              color: context.appColors.grey[400],
                             ),
                             const SizedBox(height: 16),
                             Text(
                               context.l10n.myBadges_empty,
-                              style: TextStyle(color: Colors.grey[600]),
+                              style: TextStyle(color: context.appColors.grey[600]),
                             ),
                           ],
                         ),

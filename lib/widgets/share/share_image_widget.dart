@@ -14,6 +14,7 @@ import '../common/smart_avatar.dart';
 import '../common/flair_badge.dart';
 import '../common/emoji_text.dart';
 import 'share_image_preview.dart';
+import '../../theme/app_colors.dart';
 
 /// 分享图片 Widget
 /// 用于生成可截图的分享图片
@@ -195,7 +196,7 @@ class ShareImageWidget extends ConsumerWidget {
             imageUrl: fullAvatarUrl,
             radius: 18,
             fallbackText: post.username,
-            backgroundColor: Colors.grey.shade300,
+            backgroundColor: context.appColors.grey.shade300,
             border: Border.all(color: borderColor, width: 1),
           ),
         ),

@@ -9,6 +9,7 @@ import '../../services/emoji_handler.dart';
 import '../../utils/svg_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
+import '../../theme/app_colors.dart';
 
 /// Flair 徽章组件
 /// 用于在头像右下角显示用户的群组/身份标识
@@ -175,7 +176,7 @@ class FlairBadge extends StatelessWidget {
                 style: TextStyle(
                   fontSize: size * 0.6,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey,
+                  color: context.appColors.grey,
                 ),
               );
             },

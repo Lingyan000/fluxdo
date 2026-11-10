@@ -15,6 +15,7 @@ import '../../../utils/quote_builder.dart';
 import '../../user/user_card.dart';
 import '../post_item/widgets/boost_flag_sheet.dart';
 import 'boost_author_popover.dart';
+import '../../../theme/app_colors.dart';
 
 /// Boost 点击后的完整操作流(作者预览/回复/主页/举报/删除),从帖脚抽出的
 /// 独立版本 —— 弹幕层挂在正文上(短帖 PostItem / 长帖首 chunk),
@@ -301,7 +302,7 @@ class BoostActions {
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
               S.current.common_delete,
-              style: const TextStyle(color: Colors.red),
+              style: TextStyle(color: context.appColors.red),
             ),
           ),
         ],

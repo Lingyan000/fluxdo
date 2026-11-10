@@ -8,6 +8,7 @@ import '../../l10n/s.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import 'app_bottom_sheet.dart';
+import '../../theme/app_colors.dart';
 
 /// 外部链接本次选择的打开方式。
 enum ExternalLinkOpenChoice { systemBrowser, inAppBrowser }
@@ -302,8 +303,8 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
       case LinkRiskLevel.risky:
         return _DialogConfig(
           icon: Symbols.link_off_rounded,
-          color: Colors.orange,
-          buttonColor: Colors.orange,
+          color: context.appColors.orange,
+          buttonColor: context.appColors.orange,
           title: l10n.externalLink_shortLinkTitle,
           message: l10n.externalLink_shortLinkMessage,
           warning: l10n.externalLink_shortLinkWarning,
@@ -311,8 +312,8 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
       case LinkRiskLevel.dangerous:
         return _DialogConfig(
           icon: Symbols.shield_rounded,
-          color: Colors.red,
-          buttonColor: Colors.red,
+          color: context.appColors.red,
+          buttonColor: context.appColors.red,
           title: l10n.externalLink_securityWarningTitle,
           message: l10n.externalLink_securityWarningMessage,
           warning: l10n.externalLink_securityWarningHint,
@@ -376,12 +377,12 @@ class _LinkBlockedSheet extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.12),
+              color: context.appColors.red.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Symbols.block_rounded,
-              color: Colors.red,
+              color: context.appColors.red,
               size: 28,
             ),
           ),
@@ -408,10 +409,10 @@ class _LinkBlockedSheet extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: ShapeDecoration(
-              color: Colors.red.withValues(alpha: 0.06),
+              color: context.appColors.red.withValues(alpha: 0.06),
               shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.red.withValues(alpha: 0.15)),
+                side: BorderSide(color: context.appColors.red.withValues(alpha: 0.15)),
               ),
             ),
             child: Row(
@@ -420,14 +421,14 @@ class _LinkBlockedSheet extends StatelessWidget {
                 Icon(
                   Symbols.dangerous_rounded,
                   size: 18,
-                  color: Colors.red.shade400,
+                  color: context.appColors.red.shade400,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
                     host,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      color: Colors.red.shade700,
+                      color: context.appColors.red.shade700,
                       fontWeight: FontWeight.w500,
                     ),
                     maxLines: 1,

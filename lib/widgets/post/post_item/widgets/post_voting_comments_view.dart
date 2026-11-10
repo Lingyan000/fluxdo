@@ -26,6 +26,7 @@ import '../../../../utils/platform_utils.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../common/emoji_text.dart';
 import '../post_voting_comment_sheet.dart';
+import '../../../../theme/app_colors.dart';
 
 class PostVotingCommentsView extends ConsumerStatefulWidget {
   final int postId;
@@ -241,7 +242,7 @@ class _PostVotingCommentsViewState
                     child: Icon(
                       Symbols.arrow_upward_rounded,
                       size: 14,
-                      color: comment.userVoted ? Colors.green : muted,
+                      color: comment.userVoted ? context.appColors.green : muted,
                       weight: comment.userVoted ? 700 : null,
                     ),
                   ),

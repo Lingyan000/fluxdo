@@ -7,6 +7,7 @@ import 'package:fluxdo/utils/font_awesome_helper.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/utils/url_helper.dart';
 import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
+import '../../theme/app_colors.dart';
 
 class CategorySelectionSheet extends StatefulWidget {
   final List<Category> categories;
@@ -48,7 +49,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     if (hex.length == 6) {
       return Color(int.parse('0xFF$hex'));
     }
-    return Colors.grey;
+    return context.appColors.grey;
   }
 
   List<_CategoryItem> _buildList() {

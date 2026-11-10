@@ -28,6 +28,7 @@ import '../common/smart_avatar.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'avatar_action_menu.dart';
 import 'ignore_duration_picker.dart';
+import '../../theme/app_colors.dart';
 
 /// 卡片与锚点之间的间隙
 const double _kGap = 10.0;
@@ -918,7 +919,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   Widget _buildRestrictionBanner(ThemeData theme, User user) {
     final isSuspended = user.isSuspended;
-    final color = isSuspended ? theme.colorScheme.error : Colors.orange;
+    final color = isSuspended ? theme.colorScheme.error : context.appColors.orange;
     final label = isSuspended
         ? (user.isSuspendedForever
               ? S.current.userProfile_permanentlySuspended

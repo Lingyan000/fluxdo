@@ -13,6 +13,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 import 'common/balance_card_action_button.dart';
 import 'common/balance_card_cf_action.dart';
+import '../theme/app_colors.dart';
 
 class LdcBalanceCard extends ConsumerWidget {
   static const String _homeUrl = 'https://credit.linux.do/home';
@@ -374,9 +375,9 @@ class LdcBalanceCard extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Symbols.trending_up_rounded,
-                              color: Colors.greenAccent,
+                              color: context.appColors.greenAccent,
                               size: 16,
                             ),
                             const SizedBox(width: 6),

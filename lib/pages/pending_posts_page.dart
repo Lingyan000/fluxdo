@@ -20,6 +20,7 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/master_detail_pane_host.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'create_topic_page.dart';
+import '../theme/app_colors.dart';
 
 /// 待审核内容列表 Provider
 final pendingPostsProvider = FutureProvider.autoDispose<List<PendingPost>>((
@@ -58,15 +59,15 @@ class _PendingPostsPageState extends ConsumerState<PendingPostsPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
+                    Icon(
                       Symbols.pending_actions_rounded,
                       size: 64,
-                      color: Colors.grey,
+                      color: context.appColors.grey,
                     ),
                     const SizedBox(height: 16),
                     Text(
                       context.l10n.review_empty,
-                      style: const TextStyle(color: Colors.grey),
+                      style: TextStyle(color: context.appColors.grey),
                     ),
                   ],
                 ),

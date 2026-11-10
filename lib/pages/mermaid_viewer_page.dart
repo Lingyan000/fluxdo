@@ -3,6 +3,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
+import '../theme/app_colors.dart';
 import '../l10n/s.dart';
 import 'package:common_ui/common_ui.dart';
 import 'image_viewer_page.dart';
@@ -86,11 +87,9 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    // 内容底色对齐 mermaid 块容器灰底(282a36/f6f8fa):kroki SVG 背景
+    // 内容底色对齐 mermaid 块容器底色(主题代码块底色):kroki SVG 背景
     // 透明,dark 主题图形浅色线条,必须深底才可读。
-    final canvasColor =
-        isDark ? const Color(0xff282a36) : const Color(0xfff6f8fa);
+    final canvasColor = context.appColors.codeBackground;
 
     return Scaffold(
       appBar: AppBar(

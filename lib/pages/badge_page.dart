@@ -25,6 +25,7 @@ import 'user_profile_page.dart';
 import '../l10n/s.dart';
 
 import 'package:app_icons/app_icons.dart';
+import '../theme/app_colors.dart';
 
 /// 徽章详情页面
 class BadgePage extends ConsumerStatefulWidget {
@@ -480,14 +481,14 @@ class _UserBadgeItem extends StatelessWidget {
                         Icon(
                           Symbols.shield_rounded,
                           size: 14,
-                          color: Colors.red.shade700,
+                          color: context.appColors.red.shade700,
                         ),
                       ] else if (user.moderator == true) ...[
                         const SizedBox(width: 4),
                         Icon(
                           Symbols.shield_rounded,
                           size: 14,
-                          color: Colors.blue.shade700,
+                          color: context.appColors.blue.shade700,
                         ),
                       ],
                     ],

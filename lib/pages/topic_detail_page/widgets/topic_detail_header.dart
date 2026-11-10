@@ -22,6 +22,7 @@ import '../../../widgets/common/topic_badges.dart';
 import '../../category_topics_page.dart';
 import '../../tag_topics_page.dart';
 import '../../../widgets/topic/assign_sheet.dart';
+import '../../../theme/app_colors.dart';
 
 /// 话题详情页头部组件
 class TopicDetailHeader extends ConsumerWidget {
@@ -123,7 +124,7 @@ class TopicDetailHeader extends ConsumerWidget {
                         child: Icon(
                           Symbols.check_box_rounded,
                           size: 20,
-                          color: Colors.green,
+                          color: context.appColors.green,
                         ),
                       ),
                     ),

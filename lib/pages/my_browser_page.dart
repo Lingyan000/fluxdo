@@ -18,6 +18,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import 'webview_page.dart';
 import 'download_list_page.dart';
+import '../theme/app_colors.dart';
 
 // ---------------------------------------------------------------------------
 // 内置浏览器主页 — 地址栏 + 功能入口
@@ -45,7 +46,7 @@ class MyBrowserPage extends ConsumerWidget {
             children: [
               _EntryTile(
                 icon: Symbols.star_rounded,
-                iconColor: Colors.amber,
+                iconColor: context.appColors.amber,
                 title: context.l10n.myBrowser_bookmarks,
                 subtitle: context.l10n.myBrowser_bookmarkCount(bookmarkCount),
                 onTap: () => Navigator.push(
@@ -55,7 +56,7 @@ class MyBrowserPage extends ConsumerWidget {
               ),
               _EntryTile(
                 icon: Symbols.history_rounded,
-                iconColor: Colors.purple,
+                iconColor: context.appColors.purple,
                 title: context.l10n.myBrowser_history,
                 subtitle: context.l10n.myBrowser_historyDesc,
                 onTap: () => Navigator.push(
@@ -65,7 +66,7 @@ class MyBrowserPage extends ConsumerWidget {
               ),
               _EntryTile(
                 icon: Symbols.download_rounded,
-                iconColor: Colors.teal,
+                iconColor: context.appColors.teal,
                 title: context.l10n.myBrowser_downloads,
                 subtitle: context.l10n.myBrowser_downloadsDesc,
                 onTap: () => Navigator.push(
@@ -278,13 +279,13 @@ class _BookmarkListPage extends ConsumerWidget {
                       trailingActions: [
                         SwipeAction(
                           icon: Symbols.edit_rounded,
-                          color: Colors.blue,
+                          color: context.appColors.blue,
                           label: S.current.myBrowser_edit,
                           onPressed: () => _showEditDialog(context, ref, item),
                         ),
                         SwipeAction(
                           icon: Symbols.delete_rounded,
-                          color: Colors.red,
+                          color: context.appColors.red,
                           label: S.current.myBrowser_delete,
                           onPressed: () => _confirmDelete(context, ref, item),
                         ),
@@ -493,7 +494,7 @@ class _WebHistoryPage extends ConsumerWidget {
                       trailingActions: [
                         SwipeAction(
                           icon: Symbols.delete_rounded,
-                          color: Colors.red,
+                          color: context.appColors.red,
                           label: S.current.myBrowser_delete,
                           onPressed: () => ref
                               .read(webHistoryProvider.notifier)
@@ -565,14 +566,14 @@ class _HistoryCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: ShapeDecoration(
-                color: Colors.purple.withValues(alpha: 0.1),
+                color: context.appColors.purple.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Icon(
+              child: Icon(
                 Symbols.history_rounded,
-                color: Colors.purple,
+                color: context.appColors.purple,
                 size: 24,
               ),
             ),

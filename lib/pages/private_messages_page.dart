@@ -26,6 +26,7 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../l10n/s.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'topics_screen.dart' show PaneContentWidget;
+import '../theme/app_colors.dart';
 
 /// 内部 tab 动作：外层根据当前激活 filter 派发给对应子 widget。
 /// 用 nonce 让连续同类事件也能触发 Riverpod 监听。
@@ -393,11 +394,11 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Symbols.mail_rounded, size: 64, color: Colors.grey),
+                  Icon(Symbols.mail_rounded, size: 64, color: context.appColors.grey),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.privateMessages_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),

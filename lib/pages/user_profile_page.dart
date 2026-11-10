@@ -63,6 +63,7 @@ import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../widgets/common/hero_image.dart';
+import '../theme/app_colors.dart';
 
 /// 用户个人页
 /// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
@@ -647,7 +648,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                   TimeUtils.formatFullDate(_user!.silencedTill),
                                 ),
                           reason: _user!.silenceReason,
-                          color: Colors.orange,
+                          color: context.appColors.orange,
                         ),
 
                       // 个人简介
@@ -1580,7 +1581,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                                 ),
                                               ),
                                     reason: _user!.suspendReason,
-                                    color: Colors.redAccent,
+                                    color: context.appColors.redAccent,
                                     reasonColor:
                                         theme.colorScheme.onSurfaceVariant,
                                   ),
@@ -1601,7 +1602,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                                 ),
                                               ),
                                     reason: _user!.silenceReason,
-                                    color: Colors.orangeAccent,
+                                    color: context.appColors.orangeAccent,
                                     reasonColor:
                                         theme.colorScheme.onSurfaceVariant,
                                   ),
@@ -2409,7 +2410,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             TimeUtils.formatFullDate(_user!.suspendedTill),
                           ),
                     reason: _user!.suspendReason,
-                    color: Colors.redAccent,
+                    color: context.appColors.redAccent,
                   ),
                   if (_user!.isSilenced) const SizedBox(height: 8),
                 ],
@@ -2423,7 +2424,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             TimeUtils.formatFullDate(_user!.silencedTill),
                           ),
                     reason: _user!.silenceReason,
-                    color: Colors.orangeAccent,
+                    color: context.appColors.orangeAccent,
                   ),
               ],
             ),
@@ -2953,11 +2954,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Symbols.inbox_rounded, size: 48, color: Colors.grey[400]),
+            Icon(Symbols.inbox_rounded, size: 48, color: context.appColors.grey[400]),
             const SizedBox(height: 8),
             Text(
               context.l10n.userProfile_noContent,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.appColors.grey[600]),
             ),
           ],
         ),
@@ -3127,12 +3128,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   Icon(
                     Symbols.summarize_rounded,
                     size: 48,
-                    color: Colors.grey[400],
+                    color: context.appColors.grey[400],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     context.l10n.userProfile_noSummary,
-                    style: TextStyle(color: Colors.grey[600]),
+                    style: TextStyle(color: context.appColors.grey[600]),
                   ),
                 ],
               ),
@@ -3506,12 +3507,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             Icon(
               Symbols.emoji_emotions_rounded,
               size: 48,
-              color: Colors.grey[400],
+              color: context.appColors.grey[400],
             ),
             const SizedBox(height: 8),
             Text(
               context.l10n.userProfile_noReactions,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.appColors.grey[600]),
             ),
           ],
         ),
@@ -3574,12 +3575,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             Icon(
               Symbols.rocket_launch_rounded,
               size: 48,
-              color: Colors.grey[400],
+              color: context.appColors.grey[400],
             ),
             const SizedBox(height: 8),
             Text(
               context.l10n.userProfile_noBoosts,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.appColors.grey[600]),
             ),
           ],
         ),
@@ -3640,12 +3641,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             Icon(
               Symbols.how_to_vote_rounded,
               size: 48,
-              color: Colors.grey[400],
+              color: context.appColors.grey[400],
             ),
             const SizedBox(height: 8),
             Text(
               context.l10n.userProfile_noVotes,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.appColors.grey[600]),
             ),
           ],
         ),
@@ -3727,12 +3728,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             Icon(
               Symbols.check_circle_rounded,
               size: 48,
-              color: Colors.grey[400],
+              color: context.appColors.grey[400],
             ),
             const SizedBox(height: 8),
             Text(
               context.l10n.userProfile_noSolved,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.appColors.grey[600]),
             ),
           ],
         ),

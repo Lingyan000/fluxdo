@@ -21,6 +21,7 @@ import '../widgets/common/error_view.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import '../theme/app_colors.dart';
 
 /// 我的话题页面
 class MyTopicsPage extends ConsumerStatefulWidget {
@@ -179,15 +180,15 @@ class _MyTopicsPageState extends ConsumerState<MyTopicsPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Symbols.article_rounded,
                     size: 64,
-                    color: Colors.grey,
+                    color: context.appColors.grey,
                   ),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.myTopics_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),

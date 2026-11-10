@@ -29,6 +29,7 @@ import '../topic/topic_item_builder.dart';
 import '../../providers/discourse_providers.dart';
 import '../../services/topic_preview_preloader.dart';
 import '../topic/topic_preview_dialog.dart';
+import '../../theme/app_colors.dart';
 
 class BookmarksListContent extends ConsumerWidget {
   const BookmarksListContent({
@@ -469,11 +470,11 @@ class BookmarksListContent extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Symbols.bookmark_rounded, size: 64, color: Colors.grey),
+          Icon(Symbols.bookmark_rounded, size: 64, color: context.appColors.grey),
           const SizedBox(height: 16),
           Text(
             context.l10n.bookmarks_empty,
-            style: const TextStyle(color: Colors.grey),
+            style: TextStyle(color: context.appColors.grey),
           ),
         ],
       ),

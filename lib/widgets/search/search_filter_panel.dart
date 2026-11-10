@@ -14,6 +14,7 @@ import '../../utils/font_awesome_helper.dart';
 import '../../utils/tag_icon_list.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
+import '../../theme/app_colors.dart';
 
 /// 搜索高级过滤器面板
 /// 作为 BottomSheet 显示，支持分类、标签、状态、时间范围过滤
@@ -534,7 +535,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             // "全部" 选项
             _CategoryFilterItem(
               name: S.current.common_all,
-              color: Colors.grey,
+              color: context.appColors.grey,
               isSelected: selectedId == null,
               onTap: () => _setCategory(null),
               isAll: true,
@@ -711,7 +712,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
     try {
       return Color(int.parse('FF$hex', radix: 16));
     } catch (e) {
-      return Colors.grey;
+      return context.appColors.grey;
     }
   }
 }

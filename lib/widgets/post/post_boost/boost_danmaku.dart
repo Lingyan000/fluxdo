@@ -11,6 +11,7 @@ import '../../../utils/url_helper.dart';
 import '../../common/emoji_text.dart';
 import '../../common/smart_avatar.dart';
 import 'boost_content.dart';
+import '../../../theme/app_colors.dart';
 
 typedef BoostDanmakuTapCallback = void Function(Boost boost, Rect? anchorRect);
 
@@ -524,7 +525,7 @@ class _DanmakuItemState extends State<_DanmakuItem> {
                         fontWeight: FontWeight.w700,
                         color: widget.item.isHighlighted
                             ? highlightColor
-                            : Colors.amber.shade300,
+                            : context.appColors.amber.shade300,
                       ),
                     ),
                   ],

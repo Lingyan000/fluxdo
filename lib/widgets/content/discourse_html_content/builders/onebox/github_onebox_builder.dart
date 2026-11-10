@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../../services/highlighter_service.dart';
+import '../../../../../theme/app_colors.dart';
 import '../../../../../services/toast_service.dart';
 import '../../../../../utils/link_launcher.dart';
 import 'onebox_base.dart';
@@ -188,9 +189,7 @@ class GithubOneboxBuilder {
       // 从文件名检测语言
       final language = _detectLanguageFromFileName(fileName);
 
-      final bgColor = isDark
-          ? const Color(0xff282a36)
-          : const Color(0xfff6f8fa);
+      final bgColor = context.appColors.codeBackground;
       final borderColor = theme.colorScheme.outlineVariant.withValues(
         alpha: 0.3,
       );
@@ -429,7 +428,6 @@ class GithubOneboxBuilder {
       return HighlighterService.instance.buildHighlightView(
         codeText,
         language: language,
-        isDark: isDark,
         backgroundColor: Colors.transparent,
         padding: const EdgeInsets.all(12),
       );
@@ -1065,7 +1063,7 @@ class GithubOneboxBuilder {
         element.querySelector('pre') ?? element.querySelector('code');
     final codeText = codeElement?.text ?? '';
 
-    final bgColor = isDark ? const Color(0xff282a36) : const Color(0xfff6f8fa);
+    final bgColor = context.appColors.codeBackground;
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.3);
 
     return Container(
@@ -1144,7 +1142,6 @@ class GithubOneboxBuilder {
                     scrollDirection: Axis.horizontal,
                     child: HighlighterService.instance.buildHighlightView(
                       codeText,
-                      isDark: isDark,
                       backgroundColor: Colors.transparent,
                       padding: const EdgeInsets.all(12),
                     ),

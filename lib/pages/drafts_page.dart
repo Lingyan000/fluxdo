@@ -25,6 +25,7 @@ import '../providers/draft_store_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import 'create_topic_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import '../theme/app_colors.dart';
 
 /// 草稿列表 Provider
 final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
@@ -192,15 +193,15 @@ class _DraftsPageState extends ConsumerState<DraftsPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
+                    Icon(
                       Symbols.drafts_rounded,
                       size: 64,
-                      color: Colors.grey,
+                      color: context.appColors.grey,
                     ),
                     const SizedBox(height: 16),
                     Text(
                       context.l10n.drafts_empty,
-                      style: const TextStyle(color: Colors.grey),
+                      style: TextStyle(color: context.appColors.grey),
                     ),
                   ],
                 ),

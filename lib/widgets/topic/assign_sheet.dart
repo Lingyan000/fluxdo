@@ -15,6 +15,7 @@ import '../../utils/dialog_utils.dart';
 import '../common/smart_avatar.dart';
 import '../markdown_editor/markdown_editor.dart';
 import '../../services/preloaded_data_service.dart';
+import '../../theme/app_colors.dart';
 
 /// 状态下拉的可选值——assign_statuses 是 client:true 的站点设置,
 /// 随预加载 siteSettings 下发(官方 Web 端就是读
@@ -377,9 +378,9 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                 ),
               )
             else
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('尚未指定给任何人', style: TextStyle(color: Colors.grey)),
+                child: Text('尚未指定给任何人', style: TextStyle(color: context.appColors.grey)),
               ),
             const Divider(height: 1),
             ListTile(

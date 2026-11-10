@@ -32,6 +32,7 @@ import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
+import '../theme/app_colors.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
@@ -1619,10 +1620,10 @@ class _AsyncHighlightedCode extends StatefulWidget {
 
 class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   List<HighlightToken>? _tokens;
-  // memoize:span 树只在 tokens / 明暗切换时重建,普通 build 直接复用。
+  // memoize:span 树只在 tokens / 高亮表切换时重建,普通 build 直接复用。
   // 大代码块 tokensToSpan 是主线程大头,不能每帧重算。
   TextSpan? _span;
-  bool? _spanIsDark;
+  Map<String, TextStyle>? _spanSyntax;
 
   @override
   void initState() {
@@ -1668,7 +1669,7 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final syntax = context.appColors.syntax;
     final baseStyle = TextStyle(
       fontFamily: 'FiraCode',
       fontFamilyFallback: const ['monospace', 'Menlo', 'Courier'],
@@ -1679,13 +1680,14 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     if (_tokens == null) {
       return Text(widget.code, style: baseStyle);
     }
-    if (_span == null || _spanIsDark != isDark) {
+    // 高亮表是主题级常量，同一主题下引用不变，按引用比较即可
+    if (_span == null || !identical(_spanSyntax, syntax)) {
       _span = HighlighterService.instance.tokensToSpan(
         _tokens!,
-        isDark: isDark,
+        syntax: syntax,
         baseStyle: baseStyle,
       );
-      _spanIsDark = isDark;
+      _spanSyntax = syntax;
     }
     return Text.rich(_span!);
   }
@@ -1693,7 +1695,7 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
 
 /// Mermaid 图表块(纯主项目侧,经子包 CodeBlockBuilder 整块接管,UI 照搬
 /// legacy `code_block_builder.dart` 的 `_MermaidWidget`):
-/// 灰底容器(282a36/f6f8fa)+ 顶栏「图表⇄代码」切换 + 复制按钮;
+/// 灰底容器(主题代码块底色)+ 顶栏「图表⇄代码」切换 + 复制按钮;
 /// 图表态 mermaid.ink 服务端出图(懒加载 shimmer / 错误重试 / 点开高清
 /// width=2000),代码态 HighlighterService 高亮源码。
 ///
@@ -1781,13 +1783,14 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     return 'https://kroki.io/mermaid/$format/$encoded?theme=$theme';
   }
 
-  /// mermaid.ink 出图 URL(备源 + 高清):逐字照搬 legacy
-  /// _buildMermaidInkUrl:base64url(utf8) + theme(dark/default)+
-  /// bgColor(282a36/f6f8fa)+ 可选 width。
+  /// mermaid.ink 出图 URL(备源 + 高清):base64url(utf8) + theme
+  /// (dark/default)+ bgColor(当前主题代码块底色)+ 可选 width。
   String _buildMermaidInkUrl(String code, bool isDark, {int? width}) {
     final encoded = base64Url.encode(utf8.encode(code));
     final theme = isDark ? 'dark' : 'default';
-    final bgColor = isDark ? '282a36' : 'f6f8fa';
+    final bgColor = (context.appColors.codeBackground.toARGB32() & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0');
     var url = 'https://mermaid.ink/img/$encoded?theme=$theme&bgColor=$bgColor';
     if (width != null) url += '&width=$width';
     return url;
@@ -1803,14 +1806,13 @@ class _MermaidBlockState extends State<_MermaidBlock> {
 
   /// 代码态:HighlighterService 高亮 mermaid 源码,在固定内容框内双向滚动。
   /// 截图模式不滚动、自动换行(块高仍由外层固定框决定)。
-  Widget _buildCodeView(bool isDark, Color thumbColor, bool screenshotMode) {
+  Widget _buildCodeView(Color thumbColor, bool screenshotMode) {
     if (screenshotMode) {
       return Padding(
         padding: const EdgeInsets.all(12),
         child: HighlighterService.instance.buildHighlightView(
           widget.code,
           language: 'mermaid',
-          isDark: isDark,
           backgroundColor: Colors.transparent,
           padding: EdgeInsets.zero,
         ),
@@ -1837,7 +1839,6 @@ class _MermaidBlockState extends State<_MermaidBlock> {
               child: HighlighterService.instance.buildHighlightView(
                 widget.code,
                 language: 'mermaid',
-                isDark: isDark,
                 backgroundColor: Colors.transparent,
                 padding: const EdgeInsets.all(12),
               ),
@@ -1946,7 +1947,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final screenshotMode = ScreenshotMode.of(context);
-    final bgColor = isDark ? const Color(0xff282a36) : const Color(0xfff6f8fa);
+    final bgColor = context.appColors.codeBackground;
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.3);
     final thumbColor = (isDark ? Colors.white : Colors.black).withValues(
       alpha: 0.15,
@@ -2073,7 +2074,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: _showCode
-                  ? _buildCodeView(isDark, thumbColor, screenshotMode)
+                  ? _buildCodeView(thumbColor, screenshotMode)
                   : _buildChartView(theme, isDark),
             ),
           ),

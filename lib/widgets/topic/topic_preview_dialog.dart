@@ -24,6 +24,7 @@ import '../../utils/fluxdo_render_callbacks.dart';
 import '../../pages/category_topics_page.dart';
 import '../../pages/tag_topics_page.dart';
 import '../../../../../l10n/s.dart';
+import '../../theme/app_colors.dart';
 
 /// 预览弹窗中的操作项
 class PreviewAction {
@@ -392,7 +393,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                 child: Icon(
                   Symbols.check_box_rounded,
                   size: 17,
-                  color: Colors.green,
+                  color: context.appColors.green,
                 ),
               ),
             ),
@@ -712,6 +713,6 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     if (hex.length == 6) {
       return Color(int.parse('0xFF$hex'));
     }
-    return Colors.grey;
+    return context.appColors.grey;
   }
 }

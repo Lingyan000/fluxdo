@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
 import 'color_scheme_roles.dart';
 
 /// 主题配色的生成方式。
@@ -31,6 +32,7 @@ class ThemePalette {
     required this.fg,
     required this.fgMuted,
     required this.border,
+    required this.hues,
     this.outline,
     this.error,
     this.roles = const {},
@@ -47,6 +49,10 @@ class ThemePalette {
 
   /// 分割线、弱描边（outlineVariant）。
   final Color border;
+
+  /// 色相表：至少包含 [AppHue.basics]（红橙黄绿青蓝紫），可选
+  /// [AppHue.optionals]。语义色、callout、代码高亮都从这里取色。
+  final Map<AppHue, Color> hues;
 
   /// 强描边（outline），缺省由 fgMuted 与 bg 混合推导。
   final Color? outline;
@@ -69,11 +75,26 @@ class ThemePalette {
     if (unknown.isNotEmpty) {
       throw FormatException('未知的 ColorScheme role: ${unknown.join(', ')}');
     }
+    final huesJson = json['hues'];
+    if (huesJson is! Map) throw const FormatException('缺少色相表 hues');
+    const allowed = [...AppHue.basics, ...AppHue.optionals];
+    final byName = {for (final h in allowed) h.name: h};
+    final hues = <AppHue, Color>{};
+    for (final e in huesJson.entries) {
+      final hue = byName[e.key];
+      if (hue == null) throw FormatException('未知的色相: ${e.key}');
+      hues[hue] = ThemeSpecColor.parse(e.value);
+    }
+    final missing = AppHue.basics.where((h) => !hues.containsKey(h));
+    if (missing.isNotEmpty) {
+      throw FormatException('色相表缺少: ${missing.map((h) => h.name).join(', ')}');
+    }
     return ThemePalette(
       bg: ThemeSpecColor.parse(json['bg']),
       fg: ThemeSpecColor.parse(json['fg']),
       fgMuted: ThemeSpecColor.parse(json['fgMuted']),
       border: ThemeSpecColor.parse(json['border']),
+      hues: hues,
       outline: _optionalColor(json['outline']),
       error: _optionalColor(json['error']),
       roles: roles,
@@ -85,6 +106,9 @@ class ThemePalette {
     'fg': ThemeSpecColor.format(fg),
     'fgMuted': ThemeSpecColor.format(fgMuted),
     'border': ThemeSpecColor.format(border),
+    'hues': {
+      for (final e in hues.entries) e.key.name: ThemeSpecColor.format(e.value),
+    },
     if (outline != null) 'outline': ThemeSpecColor.format(outline!),
     if (error != null) 'error': ThemeSpecColor.format(error!),
     if (roles.isNotEmpty)

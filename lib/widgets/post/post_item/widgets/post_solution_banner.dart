@@ -8,6 +8,7 @@ import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../../utils/url_helper.dart';
 import '../../../common/smart_avatar.dart';
+import '../../../../theme/app_colors.dart';
 
 /// 解决方案横幅(仅在主贴下方展示)
 ///
@@ -57,12 +58,12 @@ class _PostSolutionBannerState extends State<PostSolutionBanner> {
         child: Container(
           decoration: ShapeDecoration(
             color: isDark
-                ? Colors.green.withValues(alpha: 0.05)
-                : Colors.green.withValues(alpha: 0.04),
+                ? context.appColors.green.withValues(alpha: 0.05)
+                : context.appColors.green.withValues(alpha: 0.04),
             shape: RoundedSuperellipseBorder(
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(
-                color: Colors.green.withValues(alpha: 0.3),
+                color: context.appColors.green.withValues(alpha: 0.3),
                 width: 1,
               ),
             ),

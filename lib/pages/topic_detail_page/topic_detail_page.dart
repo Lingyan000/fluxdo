@@ -99,6 +99,7 @@ import '../../models/shortcut_binding.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
 import '../../widgets/topic/assign_sheet.dart';
+import '../../theme/app_colors.dart';
 
 part 'actions/_scroll_actions.dart';
 part 'actions/_user_actions.dart';
@@ -1392,7 +1393,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     child: Icon(
                       Symbols.check_box_rounded,
                       size: 18,
-                      color: Colors.green,
+                      color: context.appColors.green,
                     ),
                   ),
                 ),
@@ -1508,7 +1509,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   child: Icon(
                     Symbols.check_box_rounded,
                     size: 16,
-                    color: Colors.green,
+                    color: context.appColors.green,
                   ),
                 ),
               ),

@@ -21,6 +21,7 @@ import '../layout/master_detail_layout.dart';
 import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
+import '../../theme/app_colors.dart';
 
 /// 通知快捷面板控制器
 /// 侧栏模式：在 widget 树中渲染（低于路由层，新页面自然覆盖）
@@ -695,15 +696,15 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Symbols.notifications_rounded,
                     size: 48,
-                    color: Colors.grey,
+                    color: context.appColors.grey,
                   ),
                   const SizedBox(height: 12),
                   Text(
                     context.l10n.notification_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),
@@ -746,7 +747,7 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Symbols.error_rounded, size: 48, color: Colors.grey),
+              Icon(Symbols.error_rounded, size: 48, color: context.appColors.grey),
               const SizedBox(height: 12),
               Text(
                 context.l10n.common_loadFailed,

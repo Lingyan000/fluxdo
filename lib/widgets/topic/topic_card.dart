@@ -24,6 +24,7 @@ import '../common/relative_time_text.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
 import 'topic_expandable_excerpt.dart';
+import '../../theme/app_colors.dart';
 
 Widget _withDesktopTertiaryTap(Widget child, VoidCallback? onMiddleClick) {
   if (!PlatformUtils.isDesktop || onMiddleClick == null) return child;
@@ -694,8 +695,8 @@ class TopicCard extends ConsumerWidget {
           size: 15,
           // 全读完时随文字一起降饱和
           color: isFullyRead
-              ? Colors.green.withValues(alpha: 0.5)
-              : Colors.green,
+              ? context.appColors.green.withValues(alpha: 0.5)
+              : context.appColors.green,
           gap: 4,
         )
       else if (topic.canHaveAnswer)
@@ -1138,7 +1139,7 @@ class CompactTopicCard extends ConsumerWidget {
                                     context,
                                     Symbols.check_box_rounded,
                                     size: 12,
-                                    color: Colors.green,
+                                    color: context.appColors.green,
                                     gap: 3,
                                   )
                                 else if (topic.canHaveAnswer)

@@ -60,6 +60,7 @@ import '../services/emoji_handler.dart';
 import '../services/log/log_writer.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
+import '../theme/app_colors.dart';
 
 /// 个人页面
 class ProfilePage extends ConsumerStatefulWidget {
@@ -739,7 +740,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final actions = [
       (
         icon: Symbols.article_rounded,
-        iconColor: Colors.blue,
+        iconColor: context.appColors.blue,
         title: context.l10n.profile_myTopics,
         onTap: () => Navigator.push(
           context,
@@ -748,7 +749,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       ),
       (
         icon: Symbols.bookmark_rounded,
-        iconColor: Colors.orange,
+        iconColor: context.appColors.orange,
         title: context.l10n.profile_myBookmarks,
         onTap: () => Navigator.push(
           context,
@@ -757,13 +758,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       ),
       (
         icon: Symbols.drafts_rounded,
-        iconColor: Colors.teal,
+        iconColor: context.appColors.teal,
         title: context.l10n.profile_myDrafts,
         onTap: _openDrafts,
       ),
       (
         icon: Symbols.history_rounded,
-        iconColor: Colors.purple,
+        iconColor: context.appColors.purple,
         title: context.l10n.profile_browsingHistory,
         onTap: () => Navigator.push(
           context,
@@ -866,7 +867,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       children: [
         _buildOptionTile(
           icon: Symbols.mail_rounded,
-          iconColor: Colors.indigo,
+          iconColor: context.appColors.indigo,
           title: context.l10n.profile_privateMessages,
           onTap: () => Navigator.push(
             context,
@@ -875,7 +876,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.forum_rounded,
-          iconColor: Colors.teal,
+          iconColor: context.appColors.teal,
           title: context.l10n.chat_title,
           onTap: () => Navigator.push(
             context,
@@ -884,7 +885,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.pending_actions_rounded,
-          iconColor: Colors.amber,
+          iconColor: context.appColors.amber,
           title: context.l10n.review_myPending,
           onTap: () => Navigator.push(
             context,
@@ -893,7 +894,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.military_tech_rounded,
-          iconColor: Colors.amber[700]!,
+          iconColor: context.appColors.amber[700]!,
           title: context.l10n.profile_myBadges,
           onTap: () => Navigator.push(
             context,
@@ -902,7 +903,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.verified_user_rounded,
-          iconColor: Colors.green,
+          iconColor: context.appColors.green,
           title: context.l10n.profile_trustRequirements,
           onTap: () => Navigator.push(
             context,
@@ -914,7 +915,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         if (canAccessInviteLinks)
           _buildOptionTile(
             icon: Symbols.link_rounded,
-            iconColor: Colors.cyan,
+            iconColor: context.appColors.cyan,
             title: context.l10n.profile_inviteLinks,
             onTap: () => Navigator.push(
               context,
@@ -923,7 +924,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ),
         _buildOptionTile(
           icon: Symbols.history_edu_rounded,
-          iconColor: Colors.pink,
+          iconColor: context.appColors.pink,
           title: context.l10n.exportHistory_title,
           onTap: () => Navigator.push(
             context,
@@ -932,7 +933,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.explore_rounded,
-          iconColor: Colors.deepOrange,
+          iconColor: context.appColors.deepOrange,
           title: context.l10n.profile_metaverse,
           onTap: () => Navigator.push(
             context,
@@ -953,7 +954,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.language_rounded,
-          iconColor: Colors.blue,
+          iconColor: context.appColors.blue,
           title: context.l10n.profile_myBrowser,
           onTap: () => Navigator.push(
             context,
@@ -962,7 +963,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.smart_toy_rounded,
-          iconColor: Colors.cyan,
+          iconColor: context.appColors.cyan,
           title: context.l10n.profile_aiModelService,
           onTap: () => Navigator.push(
             context,
@@ -986,7 +987,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         _buildOptionTile(
           icon: Symbols.settings_rounded,
-          iconColor: Colors.blueGrey,
+          iconColor: context.appColors.blueGrey,
           title: context.l10n.profile_settings,
           // 导航枢纽语义:开新页面(本页无 EmbeddedStackScope,
           // openSettings 自然走全屏 push,与其他入口一致)。

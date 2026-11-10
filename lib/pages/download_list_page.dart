@@ -22,6 +22,7 @@ import '../utils/dialog_utils.dart';
 import '../services/public_file_channel.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
+import '../theme/app_colors.dart';
 
 /// 下载管理页面
 class DownloadListPage extends ConsumerStatefulWidget {
@@ -143,13 +144,13 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                             ShareUtils.canShareFiles)
                           SwipeAction(
                             icon: Symbols.share_rounded,
-                            color: Colors.blue,
+                            color: context.appColors.blue,
                             label: S.current.common_share,
                             onPressed: () => _shareFile(item),
                           ),
                         SwipeAction(
                           icon: Symbols.delete_rounded,
-                          color: Colors.red,
+                          color: context.appColors.red,
                           label: S.current.myBrowser_delete,
                           onPressed: () => ref
                               .read(downloadProvider.notifier)
@@ -358,12 +359,12 @@ class _DownloadCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: ShapeDecoration(
-                color: _statusColor.withValues(alpha: 0.1),
+                color: _statusColor(context).withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: Icon(_statusIcon, color: _statusColor, size: 24),
+              child: Icon(_statusIcon, color: _statusColor(context), size: 24),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -401,7 +402,7 @@ class _DownloadCard extends StatelessWidget {
                       Text(
                         _statusText(context),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: _statusColor,
+                          color: _statusColor(context),
                           fontSize: 11,
                         ),
                       ),
@@ -429,14 +430,14 @@ class _DownloadCard extends StatelessWidget {
     );
   }
 
-  Color get _statusColor {
+  Color _statusColor(BuildContext context) {
     switch (item.status) {
       case DownloadItemStatus.downloading:
-        return Colors.blue;
+        return context.appColors.blue;
       case DownloadItemStatus.completed:
-        return Colors.teal;
+        return context.appColors.teal;
       case DownloadItemStatus.failed:
-        return Colors.red;
+        return context.appColors.red;
     }
   }
 

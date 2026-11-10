@@ -95,6 +95,7 @@ import 'utils/hashtag_handlers.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
+import 'theme/app_colors.dart';
 import 'theme/theme_resolver.dart';
 import 'widgets/common/app_background_layer.dart';
 import 'utils/time_utils.dart';
@@ -700,6 +701,7 @@ ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
 /// ThemeData.lerp 对单边缺失的 extension 不插值而是瞬时并入)。
 ThemeData _buildAppTheme(
   ColorScheme scheme,
+  AppColors colors,
   ThemeState themeState, {
   required bool fullscreenSwipeBack,
   required bool transparent,
@@ -723,7 +725,7 @@ ThemeData _buildAppTheme(
         : _pageTransitionsTheme,
     iconTheme: _appIconTheme(scheme.onSurface),
     primaryIconTheme: _appIconTheme(scheme.onPrimary),
-    extensions: [M3eFlags(enabled: m3e)],
+    extensions: [M3eFlags(enabled: m3e), colors, colors.render],
     // year2023: false 启用进度条/滑块的 M3E 翻新(圆角端点/track gap/
     // stop indicator/16dp 滑轨+竖条 thumb)。字段虽标记 deprecated,但
     // trackGap 等新样式只由它驱动,官方 M3E 独立包落地前只能走这里。
@@ -883,6 +885,7 @@ class MainApp extends ConsumerWidget {
               theme: _withChineseFallback(
                 _buildAppTheme(
                   lightScheme,
+                  resolvedTheme.lightColors,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,
@@ -891,6 +894,7 @@ class MainApp extends ConsumerWidget {
               darkTheme: _withChineseFallback(
                 _buildAppTheme(
                   darkScheme,
+                  resolvedTheme.darkColors,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,

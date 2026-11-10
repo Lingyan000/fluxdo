@@ -16,6 +16,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/update_dialog.dart';
 import 'app_logs_page.dart';
 import 'perf_diagnostics_page.dart';
+import '../theme/app_colors.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -183,7 +184,7 @@ class _AboutPageState extends State<AboutPage> {
     showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
-        icon: const Icon(Symbols.check_circle_rounded, size: 48, color: Colors.green),
+        icon: Icon(Symbols.check_circle_rounded, size: 48, color: context.appColors.green),
         title: Text(context.l10n.about_latestVersion),
         content: Text(context.l10n.about_noUpdateContent(currentVersion)),
         actions: [
@@ -200,7 +201,7 @@ class _AboutPageState extends State<AboutPage> {
     showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
-        icon: const Icon(Symbols.error_rounded, size: 48, color: Colors.red),
+        icon: Icon(Symbols.error_rounded, size: 48, color: context.appColors.red),
         title: Text(context.l10n.about_checkUpdateFailed),
         content: Text(context.l10n.about_checkUpdateError(error)),
         actions: [
@@ -403,7 +404,7 @@ class _AboutPageState extends State<AboutPage> {
       leading: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle) : null,
-      trailing: const Icon(Symbols.chevron_right_rounded, size: 20, color: Colors.grey),
+      trailing: Icon(Symbols.chevron_right_rounded, size: 20, color: context.appColors.grey),
       onTap: onTap,
     );
   }

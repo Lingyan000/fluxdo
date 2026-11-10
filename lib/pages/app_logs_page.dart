@@ -20,6 +20,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../theme/app_colors.dart';
 
 /// 日志类型筛选（公开供调试工具等入口预设初始筛选）
 enum LogTypeFilter {
@@ -307,7 +308,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
     if (level == 'error' || (statusCode is int && statusCode >= 400)) {
       return scheme.error;
     }
-    if (level == 'warning') return Colors.orange;
+    if (level == 'warning') return context.appColors.orange;
     return Colors.transparent;
   }
 
@@ -1072,8 +1073,8 @@ class _AppLogsPageState extends State<AppLogsPage> {
       final statusColor = statusCode >= 400
           ? scheme.error
           : statusCode >= 300
-          ? Colors.orange
-          : Colors.green;
+          ? context.appColors.orange
+          : context.appColors.green;
       final rest = subtitle.startsWith('$statusCode')
           ? subtitle.substring('$statusCode'.length)
           : ' $subtitle';

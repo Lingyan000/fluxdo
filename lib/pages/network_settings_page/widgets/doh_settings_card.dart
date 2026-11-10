@@ -16,6 +16,7 @@ import '../../../services/windows_webview_environment_service.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../doh_detail_settings_page.dart';
 import 'ios_cert_install_dialog.dart';
+import '../../../theme/app_colors.dart';
 
 /// DOH 设置卡片（简化版：开关 + 状态 + "更多设置"入口）
 class DohSettingsCard extends StatelessWidget {
@@ -309,7 +310,7 @@ class _CertGuideState extends State<_CertGuide> {
       return ListTile(
         leading: Icon(
           _installed ? Symbols.verified_user_rounded : Symbols.security_rounded,
-          color: _installed ? Colors.green : theme.colorScheme.error,
+          color: _installed ? context.appColors.green : theme.colorScheme.error,
         ),
         title: Text(
           _installed
@@ -340,7 +341,7 @@ class _CertGuideState extends State<_CertGuide> {
       return ListTile(
         leading: Icon(
           _installed ? Symbols.verified_user_rounded : Symbols.security_rounded,
-          color: _installed ? Colors.green : theme.colorScheme.error,
+          color: _installed ? context.appColors.green : theme.colorScheme.error,
         ),
         title: Text(
           _installed
@@ -370,7 +371,7 @@ class _CertGuideState extends State<_CertGuide> {
         _perDeviceEnabled
             ? Symbols.verified_user_rounded
             : Symbols.security_rounded,
-        color: _perDeviceEnabled ? Colors.green : null,
+        color: _perDeviceEnabled ? context.appColors.green : null,
       ),
       title: Text(l10n.dohSettings_perDeviceCert),
       subtitle: Text(

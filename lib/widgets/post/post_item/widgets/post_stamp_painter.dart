@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../../l10n/s.dart';
+import '../../../../theme/app_colors.dart';
 
 /// 解决方案水印章（平铺 PostHeaderSection / 树形 NestedPostCard 共用）：
 /// 已解决 = 绿色「已解决」+ verified 图标（opacity 0.12）；
@@ -16,7 +17,7 @@ class PostSolutionStamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = accepted ? Colors.green : theme.colorScheme.outline;
+    final color = accepted ? context.appColors.green : theme.colorScheme.outline;
     return IgnorePointer(
       child: Opacity(
         opacity: accepted ? 0.12 : 0.05,

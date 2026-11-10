@@ -17,6 +17,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import 'widgets/ech_settings_card.dart';
+import '../../theme/app_colors.dart';
 
 /// DOH 详细设置页面（服务器列表、IPv6、服务端 IP、ECH）
 class DohDetailSettingsPage extends StatefulWidget {
@@ -334,9 +335,9 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
   }
 
   Color _getLatencyColor(int latency) {
-    if (latency < 100) return Colors.green;
-    if (latency < 300) return Colors.orange;
-    return Colors.red;
+    if (latency < 100) return context.appColors.green;
+    if (latency < 300) return context.appColors.orange;
+    return context.appColors.red;
   }
 
   Future<void> _testServer(DohServer server) async {

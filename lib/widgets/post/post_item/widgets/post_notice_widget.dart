@@ -5,6 +5,7 @@ import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../../utils/time_utils.dart';
+import '../../../../theme/app_colors.dart';
 
 /// 帖子提示横条（新用户首发帖、回归用户、自定义通知）
 class PostNoticeWidget extends StatelessWidget {
@@ -27,17 +28,17 @@ class PostNoticeWidget extends StatelessWidget {
     // custom 类型用浅红色，其他用浅蓝色
     final bgColor = isCustom
         ? (isDark
-              ? Colors.red.withValues(alpha: 0.1)
-              : Colors.red.withValues(alpha: 0.06))
+              ? context.appColors.red.withValues(alpha: 0.1)
+              : context.appColors.red.withValues(alpha: 0.06))
         : (isDark
-              ? Colors.blue.withValues(alpha: 0.1)
-              : Colors.blue.withValues(alpha: 0.06));
+              ? context.appColors.blue.withValues(alpha: 0.1)
+              : context.appColors.blue.withValues(alpha: 0.06));
     final borderColor = isCustom
-        ? Colors.red.withValues(alpha: 0.2)
-        : Colors.blue.withValues(alpha: 0.2);
+        ? context.appColors.red.withValues(alpha: 0.2)
+        : context.appColors.blue.withValues(alpha: 0.2);
     final iconColor = isCustom
-        ? (isDark ? Colors.red.shade300 : Colors.red.shade600)
-        : (isDark ? Colors.blue.shade300 : Colors.blue.shade600);
+        ? (isDark ? context.appColors.red.shade300 : context.appColors.red.shade600)
+        : (isDark ? context.appColors.blue.shade300 : context.appColors.blue.shade600);
 
     return Container(
       width: double.infinity,

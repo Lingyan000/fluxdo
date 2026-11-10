@@ -10,6 +10,7 @@ import '../../models/topic_card_style.dart';
 import '../../utils/color_utils.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/time_utils.dart';
+import '../../theme/app_colors.dart';
 
 /// 话题自绘卡的排版产物:一张卡全部文本的 [ui.Paragraph] 成品 + 几何。
 ///
@@ -214,7 +215,9 @@ class TopicCardLayout {
       if (topic.hasAcceptedAnswer)
         (
           Symbols.check_box_rounded,
-          isFullyRead ? Colors.green.withValues(alpha: 0.5) : Colors.green,
+          isFullyRead
+              ? theme.appColors.green.withValues(alpha: 0.5)
+              : theme.appColors.green,
         )
       else if (topic.canHaveAnswer)
         (Symbols.check_box_outline_blank_rounded, scheme.outline),

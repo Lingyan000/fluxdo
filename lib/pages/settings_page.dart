@@ -25,6 +25,7 @@ import 'notion_settings_page.dart';
 import 'preferences_page.dart';
 import 'reading_settings_page.dart';
 import 'shortcut_settings_page.dart';
+import '../theme/app_colors.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   static const double parallelMasterWidth = PaneBreakpoints.settingsMasterWidth;
@@ -351,46 +352,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           children: [
             _buildOptionTile(
               icon: Symbols.color_lens_rounded,
-              iconColor: Colors.teal,
+              iconColor: context.appColors.teal,
               title: l10n.settings_appearance,
               onTap: () => _openSettingsPage((_) => const AppearancePage()),
             ),
             _buildOptionTile(
               icon: Symbols.auto_stories_rounded,
-              iconColor: Colors.deepOrange,
+              iconColor: context.appColors.deepOrange,
               title: l10n.settings_reading,
               onTap: () =>
                   _openSettingsPage((_) => const ReadingSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.network_check_rounded,
-              iconColor: Colors.blueGrey,
+              iconColor: context.appColors.blueGrey,
               title: l10n.settings_network,
               onTap: () =>
                   _openSettingsPage((_) => const NetworkSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.tune_rounded,
-              iconColor: Colors.deepPurple,
+              iconColor: context.appColors.deepPurple,
               title: l10n.settings_preferences,
               onTap: () => _openSettingsPage((_) => const PreferencesPage()),
             ),
             _buildOptionTile(
               icon: Symbols.view_day_rounded,
-              iconColor: Colors.amber,
+              iconColor: context.appColors.amber,
               title: l10n.settings_bottomNav,
               onTap: () =>
                   _openSettingsPage((_) => const BottomNavSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.storage_rounded,
-              iconColor: Colors.brown,
+              iconColor: context.appColors.brown,
               title: l10n.settings_dataManagement,
               onTap: () => _openSettingsPage((_) => const DataManagementPage()),
             ),
             _buildOptionTile(
               icon: Symbols.cloud_sync_rounded,
-              iconColor: Colors.deepPurple,
+              iconColor: context.appColors.deepPurple,
               title: l10n.notion_title,
               onTap: () => _openSettingsPage((_) => const NotionSettingsPage()),
             ),
@@ -398,14 +399,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             if (PlatformUtils.isDesktop)
               _buildOptionTile(
                 icon: Symbols.keyboard_rounded,
-                iconColor: Colors.cyan,
+                iconColor: context.appColors.cyan,
                 title: l10n.settings_shortcuts,
                 onTap: () =>
                     _openSettingsPage((_) => const ShortcutSettingsPage()),
               ),
             _buildOptionTile(
               icon: Symbols.info_rounded,
-              iconColor: Colors.indigo,
+              iconColor: context.appColors.indigo,
               title: l10n.settings_about,
               onTap: () => _openSettingsPage((_) => const AboutPage()),
             ),

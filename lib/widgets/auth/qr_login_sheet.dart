@@ -14,6 +14,7 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
+import '../../theme/app_colors.dart';
 
 /// OTP 一次性登录令牌的服务端 TTL(Redis setex 10 分钟,兑换即焚)。
 /// 二维码的真实可扫窗口以此为准。
@@ -605,7 +606,7 @@ class _QrCard extends StatelessWidget {
               return Center(
                 child: Text(
                   S.current.login_qrGenerateFailed,
-                  style: const TextStyle(color: Colors.red),
+                  style: TextStyle(color: context.appColors.red),
                 ),
               );
             },
