@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -189,8 +190,8 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
       ),
       builder: (ctx) => _FetchedModelsSelector(
         fetchFuture: fetchFuture,
@@ -338,11 +339,12 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
             child: FilledButton(
               onPressed: _isSaving ? null : _save,
               child: _isSaving
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.onPrimary),
                     )
                   : Text(AiL10n.current.save),
             ),
@@ -396,10 +398,10 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                 child: Material(
                   color: selected ? cs.secondaryContainer : Colors.transparent,
                   shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                      borderRadius: context.shapes.borderRadius(16)),
                   child: InkWell(
                     customBorder: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                        borderRadius: context.shapes.borderRadius(16)),
                     onTap: () => _switchTab(i),
                     child: SizedBox(
                       height: 56,
@@ -449,26 +451,24 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   Widget _buildConfigTab() {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
     InputDecoration inputDeco(String label, {String? hint, Widget? suffix}) =>
         InputDecoration(
           labelText: label,
           hintText: hint,
           filled: true,
-          fillColor: isDark ? Colors.white10 : cs.surfaceContainerLow,
+          fillColor: cs.surfaceContainerLow,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: context.shapes.borderRadius(14),
             borderSide:
                 BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: context.shapes.borderRadius(14),
             borderSide:
                 BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: context.shapes.borderRadius(14),
             borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
           ),
           suffixIcon: suffix,
@@ -607,7 +607,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                         Colors.white.withValues(alpha: 0.12),
                         cs.surface,
                       )
-                    : const Color(0xFFF2F3F5),
+                    : cs.surfaceContainerHigh,
                 shadows: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.08),
@@ -616,7 +616,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
                   ),
                 ],
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: context.shapes.borderRadius(999),
                 ),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -657,11 +657,11 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: cs.surfaceContainerLow,
-        shape:
-            RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(14)),
         child: InkWell(
           customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(14)),
+              borderRadius: context.shapes.borderRadius(14)),
           onTap: () => _editModel(index),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 8, 10),
@@ -743,18 +743,18 @@ class _FloatingPill extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Material(
       color: filled ? cs.primary.withValues(alpha: 0.12) : Colors.transparent,
-      shape:
-          RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(999)),
+      shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(999)),
       child: InkWell(
-        customBorder:
-            RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(999)),
+        customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(999)),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: outlined
               ? ShapeDecoration(
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: context.shapes.borderRadius(999),
                     side: BorderSide(
                       color: cs.primary.withValues(alpha: 0.35),
                     ),
@@ -929,7 +929,7 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
               decoration: ShapeDecoration(
                 color: cs.onSurface.withValues(alpha: 0.2),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: context.shapes.borderRadius(999),
                 ),
               ),
             ),
@@ -944,10 +944,9 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
                     prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                     isDense: true,
                     filled: true,
-                    fillColor:
-                        isDark ? Colors.white10 : const Color(0xFFF2F3F5),
+                    fillColor: cs.surfaceContainerHigh,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                       borderSide: BorderSide.none,
                     ),
                     suffixIcon: filtered.isNotEmpty
@@ -1038,7 +1037,7 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
           children: [
             InkWell(
               customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                  borderRadius: context.shapes.borderRadius(8)),
               onTap: () => setState(() {
                 if (isCollapsed) {
                   _collapsed.remove(group);
@@ -1106,10 +1105,10 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
                   child: Material(
                     color: cs.surfaceContainerLow,
                     shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                        borderRadius: context.shapes.borderRadius(12)),
                     child: InkWell(
                       customBorder: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                          borderRadius: context.shapes.borderRadius(12)),
                       onTap: () => _toggle(m),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(

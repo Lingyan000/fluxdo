@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -288,15 +289,15 @@ class _MaxSessionsRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: InkWell(
-        customBorder:
-            RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+        customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12)),
         onTap: () => _showPicker(context, storageService, maxSessions),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerLow,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
           ),
           child: Row(
@@ -326,7 +327,7 @@ class _MaxSessionsRow extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHigh,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: Text(

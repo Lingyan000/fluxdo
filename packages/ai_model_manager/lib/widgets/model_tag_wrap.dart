@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -82,7 +83,7 @@ class ModelTagWrap extends StatelessWidget {
                   ? color.withValues(alpha: 0.25)
                   : color.withValues(alpha: 0.15),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: context.shapes.borderRadius(999),
                 side: BorderSide(
                   color: color.withValues(alpha: 0.2),
                   width: 0.5,
@@ -146,7 +147,7 @@ class ModelTagWrap extends StatelessWidget {
                   ? color.withValues(alpha: 0.25)
                   : color.withValues(alpha: 0.15),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: context.shapes.borderRadius(999),
                 side: BorderSide(
                   color: color.withValues(alpha: 0.2),
                   width: 0.5,

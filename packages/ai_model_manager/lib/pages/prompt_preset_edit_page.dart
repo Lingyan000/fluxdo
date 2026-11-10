@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,7 +114,8 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsNameHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
@@ -137,7 +139,7 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
                     decoration: ShapeDecoration(
                       color: theme.colorScheme.surfaceContainerHigh,
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: context.shapes.borderRadius(8),
                       ),
                     ),
                     child: _DisabledIconPreview(iconRaw: _iconRaw),
@@ -167,7 +169,8 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               maxLines: 12,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTemplateHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
@@ -207,7 +210,8 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTagsHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
             ),
@@ -219,7 +223,7 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHigh,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: Row(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -310,13 +311,15 @@ class _ProviderReorderSection extends StatelessWidget {
               trailingActions: [
                 SwipeAction(
                   icon: Symbols.edit_rounded,
-                  color: Colors.blue,
+                  color: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   label: AiL10n.current.edit,
                   onPressed: () => onEdit(provider),
                 ),
                 SwipeAction(
                   icon: Symbols.delete_rounded,
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
                   label: AiL10n.current.delete,
                   onPressed: () => onDelete(provider),
                 ),
@@ -430,11 +433,12 @@ class _ProviderCard extends StatelessWidget {
       color: selected
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
           : theme.colorScheme.surface,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16)),
       child: InkWell(
         onTap: onTap,
-        customBorder:
-            RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+        customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -467,7 +471,7 @@ class _ProviderCard extends StatelessWidget {
                           ),
                           decoration: ShapeDecoration(
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: context.shapes.borderRadius(4),
                               side: BorderSide(
                                 color: theme.colorScheme.outlineVariant
                                     .withValues(alpha: 0.5),

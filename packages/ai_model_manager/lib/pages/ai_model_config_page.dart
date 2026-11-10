@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -212,9 +213,9 @@ class _ModelCard extends StatelessWidget {
 
     return Container(
       decoration: ShapeDecoration(
-        color: isDark ? Colors.white10 : Colors.white,
+        color: cs.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: cs.outlineVariant.withValues(alpha: isDark ? 0.08 : 0.06),
             width: 0.6,
@@ -271,12 +272,12 @@ class _ModelCard extends StatelessWidget {
           const SizedBox(height: 10),
           // 模型选择行
           Material(
-            color: isDark ? Colors.white10 : const Color(0xFFF2F3F5),
+            color: cs.surfaceContainerHigh,
             shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12)),
+                borderRadius: context.shapes.borderRadius(12)),
             child: InkWell(
               customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                  borderRadius: context.shapes.borderRadius(12)),
               onTap: onPick,
               child: Padding(
                 padding:

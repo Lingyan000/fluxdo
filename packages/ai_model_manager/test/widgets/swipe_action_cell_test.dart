@@ -1,27 +1,37 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   Future<void> pumpCell(
     WidgetTester tester, {
     required bool enableLongPressMenu,
+    UiShapes shapes = UiShapes.standard,
   }) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SwipeActionCell(
-            enableLongPressMenu: enableLongPressMenu,
-            trailingActions: [
-              SwipeAction(
-                icon: Icons.delete_outline,
-                color: Colors.red,
-                label: '删除',
-                onPressed: () {},
+      ProviderScope(
+        overrides: [aiSharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          theme: ThemeData(extensions: [shapes]),
+          home: Scaffold(
+            body: SwipeActionCell(
+              enableLongPressMenu: enableLongPressMenu,
+              trailingActions: [
+                SwipeAction(
+                  icon: Icons.delete_outline,
+                  color: Colors.red,
+                  label: '删除',
+                  onPressed: () {},
+                ),
+              ],
+              child: const ListTile(
+                title: Text('供应商'),
               ),
-            ],
-            child: const ListTile(
-              title: Text('供应商'),
             ),
           ),
         ),
@@ -46,5 +56,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('删除'), findsNothing);
+  });
+
+  testWidgets('sharp theme keeps swipe clip and card corners aligned',
+      (tester) async {
+    const shapes = UiShapes(scale: .2, max: 3);
+    await pumpCell(tester, enableLongPressMenu: true, shapes: shapes);
+    final clip = tester.widget<ClipRSuperellipse>(find
+        .descendant(
+            of: find.byType(SwipeActionCell),
+            matching: find.byType(ClipRSuperellipse))
+        .first);
+    expect(clip.borderRadius, shapes.borderRadius(16));
+    final card = tester.widget<Material>(find
+        .descendant(
+            of: find.byType(SwipeActionCell), matching: find.byType(Material))
+        .first);
+    expect((card.shape as RoundedSuperellipseBorder).borderRadius,
+        clip.borderRadius);
+    await tester.drag(find.byType(SwipeActionCell), const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }
